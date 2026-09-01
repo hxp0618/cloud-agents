@@ -130,6 +130,51 @@ func TestCredentialDirectoryReadsNonSecretDeploymentDescriptor(t *testing.T) {
 	}
 }
 
+func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
+	request := DeployRequest{
+		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "docker-alpha", LeaseID: "lease-alpha",
+		TargetGeneration: 1, LeaseGeneration: 1, ReleaseDigest: "sha256:" + strings.Repeat("a", 64),
+		ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+	}
+	config := deploymentConfig{
+		WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha",
+		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
+	}
+	ownedImage, ownedLabels := config.WorkerImageRepository+"@"+request.ReleaseDigest, deploymentLabels(request, config)
+	present, deletes := true, 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
+		switch {
+		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/json":
+			if present {
+				_, _ = writer.Write([]byte(`[{"Id":"container-alpha"}]`))
+			} else {
+				_, _ = writer.Write([]byte("[]"))
+			}
+		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/container-alpha/json":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Config": map[string]any{"Image": ownedImage, "Labels": ownedLabels}})
+		case httpRequest.Method == http.MethodDelete && httpRequest.URL.Path == "/containers/container-alpha":
+			present, deletes = false, deletes+1
+			writer.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(writer, httpRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+	for range 2 {
+		if err := cleanupWorkerContainer(context.Background(), server.Client(), server.URL, request, config); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if deletes != 1 {
+		t.Fatalf("delete calls = %d", deletes)
+	}
+	config.WorkerServerName = "other.example.test"
+	present = true
+	if err := cleanupWorkerContainer(context.Background(), server.Client(), server.URL, request, config); err != ErrDeploymentConflict {
+		t.Fatalf("ownership drift error = %v", err)
+	}
+}
+
 func containsJSONStrings(values []any, expected ...string) bool {
 	for _, value := range values {
 		text, ok := value.(string)

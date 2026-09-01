@@ -60,14 +60,10 @@ func TestManagedHostEnvironmentLeaseListSQLBindsTenantProjectAndCursor(t *testin
 }
 
 func TestTerminateManagedHostEnvironmentLeaseProjectsTransitionState(t *testing.T) {
-	for _, field := range []string{"generation", "desired_phase", "observed_phase", "cleanup_phase", "resource_version", "updated_at"} {
-		if !strings.Contains(terminateManagedHostEnvironmentLeaseSQL, "transition."+field) {
-			t.Fatalf("termination projection does not use transition.%s", field)
-		}
+	if !strings.Contains(terminateManagedHostEnvironmentLeaseSQL, "begin_managed_host_environment_lease_termination_v1") {
+		t.Fatal("termination does not begin the fenced cleanup transition")
 	}
-	for _, field := range []string{"deployment_target_uid", "deployment_target_generation"} {
-		if !strings.Contains(terminateManagedHostEnvironmentLeaseSQL, "lease."+field) {
-			t.Fatalf("termination projection does not retain lease.%s", field)
-		}
+	if !strings.Contains(completeManagedHostEnvironmentLeaseTerminationSQL, "complete_managed_host_environment_lease_termination_v1") {
+		t.Fatal("termination does not complete cleanup separately")
 	}
 }

@@ -75,16 +75,20 @@ FROM (
     ORDER BY lease_uid
     LIMIT $3
 ) AS environment_lease`
-	terminateManagedHostEnvironmentLeaseSQL = `SELECT transition.lease_uid, transition.lease_name, transition.release_digest,
-	    lease.deployment_target_uid, lease.deployment_target_generation, transition.generation,
-	    lease.provider_credential_ref, lease.cpu_limit_millis, lease.memory_limit_bytes,
-	    transition.desired_phase, transition.observed_phase, transition.cleanup_phase, transition.environment_id,
-	    lease.worker_endpoint, lease.worker_spiffe_id, lease.worker_server_name, ''::text,
-	    transition.expires_at, transition.resource_version, transition.created_at, transition.updated_at
-FROM cloud_agents.terminate_managed_host_environment_lease_v1($1, $2, $3, $4, $5, $6) AS transition
-JOIN cloud_agents.managed_host_environment_leases AS lease
-    ON lease.tenant_id = cloud_agents.require_tenant_id() AND lease.project_uid = $2
-	    AND lease.lease_uid = transition.lease_uid`
+	terminateManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest,
+	    deployment_target_uid, deployment_target_generation, generation,
+	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
+	    desired_phase, observed_phase, cleanup_phase, environment_id,
+	    worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
+	    expires_at, resource_version, created_at, updated_at
+FROM cloud_agents.begin_managed_host_environment_lease_termination_v1($1, $2, $3, $4, $5, $6)`
+	completeManagedHostEnvironmentLeaseTerminationSQL = `SELECT lease_uid, lease_name, release_digest,
+	    deployment_target_uid, deployment_target_generation, generation,
+	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
+	    desired_phase, observed_phase, cleanup_phase, environment_id,
+	    worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
+	    expires_at, resource_version, created_at, updated_at
+FROM cloud_agents.complete_managed_host_environment_lease_termination_v1($1, $2, $3, $4)`
 	completeManagedHostEnvironmentLeaseDeploymentSQL = `SELECT lease_uid, lease_name, release_digest,
 	    deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
@@ -306,6 +310,39 @@ func (service *DurableCoordinationService) TerminateManagedHostEnvironmentLease(
 				err := scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, terminateManagedHostEnvironmentLeaseSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ExpectedGeneration,
 					input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+				if errors.Is(err, pgx.ErrNoRows) {
+					return internalmanagedhost.ErrNotFound
+				}
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, mapManagedHostEnvironmentLeaseError(err)
+}
+
+func (service *DurableCoordinationService) CompleteManagedHostEnvironmentLeaseTermination(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalmanagedhost.CompleteEnvironmentLeaseTerminationInput,
+) (internalmanagedhost.Snapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalmanagedhost.Snapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		if ctx == nil {
+			return internalmanagedhost.Snapshot{}, ErrNilContext
+		}
+		return internalmanagedhost.Snapshot{}, ErrCoordinationInvalidInput
+	}
+	var result internalmanagedhost.Snapshot
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
+				err := scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, completeManagedHostEnvironmentLeaseTerminationSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ExpectedGeneration), input.Scope, &result)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return internalmanagedhost.ErrNotFound
 				}

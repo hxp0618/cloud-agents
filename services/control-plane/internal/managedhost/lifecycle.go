@@ -48,6 +48,12 @@ type TerminateEnvironmentLeaseInput struct {
 	Mutation           Mutation
 }
 
+type CompleteEnvironmentLeaseTerminationInput struct {
+	Scope              Scope
+	LeaseID            string
+	ExpectedGeneration int64
+}
+
 type CompleteEnvironmentLeaseDeploymentInput struct {
 	Scope                                            Scope
 	LeaseID, TargetID                                string
@@ -89,6 +95,14 @@ func (input TerminateEnvironmentLeaseInput) Validate(tenantID string) error {
 		return ErrInvalidInput
 	}
 	return validateMutation(input.Mutation)
+}
+
+func (input CompleteEnvironmentLeaseTerminationInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
+		!validIdentifier(input.LeaseID) || input.ExpectedGeneration < 1 {
+		return ErrInvalidInput
+	}
+	return nil
 }
 
 func (input CompleteEnvironmentLeaseDeploymentInput) Validate(tenantID string) error {

@@ -27,6 +27,7 @@ type managedHostEnvironmentLeaseStore interface {
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	ListManagedHostEnvironmentLeases(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedHostEnvironmentLeasePage, error)
 	TerminateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
+	CompleteManagedHostEnvironmentLeaseTermination(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput) (internalmanagedhost.Snapshot, error)
 	CompleteManagedHostEnvironmentLeaseDeployment(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput) (internalmanagedhost.Snapshot, error)
 	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
 }
@@ -223,6 +224,51 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 		return
 	}
 	result, err := server.store.TerminateManagedHostEnvironmentLease(request.Context(), tenantID, principal, internalmanagedhost.TerminateEnvironmentLeaseInput{Scope: internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, LeaseID: leaseID, ExpectedGeneration: validated.Body.ExpectedGeneration, Mutation: internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey}})
+	if err != nil {
+		status, code := managedHostEnvironmentLeaseErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	if result.CleanupPhase == "complete" {
+		writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, result)
+		return
+	}
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
+	defer cancel()
+	if server.dockerCredentials != nil && result.TargetID != "" && result.ProviderCredentialRef != "" {
+		target, targetErr := server.store.GetDeploymentTarget(cleanupContext, tenantID, principal, projectID, result.TargetID)
+		if targetErr != nil {
+			writeDeploymentTargetError(writer, targetErr)
+			return
+		}
+		if target.Kind != "docker" || target.Generation != result.TargetGeneration {
+			writePublicProblem(writer, http.StatusConflict, "lease_conflict")
+			return
+		}
+		cleanupErr := server.dockerCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockertarget.DeployRequest{
+			TenantID: tenantID, ProjectID: projectID, TargetID: result.TargetID, LeaseID: result.LeaseID,
+			TargetGeneration: result.TargetGeneration, LeaseGeneration: validated.Body.ExpectedGeneration,
+			ReleaseDigest: result.ReleaseDigest, ProviderCredentialRef: result.ProviderCredentialRef,
+			CPULimitMillis: result.CPULimitMillis, MemoryLimitBytes: result.MemoryLimitBytes,
+		})
+		if cleanupErr != nil {
+			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) {
+				writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
+			} else {
+				writePublicProblem(writer, http.StatusBadGateway, "environment_cleanup_failed")
+			}
+			return
+		}
+	} else if result.WorkerEndpoint != "" {
+		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+		return
+	}
+	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	result, err = server.store.CompleteManagedHostEnvironmentLeaseTermination(cleanupContext, tenantID, principal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput{Scope: result.Scope, LeaseID: result.LeaseID, ExpectedGeneration: result.Generation})
 	if err != nil {
 		status, code := managedHostEnvironmentLeaseErrorStatus(err)
 		writePublicProblem(writer, status, code)

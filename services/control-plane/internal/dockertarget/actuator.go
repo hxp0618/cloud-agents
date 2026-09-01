@@ -149,6 +149,42 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 	return DeployResult{Endpoint: workerEndpoint, WorkerSPIFFEID: config.WorkerSPIFFEID, WorkerServerName: config.WorkerServerName}, nil
 }
 
+func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest) error {
+	if ctx == nil || request.validate() != nil {
+		return ErrDeploymentConfigInvalid
+	}
+	config, err := directory.readDeploymentConfig(credentialRef)
+	if err != nil {
+		return err
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return err
+	}
+	defer transport.CloseIdleConnections()
+	return cleanupWorkerContainer(ctx, client, base, request, config)
+}
+
+func cleanupWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config deploymentConfig) error {
+	containerID, err := findWorkerContainer(ctx, client, base, request)
+	if err != nil || containerID == "" {
+		return err
+	}
+	inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
+	if err != nil {
+		remaining, findErr := findWorkerContainer(ctx, client, base, request)
+		if findErr != nil || remaining != "" {
+			return ErrDeploymentFailed
+		}
+		return nil
+	}
+	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
+	if inspect.Config.Image != image || !exactLabels(inspect.Config.Labels, deploymentLabels(request, config)) {
+		return ErrDeploymentConflict
+	}
+	return removeWorkerContainer(ctx, client, base, containerID)
+}
+
 func (request DeployRequest) validate() error {
 	for path, value := range map[string]string{"/tenantId": request.TenantID, "/projectId": request.ProjectID, "/targetId": request.TargetID, "/leaseId": request.LeaseID, "/providerCredentialRef": request.ProviderCredentialRef} {
 		if commonv1alpha1.ValidateIdentifier(value, path) != nil {

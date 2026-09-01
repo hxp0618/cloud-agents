@@ -618,6 +618,62 @@ describe("postgresql-lex-v1 bootstrap", () => {
     }
   });
 
+  it("classifies Managed Host Environment Lease cleanup reconciliation", () => {
+    const bytes = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000034_reconcile_managed_host_environment_lease_cleanup.sql",
+      ),
+    );
+    const statements = splitPostgresStatements(bytes);
+    const classifications = statements.map((statement) =>
+      classifyMigrationStatement(statement, "000034"),
+    );
+    expect(classifications.map(({ command }) => command)).toEqual([
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+    ]);
+
+    const catalog = JSON.parse(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/product/000034/catalog/schema-000034.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
+      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+    };
+    expect(catalog.source_descriptors.at(-1)).toEqual({
+      migration_id: "000034",
+      sql_sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      statements: statements.map((statement, index) => ({
+        index,
+        start: statement.start,
+        end: statement.end,
+        sha256: statement.sha256,
+        classification: classifications[index],
+      })),
+    });
+    for (const name of [
+      "begin_managed_host_environment_lease_termination_v1",
+      "complete_managed_host_environment_lease_termination_v1",
+    ]) {
+      expect(catalog.declared_object_identities).toContainEqual(
+        expect.objectContaining({ kind: "function", identity: expect.objectContaining({ name }) }),
+      );
+    }
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

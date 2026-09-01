@@ -24,6 +24,7 @@ type managedHostEnvironmentLeaseStoreFake struct {
 	after     string
 	limit     int
 	terminate int
+	finalize  int
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) CreateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CreateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
@@ -73,9 +74,18 @@ func (fake *managedHostEnvironmentLeaseStoreFake) TerminateManagedHostEnvironmen
 	fake.snapshot.Scope = input.Scope
 	fake.snapshot.LeaseID = input.LeaseID
 	fake.snapshot.DesiredPhase = "terminated"
+	fake.snapshot.ObservedPhase = "terminating"
+	fake.snapshot.CleanupPhase = "pending"
+	fake.snapshot.StableErrorCode = ""
+	fake.snapshot.Generation++
+	return fake.snapshot, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) CompleteManagedHostEnvironmentLeaseTermination(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CompleteEnvironmentLeaseTerminationInput) (internalmanagedhost.Snapshot, error) {
+	fake.finalize++
 	fake.snapshot.ObservedPhase = "terminated"
 	fake.snapshot.CleanupPhase = "complete"
-	fake.snapshot.Generation++
+	fake.snapshot.WorkerEndpoint, fake.snapshot.WorkerSPIFFEID, fake.snapshot.WorkerServerName = "", "", ""
 	return fake.snapshot, nil
 }
 
@@ -127,7 +137,33 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 		t.Fatalf("cross-project status=%d calls=%d body=%s", crossProject.Code, store.list, crossProject.Body.String())
 	}
 	terminated := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:terminate", `{"expectedGeneration":1}`, "request-terminate", "terminate-key-123456")
-	if terminated.Code != http.StatusOK || store.terminate != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(terminated.Body.String(), `"cleanupPhase":"complete"`) {
-		t.Fatalf("terminate status=%d calls=%d verification=%#v body=%s", terminated.Code, store.terminate, verifier.seen, terminated.Body.String())
+	if terminated.Code != http.StatusOK || store.terminate != 1 || store.finalize != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(terminated.Body.String(), `"cleanupPhase":"complete"`) {
+		t.Fatalf("terminate status=%d calls=%d finalize=%d verification=%#v body=%s", terminated.Code, store.terminate, store.finalize, verifier.seen, terminated.Body.String())
+	}
+}
+
+func TestTerminateReadyEnvironmentLeaseRequiresDockerCleanup(t *testing.T) {
+	now := time.Date(2026, time.September, 2, 8, 0, 0, 0, time.UTC)
+	store := &managedHostEnvironmentLeaseStoreFake{snapshot: internalmanagedhost.Snapshot{
+		LeaseID: "lease-ready", LeaseName: "lease-ready", EnvironmentID: "lease-ready",
+		ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		TargetID:      "docker-alpha", TargetGeneration: 1, ProviderCredentialRef: "provider-alpha",
+		CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20, WorkerEndpoint: "https://docker.example.test:32768",
+		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
+		Generation: 1, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", ResourceVersion: 2,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+	}}
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(&projectHTTPVerifierFake{}, store, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-ready:terminate", strings.NewReader(`{"expectedGeneration":1}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-terminate-ready")
+	request.Header.Set("Idempotency-Key", "terminate-ready-key-000034")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || store.terminate != 1 || store.finalize != 0 || !strings.Contains(response.Body.String(), `"code":"ENVIRONMENT_CLEANUP_UNAVAILABLE"`) {
+		t.Fatalf("status=%d terminate=%d finalize=%d body=%s", response.Code, store.terminate, store.finalize, response.Body.String())
 	}
 }
