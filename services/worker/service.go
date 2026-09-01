@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -154,6 +155,18 @@ func NewService(cfg Config) (*Service, error) {
 		if _, err := exec.LookPath(cfg.RuntimeCommand[0]); err != nil {
 			return nil, fmt.Errorf("worker/invalid_config: Runtime command is unavailable")
 		}
+		if cfg.RuntimeDirectory != "" {
+			info, err := os.Stat(cfg.RuntimeDirectory)
+			if err != nil || !info.IsDir() {
+				return nil, fmt.Errorf("worker/invalid_config: Runtime directory is unavailable")
+			}
+		}
+		if cfg.RuntimeCredentialDirectory != "" {
+			info, err := os.Stat(cfg.RuntimeCredentialDirectory)
+			if err != nil || !info.IsDir() {
+				return nil, fmt.Errorf("worker/invalid_config: Runtime credential directory is unavailable")
+			}
+		}
 		if len(cfg.AdmissionToken) == 0 {
 			return nil, fmt.Errorf("worker/invalid_config: Runtime admission token is required")
 		}
@@ -164,8 +177,8 @@ func NewService(cfg Config) (*Service, error) {
 			return nil, fmt.Errorf("worker/invalid_config: Runtime max sessions must be between 1 and %d", MaxRuntimeSessions)
 		}
 		runtimeSlots = make(chan struct{}, cfg.RuntimeMaxSessions)
-	} else if cfg.RuntimeMaxSessions != 0 {
-		return nil, fmt.Errorf("worker/invalid_config: Runtime max sessions require a Runtime command")
+	} else if cfg.RuntimeMaxSessions != 0 || cfg.RuntimeDirectory != "" || cfg.RuntimeCredentialDirectory != "" {
+		return nil, fmt.Errorf("worker/invalid_config: Runtime configuration requires a Runtime command")
 	}
 	caps := cfg.Capabilities
 	if caps == nil {

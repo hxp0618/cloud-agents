@@ -149,6 +149,29 @@ func TestRuntimeSessionCapacityConfigDefaultsAndRejectsInvalidBounds(t *testing.
 	if _, err := NewService(unavailable); err == nil {
 		t.Fatal("unavailable Runtime command unexpectedly accepted")
 	}
+	missingDirectory := base
+	missingDirectory.RuntimeCredentialDirectory = filepath.Join(t.TempDir(), "missing-credentials")
+	if _, err := NewService(missingDirectory); err == nil {
+		t.Fatal("unavailable Runtime credential directory unexpectedly accepted")
+	}
+	missingDirectory.RuntimeCredentialDirectory = ""
+	missingDirectory.RuntimeDirectory = filepath.Join(t.TempDir(), "missing-workspace")
+	if _, err := NewService(missingDirectory); err == nil {
+		t.Fatal("unavailable Runtime directory unexpectedly accepted")
+	}
+	credentialFile := filepath.Join(t.TempDir(), "credentials")
+	if err := os.WriteFile(credentialFile, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	notDirectory := base
+	notDirectory.RuntimeCredentialDirectory = credentialFile
+	if _, err := NewService(notDirectory); err == nil {
+		t.Fatal("Runtime credential file unexpectedly accepted as a directory")
+	}
+	withoutCommand := Config{WorkerIdentity: base.WorkerIdentity, RuntimeCredentialDirectory: t.TempDir()}
+	if _, err := NewService(withoutCommand); err == nil {
+		t.Fatal("Runtime credential directory without a Runtime command unexpectedly accepted")
+	}
 }
 
 func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
