@@ -32,6 +32,7 @@ type workerWireFake struct {
 	mu           sync.Mutex
 	negotiations int
 	active       string
+	tenant       string
 	artifact     *workerruntimev1alpha1.RuntimeArtifactReadRequest
 }
 
@@ -76,6 +77,9 @@ func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiS
 	if open.GetOpen().GetNegotiation().GetNegotiationId() != active {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("negotiation unknown"))
 	}
+	fake.mu.Lock()
+	fake.tenant = open.GetOpen().GetTenantId()
+	fake.mu.Unlock()
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Ready{Ready: &workerruntimev1alpha1.RuntimeSessionReady{ExecutionId: open.GetOpen().GetExecutionId(), Generation: open.GetOpen().GetGeneration(), ProtocolMajor: runtimeprotocol.ProtocolMajor, ProtocolMinor: runtimeprotocol.ProtocolMinor}}}); err != nil {
 		return err
 	}
@@ -158,7 +162,7 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	fake.mu.Lock()
 	fake.active = ""
 	fake.mu.Unlock()
-	session, err := supervisor.OpenRuntimeSession(context.Background(), "execution-1", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")})
+	session, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-1", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +171,12 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	fake.mu.Unlock()
 	if negotiations != 3 {
 		t.Fatalf("negotiations before Runtime open after Worker restart = %d", negotiations)
+	}
+	fake.mu.Lock()
+	tenant := fake.tenant
+	fake.mu.Unlock()
+	if tenant != "tenant-alpha" {
+		t.Fatalf("Runtime tenant = %q", tenant)
 	}
 	defer session.CloseResponse()
 	command := runtimeprotocol.Command{RequestID: "request-1", Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: "execution-1", Generation: 7, CommandType: "SendTurn", CommandID: "command-1", OccurredAt: now.Format(time.RFC3339), Payload: map[string]any{"inputText": "hello"}}

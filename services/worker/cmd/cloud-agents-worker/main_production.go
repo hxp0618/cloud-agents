@@ -76,7 +76,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
 	runtimeDirectory := set.String("runtime-directory", "", "absolute Runtime workspace root")
 	runtimeMaxSessions := set.Int("runtime-max-sessions", workerkernel.DefaultRuntimeMaxSessions, "maximum concurrent Runtime sessions")
-	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "directory containing <providerKind>.json credentials")
+	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "directory containing <tenantID>.<providerKind>.json credentials")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {

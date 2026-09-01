@@ -314,7 +314,7 @@ func TestLocalWorkerRuntimeModeServesGeneratedWireOverH2C(t *testing.T) {
 	defer func() { _ = stream.CloseResponse() }()
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()},
-		Fencing:     &workerv1alpha1.FencingProof{LeaseId: workerkernel.WorkerLocalDevLauncherLeaseID, Generation: workerkernel.WorkerLocalDevLauncherGeneration, Token: []byte("runtime-token")}, ExecutionId: "execution-localdev", Generation: workerkernel.WorkerLocalDevLauncherGeneration, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+		Fencing:     &workerv1alpha1.FencingProof{LeaseId: workerkernel.WorkerLocalDevLauncherLeaseID, Generation: workerkernel.WorkerLocalDevLauncherGeneration, Token: []byte("runtime-token")}, ExecutionId: "execution-localdev", Generation: workerkernel.WorkerLocalDevLauncherGeneration, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex", TenantId: "tenant-local",
 	}}}); err != nil {
 		t.Fatal(err)
 	}

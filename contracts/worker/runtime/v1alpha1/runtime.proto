@@ -20,6 +20,8 @@ message RuntimeSessionOpen {
   // Selects the deployment-owned credential passed to this Runtime process.
   // Every session command that names a Provider must match this binding.
   string provider_kind = 6;
+  // Selects the authenticated tenant's deployment-owned Provider credential.
+  string tenant_id = 7;
 }
 
 message RuntimeCommandFrame {

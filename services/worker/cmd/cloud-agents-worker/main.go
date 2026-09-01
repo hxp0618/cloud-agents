@@ -109,7 +109,7 @@ func parseLocalWorkerConfig(args []string) (localWorkerConfig, error) {
 	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
 	runtimeDirectory := set.String("runtime-directory", "", "absolute Runtime working directory")
 	runtimeMaxSessions := set.Int("runtime-max-sessions", workerkernel.DefaultRuntimeMaxSessions, "maximum concurrent Runtime sessions")
-	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "optional absolute directory containing <providerKind>.json credentials")
+	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "optional absolute directory containing <tenantID>.<providerKind>.json credentials")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return localWorkerConfig{}, errInvalidWorkerConfig
 	}

@@ -236,7 +236,7 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	if err := rejected.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: incomplete.Msg.GetSelectedVersion(), NegotiationId: incomplete.Msg.GetNegotiationId(), ExpiresAt: incomplete.Msg.GetExpiresAt()},
 		Fencing:     &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-invalid-command", Generation: 7, Token: []byte("runtime-token")},
-		ExecutionId: "execution-incomplete-binding", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+		ExecutionId: "execution-incomplete-binding", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex", TenantId: "tenant-alpha",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()},
 		Fencing:     &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-invalid-command", Generation: 7, Token: []byte("runtime-token")},
-		ExecutionId: "execution-invalid-command", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+		ExecutionId: "execution-invalid-command", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex", TenantId: "tenant-alpha",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -292,13 +292,31 @@ func TestRuntimeCommandProviderReadsOnlyProviderBindingCommands(t *testing.T) {
 	}
 }
 
-func TestRuntimeProviderCredentialFileRejectsInvalidOrMissingBinding(t *testing.T) {
+func TestRuntimeProviderCredentialFileBindsTenantAndProvider(t *testing.T) {
 	for _, providerKind := range []string{"", "../codex", "codex.json", strings.Repeat("a", 65)} {
 		if validRuntimeProviderKind(providerKind) {
 			t.Fatalf("provider kind %q unexpectedly valid", providerKind)
 		}
 	}
-	if _, err := runtimeProviderCredentialFile(t.TempDir(), "codex"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "provider_credential_unavailable") {
+	directory := t.TempDir()
+	credential := filepath.Join(directory, "tenant-alpha.codex.json")
+	if err := os.WriteFile(credential, []byte(`{"payload":{"apiKey":"tenant-alpha"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if selected, err := runtimeProviderCredentialFile(directory, "tenant-alpha", "codex"); err != nil || selected != credential {
+		t.Fatalf("selected credential = %q, %v", selected, err)
+	}
+	if _, err := runtimeProviderCredentialFile(directory, "tenant-beta", "codex"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "provider_credential_unavailable") {
 		t.Fatalf("missing Provider credential error = %v", err)
+	}
+	if _, err := runtimeProviderCredentialFile(directory, "../tenant", "codex"); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "tenant_invalid") {
+		t.Fatalf("invalid tenant error = %v", err)
+	}
+	oversize := filepath.Join(directory, "tenant-alpha.claudeAgent.json")
+	if err := os.WriteFile(oversize, make([]byte, maxRuntimeProviderCredentialBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtimeProviderCredentialFile(directory, "tenant-alpha", "claudeAgent"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "provider_credential_invalid") {
+		t.Fatalf("oversize Provider credential error = %v", err)
 	}
 }

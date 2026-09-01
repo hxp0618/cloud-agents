@@ -37,7 +37,9 @@ type RuntimeSessionOpen struct {
 	ExpectedWorkerIdentity *v1alpha1.WorkloadIdentity   `protobuf:"bytes,5,opt,name=expected_worker_identity,json=expectedWorkerIdentity,proto3" json:"expected_worker_identity,omitempty"`
 	// Selects the deployment-owned credential passed to this Runtime process.
 	// Every session command that names a Provider must match this binding.
-	ProviderKind  string `protobuf:"bytes,6,opt,name=provider_kind,json=providerKind,proto3" json:"provider_kind,omitempty"`
+	ProviderKind string `protobuf:"bytes,6,opt,name=provider_kind,json=providerKind,proto3" json:"provider_kind,omitempty"`
+	// Selects the authenticated tenant's deployment-owned Provider credential.
+	TenantId      string `protobuf:"bytes,7,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,6 +112,13 @@ func (x *RuntimeSessionOpen) GetExpectedWorkerIdentity() *v1alpha1.WorkloadIdent
 func (x *RuntimeSessionOpen) GetProviderKind() string {
 	if x != nil {
 		return x.ProviderKind
+	}
+	return ""
+}
+
+func (x *RuntimeSessionOpen) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
 	}
 	return ""
 }
@@ -624,7 +633,7 @@ var File_contracts_worker_runtime_v1alpha1_runtime_proto protoreflect.FileDescri
 
 const file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDesc = "" +
 	"\n" +
-	"/contracts/worker/runtime/v1alpha1/runtime.proto\x12#cloudagents.worker.runtime.v1alpha1\x1a&contracts/worker/v1alpha1/kernel.proto\"\xfd\x02\n" +
+	"/contracts/worker/runtime/v1alpha1/runtime.proto\x12#cloudagents.worker.runtime.v1alpha1\x1a&contracts/worker/v1alpha1/kernel.proto\"\x9a\x03\n" +
 	"\x12RuntimeSessionOpen\x12Q\n" +
 	"\vnegotiation\x18\x01 \x01(\v2/.cloudagents.worker.v1alpha1.NegotiationBindingR\vnegotiation\x12C\n" +
 	"\afencing\x18\x02 \x01(\v2).cloudagents.worker.v1alpha1.FencingProofR\afencing\x12!\n" +
@@ -633,7 +642,8 @@ const file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDesc = "" +
 	"generation\x18\x04 \x01(\x04R\n" +
 	"generation\x12g\n" +
 	"\x18expected_worker_identity\x18\x05 \x01(\v2-.cloudagents.worker.v1alpha1.WorkloadIdentityR\x16expectedWorkerIdentity\x12#\n" +
-	"\rprovider_kind\x18\x06 \x01(\tR\fproviderKind\")\n" +
+	"\rprovider_kind\x18\x06 \x01(\tR\fproviderKind\x12\x1b\n" +
+	"\ttenant_id\x18\a \x01(\tR\btenantId\")\n" +
 	"\x13RuntimeCommandFrame\x12\x12\n" +
 	"\x04json\x18\x01 \x01(\fR\x04json\"\xc5\x01\n" +
 	"\x15RuntimeSessionRequest\x12M\n" +

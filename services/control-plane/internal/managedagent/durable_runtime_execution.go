@@ -579,7 +579,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, nil
 	}
 	// Claim Worker capacity before the durable running transition so saturation remains replayable as queued.
-	runtimeSession, openErr := coordinator.supervisor.OpenRuntimeSession(runtimeCtx, input.ExecutionID, session.ProviderKind, coordinator.fencingGeneration, &workerv1alpha1.FencingProof{
+	runtimeSession, openErr := coordinator.supervisor.OpenRuntimeSession(runtimeCtx, input.Scope.TenantID, input.ExecutionID, session.ProviderKind, coordinator.fencingGeneration, &workerv1alpha1.FencingProof{
 		LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...),
 	})
 	if connect.CodeOf(openErr) == connect.CodeResourceExhausted {

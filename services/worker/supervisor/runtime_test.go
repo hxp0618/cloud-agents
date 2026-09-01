@@ -32,7 +32,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor", TrustDomain: "cloud-agents.test"}
 	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
 	credentialDirectory := t.TempDir()
-	if err := os.WriteFile(credentialDirectory+"/codex.json", []byte(`{"payload":{"apiKey":"test-key"}}`), 0o600); err != nil {
+	if err := os.WriteFile(credentialDirectory+"/tenant-alpha.codex.json", []byte(`{"payload":{"apiKey":"test-key"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	service, err := workerkernel.NewService(workerkernel.Config{
@@ -71,7 +71,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream, err := supervisor.OpenRuntimeSession(context.Background(), "execution-runtime-test", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
+	stream, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-runtime-test", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(2 * time.Minute)
-	secondStream, err := supervisor.OpenRuntimeSession(context.Background(), "execution-runtime-test-2", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
+	secondStream, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-runtime-test-2", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
 	if err != nil {
 		t.Fatalf("OpenRuntimeSession after binding expiry = %v", err)
 	}
@@ -135,7 +135,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 	}
 	var mismatchStream *RuntimeSession
 	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		mismatchStream, err = supervisor.OpenRuntimeSession(context.Background(), "execution-runtime-test-3", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
+		mismatchStream, err = supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-runtime-test-3", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
 		if err == nil {
 			break
 		}
@@ -148,7 +148,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 	defer func() { _ = capacityStream.CloseRequest(); _ = capacityStream.CloseResponse() }()
 	if err := capacityStream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: secondBinding.Negotiation(), Fencing: &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")},
-		ExecutionId: "execution-runtime-capacity", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+		ExecutionId: "execution-runtime-capacity", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex", TenantId: "tenant-alpha",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestOpenRuntimeSessionRequiresRuntimeBindingAndFencing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := supervisor.OpenRuntimeSession(context.Background(), "execution", "codex", 1, &workerv1alpha1.FencingProof{LeaseId: "lease", Generation: 1, Token: []byte("token")}); err == nil {
+	if _, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution", "codex", 1, &workerv1alpha1.FencingProof{LeaseId: "lease", Generation: 1, Token: []byte("token")}); err == nil {
 		t.Fatal("OpenRuntimeSession without Runtime client unexpectedly succeeded")
 	}
 }

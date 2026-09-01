@@ -19,6 +19,7 @@ import (
 	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
 )
@@ -66,10 +67,7 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if err := validateIdentifier(open.GetExecutionId(), "execution_id"); err != nil || open.GetGeneration() == 0 || open.GetGeneration() != open.GetFencing().GetGeneration() {
 		return runtimeSessionFailure(connect.CodeInvalidArgument, "runtime_identity_invalid", "execution id and generation are invalid")
 	}
-	if !validRuntimeProviderKind(open.GetProviderKind()) {
-		return runtimeSessionFailure(connect.CodeInvalidArgument, "provider_invalid", "Runtime provider kind is invalid")
-	}
-	credentialFile, err := runtimeProviderCredentialFile(s.runtimeCredentialDirectory, open.GetProviderKind())
+	credentialFile, err := runtimeProviderCredentialFile(s.runtimeCredentialDirectory, open.GetTenantId(), open.GetProviderKind())
 	if err != nil {
 		return err
 	}
@@ -268,7 +266,10 @@ func (s *Service) ReadArtifact(ctx context.Context, request *connect.Request[wor
 	}
 }
 
-const runtimeArtifactChunkBytes = 64 << 10
+const (
+	runtimeArtifactChunkBytes         = 64 << 10
+	maxRuntimeProviderCredentialBytes = 65 << 10
+)
 
 var runtimeArtifactSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -306,14 +307,23 @@ func validRuntimeProviderKind(value string) bool {
 	return runtimeProviderKindPattern.MatchString(value)
 }
 
-func runtimeProviderCredentialFile(directory, providerKind string) (string, error) {
+func runtimeProviderCredentialFile(directory, tenantID, providerKind string) (string, error) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil {
+		return "", runtimeSessionFailure(connect.CodeInvalidArgument, "tenant_invalid", "Runtime tenant is invalid")
+	}
+	if !validRuntimeProviderKind(providerKind) {
+		return "", runtimeSessionFailure(connect.CodeInvalidArgument, "provider_invalid", "Runtime provider kind is invalid")
+	}
 	if directory == "" {
 		return "", nil
 	}
-	path := filepath.Join(directory, providerKind+".json")
+	path := filepath.Join(directory, tenantID+"."+providerKind+".json")
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
 		return "", runtimeSessionFailure(connect.CodeFailedPrecondition, "provider_credential_unavailable", "Runtime Provider credential is unavailable")
+	}
+	if info.Size() < 0 || info.Size() > maxRuntimeProviderCredentialBytes {
+		return "", runtimeSessionFailure(connect.CodeFailedPrecondition, "provider_credential_invalid", "Runtime Provider credential is invalid")
 	}
 	return path, nil
 }

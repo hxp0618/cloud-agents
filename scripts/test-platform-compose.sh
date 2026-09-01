@@ -131,7 +131,7 @@ const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(c
 const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
 writeFileSync(`${state}/token`, `${signingInput}.${signature}\n`);
 writeFileSync(`${state}/runtime.env`, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent\nCLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1\n");
-writeFileSync(`${state}/provider-credentials/unavailable-provider.json`, '{"payload":{}}\n');
+writeFileSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 const password = randomBytes(24).toString("hex");
 const values = [
   `COMPOSE_PROJECT_NAME=${project}`,
@@ -186,7 +186,7 @@ const values = [
 writeFileSync(`${state}/compose.env`, `${values.join("\n")}\n`);
 chmodSync(`${state}/auth.json`, 0o444);
 chmodSync(`${state}/runtime.env`, 0o444);
-chmodSync(`${state}/provider-credentials/unavailable-provider.json`, 0o444);
+chmodSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
 chmodSync(`${state}/token`, 0o600);
 chmodSync(`${state}/compose.env`, 0o600);
 NODE

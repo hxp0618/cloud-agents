@@ -185,8 +185,8 @@ type RuntimeSession struct {
 	sendMu     sync.Mutex
 }
 
-func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
-	return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, true)
+func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
+	return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, true)
 }
 
 func (supervisor *Supervisor) ReadRuntimeArtifact(ctx context.Context, executionID string, generation uint64, fencing *workerv1alpha1.FencingProof, rootDirectory, relativePath string, expectedSize *uint64, expectedSHA256 string) ([]byte, error) {
@@ -257,8 +257,8 @@ func (supervisor *Supervisor) readRuntimeArtifact(ctx context.Context, execution
 	return artifact.Bytes(), nil
 }
 
-func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, retryStaleBinding bool) (*RuntimeSession, error) {
-	if supervisor == nil || !runtimeClientAvailable(supervisor.runtimeClient) || !validIdentity(supervisor.workerIdentity) || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
+func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, retryStaleBinding bool) (*RuntimeSession, error) {
+	if supervisor == nil || !runtimeClientAvailable(supervisor.runtimeClient) || !validIdentity(supervisor.workerIdentity) || tenantID == "" || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
 		return nil, errInvalidConfig
 	}
 	if err := contextErr(ctx); err != nil {
@@ -278,13 +278,13 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, executionI
 	}
 	stream := supervisor.runtimeClient.OpenSession(ctx)
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
-		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), ProviderKind: providerKind,
+		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), ProviderKind: providerKind, TenantId: tenantID,
 	}}}); err != nil {
 		if retryStaleBinding && staleBindingError(err) {
 			supervisor.clearBinding(state)
 			_ = stream.CloseRequest()
 			_ = stream.CloseResponse()
-			return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, false)
+			return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, false)
 		}
 		return nil, rpcFailure("runtime_open", err)
 	}
@@ -294,7 +294,7 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, executionI
 			supervisor.clearBinding(state)
 			_ = stream.CloseRequest()
 			_ = stream.CloseResponse()
-			return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, false)
+			return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, false)
 		}
 		return nil, rpcFailure("runtime_ready", err)
 	}

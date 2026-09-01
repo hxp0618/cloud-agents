@@ -51,9 +51,10 @@ JWK trust configuration, Runtime provider environment, SPIFFE identity, and
 Runtime admission values are deployment-owned inputs and are never generated
 by this package. Copy `runtime.env.example` for the non-secret Provider Host
 settings. Keep credentials outside the archives in the referenced directory,
-using the Runtime's existing anonymous-FD envelopes: `codex.json` contains
-`{"payload":{"apiKey":"..."}}`; `claudeAgent.json` contains exactly one of
-`apiKey` or `authToken` under `payload`. Optional `baseUrl` values and Codex
+using the Runtime's existing anonymous-FD envelopes. Files are tenant-bound:
+`<tenantId>.codex.json` contains `{"payload":{"apiKey":"..."}}`, while
+`<tenantId>.claudeAgent.json` contains exactly one of `apiKey` or `authToken`
+under `payload`. Optional `baseUrl` values and Codex
 `organization` use the same payload object. The Worker binds one file to the
 requested Provider before starting each Runtime process; provider keys in the
 runtime env file are ignored.
@@ -71,8 +72,9 @@ packaged CLI with `cloud-agentsctl --ca-file PATH ...`.
 For Kubernetes, use `deploy/helm/cloud-agents` from the extracted directory. The chart expects an external
 PostgreSQL database and pre-created Secrets named by `values.yaml`: database
 URLs (`runtime-url`, `migration-url`), `auth.json`, Control Plane/Worker mTLS,
-Runtime provider environment, Provider credentials (`codex.json` and/or
-`claudeAgent.json`), and Runtime admission (`lease-id`, `generation`, `token`).
+Runtime provider environment, tenant-bound Provider credentials
+(`<tenantId>.codex.json` and/or `<tenantId>.claudeAgent.json`), and Runtime
+admission (`lease-id`, `generation`, `token`).
 Override all three image repositories and set their digests from
 `cloud-agents-oci-images.json` before installing. A non-empty digest takes
 precedence over the chart's fallback tag:

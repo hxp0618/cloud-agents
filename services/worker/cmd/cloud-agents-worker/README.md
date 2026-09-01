@@ -25,6 +25,9 @@ GOFLAGS=-mod=readonly go run -tags localdev ./cmd/cloud-agents-worker \
   --provider-credential-directory /absolute/path/provider-credentials
 ```
 
+Credential files are tenant-bound: for example, tenant `tenant-local` uses
+`tenant-local.codex.json` or `tenant-local.claudeAgent.json`.
+
 The localdev Control Plane connects with `--worker-endpoint
 http://127.0.0.1:8091 --worker-token-file /tmp/cloud-agents-worker.token`.
 Runtime streaming uses cleartext HTTP/2 only on the validated loopback endpoint;

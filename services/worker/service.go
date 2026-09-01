@@ -79,8 +79,8 @@ type Config struct {
 	// RuntimeMaxSessions bounds concurrent Runtime processes. Zero selects the
 	// production-safe default when RuntimeCommand is configured.
 	RuntimeMaxSessions int
-	// RuntimeCredentialDirectory contains one <providerKind>.json anonymous-FD
-	// credential envelope per production Provider.
+	// RuntimeCredentialDirectory contains one <tenantID>.<providerKind>.json
+	// anonymous-FD credential envelope per production Provider.
 	RuntimeCredentialDirectory string
 	// AdmissionLeaseID, AdmissionGeneration, and AdmissionToken bind the local,
 	// in-memory operation-admission seam to one externally supplied fencing authority.
