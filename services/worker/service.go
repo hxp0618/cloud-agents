@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -150,6 +151,9 @@ func NewService(cfg Config) (*Service, error) {
 	}
 	var runtimeSlots chan struct{}
 	if len(cfg.RuntimeCommand) > 0 {
+		if _, err := exec.LookPath(cfg.RuntimeCommand[0]); err != nil {
+			return nil, fmt.Errorf("worker/invalid_config: Runtime command is unavailable")
+		}
 		if len(cfg.AdmissionToken) == 0 {
 			return nil, fmt.Errorf("worker/invalid_config: Runtime admission token is required")
 		}

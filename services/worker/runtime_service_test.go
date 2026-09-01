@@ -35,7 +35,7 @@ func TestRuntimeInvalidCommandHelperProcess(t *testing.T) {
 func TestRuntimeFencingRequiresConfiguredToken(t *testing.T) {
 	service, err := NewService(Config{
 		WorkerIdentity:      &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
-		RuntimeCommand:      []string{"runtime"},
+		RuntimeCommand:      []string{os.Args[0]},
 		AdmissionLeaseID:    "lease-runtime",
 		AdmissionGeneration: 7,
 		AdmissionToken:      []byte("expected-token"),
@@ -122,7 +122,7 @@ func TestRuntimeArtifactReadIsBoundedToCandidateRoot(t *testing.T) {
 func TestRuntimeSessionCapacityConfigDefaultsAndRejectsInvalidBounds(t *testing.T) {
 	base := Config{
 		WorkerIdentity:      &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
-		RuntimeCommand:      []string{"runtime"},
+		RuntimeCommand:      []string{os.Args[0]},
 		AdmissionToken:      []byte("runtime-token"),
 		AdmissionLeaseID:    "lease-runtime",
 		AdmissionGeneration: 7,
@@ -143,6 +143,11 @@ func TestRuntimeSessionCapacityConfigDefaultsAndRejectsInvalidBounds(t *testing.
 	}
 	if _, err := NewService(Config{WorkerIdentity: base.WorkerIdentity, RuntimeMaxSessions: 1}); err == nil {
 		t.Fatal("Runtime capacity without a Runtime command unexpectedly accepted")
+	}
+	unavailable := base
+	unavailable.RuntimeCommand = []string{filepath.Join(t.TempDir(), "missing-runtime")}
+	if _, err := NewService(unavailable); err == nil {
+		t.Fatal("unavailable Runtime command unexpectedly accepted")
 	}
 }
 
