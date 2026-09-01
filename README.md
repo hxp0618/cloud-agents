@@ -28,7 +28,7 @@ bun install --frozen-lockfile --ignore-scripts
 bun run dev
 ```
 
-The command starts an ephemeral PostgreSQL 17 database, applies the product migrations, bootstraps `tenant-local` and `organization-local`, builds the Runtime and local Go binaries, then serves the Worker on `127.0.0.1:8091` and the Control Plane on `127.0.0.1:8080`. It prints the generated 0600 bearer-token path and an exact `cloud-agentsctl` prefix. `Ctrl-C` removes the owned container, local credentials, and default managed workspace; set `CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY` to an existing absolute directory to retain Runtime workspace and Provider state. Provider credential files remain optional and can be supplied with `CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR`.
+The command starts an ephemeral PostgreSQL 17 database, applies the product migrations, bootstraps `tenant-local` and `organization-local`, builds the Runtime and local Go binaries, then serves the Worker on `127.0.0.1:8091` and the Control Plane on `127.0.0.1:8080`. It enables the packaged `codex` and `claudeAgent` Providers unless `CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS` is explicitly set, prints the generated 0600 bearer-token path, and prints an exact `cloud-agentsctl` prefix. `Ctrl-C` removes the owned container, local credentials, and default managed workspace; set `CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY` to an existing absolute directory to retain Runtime workspace and Provider state. Provider credential files remain optional and can be supplied with `CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR`.
 
 ## Verification
 

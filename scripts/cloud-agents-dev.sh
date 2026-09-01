@@ -8,6 +8,7 @@ control_plane_listen=${CLOUD_AGENTS_DEV_CONTROL_PLANE_LISTEN:-127.0.0.1:8080}
 worker_listen=${CLOUD_AGENTS_DEV_WORKER_LISTEN:-127.0.0.1:8091}
 credential_directory=${CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR:-}
 runtime_max_sessions=${CLOUD_AGENTS_DEV_RUNTIME_MAX_SESSIONS:-4}
+export CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS="${CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS-codex,claudeAgent}"
 run_id="${UID:-0}-$$"
 container_name="cloud-agents-dev-$run_id"
 state_parent="$repository_root/.tmp"
