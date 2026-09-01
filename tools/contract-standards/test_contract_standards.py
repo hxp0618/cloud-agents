@@ -94,13 +94,16 @@ class ContractStandardsTest(unittest.TestCase):
             validate_profile(profile, ROOT)
 
     def test_source_tree_has_no_python_bytecode(self) -> None:
+        source_root = ROOT / "tools" / "contract-standards"
         bytecode = sorted(
             path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "tools" / "contract-standards").rglob("*.pyc")
+            for path in source_root.rglob("*.pyc")
+            if ".venv" not in path.relative_to(source_root).parts
         )
         caches = sorted(
             path.relative_to(ROOT).as_posix()
-            for path in (ROOT / "tools" / "contract-standards").rglob("__pycache__")
+            for path in source_root.rglob("__pycache__")
+            if ".venv" not in path.relative_to(source_root).parts
         )
         self.assertEqual(bytecode, [])
         self.assertEqual(caches, [])
