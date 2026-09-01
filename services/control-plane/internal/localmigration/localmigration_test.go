@@ -136,21 +136,21 @@ func TestLoadAndVerifyIndependentProductSessionManifest(t *testing.T) {
 
 func TestLoadAndVerifyLatestIndependentProductManifest(t *testing.T) {
 	config := testConfig(t)
-	config.ManifestSelector = "product-000032"
-	config.ManifestPath = "services/control-plane/migrations/product/000032/manifest.json"
+	config.ManifestSelector = "product-000033"
+	config.ManifestPath = "services/control-plane/migrations/product/000033/manifest.json"
 	bundle, err := loadAndVerify(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.manifest.SchemaBundle.SchemaHead != "000032" || len(bundle.manifest.SchemaBundle.Migrations) != 32 {
+	if bundle.manifest.SchemaBundle.SchemaHead != "000033" || len(bundle.manifest.SchemaBundle.Migrations) != 33 {
 		t.Fatalf("unexpected latest product manifest: head=%s migrations=%d", bundle.manifest.SchemaBundle.SchemaHead, len(bundle.manifest.SchemaBundle.Migrations))
 	}
 }
 
 func TestRunUpgradesLedgerWrittenByPreviousProductBundle(t *testing.T) {
 	previousConfig := testConfig(t)
-	previousConfig.ManifestSelector = "product-000031"
-	previousConfig.ManifestPath = "services/control-plane/migrations/product/000031/manifest.json"
+	previousConfig.ManifestSelector = "product-000032"
+	previousConfig.ManifestPath = "services/control-plane/migrations/product/000032/manifest.json"
 	previous, err := loadAndVerify(previousConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -161,21 +161,21 @@ func TestRunUpgradesLedgerWrittenByPreviousProductBundle(t *testing.T) {
 	}
 
 	currentConfig := testConfig(t)
-	currentConfig.ManifestSelector = "product-000032"
-	currentConfig.ManifestPath = "services/control-plane/migrations/product/000032/manifest.json"
+	currentConfig.ManifestSelector = "product-000033"
+	currentConfig.ManifestPath = "services/control-plane/migrations/product/000033/manifest.json"
 	result, err := Run(context.Background(), currentConfig, &fakeConnector{session: session})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Applied != 1 || result.NoOp || result.SchemaHead != "000032" || len(session.apply) != 1 || session.apply[0] != "000032" {
+	if result.Applied != 1 || result.NoOp || result.SchemaHead != "000033" || len(session.apply) != 1 || session.apply[0] != "000033" {
 		t.Fatalf("unexpected upgrade result: result=%+v applied=%v", result, session.apply)
 	}
 }
 
 func TestRunRejectsUnknownHistoricalBundleDigest(t *testing.T) {
 	config := testConfig(t)
-	config.ManifestSelector = "product-000032"
-	config.ManifestPath = "services/control-plane/migrations/product/000032/manifest.json"
+	config.ManifestSelector = "product-000033"
+	config.ManifestPath = "services/control-plane/migrations/product/000033/manifest.json"
 	bundle, err := loadAndVerify(config)
 	if err != nil {
 		t.Fatal(err)
@@ -246,13 +246,14 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 		{head: "000030", length: 30},
 		{head: "000031", length: 31},
 		{head: "000032", length: 32},
+		{head: "000033", length: 33},
 	} {
 		length, ok := supportedManifestLength(test.head)
 		if !ok || length != test.length {
 			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
 		}
 	}
-	if length, ok := supportedManifestLength("000033"); ok || length != 0 {
+	if length, ok := supportedManifestLength("000034"); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
 	}
 }

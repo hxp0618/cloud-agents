@@ -151,7 +151,7 @@ func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	created, err := client.CreateManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", ManagedAgentSessionCreateRequest{SessionID: "session-alpha", ProviderKind: "codex"})
+	created, err := client.CreateManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", ManagedAgentSessionCreateRequest{SessionID: "session-alpha", ProviderKind: "codex", EnvironmentLeaseID: "lease-alpha"})
 	if err != nil || created.Value.Spec.ProviderKind != "codex" {
 		t.Fatalf("create = %#v / %v", created, err)
 	}
@@ -164,7 +164,7 @@ func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	if _, err := client.CloseManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3"); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 4 || string(seen[0].Body) != `{"sessionId":"session-alpha","providerKind":"codex"}` || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1" || seen[3].Body != nil {
+	if len(seen) != 4 || string(seen[0].Body) != `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}` || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1" || seen[3].Body != nil {
 		t.Fatalf("session requests = %#v", seen)
 	}
 }

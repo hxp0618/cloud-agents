@@ -33,6 +33,10 @@ func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(c
 	return internalmanagedagent.RuntimeSessionSnapshot{}, nil
 }
 
+func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForArtifact(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.RuntimeSessionSnapshot, error) {
+	return internalmanagedagent.RuntimeSessionSnapshot{}, nil
+}
+
 func (fake *managedAgentExecutionStoreFake) FindManagedAgentTurnForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string, string) (internalmanagedagent.TurnSnapshot, bool, error) {
 	return internalmanagedagent.TurnSnapshot{}, false, nil
 }
@@ -142,7 +146,10 @@ func (fake *managedAgentExecutionRunnerFake) ResolveUserInput(_ context.Context,
 	return fake.resolveErr
 }
 
-func (fake *managedAgentExecutionRunnerFake) ReadArtifact(_ context.Context, input internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error) {
+func (fake *managedAgentExecutionRunnerFake) ReadArtifact(_ context.Context, principalSource internalmanagedagent.VerifiedPrincipalSource, input internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error) {
+	if principalSource == nil {
+		return internalmanagedagent.RuntimeArtifact{}, errors.New("missing principal source")
+	}
 	fake.artifactInput = input
 	return fake.artifactResult, fake.artifactErr
 }
@@ -253,6 +260,13 @@ func TestManagedAgentExecutionCapacityErrorIsRetryable(t *testing.T) {
 	writeManagedAgentSessionError(response, status, code)
 	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), `"code":"RUNTIME_CAPACITY_EXHAUSTED"`) || !strings.Contains(response.Body.String(), `"retryable":true`) {
 		t.Fatalf("capacity response status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestManagedAgentExecutionUnavailableEnvironmentIsAConflict(t *testing.T) {
+	status, code := managedAgentExecutionErrorStatus(internalmanagedagent.ErrRuntimeEnvironmentUnavailable)
+	if status != http.StatusConflict || code != "environment_unavailable" {
+		t.Fatalf("status=%d code=%q", status, code)
 	}
 }
 

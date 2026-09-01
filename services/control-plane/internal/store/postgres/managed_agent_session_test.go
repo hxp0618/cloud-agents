@@ -14,18 +14,26 @@ import (
 func TestScanManagedAgentSessionBuildsDetachedSnapshot(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
 	var snapshot internalmanagedagent.SessionSnapshot
-	err := scanManagedAgentSession(rowValues("session-alpha", "codex", "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot, nil)
+	err := scanManagedAgentSession(rowValues("session-alpha", "codex", nil, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if snapshot.SessionID != "session-alpha" || snapshot.ProviderKind != "codex" || snapshot.State != internalmanagedagent.SessionActive || snapshot.Version != 2 || snapshot.Scope.ProjectID != "project-alpha" {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
+	leaseID, generation := "lease-alpha", int64(7)
+	err = scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, &generation, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
+	if err != nil || snapshot.EnvironmentLeaseID != leaseID || snapshot.EnvironmentGeneration != 7 {
+		t.Fatalf("bound snapshot = %#v / %v", snapshot, err)
+	}
+	if err := scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("partial environment binding error = %v", err)
+	}
 }
 
 func TestScanManagedAgentSessionPreservesNotFound(t *testing.T) {
 	var snapshot internalmanagedagent.SessionSnapshot
-	if err := scanManagedAgentSession(rowError(pgx.ErrNoRows), internalmanagedagent.Scope{}, &snapshot, nil); !errors.Is(err, pgx.ErrNoRows) {
+	if err := scanManagedAgentSession(rowError(pgx.ErrNoRows), internalmanagedagent.Scope{}, &snapshot); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("error = %v, want pgx.ErrNoRows", err)
 	}
 }
@@ -50,7 +58,7 @@ func TestDecodeManagedAgentSessionPageRowsBindsProjectAndCursor(t *testing.T) {
 
 func TestManagedAgentSessionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	for _, sql := range []string{createManagedAgentSessionSQL, closeManagedAgentSessionSQL} {
-		if !strings.Contains(sql, "cloud_agents.") || !strings.Contains(sql, "_v1(") {
+		if !strings.Contains(sql, "cloud_agents.") || !strings.Contains(sql, "_v") {
 			t.Fatalf("unqualified or unversioned session mutation SQL: %s", sql)
 		}
 	}
@@ -67,7 +75,7 @@ func TestManagedAgentSessionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 
 func TestManagedAgentSessionDigestMatchesLifecycleKernel(t *testing.T) {
 	input := internalmanagedagent.CreateSessionInput{
-		Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", ProviderKind: "codex",
+		Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", ProviderKind: "codex", EnvironmentLeaseID: "lease-alpha",
 		Mutation: internalmanagedagent.Mutation{RequestID: "request-alpha", IdempotencyKey: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2"},
 	}
 	digest, err := internalmanagedagent.SessionCreateMutationDigest(input)

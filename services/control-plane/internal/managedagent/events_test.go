@@ -184,7 +184,7 @@ func TestLifecycleEventsDoNotDuplicateOnIdempotentReplay(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t, newTestClock())
 	input := CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-event-replay", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-event-replay", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-event-replay", IdempotencyKey: "idem-event-replay"},
 	}
 	if _, err := store.CreateSession(ctx, input); err != nil {
@@ -230,7 +230,7 @@ func TestLifecycleEventsAppendOnlyAfterSuccessfulMutation(t *testing.T) {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	if _, err := store.CreateSession(cancelled, CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-cancelled-event", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-cancelled-event", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-cancelled-event", IdempotencyKey: "idem-cancelled-event"},
 	}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled mutation error = %v", err)
@@ -248,7 +248,7 @@ func TestLifecycleEventsAppendOnlyAfterSuccessfulMutation(t *testing.T) {
 func createSessionInScope(t *testing.T, store *Store, scope Scope, sessionID string) {
 	t.Helper()
 	if _, err := store.CreateSession(context.Background(), CreateSessionInput{
-		Scope: scope, SessionID: sessionID, ProviderKind: "codex",
+		Scope: scope, SessionID: sessionID, ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-" + sessionID, IdempotencyKey: "idem-" + sessionID},
 	}); err != nil {
 		t.Fatal(err)

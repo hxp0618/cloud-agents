@@ -61,6 +61,30 @@ func TestParseProductionConfigRejectsPartialTLS(t *testing.T) {
 	}
 }
 
+func TestParseProductionConfigAllowsEnvironmentRoutedWorkers(t *testing.T) {
+	values := map[string]string{
+		productionDatabaseEnvironment:         "postgres://runtime@db/cloud_agents",
+		productionAuthConfigEnvironment:       "/etc/cloud-agents/auth.json",
+		productionWorkerClientCertEnvironment: "/etc/cloud-agents/worker-client.crt",
+		productionWorkerClientKeyEnvironment:  "/etc/cloud-agents/worker-client.key",
+		productionWorkerCAEnvironment:         "/etc/cloud-agents/worker-ca.crt",
+		productionWorkspaceEnvironment:        "/workspace",
+		productionAdmissionTokenEnvironment:   "runtime-token",
+	}
+	args := []string{"--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}
+	getenv := func(name string) string { return values[name] }
+	config, err := parseProductionConfig(args, getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.workerEndpoint != "" || config.workerSPIFFE != "" || config.admissionLeaseID != "" || config.admissionGeneration != 0 {
+		t.Fatalf("unexpected fixed Worker route: %#v", config)
+	}
+	if _, err := parseProductionConfig(append(args, "--worker-endpoint", "https://worker:8091"), getenv); err == nil {
+		t.Fatal("accepted partial fixed Worker route")
+	}
+}
+
 func TestProductionAccessLogIsCorrelatedAndDoesNotLeakRequestInputs(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&output, nil))

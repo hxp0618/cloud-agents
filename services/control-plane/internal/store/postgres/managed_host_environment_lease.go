@@ -36,6 +36,7 @@ type managedHostEnvironmentLeasePageRow struct {
 	EnvironmentID         string    `json:"environment_id"`
 	WorkerEndpoint        string    `json:"worker_endpoint"`
 	WorkerSPIFFEID        string    `json:"worker_spiffe_id"`
+	WorkerServerName      string    `json:"worker_server_name"`
 	StableErrorCode       string    `json:"stable_error_code"`
 	ExpiresAt             time.Time `json:"expires_at"`
 	ResourceVersion       int64     `json:"resource_version"`
@@ -46,12 +47,12 @@ type managedHostEnvironmentLeasePageRow struct {
 const (
 	createManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
-	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, stable_error_code,
+	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, ''::text, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at
 FROM cloud_agents.create_managed_host_environment_lease_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 	getManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
-	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, stable_error_code,
+	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at
 FROM cloud_agents.managed_host_environment_leases
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND lease_uid = $2`
@@ -65,7 +66,7 @@ FROM (
 	        deployment_target_uid, deployment_target_generation,
 	        provider_credential_ref, cpu_limit_millis, memory_limit_bytes, generation,
 	        desired_phase, observed_phase, cleanup_phase, environment_id,
-	        worker_endpoint, worker_spiffe_id, stable_error_code, expires_at,
+	        worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code, expires_at,
         resource_version, created_at, updated_at
     FROM cloud_agents.managed_host_environment_leases
     WHERE tenant_id = cloud_agents.require_tenant_id()
@@ -78,7 +79,7 @@ FROM (
 	    lease.deployment_target_uid, lease.deployment_target_generation, transition.generation,
 	    lease.provider_credential_ref, lease.cpu_limit_millis, lease.memory_limit_bytes,
 	    transition.desired_phase, transition.observed_phase, transition.cleanup_phase, transition.environment_id,
-	    lease.worker_endpoint, lease.worker_spiffe_id, ''::text,
+	    lease.worker_endpoint, lease.worker_spiffe_id, lease.worker_server_name, ''::text,
 	    transition.expires_at, transition.resource_version, transition.created_at, transition.updated_at
 FROM cloud_agents.terminate_managed_host_environment_lease_v1($1, $2, $3, $4, $5, $6) AS transition
 JOIN cloud_agents.managed_host_environment_leases AS lease
@@ -87,9 +88,9 @@ JOIN cloud_agents.managed_host_environment_leases AS lease
 	completeManagedHostEnvironmentLeaseDeploymentSQL = `SELECT lease_uid, lease_name, release_digest,
 	    deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
-	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, stable_error_code,
+	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at
-FROM cloud_agents.complete_managed_host_environment_lease_deployment_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.complete_managed_host_environment_lease_deployment_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 )
 
 func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
@@ -225,7 +226,7 @@ func decodeManagedHostEnvironmentLeasePageRows(raw []byte, tenantID, projectID s
 			LeaseID: row.LeaseID, LeaseName: row.LeaseName, ReleaseDigest: row.ReleaseDigest,
 			Generation: row.Generation, DesiredPhase: row.DesiredPhase, ObservedPhase: row.ObservedPhase,
 			CleanupPhase: row.CleanupPhase, EnvironmentID: row.EnvironmentID, WorkerEndpoint: row.WorkerEndpoint,
-			WorkerSPIFFEID: row.WorkerSPIFFEID, StableErrorCode: row.StableErrorCode, ExpiresAt: row.ExpiresAt,
+			WorkerSPIFFEID: row.WorkerSPIFFEID, WorkerServerName: row.WorkerServerName, StableErrorCode: row.StableErrorCode, ExpiresAt: row.ExpiresAt,
 			ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		}
 		if row.TargetID != nil && row.TargetGeneration != nil {
@@ -270,7 +271,7 @@ func (service *DurableCoordinationService) CompleteManagedHostEnvironmentLeaseDe
 				return scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, completeManagedHostEnvironmentLeaseDeploymentSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ExpectedGeneration,
 					input.TargetID, input.ExpectedTargetGeneration, input.Succeeded, input.WorkerEndpoint,
-					input.WorkerSPIFFEID, input.StableErrorCode), input.Scope, &result)
+					input.WorkerSPIFFEID, input.WorkerServerName, input.StableErrorCode), input.Scope, &result)
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -328,7 +329,7 @@ func scanManagedHostEnvironmentLease(row rowScanner, scope internalmanagedhost.S
 	if err := row.Scan(&result.LeaseID, &result.LeaseName, &result.ReleaseDigest, &targetID, &targetGeneration, &result.Generation,
 		&providerCredentialRef, &cpuLimitMillis, &memoryLimitBytes,
 		&result.DesiredPhase, &result.ObservedPhase, &result.CleanupPhase, &result.EnvironmentID,
-		&result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.StableErrorCode,
+		&result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.WorkerServerName, &result.StableErrorCode,
 		&result.ExpiresAt, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt); err != nil {
 		return err
 	}

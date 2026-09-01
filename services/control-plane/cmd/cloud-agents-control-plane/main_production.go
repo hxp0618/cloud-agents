@@ -185,10 +185,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("RBAC mutation store is unavailable")
 	}
-	workerIdentity, err := productionWorkerIdentity(config.workerSPIFFE)
-	if err != nil {
-		return errors.New("worker identity configuration is invalid")
-	}
 	workerClientCertificate, err := tls.LoadX509KeyPair(config.workerClientCert, config.workerClientKey)
 	if err != nil {
 		return errors.New("worker client certificate is invalid")
@@ -197,12 +193,19 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("worker CA configuration is invalid")
 	}
-	workerSupervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
-	if err != nil {
-		return errors.New("worker transport configuration is invalid")
+	var workerSupervisor *workerclient.Supervisor
+	if config.workerEndpoint != "" {
+		workerIdentity, identityErr := productionWorkerIdentity(config.workerSPIFFE)
+		if identityErr != nil {
+			return errors.New("worker identity configuration is invalid")
+		}
+		workerSupervisor, err = workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
+		if err != nil {
+			return errors.New("worker transport configuration is invalid")
+		}
 	}
 	runtimeCoordinator, err := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
-		Store: coordinationService, Supervisor: workerSupervisor, Clock: time.Now,
+		Store: coordinationService, Supervisor: workerSupervisor, WorkerClientCertificate: workerClientCertificate, WorkerRootCAs: workerCAs, Clock: time.Now,
 		FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
 		WorkspaceDirectory: config.workspaceDirectory, MaxDuration: productionRuntimeMaxDuration,
 	})
@@ -330,11 +333,13 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		workerContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
-		defer cancel()
-		if err := workerSupervisor.CheckRuntimeHealth(workerContext); err != nil {
-			writer.WriteHeader(http.StatusServiceUnavailable)
-			return
+		if workerSupervisor != nil {
+			workerContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+			defer cancel()
+			if err := workerSupervisor.CheckRuntimeHealth(workerContext); err != nil {
+				writer.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 		}
 		writer.WriteHeader(http.StatusOK)
 	})
@@ -420,23 +425,26 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
-		parsed, parseErr := strconv.ParseUint(getenv(productionAdmissionGenerationEnvironment), 10, 64)
-		if parseErr != nil {
-			return productionConfig{}, errors.New("invalid control-plane configuration")
+		if raw := getenv(productionAdmissionGenerationEnvironment); raw != "" {
+			parsed, parseErr := strconv.ParseUint(raw, 10, 64)
+			if parseErr != nil {
+				return productionConfig{}, errors.New("invalid control-plane configuration")
+			}
+			*admissionGeneration = parsed
 		}
-		*admissionGeneration = parsed
 	}
 	var admissionToken string
 	if getenv != nil {
 		admissionToken = getenv(productionAdmissionTokenEnvironment)
 	}
-	required := []string{*database, *authPath, *tlsCert, *tlsKey, *workerEndpoint, *workerSPIFFE, *workerClientCert, *workerClientKey, *workerCA, *workspaceDirectory, *admissionLeaseID, admissionToken}
+	required := []string{*database, *authPath, *tlsCert, *tlsKey, *workerClientCert, *workerClientKey, *workerCA, *workspaceDirectory, admissionToken}
 	for _, value := range required {
 		if value == "" || strings.TrimSpace(value) != value {
 			return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
 		}
 	}
-	if *admissionGeneration == 0 || len(admissionToken) > 1<<20 {
+	staticWorker := *workerEndpoint != "" || *workerSPIFFE != "" || *admissionLeaseID != "" || *admissionGeneration != 0
+	if (staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0)) || len(admissionToken) > 1<<20 {
 		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
 	}
 	return productionConfig{

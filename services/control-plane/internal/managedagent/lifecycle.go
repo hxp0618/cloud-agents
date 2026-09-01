@@ -160,10 +160,11 @@ type Mutation struct {
 }
 
 type CreateSessionInput struct {
-	Scope        Scope
-	SessionID    string
-	ProviderKind string
-	Mutation     Mutation
+	Scope              Scope
+	SessionID          string
+	ProviderKind       string
+	EnvironmentLeaseID string
+	Mutation           Mutation
 }
 
 type CloseSessionInput struct {
@@ -250,13 +251,15 @@ type CancelTurnInput struct {
 }
 
 type SessionSnapshot struct {
-	Scope        Scope
-	SessionID    string
-	ProviderKind string
-	State        SessionState
-	Version      uint64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	Scope                 Scope
+	SessionID             string
+	ProviderKind          string
+	EnvironmentLeaseID    string
+	EnvironmentGeneration uint64
+	State                 SessionState
+	Version               uint64
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // RuntimeSessionSnapshot is the internal execution view of a Session.
@@ -264,6 +267,10 @@ type SessionSnapshot struct {
 type RuntimeSessionSnapshot struct {
 	SessionSnapshot
 	ProviderResumeCursor string
+	WorkerEndpoint       string
+	WorkerSPIFFEID       string
+	WorkerServerName     string
+	EnvironmentReady     bool
 }
 
 type TurnSnapshot struct {
@@ -370,12 +377,15 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 	if err := validateIdentifier(input.ProviderKind, maxProviderBytes, "provider kind"); err != nil {
 		return SessionSnapshot{}, err
 	}
+	if err := validateIdentifier(input.EnvironmentLeaseID, maxIdentifierBytes, "environment lease id"); err != nil {
+		return SessionSnapshot{}, err
+	}
 	if err := input.Mutation.validate(); err != nil {
 		return SessionSnapshot{}, err
 	}
 	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "session.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
-		SessionID: input.SessionID, ProviderKind: input.ProviderKind,
+		SessionID: input.SessionID, ProviderKind: input.ProviderKind, EnvironmentLeaseID: input.EnvironmentLeaseID,
 	})
 	record, err := store.mutate(ctx, input.Scope, "session.create", input.Mutation, digest, func(now time.Time) (mutationRecord, error) {
 		key := sessionKey{scope: input.Scope, id: input.SessionID}
@@ -384,6 +394,7 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 		}
 		snapshot := SessionSnapshot{
 			Scope: input.Scope, SessionID: input.SessionID, ProviderKind: input.ProviderKind,
+			EnvironmentLeaseID: input.EnvironmentLeaseID, EnvironmentGeneration: 1,
 			State: SessionActive, Version: 1, CreatedAt: now, UpdatedAt: now,
 		}
 		store.sessions[key] = sessionRecord{snapshot: snapshot}
@@ -960,12 +971,15 @@ func SessionCreateMutationDigest(input CreateSessionInput) (string, error) {
 	if err := validateIdentifier(input.ProviderKind, maxProviderBytes, "provider kind"); err != nil {
 		return "", err
 	}
+	if err := validateIdentifier(input.EnvironmentLeaseID, maxIdentifierBytes, "environment lease id"); err != nil {
+		return "", err
+	}
 	if err := input.Mutation.validate(); err != nil {
 		return "", err
 	}
 	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "session.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
-		SessionID: input.SessionID, ProviderKind: input.ProviderKind,
+		SessionID: input.SessionID, ProviderKind: input.ProviderKind, EnvironmentLeaseID: input.EnvironmentLeaseID,
 	}), nil
 }
 
@@ -1312,6 +1326,7 @@ type mutationDigestInput struct {
 	ExecutionID            string `json:"execution_id,omitempty"`
 	TargetExecutionID      string `json:"target_execution_id,omitempty"`
 	ProviderKind           string `json:"provider_kind,omitempty"`
+	EnvironmentLeaseID     string `json:"environment_lease_id,omitempty"`
 	Generation             uint64 `json:"generation,omitempty"`
 	InputDigest            string `json:"input_digest,omitempty"`
 	ResultDigest           string `json:"result_digest,omitempty"`

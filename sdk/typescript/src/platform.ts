@@ -247,6 +247,7 @@ export type EnvironmentLease = Readonly<{
     memoryLimitBytes?: number;
     workerEndpoint?: string;
     workerSpiffeId?: string;
+    workerServerName?: string;
     stableErrorCode?: string;
     expiresAt: string;
   }>;
@@ -287,6 +288,7 @@ export type DeploymentTarget = Readonly<{
 export type ManagedAgentSessionCreateRequest = Readonly<{
   sessionId: string;
   providerKind: string;
+  environmentLeaseId: string;
 }>;
 export type ManagedAgentSession = Readonly<{
   apiVersion: "managed-agent.cloud-agents.dev/v1alpha1";
@@ -298,7 +300,12 @@ export type ManagedAgentSession = Readonly<{
     createdAt: string;
     updatedAt: string;
   }>;
-  spec: Readonly<{ providerKind: string; state: "active" | "closed" }>;
+  spec: Readonly<{
+    providerKind: string;
+    environmentLeaseId?: string;
+    environmentGeneration?: number;
+    state: "active" | "closed";
+  }>;
 }>;
 export type ManagedAgentSessionPage = Readonly<{
   apiVersion: "managed-agent.cloud-agents.dev/v1alpha1";
@@ -565,6 +572,7 @@ const environmentLeaseResponseShape = resourceResponseShape({
   memoryLimitBytes: scalarResponseShape,
   workerEndpoint: scalarResponseShape,
   workerSpiffeId: scalarResponseShape,
+  workerServerName: scalarResponseShape,
   stableErrorCode: scalarResponseShape,
   expiresAt: scalarResponseShape,
 });
@@ -610,7 +618,14 @@ const managedAgentSessionResponseShape: ResponseShape = {
         updatedAt: scalarResponseShape,
       },
     },
-    spec: { fields: { providerKind: scalarResponseShape, state: scalarResponseShape } },
+    spec: {
+      fields: {
+        providerKind: scalarResponseShape,
+        environmentLeaseId: scalarResponseShape,
+        environmentGeneration: scalarResponseShape,
+        state: scalarResponseShape,
+      },
+    },
   },
 };
 const managedAgentSessionPageResponseShape: ResponseShape = {
@@ -1587,6 +1602,7 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
       "memoryLimitBytes",
       "workerEndpoint",
       "workerSpiffeId",
+      "workerServerName",
       "stableErrorCode",
       "expiresAt",
     ],
@@ -1614,6 +1630,15 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
   const hasWorkerSPIFFE = Object.hasOwn(spec, "workerSpiffeId");
   if (hasWorkerEndpoint !== hasWorkerSPIFFE)
     error("INVALID_DEPLOYMENT_STATE", "/spec/workerEndpoint");
+  const workerServerName =
+    spec.workerServerName === undefined
+      ? undefined
+      : boundedString(spec.workerServerName, 1, 253, "/spec/workerServerName");
+  if (
+    workerServerName !== undefined &&
+    (!hasWorkerEndpoint || /[/@\p{Cc}]/u.test(workerServerName))
+  )
+    error("INVALID_WORKER_SERVER_NAME", "/spec/workerServerName");
   const observedPhase = enumValue(
     spec.observedPhase,
     ["provisioning", "ready", "terminating", "terminated", "failed"] as const,
@@ -1685,6 +1710,7 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
             workerSpiffeId: workerSPIFFEID(spec.workerSpiffeId, "/spec/workerSpiffeId"),
           }
         : {}),
+      ...(workerServerName === undefined ? {} : { workerServerName }),
       ...(stableErrorCode === "" ? {} : { stableErrorCode }),
       expiresAt: dateTime(spec.expiresAt, "/spec/expiresAt"),
     }),
@@ -1819,10 +1845,13 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
   );
   const spec = strictRecord(
     source.spec,
-    ["providerKind", "state"],
+    ["providerKind", "environmentLeaseId", "environmentGeneration", "state"],
     ["providerKind", "state"],
     "/spec",
   );
+  const hasEnvironmentLease = spec.environmentLeaseId !== undefined;
+  if (hasEnvironmentLease !== (spec.environmentGeneration !== undefined))
+    error("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId");
   const resourceVersion = string(stable.resourceVersion, "/metadata/resourceVersion");
   if (!/^(?:0|[1-9][0-9]*)$/u.test(resourceVersion) || resourceVersion.length > 20)
     error("INVALID_RESOURCE_VERSION", "/metadata/resourceVersion");
@@ -1838,6 +1867,17 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
     }),
     spec: Object.freeze({
       providerKind: boundedString(spec.providerKind, 1, 64, "/spec/providerKind"),
+      ...(hasEnvironmentLease
+        ? {
+            environmentLeaseId: identifier(spec.environmentLeaseId, "/spec/environmentLeaseId"),
+            environmentGeneration: integer(
+              spec.environmentGeneration,
+              1,
+              Number.MAX_SAFE_INTEGER,
+              "/spec/environmentGeneration",
+            ),
+          }
+        : {}),
       state: enumValue(spec.state, ["active", "closed"] as const, "/spec/state"),
     }),
   });
@@ -1871,6 +1911,7 @@ export function encodeManagedAgentSessionCreateRequest(
   return JSON.stringify({
     sessionId: identifier(value.sessionId, "/sessionId"),
     providerKind: boundedString(value.providerKind, 1, 64, "/providerKind"),
+    environmentLeaseId: identifier(value.environmentLeaseId, "/environmentLeaseId"),
   });
 }
 export function decodeManagedAgentTurn(value: unknown): ManagedAgentTurn {

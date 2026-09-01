@@ -25,7 +25,21 @@
       "required": ["providerKind", "state"],
       "properties": {
         "providerKind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "environmentLeaseId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json",
+          "description": "Ready Environment Lease selected when the Session was created. Absent only for pre-binding Sessions."
+        },
+        "environmentGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807,
+          "description": "Server-selected Environment Lease generation. Absent only for pre-binding Sessions."
+        },
         "state": { "enum": ["active", "closed"] }
+      },
+      "dependentRequired": {
+        "environmentLeaseId": ["environmentGeneration"],
+        "environmentGeneration": ["environmentLeaseId"]
       }
     }
   }

@@ -97,7 +97,7 @@ describe("generated platform JSON models", () => {
       "project-alpha",
       "request-alpha",
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
-      { sessionId: "session-alpha", providerKind: "codex" },
+      { sessionId: "session-alpha", providerKind: "codex", environmentLeaseId: "lease-alpha" },
     );
     await client.getManagedAgentSession(
       "tenant-alpha",
@@ -120,7 +120,9 @@ describe("generated platform JSON models", () => {
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3",
     );
     expect(seen).toHaveLength(4);
-    expect(seen[0]?.body).toBe('{"sessionId":"session-alpha","providerKind":"codex"}');
+    expect(seen[0]?.body).toBe(
+      '{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}',
+    );
     expect(seen[2]?.path).toBe(
       "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1",
     );

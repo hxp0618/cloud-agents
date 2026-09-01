@@ -124,7 +124,7 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind"}, []string{"sessionId", "providerKind"})
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind", "environmentLeaseId"}, []string{"sessionId", "providerKind", "environmentLeaseId"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
@@ -139,13 +139,18 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	environmentLeaseID, err := managedAgentIdentifierField(fields, "environmentLeaseId", "/environmentLeaseId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
 	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
 	snapshot, err := server.store.CreateManagedAgentSession(request.Context(), tenantID, principal, internalmanagedagent.CreateSessionInput{
-		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, ProviderKind: providerKind,
+		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, ProviderKind: providerKind, EnvironmentLeaseID: environmentLeaseID,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
@@ -195,8 +200,9 @@ func (server *ManagedAgentSessionHTTPServer) get(writer http.ResponseWriter, req
 }
 
 type managedAgentSessionCreateBody struct {
-	SessionID    string `json:"sessionId"`
-	ProviderKind string `json:"providerKind"`
+	SessionID          string `json:"sessionId"`
+	ProviderKind       string `json:"providerKind"`
+	EnvironmentLeaseID string `json:"environmentLeaseId"`
 }
 
 type managedAgentSessionResource struct {
@@ -215,8 +221,10 @@ type managedAgentSessionResourceMetadata struct {
 }
 
 type managedAgentSessionResourceSpec struct {
-	ProviderKind string `json:"providerKind"`
-	State        string `json:"state"`
+	ProviderKind          string `json:"providerKind"`
+	EnvironmentLeaseID    string `json:"environmentLeaseId,omitempty"`
+	EnvironmentGeneration uint64 `json:"environmentGeneration,omitempty"`
+	State                 string `json:"state"`
 }
 
 type managedAgentSessionPageResource struct {
@@ -234,7 +242,8 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 	_ = json.NewEncoder(writer).Encode(managedAgentSessionResource{
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 		Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
-		Spec:     managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, State: string(snapshot.State)},
+		Spec: managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, EnvironmentLeaseID: snapshot.EnvironmentLeaseID,
+			EnvironmentGeneration: snapshot.EnvironmentGeneration, State: string(snapshot.State)},
 	})
 }
 
@@ -244,7 +253,8 @@ func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantI
 		sessions = append(sessions, managedAgentSessionResource{
 			APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 			Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
-			Spec:     managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, State: string(snapshot.State)},
+			Spec: managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, EnvironmentLeaseID: snapshot.EnvironmentLeaseID,
+				EnvironmentGeneration: snapshot.EnvironmentGeneration, State: string(snapshot.State)},
 		})
 	}
 	nextPageToken := ""

@@ -125,12 +125,15 @@ type ManagedAgentSessionMetadata struct {
 	UpdatedAt       string `json:"updatedAt"`
 }
 type ManagedAgentSessionSpec struct {
-	ProviderKind string `json:"providerKind"`
-	State        string `json:"state"`
+	ProviderKind          string `json:"providerKind"`
+	EnvironmentLeaseID    string `json:"environmentLeaseId,omitempty"`
+	EnvironmentGeneration int64  `json:"environmentGeneration,omitempty"`
+	State                 string `json:"state"`
 }
 type ManagedAgentSessionCreateRequest struct {
-	SessionID    string `json:"sessionId"`
-	ProviderKind string `json:"providerKind"`
+	SessionID          string `json:"sessionId"`
+	ProviderKind       string `json:"providerKind"`
+	EnvironmentLeaseID string `json:"environmentLeaseId"`
 }
 type ManagedAgentTurn struct {
 	APIVersion string                   `json:"apiVersion"`
@@ -1314,7 +1317,7 @@ func (client *Client) ResolveManagedAgentUserInput(ctx context.Context, tenantID
 var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
-	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
+	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
 })
 
 func DecodeManagedAgentSessionResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentSession], error) {
@@ -1517,7 +1520,7 @@ func DecodeManagedAgentEventPageResponseJSON(data []byte) (common.ResponseEnvelo
 	return common.ResponseEnvelope[ManagedAgentEventPage]{Value: value, Unknown: sidecar}, nil
 }
 
-var environmentLeaseResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "tenantRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"projectRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})})
+var environmentLeaseResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "tenantRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"projectRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})})
 
 func DecodeEnvironmentLeaseResponseJSON(data []byte) (common.ResponseEnvelope[platform.EnvironmentLease], error) {
 	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, environmentLeaseResponseShape)
@@ -1828,7 +1831,7 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
-	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "state"}, []string{"providerKind", "state"})
+	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "state"}, []string{"providerKind", "state"})
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
@@ -1859,6 +1862,16 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	if value.Spec.State != "active" && value.Spec.State != "closed" {
 		return ManagedAgentSession{}, common.ContractError("INVALID_STATE", "/spec/state")
 	}
+	_, hasEnvironmentLeaseID := spec["environmentLeaseId"]
+	_, hasEnvironmentGeneration := spec["environmentGeneration"]
+	if hasEnvironmentLeaseID != hasEnvironmentGeneration {
+		return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId")
+	}
+	if hasEnvironmentLeaseID {
+		if err := common.ValidateIdentifier(value.Spec.EnvironmentLeaseID, "/spec/environmentLeaseId"); err != nil || value.Spec.EnvironmentGeneration < 1 {
+			return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId")
+		}
+	}
 	return value, nil
 }
 func encodeManagedAgentSessionCreateRequest(value ManagedAgentSessionCreateRequest) ([]byte, error) {
@@ -1866,6 +1879,9 @@ func encodeManagedAgentSessionCreateRequest(value ManagedAgentSessionCreateReque
 		return nil, err
 	}
 	if err := common.ValidateString(value.ProviderKind, 1, 64, "/providerKind"); err != nil {
+		return nil, err
+	}
+	if err := common.ValidateIdentifier(value.EnvironmentLeaseID, "/environmentLeaseId"); err != nil {
 		return nil, err
 	}
 	return json.Marshal(value)

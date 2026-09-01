@@ -3,12 +3,15 @@ package managedagent
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"mime"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
@@ -28,6 +31,7 @@ import (
 // the PostgreSQL store and each call carries the verified principal.
 type DurableRuntimeExecutionStore interface {
 	GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (RuntimeSessionSnapshot, error)
+	GetManagedAgentSessionForArtifact(context.Context, string, *authn.VerifiedPrincipal, string, string) (RuntimeSessionSnapshot, error)
 	FindManagedAgentTurnForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string, string) (TurnSnapshot, bool, error)
 	CreateManagedAgentTurn(context.Context, string, *authn.VerifiedPrincipal, CreateTurnInput) (TurnSnapshot, error)
 	CreateManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CreateExecutionInput) (ExecutionSnapshot, error)
@@ -44,14 +48,16 @@ type DurableRuntimeExecutionStore interface {
 type VerifiedPrincipalSource func() (*authn.VerifiedPrincipal, error)
 
 type DurableRuntimeExecutionConfig struct {
-	Store              DurableRuntimeExecutionStore
-	Supervisor         *workerclient.Supervisor
-	Clock              Clock
-	FencingLeaseID     string
-	FencingGeneration  uint64
-	FencingToken       []byte
-	WorkspaceDirectory string
-	MaxDuration        time.Duration
+	Store                   DurableRuntimeExecutionStore
+	Supervisor              *workerclient.Supervisor
+	WorkerClientCertificate tls.Certificate
+	WorkerRootCAs           *x509.CertPool
+	Clock                   Clock
+	FencingLeaseID          string
+	FencingGeneration       uint64
+	FencingToken            []byte
+	WorkspaceDirectory      string
+	MaxDuration             time.Duration
 }
 
 type DurableRuntimeExecutionInput struct {
@@ -135,16 +141,24 @@ type RuntimeUserInputResolutionInput struct {
 }
 
 type DurableRuntimeExecutionCoordinator struct {
-	store              DurableRuntimeExecutionStore
-	supervisor         *workerclient.Supervisor
-	now                Clock
-	fencingLeaseID     string
-	fencingGeneration  uint64
-	fencingToken       []byte
-	workspaceDirectory string
-	maxDuration        time.Duration
-	activeMu           sync.Mutex
-	active             map[durableExecutionKey]*activeDurableExecution
+	store                   DurableRuntimeExecutionStore
+	supervisor              *workerclient.Supervisor
+	workerClientCertificate tls.Certificate
+	workerRootCAs           *x509.CertPool
+	now                     Clock
+	fencingLeaseID          string
+	fencingGeneration       uint64
+	fencingToken            []byte
+	workspaceDirectory      string
+	maxDuration             time.Duration
+	activeMu                sync.Mutex
+	active                  map[durableExecutionKey]*activeDurableExecution
+}
+
+type runtimeWorker struct {
+	supervisor *workerclient.Supervisor
+	leaseID    string
+	generation uint64
 }
 
 type durableExecutionKey struct {
@@ -195,6 +209,7 @@ var (
 	ErrDurableRuntimeExecutionUnavailable = errors.New("durable Runtime execution is unavailable")
 	ErrDurableRuntimeExecutionConflict    = errors.New("durable Runtime execution is already active")
 	ErrDurableRuntimeExecutionFailed      = errors.New("durable Runtime execution failed")
+	ErrRuntimeEnvironmentUnavailable      = errors.New("Runtime environment is unavailable")
 	ErrRuntimeCapacityExhausted           = errors.New("Runtime session capacity is exhausted")
 	ErrRuntimeInteractionUnavailable      = errors.New("Runtime interaction is unavailable")
 	ErrRuntimeInteractionConflict         = errors.New("Runtime interaction resolution conflicts with active state")
@@ -203,7 +218,9 @@ var (
 )
 
 func NewDurableRuntimeExecutionCoordinator(config DurableRuntimeExecutionConfig) (*DurableRuntimeExecutionCoordinator, error) {
-	if config.Store == nil || config.Supervisor == nil || config.Clock == nil || config.FencingLeaseID == "" || config.FencingGeneration == 0 || len(config.FencingToken) == 0 || strings.TrimSpace(config.WorkspaceDirectory) == "" {
+	staticWorker := config.Supervisor != nil && config.FencingLeaseID != "" && config.FencingGeneration > 0
+	dynamicWorker := len(config.WorkerClientCertificate.Certificate) > 0 && config.WorkerClientCertificate.PrivateKey != nil && config.WorkerRootCAs != nil
+	if config.Store == nil || config.Clock == nil || len(config.FencingToken) == 0 || strings.TrimSpace(config.WorkspaceDirectory) == "" || !staticWorker && !dynamicWorker {
 		return nil, ErrDurableRuntimeExecutionUnavailable
 	}
 	if config.MaxDuration <= 0 || config.MaxDuration > 5*time.Minute {
@@ -211,10 +228,38 @@ func NewDurableRuntimeExecutionCoordinator(config DurableRuntimeExecutionConfig)
 	}
 	return &DurableRuntimeExecutionCoordinator{
 		store: config.Store, supervisor: config.Supervisor, now: config.Clock,
+		workerClientCertificate: config.WorkerClientCertificate, workerRootCAs: config.WorkerRootCAs,
 		fencingLeaseID: config.FencingLeaseID, fencingGeneration: config.FencingGeneration,
 		fencingToken: append([]byte(nil), config.FencingToken...), workspaceDirectory: config.WorkspaceDirectory,
 		maxDuration: config.MaxDuration, active: make(map[durableExecutionKey]*activeDurableExecution),
 	}, nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) workerForSession(session RuntimeSessionSnapshot) (runtimeWorker, error) {
+	if session.EnvironmentLeaseID == "" {
+		if coordinator.supervisor == nil || coordinator.fencingLeaseID == "" || coordinator.fencingGeneration == 0 {
+			return runtimeWorker{}, ErrRuntimeEnvironmentUnavailable
+		}
+		return runtimeWorker{supervisor: coordinator.supervisor, leaseID: coordinator.fencingLeaseID, generation: coordinator.fencingGeneration}, nil
+	}
+	if !session.EnvironmentReady || session.EnvironmentGeneration == 0 || coordinator.workerRootCAs == nil || len(coordinator.workerClientCertificate.Certificate) == 0 || coordinator.workerClientCertificate.PrivateKey == nil {
+		return runtimeWorker{}, ErrRuntimeEnvironmentUnavailable
+	}
+	parsed, err := url.Parse(session.WorkerSPIFFEID)
+	if err != nil || parsed.Scheme != "spiffe" || parsed.Host == "" || parsed.Path == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return runtimeWorker{}, ErrRuntimeEnvironmentUnavailable
+	}
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: session.WorkerSPIFFEID, TrustDomain: parsed.Host}
+	// ponytail: create one Supervisor per execution; add a bounded route cache only after measured connection churn.
+	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{
+		Endpoint: session.WorkerEndpoint, ExpectedWorkerIdentity: identity,
+		ClientCertificate: coordinator.workerClientCertificate, RootCAs: coordinator.workerRootCAs,
+		ServerName: session.WorkerServerName, Clock: workerclient.Clock(coordinator.now),
+	})
+	if err != nil {
+		return runtimeWorker{}, ErrRuntimeEnvironmentUnavailable
+	}
+	return runtimeWorker{supervisor: supervisor, leaseID: session.EnvironmentLeaseID, generation: session.EnvironmentGeneration}, nil
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) Cancel(ctx context.Context, principal *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
@@ -287,13 +332,25 @@ func (coordinator *DurableRuntimeExecutionCoordinator) ActiveMessages(reference 
 	return append([]runtimeprotocol.Message(nil), active.messages...)
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) ReadArtifact(ctx context.Context, input RuntimeArtifactReadInput) (RuntimeArtifact, error) {
-	if coordinator == nil || coordinator.supervisor == nil || ctx == nil {
+func (coordinator *DurableRuntimeExecutionCoordinator) ReadArtifact(ctx context.Context, principalSource VerifiedPrincipalSource, input RuntimeArtifactReadInput) (RuntimeArtifact, error) {
+	if coordinator == nil || coordinator.store == nil || ctx == nil || principalSource == nil {
 		return RuntimeArtifact{}, ErrRuntimeArtifactUnavailable
 	}
 	candidate, err := runtimeArtifactCandidate(input)
 	if err != nil {
 		return RuntimeArtifact{}, err
+	}
+	principal, err := nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return RuntimeArtifact{}, ErrRuntimeArtifactUnavailable
+	}
+	session, err := coordinator.store.GetManagedAgentSessionForArtifact(ctx, input.Scope.TenantID, principal, input.Scope.ProjectID, input.SessionID)
+	if err != nil {
+		return RuntimeArtifact{}, fmt.Errorf("%w: %v", ErrRuntimeArtifactUnavailable, err)
+	}
+	worker, err := coordinator.workerForSession(session)
+	if err != nil || worker.generation != input.Generation {
+		return RuntimeArtifact{}, ErrRuntimeArtifactUnavailable
 	}
 	paths, err := deriveRuntimeWorkspacePaths(coordinator.workspaceDirectory, input.Scope, input.SessionID, input.TurnID, input.ExecutionID)
 	if err != nil {
@@ -303,8 +360,8 @@ func (coordinator *DurableRuntimeExecutionCoordinator) ReadArtifact(ctx context.
 	if candidate.sourceRoot == "runtime-output" {
 		root = paths.runtimeOutputDirectory
 	}
-	data, err := coordinator.supervisor.ReadRuntimeArtifact(ctx, input.ExecutionID, coordinator.fencingGeneration, &workerv1alpha1.FencingProof{
-		LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...),
+	data, err := worker.supervisor.ReadRuntimeArtifact(ctx, input.ExecutionID, worker.generation, &workerv1alpha1.FencingProof{
+		LeaseId: worker.leaseID, Generation: worker.generation, Token: append([]byte(nil), coordinator.fencingToken...),
 	}, root, candidate.relativePath, candidate.expectedSize, candidate.sha256)
 	if err != nil {
 		return RuntimeArtifact{}, fmt.Errorf("%w: %v", ErrRuntimeArtifactUnavailable, err)
@@ -499,7 +556,7 @@ func durableRuntimeExecutionKey(reference RuntimeExecutionReference) (durableExe
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Context, principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput) (DurableRuntimeExecutionResult, error) {
-	if coordinator == nil || coordinator.store == nil || coordinator.supervisor == nil || coordinator.now == nil {
+	if coordinator == nil || coordinator.store == nil || coordinator.now == nil {
 		return DurableRuntimeExecutionResult{}, ErrDurableRuntimeExecutionUnavailable
 	}
 	if ctx == nil {
@@ -518,21 +575,11 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if now.IsZero() || input.Scope.validate() != nil || input.SessionID == "" || input.TurnID == "" || input.ExecutionID == "" || input.RuntimeMode != "approval-required" && input.RuntimeMode != "full-access" || input.InteractionMode != "default" && input.InteractionMode != "plan" || input.InputText == "" || input.Mutation.validate() != nil {
 		return DurableRuntimeExecutionResult{}, ErrInvalidInput
 	}
-	if input.Mutation.RequestID == "" || input.Mutation.IdempotencyKey == "" || coordinator.fencingGeneration == 0 || coordinator.fencingLeaseID == "" || len(coordinator.fencingToken) == 0 {
+	if input.Mutation.RequestID == "" || input.Mutation.IdempotencyKey == "" || len(coordinator.fencingToken) == 0 {
 		return DurableRuntimeExecutionResult{}, ErrInvalidInput
 	}
 	runCtx, cancel := context.WithTimeout(ctx, coordinator.maxDuration)
 	defer cancel()
-	runtimeCtx, runtimeCancel := context.WithCancel(runCtx)
-	key := durableExecutionKey{tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID, turnID: input.TurnID, executionID: input.ExecutionID, generation: coordinator.fencingGeneration}
-	active, unregister, err := coordinator.registerActiveExecution(key, runtimeCancel)
-	if err != nil {
-		return DurableRuntimeExecutionResult{}, err
-	}
-	defer func() {
-		unregister()
-		runtimeCancel()
-	}()
 	principal, err := nextVerifiedPrincipal(principalSource)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
@@ -541,6 +588,20 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
+	worker, err := coordinator.workerForSession(session)
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
+	}
+	runtimeCtx, runtimeCancel := context.WithCancel(runCtx)
+	key := durableExecutionKey{tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID, turnID: input.TurnID, executionID: input.ExecutionID, generation: worker.generation}
+	active, unregister, err := coordinator.registerActiveExecution(key, runtimeCancel)
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
+	}
+	defer func() {
+		unregister()
+		runtimeCancel()
+	}()
 	principal, err = nextVerifiedPrincipal(principalSource)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
@@ -568,7 +629,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
-	execution, err := coordinator.store.CreateManagedAgentExecution(runCtx, input.Scope.TenantID, principal, CreateExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: turn.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
+	execution, err := coordinator.store.CreateManagedAgentExecution(runCtx, input.Scope.TenantID, principal, CreateExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: turn.TurnID, ExecutionID: input.ExecutionID, Generation: worker.generation, Mutation: input.Mutation})
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
@@ -579,8 +640,8 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, nil
 	}
 	// Claim Worker capacity before the durable running transition so saturation remains replayable as queued.
-	runtimeSession, openErr := coordinator.supervisor.OpenRuntimeSession(runtimeCtx, input.Scope.TenantID, input.ExecutionID, session.ProviderKind, coordinator.fencingGeneration, &workerv1alpha1.FencingProof{
-		LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...),
+	runtimeSession, openErr := worker.supervisor.OpenRuntimeSession(runtimeCtx, input.Scope.TenantID, input.ExecutionID, session.ProviderKind, worker.generation, &workerv1alpha1.FencingProof{
+		LeaseId: worker.leaseID, Generation: worker.generation, Token: append([]byte(nil), coordinator.fencingToken...),
 	})
 	if connect.CodeOf(openErr) == connect.CodeResourceExhausted {
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}}, fmt.Errorf("%w: %v", ErrRuntimeCapacityExhausted, openErr)
@@ -595,7 +656,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
-	started, err := coordinator.store.StartManagedAgentExecution(runCtx, input.Scope.TenantID, principal, StartExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
+	started, err := coordinator.store.StartManagedAgentExecution(runCtx, input.Scope.TenantID, principal, StartExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: worker.generation, Mutation: input.Mutation})
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
@@ -607,7 +668,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	}
 	runtimeResult, err := coordinator.executeRuntimeTurn(runtimeCtx, key, active, runtimeSession, RuntimeTurnInput{
 		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
-		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
+		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: worker.generation,
 		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, ProviderResumeCursor: session.ProviderResumeCursor, Model: input.Model, RuntimeMode: input.RuntimeMode, InteractionMode: input.InteractionMode, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
@@ -632,7 +693,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
-	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor, Messages: runtimeResult.Messages})
+	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: worker.generation, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor, Messages: runtimeResult.Messages})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
@@ -690,7 +751,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principalSource Ve
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(context.Canceled, err)
 	}
-	cancelled, err := coordinator.store.CancelManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CancelTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, TargetExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
+	cancelled, err := coordinator.store.CancelManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CancelTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, TargetExecutionID: input.ExecutionID, Generation: started.Execution.Generation, Mutation: input.Mutation})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(context.Canceled, err)
 	}
@@ -702,7 +763,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) fail(principalSource Veri
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
 	}
-	failed, err := coordinator.store.FailManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, FailRuntimeExecutionInput{FailExecutionInput: FailExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ErrorCode: code, Mutation: input.Mutation}, Messages: messages})
+	failed, err := coordinator.store.FailManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, FailRuntimeExecutionInput{FailExecutionInput: FailExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: started.Execution.Generation, ErrorCode: code, Mutation: input.Mutation}, Messages: messages})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
 	}

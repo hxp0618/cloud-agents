@@ -62,7 +62,7 @@ func TestLifecycleHappyPathAndIdempotentReplay(t *testing.T) {
 	ctx := context.Background()
 
 	sessionInput := CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-1", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-1", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-session-1", IdempotencyKey: "idem-session-1"},
 	}
 	session, err := store.CreateSession(ctx, sessionInput)
@@ -311,7 +311,7 @@ func TestLifecycleIdempotencyConflictAndTenantIsolation(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t, newTestClock())
 	input := CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-idem", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-idem", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-idem", IdempotencyKey: "same-key"},
 	}
 	if _, err := store.CreateSession(ctx, input); err != nil {
@@ -349,7 +349,7 @@ func TestLifecycleValidationFailsClosed(t *testing.T) {
 	store := newTestStore(t, newTestClock())
 	ctx := context.Background()
 	valid := CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-valid", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-valid", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-valid", IdempotencyKey: "idem-valid"},
 	}
 	invalids := []struct {
@@ -412,7 +412,7 @@ func TestLifecycleValidationFailsClosed(t *testing.T) {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	if _, err := store.CreateSession(cancelled, CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-cancelled", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-cancelled", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-cancelled", IdempotencyKey: "idem-cancelled"},
 	}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled context error = %v", err)
@@ -451,7 +451,7 @@ func TestLifecycleTerminalStateIsImmutableAcrossNewCommands(t *testing.T) {
 func TestLifecycleConcurrentIdempotentCreateIsSingleResult(t *testing.T) {
 	store := newTestStore(t, newTestClock())
 	input := CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: "session-concurrent", ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: "session-concurrent", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-concurrent", IdempotencyKey: "idem-concurrent"},
 	}
 	const callers = 32
@@ -507,7 +507,7 @@ func createLifecycle(t *testing.T, store *Store, sessionID, turnID, executionID 
 func createSession(t *testing.T, store *Store, sessionID string) {
 	t.Helper()
 	if _, err := store.CreateSession(context.Background(), CreateSessionInput{
-		Scope: lifecycleTestScope, SessionID: sessionID, ProviderKind: "codex",
+		Scope: lifecycleTestScope, SessionID: sessionID, ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: Mutation{RequestID: "request-" + sessionID, IdempotencyKey: "idem-" + sessionID},
 	}); err != nil {
 		t.Fatal(err)

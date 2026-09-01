@@ -36,7 +36,7 @@ type managedAgentExecutionRunner interface {
 	ActiveMessages(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message
 	ResolveApproval(context.Context, internalmanagedagent.RuntimeApprovalResolutionInput) error
 	ResolveUserInput(context.Context, internalmanagedagent.RuntimeUserInputResolutionInput) error
-	ReadArtifact(context.Context, internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error)
+	ReadArtifact(context.Context, internalmanagedagent.VerifiedPrincipalSource, internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error)
 }
 
 type ManagedAgentExecutionHTTPServer struct {
@@ -265,7 +265,10 @@ func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.Resp
 		writeManagedAgentSessionError(writer, http.StatusNotFound, "not_found")
 		return
 	}
-	artifact, err := server.runner.ReadArtifact(request.Context(), internalmanagedagent.RuntimeArtifactReadInput{
+	principalSource := internalmanagedagent.VerifiedPrincipalSource(func() (*authn.VerifiedPrincipal, error) {
+		return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	})
+	artifact, err := server.runner.ReadArtifact(request.Context(), principalSource, internalmanagedagent.RuntimeArtifactReadInput{
 		RuntimeExecutionReference: runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation),
 		Message:                   messages[messageIndex],
 	})
@@ -613,6 +616,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "execution_conflict"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionConflict):
 		return http.StatusConflict, "execution_in_progress"
+	case errors.Is(err, internalmanagedagent.ErrRuntimeEnvironmentUnavailable):
+		return http.StatusConflict, "environment_unavailable"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeCapacityExhausted):
 		return http.StatusBadGateway, "runtime_capacity_exhausted"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeInteractionUnavailable), errors.Is(err, internalmanagedagent.ErrRuntimeInteractionConflict):

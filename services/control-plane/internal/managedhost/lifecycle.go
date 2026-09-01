@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -48,25 +49,26 @@ type TerminateEnvironmentLeaseInput struct {
 }
 
 type CompleteEnvironmentLeaseDeploymentInput struct {
-	Scope                                           Scope
-	LeaseID, TargetID                               string
-	ExpectedGeneration, ExpectedTargetGeneration    int64
-	Succeeded                                       bool
-	WorkerEndpoint, WorkerSPIFFEID, StableErrorCode string
+	Scope                                            Scope
+	LeaseID, TargetID                                string
+	ExpectedGeneration, ExpectedTargetGeneration     int64
+	Succeeded                                        bool
+	WorkerEndpoint, WorkerSPIFFEID, WorkerServerName string
+	StableErrorCode                                  string
 }
 
 type Snapshot struct {
-	Scope                                       Scope
-	LeaseID, LeaseName, ReleaseDigest, TargetID string
-	ProviderCredentialRef                       string
-	Generation, TargetGeneration                int64
-	CPULimitMillis, MemoryLimitBytes            int64
-	DesiredPhase, ObservedPhase, CleanupPhase   string
-	EnvironmentID                               string
-	WorkerEndpoint, WorkerSPIFFEID              string
-	StableErrorCode                             string
-	ExpiresAt, CreatedAt, UpdatedAt             time.Time
-	ResourceVersion                             int64
+	Scope                                            Scope
+	LeaseID, LeaseName, ReleaseDigest, TargetID      string
+	ProviderCredentialRef                            string
+	Generation, TargetGeneration                     int64
+	CPULimitMillis, MemoryLimitBytes                 int64
+	DesiredPhase, ObservedPhase, CleanupPhase        string
+	EnvironmentID                                    string
+	WorkerEndpoint, WorkerSPIFFEID, WorkerServerName string
+	StableErrorCode                                  string
+	ExpiresAt, CreatedAt, UpdatedAt                  time.Time
+	ResourceVersion                                  int64
 }
 
 func (input CreateEnvironmentLeaseInput) Validate(tenantID string) error {
@@ -94,10 +96,10 @@ func (input CompleteEnvironmentLeaseDeploymentInput) Validate(tenantID string) e
 		return ErrInvalidInput
 	}
 	if input.Succeeded {
-		if !validWorkerEndpoint(input.WorkerEndpoint) || !validWorkerSPIFFEID(input.WorkerSPIFFEID) || input.StableErrorCode != "" {
+		if !validWorkerEndpoint(input.WorkerEndpoint) || !validWorkerSPIFFEID(input.WorkerSPIFFEID) || !validWorkerServerName(input.WorkerServerName) || input.StableErrorCode != "" {
 			return ErrInvalidInput
 		}
-	} else if input.WorkerEndpoint != "" || input.WorkerSPIFFEID != "" || !validIdentifier(input.StableErrorCode) {
+	} else if input.WorkerEndpoint != "" || input.WorkerSPIFFEID != "" || input.WorkerServerName != "" || !validIdentifier(input.StableErrorCode) {
 		return ErrInvalidInput
 	}
 	return nil
@@ -179,7 +181,7 @@ func (snapshot Snapshot) Validate() error {
 }
 
 func validDeploymentBinding(snapshot Snapshot) bool {
-	legacy := snapshot.ProviderCredentialRef == "" && snapshot.CPULimitMillis == 0 && snapshot.MemoryLimitBytes == 0 && snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.StableErrorCode == ""
+	legacy := snapshot.ProviderCredentialRef == "" && snapshot.CPULimitMillis == 0 && snapshot.MemoryLimitBytes == 0 && snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.WorkerServerName == "" && snapshot.StableErrorCode == ""
 	if legacy {
 		return true
 	}
@@ -188,13 +190,13 @@ func validDeploymentBinding(snapshot Snapshot) bool {
 	}
 	switch snapshot.ObservedPhase {
 	case "provisioning":
-		return snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.StableErrorCode == ""
+		return snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.WorkerServerName == "" && snapshot.StableErrorCode == ""
 	case "ready":
-		return validWorkerEndpoint(snapshot.WorkerEndpoint) && validWorkerSPIFFEID(snapshot.WorkerSPIFFEID) && snapshot.StableErrorCode == ""
+		return validWorkerEndpoint(snapshot.WorkerEndpoint) && validWorkerSPIFFEID(snapshot.WorkerSPIFFEID) && (snapshot.WorkerServerName == "" || validWorkerServerName(snapshot.WorkerServerName)) && snapshot.StableErrorCode == ""
 	case "failed":
-		return snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && validIdentifier(snapshot.StableErrorCode)
+		return snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.WorkerServerName == "" && validIdentifier(snapshot.StableErrorCode)
 	case "terminating", "terminated":
-		return snapshot.StableErrorCode == "" && (snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" || validWorkerEndpoint(snapshot.WorkerEndpoint) && validWorkerSPIFFEID(snapshot.WorkerSPIFFEID))
+		return snapshot.StableErrorCode == "" && (snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.WorkerServerName == "" || validWorkerEndpoint(snapshot.WorkerEndpoint) && validWorkerSPIFFEID(snapshot.WorkerSPIFFEID) && (snapshot.WorkerServerName == "" || validWorkerServerName(snapshot.WorkerServerName)))
 	default:
 		return false
 	}
@@ -208,6 +210,10 @@ func validWorkerEndpoint(value string) bool {
 func validWorkerSPIFFEID(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func validWorkerServerName(value string) bool {
+	return value != "" && len(value) <= 253 && utf8.ValidString(value) && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "/@") && strings.IndexFunc(value, unicode.IsControl) < 0
 }
 
 func validPhase(value string, allowed ...string) bool {

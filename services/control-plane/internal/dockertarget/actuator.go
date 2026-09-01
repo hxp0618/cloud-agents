@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
@@ -56,8 +57,9 @@ type DeployRequest struct {
 }
 
 type DeployResult struct {
-	Endpoint       string
-	WorkerSPIFFEID string
+	Endpoint         string
+	WorkerSPIFFEID   string
+	WorkerServerName string
 }
 
 type deploymentConfig struct {
@@ -144,7 +146,7 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 		cleanup()
 		return DeployResult{}, ErrWorkerUnavailable
 	}
-	return DeployResult{Endpoint: workerEndpoint, WorkerSPIFFEID: config.WorkerSPIFFEID}, nil
+	return DeployResult{Endpoint: workerEndpoint, WorkerSPIFFEID: config.WorkerSPIFFEID, WorkerServerName: config.WorkerServerName}, nil
 }
 
 func (request DeployRequest) validate() error {
@@ -190,7 +192,7 @@ func validDeploymentConfig(config deploymentConfig) bool {
 	parsed, err := url.Parse(config.WorkerSPIFFEID)
 	return imageRepositoryPattern.MatchString(config.WorkerImageRepository) && volumeNamePattern.MatchString(config.WorkerCredentialRef) &&
 		err == nil && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
-		config.WorkerServerName != "" && len(config.WorkerServerName) <= 253 && strings.TrimSpace(config.WorkerServerName) == config.WorkerServerName && !strings.ContainsAny(config.WorkerServerName, "/@")
+		config.WorkerServerName != "" && len(config.WorkerServerName) <= 253 && strings.TrimSpace(config.WorkerServerName) == config.WorkerServerName && !strings.ContainsAny(config.WorkerServerName, "/@") && strings.IndexFunc(config.WorkerServerName, unicode.IsControl) < 0
 }
 
 func spiffeTrustDomain(identity string) string {
@@ -212,6 +214,7 @@ func deploymentLabels(request DeployRequest, config deploymentConfig) map[string
 		"cloud-agents.dev/cpu-limit-millis":        strconv.FormatInt(request.CPULimitMillis, 10),
 		"cloud-agents.dev/memory-limit-bytes":      strconv.FormatInt(request.MemoryLimitBytes, 10),
 		"cloud-agents.dev/worker-spiffe-id":        config.WorkerSPIFFEID,
+		"cloud-agents.dev/worker-server-name":      config.WorkerServerName,
 	}
 }
 

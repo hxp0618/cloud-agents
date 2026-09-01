@@ -39,7 +39,7 @@ func TestSnapshotDeploymentFactsMatchObservedPhase(t *testing.T) {
 		ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		TargetID:      "docker-a", TargetGeneration: 1, ProviderCredentialRef: "provider-a", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
 		Generation: 1, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", EnvironmentID: "lease-a",
-		WorkerEndpoint: "https://docker.example.test:32768", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-a",
+		WorkerEndpoint: "https://docker.example.test:32768", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-a", WorkerServerName: "worker.example.test",
 		ExpiresAt: now.Add(time.Hour), ResourceVersion: 2, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := snapshot.Validate(); err != nil {
@@ -48,6 +48,11 @@ func TestSnapshotDeploymentFactsMatchObservedPhase(t *testing.T) {
 	snapshot.WorkerEndpoint = ""
 	if err := snapshot.Validate(); err == nil {
 		t.Fatal("ready snapshot without a Worker endpoint was accepted")
+	}
+	snapshot.WorkerEndpoint = "https://docker.example.test:32768"
+	snapshot.WorkerServerName = "worker\nexample.test"
+	if err := snapshot.Validate(); err == nil {
+		t.Fatal("Worker server name with control characters was accepted")
 	}
 }
 

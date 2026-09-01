@@ -2,6 +2,8 @@ package managedagent
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net/http"
@@ -35,6 +37,10 @@ func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForExecution
 	fake.calls = append(fake.calls, "session")
 	fake.recordPrincipal(principal)
 	return RuntimeSessionSnapshot{SessionSnapshot: SessionSnapshot{ProviderKind: "codex"}}, nil
+}
+
+func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForArtifact(ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, sessionID string) (RuntimeSessionSnapshot, error) {
+	return fake.GetManagedAgentSessionForExecution(ctx, tenantID, principal, projectID, sessionID)
 }
 
 func (fake *durableRuntimeExecutionStoreFake) FindManagedAgentTurnForExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ string, _ string, _ string) (TurnSnapshot, bool, error) {
@@ -205,6 +211,28 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 	want := strings.Repeat("a", maxPublicExecutionMessageIdentifierBytes-len("-start")) + "-start"
 	if got != want || len(got) != maxPublicExecutionMessageIdentifierBytes {
 		t.Fatalf("bounded runtime identifier = %q, want %q", got, want)
+	}
+}
+
+func TestRuntimeWorkerRouteUsesBoundEnvironmentGeneration(t *testing.T) {
+	coordinator := &DurableRuntimeExecutionCoordinator{
+		now: func() time.Time { return time.Now() }, fencingToken: []byte("token"),
+		workerClientCertificate: tls.Certificate{Certificate: [][]byte{{1}}, PrivateKey: struct{}{}}, workerRootCAs: x509.NewCertPool(),
+	}
+	session := RuntimeSessionSnapshot{SessionSnapshot: SessionSnapshot{EnvironmentLeaseID: "lease-alpha", EnvironmentGeneration: 7},
+		WorkerEndpoint: "https://worker.example.test:8091", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test", EnvironmentReady: true}
+	worker, err := coordinator.workerForSession(session)
+	if err != nil || worker.supervisor == nil || worker.leaseID != "lease-alpha" || worker.generation != 7 {
+		t.Fatalf("worker = %#v, error = %v", worker, err)
+	}
+	session.EnvironmentReady = false
+	if _, err := coordinator.workerForSession(session); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("unready environment error = %v", err)
+	}
+	session.EnvironmentReady = true
+	session.WorkerSPIFFEID += "?unexpected=query"
+	if _, err := coordinator.workerForSession(session); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("malformed Worker identity error = %v", err)
 	}
 }
 

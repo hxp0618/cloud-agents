@@ -201,7 +201,7 @@ func run(args []string, stdout io.Writer) error {
 	case "session create":
 		var provider string
 		if err = parseActionFlags("session create", actionArgs, func(set *flag.FlagSet) { set.StringVar(&provider, "provider", "", "provider kind") }); err == nil {
-			value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{SessionID: options.session, ProviderKind: provider})
+			value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{SessionID: options.session, ProviderKind: provider, EnvironmentLeaseID: options.lease})
 		}
 	case "session list":
 		var pageSize int
@@ -805,7 +805,7 @@ func requiresExecution(command, action string) bool {
 	return command == "execution" && action != "list"
 }
 func requiresLease(command, action string) bool {
-	return command == "environment-lease" && action != "list"
+	return command == "environment-lease" && action != "list" || command == "session" && action == "create"
 }
 func requiresTarget(command, action string) bool {
 	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"

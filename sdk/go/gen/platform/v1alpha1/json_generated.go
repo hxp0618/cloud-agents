@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
@@ -199,6 +200,7 @@ type EnvironmentLeaseSpec struct {
 	MemoryLimitBytes      int64             `json:"memoryLimitBytes,omitempty"`
 	WorkerEndpoint        string            `json:"workerEndpoint,omitempty"`
 	WorkerSPIFFEID        string            `json:"workerSpiffeId,omitempty"`
+	WorkerServerName      string            `json:"workerServerName,omitempty"`
 	StableErrorCode       string            `json:"stableErrorCode,omitempty"`
 	ExpiresAt             string            `json:"expiresAt"`
 }
@@ -277,7 +279,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "RoleBinding":
 		spec = map[string]common.ResponseShape{"tenantRef": resourceTenantRefResponseShape, "subject": resourceSubjectResponseShape, "roleName": common.ScalarResponseShape(), "roleVersion": common.ScalarResponseShape(), "scope": resourceScopeResponseShape, "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "CloudEnvironmentLease":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	default:
@@ -1025,7 +1027,7 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 	if err != nil {
 		return EnvironmentLease{}, err
 	}
-	allowed := []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "targetId", "targetGeneration", "providerCredentialRef", "cpuLimitMillis", "memoryLimitBytes", "workerEndpoint", "workerSpiffeId", "stableErrorCode", "expiresAt"}
+	allowed := []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "targetId", "targetGeneration", "providerCredentialRef", "cpuLimitMillis", "memoryLimitBytes", "workerEndpoint", "workerSpiffeId", "workerServerName", "stableErrorCode", "expiresAt"}
 	required := []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "expiresAt"}
 	spec, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
@@ -1099,7 +1101,7 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 			return EnvironmentLease{}, common.ContractError("INVALID_RESOURCE_LIMIT", "/spec/memoryLimitBytes")
 		}
 	}
-	workerEndpoint, workerSPIFFEID, stableErrorCode := "", "", ""
+	workerEndpoint, workerSPIFFEID, workerServerName, stableErrorCode := "", "", "", ""
 	_, hasWorkerEndpoint := spec["workerEndpoint"]
 	_, hasWorkerSPIFFEID := spec["workerSpiffeId"]
 	if hasWorkerEndpoint != hasWorkerSPIFFEID {
@@ -1115,6 +1117,12 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 			return EnvironmentLease{}, common.ContractError("INVALID_WORKER_IDENTITY", "/spec/workerSpiffeId")
 		}
 	}
+	if _, ok := spec["workerServerName"]; ok {
+		workerServerName, err = fieldString(spec, "workerServerName", "/spec/workerServerName")
+		if err != nil || !validWorkerServerName(workerServerName) || !hasWorkerEndpoint {
+			return EnvironmentLease{}, common.ContractError("INVALID_WORKER_SERVER_NAME", "/spec/workerServerName")
+		}
+	}
 	if _, ok := spec["stableErrorCode"]; ok {
 		stableErrorCode, err = fieldString(spec, "stableErrorCode", "/spec/stableErrorCode")
 		if err != nil || stableErrorCode != "" && common.ValidateIdentifier(stableErrorCode, "/spec/stableErrorCode") != nil {
@@ -1128,7 +1136,7 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 	if err != nil || common.ValidateDateTime(expires, "/spec/expiresAt") != nil {
 		return EnvironmentLease{}, common.ContractError("INVALID_DATE_TIME", "/spec/expiresAt")
 	}
-	return EnvironmentLease{ResourceBase: base, Spec: EnvironmentLeaseSpec{ProjectRef: project, Generation: generation, DesiredPhase: desired, ObservedPhase: observed, CleanupPhase: cleanup, EnvironmentID: environmentID, ReleaseDigest: release, TargetID: targetID, TargetGeneration: targetGeneration, ProviderCredentialRef: providerCredentialRef, CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes, WorkerEndpoint: workerEndpoint, WorkerSPIFFEID: workerSPIFFEID, StableErrorCode: stableErrorCode, ExpiresAt: expires}}, nil
+	return EnvironmentLease{ResourceBase: base, Spec: EnvironmentLeaseSpec{ProjectRef: project, Generation: generation, DesiredPhase: desired, ObservedPhase: observed, CleanupPhase: cleanup, EnvironmentID: environmentID, ReleaseDigest: release, TargetID: targetID, TargetGeneration: targetGeneration, ProviderCredentialRef: providerCredentialRef, CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes, WorkerEndpoint: workerEndpoint, WorkerSPIFFEID: workerSPIFFEID, WorkerServerName: workerServerName, StableErrorCode: stableErrorCode, ExpiresAt: expires}}, nil
 }
 func DecodeEnvironmentLeaseResponseJSON(data []byte) (common.ResponseEnvelope[EnvironmentLease], error) {
 	fields, sidecar, err := strictResource(data, "CloudEnvironmentLease")
@@ -1200,6 +1208,9 @@ func validDeploymentTargetEndpoint(value string) bool {
 func validWorkerSPIFFEID(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+func validWorkerServerName(value string) bool {
+	return value != "" && len(value) <= 253 && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "/@") && strings.IndexFunc(value, unicode.IsControl) < 0
 }
 func DecodeDeploymentTargetRegisterRequestJSON(data []byte) (DeploymentTargetRegisterRequest, error) {
 	fields, err := common.DecodeStrictObject(data, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"}, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"})

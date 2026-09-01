@@ -3,7 +3,7 @@
   "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/session-create-request.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["sessionId", "providerKind"],
+  "required": ["sessionId", "providerKind", "environmentLeaseId"],
   "properties": {
     "sessionId": {
       "type": "string",
@@ -12,6 +12,9 @@
     "providerKind": {
       "type": "string",
       "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,62}[A-Za-z0-9])?$"
+    },
+    "environmentLeaseId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
     }
   }
 }

@@ -35,6 +35,7 @@ func (fake *managedAgentSessionStoreFake) CreateManagedAgentSession(_ context.Co
 	fake.snapshot.Scope = input.Scope
 	fake.snapshot.SessionID = input.SessionID
 	fake.snapshot.ProviderKind = input.ProviderKind
+	fake.snapshot.EnvironmentLeaseID = input.EnvironmentLeaseID
 	return fake.snapshot, nil
 }
 
@@ -58,14 +59,14 @@ func (fake *managedAgentSessionStoreFake) ListManagedAgentSessions(_ context.Con
 func TestManagedAgentSessionHTTPServerLifecycleRoutes(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
 	verifier := &projectHTTPVerifierFake{}
-	snapshot := internalmanagedagent.SessionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", ProviderKind: "codex", State: internalmanagedagent.SessionActive, Version: 1, CreatedAt: now, UpdatedAt: now}
+	snapshot := internalmanagedagent.SessionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", ProviderKind: "codex", EnvironmentLeaseID: "lease-alpha", EnvironmentGeneration: 1, State: internalmanagedagent.SessionActive, Version: 1, CreatedAt: now, UpdatedAt: now}
 	store := &managedAgentSessionStoreFake{snapshot: snapshot, page: postgres.ManagedAgentSessionPage{Sessions: []internalmanagedagent.SessionSnapshot{snapshot}, NextSessionID: "session-alpha"}}
 	handler, err := NewManagedAgentSessionHTTPServer(verifier, store)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	create := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", strings.NewReader(`{"sessionId":"session-alpha","providerKind":"codex"}`))
+	create := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", strings.NewReader(`{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}`))
 	create.Header.Set("Authorization", "Bearer access-token")
 	create.Header.Set("X-Request-ID", "request-alpha")
 	create.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2")
@@ -148,13 +149,14 @@ func TestManagedAgentSessionHTTPServerRejectsInvalidPublicInputs(t *testing.T) {
 		idempotency string
 		body        string
 	}{
-		{name: "request id", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request:invalid", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex"}`},
-		{name: "tenant identifier", path: "/v1/tenants/-tenant/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex"}`},
-		{name: "idempotency key", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "short", body: `{"sessionId":"session-alpha","providerKind":"codex"}`},
-		{name: "session identifier", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"-session","providerKind":"codex"}`},
-		{name: "provider length", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`},
-		{name: "unknown field", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex","extra":true}`},
-		{name: "duplicate field", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","sessionId":"session-beta","providerKind":"codex"}`},
+		{name: "request id", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request:invalid", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}`},
+		{name: "tenant identifier", path: "/v1/tenants/-tenant/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}`},
+		{name: "idempotency key", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "short", body: `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}`},
+		{name: "session identifier", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"-session","providerKind":"codex","environmentLeaseId":"lease-alpha"}`},
+		{name: "provider length", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","environmentLeaseId":"lease-alpha"}`},
+		{name: "environment lease identifier", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"-lease"}`},
+		{name: "unknown field", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha","extra":true}`},
+		{name: "duplicate field", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", requestID: "request-alpha", idempotency: "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body: `{"sessionId":"session-alpha","sessionId":"session-beta","providerKind":"codex","environmentLeaseId":"lease-alpha"}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

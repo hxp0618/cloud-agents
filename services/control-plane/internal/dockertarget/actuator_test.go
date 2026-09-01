@@ -125,6 +125,9 @@ func TestCredentialDirectoryReadsNonSecretDeploymentDescriptor(t *testing.T) {
 	if _, err := directory.readDeploymentConfig("docker-alpha"); err != ErrDeploymentConfigInvalid {
 		t.Fatalf("secret field error = %v", err)
 	}
+	if validDeploymentConfig(deploymentConfig{WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker\nexample.test"}) {
+		t.Fatal("accepted Worker server name with a control character")
+	}
 }
 
 func containsJSONStrings(values []any, expected ...string) bool {

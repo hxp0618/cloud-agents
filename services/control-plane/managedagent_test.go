@@ -18,7 +18,7 @@ func TestManagedAgentServiceExposesInMemoryLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	session, err := service.CreateSession(ctx, controlplane.CreateSessionInput{
-		Scope: scope, SessionID: "session-1", ProviderKind: "codex",
+		Scope: scope, SessionID: "session-1", ProviderKind: "codex", EnvironmentLeaseID: "environment-1",
 		Mutation: controlplane.Mutation{RequestID: "request-session", IdempotencyKey: "idem-session"},
 	})
 	if err != nil || session.State != controlplane.SessionActive {
