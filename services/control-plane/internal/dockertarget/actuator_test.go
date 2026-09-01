@@ -80,6 +80,21 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 	}
 }
 
+func TestDeployedWorkerEndpointAcceptsDualStackBindingOnOnePort(t *testing.T) {
+	var inspect containerInspect
+	if err := json.Unmarshal([]byte(`{"NetworkSettings":{"Ports":{"8091/tcp":[{"HostPort":"32768"},{"HostPort":"32768"}]}}}`), &inspect); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := deployedWorkerEndpoint("https://docker.example.test:2376", inspect)
+	if err != nil || endpoint != "https://docker.example.test:32768" {
+		t.Fatalf("endpoint=%q error=%v", endpoint, err)
+	}
+	inspect.NetworkSettings.Ports[workerPort][1].HostPort = "32769"
+	if _, err := deployedWorkerEndpoint("https://docker.example.test:2376", inspect); err != ErrDeploymentFailed {
+		t.Fatalf("conflicting dual-stack binding error=%v", err)
+	}
+}
+
 func TestEnsureWorkerContainerReconcilesConcurrentCreate(t *testing.T) {
 	request := DeployRequest{TenantID: "tenant-alpha", ProjectID: "project-alpha", LeaseID: "lease-alpha"}
 	listCalls := 0

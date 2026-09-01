@@ -16,6 +16,9 @@ RUN case "${TARGETARCH}" in \
     && ln -s "/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk-linux-${claude_arch}/claude" /usr/local/bin/claude \
     && test "$(claude --version)" = "2.1.207 (Claude Code)" \
     && npm cache clean --force \
+    && mkdir -p /workspace \
+    && chown 1000:1000 /workspace \
+    && chmod 0700 /workspace \
     && chmod 0555 /usr/local/bin/cloud-agents-worker /usr/local/bin/cloud-agent-runtime
 
 USER 1000:1000

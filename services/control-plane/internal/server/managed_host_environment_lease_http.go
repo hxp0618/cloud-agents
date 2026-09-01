@@ -147,6 +147,11 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 		return
 	}
 	if server.dockerCredentials != nil && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
+		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+		if err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
 		target, targetErr := server.store.GetDeploymentTarget(request.Context(), tenantID, principal, projectID, result.TargetID)
 		completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{Scope: result.Scope, LeaseID: result.LeaseID, TargetID: result.TargetID, ExpectedGeneration: result.Generation, ExpectedTargetGeneration: result.TargetGeneration}
 		if targetErr != nil {
@@ -236,6 +241,11 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
 	if server.dockerCredentials != nil && result.TargetID != "" && result.ProviderCredentialRef != "" {
+		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+		if err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
 		target, targetErr := server.store.GetDeploymentTarget(cleanupContext, tenantID, principal, projectID, result.TargetID)
 		if targetErr != nil {
 			writeDeploymentTargetError(writer, targetErr)

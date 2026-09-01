@@ -12,6 +12,11 @@ for command in curl docker node openssl; do
     exit 2
   fi
 done
+docker_host=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
+case "$docker_host" in
+  unix:///*) docker_socket=${docker_host#unix://} ;;
+  *) echo "platform Compose Docker target smoke requires a Unix Docker context" >&2; exit 2 ;;
+esac
 
 candidate_directory=$(CDPATH= cd -- "$1" && pwd)
 case "$(uname -s)/$(uname -m)" in
@@ -36,14 +41,44 @@ smoke_directory=$(mktemp -d "$candidate_directory/.compose-smoke.XXXXXX")
 project="cloud-agents-compose-smoke-$$"
 environment_file="$smoke_directory/compose.env"
 compose_file="$smoke_directory/deployment/deploy/compose/docker-compose.yml"
+compose_override_file="$smoke_directory/compose-target-override.yml"
+docker_proxy_pid=
+registry_container="${project}-registry"
+worker_repository=
+worker_release_digest=
+target_worker_credentials_volume="${project}-target-worker-credentials"
+target_provider_credentials_volume="${project}-target-provider-credentials"
 compose() {
-  docker compose --env-file "$environment_file" -f "$compose_file" "$@"
+  docker compose --env-file "$environment_file" -f "$compose_file" -f "$compose_override_file" "$@"
 }
 cleanup() {
   status=$?
   trap - 0 HUP INT TERM
+  for container in $(docker ps -aq \
+    --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+    --filter label=cloud-agents.dev/lease=lease-compose-target); do
+    if [ "$status" -ne 0 ]; then
+      docker logs "$container" >&2 || true
+    fi
+    docker rm -f "$container" >/dev/null 2>&1 || true
+  done
   if [ -f "$environment_file" ]; then
+    if [ "$status" -ne 0 ]; then
+      compose logs --no-color --tail=200 control-plane worker migrate postgres >&2 || true
+    fi
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+  fi
+  docker rm -f "$registry_container" >/dev/null 2>&1 || true
+  docker volume rm "$target_worker_credentials_volume" "$target_provider_credentials_volume" >/dev/null 2>&1 || true
+  if [ -n "$worker_repository" ]; then
+    docker image rm "$worker_repository:smoke" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$worker_repository" ] && [ -n "$worker_release_digest" ]; then
+    docker image rm "$worker_repository@$worker_release_digest" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$docker_proxy_pid" ]; then
+    kill "$docker_proxy_pid" >/dev/null 2>&1 || true
+    wait "$docker_proxy_pid" 2>/dev/null || true
   fi
   docker image rm "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
   rm -rf -- "$smoke_directory"
@@ -52,9 +87,13 @@ cleanup() {
 trap cleanup 0 HUP INT TERM
 
 mkdir -p "$smoke_directory/deployment" "$smoke_directory/control-plane-tls" \
-  "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/workspace"
+  "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/workspace" \
+  "$smoke_directory/docker-target-credentials/docker-compose-target" \
+  "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0755 "$smoke_directory" "$smoke_directory/control-plane-tls" \
-  "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials"
+  "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" \
+  "$smoke_directory/docker-target-credentials" "$smoke_directory/docker-target-credentials/docker-compose-target" \
+  "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0777 "$smoke_directory/workspace"
 tar -xf "$1" -C "$smoke_directory/deployment"
 
@@ -69,6 +108,14 @@ openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=worker \
 openssl x509 -req -sha256 -days 1 -in "$smoke_directory/worker.csr" \
   -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
   -copy_extensions copy -out "$smoke_directory/worker-tls/server.crt" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=host.docker.internal \
+  -keyout "$smoke_directory/target-worker-credentials/server.key" \
+  -out "$smoke_directory/target-worker.csr" \
+  -addext subjectAltName=DNS:host.docker.internal,URI:spiffe://cloud-agents.compose/worker-target \
+  -addext extendedKeyUsage=serverAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
+openssl x509 -req -sha256 -days 1 -in "$smoke_directory/target-worker.csr" \
+  -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
+  -copy_extensions copy -out "$smoke_directory/target-worker-credentials/server.crt" >/dev/null 2>&1
 openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=control-plane-worker-client \
   -keyout "$smoke_directory/control-plane-tls/worker-client.key" \
   -out "$smoke_directory/control-plane-client.csr" \
@@ -87,6 +134,28 @@ openssl x509 -req -sha256 -days 1 -in "$smoke_directory/control-plane-server.csr
   -copy_extensions copy -out "$smoke_directory/control-plane-tls/server.crt" >/dev/null 2>&1
 cp "$smoke_directory/ca.crt" "$smoke_directory/control-plane-tls/worker-ca.crt"
 cp "$smoke_directory/ca.crt" "$smoke_directory/worker-tls/client-ca.crt"
+cp "$smoke_directory/ca.crt" "$smoke_directory/target-worker-credentials/client-ca.crt"
+
+openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+  -subj /CN=cloud-agents-compose-docker-target-ca \
+  -keyout "$smoke_directory/docker-target-ca.key" -out "$smoke_directory/docker-target-ca.crt" \
+  -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=host.docker.internal \
+  -keyout "$smoke_directory/docker-target-server.key" -out "$smoke_directory/docker-target-server.csr" \
+  -addext subjectAltName=DNS:host.docker.internal,IP:127.0.0.1 \
+  -addext extendedKeyUsage=serverAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
+openssl x509 -req -sha256 -days 1 -in "$smoke_directory/docker-target-server.csr" \
+  -CA "$smoke_directory/docker-target-ca.crt" -CAkey "$smoke_directory/docker-target-ca.key" -CAcreateserial \
+  -copy_extensions copy -out "$smoke_directory/docker-target-server.crt" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=control-plane-docker-target-client \
+  -keyout "$smoke_directory/docker-target-credentials/docker-compose-target/key.pem" \
+  -out "$smoke_directory/docker-target-client.csr" \
+  -addext extendedKeyUsage=clientAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
+openssl x509 -req -sha256 -days 1 -in "$smoke_directory/docker-target-client.csr" \
+  -CA "$smoke_directory/docker-target-ca.crt" -CAkey "$smoke_directory/docker-target-ca.key" -CAcreateserial \
+  -copy_extensions copy -out "$smoke_directory/docker-target-credentials/docker-compose-target/cert.pem" >/dev/null 2>&1
+cp "$smoke_directory/docker-target-ca.crt" \
+  "$smoke_directory/docker-target-credentials/docker-compose-target/ca.pem"
 chmod 0444 "$smoke_directory"/control-plane-tls/* "$smoke_directory"/worker-tls/*
 
 CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" \
@@ -129,9 +198,28 @@ const claims = {
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
 const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
 const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
+const admissionToken = randomBytes(24).toString("hex");
 writeFileSync(`${state}/token`, `${signingInput}.${signature}\n`);
 writeFileSync(`${state}/runtime.env`, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent\nCLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1\n");
 writeFileSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
+writeFileSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
+writeFileSync(`${state}/target-worker-credentials/admission-token`, admissionToken);
+writeFileSync(`${state}/compose-target-override.yml`, 'services:\n  control-plane:\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n');
+writeFileSync(`${state}/docker-proxy.mjs`, [
+  'import { chmodSync, readFileSync, writeFileSync } from "node:fs";',
+  'import net from "node:net";',
+  'import tls from "node:tls";',
+  'const [socketPath, caPath, certPath, keyPath, portPath] = process.argv.slice(2);',
+  'const server = tls.createServer({ ca: readFileSync(caPath), cert: readFileSync(certPath), key: readFileSync(keyPath), minVersion: "TLSv1.2", requestCert: true, rejectUnauthorized: true }, (client) => {',
+  '  const upstream = net.createConnection(socketPath);',
+  '  const close = () => { client.destroy(); upstream.destroy(); };',
+  '  client.on("error", close); upstream.on("error", close);',
+  '  client.pipe(upstream); upstream.pipe(client);',
+  '});',
+  'server.on("tlsClientError", () => {});',
+  'server.listen(0, "0.0.0.0", () => { writeFileSync(portPath, String(server.address().port)); chmodSync(portPath, 0o600); });',
+  'process.on("SIGTERM", () => process.exit(0));',
+].join("\n") + "\n");
 const password = randomBytes(24).toString("hex");
 const values = [
   `COMPOSE_PROJECT_NAME=${project}`,
@@ -169,6 +257,7 @@ const values = [
   `CLOUD_AGENTS_AUTH_CONFIG=${state}/auth.json`,
   `CLOUD_AGENTS_RUNTIME_ENV_FILE=${state}/runtime.env`,
   `CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR=${state}/provider-credentials`,
+  `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR=${state}/docker-target-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR=${state}/control-plane-tls`,
   `CLOUD_AGENTS_WORKER_TLS_DIR=${state}/worker-tls`,
   "CLOUD_AGENTS_WORKER_ENDPOINT=https://worker:8091",
@@ -181,15 +270,46 @@ const values = [
   "CLOUD_AGENTS_RUNTIME_MAX_SESSIONS=2",
   "CLOUD_AGENTS_ADMISSION_LEASE_ID=compose-smoke-lease",
   "CLOUD_AGENTS_ADMISSION_GENERATION=1",
-  `CLOUD_AGENTS_ADMISSION_TOKEN=${randomBytes(24).toString("hex")}`,
+  `CLOUD_AGENTS_ADMISSION_TOKEN=${admissionToken}`,
 ];
 writeFileSync(`${state}/compose.env`, `${values.join("\n")}\n`);
 chmodSync(`${state}/auth.json`, 0o444);
 chmodSync(`${state}/runtime.env`, 0o444);
 chmodSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
+chmodSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
+chmodSync(`${state}/target-worker-credentials/admission-token`, 0o400);
+chmodSync(`${state}/docker-proxy.mjs`, 0o400);
 chmodSync(`${state}/token`, 0o600);
 chmodSync(`${state}/compose.env`, 0o600);
 NODE
+
+chmod 0444 "$smoke_directory"/target-worker-credentials/server.* \
+  "$smoke_directory"/target-worker-credentials/client-ca.crt \
+  "$smoke_directory"/docker-target-credentials/docker-compose-target/*.pem
+
+docker_proxy_port_file="$smoke_directory/docker-proxy.port"
+node "$smoke_directory/docker-proxy.mjs" "$docker_socket" \
+  "$smoke_directory/docker-target-ca.crt" "$smoke_directory/docker-target-server.crt" \
+  "$smoke_directory/docker-target-server.key" "$docker_proxy_port_file" &
+docker_proxy_pid=$!
+attempt=0
+while [ ! -s "$docker_proxy_port_file" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 50 ] || ! kill -0 "$docker_proxy_pid" 2>/dev/null; then
+    echo "Docker target mTLS proxy did not start" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+docker_proxy_port=$(cat "$docker_proxy_port_file")
+case "$docker_proxy_port" in
+  '' | *[!0-9]*) echo "Docker target mTLS proxy returned an invalid port" >&2; exit 1 ;;
+esac
+test "$(curl --silent --show-error --fail \
+  --cacert "$smoke_directory/docker-target-ca.crt" \
+  --cert "$smoke_directory/docker-target-credentials/docker-compose-target/cert.pem" \
+  --key "$smoke_directory/docker-target-credentials/docker-compose-target/key.pem" \
+  "https://127.0.0.1:$docker_proxy_port/_ping")" = OK
 
 compose config --quiet
 compose --profile bootstrap run --rm bootstrap >/dev/null
@@ -219,6 +339,72 @@ cloud_agentsctl() {
     --token-file "$smoke_directory/token" --tenant tenant-compose-smoke "$@"
 }
 
+docker run -d --name "$registry_container" -p 127.0.0.1::5000 registry:2 >/dev/null
+registry_endpoint=$(docker port "$registry_container" 5000/tcp)
+registry_port=${registry_endpoint##*:}
+case "$registry_port" in
+  '' | *[!0-9]*) echo "local Worker registry returned an invalid port" >&2; exit 1 ;;
+esac
+attempt=0
+until curl --silent --show-error --fail "http://127.0.0.1:$registry_port/v2/" >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    docker logs "$registry_container" >&2
+    exit 1
+  fi
+  sleep 1
+done
+worker_repository="localhost:$registry_port/cloud-agents/worker"
+worker_image=$(compose images -q worker)
+if [ -z "$worker_image" ]; then
+  echo "Compose Worker image is unavailable" >&2
+  exit 1
+fi
+docker tag "$worker_image" "$worker_repository:smoke"
+docker push "$worker_repository:smoke" >/dev/null
+worker_reference=$(docker image inspect "$worker_repository:smoke" --format '{{json .RepoDigests}}' |
+  node -e 'const fs=require("node:fs");const values=JSON.parse(fs.readFileSync(0,"utf8"));if(values.length!==1)process.exit(1);process.stdout.write(values[0])')
+worker_release_digest=${worker_reference##*@}
+case "$worker_release_digest" in
+  sha256:????????????????????????????????????????????????????????????????) ;;
+  *) echo "pushed Worker image returned an invalid digest" >&2; exit 1 ;;
+esac
+
+CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" \
+CLOUD_AGENTS_COMPOSE_SMOKE_WORKER_REPOSITORY="$worker_repository" \
+CLOUD_AGENTS_COMPOSE_SMOKE_WORKER_CREDENTIAL_REF="$target_worker_credentials_volume" \
+  node <<'NODE'
+const { chmodSync, writeFileSync } = require("node:fs");
+const state = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_STATE;
+const workerImageRepository = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_WORKER_REPOSITORY;
+const workerCredentialRef = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_WORKER_CREDENTIAL_REF;
+if (![state, workerImageRepository, workerCredentialRef].every((value) => value && !value.includes("\n"))) {
+  throw new Error("invalid Docker target deployment inputs");
+}
+const descriptor = {
+  workerImageRepository,
+  workerCredentialRef,
+  workerSpiffeId: "spiffe://cloud-agents.compose/worker-target",
+  workerServerName: "host.docker.internal",
+};
+const path = `${state}/docker-target-credentials/docker-compose-target/deployment.json`;
+writeFileSync(path, `${JSON.stringify(descriptor)}\n`);
+chmodSync(path, 0o444);
+NODE
+
+docker volume create "$target_worker_credentials_volume" >/dev/null
+docker volume create "$target_provider_credentials_volume" >/dev/null
+docker run --rm --user 0 --entrypoint /bin/sh \
+  -v "$target_worker_credentials_volume:/target" \
+  -v "$smoke_directory/target-worker-credentials:/source:ro" \
+  postgres:17.6-bookworm -ec \
+  'cp /source/server.crt /source/server.key /source/client-ca.crt /source/admission-token /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+docker run --rm --user 0 --entrypoint /bin/sh \
+  -v "$target_provider_credentials_volume:/target" \
+  -v "$smoke_directory/target-provider-credentials:/source:ro" \
+  postgres:17.6-bookworm -ec \
+  'cp /source/tenant-compose-smoke.unavailable-provider.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+
 organization_output=$(cloud_agentsctl --request-id compose-smoke-organizations organization list)
 case "$organization_output" in
   *'"uid":"organization-compose-smoke"'*) ;;
@@ -230,7 +416,47 @@ project_output=$(cloud_agentsctl --request-id compose-smoke-project-create \
 project_id=$(printf '%s' "$project_output" | node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.metadata.uid)')
 case "$project_id" in project-*) ;; *) echo "Compose project id is invalid" >&2; exit 1 ;; esac
 
-cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+  --request-id compose-smoke-target-register --idempotency-key compose-smoke-target-register \
+  target register --target-name docker-compose-target --kind docker \
+  --target-endpoint "https://host.docker.internal:$docker_proxy_port" \
+  --credential-ref docker-compose-target)
+case "$target_output" in
+  *'"generation":1'*'"targetKind":"docker"'*'"observedPhase":"unprobed"'*) ;;
+  *) echo "Compose Docker target was not registered" >&2; exit 1 ;;
+esac
+probe_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+  --request-id compose-smoke-target-probe --idempotency-key compose-smoke-target-probe \
+  target probe --expected-generation 1)
+case "$probe_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"apiVersion":'*'"engineVersion":'*) ;;
+  *) echo "Compose Docker target probe did not become ready" >&2; exit 1 ;;
+esac
+target_get_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+  --request-id compose-smoke-target-get target get)
+case "$target_get_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*) ;;
+  *) echo "Compose Docker target ready state was not persisted" >&2; exit 1 ;;
+esac
+lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
+  --lease lease-compose-target --request-id compose-smoke-lease-create \
+  --idempotency-key compose-smoke-lease-create environment-lease create \
+  --name lease-compose-target --release-digest "$worker_release_digest" \
+  --expected-target-generation 1 --provider-credential-ref "$target_provider_credentials_volume" \
+  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
+case "$lease_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"workerEndpoint":"https://host.docker.internal:'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
+  *) echo "Compose Docker target Worker did not become ready: $lease_output" >&2; exit 1 ;;
+esac
+target_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease=lease-compose-target | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 1 ]; then
+  echo "Compose Docker target created $target_container_count Workers, expected 1" >&2
+  exit 1
+fi
+
+cloud_agentsctl --project "$project_id" --lease lease-compose-target --session session-compose-smoke \
   --request-id compose-smoke-session-create --idempotency-key compose-smoke-session-create \
   session create --provider unavailable-provider >/dev/null
 cloud_agentsctl --project "$project_id" --session session-compose-smoke --turn turn-compose-smoke \
@@ -253,7 +479,7 @@ execution_output=$(cloud_agentsctl --project "$project_id" --session session-com
   --request-id compose-smoke-execution-get execution get)
 case "$execution_output" in
   *'"state":"failed","errorCode":"provider_not_installed"'*'"messageType":"Error"'*) ;;
-  *) echo "Compose Runtime terminal failure was not persisted" >&2; exit 1 ;;
+  *) echo "Compose Runtime terminal failure was not persisted: $execution_output" >&2; exit 1 ;;
 esac
 events_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
   --execution execution-compose-smoke --request-id compose-smoke-events \
@@ -262,6 +488,28 @@ case "$events_output" in
   *'"kind":"Event"'*'"operation":"execution.fail"'*'"executionId":"execution-compose-smoke"'*) ;;
   *) echo "Compose event watch did not reach the durable execution terminal event" >&2; exit 1 ;;
 esac
+
+terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target \
+  --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
+  environment-lease terminate --generation 1)
+case "$terminate_output" in
+  *'"generation":2'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *) echo "Compose Docker target Lease did not terminate cleanly: $terminate_output" >&2; exit 1 ;;
+esac
+replayed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target \
+  --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
+  environment-lease terminate --generation 1)
+if [ "$replayed_terminate_output" != "$terminate_output" ]; then
+  echo "Compose Docker target termination was not idempotent" >&2
+  exit 1
+fi
+target_container_count=$(docker ps -aq \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease=lease-compose-target | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 0 ]; then
+  echo "Compose Docker target Worker was not cleaned up" >&2
+  exit 1
+fi
 
 backup="$smoke_directory/cloud-agents.dump"
 compose --profile backup run --rm -T backup >"$backup"

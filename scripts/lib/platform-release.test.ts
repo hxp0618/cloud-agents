@@ -273,6 +273,8 @@ describe("platform release", () => {
       '"@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@0.3.207"',
     );
     expect(workerDockerfile).toContain('test "$(claude --version)" = "2.1.207 (Claude Code)"');
+    expect(workerDockerfile).toContain("chown 1000:1000 /workspace");
+    expect(workerDockerfile).toContain("chmod 0700 /workspace");
     expect(workerDockerfile).not.toContain("@openai/codex@latest");
     expect(workerDockerfile).not.toContain(
       "@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@latest",

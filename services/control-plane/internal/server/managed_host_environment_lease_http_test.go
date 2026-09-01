@@ -18,6 +18,7 @@ import (
 
 type managedHostEnvironmentLeaseStoreFake struct {
 	snapshot  internalmanagedhost.Snapshot
+	target    internaldeploymenttarget.Snapshot
 	create    int
 	get       int
 	list      int
@@ -54,7 +55,7 @@ func (fake *managedHostEnvironmentLeaseStoreFake) CompleteManagedHostEnvironment
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error) {
-	return internaldeploymenttarget.Snapshot{}, nil
+	return fake.target, nil
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error) {
@@ -139,6 +140,62 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 	terminated := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:terminate", `{"expectedGeneration":1}`, "request-terminate", "terminate-key-123456")
 	if terminated.Code != http.StatusOK || store.terminate != 1 || store.finalize != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(terminated.Body.String(), `"cleanupPhase":"complete"`) {
 		t.Fatalf("terminate status=%d calls=%d finalize=%d verification=%#v body=%s", terminated.Code, store.terminate, store.finalize, verifier.seen, terminated.Body.String())
+	}
+}
+
+type managedHostEnvironmentLeaseVerifierFake struct {
+	requests []authn.VerificationRequest
+}
+
+func (fake *managedHostEnvironmentLeaseVerifierFake) Verify(_ string, request authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	fake.requests = append(fake.requests, request)
+	return &authn.VerifiedPrincipal{}, nil
+}
+
+func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testing.T) {
+	now := time.Date(2026, time.September, 2, 8, 0, 0, 0, time.UTC)
+	verifier := &managedHostEnvironmentLeaseVerifierFake{}
+	store := &managedHostEnvironmentLeaseStoreFake{
+		snapshot: internalmanagedhost.Snapshot{
+			LeaseID: "lease-alpha", LeaseName: "lease-alpha", EnvironmentID: "lease-alpha",
+			ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Generation:    1, DesiredPhase: "active", ObservedPhase: "provisioning", CleanupPhase: "none", ResourceVersion: 1,
+			ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+		},
+		target: internaldeploymenttarget.Snapshot{TargetID: "docker-alpha", Kind: "docker", Generation: 1, ObservedPhase: "ready"},
+	}
+	credentials, err := dockertarget.NewCredentialDirectory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, credentials, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases", strings.NewReader(`{"leaseId":"lease-alpha","leaseName":"lease-alpha","releaseDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","targetId":"docker-alpha","expectedTargetGeneration":1,"providerCredentialRef":"provider-alpha","cpuLimitMillis":1000,"memoryLimitBytes":536870912,"ttlSeconds":3600}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-create-alpha")
+	request.Header.Set("Idempotency-Key", "create-alpha-key-1234")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || store.snapshot.ObservedPhase != "failed" || len(verifier.requests) != 3 {
+		t.Fatalf("status=%d phase=%q verifications=%#v body=%s", response.Code, store.snapshot.ObservedPhase, verifier.requests, response.Body.String())
+	}
+	for index, permission := range []string{"projects.act", "projects.get", "projects.act"} {
+		if verifier.requests[index].RequiredPermission != permission {
+			t.Fatalf("verification %d permission=%q, want %q", index, verifier.requests[index].RequiredPermission, permission)
+		}
+	}
+
+	verifier.requests = nil
+	request = httptest.NewRequest(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:terminate", strings.NewReader(`{"expectedGeneration":1}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-terminate-alpha")
+	request.Header.Set("Idempotency-Key", "terminate-alpha-key-1234")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadGateway || len(verifier.requests) != 2 || verifier.requests[0].RequiredPermission != "projects.act" || verifier.requests[1].RequiredPermission != "projects.get" {
+		t.Fatalf("status=%d verifications=%#v body=%s", response.Code, verifier.requests, response.Body.String())
 	}
 }
 

@@ -403,7 +403,7 @@ func waitForRunningContainer(ctx context.Context, client *http.Client, base, con
 	defer ticker.Stop()
 	for {
 		inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
-		if err == nil && inspect.State.Running && len(inspect.NetworkSettings.Ports[workerPort]) == 1 {
+		if _, portErr := publishedWorkerPort(inspect); err == nil && inspect.State.Running && portErr == nil {
 			return inspect, nil
 		}
 		select {
@@ -418,15 +418,29 @@ func waitForRunningContainer(ctx context.Context, client *http.Client, base, con
 
 func deployedWorkerEndpoint(targetEndpoint string, inspect containerInspect) (string, error) {
 	target, err := url.Parse(targetEndpoint)
+	port, portErr := publishedWorkerPort(inspect)
+	if err != nil || target.Hostname() == "" || portErr != nil {
+		return "", ErrDeploymentFailed
+	}
+	return "https://" + net.JoinHostPort(target.Hostname(), port), nil
+}
+
+func publishedWorkerPort(inspect containerInspect) (string, error) {
 	bindings := inspect.NetworkSettings.Ports[workerPort]
-	if err != nil || target.Hostname() == "" || len(bindings) != 1 {
+	if len(bindings) == 0 {
 		return "", ErrDeploymentFailed
 	}
-	port, err := strconv.Atoi(bindings[0].HostPort)
-	if err != nil || port < 1 || port > 65535 {
+	port := bindings[0].HostPort
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return "", ErrDeploymentFailed
 	}
-	return "https://" + net.JoinHostPort(target.Hostname(), strconv.Itoa(port)), nil
+	for _, binding := range bindings[1:] {
+		if binding.HostPort != port {
+			return "", ErrDeploymentFailed
+		}
+	}
+	return port, nil
 }
 
 func waitForWorker(ctx context.Context, supervisor *workerclient.Supervisor) error {
