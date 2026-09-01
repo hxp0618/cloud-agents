@@ -6,7 +6,6 @@ type JsonRecord = Record<string, unknown>;
 const root = resolve(import.meta.dirname, "..");
 const outputDirectory = parseOutputDirectory(process.argv.slice(2));
 const packagePaths = [
-  "package.json",
   "packages/cloud-agent-protocol/package.json",
   "packages/cloud-agent-provider-api/package.json",
   "packages/cloud-agent-runtime/package.json",
@@ -33,21 +32,51 @@ const packages = manifests.map(({ path, manifest }, index) => ({
     },
   ],
 }));
+const releasedByName = new Map(packages.map((item) => [item.name, item]));
+const externalVersions = new Map<string, string>();
+for (const { manifest } of manifests) {
+  for (const section of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+    for (const [name, value] of Object.entries(recordValue(manifest[section]))) {
+      if (releasedByName.has(name)) continue;
+      const version = stringValue(value, `${name} version`);
+      const existing = externalVersions.get(name);
+      if (existing !== undefined && existing !== version) {
+        throw new Error(`${name} has conflicting release dependency versions.`);
+      }
+      externalVersions.set(name, version);
+    }
+  }
+}
+for (const [name, version] of [...externalVersions].toSorted(([left], [right]) =>
+  left.localeCompare(right),
+)) {
+  packages.push({
+    SPDXID: `SPDXRef-Package-${packages.length + 1}`,
+    name,
+    versionInfo: version,
+    downloadLocation: "NOASSERTION",
+    filesAnalyzed: false,
+    licenseConcluded: "NOASSERTION",
+    licenseDeclared: "NOASSERTION",
+    supplier: "NOASSERTION",
+    externalRefs: [
+      {
+        referenceCategory: "PACKAGE-MANAGER",
+        referenceType: "purl",
+        referenceLocator: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(version)}`,
+      },
+    ],
+  });
+}
 const byName = new Map(packages.map((item) => [item.name, item]));
 const relationships = manifests.flatMap(({ manifest }, index) => {
-  const dependencies = recordValue(manifest.dependencies);
-  return Object.keys(dependencies).flatMap((name) => {
-    const dependency = byName.get(name);
-    return dependency
-      ? [
-          {
-            spdxElementId: packages[index]!.SPDXID,
-            relationshipType: "DEPENDS_ON",
-            relatedSpdxElement: dependency.SPDXID,
-          },
-        ]
-      : [];
-  });
+  return ["dependencies", "optionalDependencies", "peerDependencies"].flatMap((section) =>
+    Object.keys(recordValue(manifest[section])).map((name) => ({
+      spdxElementId: packages[index]!.SPDXID,
+      relationshipType: "DEPENDS_ON",
+      relatedSpdxElement: byName.get(name)!.SPDXID,
+    })),
+  );
 });
 const document = {
   spdxVersion: "SPDX-2.3",
