@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
@@ -103,7 +102,6 @@ for (const [expectedName, directory] of packageDirectories) {
 
 validatePackedCloudAgentSet(packedManifests);
 validateDistributionManifest(packedManifests);
-const distributionArtifacts = distributionArtifactDigests();
 
 const beforeSmoke = packedPackages.toSorted((left, right) => left.name.localeCompare(right.name));
 const nodeConformance = runExternalNode24Smoke(options.outputDirectory, beforeSmoke);
@@ -131,7 +129,6 @@ const candidate = {
   platform: `${process.platform}-${process.arch}`,
   sameBitsVerified: true,
   packedBinConformance,
-  distributionArtifacts,
   standaloneRuntime: standaloneRuntimeArtifact(options.outputDirectory),
   packages: afterSmoke,
 };
@@ -563,27 +560,6 @@ function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): voi
   ) {
     throw new Error("Distribution manifest schema export is missing or unstable.");
   }
-}
-
-function distributionArtifactDigests(): Readonly<Record<string, string>> {
-  const distribution = packedPackages.find(
-    (item) => item.name === "@cloud-agents/cloud-agent-distribution",
-  );
-  if (!distribution) throw new Error("Packed Cloud Agent Distribution is missing.");
-  const tarball = join(options.outputDirectory, distribution.filename);
-  return Object.fromEntries(
-    [
-      "package/manifest.json",
-      "package/dist/stdio.mjs",
-      "package/dist/schemas.mjs",
-      "package/dist/schemas.cjs",
-    ].map((path) => [
-      path.replace(/^package\//u, ""),
-      `sha256:${createHash("sha256")
-        .update(run("tar", ["-xOf", tarball, path], repositoryRoot))
-        .digest("hex")}`,
-    ]),
-  );
 }
 
 function readTarballJSON(tarball: string, path: string): JSONRecord {

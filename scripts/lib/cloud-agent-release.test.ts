@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -98,6 +99,26 @@ function replacePeerDependencies(
 }
 
 describe("Cloud Agent packed release validation", () => {
+  it("runs and publishes the packed Runtime candidate in product workflows", () => {
+    const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+    const release = readFileSync(".github/workflows/release.yml", "utf8");
+    const smoke = "node scripts/cloud-agent-release-smoke.ts --output-dir";
+    expect(ci).toContain(smoke);
+    expect(release).toContain(smoke);
+    for (const asset of [
+      "*.tgz",
+      "candidate-manifest.json",
+      "cloud-agent-runtime-checksums.sha256",
+      "cloud-agent-runtime-sbom.spdx.json",
+      "cloud-agent-runtime-provenance.json",
+    ]) {
+      expect(release).toContain(asset);
+    }
+    expect(release).toContain(
+      'cmp "$runtime_directory/cloud-agent-runtime-standalone.mjs" "$CLOUD_AGENTS_PLATFORM_DIRECTORY/cloud-agent-runtime-standalone.mjs"',
+    );
+  });
+
   it("isolates every package import to its exact transitive tarball closure", () => {
     const expected = {
       "@cloud-agents/cloud-agent-protocol": ["@cloud-agents/cloud-agent-protocol"],

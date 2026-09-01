@@ -36,6 +36,9 @@ jobs:
       - run: bun run secret:scan
         env:
           CLOUD_AGENT_SECRET_SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - run: node scripts/cloud-agent-release-smoke.ts --output-dir "${RUNNER_TEMP}/cloud-agent-runtime-candidate"
+      - run: sha256sum -c checksums.sha256
+        working-directory: ${{ runner.temp }}/cloud-agent-runtime-candidate
       - run: bun run platform:release -- --version 0.0.0-ci --output-dir "${RUNNER_TEMP}/cloud-agents-platform-candidate"
       - run: sha256sum -c checksums.sha256
         working-directory: ${{ runner.temp }}/cloud-agents-platform-candidate

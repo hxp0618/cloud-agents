@@ -17,7 +17,7 @@ The seven Runtime packages and the public Control Plane SDK use the independent 
 
 Runtime and Provider configuration uses only the `CLOUD_AGENT_*` environment namespace.
 
-The coordinated RC keeps every internal package edge as an exact peer pin. Consumers install the required tarball closure as top-level GitHub Release URLs from `cloud-agent-candidate.lock.json`; no unpublished `@cloud-agents/*` package is resolved through npm, and no package-manager security switch needs to be relaxed.
+The coordinated RC keeps every internal package edge as an exact peer pin. Consumers install the required tarball closure as top-level GitHub Release URLs using the package filenames and SHA-256 values in `candidate-manifest.json`; no unpublished `@cloud-agents/*` package is resolved through npm, and no package-manager security switch needs to be relaxed.
 
 ## Local development
 

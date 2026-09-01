@@ -63,6 +63,15 @@ jobs:
           bun run platform:release -- --version "$CLOUD_AGENTS_RELEASE_VERSION" --output-dir "$platform_directory"
           (cd "$platform_directory" && sha256sum -c checksums.sha256)
           echo "CLOUD_AGENTS_PLATFORM_DIRECTORY=$platform_directory" >>"$GITHUB_ENV"
+      - name: Build Runtime package assets
+        run: |
+          set -euo pipefail
+          runtime_directory=$RUNNER_TEMP/cloud-agent-runtime
+          export CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          node scripts/cloud-agent-release-smoke.ts --output-dir "$runtime_directory"
+          (cd "$runtime_directory" && sha256sum -c checksums.sha256)
+          cmp "$runtime_directory/cloud-agent-runtime-standalone.mjs" "$CLOUD_AGENTS_PLATFORM_DIRECTORY/cloud-agent-runtime-standalone.mjs"
+          echo "CLOUD_AGENTS_RUNTIME_DIRECTORY=$runtime_directory" >>"$GITHUB_ENV"
       - run: sh scripts/test-platform-oci-images.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
       - run: sh scripts/test-platform-compose.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
       - name: Publish OCI images
@@ -89,6 +98,11 @@ jobs:
           mkdir "$release_directory"
           cp "$CLOUD_AGENTS_PLATFORM_DIRECTORY"/* "$release_directory/"
           mv "$release_directory/checksums.sha256" "$release_directory/cloud-agents-platform-checksums.sha256"
+          cp "$CLOUD_AGENTS_RUNTIME_DIRECTORY"/*.tgz "$release_directory/"
+          cp "$CLOUD_AGENTS_RUNTIME_DIRECTORY/candidate-manifest.json" "$release_directory/"
+          cp "$CLOUD_AGENTS_RUNTIME_DIRECTORY/checksums.sha256" "$release_directory/cloud-agent-runtime-checksums.sha256"
+          cp "$CLOUD_AGENTS_RUNTIME_DIRECTORY/sbom.spdx.json" "$release_directory/cloud-agent-runtime-sbom.spdx.json"
+          cp "$CLOUD_AGENTS_RUNTIME_DIRECTORY/provenance.json" "$release_directory/cloud-agent-runtime-provenance.json"
           export CLOUD_AGENTS_OCI_MANIFEST="$release_directory/cloud-agents-oci-images.json"
           node <<'NODE'
           const { readFileSync, writeFileSync } = require("node:fs");
