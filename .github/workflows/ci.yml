@@ -21,7 +21,7 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run fmt:check
       - run: bun run lint
-      - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh scripts/test-platform-oci-images.sh
+      - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh scripts/test-platform-compose.sh scripts/test-platform-oci-images.sh
       - run: sh scripts/test-cloud-agents-helm.sh
       - run: bun run platform:go:check
       - run: bun run platform:contracts:check
@@ -39,3 +39,4 @@ jobs:
       - run: sha256sum -c checksums.sha256
         working-directory: ${{ runner.temp }}/cloud-agents-platform-candidate
       - run: sh scripts/test-platform-oci-images.sh "${RUNNER_TEMP}/cloud-agents-platform-candidate"
+      - run: sh scripts/test-platform-compose.sh "${RUNNER_TEMP}/cloud-agents-platform-candidate"

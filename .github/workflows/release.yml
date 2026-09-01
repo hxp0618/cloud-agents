@@ -43,7 +43,7 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run fmt:check
       - run: bun run lint
-      - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh scripts/test-platform-oci-images.sh
+      - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh scripts/test-platform-compose.sh scripts/test-platform-oci-images.sh
       - run: sh scripts/test-cloud-agents-helm.sh
       - run: bun run platform:go:check
       - run: bun run platform:contracts:check
@@ -63,6 +63,7 @@ jobs:
           (cd "$platform_directory" && sha256sum -c checksums.sha256)
           echo "CLOUD_AGENTS_PLATFORM_DIRECTORY=$platform_directory" >>"$GITHUB_ENV"
       - run: sh scripts/test-platform-oci-images.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
+      - run: sh scripts/test-platform-compose.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
       - name: Publish OCI images
         env:
           GHCR_TOKEN: ${{ github.token }}
