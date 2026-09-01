@@ -41,6 +41,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"execution", "execute", "help"}, expected: "-runtime-mode string"},
 		{args: []string{"execution", "download-artifact", "help"}, expected: "-message-index int"},
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
+		{args: []string{"events", "watch", "help"}, expected: "-until-terminal"},
 	} {
 		var stdout bytes.Buffer
 		if err := run(test.args, &stdout); err != nil {
@@ -165,6 +166,57 @@ func TestRunExecutionListDoesNotRequireTurnOrExecutionID(t *testing.T) {
 	}, &stdout)
 	if err != nil || !strings.Contains(stdout.String(), `"kind":"ExecutionPage"`) {
 		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
+func TestRunEventsWatchAdvancesCursorUntilExecutionTerminal(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls++
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/events" || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-events-watch" || request.URL.Query().Get("limit") != "1" {
+			t.Fatalf("request %d = %s %s headers=%v", calls, request.Method, request.URL.String(), request.Header)
+		}
+		cursor := request.URL.Query().Get("cursor")
+		writer.Header().Set("Content-Type", "application/json")
+		switch calls {
+		case 1:
+			if cursor != "" {
+				t.Fatalf("initial cursor = %q", cursor)
+			}
+			_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"EventPage","events":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Event","metadata":{"uid":"event-1","projectId":"project-alpha","sessionId":"session-alpha","sequence":"1","occurredAt":"2026-09-01T08:00:00Z"},"spec":{"operation":"execution.start","resource":"Execution","generation":1,"mutationDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","turnId":"turn-alpha","executionId":"execution-alpha","changes":[{"resource":"Execution","from":"queued","to":"running","version":2}]}}],"nextCursor":"cursor-1","hasMore":true}`))
+		case 2:
+			if cursor != "cursor-1" {
+				t.Fatalf("continuation cursor = %q", cursor)
+			}
+			_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"EventPage","events":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Event","metadata":{"uid":"event-2","projectId":"project-alpha","sessionId":"session-alpha","sequence":"2","occurredAt":"2026-09-01T08:00:01Z"},"spec":{"operation":"execution.fail","resource":"Execution","generation":1,"mutationDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","errorCode":"provider_failed","turnId":"turn-alpha","executionId":"execution-alpha","changes":[{"resource":"Execution","from":"running","to":"failed","version":3}]}}],"nextCursor":"cursor-2","hasMore":false}`))
+		default:
+			t.Fatalf("unexpected request %d", calls)
+		}
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	missingExecutionErr := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha",
+		"--project", "project-alpha", "--session", "session-alpha", "--request-id", "request-events-watch",
+		"events", "watch", "--until-terminal",
+	}, &stdout)
+	if missingExecutionErr == nil || missingExecutionErr.Error() != "--execution is required with --until-terminal" || calls != 0 {
+		t.Fatalf("missing execution error/calls = %v/%d", missingExecutionErr, calls)
+	}
+	stdout.Reset()
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha",
+		"--project", "project-alpha", "--session", "session-alpha", "--execution", "execution-alpha",
+		"--request-id", "request-events-watch", "events", "watch", "--limit", "1",
+		"--poll-interval", "1h", "--until-terminal",
+	}, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if calls != 2 || len(lines) != 2 || !strings.Contains(lines[0], `"operation":"execution.start"`) || !strings.Contains(lines[1], `"operation":"execution.fail"`) || strings.Contains(stdout.String(), `"kind":"EventPage"`) {
+		t.Fatalf("calls=%d output=%q", calls, stdout.String())
 	}
 }
 

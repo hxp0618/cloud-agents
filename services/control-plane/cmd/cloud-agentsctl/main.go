@@ -40,9 +40,10 @@ type globalOptions struct {
 }
 
 const (
-	maxBearerTokenFileBytes = 16 << 10
-	maxCAFileBytes          = 1 << 20
-	defaultRequestTimeout   = 6 * time.Minute
+	maxBearerTokenFileBytes  = 16 << 10
+	maxCAFileBytes           = 1 << 20
+	defaultRequestTimeout    = 6 * time.Minute
+	defaultEventPollInterval = time.Second
 )
 
 func main() {
@@ -279,6 +280,29 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&limit, "limit", 0, "maximum events to return")
 		}); err == nil {
 			value, err = client.ListManagedAgentEvents(ctx, options.tenant, options.project, options.session, options.requestID, cursor, limit)
+		}
+	case "events watch":
+		var cursor string
+		limit := 64
+		pollInterval := defaultEventPollInterval
+		var untilTerminal bool
+		if err = parseActionFlags("events watch", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&cursor, "cursor", "", "opaque event cursor")
+			set.IntVar(&limit, "limit", 64, "maximum events to return per request")
+			set.DurationVar(&pollInterval, "poll-interval", defaultEventPollInterval, "delay after an empty event page")
+			set.BoolVar(&untilTerminal, "until-terminal", false, "stop after the selected execution reaches a terminal state")
+		}); err == nil && (limit < 1 || limit > 64) {
+			err = errors.New("--limit must be between 1 and 64")
+		} else if err == nil && pollInterval <= 0 {
+			err = errors.New("--poll-interval must be greater than zero")
+		} else if err == nil && untilTerminal && options.execution == "" {
+			err = errors.New("--execution is required with --until-terminal")
+		} else if err == nil {
+			terminalExecutionID := ""
+			if untilTerminal {
+				terminalExecutionID = options.execution
+			}
+			return watchManagedAgentEvents(ctx, client, stdout, options, cursor, limit, pollInterval, terminalExecutionID)
 		}
 	case "membership get":
 		if err = parseActionFlags("membership get", actionArgs, nil); err == nil {
@@ -645,9 +669,50 @@ func responseValue(value any) any {
 	}
 }
 
+func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout io.Writer, options globalOptions, cursor string, limit int, pollInterval time.Duration, terminalExecutionID string) error {
+	encoder := json.NewEncoder(stdout)
+	for {
+		result, err := client.ListManagedAgentEvents(ctx, options.tenant, options.project, options.session, options.requestID, cursor, limit)
+		if err != nil {
+			return err
+		}
+		page := result.Value
+		if len(page.Events) > 0 && (page.NextCursor == "" || page.NextCursor == cursor) {
+			return errors.New("event watch cursor did not advance")
+		}
+		if page.HasMore && len(page.Events) == 0 {
+			return errors.New("event watch returned an empty continuation page")
+		}
+		for _, event := range page.Events {
+			if err := encoder.Encode(event); err != nil {
+				return err
+			}
+			if terminalExecutionID != "" && event.Spec.ExecutionID == terminalExecutionID {
+				switch event.Spec.Operation {
+				case "execution.complete", "execution.fail", "turn.interrupt", "turn.cancel":
+					return nil
+				}
+			}
+		}
+		if page.NextCursor != "" {
+			cursor = page.NextCursor
+		}
+		if page.HasMore {
+			continue
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -694,7 +759,7 @@ resources and actions:
   session get|list|create|close
   turn get|list|create
   execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input
-  events list
+  events list|watch
   membership get|list|create|resume|suspend|revoke
   role get|list
   role-binding get|list|create|revoke

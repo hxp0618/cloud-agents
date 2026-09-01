@@ -255,6 +255,13 @@ case "$execution_output" in
   *'"state":"failed","errorCode":"provider_not_installed"'*'"messageType":"Error"'*) ;;
   *) echo "Compose Runtime terminal failure was not persisted" >&2; exit 1 ;;
 esac
+events_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+  --execution execution-compose-smoke --request-id compose-smoke-events \
+  events watch --limit 1 --until-terminal)
+case "$events_output" in
+  *'"kind":"Event"'*'"operation":"execution.fail"'*'"executionId":"execution-compose-smoke"'*) ;;
+  *) echo "Compose event watch did not reach the durable execution terminal event" >&2; exit 1 ;;
+esac
 
 backup="$smoke_directory/cloud-agents.dump"
 compose --profile backup run --rm -T backup >"$backup"
