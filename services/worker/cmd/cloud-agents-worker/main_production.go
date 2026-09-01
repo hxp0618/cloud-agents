@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -12,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -28,6 +30,15 @@ import (
 )
 
 var errInvalidProductionWorkerConfig = errors.New("cloud-agents-worker/invalid_production_config")
+
+type productionWorkerErrorWriter struct{ output io.Writer }
+
+func (writer productionWorkerErrorWriter) Write(message []byte) (int, error) {
+	if bytes.Contains(message, []byte("http: TLS handshake error from ")) && bytes.HasSuffix(message, []byte(": EOF\n")) {
+		return len(message), nil
+	}
+	return writer.output.Write(message)
+}
 
 const (
 	defaultProductionWorkerListen  = ":8091"
@@ -181,6 +192,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		Addr:        cfg.listen,
 		Handler:     workerkernel.NewTLSHandler(mux),
 		BaseContext: func(net.Listener) context.Context { return ctx },
+		ErrorLog:    log.New(productionWorkerErrorWriter{output: os.Stderr}, "", log.LstdFlags),
 		IdleTimeout: 60 * time.Second,
 		TLSConfig: &tls.Config{
 			MinVersion:   tls.VersionTLS13,

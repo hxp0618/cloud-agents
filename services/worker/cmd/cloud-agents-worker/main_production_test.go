@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"slices"
 	"testing"
@@ -10,6 +11,19 @@ import (
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
 )
+
+func TestProductionWorkerErrorWriterSuppressesEmptyTLSProbe(t *testing.T) {
+	var output bytes.Buffer
+	writer := productionWorkerErrorWriter{output: &output}
+	probe := []byte("2026/09/01 01:53:08 http: TLS handshake error from 192.168.194.1:45166: EOF\n")
+	if written, err := writer.Write(probe); err != nil || written != len(probe) || output.Len() != 0 {
+		t.Fatalf("probe write = %d/%v output=%q", written, err, output.String())
+	}
+	invalidClient := []byte("2026/09/01 01:53:09 http: TLS handshake error from 192.168.194.1:45167: tls: client didn't provide a certificate\n")
+	if written, err := writer.Write(invalidClient); err != nil || written != len(invalidClient) || !bytes.Equal(output.Bytes(), invalidClient) {
+		t.Fatalf("invalid client write = %d/%v output=%q", written, err, output.String())
+	}
+}
 
 func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	if _, err := parseProductionWorkerConfig(nil, nil); !errors.Is(err, errInvalidProductionWorkerConfig) {
