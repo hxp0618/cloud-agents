@@ -363,6 +363,11 @@ export type ManagedAgentExecutionPage = Readonly<{
   executions: readonly ManagedAgentExecution[];
   nextPageToken?: string;
 }>;
+export type ManagedAgentArtifactResult = Readonly<{
+  data: Uint8Array;
+  contentType: string;
+  etag?: string;
+}>;
 export type ManagedAgentEventChange = Readonly<{
   resource: "Session" | "Turn" | "Execution";
   from: string;
@@ -2266,17 +2271,20 @@ export type FixtureRequest = Readonly<{
   path: string;
   headers: Readonly<Record<string, string>>;
   body?: string;
+  responseType?: "binary";
 }>;
 export type FixtureResponse = Readonly<{
   status: number;
   headers: Readonly<Record<string, string>>;
   body: string;
+  data?: Uint8Array;
 }>;
 export type FixtureTransport = (
   request: FixtureRequest,
   signal: AbortSignal,
 ) => Promise<FixtureResponse>;
 const maxHTTPResponseBytes = 2 * 1024 * 1024;
+const maxManagedAgentArtifactBytes = 16 * 1024 * 1024;
 export function createHTTPClient(baseURL: string, bearerToken: string): Client {
   if (typeof baseURL !== "string" || typeof bearerToken !== "string")
     throw new TypeError("invalid Cloud Agents HTTP client configuration");
@@ -2320,29 +2328,42 @@ export function createHTTPClient(baseURL: string, bearerToken: string): Client {
     const responseHeaders: Record<string, string> = Object.fromEntries(response.headers.entries());
     const resourceVersion = response.headers.get("X-Resource-Version");
     if (resourceVersion !== null) responseHeaders["X-Resource-Version"] = resourceVersion;
+    const binary = request.responseType === "binary" && response.status === 200;
+    const data = await readHTTPResponseBytes(
+      response,
+      binary ? maxManagedAgentArtifactBytes : maxHTTPResponseBytes,
+    );
     return {
       status: response.status,
       headers: responseHeaders,
-      body: await readHTTPResponseBody(response),
+      body: binary ? "" : new TextDecoder().decode(data),
+      ...(binary ? { data } : {}),
     };
   });
 }
-async function readHTTPResponseBody(response: Response): Promise<string> {
-  if (response.body === null) return "";
+async function readHTTPResponseBytes(response: Response, maximum: number): Promise<Uint8Array> {
+  if (response.body === null) return new Uint8Array();
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let body = "";
+  const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return body + decoder.decode();
+      if (done) {
+        const body = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          body.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        return body;
+      }
       size += value.byteLength;
-      if (size > maxHTTPResponseBytes) {
+      if (size > maximum) {
         await reader.cancel().catch(() => undefined);
         throw new Error("Cloud Agents HTTP response exceeds the SDK limit");
       }
-      body += decoder.decode(value, { stream: true });
+      chunks.push(value);
     }
   } finally {
     reader.releaseLock();
@@ -2691,6 +2712,51 @@ export class Client {
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
+  }
+  async downloadManagedAgentArtifact(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    turnId: string,
+    executionId: string,
+    requestId: string,
+    messageIndex: number,
+    signal?: AbortSignal,
+  ): Promise<ManagedAgentArtifactResult> {
+    validateExecutionPath(tenantId, projectId, requestId, sessionId, turnId, executionId);
+    integer(messageIndex, 0, 63, "/messageIndex");
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/turns/${turnId}/executions/${executionId}/messages/${messageIndex}/artifact`,
+        headers: { "X-Request-ID": requestId },
+        responseType: "binary",
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("managedAgentDownloadArtifact", response);
+    const data = response.data ?? new TextEncoder().encode(response.body);
+    if (data.byteLength > maxManagedAgentArtifactBytes)
+      throw new ClientError(
+        "managedAgentDownloadArtifact",
+        response.status,
+        undefined,
+        new Error("artifact exceeds the SDK limit"),
+      );
+    const contentType = response.headers["Content-Type"] ?? response.headers["content-type"];
+    if (contentType === undefined || contentType === "")
+      throw new ClientError(
+        "managedAgentDownloadArtifact",
+        response.status,
+        undefined,
+        new Error("artifact Content-Type is missing"),
+      );
+    const etag = response.headers.ETag ?? response.headers.Etag ?? response.headers.etag;
+    return Object.freeze({
+      data: data.slice(),
+      contentType,
+      ...(etag === undefined || etag === "" ? {} : { etag }),
+    });
   }
   async cancelManagedAgentExecution(
     tenantId: string,

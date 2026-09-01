@@ -594,6 +594,19 @@ describe("generated platform client", () => {
         response.end(Buffer.alloc(2 * 1024 * 1024 + 1, 0x20));
         return;
       }
+      if (request.url?.includes("/execution-artifact-oversize/messages/0/artifact")) {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/octet-stream");
+        response.end(Buffer.alloc(16 * 1024 * 1024 + 1, 0x80));
+        return;
+      }
+      if (request.url?.includes("/execution-artifact/messages/0/artifact")) {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/octet-stream");
+        response.setHeader("ETag", '"sha256:artifact"');
+        response.end(Buffer.alloc(16 * 1024 * 1024, 0x80));
+        return;
+      }
       response.statusCode = 200;
       response.setHeader("Content-Type", "application/json");
       response.setHeader("X-Resource-Version", "3");
@@ -616,6 +629,30 @@ describe("generated platform client", () => {
       expect(redirectTargetCalls).toBe(0);
       await expect(
         client.getProject("tenant-alpha", "project-oversize", "request-alpha"),
+      ).rejects.toThrow("Cloud Agents HTTP response exceeds the SDK limit");
+      const artifact = await client.downloadManagedAgentArtifact(
+        "tenant-alpha",
+        "project-alpha",
+        "session-alpha",
+        "turn-alpha",
+        "execution-artifact",
+        "request-alpha",
+        0,
+      );
+      expect(artifact.data).toHaveLength(16 * 1024 * 1024);
+      expect([artifact.data[0], artifact.data.at(-1), artifact.contentType, artifact.etag]).toEqual(
+        [0x80, 0x80, "application/octet-stream", '"sha256:artifact"'],
+      );
+      await expect(
+        client.downloadManagedAgentArtifact(
+          "tenant-alpha",
+          "project-alpha",
+          "session-alpha",
+          "turn-alpha",
+          "execution-artifact-oversize",
+          "request-alpha",
+          0,
+        ),
       ).rejects.toThrow("Cloud Agents HTTP response exceeds the SDK limit");
       expect(() => createHTTPClient(`${baseURL}/`, "token-alpha")).toThrow(TypeError);
       expect(() => createHTTPClient(baseURL, "token alpha")).toThrow(TypeError);
