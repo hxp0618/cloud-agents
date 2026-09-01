@@ -51,23 +51,26 @@ const (
 	productionHTTPWriteGrace                 = 15 * time.Second
 	productionJWKSFetchTimeout               = 5 * time.Second
 	maxJWKSResponseBytes                     = 1 << 20
+	defaultProductionMaxConcurrentRequests   = 128
+	maximumProductionMaxConcurrentRequests   = 10_000
 )
 
 type productionConfig struct {
-	listen              string
-	database            string
-	authPath            string
-	tlsCert             string
-	tlsKey              string
-	workerEndpoint      string
-	workerSPIFFE        string
-	workerClientCert    string
-	workerClientKey     string
-	workerCA            string
-	workspaceDirectory  string
-	admissionLeaseID    string
-	admissionGeneration uint64
-	admissionToken      []byte
+	listen                string
+	database              string
+	authPath              string
+	tlsCert               string
+	tlsKey                string
+	workerEndpoint        string
+	workerSPIFFE          string
+	workerClientCert      string
+	workerClientKey       string
+	workerCA              string
+	workspaceDirectory    string
+	admissionLeaseID      string
+	admissionGeneration   uint64
+	admissionToken        []byte
+	maxConcurrentRequests int
 }
 
 type authConfigFile struct {
@@ -306,7 +309,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		writer.WriteHeader(http.StatusOK)
 	})
-	httpServer := &http.Server{Addr: config.listen, Handler: productionAccessLogHandler(logger, mux), BaseContext: func(net.Listener) context.Context { return ctx }, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
+	httpServer := &http.Server{Addr: config.listen, Handler: productionAccessLogHandler(logger, server.ConcurrentRequestLimitHandler(config.maxConcurrentRequests, mux)), BaseContext: func(net.Listener) context.Context { return ctx }, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
 	errorChannel := make(chan error, 1)
 	go func() {
 		if config.tlsCert != "" {
@@ -357,7 +360,11 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
+	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
+		return productionConfig{}, errors.New("invalid control-plane configuration")
+	}
+	if *maxConcurrentRequests < 1 || *maxConcurrentRequests > maximumProductionMaxConcurrentRequests {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *database == "" && getenv != nil {
@@ -401,7 +408,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken),
+		workspaceDirectory: *workspaceDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

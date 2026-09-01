@@ -173,14 +173,23 @@ describe("platform release", () => {
     expect(worker).toContain("secretName: {{ .Values.runtime.credentialSecretName }}");
   });
 
-  it("publishes the Worker Runtime capacity limit in Compose and Helm", () => {
+  it("publishes component capacity limits in Compose and Helm", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const controlPlane = readFileSync(
+      "deploy/helm/cloud-agents/templates/control-plane.yaml",
+      "utf8",
+    );
     const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
     for (const deployment of [compose, worker]) {
       expect(deployment).toContain("--runtime-max-sessions");
     }
     expect(compose).toContain("CLOUD_AGENTS_RUNTIME_MAX_SESSIONS:-4");
     expect(worker).toContain(".Values.runtime.maxSessions");
+    for (const deployment of [compose, controlPlane]) {
+      expect(deployment).toContain("--max-concurrent-requests");
+    }
+    expect(compose).toContain("CLOUD_AGENTS_CONTROL_PLANE_MAX_CONCURRENT_REQUESTS:-128");
+    expect(controlPlane).toContain(".Values.controlPlane.maxConcurrentRequests");
   });
 
   it("packages an atomic Compose database authority bootstrap", () => {

@@ -53,6 +53,8 @@ spec:
             - /run/cloud-agents/control-plane-tls/tls.crt
             - --tls-key
             - /run/cloud-agents/control-plane-tls/tls.key
+            - --max-concurrent-requests
+            - {{ .Values.controlPlane.maxConcurrentRequests | quote }}
           env:
             - name: CLOUD_AGENTS_PLATFORM_DATABASE_URL
               valueFrom:

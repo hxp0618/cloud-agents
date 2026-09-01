@@ -163,7 +163,7 @@ services:
       CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID: ${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}
       CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION: ${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}
       CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN: ${CLOUD_AGENTS_ADMISSION_TOKEN:?set the Runtime admission token}
-    command: ["--listen", ":8080", "--auth-config", "/run/cloud-agents/auth.json", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key"]
+    command: ["--listen", ":8080", "--auth-config", "/run/cloud-agents/auth.json", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key", "--max-concurrent-requests", "${CLOUD_AGENTS_CONTROL_PLANE_MAX_CONCURRENT_REQUESTS:-128}"]
     volumes:
       - ${CLOUD_AGENTS_AUTH_CONFIG:?set the verifier JSON path}:/run/cloud-agents/auth.json:ro
       - ${CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR:?set the Control Plane TLS directory}:/run/cloud-agents/tls:ro

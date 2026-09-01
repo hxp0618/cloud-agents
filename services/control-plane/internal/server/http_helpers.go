@@ -8,6 +8,25 @@ import (
 
 const publicFallbackRequestID = "request-unknown"
 
+func ConcurrentRequestLimitHandler(limit int, next http.Handler) http.Handler {
+	slots := make(chan struct{}, limit)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/healthz" || request.URL.Path == "/readyz" {
+			next.ServeHTTP(writer, request)
+			return
+		}
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			next.ServeHTTP(writer, request)
+		default:
+			preparePublicRequestID(writer, request)
+			writer.Header().Set("Retry-After", "1")
+			writePublicProblem(writer, http.StatusTooManyRequests, "REQUEST_CAPACITY_EXHAUSTED")
+		}
+	})
+}
+
 type publicProblem struct {
 	Type      string            `json:"type"`
 	Title     string            `json:"title"`
@@ -82,6 +101,8 @@ func publicProblemTitle(code string) string {
 		return "Route not found"
 	case "METHOD_NOT_ALLOWED":
 		return "Method not allowed"
+	case "REQUEST_CAPACITY_EXHAUSTED":
+		return "Request capacity exhausted"
 	default:
 		return "Cloud Agents request failed"
 	}

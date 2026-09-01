@@ -19,6 +19,7 @@ grep -A1 -F -- "- --runtime-directory" "$rendered" | grep -Fq -- '- /workspace'
 grep -Fq "mountPath: /tmp" "$rendered"
 grep -Fq "emptyDir: {}" "$rendered"
 grep -A1 -F -- "- --runtime-max-sessions" "$rendered" | grep -Fq -- '- "4"'
+grep -A1 -F -- "- --max-concurrent-requests" "$rendered" | grep -Fq -- '- "128"'
 
 helm template cloud-agents "$chart" \
   --set-string images.controlPlane.digest="$digest" \
@@ -35,5 +36,9 @@ if helm template cloud-agents "$chart" --set-string images.worker.digest=sha256:
 fi
 if helm template cloud-agents "$chart" --set runtime.maxSessions=0 >/dev/null 2>&1; then
   echo "invalid Runtime max sessions passed Helm values validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set controlPlane.maxConcurrentRequests=0 >/dev/null 2>&1; then
+  echo "invalid Control Plane max concurrent requests passed Helm values validation" >&2
   exit 1
 fi

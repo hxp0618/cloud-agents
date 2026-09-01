@@ -81,6 +81,11 @@
         "replicas": {
           "type": "integer",
           "const": 1
+        },
+        "maxConcurrentRequests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
         }
       }
     },

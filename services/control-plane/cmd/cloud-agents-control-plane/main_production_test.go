@@ -34,12 +34,20 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 		productionAdmissionGenerationEnvironment: "7",
 		productionAdmissionTokenEnvironment:      "runtime-token",
 	}
-	config, err := parseProductionConfig([]string{"--listen", "127.0.0.1:9443", "--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}, func(name string) string { return values[name] })
+	args := []string{"--listen", "127.0.0.1:9443", "--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}
+	getenv := func(name string) string { return values[name] }
+	config, err := parseProductionConfig(args, getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) {
+	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
 		t.Fatalf("config = %#v", config)
+	}
+	for _, invalid := range []string{"0", "10001"} {
+		candidate := append(append([]string{}, args...), "--max-concurrent-requests", invalid)
+		if _, err := parseProductionConfig(candidate, getenv); err == nil {
+			t.Fatalf("accepted max concurrent requests %s", invalid)
+		}
 	}
 }
 

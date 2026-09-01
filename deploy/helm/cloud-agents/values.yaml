@@ -51,6 +51,7 @@ runtime:
 
 controlPlane:
   replicas: 1
+  maxConcurrentRequests: 128
   service:
     type: ClusterIP
     port: 8080
