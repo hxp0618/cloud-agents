@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000034.tar` into a directory and copy
+Extract `cloud-agents-deployment-000035.tar` into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
@@ -85,6 +85,15 @@ pre-created named volumes: `workerCredentialRef` contains `server.crt`,
 Claude credential envelopes. Files must be readable by container uid `1000`.
 Never put private keys, admission tokens, Provider keys, or credential payloads
 in `deployment.json`, target API bodies, or Environment Lease fields.
+
+For a Kubernetes deployment target, point
+`CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR` at a deployment-owned directory.
+Each `credentialRef` selects `<credentialRef>.ca.crt` and
+`<credentialRef>.token`. The token should belong to a ServiceAccount allowed to
+read the target API server's `/version` endpoint; the Control Plane sends it
+only as an HTTPS Bearer credential and never persists it in target state.
+Helm installations can mount the same flat file layout from the Secret named by
+`deploymentTargets.kubernetesCredentialSecretName`.
 
 The source checkout's packaged Compose smoke keeps its default no-credential
 `provider_not_installed` check. To additionally run one real Codex Turn and one

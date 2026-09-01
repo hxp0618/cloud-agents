@@ -8,7 +8,7 @@
   "properties": {
     "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "targetName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-    "targetKind": { "const": "docker" },
+    "targetKind": { "enum": ["docker", "kubernetes"] },
     "endpoint": { "type": "string", "format": "uri", "pattern": "^https://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
     "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
   }

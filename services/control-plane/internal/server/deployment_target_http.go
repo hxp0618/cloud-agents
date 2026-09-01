@@ -15,6 +15,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
@@ -28,16 +29,17 @@ type deploymentTargetStore interface {
 }
 
 type DeploymentTargetHTTPServer struct {
-	verifier AccessTokenVerifier
-	store    deploymentTargetStore
-	prober   *dockertarget.CredentialDirectory
+	verifier         AccessTokenVerifier
+	store            deploymentTargetStore
+	dockerProber     *dockertarget.CredentialDirectory
+	kubernetesProber *kubernetestarget.CredentialDirectory
 }
 
-func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, prober *dockertarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
+func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, dockerProber *dockertarget.CredentialDirectory, kubernetesProber *kubernetestarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("deployment target HTTP server configuration is invalid")
 	}
-	return &DeploymentTargetHTTPServer{verifier: verifier, store: store, prober: prober}, nil
+	return &DeploymentTargetHTTPServer{verifier: verifier, store: store, dockerProber: dockerProber, kubernetesProber: kubernetesProber}, nil
 }
 
 func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -161,16 +163,25 @@ func (server *DeploymentTargetHTTPServer) probe(writer http.ResponseWriter, requ
 		return
 	}
 	completion := internaldeploymenttarget.ProbeCompletion{Input: input}
-	if server.prober == nil {
-		completion.StableErrorCode = "docker-probe-unconfigured"
-	} else if result, probeErr := server.prober.Probe(request.Context(), started.Target.Endpoint, started.Target.CredentialRef); probeErr != nil {
-		completion.StableErrorCode = deploymentTargetProbeErrorCode(probeErr)
-	} else {
-		completion.Succeeded = true
-		completion.APIVersion = result.APIVersion
-		completion.EngineVersion = result.EngineVersion
-		completion.OS = result.OS
-		completion.Arch = result.Architecture
+	switch started.Target.Kind {
+	case "docker":
+		if server.dockerProber == nil {
+			completion.StableErrorCode = "docker-probe-unconfigured"
+		} else if result, probeErr := server.dockerProber.Probe(request.Context(), started.Target.Endpoint, started.Target.CredentialRef); probeErr != nil {
+			completion.StableErrorCode = dockerTargetProbeErrorCode(probeErr)
+		} else {
+			completion.Succeeded, completion.APIVersion, completion.EngineVersion = true, result.APIVersion, result.EngineVersion
+			completion.OS, completion.Arch = result.OS, result.Architecture
+		}
+	case "kubernetes":
+		if server.kubernetesProber == nil {
+			completion.StableErrorCode = "kubernetes-probe-unconfigured"
+		} else if result, probeErr := server.kubernetesProber.Probe(request.Context(), started.Target.Endpoint, started.Target.CredentialRef); probeErr != nil {
+			completion.StableErrorCode = kubernetesTargetProbeErrorCode(probeErr)
+		} else {
+			completion.Succeeded, completion.APIVersion, completion.EngineVersion = true, result.APIVersion, result.EngineVersion
+			completion.OS, completion.Arch = result.OS, result.Architecture
+		}
 	}
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
@@ -250,7 +261,7 @@ func HandlesDeploymentTargetPath(path string) bool {
 	return ok
 }
 
-func deploymentTargetProbeErrorCode(err error) string {
+func dockerTargetProbeErrorCode(err error) string {
 	switch {
 	case errors.Is(err, dockertarget.ErrInvalidEndpoint):
 		return "docker-endpoint-invalid"
@@ -262,6 +273,21 @@ func deploymentTargetProbeErrorCode(err error) string {
 		return "docker-response-invalid"
 	default:
 		return "docker-target-unavailable"
+	}
+}
+
+func kubernetesTargetProbeErrorCode(err error) string {
+	switch {
+	case errors.Is(err, kubernetestarget.ErrInvalidEndpoint):
+		return "kubernetes-endpoint-invalid"
+	case errors.Is(err, kubernetestarget.ErrInvalidDirectory):
+		return "kubernetes-probe-unconfigured"
+	case errors.Is(err, kubernetestarget.ErrCredentialUnavailable), errors.Is(err, kubernetestarget.ErrCredentialInvalid):
+		return "kubernetes-credential-unavailable"
+	case errors.Is(err, kubernetestarget.ErrInvalidResponse):
+		return "kubernetes-response-invalid"
+	default:
+		return "kubernetes-target-unavailable"
 	}
 }
 

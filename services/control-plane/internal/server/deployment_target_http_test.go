@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +14,7 @@ import (
 	openapiv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 )
 
 type deploymentTargetStoreFake struct {
@@ -20,6 +24,47 @@ type deploymentTargetStoreFake struct {
 	begin      int
 	complete   int
 	completion internaldeploymenttarget.ProbeCompletion
+}
+
+func TestDeploymentTargetHTTPProbesKubernetesTarget(t *testing.T) {
+	cluster := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/version" || request.Header.Get("Authorization") != "Bearer service-account-token" {
+			t.Fatalf("cluster request path=%q authorization=%q", request.URL.Path, request.Header.Get("Authorization"))
+		}
+		_, _ = writer.Write([]byte(`{"major":"1","minor":"34","gitVersion":"v1.34.2","platform":"linux/arm64"}`))
+	}))
+	defer cluster.Close()
+	directory := t.TempDir()
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cluster.Certificate().Raw})
+	for name, value := range map[string][]byte{"cluster-alpha.ca.crt": certificate, "cluster-alpha.token": []byte("service-account-token\n")} {
+		if err := os.WriteFile(filepath.Join(directory, name), value, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	credentials, err := kubernetestarget.NewCredentialDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC)
+	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{
+		Scope:    internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
+		TargetID: "kubernetes-alpha", TargetName: "kubernetes-alpha", Kind: "kubernetes", Endpoint: cluster.URL, CredentialRef: "cluster-alpha",
+		Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
+	}}
+	verifier := &projectHTTPVerifierFake{}
+	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:probe", strings.NewReader(`{"expectedGeneration":1}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-kubernetes-probe")
+	request.Header.Set("Idempotency-Key", "kubernetes-probe-key")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !store.completion.Succeeded || store.completion.APIVersion != "1.34" || store.completion.EngineVersion != "v1.34.2" || store.completion.OS != "linux" || store.completion.Arch != "arm64" || !strings.Contains(response.Body.String(), `"targetKind":"kubernetes"`) || !strings.Contains(response.Body.String(), `"observedPhase":"ready"`) {
+		t.Fatalf("status=%d completion=%#v body=%s", response.Code, store.completion, response.Body.String())
+	}
 }
 
 func (fake *deploymentTargetStoreFake) RegisterDeploymentTarget(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internaldeploymenttarget.RegisterInput) (internaldeploymenttarget.Snapshot, error) {
@@ -69,7 +114,7 @@ func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC)
 	verifier := &projectHTTPVerifierFake{}
 	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now}}
-	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil)
+	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

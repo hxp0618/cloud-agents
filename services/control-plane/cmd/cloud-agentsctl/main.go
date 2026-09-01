@@ -98,7 +98,7 @@ func run(args []string, stdout io.Writer) error {
 	case "target preflight":
 		var kind, socketPath string
 		if err = parseActionFlags("target preflight", actionArgs, func(set *flag.FlagSet) {
-			set.StringVar(&kind, "kind", "", "target kind (docker)")
+			set.StringVar(&kind, "kind", "", "target kind (docker or kubernetes)")
 			set.StringVar(&socketPath, "socket", "", "absolute Docker Engine socket path")
 		}); err == nil && kind != "docker" {
 			err = errors.New("--kind must be docker")

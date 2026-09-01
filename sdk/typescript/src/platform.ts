@@ -261,7 +261,7 @@ export type EnvironmentLeasePage = Readonly<{
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
-  targetKind: "docker";
+  targetKind: "docker" | "kubernetes";
   endpoint: string;
   credentialRef: string;
 }>;
@@ -273,7 +273,7 @@ export type DeploymentTarget = Readonly<{
   spec: Readonly<{
     projectRef: NamespaceRef;
     generation: number;
-    targetKind: "docker";
+    targetKind: "docker" | "kubernetes";
     endpoint: string;
     credentialRef: string;
     observedPhase: "unprobed" | "probing" | "ready" | "unavailable";
@@ -1261,7 +1261,7 @@ export function decodeDeploymentTargetRegisterRequest(
   return Object.freeze({
     targetId: identifier(source.targetId, "/targetId"),
     targetName: identifier(source.targetName, "/targetName"),
-    targetKind: enumValue(source.targetKind, ["docker"] as const, "/targetKind"),
+    targetKind: enumValue(source.targetKind, ["docker", "kubernetes"] as const, "/targetKind"),
     endpoint: deploymentTargetEndpoint(source.endpoint, "/endpoint"),
     credentialRef: identifier(source.credentialRef, "/credentialRef"),
   });
@@ -1812,7 +1812,7 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
     spec: Object.freeze({
       projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
       generation: integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation"),
-      targetKind: enumValue(spec.targetKind, ["docker"] as const, "/spec/targetKind"),
+      targetKind: enumValue(spec.targetKind, ["docker", "kubernetes"] as const, "/spec/targetKind"),
       endpoint: deploymentTargetEndpoint(spec.endpoint, "/spec/endpoint"),
       credentialRef: identifier(spec.credentialRef, "/spec/credentialRef"),
       observedPhase: phase,

@@ -32,6 +32,7 @@ import (
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
@@ -47,6 +48,7 @@ const (
 	localRuntimeWorkerTokenEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_TOKEN_FILE"
 	localRuntimeWorkspaceEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
 	localDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
+	localKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
 	localTokenRefreshInterval             = 4 * time.Minute
 )
 
@@ -232,15 +234,16 @@ JOIN pg_catalog.pg_namespace AS target_namespace
 WHERE login_role.rolname = session_user`
 
 type controlPlaneConfig struct {
-	listen             string
-	databaseURL        string
-	localTokenFile     string
-	localTenantID      string
-	localSubject       string
-	workerEndpoint     string
-	workerTokenFile    string
-	workspaceDirectory string
-	dockerCredentials  string
+	listen                string
+	databaseURL           string
+	localTokenFile        string
+	localTenantID         string
+	localSubject          string
+	workerEndpoint        string
+	workerTokenFile       string
+	workspaceDirectory    string
+	dockerCredentials     string
+	kubernetesCredentials string
 }
 
 type localRuntimeWorkerHealth struct {
@@ -414,7 +417,14 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local Docker target credential directory is invalid")
 		}
 	}
-	deploymentTargetHTTPServer, err := server.NewDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber)
+	var kubernetesProber *kubernetestarget.CredentialDirectory
+	if config.kubernetesCredentials != "" {
+		kubernetesProber, err = kubernetestarget.NewCredentialDirectory(config.kubernetesCredentials)
+		if err != nil {
+			return errors.New("local Kubernetes target credential directory is invalid")
+		}
+	}
+	deploymentTargetHTTPServer, err := server.NewDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber)
 	if err != nil {
 		return errors.New("local deployment target HTTP server is unavailable")
 	}
@@ -563,6 +573,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	workerTokenFile := set.String("worker-token-file", "", "0600 bearer token file written by the localdev Worker")
 	workspaceDirectory := set.String("workspace-directory", "", "workspace passed to the local Runtime")
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
+	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return controlPlaneConfig{}, errors.New("invalid control-plane configuration")
 	}
@@ -570,7 +581,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	if resolvedDatabaseURL == "" && getenv != nil {
 		resolvedDatabaseURL = getenv(databaseURLEnvironment)
 	}
-	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials
+	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials, resolvedKubernetesCredentials := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials, *kubernetesCredentials
 	if getenv != nil {
 		if resolvedWorkerEndpoint == "" {
 			resolvedWorkerEndpoint = getenv(localRuntimeWorkerEndpointEnvironment)
@@ -584,23 +595,27 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		if resolvedDockerCredentials == "" {
 			resolvedDockerCredentials = getenv(localDockerCredentialsEnvironment)
 		}
+		if resolvedKubernetesCredentials == "" {
+			resolvedKubernetesCredentials = getenv(localKubernetesCredentialsEnvironment)
+		}
 	}
 	if *localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator))) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
-	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
+	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
 		return controlPlaneConfig{}, errInvalidRuntimeConfig
 	}
 	return controlPlaneConfig{
-		listen:             *listen,
-		databaseURL:        resolvedDatabaseURL,
-		localTokenFile:     *localTokenFile,
-		localTenantID:      *localTenantID,
-		localSubject:       *localSubject,
-		workerEndpoint:     resolvedWorkerEndpoint,
-		workerTokenFile:    resolvedWorkerTokenFile,
-		workspaceDirectory: resolvedWorkspaceDirectory,
-		dockerCredentials:  resolvedDockerCredentials,
+		listen:                *listen,
+		databaseURL:           resolvedDatabaseURL,
+		localTokenFile:        *localTokenFile,
+		localTenantID:         *localTenantID,
+		localSubject:          *localSubject,
+		workerEndpoint:        resolvedWorkerEndpoint,
+		workerTokenFile:       resolvedWorkerTokenFile,
+		workspaceDirectory:    resolvedWorkspaceDirectory,
+		dockerCredentials:     resolvedDockerCredentials,
+		kubernetesCredentials: resolvedKubernetesCredentials,
 	}, nil
 }
 

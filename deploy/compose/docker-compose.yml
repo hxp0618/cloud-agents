@@ -160,6 +160,7 @@ services:
       CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY: /run/cloud-agents/worker-client.key
       CLOUD_AGENTS_PLATFORM_WORKER_CA: /run/cloud-agents/worker-ca.crt
       CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY: /run/cloud-agents/docker-target-credentials
+      CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY: /run/cloud-agents/kubernetes-target-credentials
       CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY: ${CLOUD_AGENTS_WORKER_WORKSPACE_DIRECTORY:-/workspace}
       CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID: ${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}
       CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION: ${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}
@@ -172,6 +173,7 @@ services:
       - ${CLOUD_AGENTS_WORKER_CLIENT_KEY:?set the Worker client key path}:/run/cloud-agents/worker-client.key:ro
       - ${CLOUD_AGENTS_WORKER_CA:?set the Worker CA certificate path}:/run/cloud-agents/worker-ca.crt:ro
       - ${CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR:?set the Docker target credential directory}:/run/cloud-agents/docker-target-credentials:ro
+      - ${CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR:?set the Kubernetes target credential directory}:/run/cloud-agents/kubernetes-target-credentials:ro
     ports:
       - "${CLOUD_AGENTS_CONTROL_PLANE_BIND:-127.0.0.1:8080}:8080"
 

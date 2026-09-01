@@ -94,8 +94,8 @@ describe("platform release", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
     expect(entries.map(({ path }) => path)).toContain("LICENSE");
-    expect(entries.some(({ path }) => path.endsWith("product/000034/manifest.json"))).toBe(true);
-    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(34);
+    expect(entries.some(({ path }) => path.endsWith("product/000035/manifest.json"))).toBe(true);
+    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(35);
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agents-migrations",
       target: "portable",
@@ -263,9 +263,15 @@ describe("platform release", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
+    expect(compose).toContain("CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY");
+    const controlPlaneTemplate = readFileSync(
+      "deploy/helm/cloud-agents/templates/control-plane.yaml",
+      "utf8",
+    );
+    expect(controlPlaneTemplate).toContain("kubernetesCredentialSecretName");
     const migrateDockerfile = readFileSync("deploy/docker/migrate.Dockerfile", "utf8");
-    expect(migrateDockerfile).toContain("cloud-agents-migrations-000034.tar");
-    expect(migrateDockerfile).toContain("product/000034/manifest.json");
+    expect(migrateDockerfile).toContain("cloud-agents-migrations-000035.tar");
+    expect(migrateDockerfile).toContain("product/000035/manifest.json");
     expect(migrateDockerfile).not.toContain("000029");
     const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
     expect(workerDockerfile).toContain("@openai/codex@0.150.1");

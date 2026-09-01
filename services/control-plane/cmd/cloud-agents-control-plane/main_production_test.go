@@ -22,18 +22,19 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 		t.Fatal("expected required production configuration error")
 	}
 	values := map[string]string{
-		productionDatabaseEnvironment:            "postgres://runtime@db/cloud_agents",
-		productionAuthConfigEnvironment:          "/etc/cloud-agents/auth.json",
-		productionWorkerEndpointEnvironment:      "https://worker:8091",
-		productionWorkerSPIFFEEnvironment:        "spiffe://cloud-agents.test/worker",
-		productionWorkerClientCertEnvironment:    "/etc/cloud-agents/worker-client.crt",
-		productionWorkerClientKeyEnvironment:     "/etc/cloud-agents/worker-client.key",
-		productionWorkerCAEnvironment:            "/etc/cloud-agents/worker-ca.crt",
-		productionWorkspaceEnvironment:           "/workspace",
-		productionDockerCredentialsEnvironment:   "/etc/cloud-agents/docker-targets",
-		productionAdmissionLeaseEnvironment:      "runtime-lease",
-		productionAdmissionGenerationEnvironment: "7",
-		productionAdmissionTokenEnvironment:      "runtime-token",
+		productionDatabaseEnvironment:              "postgres://runtime@db/cloud_agents",
+		productionAuthConfigEnvironment:            "/etc/cloud-agents/auth.json",
+		productionWorkerEndpointEnvironment:        "https://worker:8091",
+		productionWorkerSPIFFEEnvironment:          "spiffe://cloud-agents.test/worker",
+		productionWorkerClientCertEnvironment:      "/etc/cloud-agents/worker-client.crt",
+		productionWorkerClientKeyEnvironment:       "/etc/cloud-agents/worker-client.key",
+		productionWorkerCAEnvironment:              "/etc/cloud-agents/worker-ca.crt",
+		productionWorkspaceEnvironment:             "/workspace",
+		productionDockerCredentialsEnvironment:     "/etc/cloud-agents/docker-targets",
+		productionKubernetesCredentialsEnvironment: "/etc/cloud-agents/kubernetes-targets",
+		productionAdmissionLeaseEnvironment:        "runtime-lease",
+		productionAdmissionGenerationEnvironment:   "7",
+		productionAdmissionTokenEnvironment:        "runtime-token",
 	}
 	args := []string{"--listen", "127.0.0.1:9443", "--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}
 	getenv := func(name string) string { return values[name] }
@@ -41,7 +42,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
+	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
 		t.Fatalf("config = %#v", config)
 	}
 	for _, invalid := range []string{"0", "10001"} {
@@ -52,6 +53,9 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	}
 	if _, err := parseProductionConfig(append(append([]string{}, args...), "--docker-credentials-directory", " /tmp/docker-targets"), getenv); err == nil {
 		t.Fatal("accepted invalid Docker credential directory")
+	}
+	if _, err := parseProductionConfig(append(append([]string{}, args...), "--kubernetes-credentials-directory", " /tmp/kubernetes-targets"), getenv); err == nil {
+		t.Fatal("accepted invalid Kubernetes credential directory")
 	}
 }
 

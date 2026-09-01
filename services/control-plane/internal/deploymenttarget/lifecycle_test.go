@@ -24,6 +24,10 @@ func TestDeploymentTargetValidationAndDigests(t *testing.T) {
 	if err := input.Validate("tenant-alpha"); err == nil {
 		t.Fatal("Control Plane accepted a Docker socket endpoint")
 	}
+	input.Kind, input.Endpoint = "kubernetes", "https://kubernetes.example.test:6443"
+	if err := input.Validate("tenant-alpha"); err != nil {
+		t.Fatalf("Kubernetes target validation: %v", err)
+	}
 }
 
 func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {

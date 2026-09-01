@@ -16,7 +16,7 @@
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
-        "targetKind": { "const": "docker" },
+        "targetKind": { "enum": ["docker", "kubernetes"] },
         "endpoint": { "type": "string", "format": "uri", "pattern": "^https://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
         "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "observedPhase": { "enum": ["unprobed", "probing", "ready", "unavailable"] },
@@ -38,6 +38,7 @@
     "unprobed or probing carries no probe facts or stable error",
     "ready requires non-empty probe facts and lastProbeAt",
     "unavailable requires stableErrorCode and lastProbeAt but no probe facts",
-    "credentialRef names a deployment-owned credential and never contains credential bytes"
+    "credentialRef names a deployment-owned credential and never contains credential bytes",
+    "targetKind selects only the target-specific probe and actuator; Agent execution remains on the shared Worker and Runtime protocol"
   ]
 }

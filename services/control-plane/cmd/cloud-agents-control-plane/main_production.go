@@ -27,6 +27,7 @@ import (
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
@@ -36,26 +37,27 @@ import (
 )
 
 const (
-	productionDatabaseEnvironment            = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
-	productionAuthConfigEnvironment          = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
-	productionWorkerEndpointEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
-	productionWorkerSPIFFEEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
-	productionWorkerClientCertEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
-	productionWorkerClientKeyEnvironment     = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
-	productionWorkerCAEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
-	productionWorkspaceEnvironment           = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
-	productionDockerCredentialsEnvironment   = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
-	productionAdmissionLeaseEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
-	productionAdmissionGenerationEnvironment = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
-	productionAdmissionTokenEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
-	maxAuthConfigBytes                       = 1 << 20
-	maxProductionCABytes                     = 1 << 20
-	productionRuntimeMaxDuration             = 5 * time.Minute
-	productionHTTPWriteGrace                 = 15 * time.Second
-	productionJWKSFetchTimeout               = 5 * time.Second
-	maxJWKSResponseBytes                     = 1 << 20
-	defaultProductionMaxConcurrentRequests   = 128
-	maximumProductionMaxConcurrentRequests   = 10_000
+	productionDatabaseEnvironment              = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+	productionAuthConfigEnvironment            = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
+	productionWorkerEndpointEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
+	productionWorkerSPIFFEEnvironment          = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
+	productionWorkerClientCertEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
+	productionWorkerClientKeyEnvironment       = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
+	productionWorkerCAEnvironment              = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
+	productionWorkspaceEnvironment             = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	productionDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
+	productionKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
+	productionAdmissionLeaseEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
+	productionAdmissionGenerationEnvironment   = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
+	productionAdmissionTokenEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
+	maxAuthConfigBytes                         = 1 << 20
+	maxProductionCABytes                       = 1 << 20
+	productionRuntimeMaxDuration               = 5 * time.Minute
+	productionHTTPWriteGrace                   = 15 * time.Second
+	productionJWKSFetchTimeout                 = 5 * time.Second
+	maxJWKSResponseBytes                       = 1 << 20
+	defaultProductionMaxConcurrentRequests     = 128
+	maximumProductionMaxConcurrentRequests     = 10_000
 )
 
 var version = "dev"
@@ -73,6 +75,7 @@ type productionConfig struct {
 	workerCA              string
 	workspaceDirectory    string
 	dockerCredentials     string
+	kubernetesCredentials string
 	admissionLeaseID      string
 	admissionGeneration   uint64
 	admissionToken        []byte
@@ -227,7 +230,14 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("Docker target credential directory is invalid")
 		}
 	}
-	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber)
+	var kubernetesProber *kubernetestarget.CredentialDirectory
+	if config.kubernetesCredentials != "" {
+		kubernetesProber, err = kubernetestarget.NewCredentialDirectory(config.kubernetesCredentials)
+		if err != nil {
+			return errors.New("Kubernetes target credential directory is invalid")
+		}
+	}
+	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber)
 	if err != nil {
 		return errors.New("deployment target HTTP server is unavailable")
 	}
@@ -393,6 +403,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	workerCA := set.String("worker-ca", "", "Worker CA certificate path")
 	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
+	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
@@ -420,8 +431,9 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(workerCA, productionWorkerCAEnvironment)
 	fill(workspaceDirectory, productionWorkspaceEnvironment)
 	fill(dockerCredentials, productionDockerCredentialsEnvironment)
+	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials {
+	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -450,7 +462,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

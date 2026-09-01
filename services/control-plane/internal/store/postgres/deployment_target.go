@@ -17,7 +17,7 @@ const deploymentTargetColumns = `target_uid, target_name, target_kind, endpoint,
 
 var (
 	registerDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
-FROM cloud_agents.register_deployment_target_v1($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+FROM cloud_agents.register_deployment_target_v2($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	getDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.deployment_targets
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`

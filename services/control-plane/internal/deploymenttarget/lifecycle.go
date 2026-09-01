@@ -63,7 +63,7 @@ type ProbeStart struct {
 
 func (input RegisterInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
-		invalidIdentifier(input.TargetID) || invalidIdentifier(input.TargetName) || input.Kind != "docker" ||
+		invalidIdentifier(input.TargetID) || invalidIdentifier(input.TargetName) || !validKind(input.Kind) ||
 		!validEndpoint(input.Endpoint) || invalidIdentifier(input.CredentialRef) {
 		return ErrInvalidInput
 	}
@@ -118,7 +118,7 @@ func (completion ProbeCompletion) Validate(tenantID string) error {
 
 func (snapshot Snapshot) Validate() error {
 	if invalidIdentifier(snapshot.Scope.TenantID) || invalidIdentifier(snapshot.Scope.ProjectID) ||
-		invalidIdentifier(snapshot.TargetID) || invalidIdentifier(snapshot.TargetName) || snapshot.Kind != "docker" ||
+		invalidIdentifier(snapshot.TargetID) || invalidIdentifier(snapshot.TargetName) || !validKind(snapshot.Kind) ||
 		!validEndpoint(snapshot.Endpoint) || invalidIdentifier(snapshot.CredentialRef) || snapshot.Generation < 1 ||
 		snapshot.ResourceVersion < 1 || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
 		return ErrInvalidInput
@@ -147,6 +147,8 @@ func validEndpoint(value string) bool {
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
 		(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
 }
+
+func validKind(value string) bool { return value == "docker" || value == "kubernetes" }
 
 func invalidIdentifier(value string) bool {
 	return commonv1alpha1.ValidateIdentifier(value, "/value") != nil

@@ -1226,7 +1226,7 @@ func DecodeDeploymentTargetRegisterRequestJSON(data []byte) (DeploymentTargetReg
 		return DeploymentTargetRegisterRequest{}, err
 	}
 	kind, err := fieldString(fields, "targetKind", "/targetKind")
-	if err != nil || kind != "docker" {
+	if err != nil || kind != "docker" && kind != "kubernetes" {
 		return DeploymentTargetRegisterRequest{}, common.ContractError("INVALID_TARGET_KIND", "/targetKind")
 	}
 	endpoint, err := fieldString(fields, "endpoint", "/endpoint")
@@ -1302,7 +1302,7 @@ func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 		return DeploymentTarget{}, common.ContractError("INVALID_GENERATION", "/spec/generation")
 	}
 	kind, err := fieldString(spec, "targetKind", "/spec/targetKind")
-	if err != nil || kind != "docker" {
+	if err != nil || kind != "docker" && kind != "kubernetes" {
 		return DeploymentTarget{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
 	}
 	endpoint, err := fieldString(spec, "endpoint", "/spec/endpoint")

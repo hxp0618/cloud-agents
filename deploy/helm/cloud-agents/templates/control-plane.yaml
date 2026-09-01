@@ -71,6 +71,10 @@ spec:
               value: /run/cloud-agents/worker-client/tls.key
             - name: CLOUD_AGENTS_PLATFORM_WORKER_CA
               value: /run/cloud-agents/worker-ca/ca.crt
+            {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
+            - name: CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY
+              value: /run/cloud-agents/kubernetes-target-credentials
+            {{- end }}
             - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
               value: /workspace
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
@@ -121,6 +125,11 @@ spec:
             - name: worker-ca
               mountPath: /run/cloud-agents/worker-ca
               readOnly: true
+            {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
+            - name: kubernetes-target-credentials
+              mountPath: /run/cloud-agents/kubernetes-target-credentials
+              readOnly: true
+            {{- end }}
       volumes:
         - name: auth
           secret:
@@ -140,3 +149,8 @@ spec:
             items:
               - key: ca.crt
                 path: ca.crt
+        {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
+        - name: kubernetes-target-credentials
+          secret:
+            secretName: {{ .Values.deploymentTargets.kubernetesCredentialSecretName }}
+        {{- end }}

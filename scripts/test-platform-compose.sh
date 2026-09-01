@@ -62,6 +62,7 @@ environment_file="$smoke_directory/compose.env"
 compose_file="$smoke_directory/deployment/deploy/compose/docker-compose.yml"
 compose_override_file="$smoke_directory/compose-target-override.yml"
 docker_proxy_pid=
+kubernetes_api_pid=
 registry_container="${project}-registry"
 worker_repository=
 worker_release_digest=
@@ -103,6 +104,10 @@ cleanup() {
     kill "$docker_proxy_pid" >/dev/null 2>&1 || true
     wait "$docker_proxy_pid" 2>/dev/null || true
   fi
+  if [ -n "$kubernetes_api_pid" ]; then
+    kill "$kubernetes_api_pid" >/dev/null 2>&1 || true
+    wait "$kubernetes_api_pid" 2>/dev/null || true
+  fi
   docker image rm "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
   rm -rf -- "$smoke_directory"
   exit "$status"
@@ -112,10 +117,12 @@ trap cleanup 0 HUP INT TERM
 mkdir -p "$smoke_directory/deployment" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/workspace" \
   "$smoke_directory/docker-target-credentials/docker-compose-target" \
+  "$smoke_directory/kubernetes-target-credentials" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0755 "$smoke_directory" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" \
   "$smoke_directory/docker-target-credentials" "$smoke_directory/docker-target-credentials/docker-compose-target" \
+  "$smoke_directory/kubernetes-target-credentials" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0777 "$smoke_directory/workspace"
 tar -xf "$1" -C "$smoke_directory/deployment"
@@ -179,6 +186,8 @@ openssl x509 -req -sha256 -days 1 -in "$smoke_directory/docker-target-client.csr
   -copy_extensions copy -out "$smoke_directory/docker-target-credentials/docker-compose-target/cert.pem" >/dev/null 2>&1
 cp "$smoke_directory/docker-target-ca.crt" \
   "$smoke_directory/docker-target-credentials/docker-compose-target/ca.pem"
+cp "$smoke_directory/docker-target-ca.crt" \
+  "$smoke_directory/kubernetes-target-credentials/kubernetes-compose-target.ca.crt"
 chmod 0444 "$smoke_directory"/control-plane-tls/* "$smoke_directory"/worker-tls/*
 
 CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" \
@@ -222,11 +231,13 @@ const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url
 const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
 const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
 const admissionToken = randomBytes(24).toString("hex");
+const kubernetesToken = randomBytes(24).toString("hex");
 writeFileSync(`${state}/token`, `${signingInput}.${signature}\n`);
 writeFileSync(`${state}/runtime.env`, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent\nCLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1\n");
 writeFileSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 writeFileSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 writeFileSync(`${state}/target-worker-credentials/admission-token`, admissionToken);
+writeFileSync(`${state}/kubernetes-target-credentials/kubernetes-compose-target.token`, `${kubernetesToken}\n`);
 writeFileSync(`${state}/compose-target-override.yml`, 'services:\n  control-plane:\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n');
 writeFileSync(`${state}/docker-proxy.mjs`, [
   'import { chmodSync, readFileSync, writeFileSync } from "node:fs";',
@@ -240,6 +251,19 @@ writeFileSync(`${state}/docker-proxy.mjs`, [
   '  client.pipe(upstream); upstream.pipe(client);',
   '});',
   'server.on("tlsClientError", () => {});',
+  'server.listen(0, "0.0.0.0", () => { writeFileSync(portPath, String(server.address().port)); chmodSync(portPath, 0o600); });',
+  'process.on("SIGTERM", () => process.exit(0));',
+].join("\n") + "\n");
+writeFileSync(`${state}/kubernetes-api.mjs`, [
+  'import { chmodSync, readFileSync, writeFileSync } from "node:fs";',
+  'import https from "node:https";',
+  'const [certPath, keyPath, tokenPath, portPath] = process.argv.slice(2);',
+  'const token = readFileSync(tokenPath, "utf8").trimEnd();',
+  'const server = https.createServer({ cert: readFileSync(certPath), key: readFileSync(keyPath), minVersion: "TLSv1.2" }, (request, response) => {',
+  '  if (request.method !== "GET" || request.url !== "/version" || request.headers.authorization !== `Bearer ${token}`) { response.writeHead(401).end(); return; }',
+  '  response.setHeader("content-type", "application/json");',
+  '  response.end(JSON.stringify({ major: "1", minor: "34+", gitVersion: "v1.34.2", platform: "linux/arm64" }));',
+  '});',
   'server.listen(0, "0.0.0.0", () => { writeFileSync(portPath, String(server.address().port)); chmodSync(portPath, 0o600); });',
   'process.on("SIGTERM", () => process.exit(0));',
 ].join("\n") + "\n");
@@ -281,6 +305,7 @@ const values = [
   `CLOUD_AGENTS_RUNTIME_ENV_FILE=${state}/runtime.env`,
   `CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR=${state}/provider-credentials`,
   `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR=${state}/docker-target-credentials`,
+  `CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR=${state}/kubernetes-target-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR=${state}/control-plane-tls`,
   `CLOUD_AGENTS_WORKER_TLS_DIR=${state}/worker-tls`,
   "CLOUD_AGENTS_WORKER_ENDPOINT=https://worker:8091",
@@ -301,14 +326,17 @@ chmodSync(`${state}/runtime.env`, 0o444);
 chmodSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
 chmodSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
 chmodSync(`${state}/target-worker-credentials/admission-token`, 0o400);
+chmodSync(`${state}/kubernetes-target-credentials/kubernetes-compose-target.token`, 0o400);
 chmodSync(`${state}/docker-proxy.mjs`, 0o400);
+chmodSync(`${state}/kubernetes-api.mjs`, 0o400);
 chmodSync(`${state}/token`, 0o600);
 chmodSync(`${state}/compose.env`, 0o600);
 NODE
 
 chmod 0444 "$smoke_directory"/target-worker-credentials/server.* \
   "$smoke_directory"/target-worker-credentials/client-ca.crt \
-  "$smoke_directory"/docker-target-credentials/docker-compose-target/*.pem
+  "$smoke_directory"/docker-target-credentials/docker-compose-target/*.pem \
+  "$smoke_directory"/kubernetes-target-credentials/kubernetes-compose-target.ca.crt
 
 docker_proxy_port_file="$smoke_directory/docker-proxy.port"
 node "$smoke_directory/docker-proxy.mjs" "$docker_socket" \
@@ -327,6 +355,26 @@ done
 docker_proxy_port=$(cat "$docker_proxy_port_file")
 case "$docker_proxy_port" in
   '' | *[!0-9]*) echo "Docker target mTLS proxy returned an invalid port" >&2; exit 1 ;;
+esac
+
+kubernetes_api_port_file="$smoke_directory/kubernetes-api.port"
+node "$smoke_directory/kubernetes-api.mjs" \
+  "$smoke_directory/docker-target-server.crt" "$smoke_directory/docker-target-server.key" \
+  "$smoke_directory/kubernetes-target-credentials/kubernetes-compose-target.token" \
+  "$kubernetes_api_port_file" &
+kubernetes_api_pid=$!
+attempt=0
+while [ ! -s "$kubernetes_api_port_file" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 50 ] || ! kill -0 "$kubernetes_api_pid" 2>/dev/null; then
+    echo "Kubernetes target API smoke server did not start" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+kubernetes_api_port=$(cat "$kubernetes_api_port_file")
+case "$kubernetes_api_port" in
+  '' | *[!0-9]*) echo "Kubernetes target API smoke server returned an invalid port" >&2; exit 1 ;;
 esac
 test "$(curl --silent --show-error --fail \
   --cacert "$smoke_directory/docker-target-ca.crt" \
@@ -445,6 +493,29 @@ project_output=$(cloud_agentsctl --request-id compose-smoke-project-create \
   --display-name "Compose Smoke Project" --organization-id organization-compose-smoke)
 project_id=$(printf '%s' "$project_output" | node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.metadata.uid)')
 case "$project_id" in project-*) ;; *) echo "Compose project id is invalid" >&2; exit 1 ;; esac
+
+kubernetes_target_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+  --request-id compose-smoke-kubernetes-target-register --idempotency-key compose-smoke-kubernetes-target-register \
+  target register --target-name kubernetes-compose-target --kind kubernetes \
+  --target-endpoint "https://host.docker.internal:$kubernetes_api_port" \
+  --credential-ref kubernetes-compose-target)
+case "$kubernetes_target_output" in
+  *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"unprobed"'*) ;;
+  *) echo "Compose Kubernetes target was not registered" >&2; exit 1 ;;
+esac
+kubernetes_probe_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+  --request-id compose-smoke-kubernetes-target-probe --idempotency-key compose-smoke-kubernetes-target-probe \
+  target probe --expected-generation 1)
+case "$kubernetes_probe_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"apiVersion":"1.34"'*'"engineVersion":"v1.34.2"'*'"os":"linux"'*'"architecture":"arm64"'*) ;;
+  *) echo "Compose Kubernetes target probe did not become ready" >&2; exit 1 ;;
+esac
+kubernetes_target_get_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+  --request-id compose-smoke-kubernetes-target-get target get)
+case "$kubernetes_target_get_output" in
+  *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
+  *) echo "Compose Kubernetes target ready state was not persisted" >&2; exit 1 ;;
+esac
 
 target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
   --request-id compose-smoke-target-register --idempotency-key compose-smoke-target-register \

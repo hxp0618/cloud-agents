@@ -58,6 +58,9 @@ controlPlane:
   workerSPIFFEID: spiffe://cloud-agents.example/worker
   resources: {}
 
+deploymentTargets:
+  kubernetesCredentialSecretName: ""
+
 worker:
   replicas: 1
   service:
