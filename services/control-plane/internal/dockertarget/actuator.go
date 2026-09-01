@@ -62,7 +62,7 @@ type DeployResult struct {
 	WorkerServerName string
 }
 
-type deploymentConfig struct {
+type DeploymentConfig struct {
 	WorkerImageRepository string `json:"workerImageRepository"`
 	WorkerCredentialRef   string `json:"workerCredentialRef"`
 	WorkerSPIFFEID        string `json:"workerSpiffeId"`
@@ -85,7 +85,7 @@ type containerInspect struct {
 }
 
 func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
-	if ctx == nil || request.validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
+	if ctx == nil || request.Validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
 		return DeployResult{}, ErrDeploymentConfigInvalid
 	}
 	config, err := directory.readDeploymentConfig(credentialRef)
@@ -103,7 +103,7 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 	if err := requireVolume(ctx, client, base, request.ProviderCredentialRef); err != nil {
 		return DeployResult{}, err
 	}
-	labels := deploymentLabels(request, config)
+	labels := DeploymentLabels(request, config)
 	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
 	containerID, err := ensureWorkerContainer(ctx, client, base, request, config, image, labels)
 	if err != nil {
@@ -150,7 +150,7 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 }
 
 func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest) error {
-	if ctx == nil || request.validate() != nil {
+	if ctx == nil || request.Validate() != nil {
 		return ErrDeploymentConfigInvalid
 	}
 	config, err := directory.readDeploymentConfig(credentialRef)
@@ -165,7 +165,7 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 	return cleanupWorkerContainer(ctx, client, base, request, config)
 }
 
-func cleanupWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config deploymentConfig) error {
+func cleanupWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig) error {
 	containerID, err := findWorkerContainer(ctx, client, base, request)
 	if err != nil || containerID == "" {
 		return err
@@ -179,13 +179,13 @@ func cleanupWorkerContainer(ctx context.Context, client *http.Client, base strin
 		return nil
 	}
 	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
-	if inspect.Config.Image != image || !exactLabels(inspect.Config.Labels, deploymentLabels(request, config)) {
+	if inspect.Config.Image != image || !exactLabels(inspect.Config.Labels, DeploymentLabels(request, config)) {
 		return ErrDeploymentConflict
 	}
 	return removeWorkerContainer(ctx, client, base, containerID)
 }
 
-func (request DeployRequest) validate() error {
+func (request DeployRequest) Validate() error {
 	for path, value := range map[string]string{"/tenantId": request.TenantID, "/projectId": request.ProjectID, "/targetId": request.TargetID, "/leaseId": request.LeaseID, "/providerCredentialRef": request.ProviderCredentialRef} {
 		if commonv1alpha1.ValidateIdentifier(value, path) != nil {
 			return ErrDeploymentConfigInvalid
@@ -202,29 +202,29 @@ func (request DeployRequest) validate() error {
 	return nil
 }
 
-func (directory *CredentialDirectory) readDeploymentConfig(credentialRef string) (deploymentConfig, error) {
+func (directory *CredentialDirectory) readDeploymentConfig(credentialRef string) (DeploymentConfig, error) {
 	if directory == nil || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
-		return deploymentConfig{}, ErrDeploymentConfigInvalid
+		return DeploymentConfig{}, ErrDeploymentConfigInvalid
 	}
 	root, err := os.OpenRoot(directory.path)
 	if err != nil {
-		return deploymentConfig{}, ErrDeploymentConfigUnavailable
+		return DeploymentConfig{}, ErrDeploymentConfigUnavailable
 	}
 	defer root.Close()
 	value, err := readCredential(root, filepath.Join(credentialRef, "deployment.json"))
 	if err != nil {
-		return deploymentConfig{}, ErrDeploymentConfigUnavailable
+		return DeploymentConfig{}, ErrDeploymentConfigUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(value))
 	decoder.DisallowUnknownFields()
-	var config deploymentConfig
-	if decoder.Decode(&config) != nil || decoder.Decode(&struct{}{}) != io.EOF || !validDeploymentConfig(config) {
-		return deploymentConfig{}, ErrDeploymentConfigInvalid
+	var config DeploymentConfig
+	if decoder.Decode(&config) != nil || decoder.Decode(&struct{}{}) != io.EOF || !config.Valid() {
+		return DeploymentConfig{}, ErrDeploymentConfigInvalid
 	}
 	return config, nil
 }
 
-func validDeploymentConfig(config deploymentConfig) bool {
+func (config DeploymentConfig) Valid() bool {
 	parsed, err := url.Parse(config.WorkerSPIFFEID)
 	return imageRepositoryPattern.MatchString(config.WorkerImageRepository) && volumeNamePattern.MatchString(config.WorkerCredentialRef) &&
 		err == nil && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
@@ -236,7 +236,7 @@ func spiffeTrustDomain(identity string) string {
 	return parsed.Host
 }
 
-func deploymentLabels(request DeployRequest, config deploymentConfig) map[string]string {
+func DeploymentLabels(request DeployRequest, config DeploymentConfig) map[string]string {
 	return map[string]string{
 		"cloud-agents.dev/managed":                 "true",
 		"cloud-agents.dev/tenant":                  request.TenantID,
@@ -295,7 +295,7 @@ func findWorkerContainer(ctx context.Context, client *http.Client, base string, 
 	return "", nil
 }
 
-func ensureWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config deploymentConfig, image string, labels map[string]string) (string, error) {
+func ensureWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string) (string, error) {
 	containerID, err := findWorkerContainer(ctx, client, base, request)
 	if err != nil || containerID != "" {
 		return containerID, err
@@ -312,7 +312,7 @@ func ensureWorkerContainer(ctx context.Context, client *http.Client, base string
 	return containerID, nil
 }
 
-func createWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config deploymentConfig, image string, labels map[string]string) (string, error) {
+func createWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string) (string, error) {
 	body := map[string]any{
 		"Image": image,
 		"User":  "1000:1000",
@@ -355,14 +355,14 @@ func createWorkerContainer(ctx context.Context, client *http.Client, base string
 	var response struct {
 		ID string `json:"Id"`
 	}
-	createURL := base + "/containers/create?name=" + url.QueryEscape(workerContainerName(request))
+	createURL := base + "/containers/create?name=" + url.QueryEscape(WorkerContainerName(request))
 	if err := dockerJSON(ctx, client, http.MethodPost, createURL, body, http.StatusCreated, &response); err != nil || response.ID == "" {
 		return "", ErrDeploymentFailed
 	}
 	return response.ID, nil
 }
 
-func workerContainerName(request DeployRequest) string {
+func WorkerContainerName(request DeployRequest) string {
 	digest := fnv.New64a()
 	for _, value := range []string{request.TenantID, request.ProjectID, request.LeaseID} {
 		_, _ = digest.Write([]byte(value))

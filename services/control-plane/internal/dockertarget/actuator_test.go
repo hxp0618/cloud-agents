@@ -18,11 +18,11 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 		ReleaseDigest: "sha256:" + strings.Repeat("a", 64), ProviderCredentialRef: "provider-alpha",
 		CPULimitMillis: 1500, MemoryLimitBytes: 512 << 20,
 	}
-	config := deploymentConfig{
+	config := DeploymentConfig{
 		WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha",
 		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
 	}
-	labels := deploymentLabels(request, config)
+	labels := DeploymentLabels(request, config)
 	var create map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
 		switch {
@@ -31,7 +31,7 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/json":
 			_, _ = writer.Write([]byte("[]"))
 		case httpRequest.Method == http.MethodPost && httpRequest.URL.Path == "/containers/create":
-			if httpRequest.URL.Query().Get("name") != workerContainerName(request) {
+			if httpRequest.URL.Query().Get("name") != WorkerContainerName(request) {
 				t.Errorf("container name = %q", httpRequest.URL.Query().Get("name"))
 			}
 			if err := json.NewDecoder(httpRequest.Body).Decode(&create); err != nil {
@@ -114,7 +114,7 @@ func TestEnsureWorkerContainerReconcilesConcurrentCreate(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	containerID, err := ensureWorkerContainer(context.Background(), server.Client(), server.URL, request, deploymentConfig{}, "image", nil)
+	containerID, err := ensureWorkerContainer(context.Background(), server.Client(), server.URL, request, DeploymentConfig{}, "image", nil)
 	if err != nil || containerID != "container-winner" || listCalls != 2 {
 		t.Fatalf("container = %q, list calls = %d, error = %v", containerID, listCalls, err)
 	}
@@ -144,7 +144,7 @@ func TestCredentialDirectoryReadsNonSecretDeploymentDescriptor(t *testing.T) {
 	if _, err := directory.readDeploymentConfig("docker-alpha"); err != ErrDeploymentConfigInvalid {
 		t.Fatalf("secret field error = %v", err)
 	}
-	if validDeploymentConfig(deploymentConfig{WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker\nexample.test"}) {
+	if (DeploymentConfig{WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker\nexample.test"}).Valid() {
 		t.Fatal("accepted Worker server name with a control character")
 	}
 }
@@ -155,11 +155,11 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 		TargetGeneration: 1, LeaseGeneration: 1, ReleaseDigest: "sha256:" + strings.Repeat("a", 64),
 		ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
 	}
-	config := deploymentConfig{
+	config := DeploymentConfig{
 		WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha",
 		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
 	}
-	ownedImage, ownedLabels := config.WorkerImageRepository+"@"+request.ReleaseDigest, deploymentLabels(request, config)
+	ownedImage, ownedLabels := config.WorkerImageRepository+"@"+request.ReleaseDigest, DeploymentLabels(request, config)
 	present, deletes := true, 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
 		switch {

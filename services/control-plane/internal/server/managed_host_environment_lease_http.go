@@ -18,6 +18,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
@@ -41,15 +42,16 @@ type ManagedHostEnvironmentLeaseHTTPServer struct {
 	store                 managedHostEnvironmentLeaseStore
 	dockerCredentials     *dockertarget.CredentialDirectory
 	kubernetesCredentials *kubernetestarget.CredentialDirectory
+	sshCredentials        *sshtarget.CredentialDirectory
 	workerTrust           dockertarget.WorkerTrust
 	kubernetesWorkerTrust kubernetestarget.WorkerTrust
 }
 
-func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, kubernetesCredentials *kubernetestarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
+func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, kubernetesCredentials *kubernetestarget.CredentialDirectory, sshCredentials *sshtarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("managed host environment lease HTTP server configuration is invalid")
 	}
-	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, kubernetesCredentials: kubernetesCredentials, workerTrust: workerTrust, kubernetesWorkerTrust: kubernetestarget.WorkerTrust{ClientCertificate: workerTrust.ClientCertificate, RootCAs: workerTrust.RootCAs}}, nil
+	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, kubernetesCredentials: kubernetesCredentials, sshCredentials: sshCredentials, workerTrust: workerTrust, kubernetesWorkerTrust: kubernetestarget.WorkerTrust{ClientCertificate: workerTrust.ClientCertificate, RootCAs: workerTrust.RootCAs}}, nil
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -152,7 +154,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 		writePublicProblem(writer, status, code)
 		return
 	}
-	if (server.dockerCredentials != nil || server.kubernetesCredentials != nil) && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
+	if (server.dockerCredentials != nil || server.kubernetesCredentials != nil || server.sshCredentials != nil) && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
 		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 		if err != nil {
 			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
@@ -171,6 +173,8 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 				completion.StableErrorCode = "docker-target-not-ready"
 			case "kubernetes":
 				completion.StableErrorCode = "kubernetes-target-not-ready"
+			case "ssh":
+				completion.StableErrorCode = "ssh-target-not-ready"
 			default:
 				completion.StableErrorCode = "target-kind-unsupported"
 			}
@@ -189,6 +193,14 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 					completion.StableErrorCode = "kubernetes-actuator-unconfigured"
 				} else if deployed, deployErr := server.kubernetesCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, result.Generation), server.kubernetesWorkerTrust); deployErr != nil {
 					completion.StableErrorCode = kubernetesDeploymentErrorCode(deployErr)
+				} else {
+					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+				}
+			case "ssh":
+				if server.sshCredentials == nil {
+					completion.StableErrorCode = "ssh-actuator-unconfigured"
+				} else if deployed, deployErr := server.sshCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation), server.workerTrust); deployErr != nil {
+					completion.StableErrorCode = sshDeploymentErrorCode(deployErr)
 				} else {
 					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
 				}
@@ -264,12 +276,12 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 		return
 	}
 	cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
-	if result.WorkerEndpoint != "" && server.dockerCredentials == nil && server.kubernetesCredentials == nil {
+	if result.WorkerEndpoint != "" && server.dockerCredentials == nil && server.kubernetesCredentials == nil && server.sshCredentials == nil {
 		cancelCleanup()
 		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
 		return
 	}
-	if result.TargetID != "" && result.ProviderCredentialRef != "" && (result.WorkerEndpoint != "" || server.dockerCredentials != nil || server.kubernetesCredentials != nil) {
+	if result.TargetID != "" && result.ProviderCredentialRef != "" && (result.WorkerEndpoint != "" || server.dockerCredentials != nil || server.kubernetesCredentials != nil || server.sshCredentials != nil) {
 		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 		if err != nil {
 			cancelCleanup()
@@ -303,12 +315,19 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 				return
 			}
 			cleanupErr = server.kubernetesCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
+		case "ssh":
+			if server.sshCredentials == nil {
+				cancelCleanup()
+				writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+				return
+			}
+			cleanupErr = server.sshCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
 		default:
 			cleanupErr = dockertarget.ErrDeploymentConflict
 		}
 		if cleanupErr != nil {
 			cancelCleanup()
-			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, kubernetestarget.ErrDeploymentConflict) {
+			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, kubernetestarget.ErrDeploymentConflict) || errors.Is(cleanupErr, sshtarget.ErrDeploymentConflict) {
 				writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
 			} else {
 				writePublicProblem(writer, http.StatusBadGateway, "environment_cleanup_failed")
@@ -401,6 +420,27 @@ func kubernetesDeploymentErrorCode(err error) string {
 		return "kubernetes-worker-unavailable"
 	default:
 		return "kubernetes-deployment-failed"
+	}
+}
+
+func sshDeploymentErrorCode(err error) string {
+	switch {
+	case errors.Is(err, sshtarget.ErrHostKeyMismatch):
+		return "ssh-host-key-mismatch"
+	case errors.Is(err, sshtarget.ErrCredentialUnavailable), errors.Is(err, sshtarget.ErrCredentialInvalid):
+		return "ssh-credential-unavailable"
+	case errors.Is(err, sshtarget.ErrUnavailable):
+		return "ssh-target-unavailable"
+	case errors.Is(err, sshtarget.ErrDeploymentConfigUnavailable):
+		return "ssh-deployment-config-unavailable"
+	case errors.Is(err, sshtarget.ErrDeploymentConfigInvalid):
+		return "ssh-deployment-config-invalid"
+	case errors.Is(err, sshtarget.ErrDeploymentConflict):
+		return "ssh-deployment-conflict"
+	case errors.Is(err, sshtarget.ErrWorkerUnavailable):
+		return "ssh-worker-unavailable"
+	default:
+		return "ssh-deployment-failed"
 	}
 }
 

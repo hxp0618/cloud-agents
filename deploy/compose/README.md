@@ -125,6 +125,17 @@ returns their contents in target state, events, logs, or errors. Helm
 installations can mount the same layout from
 `deploymentTargets.sshCredentialSecretName`.
 
+SSH Environment Leases use the target host's existing Docker installation.
+Add `<credentialRef>.deployment.json` with the same non-secret
+`workerImageRepository`, `workerCredentialRef`, `workerSpiffeId`, and
+`workerServerName` fields used by a Docker target. The host must already contain
+the exact Worker image and the named Worker/provider credential volumes. A
+Lease starts the same read-only Worker image with an isolated workspace volume,
+the requested CPU/memory limits, generation labels, and `unless-stopped`
+restart policy. Exact retries reuse the owned container; termination removes it
+and its anonymous workspace volume. A container with mismatched ownership,
+generation, image, or credential references is never replaced or deleted.
+
 After a target is ready, run `cloud-agentsctl ... target cleanup
 --expected-generation GENERATION` to remove stale managed Deployments, Services,
 and PVCs. Cleanup retains every exact active Environment Lease, validates the
