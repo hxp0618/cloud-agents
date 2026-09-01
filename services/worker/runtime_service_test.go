@@ -56,10 +56,16 @@ func TestRuntimeFencingRequiresConfiguredToken(t *testing.T) {
 func TestRuntimeArtifactReadIsBoundedToCandidateRoot(t *testing.T) {
 	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
 	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor", TrustDomain: "cloud-agents.test"}
+	runtimeRoot := t.TempDir()
+	root := filepath.Join(runtimeRoot, "tenants", "tenant-alpha", "sessions", "session-alpha", "workspace")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	service, err := NewService(Config{
 		WorkerIdentity: workerIdentity, Capabilities: []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION},
 		IdentityProvider: StaticIdentityProvider{Identity: supervisorIdentity}, AdmissionLeaseID: "lease-artifact", AdmissionGeneration: 7,
 		AdmissionToken: []byte("artifact-token"), NegotiationTTL: time.Minute,
+		RuntimeCommand: []string{os.Args[0]}, RuntimeDirectory: runtimeRoot,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +87,6 @@ func TestRuntimeArtifactReadIsBoundedToCandidateRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
 	contents := []byte("artifact bytes")
 	if err := os.WriteFile(filepath.Join(root, "result.txt"), contents, 0o600); err != nil {
 		t.Fatal(err)
@@ -99,22 +104,35 @@ func TestRuntimeArtifactReadIsBoundedToCandidateRoot(t *testing.T) {
 	if err != nil || !stream.Receive() || string(stream.Msg().GetData()) != string(contents) || stream.Msg().GetSizeBytes() != size || stream.Receive() || stream.Err() != nil {
 		t.Fatalf("artifact stream=%v err=%v streamErr=%v", stream, err, stream.Err())
 	}
-	outside := filepath.Join(t.TempDir(), "outside.txt")
+	outsideRoot := t.TempDir()
+	outside := filepath.Join(outsideRoot, "outside.txt")
 	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
 		t.Fatal(err)
 	}
-	for _, relativePath := range []string{"../outside.txt", "escape"} {
-		rejected, callErr := runtimeClient.ReadArtifact(context.Background(), connect.NewRequest(request(relativePath)))
+	if err := os.Symlink(outsideRoot, filepath.Join(runtimeRoot, "escaped-root")); err != nil {
+		t.Fatal(err)
+	}
+	outsideRequest := request("outside.txt")
+	outsideRequest.RootDirectory = outsideRoot
+	escapedRootRequest := request("outside.txt")
+	escapedRootRequest.RootDirectory = filepath.Join(runtimeRoot, "escaped-root")
+	for name, unsafeRequest := range map[string]*workerruntimev1alpha1.RuntimeArtifactReadRequest{
+		"parent traversal": request("../outside.txt"),
+		"file symlink":     request("escape"),
+		"outside root":     outsideRequest,
+		"root symlink":     escapedRootRequest,
+	} {
+		rejected, callErr := runtimeClient.ReadArtifact(context.Background(), connect.NewRequest(unsafeRequest))
 		if callErr == nil {
 			for rejected.Receive() {
 			}
 			callErr = rejected.Err()
 		}
 		if callErr == nil {
-			t.Fatalf("unsafe path %q was accepted", relativePath)
+			t.Fatalf("unsafe Artifact %q was accepted", name)
 		}
 	}
 }

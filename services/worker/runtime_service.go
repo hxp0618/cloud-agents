@@ -214,12 +214,16 @@ func (s *Service) ReadArtifact(ctx context.Context, request *connect.Request[wor
 	if err := validateIdentifier(message.GetExecutionId(), "execution_id"); err != nil || message.GetGeneration() == 0 || message.GetGeneration() != message.GetFencing().GetGeneration() || !validRuntimeArtifactRoot(message.GetRootDirectory()) || !validRuntimeArtifactPath(message.GetRelativePath()) || message.GetExpectedSha256() != "" && !runtimeArtifactSHA256Pattern.MatchString(message.GetExpectedSha256()) {
 		return runtimeSessionFailure(connect.CodeInvalidArgument, "artifact_request_invalid", "Artifact identity or path is invalid")
 	}
-	root, err := os.OpenRoot(message.GetRootDirectory())
+	artifactPath, ok := runtimeArtifactPath(s.runtimeDirectory, message.GetRootDirectory(), message.GetRelativePath())
+	if !ok {
+		return runtimeSessionFailure(connect.CodePermissionDenied, "artifact_root_forbidden", "Artifact root is outside the configured Runtime directory")
+	}
+	root, err := os.OpenRoot(s.runtimeDirectory)
 	if err != nil {
 		return runtimeSessionFailure(connect.CodeNotFound, "artifact_root_unavailable", "Artifact root is unavailable")
 	}
 	defer root.Close()
-	file, err := root.Open(message.GetRelativePath())
+	file, err := root.Open(artifactPath)
 	if err != nil {
 		return runtimeSessionFailure(connect.CodeNotFound, "artifact_unavailable", "Artifact is unavailable")
 	}
@@ -274,6 +278,17 @@ func validRuntimeArtifactRoot(value string) bool {
 
 func validRuntimeArtifactPath(value string) bool {
 	return value != "" && len(value) <= 4096 && value != "." && !strings.Contains(value, `\`) && filepath.IsLocal(value) && filepath.Clean(value) == value && !runtimePathHasControl(value)
+}
+
+func runtimeArtifactPath(runtimeDirectory, artifactRoot, relativePath string) (string, bool) {
+	if !validRuntimeArtifactRoot(runtimeDirectory) {
+		return "", false
+	}
+	relativeRoot, err := filepath.Rel(filepath.Clean(runtimeDirectory), filepath.Clean(artifactRoot))
+	if err != nil || relativeRoot == ".." || strings.HasPrefix(relativeRoot, ".."+string(filepath.Separator)) || filepath.IsAbs(relativeRoot) {
+		return "", false
+	}
+	return filepath.Join(relativeRoot, relativePath), true
 }
 
 func runtimePathHasControl(value string) bool {

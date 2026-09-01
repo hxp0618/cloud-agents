@@ -55,6 +55,7 @@ type productionWorkerConfig struct {
 	clientCAFile               string
 	workerSPIFFE               string
 	runtimeCommand             string
+	runtimeDirectory           string
 	runtimeMaxSessions         int
 	runtimeCredentialDirectory string
 	admissionLeaseID           string
@@ -71,6 +72,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	clientCA := set.String("client-ca", "", "client CA certificate PEM file")
 	workerSPIFFE := set.String("worker-spiffe-id", "", "worker SPIFFE identity")
 	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
+	runtimeDirectory := set.String("runtime-directory", "", "absolute Runtime workspace root")
 	runtimeMaxSessions := set.Int("runtime-max-sessions", workerkernel.DefaultRuntimeMaxSessions, "maximum concurrent Runtime sessions")
 	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "directory containing <providerKind>.json credentials")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
@@ -92,7 +94,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	if getenv != nil {
 		admissionToken = []byte(getenv(admissionTokenEnvironment))
 	}
-	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
+	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
 	if err := validateProductionWorkerConfig(cfg); err != nil {
 		return productionWorkerConfig{}, err
 	}
@@ -100,10 +102,10 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 }
 
 func validateProductionWorkerConfig(cfg productionWorkerConfig) error {
-	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || cfg.runtimeMaxSessions < 1 || cfg.runtimeMaxSessions > workerkernel.MaxRuntimeSessions || !filepath.IsAbs(cfg.runtimeCredentialDirectory) || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
+	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || !filepath.IsAbs(cfg.runtimeDirectory) || filepath.Clean(cfg.runtimeDirectory) == string(filepath.Separator) || cfg.runtimeMaxSessions < 1 || cfg.runtimeMaxSessions > workerkernel.MaxRuntimeSessions || !filepath.IsAbs(cfg.runtimeCredentialDirectory) || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
 		return errInvalidProductionWorkerConfig
 	}
-	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
+	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.runtimeDirectory) != cfg.runtimeDirectory || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
 		return errInvalidProductionWorkerConfig
 	}
 	if _, err := productionIdentity(cfg.workerSPIFFE); err != nil {
@@ -173,6 +175,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		Capabilities:               productionWorkerCapabilities(),
 		IdentityProvider:           workerkernel.TLSIdentityProvider{},
 		RuntimeCommand:             []string{cfg.runtimeCommand},
+		RuntimeDirectory:           cfg.runtimeDirectory,
 		RuntimeMaxSessions:         cfg.runtimeMaxSessions,
 		RuntimeEnvironment:         productionRuntimeEnvironment(os.Environ()),
 		RuntimeCredentialDirectory: cfg.runtimeCredentialDirectory,

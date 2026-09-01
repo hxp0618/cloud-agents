@@ -29,7 +29,7 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	if _, err := parseProductionWorkerConfig(nil, nil); !errors.Is(err, errInvalidProductionWorkerConfig) {
 		t.Fatalf("missing TLS config error = %v", err)
 	}
-	base := []string{"--tls-cert", "server.pem", "--tls-key", "server.key", "--client-ca", "clients.pem", "--provider-credential-directory", "/run/cloud-agents/provider-credentials"}
+	base := []string{"--tls-cert", "server.pem", "--tls-key", "server.key", "--client-ca", "clients.pem", "--runtime-directory", "/workspace", "--provider-credential-directory", "/run/cloud-agents/provider-credentials"}
 	for _, address := range []string{"127.0.0.1:0", ":not-a-port", ":65536", "worker.example"} {
 		args := append([]string{"--listen", address}, base...)
 		if _, err := parseProductionWorkerConfig(args, nil); !errors.Is(err, errInvalidProductionWorkerConfig) {
@@ -58,6 +58,11 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	}
 	if _, err := parseProductionWorkerConfig(append(validArgs, "--provider-credential-directory", "relative"), func(string) string { return "admission-token" }); !errors.Is(err, errInvalidProductionWorkerConfig) {
 		t.Fatalf("relative Provider credential directory error = %v", err)
+	}
+	for _, directory := range []string{"relative", "/"} {
+		if _, err := parseProductionWorkerConfig(append(validArgs, "--runtime-directory", directory), func(string) string { return "admission-token" }); !errors.Is(err, errInvalidProductionWorkerConfig) {
+			t.Fatalf("Runtime directory %q error = %v", directory, err)
+		}
 	}
 	for _, identity := range []string{"", "https://cloud-agents.example/worker", "spiffe://", "spiffe://cloud-agents.example/worker?bad=1"} {
 		args := append(append([]string{}, base...), "--worker-spiffe-id", identity, "--runtime-command", "/opt/cloud-agents/runtime", "--admission-lease-id", "lease-production", "--admission-generation", "7")

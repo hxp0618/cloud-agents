@@ -15,6 +15,7 @@ for image in control-plane worker migrate; do
 done
 grep -Fq "fsGroup: 1000" "$rendered"
 grep -Fq "mountPath: /workspace" "$rendered"
+grep -A1 -F -- "- --runtime-directory" "$rendered" | grep -Fq -- '- /workspace'
 grep -Fq "mountPath: /tmp" "$rendered"
 grep -Fq "emptyDir: {}" "$rendered"
 grep -A1 -F -- "- --runtime-max-sessions" "$rendered" | grep -Fq -- '- "4"'

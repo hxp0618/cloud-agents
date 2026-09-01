@@ -191,6 +191,8 @@ services:
       - "${CLOUD_AGENTS_WORKER_SPIFFE_ID:?set the Worker SPIFFE identity}"
       - "--runtime-command"
       - "/usr/local/bin/cloud-agent-runtime"
+      - "--runtime-directory"
+      - "/workspace"
       - "--runtime-max-sessions"
       - "${CLOUD_AGENTS_RUNTIME_MAX_SESSIONS:-4}"
       - "--provider-credential-directory"

@@ -59,6 +59,8 @@ spec:
             - {{ .Values.controlPlane.workerSPIFFEID | quote }}
             - --runtime-command
             - /usr/local/bin/cloud-agent-runtime
+            - --runtime-directory
+            - /workspace
             - --runtime-max-sessions
             - {{ .Values.runtime.maxSessions | quote }}
             - --provider-credential-directory
