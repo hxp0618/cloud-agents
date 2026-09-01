@@ -19,6 +19,7 @@ cloud_agentsctl=${CLOUD_AGENTSCTL-cloud-agentsctl}
 kubectl=${KUBECTL-kubectl}
 ca_file=${CLOUD_AGENTS_CA_FILE-}
 target_name=${CLOUD_AGENTS_TARGET_NAME-$CLOUD_AGENTS_TARGET_ID}
+script_directory=$(CDPATH= cd "$(dirname "$0")" && pwd)
 
 if [ ! -f "$CLOUD_AGENTS_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_KUBECONFIG" ] || [ -e "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ] || [ "${#CLOUD_AGENTS_TARGET_ID}" -gt 90 ]; then
   echo "token file and kubeconfig must exist, target id must be at most 90 characters, and CLOUD_AGENTS_E2E_OUTPUT_DIR must be new" >&2
@@ -158,6 +159,8 @@ sleep 2
 run_real_turn codex "$codex_session" after-restart
 create_session claudeAgent "$claude_session"
 run_real_turn claudeAgent "$claude_session" after-restart
+CLOUD_AGENTS_E2E_LEASE_ID="$lease_id" CLOUD_AGENTS_E2E_RUN_ID="$run_id" \
+  sh "$script_directory/test-platform-agent-interactions.sh"
 
 for session_id in "$codex_session" "$claude_session"; do
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --request-id "$session_id-close" \

@@ -151,6 +151,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/worker.Dockerfile",
+    "scripts/test-platform-agent-interactions.sh",
     "scripts/test-platform-kubernetes-target.sh",
     "scripts/test-platform-ssh-target.sh",
     ...readTree(root, "deploy/helm/cloud-agents"),
