@@ -6,7 +6,6 @@ repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 postgres_image=${CLOUD_AGENTS_DEV_POSTGRES_IMAGE:-postgres:17.6-bookworm}
 control_plane_listen=${CLOUD_AGENTS_DEV_CONTROL_PLANE_LISTEN:-127.0.0.1:8080}
 worker_listen=${CLOUD_AGENTS_DEV_WORKER_LISTEN:-127.0.0.1:8091}
-workspace_directory=${CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY:-$repository_root}
 credential_directory=${CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR:-}
 runtime_max_sessions=${CLOUD_AGENTS_DEV_RUNTIME_MAX_SESSIONS:-4}
 run_id="${UID:-0}-$$"
@@ -34,6 +33,11 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT INT TERM HUP
+
+workspace_directory=${CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY:-$state_directory/workspace}
+if [[ -z ${CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY:-} ]]; then
+  mkdir -p "$workspace_directory"
+fi
 
 for command in bun curl docker go node od; do
   if ! command -v "$command" >/dev/null 2>&1; then
