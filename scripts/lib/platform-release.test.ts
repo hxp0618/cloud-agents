@@ -130,6 +130,7 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
       "scripts/test-platform-kubernetes-target.sh",
+      "scripts/test-platform-ssh-target.sh",
     ]);
   });
 

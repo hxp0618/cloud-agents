@@ -155,6 +155,18 @@ Codex Turn, restarts the Worker Deployment, resumes the Codex Session, runs a
 real Claude Turn, validates downloaded Artifacts, terminates twice to verify
 idempotency, runs orphan cleanup, and retains non-secret JSON/JSONL results.
 
+Run the real SSH target acceptance with
+`sh scripts/test-platform-ssh-target.sh`. It uses the same Control Plane inputs
+plus `CLOUD_AGENTS_PROVIDER_VOLUME_REF`, `CLOUD_AGENTS_SSH_HOST`,
+`CLOUD_AGENTS_SSH_USER`, `CLOUD_AGENTS_SSH_IDENTITY_FILE`, and
+`CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE`; set `CLOUD_AGENTS_SSH_PORT` when it is not
+22. The operator key is read only by OpenSSH with `IdentitiesOnly` and strict
+host-key checking. The script replays deployment, runs a real Codex Turn,
+restarts and reconnects to the remote Worker, resumes the Codex Session, runs a
+real Claude Turn, validates events and Artifacts, terminates twice, and verifies
+remote cleanup. The mounted Control Plane credential reference, target volumes,
+and Worker image must already satisfy the SSH target layout above.
+
 The source checkout's packaged Compose smoke keeps its default no-credential
 `provider_not_installed` check. To additionally run one real Codex Turn and one
 real Claude Code Turn against its independently registered Docker target, pass
