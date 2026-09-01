@@ -31,6 +31,7 @@ import (
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -468,14 +469,17 @@ func run(ctx context.Context, args []string) error {
 			projectHTTPServer.ServeHTTP(writer, request)
 		}))
 	}
-	healthCheck := pool.Ping
-	if runtimeSupervisor != nil {
-		healthCheck = func(ctx context.Context) error {
-			if err := pool.Ping(ctx); err != nil {
-				return err
-			}
+	healthCheck := func(ctx context.Context) error {
+		if err := pool.Ping(ctx); err != nil {
+			return err
+		}
+		if err := localmigration.CheckProductSchemaReadiness(ctx, pool); err != nil {
+			return err
+		}
+		if runtimeSupervisor != nil {
 			return runtimeSupervisor.CheckRuntimeHealth(ctx)
 		}
+		return nil
 	}
 	healthHTTPServer, err := server.NewLocalControlPlaneHealthHTTPServer(healthCheck)
 	if err != nil {

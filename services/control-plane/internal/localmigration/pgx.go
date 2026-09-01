@@ -44,6 +44,30 @@ func (ProductPGXConnector) Connect(ctx context.Context, databaseURL string) (Ses
 	return &pgxSession{connection: connection}, nil
 }
 
+const productSchemaReadinessSQL = `SELECT
+ count(*)::bigint,
+ COALESCE(min(migration_id), ''),
+ COALESCE(max(migration_id), ''),
+ COALESCE((SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id = $1), '')
+FROM cloud_agents.schema_migrations`
+
+// CheckProductSchemaReadiness verifies that the runtime database is exactly at
+// the current independent-product migration head.
+func CheckProductSchemaReadiness(ctx context.Context, queryer interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}) error {
+	current := productRunnerBindingSelector("000029")
+	var count int64
+	var first, last, bundleDigest string
+	if err := queryer.QueryRow(ctx, productSchemaReadinessSQL, current.schemaHead).Scan(&count, &first, &last, &bundleDigest); err != nil {
+		return errors.New("product schema is unavailable")
+	}
+	if count != int64(current.migrationCount) || first != "000001" || last != current.schemaHead || bundleDigest != current.schemaBundleDigest {
+		return errors.New("product schema is not current")
+	}
+	return nil
+}
+
 func parseLocalPGXConfig(databaseURL string) (*pgx.ConnConfig, error) {
 	config, err := pgx.ParseConfig(databaseURL)
 	if err != nil {

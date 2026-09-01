@@ -26,6 +26,7 @@ import (
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -304,6 +305,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return
 		}
 		if err := pool.Ping(request.Context()); err != nil {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if err := localmigration.CheckProductSchemaReadiness(request.Context(), pool); err != nil {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}

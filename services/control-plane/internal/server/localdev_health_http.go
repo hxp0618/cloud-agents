@@ -21,9 +21,8 @@ const (
 
 var ErrInvalidLocalControlPlaneHealthServer = errors.New("local control-plane health server configuration is invalid")
 
-// LocalControlPlaneReadinessProbe is a read-only dependency check. The
-// control-plane command supplies pgxpool.Ping; tests may inject a deterministic
-// probe. No caller input is passed to the probe.
+// LocalControlPlaneReadinessProbe is a read-only dependency check. Tests may
+// inject a deterministic probe. No caller input is passed to the probe.
 type LocalControlPlaneReadinessProbe func(context.Context) error
 
 // LocalControlPlaneHealthHTTPServer is a loopback/localdev health adapter. It
