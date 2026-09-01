@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -87,6 +88,51 @@ type authConfigKey struct {
 	NotAfter  int64           `json:"notAfter"`
 }
 
+type productionStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (writer *productionStatusWriter) WriteHeader(status int) {
+	if writer.status != 0 {
+		return
+	}
+	writer.status = status
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer *productionStatusWriter) Write(body []byte) (int, error) {
+	if writer.status == 0 {
+		writer.WriteHeader(http.StatusOK)
+	}
+	return writer.ResponseWriter.Write(body)
+}
+
+func (writer *productionStatusWriter) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
+
+func productionAccessLogHandler(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		started := time.Now()
+		writer := &productionStatusWriter{ResponseWriter: response}
+		next.ServeHTTP(writer, request)
+		status := writer.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		path := request.URL.Path
+		if status < http.StatusBadRequest && (path == "/healthz" || path == "/readyz") {
+			return
+		}
+		logger.InfoContext(request.Context(), "http request",
+			"method", request.Method,
+			"path", path,
+			"status", status,
+			"duration_ms", time.Since(started).Milliseconds(),
+			"request_id", writer.Header().Get("X-Request-ID"),
+		)
+	})
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -101,6 +147,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return err
 	}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	verifier, err := loadConfiguredVerifier(config.authPath)
 	if err != nil {
 		return err
@@ -259,7 +306,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		writer.WriteHeader(http.StatusOK)
 	})
-	httpServer := &http.Server{Addr: config.listen, Handler: mux, BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
+	httpServer := &http.Server{Addr: config.listen, Handler: productionAccessLogHandler(logger, mux), BaseContext: func(net.Listener) context.Context { return ctx }, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
 	errorChannel := make(chan error, 1)
 	go func() {
 		if config.tlsCert != "" {
@@ -275,9 +322,16 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			defer cancel()
 			return httpServer.Shutdown(shutdownContext)
 		case <-hup:
-			if refreshed, refreshErr := loadConfiguredVerifierConfig(config.authPath); refreshErr == nil {
-				_ = verifier.Reload(refreshed)
+			refreshed, refreshErr := loadConfiguredVerifierConfig(config.authPath)
+			if refreshErr != nil {
+				logger.Error("authentication reload failed", "error", refreshErr)
+				continue
 			}
+			if refreshErr = verifier.Reload(refreshed); refreshErr != nil {
+				logger.Error("authentication reload failed", "error", refreshErr)
+				continue
+			}
+			logger.Info("authentication reloaded", "generation", refreshed.Generation)
 		case err := <-errorChannel:
 			if errors.Is(err, http.ErrServerClosed) {
 				return nil

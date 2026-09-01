@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
@@ -44,6 +46,40 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 func TestParseProductionConfigRejectsPartialTLS(t *testing.T) {
 	if _, err := parseProductionConfig([]string{"--database-url", "postgres://runtime@db/cloud_agents", "--auth-config", "/etc/cloud-agents/auth.json", "--tls-cert", "/tmp/cert"}, nil); err == nil {
 		t.Fatal("expected partial TLS configuration error")
+	}
+}
+
+func TestProductionAccessLogIsCorrelatedAndDoesNotLeakRequestInputs(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	handler := productionAccessLogHandler(logger, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("X-Request-ID", "request-alpha")
+		writer.WriteHeader(http.StatusForbidden)
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects?pageToken=opaque-secret", nil)
+	request.Header.Set("Authorization", "Bearer bearer-secret")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	var event map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event["msg"] != "http request" || event["method"] != http.MethodPost || event["path"] != "/v1/tenants/tenant-alpha/projects" || event["status"] != float64(http.StatusForbidden) || event["request_id"] != "request-alpha" {
+		t.Fatalf("access log = %#v", event)
+	}
+	if _, ok := event["duration_ms"].(float64); !ok || strings.Contains(output.String(), "opaque-secret") || strings.Contains(output.String(), "bearer-secret") {
+		t.Fatalf("unsafe access log = %s", output.String())
+	}
+
+	output.Reset()
+	probe := productionAccessLogHandler(logger, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusOK) }))
+	probe.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if output.Len() != 0 {
+		t.Fatalf("successful probe was logged: %s", output.String())
+	}
+	failedProbe := productionAccessLogHandler(logger, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusServiceUnavailable) }))
+	failedProbe.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if !strings.Contains(output.String(), `"status":503`) {
+		t.Fatalf("failed probe was not logged: %s", output.String())
 	}
 }
 
