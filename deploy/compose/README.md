@@ -86,6 +86,26 @@ Claude credential envelopes. Files must be readable by container uid `1000`.
 Never put private keys, admission tokens, Provider keys, or credential payloads
 in `deployment.json`, target API bodies, or Environment Lease fields.
 
+On a fresh Docker target or on the Docker host selected by an SSH target, copy
+`scripts/prepare-platform-docker-target.sh` and run it with the immutable Worker
+image plus the two source credential directories and volume names:
+
+```sh
+CLOUD_AGENTS_WORKER_IMAGE='registry.example/cloud-agents/worker@sha256:...' \
+CLOUD_AGENTS_WORKER_CREDENTIAL_REF=cloud-agents-worker-target-a \
+CLOUD_AGENTS_WORKER_CREDENTIAL_DIR=/secure/worker-credentials \
+CLOUD_AGENTS_PROVIDER_CREDENTIAL_REF=cloud-agents-provider-tenant-a \
+CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR=/secure/provider-credentials \
+CLOUD_AGENTS_TENANT=tenant-a \
+  sh scripts/prepare-platform-docker-target.sh
+```
+
+The script pulls only the explicit digest when absent, creates the two named
+volumes, copies the credential files as uid `1000` with mode `0400`, and refuses
+to overwrite a non-empty volume. It never prints or hashes credential content.
+Run it locally on the target; SSH transport and Docker contexts remain operator
+configuration rather than API fields.
+
 For a Kubernetes deployment target, point
 `CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR` at a deployment-owned directory.
 Each `credentialRef` selects `<credentialRef>.ca.crt` and

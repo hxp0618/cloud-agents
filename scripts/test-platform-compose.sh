@@ -472,18 +472,20 @@ writeFileSync(kubernetesDescriptorPath, `${JSON.stringify({ namespace: "cloud-ag
 chmodSync(kubernetesDescriptorPath, 0o444);
 NODE
 
-docker volume create "$target_worker_credentials_volume" >/dev/null
-docker volume create "$target_provider_credentials_volume" >/dev/null
-docker run --rm --user 0 --entrypoint /bin/sh \
-  -v "$target_worker_credentials_volume:/target" \
-  -v "$smoke_directory/target-worker-credentials:/source:ro" \
-  postgres:17.6-bookworm -ec \
-  'cp /source/server.crt /source/server.key /source/client-ca.crt /source/admission-token /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
-docker run --rm --user 0 --entrypoint /bin/sh \
-  -v "$target_provider_credentials_volume:/target" \
-  -v "$smoke_directory/target-provider-credentials:/source:ro" \
-  postgres:17.6-bookworm -ec \
-  'cp /source/tenant-compose-smoke.unavailable-provider.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+prepare_target_credentials() {
+  CLOUD_AGENTS_WORKER_IMAGE="$worker_reference" \
+  CLOUD_AGENTS_WORKER_CREDENTIAL_REF="$target_worker_credentials_volume" \
+  CLOUD_AGENTS_WORKER_CREDENTIAL_DIR="$smoke_directory/target-worker-credentials" \
+  CLOUD_AGENTS_PROVIDER_CREDENTIAL_REF="$target_provider_credentials_volume" \
+  CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR="$smoke_directory/target-provider-credentials" \
+  CLOUD_AGENTS_TENANT=tenant-compose-smoke \
+    sh "$smoke_directory/deployment/scripts/prepare-platform-docker-target.sh"
+}
+prepare_target_credentials >/dev/null
+if prepare_target_credentials >/dev/null 2>&1; then
+  echo "Docker target preparation overwrote non-empty credential volumes" >&2
+  exit 1
+fi
 if [ -n "$real_provider_credentials_directory" ]; then
   docker run --rm --user 0 --entrypoint /bin/sh \
     -v "$target_provider_credentials_volume:/target" \

@@ -129,6 +129,7 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
+      "scripts/prepare-platform-docker-target.sh",
       "scripts/test-platform-agent-interactions.sh",
       "scripts/test-platform-kubernetes-target.sh",
       "scripts/test-platform-ssh-target.sh",
