@@ -50,38 +50,18 @@ func NewCredentialDirectory(path string) (*CredentialDirectory, error) {
 }
 
 func (directory *CredentialDirectory) Probe(ctx context.Context, endpoint, credentialRef string) (ProbeResult, error) {
-	if directory == nil || ctx == nil || !validEndpoint(endpoint) || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
+	if ctx == nil {
 		return ProbeResult{}, ErrInvalidEndpoint
 	}
-	root, err := os.OpenRoot(directory.path)
-	if err != nil {
-		return ProbeResult{}, ErrCredentialUnavailable
-	}
-	defer root.Close()
-	caPEM, err := readCredential(root, credentialRef+".ca.crt")
+	client, transport, base, err := directory.client(endpoint, credentialRef)
 	if err != nil {
 		return ProbeResult{}, err
-	}
-	tokenBytes, err := readCredential(root, credentialRef+".token")
-	if err != nil {
-		return ProbeResult{}, err
-	}
-	token := strings.TrimSuffix(strings.TrimSuffix(string(tokenBytes), "\n"), "\r")
-	roots := x509.NewCertPool()
-	if token == "" || strings.TrimSpace(token) != token || !roots.AppendCertsFromPEM(caPEM) {
-		return ProbeResult{}, ErrCredentialInvalid
-	}
-	transport := &http.Transport{
-		DisableCompression: true, ResponseHeaderTimeout: 10 * time.Second,
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
 	}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrInvalidResponse }}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(endpoint, "/")+"/version", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/version", nil)
 	if err != nil {
 		return ProbeResult{}, ErrInvalidEndpoint
 	}
-	request.Header.Set("Authorization", "Bearer "+token)
 	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -116,6 +96,47 @@ func (directory *CredentialDirectory) Probe(ctx context.Context, endpoint, crede
 		return ProbeResult{}, ErrInvalidResponse
 	}
 	return ProbeResult{APIVersion: version.Major + "." + minor, EngineVersion: version.GitVersion, OS: targetOS, Architecture: architecture}, nil
+}
+
+func (directory *CredentialDirectory) client(endpoint, credentialRef string) (*http.Client, *http.Transport, string, error) {
+	if directory == nil || !validEndpoint(endpoint) || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
+		return nil, nil, "", ErrInvalidEndpoint
+	}
+	root, err := os.OpenRoot(directory.path)
+	if err != nil {
+		return nil, nil, "", ErrCredentialUnavailable
+	}
+	defer root.Close()
+	caPEM, err := readCredential(root, credentialRef+".ca.crt")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	tokenBytes, err := readCredential(root, credentialRef+".token")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	token := strings.TrimSuffix(strings.TrimSuffix(string(tokenBytes), "\n"), "\r")
+	roots := x509.NewCertPool()
+	if token == "" || strings.TrimSpace(token) != token || !roots.AppendCertsFromPEM(caPEM) {
+		return nil, nil, "", ErrCredentialInvalid
+	}
+	transport := &http.Transport{
+		DisableCompression: true, ResponseHeaderTimeout: 10 * time.Second,
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
+	}
+	client := &http.Client{Transport: bearerTransport{base: transport, token: token}, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrInvalidResponse }}
+	return client, transport, strings.TrimSuffix(endpoint, "/"), nil
+}
+
+type bearerTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (transport bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	copy := request.Clone(request.Context())
+	copy.Header.Set("Authorization", "Bearer "+transport.token)
+	return transport.base.RoundTrip(copy)
 }
 
 func validEndpoint(value string) bool {

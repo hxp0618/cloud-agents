@@ -89,9 +89,28 @@ in `deployment.json`, target API bodies, or Environment Lease fields.
 For a Kubernetes deployment target, point
 `CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR` at a deployment-owned directory.
 Each `credentialRef` selects `<credentialRef>.ca.crt` and
-`<credentialRef>.token`. The token should belong to a ServiceAccount allowed to
-read the target API server's `/version` endpoint; the Control Plane sends it
-only as an HTTPS Bearer credential and never persists it in target state.
+`<credentialRef>.token`, plus this non-secret deployment descriptor:
+
+```json
+{
+  "namespace": "cloud-agents-target",
+  "workerImageRepository": "registry.example/cloud-agents/worker",
+  "workerCredentialSecretRef": "cloud-agents-worker-target-a",
+  "workerSpiffeId": "spiffe://cloud-agents.example/workers/target-a",
+  "workerServerName": "worker-target-a.example"
+}
+```
+
+Store the descriptor as `<credentialRef>.deployment.json`. The token should
+belong to a ServiceAccount allowed to GET `/version` and Secrets, and to
+GET/PATCH/DELETE Deployments, Services, and PersistentVolumeClaims in the
+configured namespace. The Control Plane sends it only as an HTTPS Bearer
+credential and never persists it in target state. Each Environment Lease uses
+Server-Side Apply to reconcile a single Worker Deployment, a 20 Gi workspace
+PVC using the namespace's default StorageClass, and a LoadBalancer Service.
+`workerCredentialSecretRef` must contain `server.crt`, `server.key`,
+`client-ca.crt`, and `admission-token`; the Lease `providerCredentialRef` names
+the target Secret containing the existing tenant Provider credential envelope.
 Helm installations can mount the same flat file layout from the Secret named by
 `deploymentTargets.kubernetesCredentialSecretName`.
 

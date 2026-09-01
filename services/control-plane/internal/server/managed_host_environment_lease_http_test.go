@@ -12,6 +12,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
@@ -98,7 +99,7 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 		Generation: 1, DesiredPhase: "active", ObservedPhase: "provisioning", CleanupPhase: "none", ResourceVersion: 1,
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
 	}}
-	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, nil, dockertarget.WorkerTrust{})
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, nil, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +169,7 @@ func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, credentials, dockertarget.WorkerTrust{})
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, credentials, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +200,36 @@ func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testi
 	}
 }
 
+func TestEnvironmentLeaseRoutesKubernetesTargetToKubernetesActuator(t *testing.T) {
+	now := time.Date(2026, time.September, 2, 9, 0, 0, 0, time.UTC)
+	store := &managedHostEnvironmentLeaseStoreFake{
+		snapshot: internalmanagedhost.Snapshot{
+			LeaseID: "lease-kubernetes", LeaseName: "lease-kubernetes", EnvironmentID: "lease-kubernetes",
+			ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Generation:    1, DesiredPhase: "active", ObservedPhase: "provisioning", CleanupPhase: "none", ResourceVersion: 1,
+			ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+		},
+		target: internaldeploymenttarget.Snapshot{TargetID: "kubernetes-alpha", Kind: "kubernetes", Endpoint: "https://kubernetes.example.test:6443", CredentialRef: "kubernetes-alpha", Generation: 1, ObservedPhase: "ready"},
+	}
+	credentials, err := kubernetestarget.NewCredentialDirectory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(&projectHTTPVerifierFake{}, store, nil, credentials, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases", strings.NewReader(`{"leaseId":"lease-kubernetes","leaseName":"lease-kubernetes","releaseDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","targetId":"kubernetes-alpha","expectedTargetGeneration":1,"providerCredentialRef":"provider-alpha","cpuLimitMillis":1000,"memoryLimitBytes":536870912,"ttlSeconds":3600}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-create-kubernetes")
+	request.Header.Set("Idempotency-Key", "create-kubernetes-key-1234")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || store.snapshot.ObservedPhase != "failed" || store.snapshot.StableErrorCode != "kubernetes-deployment-config-invalid" || strings.Contains(response.Body.String(), "docker-") {
+		t.Fatalf("status=%d phase=%q stable=%q body=%s", response.Code, store.snapshot.ObservedPhase, store.snapshot.StableErrorCode, response.Body.String())
+	}
+}
+
 func TestTerminateReadyEnvironmentLeaseRequiresDockerCleanup(t *testing.T) {
 	now := time.Date(2026, time.September, 2, 8, 0, 0, 0, time.UTC)
 	store := &managedHostEnvironmentLeaseStoreFake{snapshot: internalmanagedhost.Snapshot{
@@ -210,7 +241,7 @@ func TestTerminateReadyEnvironmentLeaseRequiresDockerCleanup(t *testing.T) {
 		Generation: 1, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", ResourceVersion: 2,
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
 	}}
-	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(&projectHTTPVerifierFake{}, store, nil, dockertarget.WorkerTrust{})
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(&projectHTTPVerifierFake{}, store, nil, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,11 +16,15 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
-const ManagedHostEnvironmentLeaseRoutePrefix = "/v1/managed-host/tenants/"
+const (
+	ManagedHostEnvironmentLeaseRoutePrefix = "/v1/managed-host/tenants/"
+	environmentActuationTimeout            = 2 * time.Minute
+)
 
 type managedHostEnvironmentLeaseStore interface {
 	CreateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CreateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
@@ -33,17 +37,19 @@ type managedHostEnvironmentLeaseStore interface {
 }
 
 type ManagedHostEnvironmentLeaseHTTPServer struct {
-	verifier          AccessTokenVerifier
-	store             managedHostEnvironmentLeaseStore
-	dockerCredentials *dockertarget.CredentialDirectory
-	workerTrust       dockertarget.WorkerTrust
+	verifier              AccessTokenVerifier
+	store                 managedHostEnvironmentLeaseStore
+	dockerCredentials     *dockertarget.CredentialDirectory
+	kubernetesCredentials *kubernetestarget.CredentialDirectory
+	workerTrust           dockertarget.WorkerTrust
+	kubernetesWorkerTrust kubernetestarget.WorkerTrust
 }
 
-func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
+func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, kubernetesCredentials *kubernetestarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("managed host environment lease HTTP server configuration is invalid")
 	}
-	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, workerTrust: workerTrust}, nil
+	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, kubernetesCredentials: kubernetesCredentials, workerTrust: workerTrust, kubernetesWorkerTrust: kubernetestarget.WorkerTrust{ClientCertificate: workerTrust.ClientCertificate, RootCAs: workerTrust.RootCAs}}, nil
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -146,7 +152,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 		writePublicProblem(writer, status, code)
 		return
 	}
-	if server.dockerCredentials != nil && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
+	if (server.dockerCredentials != nil || server.kubernetesCredentials != nil) && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
 		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 		if err != nil {
 			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
@@ -159,17 +165,36 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 			writePublicProblem(writer, status, code)
 			return
 		}
-		if target.Generation != result.TargetGeneration || target.ObservedPhase != "ready" || target.Kind != "docker" {
-			completion.StableErrorCode = "docker-target-not-ready"
-		} else if deployed, deployErr := server.dockerCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, dockertarget.DeployRequest{
-			TenantID: tenantID, ProjectID: projectID, TargetID: target.TargetID, LeaseID: result.LeaseID,
-			TargetGeneration: result.TargetGeneration, LeaseGeneration: result.Generation,
-			ReleaseDigest: result.ReleaseDigest, ProviderCredentialRef: result.ProviderCredentialRef,
-			CPULimitMillis: result.CPULimitMillis, MemoryLimitBytes: result.MemoryLimitBytes,
-		}, server.workerTrust); deployErr != nil {
-			completion.StableErrorCode = dockerDeploymentErrorCode(deployErr)
+		if target.Generation != result.TargetGeneration || target.ObservedPhase != "ready" {
+			switch target.Kind {
+			case "docker":
+				completion.StableErrorCode = "docker-target-not-ready"
+			case "kubernetes":
+				completion.StableErrorCode = "kubernetes-target-not-ready"
+			default:
+				completion.StableErrorCode = "target-kind-unsupported"
+			}
 		} else {
-			completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+			switch target.Kind {
+			case "docker":
+				if server.dockerCredentials == nil {
+					completion.StableErrorCode = "docker-actuator-unconfigured"
+				} else if deployed, deployErr := server.dockerCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation), server.workerTrust); deployErr != nil {
+					completion.StableErrorCode = dockerDeploymentErrorCode(deployErr)
+				} else {
+					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+				}
+			case "kubernetes":
+				if server.kubernetesCredentials == nil {
+					completion.StableErrorCode = "kubernetes-actuator-unconfigured"
+				} else if deployed, deployErr := server.kubernetesCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, result.Generation), server.kubernetesWorkerTrust); deployErr != nil {
+					completion.StableErrorCode = kubernetesDeploymentErrorCode(deployErr)
+				} else {
+					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+				}
+			default:
+				completion.StableErrorCode = "target-kind-unsupported"
+			}
 		}
 		completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 		defer cancel()
@@ -238,31 +263,52 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 		writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, result)
 		return
 	}
-	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
-	defer cancel()
-	if server.dockerCredentials != nil && result.TargetID != "" && result.ProviderCredentialRef != "" {
+	cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
+	if result.WorkerEndpoint != "" && server.dockerCredentials == nil && server.kubernetesCredentials == nil {
+		cancelCleanup()
+		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+		return
+	}
+	if result.TargetID != "" && result.ProviderCredentialRef != "" && (result.WorkerEndpoint != "" || server.dockerCredentials != nil || server.kubernetesCredentials != nil) {
 		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 		if err != nil {
+			cancelCleanup()
 			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 			return
 		}
 		target, targetErr := server.store.GetDeploymentTarget(cleanupContext, tenantID, principal, projectID, result.TargetID)
 		if targetErr != nil {
+			cancelCleanup()
 			writeDeploymentTargetError(writer, targetErr)
 			return
 		}
-		if target.Kind != "docker" || target.Generation != result.TargetGeneration {
+		if target.Generation != result.TargetGeneration {
+			cancelCleanup()
 			writePublicProblem(writer, http.StatusConflict, "lease_conflict")
 			return
 		}
-		cleanupErr := server.dockerCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockertarget.DeployRequest{
-			TenantID: tenantID, ProjectID: projectID, TargetID: result.TargetID, LeaseID: result.LeaseID,
-			TargetGeneration: result.TargetGeneration, LeaseGeneration: validated.Body.ExpectedGeneration,
-			ReleaseDigest: result.ReleaseDigest, ProviderCredentialRef: result.ProviderCredentialRef,
-			CPULimitMillis: result.CPULimitMillis, MemoryLimitBytes: result.MemoryLimitBytes,
-		})
+		var cleanupErr error
+		switch target.Kind {
+		case "docker":
+			if server.dockerCredentials == nil {
+				cancelCleanup()
+				writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+				return
+			}
+			cleanupErr = server.dockerCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
+		case "kubernetes":
+			if server.kubernetesCredentials == nil {
+				cancelCleanup()
+				writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+				return
+			}
+			cleanupErr = server.kubernetesCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
+		default:
+			cleanupErr = dockertarget.ErrDeploymentConflict
+		}
 		if cleanupErr != nil {
-			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) {
+			cancelCleanup()
+			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, kubernetestarget.ErrDeploymentConflict) {
 				writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
 			} else {
 				writePublicProblem(writer, http.StatusBadGateway, "environment_cleanup_failed")
@@ -270,15 +316,19 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 			return
 		}
 	} else if result.WorkerEndpoint != "" {
+		cancelCleanup()
 		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
 		return
 	}
+	cancelCleanup()
 	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	result, err = server.store.CompleteManagedHostEnvironmentLeaseTermination(cleanupContext, tenantID, principal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput{Scope: result.Scope, LeaseID: result.LeaseID, ExpectedGeneration: result.Generation})
+	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
+	defer cancelCompletion()
+	result, err = server.store.CompleteManagedHostEnvironmentLeaseTermination(completionContext, tenantID, principal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput{Scope: result.Scope, LeaseID: result.LeaseID, ExpectedGeneration: result.Generation})
 	if err != nil {
 		status, code := managedHostEnvironmentLeaseErrorStatus(err)
 		writePublicProblem(writer, status, code)
@@ -306,6 +356,24 @@ func managedHostEnvironmentLeaseResource(snapshot internalmanagedhost.Snapshot) 
 	return platformv1alpha1.EnvironmentLease{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "CloudEnvironmentLease", Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName, TenantRef: tenant, ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, Spec: platformv1alpha1.EnvironmentLeaseSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID}, Generation: snapshot.Generation, DesiredPhase: snapshot.DesiredPhase, ObservedPhase: snapshot.ObservedPhase, CleanupPhase: snapshot.CleanupPhase, EnvironmentID: snapshot.EnvironmentID, ReleaseDigest: snapshot.ReleaseDigest, TargetID: snapshot.TargetID, TargetGeneration: snapshot.TargetGeneration, ProviderCredentialRef: snapshot.ProviderCredentialRef, CPULimitMillis: snapshot.CPULimitMillis, MemoryLimitBytes: snapshot.MemoryLimitBytes, WorkerEndpoint: snapshot.WorkerEndpoint, WorkerSPIFFEID: snapshot.WorkerSPIFFEID, WorkerServerName: snapshot.WorkerServerName, StableErrorCode: snapshot.StableErrorCode, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)}}
 }
 
+func dockerDeployRequest(tenantID, projectID string, snapshot internalmanagedhost.Snapshot, leaseGeneration int64) dockertarget.DeployRequest {
+	return dockertarget.DeployRequest{
+		TenantID: tenantID, ProjectID: projectID, TargetID: snapshot.TargetID, LeaseID: snapshot.LeaseID,
+		TargetGeneration: snapshot.TargetGeneration, LeaseGeneration: leaseGeneration,
+		ReleaseDigest: snapshot.ReleaseDigest, ProviderCredentialRef: snapshot.ProviderCredentialRef,
+		CPULimitMillis: snapshot.CPULimitMillis, MemoryLimitBytes: snapshot.MemoryLimitBytes,
+	}
+}
+
+func kubernetesDeployRequest(tenantID, projectID string, snapshot internalmanagedhost.Snapshot, leaseGeneration int64) kubernetestarget.DeployRequest {
+	return kubernetestarget.DeployRequest{
+		TenantID: tenantID, ProjectID: projectID, TargetID: snapshot.TargetID, LeaseID: snapshot.LeaseID,
+		TargetGeneration: snapshot.TargetGeneration, LeaseGeneration: leaseGeneration,
+		ReleaseDigest: snapshot.ReleaseDigest, ProviderCredentialRef: snapshot.ProviderCredentialRef,
+		CPULimitMillis: snapshot.CPULimitMillis, MemoryLimitBytes: snapshot.MemoryLimitBytes,
+	}
+}
+
 func dockerDeploymentErrorCode(err error) string {
 	switch {
 	case errors.Is(err, dockertarget.ErrDeploymentConfigUnavailable):
@@ -318,6 +386,21 @@ func dockerDeploymentErrorCode(err error) string {
 		return "docker-worker-unavailable"
 	default:
 		return "docker-deployment-failed"
+	}
+}
+
+func kubernetesDeploymentErrorCode(err error) string {
+	switch {
+	case errors.Is(err, kubernetestarget.ErrDeploymentConfigUnavailable):
+		return "kubernetes-deployment-config-unavailable"
+	case errors.Is(err, kubernetestarget.ErrDeploymentConfigInvalid):
+		return "kubernetes-deployment-config-invalid"
+	case errors.Is(err, kubernetestarget.ErrDeploymentConflict):
+		return "kubernetes-deployment-conflict"
+	case errors.Is(err, kubernetestarget.ErrWorkerUnavailable):
+		return "kubernetes-worker-unavailable"
+	default:
+		return "kubernetes-deployment-failed"
 	}
 }
 
