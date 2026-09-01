@@ -152,9 +152,10 @@ It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_TOKEN_FILE`,
 `CLOUD_AGENTS_E2E_OUTPUT_DIR`. The Control Plane credential directory and target
 Secrets must already contain the files described above. The script runs a real
 Codex Turn, restarts the Worker Deployment, resumes the Codex Session, runs a
-real Claude Turn, resolves real approval and user-input requests, validates
-downloaded Artifacts, terminates twice to verify idempotency, runs orphan
-cleanup, and retains non-secret JSON/JSONL results.
+real Claude Turn, resolves real approval and user-input requests, cancels and
+interrupts live executions, validates downloaded Artifacts, terminates twice to
+verify idempotency, runs orphan cleanup, and retains non-secret JSON/JSONL
+results.
 
 Run the real SSH target acceptance with
 `sh scripts/test-platform-ssh-target.sh`. It uses the same Control Plane inputs
@@ -164,10 +165,11 @@ plus `CLOUD_AGENTS_PROVIDER_VOLUME_REF`, `CLOUD_AGENTS_SSH_HOST`,
 22. The operator key is read only by OpenSSH with `IdentitiesOnly` and strict
 host-key checking. The script replays deployment, runs a real Codex Turn,
 restarts and reconnects to the remote Worker, resumes the Codex Session, runs a
-real Claude Turn, resolves real approval and user-input requests, validates
-events and Artifacts, terminates twice, and verifies remote cleanup. The mounted
-Control Plane credential reference, target volumes, and Worker image must
-already satisfy the SSH target layout above.
+real Claude Turn, resolves real approval and user-input requests, cancels and
+interrupts live executions, validates events and Artifacts, terminates twice,
+and verifies remote cleanup. The mounted Control Plane credential reference,
+target volumes, and Worker image must already satisfy the SSH target layout
+above.
 
 The source checkout's packaged Compose smoke keeps its default no-credential
 `provider_not_installed` check. To additionally run one real Codex Turn and one

@@ -133,6 +133,64 @@ if (value.spec?.state !== "succeeded" || !value.messages?.some((message) => mess
 NODE
 }
 
+wait_for_running() {
+  session_id=$1
+  turn_id=$2
+  execution_id=$3
+  state_file=$4
+  generation_file="$state_file.generation"
+  attempt=0
+  while [ "$attempt" -lt 90 ]; do
+    attempt=$((attempt + 1))
+    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+      --request-id "$execution_id-running-$attempt" execution get >"$state_file" 2>/dev/null; then
+      CLOUD_AGENTS_E2E_EXECUTION_FILE="$state_file" node <<'NODE' >"$generation_file"
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+if (value.spec?.state === "running") {
+  if (!Number.isSafeInteger(value.spec?.generation) || value.spec.generation < 1) throw new Error("running execution generation is invalid");
+  process.stdout.write(String(value.spec.generation));
+} else if (value.spec?.state !== "queued") {
+  throw new Error(`execution became ${value.spec?.state} before control action`);
+}
+NODE
+      if [ -s "$generation_file" ]; then
+        cat "$generation_file"
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  echo "timed out waiting for running execution" >&2
+  return 1
+}
+
+run_controlled_stop() {
+  action=$1
+  session_id="$CLOUD_AGENTS_E2E_RUN_ID-$action"
+  turn_id="$session_id-turn"
+  execution_id="$session_id-execution"
+  prompt="Use the shell tool now to run exactly: sleep 300. Do not finish or call another tool until that command completes."
+  create_turn codex "$session_id" "$turn_id" "$prompt"
+  background_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-background.json"
+  state_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-running.json"
+  action_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-$action.json"
+  start_execution "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$background_file"
+  generation=$(wait_for_running "$session_id" "$turn_id" "$execution_id" "$state_file")
+  sleep 2
+  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    --request-id "$execution_id-$action" --idempotency-key "$execution_id-$action" \
+    execution "$action" --generation "$generation" >"$action_file"
+  if wait "$execute_pid"; then :; fi
+  execute_pid=
+  CLOUD_AGENTS_E2E_EXECUTION_FILE="$action_file" CLOUD_AGENTS_E2E_CONTROL_ACTION="$action" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const expectedError = process.env.CLOUD_AGENTS_E2E_CONTROL_ACTION === "interrupt" ? "interrupted" : "cancelled";
+if (value.spec?.state !== "cancelled" || value.spec?.errorCode !== expectedError) throw new Error(`${process.env.CLOUD_AGENTS_E2E_CONTROL_ACTION} terminal state changed`);
+NODE
+}
+
 approval_turn="$approval_session-turn"
 approval_execution="$approval_session-execution"
 approval_path=".cloud-agents-acceptance/$CLOUD_AGENTS_E2E_RUN_ID-approved.txt"
@@ -163,6 +221,9 @@ run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$input_session" --turn "$in
   --generation "$(interaction_field "$input_interaction" generation)" \
   --interaction-request "$(interaction_field "$input_interaction" requestId)" --answers-json "$answers_json" >/dev/null
 wait_for_success "$input_final"
+
+run_controlled_stop cancel
+run_controlled_stop interrupt
 
 cleanup
 active_sessions=
