@@ -67,19 +67,22 @@ worker_repository=
 worker_release_digest=
 target_worker_credentials_volume="${project}-target-worker-credentials"
 target_provider_credentials_volume="${project}-target-provider-credentials"
+retry_provider_credentials_volume="${project}-retry-provider-credentials"
 compose() {
   docker compose --env-file "$environment_file" -f "$compose_file" -f "$compose_override_file" "$@"
 }
 cleanup() {
   status=$?
   trap - 0 HUP INT TERM
-  for container in $(docker ps -aq \
-    --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-    --filter label=cloud-agents.dev/lease=lease-compose-target); do
-    if [ "$status" -ne 0 ]; then
-      docker logs "$container" >&2 || true
-    fi
-    docker rm -f "$container" >/dev/null 2>&1 || true
+  for target_lease in lease-compose-target lease-compose-target-retry; do
+    for container in $(docker ps -aq \
+      --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+      --filter label=cloud-agents.dev/lease="$target_lease"); do
+      if [ "$status" -ne 0 ]; then
+        docker logs "$container" >&2 || true
+      fi
+      docker rm -f "$container" >/dev/null 2>&1 || true
+    done
   done
   if [ -f "$environment_file" ]; then
     if [ "$status" -ne 0 ]; then
@@ -88,7 +91,8 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   docker rm -f "$registry_container" >/dev/null 2>&1 || true
-  docker volume rm "$target_worker_credentials_volume" "$target_provider_credentials_volume" >/dev/null 2>&1 || true
+  docker volume rm "$target_worker_credentials_volume" "$target_provider_credentials_volume" \
+    "$retry_provider_credentials_volume" >/dev/null 2>&1 || true
   if [ -n "$worker_repository" ]; then
     docker image rm "$worker_repository:smoke" >/dev/null 2>&1 || true
   fi
@@ -464,6 +468,64 @@ case "$target_get_output" in
   *'"generation":1'*'"observedPhase":"ready"'*) ;;
   *) echo "Compose Docker target ready state was not persisted" >&2; exit 1 ;;
 esac
+
+failed_lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
+  --lease lease-compose-target-retry --request-id compose-smoke-retry-lease-create \
+  --idempotency-key compose-smoke-retry-lease-create environment-lease create \
+  --name lease-compose-target-retry --release-digest "$worker_release_digest" \
+  --expected-target-generation 1 --provider-credential-ref "$retry_provider_credentials_volume" \
+  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
+case "$failed_lease_output" in
+  *'"generation":1'*'"observedPhase":"failed"'*'"cleanupPhase":"none"'*'"stableErrorCode":"docker-deployment-config-unavailable"'*) ;;
+  *) echo "Compose missing credential volume did not persist a recoverable failed deployment: $failed_lease_output" >&2; exit 1 ;;
+esac
+retry_container_count=$(docker ps -aq \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
+if [ "$retry_container_count" -ne 0 ]; then
+  echo "Compose failed deployment left a target Worker" >&2
+  exit 1
+fi
+docker volume create "$retry_provider_credentials_volume" >/dev/null
+docker run --rm --user 0 --entrypoint /bin/sh \
+  -v "$retry_provider_credentials_volume:/target" \
+  -v "$smoke_directory/target-provider-credentials:/source:ro" \
+  postgres:17.6-bookworm -ec \
+  'cp /source/tenant-compose-smoke.unavailable-provider.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+recovered_lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
+  --lease lease-compose-target-retry --request-id compose-smoke-retry-lease-create \
+  --idempotency-key compose-smoke-retry-lease-create environment-lease create \
+  --name lease-compose-target-retry --release-digest "$worker_release_digest" \
+  --expected-target-generation 1 --provider-credential-ref "$retry_provider_credentials_volume" \
+  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
+case "$recovered_lease_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*'"stableErrorCode"'*)
+    echo "Compose failed deployment recovery retained an error: $recovered_lease_output" >&2; exit 1 ;;
+  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
+  *) echo "Compose failed deployment did not recover: $recovered_lease_output" >&2; exit 1 ;;
+esac
+retry_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
+if [ "$retry_container_count" -ne 1 ]; then
+  echo "Compose failed deployment recovery created $retry_container_count Workers, expected 1" >&2
+  exit 1
+fi
+retry_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target-retry \
+  --request-id compose-smoke-retry-lease-terminate --idempotency-key compose-smoke-retry-lease-terminate \
+  environment-lease terminate --generation 1)
+case "$retry_terminate_output" in
+  *'"generation":2'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *) echo "Compose recovered deployment did not terminate cleanly: $retry_terminate_output" >&2; exit 1 ;;
+esac
+retry_container_count=$(docker ps -aq \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
+if [ "$retry_container_count" -ne 0 ]; then
+  echo "Compose recovered deployment left a target Worker after termination" >&2
+  exit 1
+fi
+
 lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
   --lease lease-compose-target --request-id compose-smoke-lease-create \
   --idempotency-key compose-smoke-lease-create environment-lease create \
