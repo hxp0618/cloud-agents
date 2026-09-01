@@ -46,6 +46,8 @@ const (
 	defaultEventPollInterval = time.Second
 )
 
+var version = "dev"
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "cloud-agentsctl:", err)
@@ -54,6 +56,10 @@ func main() {
 }
 
 func run(args []string, stdout io.Writer) error {
+	if len(args) == 1 && args[0] == "--version" {
+		_, err := fmt.Fprintf(stdout, "cloud-agentsctl %s\n", version)
+		return err
+	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
 		_, err := fmt.Fprintln(stdout, help)
 		return err
@@ -748,7 +754,8 @@ func requiresIdempotency(command, action string) bool {
 	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }
 
-const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]`
+const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
+       cloud-agentsctl --version`
 
 const help = usage + `
 

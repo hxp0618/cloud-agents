@@ -30,6 +30,16 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 	}
 }
 
+func TestRunVersionDoesNotRequireConnectionOptions(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := run([]string{"--version"}, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "cloud-agentsctl dev\n" {
+		t.Fatalf("version output = %q", stdout.String())
+	}
+}
+
 func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 	for _, test := range []struct {
 		args     []string

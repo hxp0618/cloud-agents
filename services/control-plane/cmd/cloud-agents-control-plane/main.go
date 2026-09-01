@@ -48,6 +48,7 @@ const (
 )
 
 var (
+	version                 = "dev"
 	errMissingDatabaseURL   = errors.New("database URL is required")
 	errNonLoopbackDatabase  = errors.New("database URL must target loopback or a local Unix socket")
 	errNonLoopbackListen    = errors.New("listen address must be loopback")
@@ -266,6 +267,10 @@ func (v localAccessTokenVerifier) Verify(token string, request authn.Verificatio
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		_, _ = fmt.Printf("cloud-agents-control-plane %s\n", version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:]); err != nil {

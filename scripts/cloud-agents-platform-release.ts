@@ -158,7 +158,16 @@ function buildGoArtifact(command: string, target: PlatformReleaseTarget, output:
   const module = command === "cloud-agents-worker" ? "services/worker" : "services/control-plane";
   run(
     "go",
-    ["-C", module, "build", "-trimpath", "-ldflags=-buildid=", "-o", output, `./cmd/${command}`],
+    [
+      "-C",
+      module,
+      "build",
+      "-trimpath",
+      `-ldflags=-buildid= -X main.version=${options.version}`,
+      "-o",
+      output,
+      `./cmd/${command}`,
+    ],
     repositoryRoot,
     {
       GOOS: goos,

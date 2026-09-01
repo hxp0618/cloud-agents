@@ -55,6 +55,8 @@ const (
 	maximumProductionMaxConcurrentRequests   = 10_000
 )
 
+var version = "dev"
+
 type productionConfig struct {
 	listen                string
 	database              string
@@ -137,6 +139,10 @@ func productionAccessLogHandler(logger *slog.Logger, next http.Handler) http.Han
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		_, _ = fmt.Printf("cloud-agents-control-plane %s\n", version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := runProduction(ctx, os.Args[1:], os.Getenv); err != nil {

@@ -16,6 +16,8 @@ import (
 
 const databaseURLEnvironment = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
 
+var version = "dev"
+
 type productMigrationConfig struct {
 	databaseURL    string
 	repositoryRoot string
@@ -24,6 +26,10 @@ type productMigrationConfig struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		_, _ = fmt.Printf("cloud-agents-product-migrate %s\n", version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Getenv); err != nil {

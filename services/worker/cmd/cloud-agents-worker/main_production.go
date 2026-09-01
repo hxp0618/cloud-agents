@@ -31,6 +31,8 @@ import (
 
 var errInvalidProductionWorkerConfig = errors.New("cloud-agents-worker/invalid_production_config")
 
+var version = "dev"
+
 type productionWorkerErrorWriter struct{ output io.Writer }
 
 func (writer productionWorkerErrorWriter) Write(message []byte) (int, error) {
@@ -267,6 +269,10 @@ func productionWorkerCapabilities() []workerv1alpha1.Capability {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		_, _ = fmt.Printf("cloud-agents-worker %s\n", version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := runProductionMain(os.Args[1:], ctx); err != nil {
