@@ -448,6 +448,16 @@ case "$lease_output" in
   *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"workerEndpoint":"https://host.docker.internal:'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
   *) echo "Compose Docker target Worker did not become ready: $lease_output" >&2; exit 1 ;;
 esac
+replayed_lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
+  --lease lease-compose-target --request-id compose-smoke-lease-create \
+  --idempotency-key compose-smoke-lease-create environment-lease create \
+  --name lease-compose-target --release-digest "$worker_release_digest" \
+  --expected-target-generation 1 --provider-credential-ref "$target_provider_credentials_volume" \
+  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
+case "$replayed_lease_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
+  *) echo "Compose Docker target deployment replay changed identity or state: $replayed_lease_output" >&2; exit 1 ;;
+esac
 target_container_count=$(docker ps -q \
   --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
   --filter label=cloud-agents.dev/lease=lease-compose-target | wc -l | tr -d ' ')
