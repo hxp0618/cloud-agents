@@ -244,6 +244,33 @@ export type EnvironmentLeasePage = Readonly<{
   environmentLeases: readonly EnvironmentLease[];
   nextPageToken?: string;
 }>;
+export type DeploymentTargetRegisterRequest = Readonly<{
+  targetId: string;
+  targetName: string;
+  targetKind: "docker";
+  endpoint: string;
+  credentialRef: string;
+}>;
+export type DeploymentTargetProbeRequest = Readonly<{ expectedGeneration: number }>;
+export type DeploymentTarget = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "DeploymentTarget";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    generation: number;
+    targetKind: "docker";
+    endpoint: string;
+    credentialRef: string;
+    observedPhase: "unprobed" | "probing" | "ready" | "unavailable";
+    apiVersion: string;
+    engineVersion: string;
+    os: string;
+    architecture: string;
+    stableErrorCode: string;
+    lastProbeAt?: string;
+  }>;
+}>;
 export type ManagedAgentSessionCreateRequest = Readonly<{
   sessionId: string;
   providerKind: string;
@@ -528,6 +555,20 @@ const environmentLeasePageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const deploymentTargetResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  generation: scalarResponseShape,
+  targetKind: scalarResponseShape,
+  endpoint: scalarResponseShape,
+  credentialRef: scalarResponseShape,
+  observedPhase: scalarResponseShape,
+  apiVersion: scalarResponseShape,
+  engineVersion: scalarResponseShape,
+  os: scalarResponseShape,
+  architecture: scalarResponseShape,
+  stableErrorCode: scalarResponseShape,
+  lastProbeAt: scalarResponseShape,
+});
 const rbacMutationResultResponseShape: ResponseShape = {
   fields: {
     resourceUid: scalarResponseShape,
@@ -792,6 +833,25 @@ function absoluteURI(value: unknown, path: string): string {
   } catch (cause) {
     if (cause instanceof JSONContractError) throw cause;
     error("INVALID_URI", path);
+  }
+  return text;
+}
+function deploymentTargetEndpoint(value: unknown, path: string): string {
+  const text = boundedString(value, 9, 2048, path);
+  try {
+    const parsed = new URL(text);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.search !== "" ||
+      parsed.hash !== "" ||
+      parsed.pathname !== "/"
+    )
+      error("INVALID_TARGET_ENDPOINT", path);
+  } catch (cause) {
+    if (cause instanceof JSONContractError) throw cause;
+    error("INVALID_TARGET_ENDPOINT", path);
   }
   return text;
 }
@@ -1098,6 +1158,41 @@ export function encodeEnvironmentLeaseTerminateRequest(
   value: EnvironmentLeaseTerminateRequest,
 ): string {
   return JSON.stringify(decodeEnvironmentLeaseTerminateRequest(value));
+}
+export function decodeDeploymentTargetRegisterRequest(
+  value: unknown,
+): DeploymentTargetRegisterRequest {
+  const source = strictRecord(
+    value,
+    ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
+    ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
+  );
+  return Object.freeze({
+    targetId: identifier(source.targetId, "/targetId"),
+    targetName: identifier(source.targetName, "/targetName"),
+    targetKind: enumValue(source.targetKind, ["docker"] as const, "/targetKind"),
+    endpoint: deploymentTargetEndpoint(source.endpoint, "/endpoint"),
+    credentialRef: identifier(source.credentialRef, "/credentialRef"),
+  });
+}
+export function encodeDeploymentTargetRegisterRequest(
+  value: DeploymentTargetRegisterRequest,
+): string {
+  return JSON.stringify(decodeDeploymentTargetRegisterRequest(value));
+}
+export function decodeDeploymentTargetProbeRequest(value: unknown): DeploymentTargetProbeRequest {
+  const source = strictRecord(value, ["expectedGeneration"], ["expectedGeneration"]);
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+  });
+}
+export function encodeDeploymentTargetProbeRequest(value: DeploymentTargetProbeRequest): string {
+  return JSON.stringify(decodeDeploymentTargetProbeRequest(value));
 }
 export function parseRBACMutationResult(text: string): ResponseEnvelope<RBACMutationResult> {
   return parseResponse(text, rbacMutationResultResponseShape, decodeRBACMutationResult);
@@ -1469,6 +1564,99 @@ export function decodeEnvironmentLeasePage(value: unknown): EnvironmentLeasePage
   };
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
+}
+export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
+  const source = record(value);
+  const root = base(source, "DeploymentTarget");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "generation",
+      "targetKind",
+      "endpoint",
+      "credentialRef",
+      "observedPhase",
+      "apiVersion",
+      "engineVersion",
+      "os",
+      "architecture",
+      "stableErrorCode",
+      "lastProbeAt",
+    ],
+    [
+      "projectRef",
+      "generation",
+      "targetKind",
+      "endpoint",
+      "credentialRef",
+      "observedPhase",
+      "apiVersion",
+      "engineVersion",
+      "os",
+      "architecture",
+      "stableErrorCode",
+    ],
+    "/spec",
+  );
+  const phase = enumValue(
+    spec.observedPhase,
+    ["unprobed", "probing", "ready", "unavailable"] as const,
+    "/spec/observedPhase",
+  );
+  const apiVersion = boundedString(spec.apiVersion, 0, 128, "/spec/apiVersion");
+  const engineVersion = boundedString(spec.engineVersion, 0, 128, "/spec/engineVersion");
+  const os = boundedString(spec.os, 0, 128, "/spec/os");
+  const architecture = boundedString(spec.architecture, 0, 128, "/spec/architecture");
+  const stableErrorCode = boundedString(spec.stableErrorCode, 0, 128, "/spec/stableErrorCode");
+  if (stableErrorCode !== "") identifier(stableErrorCode, "/spec/stableErrorCode");
+  const lastProbeAt =
+    spec.lastProbeAt === undefined ? undefined : dateTime(spec.lastProbeAt, "/spec/lastProbeAt");
+  if (
+    (phase === "ready" &&
+      (apiVersion === "" ||
+        engineVersion === "" ||
+        os === "" ||
+        architecture === "" ||
+        stableErrorCode !== "" ||
+        lastProbeAt === undefined)) ||
+    (phase === "unavailable" &&
+      (apiVersion !== "" ||
+        engineVersion !== "" ||
+        os !== "" ||
+        architecture !== "" ||
+        stableErrorCode === "" ||
+        lastProbeAt === undefined)) ||
+    ((phase === "unprobed" || phase === "probing") &&
+      (apiVersion !== "" ||
+        engineVersion !== "" ||
+        os !== "" ||
+        architecture !== "" ||
+        stableErrorCode !== ""))
+  )
+    error("INVALID_PROBE_STATE", "/spec");
+  const target = {
+    ...root,
+    kind: "DeploymentTarget" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      generation: integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation"),
+      targetKind: enumValue(spec.targetKind, ["docker"] as const, "/spec/targetKind"),
+      endpoint: deploymentTargetEndpoint(spec.endpoint, "/spec/endpoint"),
+      credentialRef: identifier(spec.credentialRef, "/spec/credentialRef"),
+      observedPhase: phase,
+      apiVersion,
+      engineVersion,
+      os,
+      architecture,
+      stableErrorCode,
+    }),
+  };
+  return Object.freeze(
+    lastProbeAt === undefined
+      ? target
+      : { ...target, spec: Object.freeze({ ...target.spec, lastProbeAt }) },
+  );
 }
 export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
   const source = strictRecord(
@@ -2118,6 +2306,9 @@ export function parseEnvironmentLease(text: string): ResponseEnvelope<Environmen
 }
 export function parseEnvironmentLeasePage(text: string): ResponseEnvelope<EnvironmentLeasePage> {
   return parseResponse(text, environmentLeasePageResponseShape, decodeEnvironmentLeasePage);
+}
+export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
+  return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
 }
 export function parseManagedAgentSession(text: string): ResponseEnvelope<ManagedAgentSession> {
   return parseResponse(text, managedAgentSessionResponseShape, decodeManagedAgentSession);
@@ -3446,6 +3637,99 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  async registerDeploymentTarget(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: DeploymentTargetRegisterRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTarget>> {
+    validateDeploymentTargetPath(tenantId, projectId, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeDeploymentTargetRegisterRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 201)
+      throw await this.problem("managedHostRegisterDeploymentTarget", response);
+    const result = parseDeploymentTarget(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== body.targetId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async getDeploymentTarget(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTarget>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedHostGetDeploymentTarget", response);
+    const result = parseDeploymentTarget(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== targetId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async probeDeploymentTarget(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: DeploymentTargetProbeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTarget>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:probe`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeDeploymentTargetProbeRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedHostProbeDeploymentTarget", response);
+    const result = parseDeploymentTarget(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== targetId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
   private async mutate(
     path: string,
     tenantId: string,
@@ -3586,6 +3870,16 @@ function validateLeasePath(
   validatePath(tenantId, requestId);
   identifier(projectId, "/projectId");
   if (leaseId !== undefined) identifier(leaseId, "/leaseId");
+}
+function validateDeploymentTargetPath(
+  tenantId: string,
+  projectId: string,
+  targetId: string | undefined,
+  requestId: string,
+): void {
+  validatePath(tenantId, requestId);
+  identifier(projectId, "/projectId");
+  if (targetId !== undefined) identifier(targetId, "/targetId");
 }
 function resourceMetadata(value: unknown): ResourceMetadata {
   return (value as { metadata: ResourceMetadata }).metadata;

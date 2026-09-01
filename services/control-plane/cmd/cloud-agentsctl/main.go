@@ -35,6 +35,7 @@ type globalOptions struct {
 	turn           string
 	execution      string
 	lease          string
+	target         string
 	requestID      string
 	idempotencyKey string
 	timeout        time.Duration
@@ -69,9 +70,9 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	localTargetProbe := command == "target" && action == "probe"
+	localTargetPreflight := command == "target" && action == "preflight"
 	var client *openapi.Client
-	if !actionHelpRequested(actionArgs) && !localTargetProbe {
+	if !actionHelpRequested(actionArgs) && !localTargetPreflight {
 		token := options.token
 		if options.tokenFile != "" {
 			file, openErr := os.Open(options.tokenFile)
@@ -94,15 +95,38 @@ func run(args []string, stdout io.Writer) error {
 	defer cancel()
 	var value any
 	switch command + " " + action {
-	case "target probe":
+	case "target preflight":
 		var kind, socketPath string
-		if err = parseActionFlags("target probe", actionArgs, func(set *flag.FlagSet) {
+		if err = parseActionFlags("target preflight", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&kind, "kind", "", "target kind (docker)")
 			set.StringVar(&socketPath, "socket", "", "absolute Docker Engine socket path")
 		}); err == nil && kind != "docker" {
 			err = errors.New("--kind must be docker")
 		} else if err == nil {
 			value, err = dockertarget.ProbeUnixSocket(ctx, socketPath)
+		}
+	case "target register":
+		var targetName, kind, targetEndpoint, credentialRef string
+		if err = parseActionFlags("target register", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&targetName, "target-name", "", "deployment target name")
+			set.StringVar(&kind, "kind", "", "target kind (docker)")
+			set.StringVar(&targetEndpoint, "target-endpoint", "", "Docker Engine HTTPS endpoint")
+			set.StringVar(&credentialRef, "credential-ref", "", "deployment-owned credential reference")
+		}); err == nil {
+			value, err = client.RegisterDeploymentTarget(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.DeploymentTargetRegisterRequest{TargetID: options.target, TargetName: targetName, TargetKind: kind, Endpoint: targetEndpoint, CredentialRef: credentialRef})
+		}
+	case "target get":
+		if err = parseActionFlags("target get", actionArgs, nil); err == nil {
+			value, err = client.GetDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID)
+		}
+	case "target probe":
+		var generation int64
+		if err = parseActionFlags("target probe", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&generation, "expected-generation", 0, "deployment target fencing generation")
+		}); err == nil && generation < 1 {
+			err = errors.New("--expected-generation must be greater than zero")
+		} else if err == nil {
+			value, err = client.ProbeDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
 		}
 	case "tenant get":
 		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
@@ -537,6 +561,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.turn, "turn", "", "turn identifier")
 	set.StringVar(&options.execution, "execution", "", "execution identifier")
 	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
+	set.StringVar(&options.target, "target", "", "deployment target identifier")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
 	set.StringVar(&options.idempotencyKey, "idempotency-key", "", "idempotency key")
 	set.DurationVar(&options.timeout, "timeout", defaultRequestTimeout, "request timeout")
@@ -558,7 +583,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if options.timeout <= 0 {
 		return globalOptions{}, "", "", nil, errors.New("--timeout must be greater than zero")
 	}
-	if command == "target" && action == "probe" {
+	if command == "target" && action == "preflight" {
 		return options, command, action, actionArgs, nil
 	}
 	for name, value := range map[string]string{"endpoint": options.endpoint, "tenant": options.tenant, "request-id": options.requestID} {
@@ -604,6 +629,9 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if requiresLease(command, action) && options.lease == "" {
 		return globalOptions{}, "", "", nil, errors.New("--lease is required")
+	}
+	if requiresTarget(command, action) && options.target == "" {
+		return globalOptions{}, "", "", nil, errors.New("--target is required")
 	}
 	if requiresIdempotency(command, action) && options.idempotencyKey == "" {
 		return globalOptions{}, "", "", nil, errors.New("--idempotency-key is required")
@@ -683,6 +711,8 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.EnvironmentLeasePageResult:
 		return result.Value
+	case openapi.DeploymentTargetResult:
+		return result.Value
 	case openapi.RBACMutationResult:
 		return result.Value
 	default:
@@ -733,7 +763,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target probe", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "target preflight", "target register", "target get", "target probe", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -741,7 +771,7 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
+	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool {
 	return command == "organization" && action != "list" || command == "project" && action == "list"
@@ -765,18 +795,21 @@ func requiresExecution(command, action string) bool {
 func requiresLease(command, action string) bool {
 	return command == "environment-lease" && action != "list"
 }
+func requiresTarget(command, action string) bool {
+	return command == "target" && action != "preflight"
+}
 func requiresIdempotency(command, action string) bool {
-	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
+	return (command == "target" && (action == "register" || action == "probe")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
-	   cloud-agentsctl [--timeout DURATION] target probe --kind docker --socket /absolute/path/to/docker.sock
+	   cloud-agentsctl [--timeout DURATION] target preflight --kind docker --socket /absolute/path/to/docker.sock
        cloud-agentsctl --version`
 
 const help = usage + `
 
 resources and actions:
-  target probe
+  target preflight|register|get|probe
   tenant get
   organization get|list|create
   project get|list|create

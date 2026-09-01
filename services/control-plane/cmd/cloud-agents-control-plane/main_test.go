@@ -30,11 +30,12 @@ func TestParseControlPlaneConfigAcceptsLocalRuntimeBridge(t *testing.T) {
 	config, err := parseControlPlaneConfig([]string{
 		"--database-url", "postgres://task-local", "--listen", "127.0.0.1:9090",
 		"--worker-endpoint", "http://127.0.0.1:8091", "--worker-token-file", "/tmp/cloud-agents-worker.token", "--workspace-directory", "/tmp/workspace",
+		"--docker-credentials-directory", "/tmp/docker-targets",
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" {
+	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" || config.dockerCredentials != "/tmp/docker-targets" {
 		t.Fatalf("config = %#v", config)
 	}
 }

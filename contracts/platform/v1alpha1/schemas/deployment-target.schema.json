@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/deployment-target.schema.json",
+  "title": "DeploymentTarget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "DeploymentTarget" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "generation", "targetKind", "endpoint", "credentialRef", "observedPhase", "apiVersion", "engineVersion", "os", "architecture", "stableErrorCode"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "targetKind": { "const": "docker" },
+        "endpoint": { "type": "string", "format": "uri", "pattern": "^https://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
+        "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "observedPhase": { "enum": ["unprobed", "probing", "ready", "unavailable"] },
+        "apiVersion": { "type": "string", "maxLength": 128 },
+        "engineVersion": { "type": "string", "maxLength": 128 },
+        "os": { "type": "string", "maxLength": 128 },
+        "architecture": { "type": "string", "maxLength": 128 },
+        "stableErrorCode": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+          ]
+        },
+        "lastProbeAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "unprobed or probing carries no probe facts or stable error",
+    "ready requires non-empty probe facts and lastProbeAt",
+    "unavailable requires stableErrorCode and lastProbeAt but no probe facts",
+    "credentialRef names a deployment-owned credential and never contains credential bytes"
+  ]
+}

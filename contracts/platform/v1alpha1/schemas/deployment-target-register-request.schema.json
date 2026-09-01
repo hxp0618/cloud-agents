@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/deployment-target-register-request.schema.json",
+  "title": "DeploymentTargetRegisterRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
+  "properties": {
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetKind": { "const": "docker" },
+    "endpoint": { "type": "string", "format": "uri", "pattern": "^https://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
+    "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

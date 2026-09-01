@@ -94,8 +94,8 @@ describe("platform release", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
     expect(entries.map(({ path }) => path)).toContain("LICENSE");
-    expect(entries.some(({ path }) => path.endsWith("product/000029/manifest.json"))).toBe(true);
-    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(29);
+    expect(entries.some(({ path }) => path.endsWith("product/000030/manifest.json"))).toBe(true);
+    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(30);
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agents-migrations",
       target: "portable",
@@ -264,9 +264,9 @@ describe("platform release", () => {
     expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     const migrateDockerfile = readFileSync("deploy/docker/migrate.Dockerfile", "utf8");
-    expect(migrateDockerfile).toContain("cloud-agents-migrations-000029.tar");
-    expect(migrateDockerfile).toContain("product/000029/manifest.json");
-    expect(migrateDockerfile).not.toContain("000028");
+    expect(migrateDockerfile).toContain("cloud-agents-migrations-000030.tar");
+    expect(migrateDockerfile).toContain("product/000030/manifest.json");
+    expect(migrateDockerfile).not.toContain("000029");
     const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
     expect(workerDockerfile).toContain("@openai/codex@0.150.1");
     expect(workerDockerfile).toContain(
@@ -296,6 +296,7 @@ describe("platform release", () => {
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/membership-page.schema.json");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/role-binding-page.schema.json");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/environment-lease.schema.json");
+    expect(paths).toContain("contracts/platform/v1alpha1/schemas/deployment-target.schema.json");
     expect(paths).not.toContain("contracts/platform/v1alpha1/fixtures/manifest.json");
     expect(
       paths.some((path) => path.includes("generation.lock") || path.includes("docs/plan")),

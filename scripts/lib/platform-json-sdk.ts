@@ -58,6 +58,9 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+  "deployment-target-probe-request.schema.json",
+  "deployment-target-register-request.schema.json",
+  "deployment-target.schema.json",
   "environment-lease-create-request.schema.json",
   "environment-lease-page.schema.json",
   "environment-lease-terminate-request.schema.json",
@@ -246,10 +249,13 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentRevokeRoleBinding",
     "managedAgentSuspendMembership",
     "managedHostCreateEnvironmentLease",
+    "managedHostGetDeploymentTarget",
     "managedHostGetEnvironmentLease",
     "managedHostGetProjectContext",
     "managedHostGetRoleBinding",
     "managedHostListEnvironmentLeases",
+    "managedHostProbeDeploymentTarget",
+    "managedHostRegisterDeploymentTarget",
     "managedHostTerminateEnvironmentLease",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {

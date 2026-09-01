@@ -26,6 +26,7 @@ import (
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
@@ -43,6 +44,7 @@ const (
 	productionWorkerClientKeyEnvironment     = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
 	productionWorkerCAEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
 	productionWorkspaceEnvironment           = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	productionDockerCredentialsEnvironment   = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
 	productionAdmissionLeaseEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
 	productionAdmissionGenerationEnvironment = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
 	productionAdmissionTokenEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
@@ -70,6 +72,7 @@ type productionConfig struct {
 	workerClientKey       string
 	workerCA              string
 	workspaceDirectory    string
+	dockerCredentials     string
 	admissionLeaseID      string
 	admissionGeneration   uint64
 	admissionToken        []byte
@@ -214,6 +217,17 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("project HTTP server is unavailable")
 	}
+	var dockerProber *dockertarget.CredentialDirectory
+	if config.dockerCredentials != "" {
+		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
+		if err != nil {
+			return errors.New("Docker target credential directory is invalid")
+		}
+	}
+	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber)
+	if err != nil {
+		return errors.New("deployment target HTTP server is unavailable")
+	}
 	tenantServer, err := server.NewPlatformTenantHTTPServer(verifier, coordinationService)
 	if err != nil {
 		return errors.New("tenant HTTP server is unavailable")
@@ -264,6 +278,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesDeploymentTargetPath(request.URL.Path) {
+			deploymentTargetServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesRBACPath(request.URL.Path) {
 			rbacServer.ServeHTTP(writer, request)
 			return
@@ -369,6 +387,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	workerClientKey := set.String("worker-client-key", "", "Worker mTLS client key path")
 	workerCA := set.String("worker-ca", "", "Worker CA certificate path")
 	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
+	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
@@ -395,7 +414,11 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(workerClientKey, productionWorkerClientKeyEnvironment)
 	fill(workerCA, productionWorkerCAEnvironment)
 	fill(workspaceDirectory, productionWorkspaceEnvironment)
+	fill(dockerCredentials, productionDockerCredentialsEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
+	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials {
+		return productionConfig{}, errors.New("invalid control-plane configuration")
+	}
 	if *admissionGeneration == 0 && getenv != nil {
 		parsed, parseErr := strconv.ParseUint(getenv(productionAdmissionGenerationEnvironment), 10, 64)
 		if parseErr != nil {
@@ -419,7 +442,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

@@ -31,6 +31,7 @@ import (
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
@@ -45,6 +46,7 @@ const (
 	localRuntimeWorkerEndpointEnvironment = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
 	localRuntimeWorkerTokenEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_TOKEN_FILE"
 	localRuntimeWorkspaceEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	localDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
 	localTokenRefreshInterval             = 4 * time.Minute
 )
 
@@ -238,6 +240,7 @@ type controlPlaneConfig struct {
 	workerEndpoint     string
 	workerTokenFile    string
 	workspaceDirectory string
+	dockerCredentials  string
 }
 
 type localRuntimeWorkerHealth struct {
@@ -404,6 +407,17 @@ func run(ctx context.Context, args []string) error {
 	if leaseErr != nil {
 		return errors.New("local managed host environment lease HTTP server is unavailable")
 	}
+	var dockerProber *dockertarget.CredentialDirectory
+	if config.dockerCredentials != "" {
+		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
+		if err != nil {
+			return errors.New("local Docker target credential directory is invalid")
+		}
+	}
+	deploymentTargetHTTPServer, err := server.NewDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber)
+	if err != nil {
+		return errors.New("local deployment target HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
@@ -419,7 +433,13 @@ func run(ctx context.Context, args []string) error {
 	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	if runtimeSupervisor == nil {
-		mux.Handle(server.LocalProjectGetRoutePrefix, projectGetHTTPServer)
+		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesDeploymentTargetPath(request.URL.Path) {
+				deploymentTargetHTTPServer.ServeHTTP(writer, request)
+				return
+			}
+			projectGetHTTPServer.ServeHTTP(writer, request)
+		}))
 	} else {
 		projectHTTPServer, projectErr := server.NewProjectHTTPServer(verifierAdapter, coordinationService, durableProjectCreateServer)
 		if projectErr != nil {
@@ -450,6 +470,10 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local managed agent execution HTTP server is unavailable")
 		}
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesDeploymentTargetPath(request.URL.Path) {
+				deploymentTargetHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesManagedAgentExecutionPath(request.URL.Path) {
 				executionHTTPServer.ServeHTTP(writer, request)
 				return
@@ -538,6 +562,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	workerEndpoint := set.String("worker-endpoint", "", "loopback HTTP endpoint of the localdev Worker")
 	workerTokenFile := set.String("worker-token-file", "", "0600 bearer token file written by the localdev Worker")
 	workspaceDirectory := set.String("workspace-directory", "", "workspace passed to the local Runtime")
+	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return controlPlaneConfig{}, errors.New("invalid control-plane configuration")
 	}
@@ -545,7 +570,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	if resolvedDatabaseURL == "" && getenv != nil {
 		resolvedDatabaseURL = getenv(databaseURLEnvironment)
 	}
-	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory := *workerEndpoint, *workerTokenFile, *workspaceDirectory
+	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials
 	if getenv != nil {
 		if resolvedWorkerEndpoint == "" {
 			resolvedWorkerEndpoint = getenv(localRuntimeWorkerEndpointEnvironment)
@@ -556,11 +581,14 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		if resolvedWorkspaceDirectory == "" {
 			resolvedWorkspaceDirectory = getenv(localRuntimeWorkspaceEnvironment)
 		}
+		if resolvedDockerCredentials == "" {
+			resolvedDockerCredentials = getenv(localDockerCredentialsEnvironment)
+		}
 	}
 	if *localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator))) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
-	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
+	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
 		return controlPlaneConfig{}, errInvalidRuntimeConfig
 	}
 	return controlPlaneConfig{
@@ -572,6 +600,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		workerEndpoint:     resolvedWorkerEndpoint,
 		workerTokenFile:    resolvedWorkerTokenFile,
 		workspaceDirectory: resolvedWorkspaceDirectory,
+		dockerCredentials:  resolvedDockerCredentials,
 	}, nil
 }
 

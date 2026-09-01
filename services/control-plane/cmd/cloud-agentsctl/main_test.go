@@ -42,7 +42,7 @@ func TestRunVersionDoesNotRequireConnectionOptions(t *testing.T) {
 	}
 }
 
-func TestRunDockerTargetProbeDoesNotRequireControlPlaneCredentials(t *testing.T) {
+func TestRunDockerTargetPreflightDoesNotRequireControlPlaneCredentials(t *testing.T) {
 	temporaryDirectory, err := os.MkdirTemp("/tmp", "cloud-agents-docker-")
 	if err != nil {
 		t.Fatal(err)
@@ -71,11 +71,40 @@ func TestRunDockerTargetProbeDoesNotRequireControlPlaneCredentials(t *testing.T)
 	})
 
 	var stdout bytes.Buffer
-	if err := run([]string{"target", "probe", "--kind", "docker", "--socket", socketPath}, &stdout); err != nil {
+	if err := run([]string{"target", "preflight", "--kind", "docker", "--socket", socketPath}, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), `"apiVersion":"1.53"`) || strings.Contains(stdout.String(), socketPath) {
 		t.Fatalf("probe output = %q", stdout.String())
+	}
+}
+
+func TestRunRegistersDeploymentTargetThroughControlPlane(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets" || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" || request.Header.Get("Idempotency-Key") != "register-alpha-key" || !strings.Contains(string(body), `"targetId":"docker-alpha"`) || !strings.Contains(string(body), `"credentialRef":"docker-alpha-mtls"`) {
+			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.Path, request.Header, body)
+		}
+		writer.Header().Set("X-Resource-Version", "1")
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTarget","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-01T12:00:00Z","updatedAt":"2026-09-01T12:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"targetKind":"docker","endpoint":"https://docker.example.test:2376","credentialRef":"docker-alpha-mtls","observedPhase":"unprobed","apiVersion":"","engineVersion":"","os":"","architecture":"","stableErrorCode":""}}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--target", "docker-alpha", "--request-id", "request-alpha", "--idempotency-key", "register-alpha-key",
+		"target", "register", "--target-name", "docker-alpha", "--kind", "docker", "--target-endpoint", "https://docker.example.test:2376", "--credential-ref", "docker-alpha-mtls",
+	}, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"uid":"docker-alpha"`) || strings.Contains(stdout.String(), "token-alpha") {
+		t.Fatalf("output = %q", stdout.String())
 	}
 }
 
@@ -85,6 +114,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		expected string
 	}{
 		{args: []string{"tenant", "get", "--help"}, expected: "usage: cloud-agentsctl [global flags] tenant get [flags]"},
+		{args: []string{"target", "register", "--help"}, expected: "-credential-ref string"},
 		{args: []string{"project", "create", "--help"}, expected: "-organization-id string"},
 		{args: []string{"membership", "create", "-h"}, expected: "-subject-issuer string"},
 		{args: []string{"execution", "execute", "help"}, expected: "-runtime-mode string"},

@@ -90,6 +90,7 @@ type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
 type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
+type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
@@ -652,6 +653,89 @@ func (client *Client) TerminateManagedHostEnvironmentLease(ctx context.Context, 
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID {
 		return EnvironmentLeaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) RegisterDeploymentTarget(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.DeploymentTargetRegisterRequest) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetRegisterRequestJSON(body)
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 201 {
+		return DeploymentTargetResult{}, client.problemError("managedHostRegisterDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "managedHostRegisterDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.TargetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetDeploymentTarget(ctx context.Context, tenantID, projectID, targetID, requestID string) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetResult{}, client.problemError("managedHostGetDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "managedHostGetDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ProbeDeploymentTarget(ctx context.Context, tenantID, projectID, targetID, requestID, idempotencyKey string, body platform.DeploymentTargetProbeRequest) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetProbeRequestJSON(body)
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":probe", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetResult{}, client.problemError("managedHostProbeDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "managedHostProbeDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
 }
@@ -1449,6 +1533,23 @@ func DecodeEnvironmentLeaseResponseJSON(data []byte) (common.ResponseEnvelope[pl
 func EncodeEnvironmentLeaseResponseJSON(value common.ResponseEnvelope[platform.EnvironmentLease]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
+
+var deploymentTargetResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "tenantRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"projectRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()})})
+
+func DecodeDeploymentTargetResponseJSON(data []byte) (common.ResponseEnvelope[platform.DeploymentTarget], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, deploymentTargetResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[platform.DeploymentTarget]{}, err
+	}
+	value, err := platform.DecodeDeploymentTargetJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[platform.DeploymentTarget]{}, err
+	}
+	return common.ResponseEnvelope[platform.DeploymentTarget]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeDeploymentTargetResponseJSON(value common.ResponseEnvelope[platform.DeploymentTarget]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
 func decodeManagedAgentExecution(data []byte) (ManagedAgentExecution, error) {
 	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "metadata", "spec", "messages"}, []string{"apiVersion", "kind", "metadata", "spec"})
 	if err != nil {
@@ -1894,6 +1995,8 @@ func resourceVersion[T any](value T) string {
 		return resource.Metadata.ResourceVersion
 	case platform.EnvironmentLease:
 		return resource.Metadata.ResourceVersion
+	case platform.DeploymentTarget:
+		return resource.Metadata.ResourceVersion
 	default:
 		return ""
 	}
@@ -1914,6 +2017,8 @@ func metadataTenant[T any](value T) string {
 		return resource.Metadata.TenantRef.ID
 	case platform.EnvironmentLease:
 		return resource.Metadata.TenantRef.ID
+	case platform.DeploymentTarget:
+		return resource.Metadata.TenantRef.ID
 	default:
 		return ""
 	}
@@ -1933,6 +2038,8 @@ func metadataUID[T any](value T) string {
 	case platform.RoleBinding:
 		return resource.Metadata.UID
 	case platform.EnvironmentLease:
+		return resource.Metadata.UID
+	case platform.DeploymentTarget:
 		return resource.Metadata.UID
 	default:
 		return ""
@@ -2347,6 +2454,77 @@ func validateLeasePath(tenantID, projectID, leaseID, requestID string) error {
 	}
 	if leaseID != "" {
 		return common.ValidateIdentifier(leaseID, "/leaseId")
+	}
+	return nil
+}
+
+type RegisterDeploymentTargetServerInput struct {
+	TenantID       string
+	ProjectID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.DeploymentTargetRegisterRequest
+}
+
+func ValidateRegisterDeploymentTargetServerRequest(tenantID, projectID, requestID, idempotencyKey string, body []byte) (RegisterDeploymentTargetServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return RegisterDeploymentTargetServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return RegisterDeploymentTargetServerInput{}, err
+	}
+	value, err := platform.DecodeDeploymentTargetRegisterRequestJSON(body)
+	if err != nil {
+		return RegisterDeploymentTargetServerInput{}, err
+	}
+	return RegisterDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type GetDeploymentTargetServerInput struct {
+	TenantID  string
+	ProjectID string
+	TargetID  string
+	RequestID string
+}
+
+func ValidateGetDeploymentTargetServerRequest(tenantID, projectID, targetID, requestID string) (GetDeploymentTargetServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return GetDeploymentTargetServerInput{}, err
+	}
+	return GetDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID}, nil
+}
+
+type ProbeDeploymentTargetServerInput struct {
+	TenantID       string
+	ProjectID      string
+	TargetID       string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.DeploymentTargetProbeRequest
+}
+
+func ValidateProbeDeploymentTargetServerRequest(tenantID, projectID, targetID, requestID, idempotencyKey string, body []byte) (ProbeDeploymentTargetServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return ProbeDeploymentTargetServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return ProbeDeploymentTargetServerInput{}, err
+	}
+	value, err := platform.DecodeDeploymentTargetProbeRequestJSON(body)
+	if err != nil {
+		return ProbeDeploymentTargetServerInput{}, err
+	}
+	return ProbeDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+func validateDeploymentTargetPath(tenantID, projectID, targetID, requestID string) error {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return err
+	}
+	if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil {
+		return err
+	}
+	if targetID != "" {
+		return common.ValidateIdentifier(targetID, "/targetId")
 	}
 	return nil
 }

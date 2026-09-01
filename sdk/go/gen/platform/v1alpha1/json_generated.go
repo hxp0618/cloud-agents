@@ -4,6 +4,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -198,6 +199,34 @@ type EnvironmentLeasePage struct {
 	EnvironmentLeases []EnvironmentLease `json:"environmentLeases"`
 	NextPageToken     string             `json:"nextPageToken,omitempty"`
 }
+type DeploymentTargetRegisterRequest struct {
+	TargetID      string `json:"targetId"`
+	TargetName    string `json:"targetName"`
+	TargetKind    string `json:"targetKind"`
+	Endpoint      string `json:"endpoint"`
+	CredentialRef string `json:"credentialRef"`
+}
+type DeploymentTargetProbeRequest struct {
+	ExpectedGeneration int64 `json:"expectedGeneration"`
+}
+type DeploymentTargetSpec struct {
+	ProjectRef      common.ProjectRef `json:"projectRef"`
+	Generation      int64             `json:"generation"`
+	TargetKind      string            `json:"targetKind"`
+	Endpoint        string            `json:"endpoint"`
+	CredentialRef   string            `json:"credentialRef"`
+	ObservedPhase   string            `json:"observedPhase"`
+	APIVersion      string            `json:"apiVersion"`
+	EngineVersion   string            `json:"engineVersion"`
+	OS              string            `json:"os"`
+	Architecture    string            `json:"architecture"`
+	StableErrorCode string            `json:"stableErrorCode"`
+	LastProbeAt     string            `json:"lastProbeAt,omitempty"`
+}
+type DeploymentTarget struct {
+	ResourceBase
+	Spec DeploymentTargetSpec `json:"spec"`
+}
 
 var (
 	resourceMetadataResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
@@ -236,6 +265,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"tenantRef": resourceTenantRefResponseShape, "subject": resourceSubjectResponseShape, "roleName": common.ScalarResponseShape(), "roleVersion": common.ScalarResponseShape(), "scope": resourceScopeResponseShape, "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "CloudEnvironmentLease":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
+	case "DeploymentTarget":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	default:
 		return common.ObjectResponseShape(nil)
 	}
@@ -1060,6 +1091,170 @@ func DecodeEnvironmentLeasePageResponseJSON(data []byte) (common.ResponseEnvelop
 	return common.ResponseEnvelope[EnvironmentLeasePage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeEnvironmentLeasePageResponseJSON(value common.ResponseEnvelope[EnvironmentLeasePage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func validDeploymentTargetEndpoint(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil && (parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
+}
+func DecodeDeploymentTargetRegisterRequestJSON(data []byte) (DeploymentTargetRegisterRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"}, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"})
+	if err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	id, err := fieldString(fields, "targetId", "/targetId")
+	if err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	name, err := fieldString(fields, "targetName", "/targetName")
+	if err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	kind, err := fieldString(fields, "targetKind", "/targetKind")
+	if err != nil || kind != "docker" {
+		return DeploymentTargetRegisterRequest{}, common.ContractError("INVALID_TARGET_KIND", "/targetKind")
+	}
+	endpoint, err := fieldString(fields, "endpoint", "/endpoint")
+	if err != nil || !validDeploymentTargetEndpoint(endpoint) {
+		return DeploymentTargetRegisterRequest{}, common.ContractError("INVALID_TARGET_ENDPOINT", "/endpoint")
+	}
+	credential, err := fieldString(fields, "credentialRef", "/credentialRef")
+	if err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	if err := common.ValidateIdentifier(id, "/targetId"); err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	if err := common.ValidateIdentifier(name, "/targetName"); err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	if err := common.ValidateIdentifier(credential, "/credentialRef"); err != nil {
+		return DeploymentTargetRegisterRequest{}, err
+	}
+	return DeploymentTargetRegisterRequest{TargetID: id, TargetName: name, TargetKind: kind, Endpoint: endpoint, CredentialRef: credential}, nil
+}
+func EncodeDeploymentTargetRegisterRequestJSON(value DeploymentTargetRegisterRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeDeploymentTargetRegisterRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeDeploymentTargetProbeRequestJSON(data []byte) (DeploymentTargetProbeRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedGeneration"}, []string{"expectedGeneration"})
+	if err != nil {
+		return DeploymentTargetProbeRequest{}, err
+	}
+	generation, err := fieldInt64(fields, "expectedGeneration", "/expectedGeneration")
+	if err != nil || generation < 1 {
+		return DeploymentTargetProbeRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	return DeploymentTargetProbeRequest{ExpectedGeneration: generation}, nil
+}
+func EncodeDeploymentTargetProbeRequestJSON(value DeploymentTargetProbeRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeDeploymentTargetProbeRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	base, err := checkResourceBase(fields, "DeploymentTarget")
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	allowed := []string{"projectRef", "generation", "targetKind", "endpoint", "credentialRef", "observedPhase", "apiVersion", "engineVersion", "os", "architecture", "stableErrorCode", "lastProbeAt"}
+	spec, err := strictSpec(fields["spec"], allowed, allowed[:11])
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	generation, err := fieldInt64(spec, "generation", "/spec/generation")
+	if err != nil || generation < 1 {
+		return DeploymentTarget{}, common.ContractError("INVALID_GENERATION", "/spec/generation")
+	}
+	kind, err := fieldString(spec, "targetKind", "/spec/targetKind")
+	if err != nil || kind != "docker" {
+		return DeploymentTarget{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
+	}
+	endpoint, err := fieldString(spec, "endpoint", "/spec/endpoint")
+	if err != nil || !validDeploymentTargetEndpoint(endpoint) {
+		return DeploymentTarget{}, common.ContractError("INVALID_TARGET_ENDPOINT", "/spec/endpoint")
+	}
+	credential, err := fieldString(spec, "credentialRef", "/spec/credentialRef")
+	if err != nil || common.ValidateIdentifier(credential, "/spec/credentialRef") != nil {
+		return DeploymentTarget{}, common.ContractError("INVALID_IDENTIFIER", "/spec/credentialRef")
+	}
+	phase, err := fieldString(spec, "observedPhase", "/spec/observedPhase")
+	if err != nil || phase != "unprobed" && phase != "probing" && phase != "ready" && phase != "unavailable" {
+		return DeploymentTarget{}, common.ContractError("INVALID_PHASE", "/spec/observedPhase")
+	}
+	api, err := fieldString(spec, "apiVersion", "/spec/apiVersion")
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	engine, err := fieldString(spec, "engineVersion", "/spec/engineVersion")
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	targetOS, err := fieldString(spec, "os", "/spec/os")
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	arch, err := fieldString(spec, "architecture", "/spec/architecture")
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	stable, err := fieldString(spec, "stableErrorCode", "/spec/stableErrorCode")
+	if err != nil {
+		return DeploymentTarget{}, err
+	}
+	for index, value := range []string{api, engine, targetOS, arch} {
+		if common.ValidateString(value, 0, 128, []string{"/spec/apiVersion", "/spec/engineVersion", "/spec/os", "/spec/architecture"}[index]) != nil {
+			return DeploymentTarget{}, common.ContractError("INVALID_PROBE_FACT", "/spec")
+		}
+	}
+	last := ""
+	if raw, ok := spec["lastProbeAt"]; ok {
+		last, err = fieldString(map[string]json.RawMessage{"lastProbeAt": raw}, "lastProbeAt", "/spec/lastProbeAt")
+		if err != nil || common.ValidateDateTime(last, "/spec/lastProbeAt") != nil {
+			return DeploymentTarget{}, common.ContractError("INVALID_DATE_TIME", "/spec/lastProbeAt")
+		}
+	}
+	if phase == "ready" && (api == "" || engine == "" || targetOS == "" || arch == "" || stable != "" || last == "") || phase == "unavailable" && (api != "" || engine != "" || targetOS != "" || arch != "" || stable == "" || last == "") || (phase == "unprobed" || phase == "probing") && (api != "" || engine != "" || targetOS != "" || arch != "" || stable != "") {
+		return DeploymentTarget{}, common.ContractError("INVALID_PROBE_STATE", "/spec")
+	}
+	if stable != "" && common.ValidateIdentifier(stable, "/spec/stableErrorCode") != nil {
+		return DeploymentTarget{}, common.ContractError("INVALID_IDENTIFIER", "/spec/stableErrorCode")
+	}
+	return DeploymentTarget{ResourceBase: base, Spec: DeploymentTargetSpec{ProjectRef: project, Generation: generation, TargetKind: kind, Endpoint: endpoint, CredentialRef: credential, ObservedPhase: phase, APIVersion: api, EngineVersion: engine, OS: targetOS, Architecture: arch, StableErrorCode: stable, LastProbeAt: last}}, nil
+}
+func DecodeDeploymentTargetResponseJSON(data []byte) (common.ResponseEnvelope[DeploymentTarget], error) {
+	fields, sidecar, err := strictResource(data, "DeploymentTarget")
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTarget]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeDeploymentTargetJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTarget]{}, err
+	}
+	return common.ResponseEnvelope[DeploymentTarget]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeDeploymentTargetResponseJSON(value common.ResponseEnvelope[DeploymentTarget]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
