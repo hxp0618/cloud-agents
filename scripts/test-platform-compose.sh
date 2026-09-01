@@ -118,14 +118,18 @@ mkdir -p "$smoke_directory/deployment" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/workspace" \
   "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/kubernetes-target-credentials" \
+  "$smoke_directory/prepared-kubernetes-target-credentials" \
   "$smoke_directory/ssh-target-credentials" \
+  "$smoke_directory/fake-kubectl-state" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0755 "$smoke_directory" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" \
   "$smoke_directory/docker-target-credentials" "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/kubernetes-target-credentials" \
+  "$smoke_directory/prepared-kubernetes-target-credentials" \
   "$smoke_directory/ssh-target-credentials" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
+chmod 0700 "$smoke_directory/fake-kubectl-state"
 chmod 0777 "$smoke_directory/workspace"
 tar -xf "$1" -C "$smoke_directory/deployment"
 
@@ -470,6 +474,73 @@ chmodSync(path, 0o444);
 const kubernetesDescriptorPath = `${state}/kubernetes-target-credentials/kubernetes-compose-target.deployment.json`;
 writeFileSync(kubernetesDescriptorPath, `${JSON.stringify({ namespace: "cloud-agents-target", workerImageRepository, workerCredentialSecretRef: "cloud-agents-worker-target", workerSpiffeId: "spiffe://cloud-agents.compose/worker-target", workerServerName: "worker-target.example" })}\n`);
 chmodSync(kubernetesDescriptorPath, 0o444);
+NODE
+
+cp "$smoke_directory/ca.crt" "$smoke_directory/fake-kubectl-state/ca.crt"
+: >"$smoke_directory/fake-kubeconfig"
+chmod 0600 "$smoke_directory/fake-kubeconfig"
+cat >"$smoke_directory/fake-kubectl" <<'SH'
+#!/bin/sh
+set -eu
+state=${CLOUD_AGENTS_FAKE_KUBECTL_STATE:?}
+printf '%s\n' "$*" >>"$state/calls"
+case "$*" in
+  *' config view '*'certificate-authority-data'*) openssl base64 -A -in "$state/ca.crt" ;;
+  *' config view '*'cluster.server'*) printf '%s' 'https://kubernetes-target.example:6443' ;;
+  *' apply '*) cat >"$state/rbac.yaml" ;;
+  *' auth can-i '*) printf '%s\n' yes ;;
+  *' get secret '*) ;;
+  *' create token '*) printf '%s\n' fake-service-account-token ;;
+  *' create secret generic '*) ;;
+  *) echo "unexpected fake kubectl command: $*" >&2; exit 1 ;;
+esac
+SH
+chmod 0755 "$smoke_directory/fake-kubectl"
+
+prepare_kubernetes_target() {
+  CLOUD_AGENTS_FAKE_KUBECTL_STATE="$smoke_directory/fake-kubectl-state" \
+  CLOUD_AGENTS_KUBECONFIG="$smoke_directory/fake-kubeconfig" \
+  CLOUD_AGENTS_KUBERNETES_CONTEXT=target-context \
+  CLOUD_AGENTS_KUBERNETES_NAMESPACE=cloud-agents-target \
+  CLOUD_AGENTS_KUBERNETES_SERVICE_ACCOUNT=control-plane \
+  CLOUD_AGENTS_KUBERNETES_TOKEN_DURATION=24h \
+  CLOUD_AGENTS_TARGET_CREDENTIAL_REF=kubernetes-prepared-target \
+  CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR="$smoke_directory/prepared-kubernetes-target-credentials" \
+  CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY="$worker_repository" \
+  CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF=cloud-agents-worker-target \
+  CLOUD_AGENTS_WORKER_CREDENTIAL_DIR="$smoke_directory/target-worker-credentials" \
+  CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF=cloud-agents-provider-target \
+  CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR="$smoke_directory/target-provider-credentials" \
+  CLOUD_AGENTS_TENANT=tenant-compose-smoke \
+  CLOUD_AGENTS_WORKER_SPIFFE_ID=spiffe://cloud-agents.compose/worker-target \
+  CLOUD_AGENTS_WORKER_SERVER_NAME=worker-target.example \
+  KUBECTL="$smoke_directory/fake-kubectl" \
+    sh "$smoke_directory/deployment/scripts/prepare-platform-kubernetes-target.sh"
+}
+kubernetes_prepare_output=$(prepare_kubernetes_target)
+case "$kubernetes_prepare_output" in
+  *'endpoint=https://kubernetes-target.example:6443 credentialRef=kubernetes-prepared-target'*) ;;
+  *) echo "Kubernetes target preparation returned an invalid result" >&2; exit 1 ;;
+esac
+if prepare_kubernetes_target >/dev/null 2>&1; then
+  echo "Kubernetes target preparation overwrote existing credentials" >&2
+  exit 1
+fi
+CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" node <<'NODE'
+const { readFileSync, statSync } = require("node:fs");
+const state = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_STATE;
+const directory = `${state}/prepared-kubernetes-target-credentials`;
+const files = ["kubernetes-prepared-target.ca.crt", "kubernetes-prepared-target.token", "kubernetes-prepared-target.deployment.json"];
+for (const file of files) {
+  if ((statSync(`${directory}/${file}`).mode & 0o777) !== 0o400) throw new Error(`${file} mode is not 0400`);
+}
+if (!readFileSync(`${directory}/kubernetes-prepared-target.ca.crt`).equals(readFileSync(`${state}/ca.crt`))) throw new Error("prepared Kubernetes CA changed");
+if (readFileSync(`${directory}/kubernetes-prepared-target.token`, "utf8") !== "fake-service-account-token\n") throw new Error("prepared Kubernetes token changed");
+const descriptor = JSON.parse(readFileSync(`${directory}/kubernetes-prepared-target.deployment.json`, "utf8"));
+if (descriptor.namespace !== "cloud-agents-target" || descriptor.workerCredentialSecretRef !== "cloud-agents-worker-target") throw new Error("prepared Kubernetes descriptor changed");
+const rbac = readFileSync(`${state}/fake-kubectl-state/rbac.yaml`, "utf8");
+if (!rbac.includes('resourceNames: ["cloud-agents-worker-target", "cloud-agents-provider-target"]') || !rbac.includes('verbs: ["get", "list", "create", "patch", "delete"]')) throw new Error("prepared Kubernetes RBAC changed");
+if (readFileSync(`${state}/fake-kubectl-state/calls`, "utf8").includes("fake-service-account-token")) throw new Error("Kubernetes token entered command log");
 NODE
 
 prepare_target_credentials() {

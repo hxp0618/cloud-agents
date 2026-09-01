@@ -152,6 +152,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/worker.Dockerfile",
     "scripts/prepare-platform-docker-target.sh",
+    "scripts/prepare-platform-kubernetes-target.sh",
     "scripts/test-platform-agent-interactions.sh",
     "scripts/test-platform-kubernetes-target.sh",
     "scripts/test-platform-ssh-target.sh",

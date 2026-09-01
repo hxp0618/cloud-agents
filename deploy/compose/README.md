@@ -122,9 +122,10 @@ Each `credentialRef` selects `<credentialRef>.ca.crt` and
 ```
 
 Store the descriptor as `<credentialRef>.deployment.json`. The token should
-belong to a ServiceAccount allowed to GET `/version` and Secrets, and to
-GET/PATCH/DELETE Deployments, Services, and PersistentVolumeClaims in the
-configured namespace. The Control Plane sends it only as an HTTPS Bearer
+belong to a ServiceAccount allowed to GET `/version` and the referenced Secrets,
+and to GET/LIST/CREATE/PATCH/DELETE Deployments, Services, and
+PersistentVolumeClaims in the configured namespace. The Control Plane sends it
+only as an HTTPS Bearer
 credential and never persists it in target state. Each Environment Lease uses
 Server-Side Apply to reconcile a single Worker Deployment, a 20 Gi workspace
 PVC using the namespace's default StorageClass, and a LoadBalancer Service.
@@ -133,6 +134,38 @@ PVC using the namespace's default StorageClass, and a LoadBalancer Service.
 the target Secret containing the existing tenant Provider credential envelope.
 Helm installations can mount the same flat file layout from the Secret named by
 `deploymentTargets.kubernetesCredentialSecretName`.
+
+On a fresh target, run the packaged preparation script with an explicit
+kubeconfig context, token lifetime, namespace, and deployment-owned credential
+directory. It creates the namespace, a namespaced ServiceAccount/RoleBinding,
+the Worker and Provider Secrets, and the three flat Control Plane credential
+files without printing or hashing their contents:
+
+```sh
+CLOUD_AGENTS_KUBECONFIG=/secure/target.kubeconfig \
+CLOUD_AGENTS_KUBERNETES_CONTEXT=target-a \
+CLOUD_AGENTS_KUBERNETES_NAMESPACE=cloud-agents-target \
+CLOUD_AGENTS_KUBERNETES_SERVICE_ACCOUNT=cloud-agents-control-plane \
+CLOUD_AGENTS_KUBERNETES_TOKEN_DURATION=24h \
+CLOUD_AGENTS_TARGET_CREDENTIAL_REF=kubernetes-target-a \
+CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR=/secure/control-plane-kubernetes-targets \
+CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY=registry.example/cloud-agents/worker \
+CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF=cloud-agents-worker-target-a \
+CLOUD_AGENTS_WORKER_CREDENTIAL_DIR=/secure/worker-credentials \
+CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF=cloud-agents-provider-tenant-a \
+CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR=/secure/provider-credentials \
+CLOUD_AGENTS_TENANT=tenant-a \
+CLOUD_AGENTS_WORKER_SPIFFE_ID=spiffe://cloud-agents.example/workers/target-a \
+CLOUD_AGENTS_WORKER_SERVER_NAME=worker-target-a.example \
+  sh scripts/prepare-platform-kubernetes-target.sh
+```
+
+The ServiceAccount may only read the two named Secrets and reconcile/list the
+Worker Deployments, Services, and PVCs. The script also verifies GET `/version`
+(normally granted to authenticated users), refuses existing Secrets or output
+files, and leaves any safely created resources in place on later failure rather
+than guessing that it owns pre-existing cluster state. Rotate the token file
+before the explicitly requested lifetime expires.
 
 For an SSH deployment target, point `CLOUD_AGENTS_SSH_CREDENTIALS_DIR` at a
 deployment-owned directory. Each `credentialRef` selects three flat files:
