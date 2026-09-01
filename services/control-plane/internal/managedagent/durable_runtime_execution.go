@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"connectrpc.com/connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
@@ -77,7 +78,6 @@ type RuntimeTurnInput struct {
 	RequestID            string
 	ExecutionID          string
 	Generation           uint64
-	Fencing              *workerv1alpha1.FencingProof
 	WorkspaceDirectory   string
 	ProviderKind         string
 	ProviderResumeCursor string
@@ -195,6 +195,7 @@ var (
 	ErrDurableRuntimeExecutionUnavailable = errors.New("durable Runtime execution is unavailable")
 	ErrDurableRuntimeExecutionConflict    = errors.New("durable Runtime execution is already active")
 	ErrDurableRuntimeExecutionFailed      = errors.New("durable Runtime execution failed")
+	ErrRuntimeCapacityExhausted           = errors.New("Runtime session capacity is exhausted")
 	ErrRuntimeInteractionUnavailable      = errors.New("Runtime interaction is unavailable")
 	ErrRuntimeInteractionConflict         = errors.New("Runtime interaction resolution conflicts with active state")
 	ErrRuntimeInteractionFailed           = errors.New("Runtime interaction resolution failed")
@@ -577,6 +578,19 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if execution.State != ExecutionQueued {
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, nil
 	}
+	// Claim Worker capacity before the durable running transition so saturation remains replayable as queued.
+	runtimeSession, openErr := coordinator.supervisor.OpenRuntimeSession(runtimeCtx, input.ExecutionID, session.ProviderKind, coordinator.fencingGeneration, &workerv1alpha1.FencingProof{
+		LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...),
+	})
+	if connect.CodeOf(openErr) == connect.CodeResourceExhausted {
+		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}}, fmt.Errorf("%w: %v", ErrRuntimeCapacityExhausted, openErr)
+	}
+	if runtimeSession != nil {
+		defer func() {
+			_ = runtimeSession.CloseRequest()
+			_ = runtimeSession.CloseResponse()
+		}()
+	}
 	principal, err = nextVerifiedPrincipal(principalSource)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
@@ -588,10 +602,12 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if started.Execution.State != ExecutionRunning {
 		return DurableRuntimeExecutionResult{Transition: started}, nil
 	}
-	runtimeResult, err := coordinator.executeRuntimeTurn(runtimeCtx, key, active, RuntimeTurnInput{
+	if openErr != nil {
+		return coordinator.fail(principalSource, input, started, nil, "runtime_open_failed", openErr)
+	}
+	runtimeResult, err := coordinator.executeRuntimeTurn(runtimeCtx, key, active, runtimeSession, RuntimeTurnInput{
 		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
-		Fencing:            &workerv1alpha1.FencingProof{LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...)},
 		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, ProviderResumeCursor: session.ProviderResumeCursor, Model: input.Model, RuntimeMode: input.RuntimeMode, InteractionMode: input.InteractionMode, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
@@ -707,8 +723,11 @@ func nextVerifiedPrincipal(source VerifiedPrincipalSource) (*authn.VerifiedPrinc
 	return principal, nil
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx context.Context, key durableExecutionKey, active *activeDurableExecution, input RuntimeTurnInput) (RuntimeTurnResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx context.Context, key durableExecutionKey, active *activeDurableExecution, session *workerclient.RuntimeSession, input RuntimeTurnInput) (RuntimeTurnResult, error) {
 	result := RuntimeTurnResult{FailureCode: "runtime_open_failed"}
+	if session == nil {
+		return result, ErrDurableRuntimeExecutionUnavailable
+	}
 	if err := ValidateProviderResumeCursor(input.ProviderResumeCursor); err != nil {
 		result.FailureCode = "runtime_result_invalid"
 		return result, err
@@ -718,12 +737,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx co
 		result.FailureCode = "workspace_invalid"
 		return result, err
 	}
-	session, err := coordinator.supervisor.OpenRuntimeSession(ctx, input.ExecutionID, input.ProviderKind, input.Generation, input.Fencing)
-	if err != nil {
-		return result, err
-	}
 	closeSession := func() { _ = session.CloseRequest(); _ = session.CloseResponse() }
-	defer closeSession()
 	coordinator.activeMu.Lock()
 	if coordinator.active[key] != active || active.externallyCancelled {
 		coordinator.activeMu.Unlock()

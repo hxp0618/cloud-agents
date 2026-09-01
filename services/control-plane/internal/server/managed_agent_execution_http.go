@@ -613,6 +613,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "execution_conflict"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionConflict):
 		return http.StatusConflict, "execution_in_progress"
+	case errors.Is(err, internalmanagedagent.ErrRuntimeCapacityExhausted):
+		return http.StatusBadGateway, "runtime_capacity_exhausted"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeInteractionUnavailable), errors.Is(err, internalmanagedagent.ErrRuntimeInteractionConflict):
 		return http.StatusConflict, "interaction_not_pending"
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput), errors.Is(err, internalmanagedagent.ErrInvalidInput):

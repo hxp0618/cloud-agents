@@ -3,15 +3,24 @@ package managedagent
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
+	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
+	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type durableRuntimeExecutionStoreFake struct {
@@ -102,6 +111,75 @@ func (fake *durableRuntimeExecutionStoreFake) recordPrincipal(principal *authn.V
 }
 
 var _ DurableRuntimeExecutionStore = (*durableRuntimeExecutionStoreFake)(nil)
+
+type runtimeWorkerFake struct {
+	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
+	workerruntimev1alpha1connect.UnimplementedWorkerRuntimeServiceHandler
+	identity *workerv1alpha1.WorkloadIdentity
+	now      time.Time
+	full     bool
+}
+
+func (fake *runtimeWorkerFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+	version := &workerv1alpha1.ProtocolVersion{Major: 1, Minor: 0}
+	capabilities := append([]workerv1alpha1.Capability(nil), request.Msg.GetRequiredCapabilities()...)
+	return connect.NewResponse(&workerv1alpha1.NegotiationResponse{
+		SelectedVersion: version, AcceptedCapabilities: capabilities, AuthenticatedServerIdentity: fake.identity,
+		NegotiationId: "negotiation-capacity", ExpiresAt: timestamppb.New(fake.now.Add(time.Minute)),
+		Server: &workerv1alpha1.ProtocolDescriptor{
+			CurrentVersion: version, MinimumCompatibleVersion: version, Capabilities: capabilities,
+			MaxPayloadBytes: 64 << 10, MaxDeadlineSeconds: 300, MaxWireMessageBytes: 1 << 20, MaxRepeatedItems: 64, MaxStringBytes: 1024,
+		},
+	}), nil
+}
+
+func (fake *runtimeWorkerFake) OpenSession(ctx context.Context, stream *connect.BidiStream[workerruntimev1alpha1.RuntimeSessionRequest, workerruntimev1alpha1.RuntimeSessionResponse]) error {
+	if fake.full {
+		return connect.NewError(connect.CodeResourceExhausted, errors.New("capacity_exhausted"))
+	}
+	request, err := stream.Receive()
+	if err != nil || request.GetOpen() == nil {
+		return err
+	}
+	open := request.GetOpen()
+	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Ready{Ready: &workerruntimev1alpha1.RuntimeSessionReady{
+		ExecutionId: open.GetExecutionId(), Generation: open.GetGeneration(), ProtocolMajor: runtimeprotocol.ProtocolMajor, ProtocolMinor: runtimeprotocol.ProtocolMinor,
+	}}}); err != nil {
+		return err
+	}
+	for {
+		if _, err := stream.Receive(); err != nil {
+			if errors.Is(err, io.EOF) || ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func newRuntimeTestSupervisor(t *testing.T, now time.Time, full bool) *workerclient.Supervisor {
+	t.Helper()
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
+	wire := &runtimeWorkerFake{identity: identity, now: now, full: full}
+	mux := http.NewServeMux()
+	workerPath, workerHandler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(wire)
+	runtimePath, runtimeHandler := workerruntimev1alpha1connect.NewWorkerRuntimeServiceHandler(wire)
+	mux.Handle(workerPath, workerHandler)
+	mux.Handle(runtimePath, runtimeHandler)
+	server := httptest.NewUnstartedServer(mux)
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	supervisor, err := workerclient.New(workerclient.Config{
+		Client:                 workerv1alpha1connect.NewWorkerExecutionServiceClient(server.Client(), server.URL),
+		RuntimeClient:          workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL),
+		ExpectedWorkerIdentity: identity, Clock: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return supervisor
+}
 
 func testVerifiedPrincipalSource() VerifiedPrincipalSource {
 	return func() (*authn.VerifiedPrincipal, error) { return &authn.VerifiedPrincipal{}, nil }
@@ -402,6 +480,30 @@ func TestDurableRuntimeExecutionRejectsMismatchedPrecreatedTurn(t *testing.T) {
 	}
 }
 
+func TestDurableRuntimeExecutionLeavesQueuedExecutionRetryableWhenWorkerIsFull(t *testing.T) {
+	now := time.Date(2026, 9, 1, 4, 0, 0, 0, time.UTC)
+	supervisor := newRuntimeTestSupervisor(t, now, true)
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: supervisor, Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeCapacityExhausted) || result.Transition.Execution.State != ExecutionQueued {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution"}) {
+		t.Fatalf("capacity exhaustion mutated running state: calls=%v", store.calls)
+	}
+	assertFreshPrincipals(t, store.principals, 4)
+}
+
 func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
@@ -426,9 +528,10 @@ func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t
 
 func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, cancel: cancel}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
-		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		Store: store, Supervisor: newRuntimeTestSupervisor(t, now, false), Clock: func() time.Time { return now },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
 	})
 	if err != nil {

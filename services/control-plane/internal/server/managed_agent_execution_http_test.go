@@ -247,6 +247,15 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	}
 }
 
+func TestManagedAgentExecutionCapacityErrorIsRetryable(t *testing.T) {
+	status, code := managedAgentExecutionErrorStatus(internalmanagedagent.ErrRuntimeCapacityExhausted)
+	response := httptest.NewRecorder()
+	writeManagedAgentSessionError(response, status, code)
+	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), `"code":"RUNTIME_CAPACITY_EXHAUSTED"`) || !strings.Contains(response.Body.String(), `"retryable":true`) {
+		t.Fatalf("capacity response status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestManagedAgentExecutionHTTPServerDownloadsVisibleArtifactCandidate(t *testing.T) {
 	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 	candidate := runtimeprotocol.Message{
