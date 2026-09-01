@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"maps"
 	"net"
 	"net/url"
 	"os"
@@ -281,27 +280,11 @@ func listRemoteWorkerNames(client *ssh.Client, tenantID, projectID, targetID str
 }
 
 func managedWorker(name string, inspect remoteContainerInspect, expectedTargetGeneration int64) (ManagedWorker, error) {
-	labels := inspect.Config.Labels
-	targetGeneration, targetErr := strconv.ParseInt(labels["cloud-agents.dev/target-generation"], 10, 64)
-	leaseGeneration, leaseErr := strconv.ParseInt(labels["cloud-agents.dev/lease-generation"], 10, 64)
-	cpuLimit, cpuErr := strconv.ParseInt(labels["cloud-agents.dev/cpu-limit-millis"], 10, 64)
-	memoryLimit, memoryErr := strconv.ParseInt(labels["cloud-agents.dev/memory-limit-bytes"], 10, 64)
-	request := dockertarget.DeployRequest{
-		TenantID: labels["cloud-agents.dev/tenant"], ProjectID: labels["cloud-agents.dev/project"], TargetID: labels["cloud-agents.dev/target"], LeaseID: labels["cloud-agents.dev/lease"],
-		TargetGeneration: targetGeneration, LeaseGeneration: leaseGeneration, ReleaseDigest: labels["cloud-agents.dev/release-digest"],
-		ProviderCredentialRef: labels["cloud-agents.dev/provider-credential-ref"], CPULimitMillis: cpuLimit, MemoryLimitBytes: memoryLimit,
-	}
-	config := dockertarget.DeploymentConfig{
-		WorkerImageRepository: strings.TrimSuffix(inspect.Config.Image, "@"+request.ReleaseDigest),
-		WorkerCredentialRef:   labels["cloud-agents.dev/worker-credential-ref"],
-		WorkerSPIFFEID:        labels["cloud-agents.dev/worker-spiffe-id"],
-		WorkerServerName:      labels["cloud-agents.dev/worker-server-name"],
-	}
-	expected := dockertarget.DeploymentLabels(request, config)
-	if targetErr != nil || leaseErr != nil || cpuErr != nil || memoryErr != nil || targetGeneration > expectedTargetGeneration || request.Validate() != nil || !config.Valid() || inspect.Config.Image != config.WorkerImageRepository+"@"+request.ReleaseDigest || name != dockertarget.WorkerContainerName(request) || !exactLabels(labels, expected) {
+	request, err := dockertarget.ManagedWorkerRequest(name, inspect.Config.Image, inspect.Config.Labels, expectedTargetGeneration)
+	if err != nil {
 		return ManagedWorker{}, ErrDeploymentConflict
 	}
-	return ManagedWorker{Request: request, name: name, image: inspect.Config.Image, labels: maps.Clone(labels)}, nil
+	return ManagedWorker{Request: request, name: name, image: inspect.Config.Image, labels: inspect.Config.Labels}, nil
 }
 
 func inspectRemoteWorker(client *ssh.Client, name string) (remoteContainerInspect, error) {

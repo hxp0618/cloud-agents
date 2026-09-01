@@ -137,8 +137,8 @@ and its anonymous workspace volume. A container with mismatched ownership,
 generation, image, or credential references is never replaced or deleted.
 
 After a target is ready, run `cloud-agentsctl ... target cleanup
---expected-generation GENERATION` to remove stale managed Kubernetes
-Deployments, Services, and PVCs or SSH Worker containers. Cleanup retains every
+--expected-generation GENERATION` to remove stale managed Docker/SSH Worker
+containers or Kubernetes Deployments, Services, and PVCs. Cleanup retains every
 exact active Environment Lease, validates the target and Lease generations
 before deletion, and never deletes target Secrets or named credential volumes.
 

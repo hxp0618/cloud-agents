@@ -3,6 +3,7 @@ package dockertarget
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -163,17 +164,21 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
 	}
 	ownedImage, ownedLabels := config.WorkerImageRepository+"@"+request.ReleaseDigest, DeploymentLabels(request, config)
-	present, deletes := true, 0
+	actualLabels := maps.Clone(ownedLabels)
+	present, deletes, targetLists := true, 0, 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
 		switch {
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/json":
+			if strings.Contains(httpRequest.URL.Query().Get("filters"), "cloud-agents.dev/target=docker-alpha") {
+				targetLists++
+			}
 			if present {
 				_, _ = writer.Write([]byte(`[{"Id":"container-alpha"}]`))
 			} else {
 				_, _ = writer.Write([]byte("[]"))
 			}
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/container-alpha/json":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"Config": map[string]any{"Image": ownedImage, "Labels": ownedLabels}})
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": "/" + WorkerContainerName(request), "Config": map[string]any{"Image": ownedImage, "Labels": actualLabels}})
 		case httpRequest.Method == http.MethodDelete && httpRequest.URL.Path == "/containers/container-alpha":
 			present, deletes = false, deletes+1
 			writer.WriteHeader(http.StatusNoContent)
@@ -194,6 +199,23 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 	present = true
 	if err := cleanupWorkerContainer(context.Background(), server.Client(), server.URL, request, config); err != ErrDeploymentConflict {
 		t.Fatalf("ownership drift error = %v", err)
+	}
+	actualLabels["cloud-agents.dev/target-generation"] = "2"
+	if _, err := listManagedWorkers(context.Background(), server.Client(), server.URL, request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration); err != ErrDeploymentConflict {
+		t.Fatalf("future generation list error = %v", err)
+	}
+	actualLabels = maps.Clone(ownedLabels)
+	workers, err := listManagedWorkers(context.Background(), server.Client(), server.URL, request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
+	if err != nil || len(workers) != 1 || workers[0].Request != request {
+		t.Fatalf("managed workers = %#v, error = %v", workers, err)
+	}
+	for range 2 {
+		if err := cleanupManagedWorker(context.Background(), server.Client(), server.URL, workers[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if present || deletes != 2 || targetLists != 2 {
+		t.Fatalf("managed cleanup present=%v deletes=%d targetLists=%d", present, deletes, targetLists)
 	}
 }
 

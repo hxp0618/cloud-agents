@@ -9,12 +9,14 @@ import (
 	"errors"
 	"hash/fnv"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +64,13 @@ type DeployResult struct {
 	WorkerServerName string
 }
 
+type ManagedWorker struct {
+	Request DeployRequest
+	id      string
+	image   string
+	labels  map[string]string
+}
+
 type DeploymentConfig struct {
 	WorkerImageRepository string `json:"workerImageRepository"`
 	WorkerCredentialRef   string `json:"workerCredentialRef"`
@@ -70,6 +79,7 @@ type DeploymentConfig struct {
 }
 
 type containerInspect struct {
+	Name   string `json:"Name"`
 	Config struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
@@ -82,6 +92,10 @@ type containerInspect struct {
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
 	} `json:"NetworkSettings"`
+}
+
+type containerSummary struct {
+	ID string `json:"Id"`
 }
 
 func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
@@ -163,6 +177,30 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 	}
 	defer transport.CloseIdleConnections()
 	return cleanupWorkerContainer(ctx, client, base, request, config)
+}
+
+func (directory *CredentialDirectory) ListManagedWorkers(ctx context.Context, endpoint, credentialRef, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
+	if ctx == nil || commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(targetID, "/targetId") != nil || targetGeneration < 1 {
+		return nil, ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return nil, err
+	}
+	defer transport.CloseIdleConnections()
+	return listManagedWorkers(ctx, client, base, tenantID, projectID, targetID, targetGeneration)
+}
+
+func (directory *CredentialDirectory) CleanupManagedWorker(ctx context.Context, endpoint, credentialRef string, worker ManagedWorker) error {
+	if ctx == nil || worker.Request.Validate() != nil || !volumeNamePattern.MatchString(worker.id) || worker.image == "" || len(worker.labels) == 0 {
+		return ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return err
+	}
+	defer transport.CloseIdleConnections()
+	return cleanupManagedWorker(ctx, client, base, worker)
 }
 
 func cleanupWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig) error {
@@ -255,6 +293,28 @@ func DeploymentLabels(request DeployRequest, config DeploymentConfig) map[string
 	}
 }
 
+func ManagedWorkerRequest(name, image string, labels map[string]string, expectedTargetGeneration int64) (DeployRequest, error) {
+	targetGeneration, targetErr := strconv.ParseInt(labels["cloud-agents.dev/target-generation"], 10, 64)
+	leaseGeneration, leaseErr := strconv.ParseInt(labels["cloud-agents.dev/lease-generation"], 10, 64)
+	cpuLimit, cpuErr := strconv.ParseInt(labels["cloud-agents.dev/cpu-limit-millis"], 10, 64)
+	memoryLimit, memoryErr := strconv.ParseInt(labels["cloud-agents.dev/memory-limit-bytes"], 10, 64)
+	request := DeployRequest{
+		TenantID: labels["cloud-agents.dev/tenant"], ProjectID: labels["cloud-agents.dev/project"], TargetID: labels["cloud-agents.dev/target"], LeaseID: labels["cloud-agents.dev/lease"],
+		TargetGeneration: targetGeneration, LeaseGeneration: leaseGeneration, ReleaseDigest: labels["cloud-agents.dev/release-digest"],
+		ProviderCredentialRef: labels["cloud-agents.dev/provider-credential-ref"], CPULimitMillis: cpuLimit, MemoryLimitBytes: memoryLimit,
+	}
+	config := DeploymentConfig{
+		WorkerImageRepository: strings.TrimSuffix(image, "@"+request.ReleaseDigest),
+		WorkerCredentialRef:   labels["cloud-agents.dev/worker-credential-ref"],
+		WorkerSPIFFEID:        labels["cloud-agents.dev/worker-spiffe-id"],
+		WorkerServerName:      labels["cloud-agents.dev/worker-server-name"],
+	}
+	if targetErr != nil || leaseErr != nil || cpuErr != nil || memoryErr != nil || expectedTargetGeneration < 1 || targetGeneration > expectedTargetGeneration || request.Validate() != nil || !config.Valid() || image != config.WorkerImageRepository+"@"+request.ReleaseDigest || name != WorkerContainerName(request) || !exactLabels(labels, DeploymentLabels(request, config)) {
+		return DeployRequest{}, ErrDeploymentConflict
+	}
+	return request, nil
+}
+
 func exactLabels(actual, expected map[string]string) bool {
 	for key, value := range expected {
 		if actual[key] != value {
@@ -281,9 +341,7 @@ func findWorkerContainer(ctx context.Context, client *http.Client, base string, 
 		"cloud-agents.dev/project=" + request.ProjectID,
 		"cloud-agents.dev/lease=" + request.LeaseID,
 	}})
-	var containers []struct {
-		ID string `json:"Id"`
-	}
+	var containers []containerSummary
 	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filters)), nil, http.StatusOK, &containers); err != nil {
 		return "", err
 	}
@@ -294,6 +352,59 @@ func findWorkerContainer(ctx context.Context, client *http.Client, base string, 
 		return containers[0].ID, nil
 	}
 	return "", nil
+}
+
+func listManagedWorkers(ctx context.Context, client *http.Client, base, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
+	filters, _ := json.Marshal(map[string][]string{"label": {
+		"cloud-agents.dev/managed=true",
+		"cloud-agents.dev/tenant=" + tenantID,
+		"cloud-agents.dev/project=" + projectID,
+		"cloud-agents.dev/target=" + targetID,
+	}})
+	var containers []containerSummary
+	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filters)), nil, http.StatusOK, &containers); err != nil || len(containers) > 200 {
+		return nil, ErrDeploymentFailed
+	}
+	slices.SortFunc(containers, func(left, right containerSummary) int { return strings.Compare(left.ID, right.ID) })
+	workers := make([]ManagedWorker, 0, len(containers))
+	for index, container := range containers {
+		if !volumeNamePattern.MatchString(container.ID) || index > 0 && containers[index-1].ID == container.ID {
+			return nil, ErrDeploymentConflict
+		}
+		inspect, err := inspectWorkerContainer(ctx, client, base, container.ID)
+		if err != nil {
+			return nil, err
+		}
+		name := strings.TrimPrefix(inspect.Name, "/")
+		request, parseErr := ManagedWorkerRequest(name, inspect.Config.Image, inspect.Config.Labels, targetGeneration)
+		if inspect.Name != "/"+name || parseErr != nil || request.TenantID != tenantID || request.ProjectID != projectID || request.TargetID != targetID {
+			return nil, ErrDeploymentConflict
+		}
+		workers = append(workers, ManagedWorker{Request: request, id: container.ID, image: inspect.Config.Image, labels: maps.Clone(inspect.Config.Labels)})
+	}
+	return workers, nil
+}
+
+func cleanupManagedWorker(ctx context.Context, client *http.Client, base string, worker ManagedWorker) error {
+	containerID, err := findWorkerContainer(ctx, client, base, worker.Request)
+	if err != nil || containerID == "" {
+		return err
+	}
+	if containerID != worker.id {
+		return ErrDeploymentConflict
+	}
+	inspect, err := inspectWorkerContainer(ctx, client, base, worker.id)
+	if err != nil {
+		remaining, findErr := findWorkerContainer(ctx, client, base, worker.Request)
+		if findErr != nil || remaining != "" {
+			return ErrDeploymentFailed
+		}
+		return nil
+	}
+	if inspect.Name != "/"+WorkerContainerName(worker.Request) || inspect.Config.Image != worker.image || !exactLabels(inspect.Config.Labels, worker.labels) {
+		return ErrDeploymentConflict
+	}
+	return removeWorkerContainer(ctx, client, base, worker.id)
 }
 
 func ensureWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string) (string, error) {

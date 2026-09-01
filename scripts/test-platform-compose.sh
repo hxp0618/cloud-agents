@@ -757,6 +757,13 @@ if [ "$replayed_terminate_output" != "$terminate_output" ]; then
   echo "Compose Docker target termination was not idempotent" >&2
   exit 1
 fi
+docker_cleanup_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+  --request-id compose-smoke-docker-target-cleanup --idempotency-key compose-smoke-docker-target-cleanup \
+  target cleanup --expected-generation 1)
+case "$docker_cleanup_output" in
+  *'"generation":1'*'"targetKind":"docker"'*'"observedPhase":"ready"'*) ;;
+  *) echo "Compose Docker target cleanup failed" >&2; exit 1 ;;
+esac
 target_container_count=$(docker ps -aq \
   --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
   --filter label=cloud-agents.dev/lease=lease-compose-target | wc -l | tr -d ' ')

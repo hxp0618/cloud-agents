@@ -130,6 +130,27 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 	defer cancel()
 	workers := []managedDeploymentTargetWorker{}
 	switch target.Kind {
+	case "docker":
+		if server.dockerProber == nil {
+			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+			return
+		}
+		listed, listErr := server.dockerProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
+		if listErr != nil {
+			writeDeploymentTargetCleanupError(writer, target.Kind, listErr)
+			return
+		}
+		for _, worker := range listed {
+			worker := worker
+			request := worker.Request
+			workers = append(workers, managedDeploymentTargetWorker{
+				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID,
+				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
+				cleanup: func(ctx context.Context) error {
+					return server.dockerProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+				},
+			})
+		}
 	case "kubernetes":
 		if server.kubernetesProber == nil {
 			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
@@ -214,7 +235,9 @@ func managedDeploymentTargetWorkerActive(targetGeneration int64, worker managedD
 }
 
 func writeDeploymentTargetCleanupError(writer http.ResponseWriter, kind string, err error) {
-	if kind == "kubernetes" && errors.Is(err, kubernetestarget.ErrDeploymentConflict) || kind == "ssh" && errors.Is(err, sshtarget.ErrDeploymentConflict) {
+	if (kind == "docker" && errors.Is(err, dockertarget.ErrDeploymentConflict)) ||
+		(kind == "kubernetes" && errors.Is(err, kubernetestarget.ErrDeploymentConflict)) ||
+		(kind == "ssh" && errors.Is(err, sshtarget.ErrDeploymentConflict)) {
 		writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
 		return
 	}
