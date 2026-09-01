@@ -260,9 +260,12 @@ writeFileSync(`${state}/kubernetes-api.mjs`, [
   'const [certPath, keyPath, tokenPath, portPath] = process.argv.slice(2);',
   'const token = readFileSync(tokenPath, "utf8").trimEnd();',
   'const server = https.createServer({ cert: readFileSync(certPath), key: readFileSync(keyPath), minVersion: "TLSv1.2" }, (request, response) => {',
-  '  if (request.method !== "GET" || request.url !== "/version" || request.headers.authorization !== `Bearer ${token}`) { response.writeHead(401).end(); return; }',
+  '  if (request.method !== "GET" || request.headers.authorization !== `Bearer ${token}`) { response.writeHead(401).end(); return; }',
   '  response.setHeader("content-type", "application/json");',
-  '  response.end(JSON.stringify({ major: "1", minor: "34+", gitVersion: "v1.34.2", platform: "linux/arm64" }));',
+  '  const path = new URL(request.url, "https://kubernetes.invalid").pathname;',
+  '  if (path === "/version") { response.end(JSON.stringify({ major: "1", minor: "34+", gitVersion: "v1.34.2", platform: "linux/arm64" })); return; }',
+  '  if (["/apis/apps/v1/namespaces/cloud-agents-target/deployments", "/api/v1/namespaces/cloud-agents-target/services", "/api/v1/namespaces/cloud-agents-target/persistentvolumeclaims"].includes(path)) { response.end(JSON.stringify({ metadata: {}, items: [] })); return; }',
+  '  response.writeHead(404).end();',
   '});',
   'server.listen(0, "0.0.0.0", () => { writeFileSync(portPath, String(server.address().port)); chmodSync(portPath, 0o600); });',
   'process.on("SIGTERM", () => process.exit(0));',
@@ -461,6 +464,9 @@ const descriptor = {
 const path = `${state}/docker-target-credentials/docker-compose-target/deployment.json`;
 writeFileSync(path, `${JSON.stringify(descriptor)}\n`);
 chmodSync(path, 0o444);
+const kubernetesDescriptorPath = `${state}/kubernetes-target-credentials/kubernetes-compose-target.deployment.json`;
+writeFileSync(kubernetesDescriptorPath, `${JSON.stringify({ namespace: "cloud-agents-target", workerImageRepository, workerCredentialSecretRef: "cloud-agents-worker-target", workerSpiffeId: "spiffe://cloud-agents.compose/worker-target", workerServerName: "worker-target.example" })}\n`);
+chmodSync(kubernetesDescriptorPath, 0o444);
 NODE
 
 docker volume create "$target_worker_credentials_volume" >/dev/null
@@ -515,6 +521,13 @@ kubernetes_target_get_output=$(cloud_agentsctl --project "$project_id" --target 
 case "$kubernetes_target_get_output" in
   *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
   *) echo "Compose Kubernetes target ready state was not persisted" >&2; exit 1 ;;
+esac
+kubernetes_cleanup_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+  --request-id compose-smoke-kubernetes-target-cleanup --idempotency-key compose-smoke-kubernetes-target-cleanup \
+  target cleanup --expected-generation 1)
+case "$kubernetes_cleanup_output" in
+  *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
+  *) echo "Compose Kubernetes target cleanup failed" >&2; exit 1 ;;
 esac
 
 target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \

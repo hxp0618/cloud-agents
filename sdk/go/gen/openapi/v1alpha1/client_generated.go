@@ -742,6 +742,36 @@ func (client *Client) ProbeDeploymentTarget(ctx context.Context, tenantID, proje
 	}
 	return value, nil
 }
+func (client *Client) CleanupDeploymentTarget(ctx context.Context, tenantID, projectID, targetID, requestID, idempotencyKey string, body platform.DeploymentTargetProbeRequest) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetProbeRequestJSON(body)
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":cleanup", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetResult{}, client.problemError("managedHostCleanupDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "managedHostCleanupDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
 func (client *Client) CreateMembership(ctx context.Context, tenantID, requestID string, body platform.MembershipCreateRequest) (RBACMutationResult, error) {
 	if err := validatePath(tenantID, requestID); err != nil {
 		return RBACMutationResult{}, err
@@ -2531,6 +2561,29 @@ func ValidateProbeDeploymentTargetServerRequest(tenantID, projectID, targetID, r
 		return ProbeDeploymentTargetServerInput{}, err
 	}
 	return ProbeDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type CleanupDeploymentTargetServerInput struct {
+	TenantID       string
+	ProjectID      string
+	TargetID       string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.DeploymentTargetProbeRequest
+}
+
+func ValidateCleanupDeploymentTargetServerRequest(tenantID, projectID, targetID, requestID, idempotencyKey string, body []byte) (CleanupDeploymentTargetServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return CleanupDeploymentTargetServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CleanupDeploymentTargetServerInput{}, err
+	}
+	value, err := platform.DecodeDeploymentTargetProbeRequestJSON(body)
+	if err != nil {
+		return CleanupDeploymentTargetServerInput{}, err
+	}
+	return CleanupDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 func validateDeploymentTargetPath(tenantID, projectID, targetID, requestID string) error {
 	if err := validatePath(tenantID, requestID); err != nil {

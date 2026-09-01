@@ -15,6 +15,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
+	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 )
 
 type deploymentTargetStoreFake struct {
@@ -24,6 +25,8 @@ type deploymentTargetStoreFake struct {
 	begin      int
 	complete   int
 	completion internaldeploymenttarget.ProbeCompletion
+	lease      internalmanagedhost.Snapshot
+	leaseErr   error
 }
 
 func TestDeploymentTargetHTTPProbesKubernetesTarget(t *testing.T) {
@@ -81,6 +84,10 @@ func (fake *deploymentTargetStoreFake) RegisterDeploymentTarget(_ context.Contex
 func (fake *deploymentTargetStoreFake) GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error) {
 	fake.get++
 	return fake.snapshot, nil
+}
+
+func (fake *deploymentTargetStoreFake) GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error) {
+	return fake.lease, fake.leaseErr
 }
 
 func (fake *deploymentTargetStoreFake) BeginDeploymentTargetProbe(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ internaldeploymenttarget.ProbeInput) (internaldeploymenttarget.ProbeStart, error) {
@@ -153,7 +160,24 @@ func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 }
 
 func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
-	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") {
+	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:cleanup") {
 		t.Fatal("deployment target route ownership drifted")
+	}
+}
+
+func TestManagedKubernetesWorkerActiveRequiresExactAuthority(t *testing.T) {
+	request := kubernetestarget.DeployRequest{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "kubernetes-alpha", LeaseID: "lease-alpha", TargetGeneration: 2, LeaseGeneration: 3}
+	worker := kubernetestarget.ManagedWorker{Request: request}
+	lease := internalmanagedhost.Snapshot{Scope: internalmanagedhost.Scope{TenantID: request.TenantID, ProjectID: request.ProjectID}, LeaseID: request.LeaseID, TargetID: request.TargetID, TargetGeneration: request.TargetGeneration, Generation: request.LeaseGeneration, DesiredPhase: "active"}
+	if !managedKubernetesWorkerActive(2, worker, lease) {
+		t.Fatal("exact active lease was classified as orphaned")
+	}
+	lease.DesiredPhase = "terminated"
+	if managedKubernetesWorkerActive(2, worker, lease) {
+		t.Fatal("terminated lease retained a managed worker")
+	}
+	lease.DesiredPhase = "active"
+	if managedKubernetesWorkerActive(3, worker, lease) {
+		t.Fatal("stale target generation retained a managed worker")
 	}
 }

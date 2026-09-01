@@ -248,6 +248,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentRevokeMembership",
     "managedAgentRevokeRoleBinding",
     "managedAgentSuspendMembership",
+    "managedHostCleanupDeploymentTarget",
     "managedHostCreateEnvironmentLease",
     "managedHostGetDeploymentTarget",
     "managedHostGetEnvironmentLease",

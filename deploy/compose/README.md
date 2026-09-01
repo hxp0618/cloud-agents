@@ -114,6 +114,11 @@ the target Secret containing the existing tenant Provider credential envelope.
 Helm installations can mount the same flat file layout from the Secret named by
 `deploymentTargets.kubernetesCredentialSecretName`.
 
+After a target is ready, run `cloud-agentsctl ... target cleanup
+--expected-generation GENERATION` to remove stale managed Deployments, Services,
+and PVCs. Cleanup retains every exact active Environment Lease, validates the
+target and Lease generations before deletion, and never deletes target Secrets.
+
 The source checkout's packaged Compose smoke keeps its default no-credential
 `provider_not_installed` check. To additionally run one real Codex Turn and one
 real Claude Code Turn against its independently registered Docker target, pass

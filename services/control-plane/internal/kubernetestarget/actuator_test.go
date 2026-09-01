@@ -3,6 +3,7 @@ package kubernetestarget
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,84 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestCredentialDirectoryListsAndCleansManagedWorkers(t *testing.T) {
+	request := DeployRequest{
+		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "kubernetes-alpha", LeaseID: "lease-orphan",
+		TargetGeneration: 1, LeaseGeneration: 2, ReleaseDigest: "sha256:" + strings.Repeat("a", 64),
+		ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+	}
+	config := deploymentConfig{
+		Namespace: "agents", WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialSecretRef: "worker-alpha",
+		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/kubernetes-alpha", WorkerServerName: "worker.example.test",
+	}
+	name := workerResourceName(request)
+	annotations := deploymentAnnotations(request, config)
+	deleted, deletes := map[string]bool{}, 0
+	cluster := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, incoming *http.Request) {
+		if incoming.Header.Get("Authorization") != "Bearer service-account-token" {
+			t.Errorf("authorization = %q", incoming.Header.Get("Authorization"))
+		}
+		if incoming.Method == http.MethodGet && !strings.HasSuffix(incoming.URL.Path, "/"+name) {
+			if incoming.URL.Query().Get("labelSelector") != "cloud-agents.dev/managed=true" || incoming.URL.Query().Get("limit") != "200" {
+				t.Errorf("list query = %q", incoming.URL.RawQuery)
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"metadata": map[string]string{}, "items": []resource{{Metadata: resourceMetadata{Name: name, Namespace: config.Namespace, Annotations: annotations}}}})
+			return
+		}
+		if deleted[incoming.URL.Path] {
+			http.NotFound(writer, incoming)
+			return
+		}
+		switch incoming.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(writer).Encode(resource{Metadata: resourceMetadata{Name: name, Namespace: config.Namespace, UID: "uid-" + name, ResourceVersion: "7", Annotations: annotations}})
+		case http.MethodDelete:
+			var options struct {
+				Preconditions map[string]string `json:"preconditions"`
+			}
+			if err := json.NewDecoder(incoming.Body).Decode(&options); err != nil || options.Preconditions["uid"] != "uid-"+name || options.Preconditions["resourceVersion"] != "7" {
+				t.Errorf("delete preconditions = %#v, error = %v", options.Preconditions, err)
+			}
+			deleted[incoming.URL.Path], deletes = true, deletes+1
+			writer.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(writer, incoming)
+		}
+	}))
+	t.Cleanup(cluster.Close)
+
+	directory := t.TempDir()
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cluster.Certificate().Raw})
+	descriptor, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, value := range map[string][]byte{"cluster-alpha.ca.crt": certificate, "cluster-alpha.token": []byte("service-account-token\n"), "cluster-alpha.deployment.json": descriptor} {
+		if err := os.WriteFile(filepath.Join(directory, file), value, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	credentials, err := NewCredentialDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workers, err := credentials.ListManagedWorkers(context.Background(), cluster.URL, "cluster-alpha", request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
+	if err != nil || len(workers) != 1 || workers[0].Request != request {
+		t.Fatalf("workers=%#v error=%v", workers, err)
+	}
+	for range 2 {
+		if err := credentials.CleanupManagedWorker(context.Background(), cluster.URL, "cluster-alpha", workers[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if deletes != 3 {
+		t.Fatalf("deletes=%d", deletes)
+	}
+	if _, err := credentials.ListManagedWorkers(context.Background(), cluster.URL, "cluster-alpha", request.TenantID, request.ProjectID, request.TargetID, 0); !errors.Is(err, ErrDeploymentConfigInvalid) {
+		t.Fatalf("invalid generation error=%v", err)
+	}
+}
 
 func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 	request := DeployRequest{

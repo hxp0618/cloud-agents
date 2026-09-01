@@ -16,6 +16,7 @@ import (
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
+	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
@@ -24,6 +25,7 @@ const deploymentTargetCompletionTimeout = 5 * time.Second
 type deploymentTargetStore interface {
 	RegisterDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.RegisterInput) (internaldeploymenttarget.Snapshot, error)
 	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
+	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	BeginDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeInput) (internaldeploymenttarget.ProbeStart, error)
 	CompleteDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeCompletion) (internaldeploymenttarget.Snapshot, error)
 }
@@ -75,9 +77,102 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		server.get(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "probe" && request.Method == http.MethodPost:
 		server.probe(writer, request, tenantID, projectID, targetID, requestID, bearer)
+	case action == "cleanup" && request.Method == http.MethodPost:
+		server.cleanup(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	default:
 		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 	}
+}
+
+func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, request *http.Request, tenantID, projectID, targetID, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateCleanupDeploymentTargetServerRequest(tenantID, projectID, targetID, requestID, idempotencyKey, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if _, err = server.verify(bearer, tenantID, projectID, "projects.act"); err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	target, err := server.store.GetDeploymentTarget(request.Context(), tenantID, principal, projectID, targetID)
+	if err != nil {
+		writeDeploymentTargetError(writer, err)
+		return
+	}
+	if target.Generation != validated.Body.ExpectedGeneration || target.Kind != "kubernetes" || target.ObservedPhase != "ready" {
+		writePublicProblem(writer, http.StatusConflict, "target_conflict")
+		return
+	}
+	if server.kubernetesProber == nil {
+		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+		return
+	}
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
+	defer cancel()
+	workers, err := server.kubernetesProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
+	if err != nil {
+		writeKubernetesTargetCleanupError(writer, err)
+		return
+	}
+	orphans := make([]kubernetestarget.ManagedWorker, 0, len(workers))
+	for _, worker := range workers {
+		principal, err = server.verify(bearer, tenantID, projectID, "projects.get")
+		if err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
+		lease, leaseErr := server.store.GetManagedHostEnvironmentLease(cleanupContext, tenantID, principal, projectID, worker.Request.LeaseID)
+		if leaseErr == nil && managedKubernetesWorkerActive(target.Generation, worker, lease) {
+			continue
+		}
+		if leaseErr != nil && !errors.Is(leaseErr, postgres.ErrManagedHostEnvironmentLeaseNotFound) {
+			status, code := managedHostEnvironmentLeaseErrorStatus(leaseErr)
+			writePublicProblem(writer, status, code)
+			return
+		}
+		orphans = append(orphans, worker)
+	}
+	if _, err = server.verify(bearer, tenantID, projectID, "projects.act"); err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	for _, worker := range orphans {
+		if err := server.kubernetesProber.CleanupManagedWorker(cleanupContext, target.Endpoint, target.CredentialRef, worker); err != nil {
+			writeKubernetesTargetCleanupError(writer, err)
+			return
+		}
+	}
+	writeDeploymentTarget(writer, http.StatusOK, requestID, target)
+}
+
+func managedKubernetesWorkerActive(targetGeneration int64, worker kubernetestarget.ManagedWorker, lease internalmanagedhost.Snapshot) bool {
+	request := worker.Request
+	return request.TargetGeneration == targetGeneration && lease.Scope.TenantID == request.TenantID && lease.Scope.ProjectID == request.ProjectID &&
+		lease.LeaseID == request.LeaseID && lease.TargetID == request.TargetID && lease.TargetGeneration == request.TargetGeneration &&
+		lease.Generation == request.LeaseGeneration && lease.DesiredPhase == "active"
+}
+
+func writeKubernetesTargetCleanupError(writer http.ResponseWriter, err error) {
+	if errors.Is(err, kubernetestarget.ErrDeploymentConflict) {
+		writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
+		return
+	}
+	writePublicProblem(writer, http.StatusBadGateway, "environment_cleanup_failed")
 }
 
 func (server *DeploymentTargetHTTPServer) register(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
@@ -248,6 +343,11 @@ func deploymentTargetPath(path string) (tenantID, projectID, targetID, action st
 			targetID = strings.TrimSuffix(parts[4], ":probe")
 			if targetID != "" {
 				return parts[0], parts[2], targetID, "probe", true
+			}
+		} else if strings.HasSuffix(parts[4], ":cleanup") {
+			targetID = strings.TrimSuffix(parts[4], ":cleanup")
+			if targetID != "" {
+				return parts[0], parts[2], targetID, "cleanup", true
 			}
 		} else if parts[4] != "" && !strings.Contains(parts[4], ":") {
 			return parts[0], parts[2], parts[4], "get", true

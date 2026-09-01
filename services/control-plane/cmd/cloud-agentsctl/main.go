@@ -98,7 +98,7 @@ func run(args []string, stdout io.Writer) error {
 	case "target preflight":
 		var kind, socketPath string
 		if err = parseActionFlags("target preflight", actionArgs, func(set *flag.FlagSet) {
-			set.StringVar(&kind, "kind", "", "target kind (docker or kubernetes)")
+			set.StringVar(&kind, "kind", "", "target kind (docker)")
 			set.StringVar(&socketPath, "socket", "", "absolute Docker Engine socket path")
 		}); err == nil && kind != "docker" {
 			err = errors.New("--kind must be docker")
@@ -109,8 +109,8 @@ func run(args []string, stdout io.Writer) error {
 		var targetName, kind, targetEndpoint, credentialRef string
 		if err = parseActionFlags("target register", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&targetName, "target-name", "", "deployment target name")
-			set.StringVar(&kind, "kind", "", "target kind (docker)")
-			set.StringVar(&targetEndpoint, "target-endpoint", "", "Docker Engine HTTPS endpoint")
+			set.StringVar(&kind, "kind", "", "target kind (docker or kubernetes)")
+			set.StringVar(&targetEndpoint, "target-endpoint", "", "target HTTPS endpoint")
 			set.StringVar(&credentialRef, "credential-ref", "", "deployment-owned credential reference")
 		}); err == nil {
 			value, err = client.RegisterDeploymentTarget(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.DeploymentTargetRegisterRequest{TargetID: options.target, TargetName: targetName, TargetKind: kind, Endpoint: targetEndpoint, CredentialRef: credentialRef})
@@ -127,6 +127,15 @@ func run(args []string, stdout io.Writer) error {
 			err = errors.New("--expected-generation must be greater than zero")
 		} else if err == nil {
 			value, err = client.ProbeDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
+		}
+	case "target cleanup":
+		var generation int64
+		if err = parseActionFlags("target cleanup", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&generation, "expected-generation", 0, "deployment target fencing generation")
+		}); err == nil && generation < 1 {
+			err = errors.New("--expected-generation must be greater than zero")
+		} else if err == nil {
+			value, err = client.CleanupDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
 		}
 	case "tenant get":
 		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
@@ -775,7 +784,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -811,7 +820,7 @@ func requiresTarget(command, action string) bool {
 	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"
 }
 func requiresIdempotency(command, action string) bool {
-	return (command == "target" && (action == "register" || action == "probe")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
+	return (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
@@ -821,7 +830,7 @@ const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token T
 const help = usage + `
 
 resources and actions:
-  target preflight|register|get|probe
+  target preflight|register|get|probe|cleanup
   tenant get
   organization get|list|create
   project get|list|create

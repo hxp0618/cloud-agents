@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +59,13 @@ type DeployResult struct {
 	Endpoint         string
 	WorkerSPIFFEID   string
 	WorkerServerName string
+}
+
+type ManagedWorker struct {
+	Request     DeployRequest
+	name        string
+	namespace   string
+	annotations map[string]string
 }
 
 type deploymentConfig struct {
@@ -158,6 +167,87 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 	return cleanupResources(ctx, client, base, config.Namespace, workerResourceName(request), deploymentAnnotations(request, config))
 }
 
+func (directory *CredentialDirectory) ListManagedWorkers(ctx context.Context, endpoint, credentialRef, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
+	if ctx == nil || commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(targetID, "/targetId") != nil || targetGeneration < 1 {
+		return nil, ErrDeploymentConfigInvalid
+	}
+	config, err := directory.readDeploymentConfig(credentialRef)
+	if err != nil {
+		return nil, err
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return nil, err
+	}
+	defer transport.CloseIdleConnections()
+	workers := map[string]ManagedWorker{}
+	listed := 0
+	paths := []string{
+		"/apis/apps/v1/namespaces/" + url.PathEscape(config.Namespace) + "/deployments",
+		"/api/v1/namespaces/" + url.PathEscape(config.Namespace) + "/services",
+		"/api/v1/namespaces/" + url.PathEscape(config.Namespace) + "/persistentvolumeclaims",
+	}
+	for _, path := range paths {
+		continuation := ""
+		for {
+			query := url.Values{"labelSelector": {"cloud-agents.dev/managed=true"}, "limit": {"200"}}
+			if continuation != "" {
+				query.Set("continue", continuation)
+			}
+			var page struct {
+				Metadata struct {
+					Continue string `json:"continue"`
+				} `json:"metadata"`
+				Items []resource `json:"items"`
+			}
+			status, listErr := kubernetesJSON(ctx, client, http.MethodGet, base+path+"?"+query.Encode(), "", nil, &page)
+			listed += len(page.Items)
+			if listErr != nil || status != http.StatusOK || page.Items == nil || listed > 10_000 || page.Metadata.Continue != "" && page.Metadata.Continue == continuation {
+				return nil, ErrDeploymentFailed
+			}
+			for _, item := range page.Items {
+				annotations := item.Metadata.Annotations
+				if annotations["cloud-agents.dev/target"] != targetID {
+					continue
+				}
+				if annotations["cloud-agents.dev/tenant"] != tenantID || annotations["cloud-agents.dev/project"] != projectID {
+					return nil, ErrDeploymentConflict
+				}
+				worker, parseErr := managedWorker(item.Metadata, targetGeneration, config)
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				if existing, ok := workers[worker.name]; ok && !maps.Equal(existing.annotations, worker.annotations) {
+					return nil, ErrDeploymentConflict
+				}
+				workers[worker.name] = worker
+			}
+			continuation = page.Metadata.Continue
+			if continuation == "" {
+				break
+			}
+		}
+	}
+	result := make([]ManagedWorker, 0, len(workers))
+	for _, worker := range workers {
+		result = append(result, worker)
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].name < result[right].name })
+	return result, nil
+}
+
+func (directory *CredentialDirectory) CleanupManagedWorker(ctx context.Context, endpoint, credentialRef string, worker ManagedWorker) error {
+	if ctx == nil || worker.Request.validate() != nil || worker.name != workerResourceName(worker.Request) || !dnsLabelPattern.MatchString(worker.namespace) || !ownedResource(resourceMetadata{Name: worker.name, Namespace: worker.namespace, Annotations: worker.annotations}, worker.name, worker.namespace, worker.annotations) {
+		return ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return err
+	}
+	defer transport.CloseIdleConnections()
+	return cleanupResources(ctx, client, base, worker.namespace, worker.name, worker.annotations)
+}
+
 func (request DeployRequest) validate() error {
 	for path, value := range map[string]string{"/tenantId": request.TenantID, "/projectId": request.ProjectID, "/targetId": request.TargetID, "/leaseId": request.LeaseID, "/providerCredentialRef": request.ProviderCredentialRef} {
 		if commonv1alpha1.ValidateIdentifier(value, path) != nil {
@@ -230,6 +320,24 @@ func deploymentAnnotations(request DeployRequest, config deploymentConfig) map[s
 		"cloud-agents.dev/worker-spiffe-id":             config.WorkerSPIFFEID,
 		"cloud-agents.dev/worker-server-name":           config.WorkerServerName,
 	}
+}
+
+func managedWorker(metadata resourceMetadata, expectedTargetGeneration int64, config deploymentConfig) (ManagedWorker, error) {
+	annotations := metadata.Annotations
+	targetGeneration, targetErr := strconv.ParseInt(annotations["cloud-agents.dev/target-generation"], 10, 64)
+	leaseGeneration, leaseErr := strconv.ParseInt(annotations["cloud-agents.dev/lease-generation"], 10, 64)
+	cpuLimitMillis, cpuErr := strconv.ParseInt(annotations["cloud-agents.dev/cpu-limit-millis"], 10, 64)
+	memoryLimitBytes, memoryErr := strconv.ParseInt(annotations["cloud-agents.dev/memory-limit-bytes"], 10, 64)
+	request := DeployRequest{
+		TenantID: annotations["cloud-agents.dev/tenant"], ProjectID: annotations["cloud-agents.dev/project"], TargetID: annotations["cloud-agents.dev/target"], LeaseID: annotations["cloud-agents.dev/lease"],
+		TargetGeneration: targetGeneration, LeaseGeneration: leaseGeneration, ReleaseDigest: annotations["cloud-agents.dev/release-digest"], ProviderCredentialRef: annotations["cloud-agents.dev/provider-credential-ref"],
+		CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes,
+	}
+	if targetErr != nil || leaseErr != nil || cpuErr != nil || memoryErr != nil || targetGeneration > expectedTargetGeneration || request.validate() != nil || metadata.Namespace != config.Namespace ||
+		annotations["cloud-agents.dev/worker-credential-secret-ref"] != config.WorkerCredentialSecretRef || annotations["cloud-agents.dev/worker-spiffe-id"] != config.WorkerSPIFFEID || annotations["cloud-agents.dev/worker-server-name"] != config.WorkerServerName || metadata.Name != workerResourceName(request) {
+		return ManagedWorker{}, ErrDeploymentConflict
+	}
+	return ManagedWorker{Request: request, name: metadata.Name, namespace: metadata.Namespace, annotations: deploymentAnnotations(request, config)}, nil
 }
 
 func desiredResources(name string, request DeployRequest, config deploymentConfig, annotations map[string]string) []desiredResource {

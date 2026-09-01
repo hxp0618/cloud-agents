@@ -261,6 +261,37 @@
           "415": { "$ref": "#/components/responses/Problem" }
         }
       }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:cleanup": {
+      "post": {
+        "operationId": "managedHostCleanupDeploymentTarget",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/TargetId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/deployment-target-probe-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/DeploymentTarget" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "502": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
     }
   },
   "components": {

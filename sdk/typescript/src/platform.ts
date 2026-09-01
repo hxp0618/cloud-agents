@@ -3918,6 +3918,39 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  async cleanupDeploymentTarget(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: DeploymentTargetProbeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTarget>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:cleanup`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeDeploymentTargetProbeRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedHostCleanupDeploymentTarget", response);
+    const result = parseDeploymentTarget(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== targetId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
   private async mutate(
     path: string,
     tenantId: string,
