@@ -1296,6 +1296,12 @@
     "responses": {
       "Problem": {
         "description": "Problem",
+        "headers": {
+          "WWW-Authenticate": {
+            "description": "Bearer authentication challenge returned with 401 responses.",
+            "schema": { "type": "string" }
+          }
+        },
         "content": {
           "application/problem+json": {
             "schema": {

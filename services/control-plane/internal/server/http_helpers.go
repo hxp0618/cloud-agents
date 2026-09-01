@@ -90,6 +90,9 @@ func writePublicProblem(writer http.ResponseWriter, status int, code string) {
 		Error:     publicStableError{Code: stableCode, Retryable: status == http.StatusTooManyRequests || status >= http.StatusInternalServerError},
 		RequestID: requestID,
 	}
+	if status == http.StatusUnauthorized {
+		writer.Header().Set("WWW-Authenticate", "Bearer")
+	}
 	writer.Header().Set("Content-Type", "application/problem+json")
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(problem)

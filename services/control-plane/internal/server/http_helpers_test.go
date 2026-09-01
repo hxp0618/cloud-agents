@@ -92,3 +92,12 @@ func TestConcurrentRequestLimitRejectsExcessAndKeepsProbesAvailable(t *testing.T
 	close(release)
 	<-firstDone
 }
+
+func TestWritePublicProblemChallengesUnauthorizedRequests(t *testing.T) {
+	response := httptest.NewRecorder()
+	writePublicProblem(response, http.StatusUnauthorized, "authentication_failed")
+
+	if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") != "Bearer" {
+		t.Fatalf("status=%d headers=%v", response.Code, response.Header())
+	}
+}
