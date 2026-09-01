@@ -93,6 +93,7 @@ describe("platform release", () => {
   it("packages the current product migration manifest, catalog, and SQL", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
+    expect(entries.map(({ path }) => path)).toContain("LICENSE");
     expect(entries.some(({ path }) => path.endsWith("product/000029/manifest.json"))).toBe(true);
     expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(29);
     expect(expectedArtifactIdentities()).toContainEqual({
@@ -105,6 +106,7 @@ describe("platform release", () => {
     const archive = buildPlatformDeploymentPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
     expect(entries.map(({ path }) => path)).toEqual([
+      "LICENSE",
       "deploy/bootstrap/database.sql",
       "deploy/bootstrap/roles.sql",
       "deploy/compose/.env.example",
@@ -271,6 +273,7 @@ describe("platform release", () => {
   it("packages public contracts without internal provenance inputs", () => {
     const entries = readDeterministicUstar(buildPlatformContractPackage(process.cwd()));
     const paths = entries.map(({ path }) => path);
+    expect(paths).toContain("LICENSE");
     expect(paths).toContain("contracts/managed-agent/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/managed-host/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/worker/runtime/v1alpha1/runtime.proto");

@@ -126,6 +126,7 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
     };
   };
   const paths = new Set<string>([
+    "LICENSE",
     manifestPath,
     "services/control-plane/migrations/product/000029/schema-bundle.json",
   ]);
@@ -140,6 +141,7 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
 
 export function buildPlatformDeploymentPackage(root: string): Uint8Array {
   const paths = [
+    "LICENSE",
     "deploy/compose/.env.example",
     "deploy/compose/README.md",
     "deploy/compose/cloud-agents-up.sh",
@@ -165,6 +167,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
 
 export function buildPlatformContractPackage(root: string): Uint8Array {
   const paths = [
+    "LICENSE",
     ...readTree(root, "contracts/common/v1alpha1").filter((path) => !path.endsWith("README.md")),
     ...readTree(root, "contracts/managed-agent/v1alpha1"),
     ...readTree(root, "contracts/managed-host/v1alpha1"),
