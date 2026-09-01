@@ -119,6 +119,19 @@ After a target is ready, run `cloud-agentsctl ... target cleanup
 and PVCs. Cleanup retains every exact active Environment Lease, validates the
 target and Lease generations before deletion, and never deletes target Secrets.
 
+Run the real Kubernetes target acceptance with
+`sh scripts/test-platform-kubernetes-target.sh`.
+It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_TOKEN_FILE`,
+`CLOUD_AGENTS_TENANT`, `CLOUD_AGENTS_PROJECT`, `CLOUD_AGENTS_TARGET_ID`,
+`CLOUD_AGENTS_TARGET_ENDPOINT`, `CLOUD_AGENTS_TARGET_CREDENTIAL_REF`,
+`CLOUD_AGENTS_RELEASE_DIGEST`, `CLOUD_AGENTS_PROVIDER_SECRET_REF`,
+`CLOUD_AGENTS_KUBECONFIG`, `CLOUD_AGENTS_KUBERNETES_NAMESPACE`, and a new
+`CLOUD_AGENTS_E2E_OUTPUT_DIR`. The Control Plane credential directory and target
+Secrets must already contain the files described above. The script runs a real
+Codex Turn, restarts the Worker Deployment, resumes the Codex Session, runs a
+real Claude Turn, validates downloaded Artifacts, terminates twice to verify
+idempotency, runs orphan cleanup, and retains non-secret JSON/JSONL results.
+
 The source checkout's packaged Compose smoke keeps its default no-credential
 `provider_not_installed` check. To additionally run one real Codex Turn and one
 real Claude Code Turn against its independently registered Docker target, pass

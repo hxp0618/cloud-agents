@@ -129,6 +129,7 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
+      "scripts/test-platform-kubernetes-target.sh",
     ]);
   });
 
