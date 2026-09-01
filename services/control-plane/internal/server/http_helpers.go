@@ -2,11 +2,27 @@ package server
 
 import (
 	"encoding/json"
+	"mime"
 	"net/http"
 	"strings"
 )
 
 const publicFallbackRequestID = "request-unknown"
+
+func JSONContentTypeHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost && request.ContentLength != 0 {
+			values := request.Header.Values("Content-Type")
+			mediaType, _, err := mime.ParseMediaType(strings.Join(values, ","))
+			if len(values) != 1 || err != nil || mediaType != "application/json" {
+				preparePublicRequestID(writer, request)
+				writePublicProblem(writer, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE")
+				return
+			}
+		}
+		next.ServeHTTP(writer, request)
+	})
+}
 
 func ConcurrentRequestLimitHandler(limit int, next http.Handler) http.Handler {
 	slots := make(chan struct{}, limit)
@@ -103,6 +119,8 @@ func publicProblemTitle(code string) string {
 		return "Method not allowed"
 	case "REQUEST_CAPACITY_EXHAUSTED":
 		return "Request capacity exhausted"
+	case "UNSUPPORTED_MEDIA_TYPE":
+		return "Unsupported media type"
 	default:
 		return "Cloud Agents request failed"
 	}

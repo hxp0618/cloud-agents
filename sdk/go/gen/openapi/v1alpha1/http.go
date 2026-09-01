@@ -63,6 +63,9 @@ func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Re
 	for name, value := range input.Headers {
 		request.Header.Set(name, value)
 	}
+	if len(input.Body) != 0 {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	request.Header.Set("Authorization", "Bearer "+transport.bearerToken)
 	response, err := transport.client.Do(request)
 	if err != nil {

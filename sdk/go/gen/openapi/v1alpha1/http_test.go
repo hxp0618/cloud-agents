@@ -52,6 +52,24 @@ func TestHTTPClientUsesProvidedHTTPClient(t *testing.T) {
 	}
 }
 
+func TestHTTPClientSendsJSONContentTypeForRequestBodies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("method=%s content-type=%q", request.Method, request.Header.Get("Content-Type"))
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client, err := NewHTTPClient(server.URL, "token-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.roundTrip(context.Background(), Request{Method: http.MethodPost, Path: "/resource", Body: []byte(`{}`)})
+	if err != nil || response.Status != http.StatusNoContent {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+}
+
 func TestHTTPClientRejectsUnsafeConfigAndRedirects(t *testing.T) {
 	for _, value := range []struct{ base, token string }{
 		{"", "token"}, {"ftp://example.com", "token"}, {"http://example.com", "token"}, {"http://localhost", "token"}, {"https://user@example.com", "token"}, {"https://example.com?x=1", "token"}, {"https://example.com", " token"},

@@ -484,7 +484,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	httpServer := &http.Server{
 		Addr:              config.listen,
-		Handler:           mux,
+		Handler:           server.JSONContentTypeHandler(mux),
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
