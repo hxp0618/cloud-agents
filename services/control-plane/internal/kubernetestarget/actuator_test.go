@@ -123,6 +123,9 @@ func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 			t.Fatalf("desired resources contain credential field %q", forbidden)
 		}
 	}
+	if strings.Count(text, `"defaultMode":256`) != 2 {
+		t.Fatal("Worker and Provider Secret volumes must use mode 0400")
+	}
 
 	present := map[string]bool{}
 	applies, deletes := 0, 0
