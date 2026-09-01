@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/url"
 	"os"
@@ -38,6 +39,13 @@ type DeployResult struct {
 	Endpoint         string
 	WorkerSPIFFEID   string
 	WorkerServerName string
+}
+
+type ManagedWorker struct {
+	Request dockertarget.DeployRequest
+	name    string
+	image   string
+	labels  map[string]string
 }
 
 type remoteContainerInspect struct {
@@ -122,6 +130,51 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 	return cleanupRemoteWorker(ctx, client, dockertarget.WorkerContainerName(request), config.WorkerImageRepository+"@"+request.ReleaseDigest, dockertarget.DeploymentLabels(request, config))
 }
 
+func (directory *CredentialDirectory) ListManagedWorkers(ctx context.Context, endpoint, credentialRef, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
+	for path, value := range map[string]string{"/tenantId": tenantID, "/projectId": projectID, "/targetId": targetID} {
+		if commonv1alpha1.ValidateIdentifier(value, path) != nil {
+			return nil, ErrDeploymentConfigInvalid
+		}
+	}
+	if ctx == nil || targetGeneration < 1 {
+		return nil, ErrDeploymentConfigInvalid
+	}
+	client, _, err := directory.connect(ctx, endpoint, credentialRef, 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	names, err := listRemoteWorkerNames(client, tenantID, projectID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	workers := make([]ManagedWorker, 0, len(names))
+	for _, name := range names {
+		inspect, inspectErr := inspectRemoteWorker(client, name)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		worker, parseErr := managedWorker(name, inspect, targetGeneration)
+		if parseErr != nil || worker.Request.TenantID != tenantID || worker.Request.ProjectID != projectID || worker.Request.TargetID != targetID {
+			return nil, ErrDeploymentConflict
+		}
+		workers = append(workers, worker)
+	}
+	return workers, nil
+}
+
+func (directory *CredentialDirectory) CleanupManagedWorker(ctx context.Context, endpoint, credentialRef string, worker ManagedWorker) error {
+	if ctx == nil || worker.Request.Validate() != nil || worker.name != dockertarget.WorkerContainerName(worker.Request) || worker.image == "" || len(worker.labels) == 0 {
+		return ErrDeploymentConfigInvalid
+	}
+	client, _, err := directory.connect(ctx, endpoint, credentialRef, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return cleanupRemoteWorker(ctx, client, worker.name, worker.image, worker.labels)
+}
+
 func (directory *CredentialDirectory) readDeploymentConfig(credentialRef string) (dockertarget.DeploymentConfig, error) {
 	if directory == nil || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
 		return dockertarget.DeploymentConfig{}, ErrDeploymentConfigInvalid
@@ -198,6 +251,57 @@ func findRemoteWorker(client *ssh.Client, name string, request dockertarget.Depl
 		return false, ErrDeploymentConflict
 	}
 	return len(lines) == 1, nil
+}
+
+func listRemoteWorkerNames(client *ssh.Client, tenantID, projectID, targetID string) ([]string, error) {
+	arguments := []string{"ps", "-a", "--format", "{{.Names}}"}
+	for _, filter := range []string{
+		"cloud-agents.dev/managed=true",
+		"cloud-agents.dev/tenant=" + tenantID,
+		"cloud-agents.dev/project=" + projectID,
+		"cloud-agents.dev/target=" + targetID,
+	} {
+		arguments = append(arguments, "--filter", "label="+filter)
+	}
+	output, err := runSSHCommand(client, dockerCommand(arguments...))
+	if err != nil {
+		return nil, ErrDeploymentFailed
+	}
+	names := strings.Fields(string(output))
+	if len(names) > 200 {
+		return nil, ErrDeploymentConflict
+	}
+	slices.Sort(names)
+	for index, name := range names {
+		if name == "" || len(name) > 128 || index > 0 && names[index-1] == name {
+			return nil, ErrDeploymentConflict
+		}
+	}
+	return names, nil
+}
+
+func managedWorker(name string, inspect remoteContainerInspect, expectedTargetGeneration int64) (ManagedWorker, error) {
+	labels := inspect.Config.Labels
+	targetGeneration, targetErr := strconv.ParseInt(labels["cloud-agents.dev/target-generation"], 10, 64)
+	leaseGeneration, leaseErr := strconv.ParseInt(labels["cloud-agents.dev/lease-generation"], 10, 64)
+	cpuLimit, cpuErr := strconv.ParseInt(labels["cloud-agents.dev/cpu-limit-millis"], 10, 64)
+	memoryLimit, memoryErr := strconv.ParseInt(labels["cloud-agents.dev/memory-limit-bytes"], 10, 64)
+	request := dockertarget.DeployRequest{
+		TenantID: labels["cloud-agents.dev/tenant"], ProjectID: labels["cloud-agents.dev/project"], TargetID: labels["cloud-agents.dev/target"], LeaseID: labels["cloud-agents.dev/lease"],
+		TargetGeneration: targetGeneration, LeaseGeneration: leaseGeneration, ReleaseDigest: labels["cloud-agents.dev/release-digest"],
+		ProviderCredentialRef: labels["cloud-agents.dev/provider-credential-ref"], CPULimitMillis: cpuLimit, MemoryLimitBytes: memoryLimit,
+	}
+	config := dockertarget.DeploymentConfig{
+		WorkerImageRepository: strings.TrimSuffix(inspect.Config.Image, "@"+request.ReleaseDigest),
+		WorkerCredentialRef:   labels["cloud-agents.dev/worker-credential-ref"],
+		WorkerSPIFFEID:        labels["cloud-agents.dev/worker-spiffe-id"],
+		WorkerServerName:      labels["cloud-agents.dev/worker-server-name"],
+	}
+	expected := dockertarget.DeploymentLabels(request, config)
+	if targetErr != nil || leaseErr != nil || cpuErr != nil || memoryErr != nil || targetGeneration > expectedTargetGeneration || request.Validate() != nil || !config.Valid() || inspect.Config.Image != config.WorkerImageRepository+"@"+request.ReleaseDigest || name != dockertarget.WorkerContainerName(request) || !exactLabels(labels, expected) {
+		return ManagedWorker{}, ErrDeploymentConflict
+	}
+	return ManagedWorker{Request: request, name: name, image: inspect.Config.Image, labels: maps.Clone(labels)}, nil
 }
 
 func inspectRemoteWorker(client *ssh.Client, name string) (remoteContainerInspect, error) {

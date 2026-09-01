@@ -23,6 +23,9 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
 	}
 	labels := DeploymentLabels(request, config)
+	if labels["cloud-agents.dev/worker-credential-ref"] != config.WorkerCredentialRef {
+		t.Fatal("deployment labels do not bind the Worker credential reference")
+	}
 	var create map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
 		switch {

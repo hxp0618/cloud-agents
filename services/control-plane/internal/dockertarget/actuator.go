@@ -247,6 +247,7 @@ func DeploymentLabels(request DeployRequest, config DeploymentConfig) map[string
 		"cloud-agents.dev/lease-generation":        strconv.FormatInt(request.LeaseGeneration, 10),
 		"cloud-agents.dev/release-digest":          request.ReleaseDigest,
 		"cloud-agents.dev/provider-credential-ref": request.ProviderCredentialRef,
+		"cloud-agents.dev/worker-credential-ref":   config.WorkerCredentialRef,
 		"cloud-agents.dev/cpu-limit-millis":        strconv.FormatInt(request.CPULimitMillis, 10),
 		"cloud-agents.dev/memory-limit-bytes":      strconv.FormatInt(request.MemoryLimitBytes, 10),
 		"cloud-agents.dev/worker-spiffe-id":        config.WorkerSPIFFEID,

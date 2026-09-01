@@ -106,6 +106,24 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 	if err := cleanupRemoteWorker(context.Background(), client, name, image, labels); !errors.Is(err, ErrDeploymentConflict) || deletes != 1 {
 		t.Fatalf("stale generation cleanup error=%v deletes=%d", err, deletes)
 	}
+	actualLabels = maps.Clone(labels)
+	workers, err := host.credentials.ListManagedWorkers(context.Background(), host.endpoint, "host-alpha", request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
+	if err != nil || len(workers) != 1 || workers[0].Request != request {
+		t.Fatalf("managed workers=%#v error=%v", workers, err)
+	}
+	for range 2 {
+		if err := host.credentials.CleanupManagedWorker(context.Background(), host.endpoint, "host-alpha", workers[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if present || deletes != 2 {
+		t.Fatalf("managed cleanup present=%v deletes=%d", present, deletes)
+	}
+	present, actualLabels = true, maps.Clone(labels)
+	actualLabels["cloud-agents.dev/target-generation"] = "2"
+	if _, err := host.credentials.ListManagedWorkers(context.Background(), host.endpoint, "host-alpha", request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration); !errors.Is(err, ErrDeploymentConflict) {
+		t.Fatalf("future generation list error=%v", err)
+	}
 	present = false
 	for _, expected := range []string{"'--pull' 'never'", "'--read-only'", "'--cap-drop' 'ALL'", "'--memory' '536870912'", "src=worker-alpha", "src=provider-alpha", image} {
 		if !strings.Contains(runCommand, expected) {

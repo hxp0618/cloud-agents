@@ -165,19 +165,18 @@ func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
 	}
 }
 
-func TestManagedKubernetesWorkerActiveRequiresExactAuthority(t *testing.T) {
-	request := kubernetestarget.DeployRequest{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "kubernetes-alpha", LeaseID: "lease-alpha", TargetGeneration: 2, LeaseGeneration: 3}
-	worker := kubernetestarget.ManagedWorker{Request: request}
-	lease := internalmanagedhost.Snapshot{Scope: internalmanagedhost.Scope{TenantID: request.TenantID, ProjectID: request.ProjectID}, LeaseID: request.LeaseID, TargetID: request.TargetID, TargetGeneration: request.TargetGeneration, Generation: request.LeaseGeneration, DesiredPhase: "active"}
-	if !managedKubernetesWorkerActive(2, worker, lease) {
+func TestManagedDeploymentTargetWorkerActiveRequiresExactAuthority(t *testing.T) {
+	worker := managedDeploymentTargetWorker{tenantID: "tenant-alpha", projectID: "project-alpha", targetID: "ssh-alpha", leaseID: "lease-alpha", targetGeneration: 2, leaseGeneration: 3}
+	lease := internalmanagedhost.Snapshot{Scope: internalmanagedhost.Scope{TenantID: worker.tenantID, ProjectID: worker.projectID}, LeaseID: worker.leaseID, TargetID: worker.targetID, TargetGeneration: worker.targetGeneration, Generation: worker.leaseGeneration, DesiredPhase: "active"}
+	if !managedDeploymentTargetWorkerActive(2, worker, lease) {
 		t.Fatal("exact active lease was classified as orphaned")
 	}
 	lease.DesiredPhase = "terminated"
-	if managedKubernetesWorkerActive(2, worker, lease) {
+	if managedDeploymentTargetWorkerActive(2, worker, lease) {
 		t.Fatal("terminated lease retained a managed worker")
 	}
 	lease.DesiredPhase = "active"
-	if managedKubernetesWorkerActive(3, worker, lease) {
+	if managedDeploymentTargetWorkerActive(3, worker, lease) {
 		t.Fatal("stale target generation retained a managed worker")
 	}
 }

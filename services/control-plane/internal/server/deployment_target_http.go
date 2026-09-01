@@ -39,6 +39,12 @@ type DeploymentTargetHTTPServer struct {
 	sshProber        *sshtarget.CredentialDirectory
 }
 
+type managedDeploymentTargetWorker struct {
+	tenantID, projectID, targetID, leaseID string
+	targetGeneration, leaseGeneration      int64
+	cleanup                                func(context.Context) error
+}
+
 func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, dockerProber *dockertarget.CredentialDirectory, kubernetesProber *kubernetestarget.CredentialDirectory, sshProber *sshtarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("deployment target HTTP server configuration is invalid")
@@ -116,30 +122,69 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 		writeDeploymentTargetError(writer, err)
 		return
 	}
-	if target.Generation != validated.Body.ExpectedGeneration || target.Kind != "kubernetes" || target.ObservedPhase != "ready" {
+	if target.Generation != validated.Body.ExpectedGeneration || target.ObservedPhase != "ready" {
 		writePublicProblem(writer, http.StatusConflict, "target_conflict")
-		return
-	}
-	if server.kubernetesProber == nil {
-		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
 		return
 	}
 	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
 	defer cancel()
-	workers, err := server.kubernetesProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
-	if err != nil {
-		writeKubernetesTargetCleanupError(writer, err)
+	workers := []managedDeploymentTargetWorker{}
+	switch target.Kind {
+	case "kubernetes":
+		if server.kubernetesProber == nil {
+			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+			return
+		}
+		listed, listErr := server.kubernetesProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
+		if listErr != nil {
+			writeDeploymentTargetCleanupError(writer, target.Kind, listErr)
+			return
+		}
+		for _, worker := range listed {
+			worker := worker
+			request := worker.Request
+			workers = append(workers, managedDeploymentTargetWorker{
+				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID,
+				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
+				cleanup: func(ctx context.Context) error {
+					return server.kubernetesProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+				},
+			})
+		}
+	case "ssh":
+		if server.sshProber == nil {
+			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+			return
+		}
+		listed, listErr := server.sshProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
+		if listErr != nil {
+			writeDeploymentTargetCleanupError(writer, target.Kind, listErr)
+			return
+		}
+		for _, worker := range listed {
+			worker := worker
+			request := worker.Request
+			workers = append(workers, managedDeploymentTargetWorker{
+				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID,
+				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
+				cleanup: func(ctx context.Context) error {
+					return server.sshProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+				},
+			})
+		}
+	default:
+		writePublicProblem(writer, http.StatusConflict, "target_conflict")
 		return
 	}
-	orphans := make([]kubernetestarget.ManagedWorker, 0, len(workers))
+	orphans := make([]managedDeploymentTargetWorker, 0, len(workers))
 	for _, worker := range workers {
 		principal, err = server.verify(bearer, tenantID, projectID, "projects.get")
 		if err != nil {
 			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 			return
 		}
-		lease, leaseErr := server.store.GetManagedHostEnvironmentLease(cleanupContext, tenantID, principal, projectID, worker.Request.LeaseID)
-		if leaseErr == nil && managedKubernetesWorkerActive(target.Generation, worker, lease) {
+		lease, leaseErr := server.store.GetManagedHostEnvironmentLease(cleanupContext, tenantID, principal, projectID, worker.leaseID)
+		if leaseErr == nil && managedDeploymentTargetWorkerActive(target.Generation, worker, lease) {
 			continue
 		}
 		if leaseErr != nil && !errors.Is(leaseErr, postgres.ErrManagedHostEnvironmentLeaseNotFound) {
@@ -154,23 +199,22 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 		return
 	}
 	for _, worker := range orphans {
-		if err := server.kubernetesProber.CleanupManagedWorker(cleanupContext, target.Endpoint, target.CredentialRef, worker); err != nil {
-			writeKubernetesTargetCleanupError(writer, err)
+		if err := worker.cleanup(cleanupContext); err != nil {
+			writeDeploymentTargetCleanupError(writer, target.Kind, err)
 			return
 		}
 	}
 	writeDeploymentTarget(writer, http.StatusOK, requestID, target)
 }
 
-func managedKubernetesWorkerActive(targetGeneration int64, worker kubernetestarget.ManagedWorker, lease internalmanagedhost.Snapshot) bool {
-	request := worker.Request
-	return request.TargetGeneration == targetGeneration && lease.Scope.TenantID == request.TenantID && lease.Scope.ProjectID == request.ProjectID &&
-		lease.LeaseID == request.LeaseID && lease.TargetID == request.TargetID && lease.TargetGeneration == request.TargetGeneration &&
-		lease.Generation == request.LeaseGeneration && lease.DesiredPhase == "active"
+func managedDeploymentTargetWorkerActive(targetGeneration int64, worker managedDeploymentTargetWorker, lease internalmanagedhost.Snapshot) bool {
+	return worker.targetGeneration == targetGeneration && lease.Scope.TenantID == worker.tenantID && lease.Scope.ProjectID == worker.projectID &&
+		lease.LeaseID == worker.leaseID && lease.TargetID == worker.targetID && lease.TargetGeneration == worker.targetGeneration &&
+		lease.Generation == worker.leaseGeneration && lease.DesiredPhase == "active"
 }
 
-func writeKubernetesTargetCleanupError(writer http.ResponseWriter, err error) {
-	if errors.Is(err, kubernetestarget.ErrDeploymentConflict) {
+func writeDeploymentTargetCleanupError(writer http.ResponseWriter, kind string, err error) {
+	if kind == "kubernetes" && errors.Is(err, kubernetestarget.ErrDeploymentConflict) || kind == "ssh" && errors.Is(err, sshtarget.ErrDeploymentConflict) {
 		writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
 		return
 	}
