@@ -316,6 +316,10 @@ func createWorkerContainer(ctx context.Context, client *http.Client, base string
 	body := map[string]any{
 		"Image": image,
 		"User":  "1000:1000",
+		"Env": []string{
+			"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
+			"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
+		},
 		"Cmd": []string{
 			"--listen", ":8091",
 			"--tls-cert", "/run/cloud-agents/worker-credentials/server.crt",
