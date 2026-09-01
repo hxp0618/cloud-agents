@@ -6,9 +6,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +39,43 @@ func TestRunVersionDoesNotRequireConnectionOptions(t *testing.T) {
 	}
 	if stdout.String() != "cloud-agentsctl dev\n" {
 		t.Fatalf("version output = %q", stdout.String())
+	}
+}
+
+func TestRunDockerTargetProbeDoesNotRequireControlPlaneCredentials(t *testing.T) {
+	temporaryDirectory, err := os.MkdirTemp("/tmp", "cloud-agents-docker-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(temporaryDirectory) })
+	socketPath := filepath.Join(temporaryDirectory, "docker.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/_ping":
+			_, _ = writer.Write([]byte("OK"))
+		case "/version":
+			_, _ = writer.Write([]byte(`{"ApiVersion":"1.53","Version":"29.4.0","Os":"linux","Arch":"arm64"}`))
+		default:
+			http.NotFound(writer, request)
+		}
+	})}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = server.Close()
+		<-done
+	})
+
+	var stdout bytes.Buffer
+	if err := run([]string{"target", "probe", "--kind", "docker", "--socket", socketPath}, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"apiVersion":"1.53"`) || strings.Contains(stdout.String(), socketPath) {
+		t.Fatalf("probe output = %q", stdout.String())
 	}
 }
 

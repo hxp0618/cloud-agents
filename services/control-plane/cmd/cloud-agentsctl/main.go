@@ -17,6 +17,7 @@ import (
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	openapi "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 )
 
 type globalOptions struct {
@@ -68,8 +69,9 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	localTargetProbe := command == "target" && action == "probe"
 	var client *openapi.Client
-	if !actionHelpRequested(actionArgs) {
+	if !actionHelpRequested(actionArgs) && !localTargetProbe {
 		token := options.token
 		if options.tokenFile != "" {
 			file, openErr := os.Open(options.tokenFile)
@@ -92,6 +94,16 @@ func run(args []string, stdout io.Writer) error {
 	defer cancel()
 	var value any
 	switch command + " " + action {
+	case "target probe":
+		var kind, socketPath string
+		if err = parseActionFlags("target probe", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&kind, "kind", "", "target kind (docker)")
+			set.StringVar(&socketPath, "socket", "", "absolute Docker Engine socket path")
+		}); err == nil && kind != "docker" {
+			err = errors.New("--kind must be docker")
+		} else if err == nil {
+			value, err = dockertarget.ProbeUnixSocket(ctx, socketPath)
+		}
 	case "tenant get":
 		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
 			value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
@@ -543,6 +555,12 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if actionHelpRequested(actionArgs) {
 		return options, command, action, actionArgs, nil
 	}
+	if options.timeout <= 0 {
+		return globalOptions{}, "", "", nil, errors.New("--timeout must be greater than zero")
+	}
+	if command == "target" && action == "probe" {
+		return options, command, action, actionArgs, nil
+	}
 	for name, value := range map[string]string{"endpoint": options.endpoint, "tenant": options.tenant, "request-id": options.requestID} {
 		if strings.TrimSpace(value) != value || value == "" {
 			return globalOptions{}, "", "", nil, fmt.Errorf("--%s is required", name)
@@ -559,9 +577,6 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if strings.TrimSpace(options.caFile) != options.caFile {
 		return globalOptions{}, "", "", nil, errors.New("CA file input is invalid")
-	}
-	if options.timeout <= 0 {
-		return globalOptions{}, "", "", nil, errors.New("--timeout must be greater than zero")
 	}
 	if requiresProject(command, action) && options.project == "" {
 		return globalOptions{}, "", "", nil, errors.New("--project is required")
@@ -718,7 +733,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "target probe", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -755,11 +770,13 @@ func requiresIdempotency(command, action string) bool {
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
+	   cloud-agentsctl [--timeout DURATION] target probe --kind docker --socket /absolute/path/to/docker.sock
        cloud-agentsctl --version`
 
 const help = usage + `
 
 resources and actions:
+  target probe
   tenant get
   organization get|list|create
   project get|list|create
