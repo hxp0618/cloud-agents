@@ -747,6 +747,22 @@ case "$events_output" in
   *) echo "Compose event watch did not reach the durable execution terminal event" >&2; exit 1 ;;
 esac
 
+compose restart control-plane >/dev/null
+wait_ready
+restarted_lease_output=$(cloud_agentsctl --project "$project_id" --lease lease-compose-target \
+  --request-id compose-smoke-restarted-lease environment-lease get)
+case "$restarted_lease_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
+  *) echo "Compose Control Plane restart lost the active target Lease: $restarted_lease_output" >&2; exit 1 ;;
+esac
+restarted_execution_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+  --turn turn-compose-smoke --execution execution-compose-smoke \
+  --request-id compose-smoke-restarted-execution execution get)
+case "$restarted_execution_output" in
+  *'"state":"failed","errorCode":"provider_not_installed"'*'"messageType":"Error"'*) ;;
+  *) echo "Compose Control Plane restart lost the durable execution" >&2; exit 1 ;;
+esac
+
 run_real_provider_turn() {
   provider_kind=$1
   provider_slug=$2

@@ -111,6 +111,12 @@ case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-probe.json")" in
   *'"targetKind":"ssh"'*'"observedPhase":"ready"'*) ;;
   *) echo "SSH target probe did not become ready" >&2; exit 1 ;;
 esac
+run_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+  --request-id "$run_id-target-status" target get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json"
+case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json")" in
+  *'"targetKind":"ssh"'*'"observedPhase":"ready"'*) ;;
+  *) echo "SSH target ready status was not persisted" >&2; exit 1 ;;
+esac
 
 lease_created=1
 create_lease >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json"
@@ -119,6 +125,12 @@ cmp "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json" "$CLOUD_AGENTS_E2E_OUTPUT_DIR/leas
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json")" in
   *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*) ;;
   *) echo "SSH target Worker did not become ready" >&2; exit 1 ;;
+esac
+run_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+  --request-id "$run_id-lease-status" environment-lease get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json"
+case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json")" in
+  *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"'"$CLOUD_AGENTS_TARGET_ID"'"'*) ;;
+  *) echo "SSH target Lease ready status was not persisted" >&2; exit 1 ;;
 esac
 
 workers_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/remote-workers.txt"
@@ -193,13 +205,39 @@ NODE
 
 create_session codex "$codex_session"
 run_real_turn codex "$codex_session" before-restart
-run_ssh docker restart "$worker_name" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/worker-restart.txt"
+sleep 10
+restart_state=$(run_ssh docker inspect --format '{{.RestartCount}} {{.State.Pid}}' -- "$worker_name")
+set -- $restart_state
+if [ "$#" -ne 2 ]; then
+  echo "SSH target Worker returned an invalid restart state" >&2
+  exit 1
+fi
+restart_count_before=$1
+worker_pid_before=$2
+case "$restart_count_before$worker_pid_before" in
+  *[!0-9]*|'') echo "SSH target Worker returned an invalid restart state" >&2; exit 1 ;;
+esac
+run_ssh "docker exec $worker_name /bin/sh -c 'kill -QUIT 1'" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/worker-crash.txt" 2>&1 || true
 attempt=0
-while [ "$(run_ssh docker inspect --format '{{.State.Running}}' -- "$worker_name")" != true ]; do
+worker_restarted=
+while [ -z "$worker_restarted" ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
-    echo "SSH target Worker did not restart" >&2
+    echo "SSH target Worker did not recover from its process crash" >&2
     exit 1
+  fi
+  if restart_state=$(run_ssh docker inspect --format '{{.State.Running}} {{.RestartCount}} {{.State.Pid}}' -- "$worker_name" 2>/dev/null); then
+    set -- $restart_state
+    if [ "$#" -eq 3 ] && [ "$1" = true ]; then
+      case "$2$3" in
+        *[!0-9]*|'') ;;
+        *)
+          if [ "$2" -gt "$restart_count_before" ] && [ "$3" -ne "$worker_pid_before" ]; then
+            worker_restarted=1
+          fi
+          ;;
+      esac
+    fi
   fi
   sleep 2
 done

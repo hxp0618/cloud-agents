@@ -217,9 +217,10 @@ plus `CLOUD_AGENTS_PROVIDER_VOLUME_REF`, `CLOUD_AGENTS_SSH_HOST`,
 `CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE`; set `CLOUD_AGENTS_SSH_PORT` when it is not
 22. The operator key is read only by OpenSSH with `IdentitiesOnly` and strict
 host-key checking. The script replays deployment, runs a real Codex Turn,
-restarts and reconnects to the remote Worker, resumes the Codex Session, runs a
-real Claude Turn, resolves real approval and user-input requests, cancels and
-interrupts live executions, validates events and Artifacts, terminates twice,
+crashes the remote Worker process and verifies its policy-driven restart,
+resumes the Codex Session, runs a real Claude Turn, resolves real approval and
+user-input requests, cancels and interrupts live executions, validates events
+and Artifacts, terminates twice,
 and verifies remote cleanup. The mounted Control Plane credential reference,
 target volumes, and Worker image must already satisfy the SSH target layout
 above.
@@ -239,8 +240,10 @@ That directory must contain the two inputs selected by the smoke,
 The smoke copies those two files directly into its temporary target credential
 volume, validates each successful execution, downloads its generated-file
 Artifact, and removes the volume during cleanup. It does not print or copy the
-credential payloads into the release or host-side smoke directory. A run
-without the second argument is not real Provider E2E evidence.
+credential payloads into the release or host-side smoke directory. With or
+without real Provider credentials, it restarts the Control Plane while a target
+Lease and durable Execution exist and verifies both through the public status
+commands. A run without the second argument is not real Provider E2E evidence.
 
 The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
 The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish

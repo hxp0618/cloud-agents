@@ -70,6 +70,12 @@ case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-probe.json")" in
   *'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
   *) echo "Kubernetes target probe did not become ready" >&2; exit 1 ;;
 esac
+run_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+  --request-id "$run_id-target-status" target get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json"
+case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json")" in
+  *'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
+  *) echo "Kubernetes target ready status was not persisted" >&2; exit 1 ;;
+esac
 
 lease_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json"
 lease_created=1
@@ -82,6 +88,12 @@ run_ctl --timeout 3m --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_T
 case "$(cat "$lease_file")" in
   *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*) ;;
   *) echo "Kubernetes target Worker did not become ready" >&2; exit 1 ;;
+esac
+run_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+  --request-id "$run_id-lease-status" environment-lease get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json"
+case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json")" in
+  *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"'"$CLOUD_AGENTS_TARGET_ID"'"'*) ;;
+  *) echo "Kubernetes target Lease ready status was not persisted" >&2; exit 1 ;;
 esac
 
 run_kubectl get deployments -l cloud-agents.dev/managed=true -o json >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/deployments.json"
