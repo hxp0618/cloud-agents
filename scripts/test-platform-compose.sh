@@ -2,9 +2,28 @@
 
 set -eu
 
-if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
-  echo "usage: test-platform-compose.sh PLATFORM_RELEASE_DIRECTORY" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ ! -d "$1" ]; then
+  echo "usage: test-platform-compose.sh PLATFORM_RELEASE_DIRECTORY [REAL_PROVIDER_CREDENTIALS_DIRECTORY]" >&2
   exit 2
+fi
+real_provider_credentials_directory=
+if [ "$#" -eq 2 ]; then
+  case "$2" in
+    /*) ;;
+    *) echo "real Provider credentials directory must be absolute" >&2; exit 2 ;;
+  esac
+  if [ ! -d "$2" ] || [ -L "$2" ]; then
+    echo "real Provider credentials directory must be a non-symlink directory" >&2
+    exit 2
+  fi
+  real_provider_credentials_directory=$(CDPATH= cd -- "$2" && pwd -P)
+  for provider in codex claudeAgent; do
+    credential_file="$real_provider_credentials_directory/tenant-compose-smoke.$provider.json"
+    if [ ! -f "$credential_file" ] || [ -L "$credential_file" ]; then
+      echo "real Provider credentials directory is missing a non-symlink tenant-compose-smoke.$provider.json" >&2
+      exit 2
+    fi
+  done
 fi
 for command in curl docker node openssl; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -404,6 +423,13 @@ docker run --rm --user 0 --entrypoint /bin/sh \
   -v "$smoke_directory/target-provider-credentials:/source:ro" \
   postgres:17.6-bookworm -ec \
   'cp /source/tenant-compose-smoke.unavailable-provider.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+if [ -n "$real_provider_credentials_directory" ]; then
+  docker run --rm --user 0 --entrypoint /bin/sh \
+    -v "$target_provider_credentials_volume:/target" \
+    -v "$real_provider_credentials_directory:/source:ro" \
+    postgres:17.6-bookworm -ec \
+    'cp /source/tenant-compose-smoke.codex.json /source/tenant-compose-smoke.claudeAgent.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+fi
 
 organization_output=$(cloud_agentsctl --request-id compose-smoke-organizations organization list)
 case "$organization_output" in
@@ -498,6 +524,75 @@ case "$events_output" in
   *'"kind":"Event"'*'"operation":"execution.fail"'*'"executionId":"execution-compose-smoke"'*) ;;
   *) echo "Compose event watch did not reach the durable execution terminal event" >&2; exit 1 ;;
 esac
+
+run_real_provider_turn() {
+  provider_kind=$1
+  provider_slug=$2
+  session_id="session-compose-real-$provider_slug"
+  turn_id="turn-compose-real-$provider_slug"
+  execution_id="execution-compose-real-$provider_slug"
+  artifact_path=".cloud-agents-stage3-acceptance/docker-target-real-$provider_slug.txt"
+  expected_content="cloud-agents Docker target $provider_kind real E2E"
+  case "$provider_kind" in
+    codex) file_tool="Use apply_patch to create" ;;
+    claudeAgent) file_tool="Use the Write tool to create" ;;
+  esac
+  prompt="$file_tool exactly one file at $artifact_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline. Do not modify any other file. Then reply done."
+
+  cloud_agentsctl --project "$project_id" --lease lease-compose-target --session "$session_id" \
+    --request-id "compose-real-$provider_slug-session" --idempotency-key "compose-real-$provider_slug-session" \
+    session create --provider "$provider_kind" >/dev/null
+  cloud_agentsctl --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    --request-id "compose-real-$provider_slug-turn" --idempotency-key "compose-real-$provider_slug-turn" \
+    turn create --input "$prompt" >/dev/null
+  execution_file="$smoke_directory/$execution_id.json"
+  cloud_agentsctl --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    --execution "$execution_id" --request-id "compose-real-$provider_slug-execution" \
+    --idempotency-key "compose-real-$provider_slug-execution" execution execute \
+    --runtime-mode full-access --interaction-mode default --input "$prompt" >"$execution_file"
+
+  artifact_index=$(
+    CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$execution_file" \
+    CLOUD_AGENTS_COMPOSE_ARTIFACT_PATH="$artifact_path" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
+if (value.spec?.state !== "succeeded" || !value.messages?.some((message) => message.messageType === "Result")) {
+  throw new Error("real Provider execution did not succeed with a Result");
+}
+const indexes = value.messages.flatMap((message, index) => {
+  const artifact = message.payload?.artifact;
+  return message.messageType === "ArtifactCandidate" &&
+    artifact?.sourceRoot === "workspace" && artifact?.path === process.env.CLOUD_AGENTS_COMPOSE_ARTIFACT_PATH &&
+    typeof artifact?.kind === "string" && artifact.kind.replaceAll("_", "-") === "generated-file" ? [index] : [];
+});
+if (indexes.length !== 1) throw new Error("real Provider execution did not emit the expected generated-file ArtifactCandidate");
+process.stdout.write(String(indexes[0]));
+NODE
+  )
+  artifact_file="$smoke_directory/$provider_slug-artifact.txt"
+  cloud_agentsctl --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    --execution "$execution_id" --request-id "compose-real-$provider_slug-artifact" \
+    execution download-artifact --message-index "$artifact_index" >"$artifact_file"
+  CLOUD_AGENTS_COMPOSE_ARTIFACT_FILE="$artifact_file" \
+  CLOUD_AGENTS_COMPOSE_EXPECTED_CONTENT="$expected_content" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const actual = readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ARTIFACT_FILE);
+const expected = Buffer.from(`${process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_CONTENT}\n`);
+if (!actual.equals(expected)) throw new Error("real Provider generated-file Artifact content changed");
+NODE
+  real_events_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --session "$session_id" \
+    --execution "$execution_id" --request-id "compose-real-$provider_slug-events" \
+    events watch --limit 64 --until-terminal)
+  case "$real_events_output" in
+    *'"operation":"execution.complete"'*'"executionId":"'"$execution_id"'"'*) ;;
+    *) echo "Compose real $provider_kind event watch did not reach execution.complete" >&2; exit 1 ;;
+  esac
+}
+
+if [ -n "$real_provider_credentials_directory" ]; then
+  run_real_provider_turn codex codex
+  run_real_provider_turn claudeAgent claude
+fi
 
 terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target \
   --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \

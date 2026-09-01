@@ -86,6 +86,24 @@ Claude credential envelopes. Files must be readable by container uid `1000`.
 Never put private keys, admission tokens, Provider keys, or credential payloads
 in `deployment.json`, target API bodies, or Environment Lease fields.
 
+The source checkout's packaged Compose smoke keeps its default no-credential
+`provider_not_installed` check. To additionally run one real Codex Turn and one
+real Claude Code Turn against its independently registered Docker target, pass
+an absolute deployment-owned credential directory as the second argument:
+
+```sh
+./scripts/test-platform-compose.sh RELEASE_DIRECTORY /absolute/provider-credentials
+```
+
+That directory must contain the two inputs selected by the smoke,
+`tenant-compose-smoke.codex.json` and
+`tenant-compose-smoke.claudeAgent.json`, using the envelopes described above.
+The smoke copies those two files directly into its temporary target credential
+volume, validates each successful execution, downloads its generated-file
+Artifact, and removes the volume during cleanup. It does not print or copy the
+credential payloads into the release or host-side smoke directory. A run
+without the second argument is not real Provider E2E evidence.
+
 The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
 The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish
 the next `generation` and keeps the previous key material bound to its lineage.
