@@ -112,7 +112,7 @@ func TestHTTPClientAcceptsMaximumRuntimeResultResponse(t *testing.T) {
 		Metadata: ManagedAgentExecutionMetadata{UID: "execution-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-alpha", ResourceVersion: "3", CreatedAt: "2026-08-29T08:00:00Z", UpdatedAt: "2026-08-29T08:01:00Z"},
 		Spec:     ManagedAgentExecutionSpec{Generation: 1, State: "succeeded"}, Messages: []ManagedAgentExecutionMessage{sdkMessage},
 	})
-	if err != nil || len(body) <= runtimeprotocol.MaxMessageBytes || len(body) > maxHTTPResponseBytes {
+	if err != nil || len(body) <= runtimeprotocol.MaxMessageBytes || len(body) > maxHTTPJSONResponseBytes {
 		t.Fatalf("response bytes=%d err=%v", len(body), err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -132,7 +132,7 @@ func TestHTTPClientAcceptsMaximumRuntimeResultResponse(t *testing.T) {
 
 func TestHTTPClientRejectsResponseAboveLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		_, _ = writer.Write([]byte(strings.Repeat("x", maxHTTPResponseBytes+1)))
+		_, _ = writer.Write([]byte(strings.Repeat("x", maxHTTPJSONResponseBytes+1)))
 	}))
 	defer server.Close()
 	client, err := NewHTTPClient(server.URL, "token")
@@ -141,5 +141,35 @@ func TestHTTPClientRejectsResponseAboveLimit(t *testing.T) {
 	}
 	if _, err := client.GetPlatformTenant(context.Background(), "tenant-alpha", "request-alpha"); err == nil || !strings.Contains(err.Error(), "exceeds the SDK limit") {
 		t.Fatalf("oversized response error=%v", err)
+	}
+}
+
+func TestHTTPClientUsesArtifactLimitOnlyForSuccessfulDownloads(t *testing.T) {
+	artifact := strings.Repeat("x", maxHTTPJSONResponseBytes+1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = writer.Write([]byte(artifact))
+	}))
+	defer server.Close()
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.DownloadManagedAgentArtifact(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-alpha", 0)
+	if err != nil || len(result.Data) != len(artifact) {
+		t.Fatalf("artifact bytes=%d err=%v", len(result.Data), err)
+	}
+
+	errorServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusBadGateway)
+		_, _ = writer.Write([]byte(artifact))
+	}))
+	defer errorServer.Close()
+	errorClient, err := NewHTTPClient(errorServer.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := errorClient.DownloadManagedAgentArtifact(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-alpha", 0); err == nil || !strings.Contains(err.Error(), "exceeds the SDK limit") {
+		t.Fatalf("oversized Artifact error response err=%v", err)
 	}
 }

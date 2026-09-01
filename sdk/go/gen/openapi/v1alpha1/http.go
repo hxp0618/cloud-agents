@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
-const maxHTTPResponseBytes = MaxManagedAgentArtifactBytes
+const maxHTTPJSONResponseBytes = 2 * runtimeprotocol.MaxMessageBytes
 
 var ErrInvalidHTTPClientConfig = errors.New("invalid Cloud Agents HTTP client configuration")
 
@@ -67,11 +69,15 @@ func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Re
 		return Response{}, err
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxHTTPResponseBytes+1))
+	maxResponseBytes := maxHTTPJSONResponseBytes
+	if response.StatusCode == http.StatusOK && strings.HasSuffix(input.Path, "/artifact") {
+		maxResponseBytes = MaxManagedAgentArtifactBytes
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(maxResponseBytes)+1))
 	if err != nil {
 		return Response{}, err
 	}
-	if len(body) > maxHTTPResponseBytes {
+	if len(body) > maxResponseBytes {
 		return Response{}, errors.New("Cloud Agents HTTP response exceeds the SDK limit")
 	}
 	headers := make(map[string]string, len(response.Header))
