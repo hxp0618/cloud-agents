@@ -74,38 +74,49 @@ func NewCredentialDirectory(path string) (*CredentialDirectory, error) {
 }
 
 func (directory *CredentialDirectory) Probe(ctx context.Context, endpoint, credentialRef string) (ProbeResult, error) {
-	if ctx == nil || directory == nil || directory.path == "" || !validEndpoint(endpoint) || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
+	if ctx == nil {
 		return ProbeResult{}, ErrInvalidEndpoint
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	defer transport.CloseIdleConnections()
+	return probe(ctx, client, base)
+}
+
+func (directory *CredentialDirectory) client(endpoint, credentialRef string) (*http.Client, *http.Transport, string, error) {
+	if directory == nil || directory.path == "" || !validEndpoint(endpoint) || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
+		return nil, nil, "", ErrInvalidEndpoint
 	}
 	root, err := os.OpenRoot(directory.path)
 	if err != nil {
-		return ProbeResult{}, ErrCredentialUnavailable
+		return nil, nil, "", ErrCredentialUnavailable
 	}
 	defer root.Close()
 	caPEM, err := readCredential(root, filepath.Join(credentialRef, "ca.pem"))
 	if err != nil {
-		return ProbeResult{}, err
+		return nil, nil, "", err
 	}
 	certPEM, err := readCredential(root, filepath.Join(credentialRef, "cert.pem"))
 	if err != nil {
-		return ProbeResult{}, err
+		return nil, nil, "", err
 	}
 	keyPEM, err := readCredential(root, filepath.Join(credentialRef, "key.pem"))
 	if err != nil {
-		return ProbeResult{}, err
+		return nil, nil, "", err
 	}
 	roots := x509.NewCertPool()
 	certificate, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil || !roots.AppendCertsFromPEM(caPEM) {
-		return ProbeResult{}, ErrCredentialInvalid
+		return nil, nil, "", ErrCredentialInvalid
 	}
 	transport := &http.Transport{
 		DisableCompression: true, ResponseHeaderTimeout: 10 * time.Second,
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, Certificates: []tls.Certificate{certificate}},
 	}
-	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrInvalidResponse }}
-	return probe(ctx, client, strings.TrimSuffix(endpoint, "/"))
+	return client, transport, strings.TrimSuffix(endpoint, "/"), nil
 }
 
 func probe(ctx context.Context, client *http.Client, endpoint string) (ProbeResult, error) {

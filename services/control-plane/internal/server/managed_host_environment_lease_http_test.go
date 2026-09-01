@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
@@ -32,7 +34,26 @@ func (fake *managedHostEnvironmentLeaseStoreFake) CreateManagedHostEnvironmentLe
 	fake.snapshot.ReleaseDigest = input.ReleaseDigest
 	fake.snapshot.TargetID = input.TargetID
 	fake.snapshot.TargetGeneration = input.ExpectedTargetGeneration
+	fake.snapshot.ProviderCredentialRef = input.ProviderCredentialRef
+	fake.snapshot.CPULimitMillis = input.CPULimitMillis
+	fake.snapshot.MemoryLimitBytes = input.MemoryLimitBytes
 	return fake.snapshot, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) CompleteManagedHostEnvironmentLeaseDeployment(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput) (internalmanagedhost.Snapshot, error) {
+	fake.snapshot.ObservedPhase = "failed"
+	fake.snapshot.StableErrorCode = input.StableErrorCode
+	if input.Succeeded {
+		fake.snapshot.ObservedPhase = "ready"
+		fake.snapshot.StableErrorCode = ""
+		fake.snapshot.WorkerEndpoint = input.WorkerEndpoint
+		fake.snapshot.WorkerSPIFFEID = input.WorkerSPIFFEID
+	}
+	return fake.snapshot, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error) {
+	return internaldeploymenttarget.Snapshot{}, nil
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error) {
@@ -66,7 +87,7 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 		Generation: 1, DesiredPhase: "active", ObservedPhase: "provisioning", CleanupPhase: "none", ResourceVersion: 1,
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
 	}}
-	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store)
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +102,8 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 		handler.ServeHTTP(response, request)
 		return response
 	}
-	created := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases", `{"leaseId":"lease-alpha","leaseName":"default","releaseDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","targetId":"docker-alpha","expectedTargetGeneration":1,"ttlSeconds":3600}`, "request-create", "create-key-123456")
-	if created.Code != http.StatusCreated || store.create != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(created.Body.String(), `"observedPhase":"provisioning"`) || !strings.Contains(created.Body.String(), `"targetId":"docker-alpha"`) {
+	created := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases", `{"leaseId":"lease-alpha","leaseName":"default","releaseDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","targetId":"docker-alpha","expectedTargetGeneration":1,"providerCredentialRef":"provider-alpha","cpuLimitMillis":1000,"memoryLimitBytes":536870912,"ttlSeconds":3600}`, "request-create", "create-key-123456")
+	if created.Code != http.StatusCreated || store.create != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(created.Body.String(), `"observedPhase":"provisioning"`) || !strings.Contains(created.Body.String(), `"targetId":"docker-alpha"`) || !strings.Contains(created.Body.String(), `"providerCredentialRef":"provider-alpha"`) || !strings.Contains(created.Body.String(), `"memoryLimitBytes":536870912`) {
 		t.Fatalf("create status=%d calls=%d verification=%#v body=%s", created.Code, store.create, verifier.seen, created.Body.String())
 	}
 	got := request(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha", "", "request-get", "")

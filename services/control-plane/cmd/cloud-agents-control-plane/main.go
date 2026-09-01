@@ -403,7 +403,7 @@ func run(ctx context.Context, args []string) error {
 	if rbacErr != nil {
 		return errors.New("local RBAC HTTP server is unavailable")
 	}
-	leaseHTTPServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService)
+	leaseHTTPServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService, nil, dockertarget.WorkerTrust{})
 	if leaseErr != nil {
 		return errors.New("local managed host environment lease HTTP server is unavailable")
 	}

@@ -222,6 +222,9 @@ export type EnvironmentLeaseCreateRequest = Readonly<{
   releaseDigest: `sha256:${string}`;
   targetId: string;
   expectedTargetGeneration: number;
+  providerCredentialRef: string;
+  cpuLimitMillis: number;
+  memoryLimitBytes: number;
   ttlSeconds: number;
 }>;
 export type EnvironmentLeaseTerminateRequest = Readonly<{ expectedGeneration: number }>;
@@ -239,6 +242,12 @@ export type EnvironmentLease = Readonly<{
     releaseDigest: `sha256:${string}`;
     targetId?: string;
     targetGeneration?: number;
+    providerCredentialRef?: string;
+    cpuLimitMillis?: number;
+    memoryLimitBytes?: number;
+    workerEndpoint?: string;
+    workerSpiffeId?: string;
+    stableErrorCode?: string;
     expiresAt: string;
   }>;
 }>;
@@ -549,6 +558,14 @@ const environmentLeaseResponseShape = resourceResponseShape({
   cleanupPhase: scalarResponseShape,
   environmentId: scalarResponseShape,
   releaseDigest: scalarResponseShape,
+  targetId: scalarResponseShape,
+  targetGeneration: scalarResponseShape,
+  providerCredentialRef: scalarResponseShape,
+  cpuLimitMillis: scalarResponseShape,
+  memoryLimitBytes: scalarResponseShape,
+  workerEndpoint: scalarResponseShape,
+  workerSpiffeId: scalarResponseShape,
+  stableErrorCode: scalarResponseShape,
   expiresAt: scalarResponseShape,
 });
 const environmentLeasePageResponseShape: ResponseShape = {
@@ -859,6 +876,26 @@ function deploymentTargetEndpoint(value: unknown, path: string): string {
   }
   return text;
 }
+function workerSPIFFEID(value: unknown, path: string): string {
+  const text = boundedString(value, 10, 2048, path);
+  try {
+    const parsed = new URL(text);
+    if (
+      parsed.protocol !== "spiffe:" ||
+      parsed.host === "" ||
+      parsed.pathname === "/" ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    )
+      error("INVALID_WORKER_IDENTITY", path);
+  } catch (cause) {
+    if (cause instanceof JSONContractError) throw cause;
+    error("INVALID_WORKER_IDENTITY", path);
+  }
+  return text;
+}
 function assertScalar(value: string, path: string): void {
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);
@@ -1132,8 +1169,28 @@ export function encodeRoleBindingRevokeRequest(value: RoleBindingRevokeRequest):
 export function decodeEnvironmentLeaseCreateRequest(value: unknown): EnvironmentLeaseCreateRequest {
   const source = strictRecord(
     value,
-    ["leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"],
-    ["leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"],
+    [
+      "leaseId",
+      "leaseName",
+      "releaseDigest",
+      "targetId",
+      "expectedTargetGeneration",
+      "providerCredentialRef",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "ttlSeconds",
+    ],
+    [
+      "leaseId",
+      "leaseName",
+      "releaseDigest",
+      "targetId",
+      "expectedTargetGeneration",
+      "providerCredentialRef",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "ttlSeconds",
+    ],
   );
   return Object.freeze({
     leaseId: identifier(source.leaseId, "/leaseId"),
@@ -1145,6 +1202,14 @@ export function decodeEnvironmentLeaseCreateRequest(value: unknown): Environment
       1,
       Number.MAX_SAFE_INTEGER,
       "/expectedTargetGeneration",
+    ),
+    providerCredentialRef: identifier(source.providerCredentialRef, "/providerCredentialRef"),
+    cpuLimitMillis: integer(source.cpuLimitMillis, 100, 64000, "/cpuLimitMillis"),
+    memoryLimitBytes: integer(
+      source.memoryLimitBytes,
+      134217728,
+      1099511627776,
+      "/memoryLimitBytes",
     ),
     ttlSeconds: integer(source.ttlSeconds, 60, 86400, "/ttlSeconds"),
   });
@@ -1517,6 +1582,12 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
       "releaseDigest",
       "targetId",
       "targetGeneration",
+      "providerCredentialRef",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "workerEndpoint",
+      "workerSpiffeId",
+      "stableErrorCode",
       "expiresAt",
     ],
     [
@@ -1534,6 +1605,35 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
   const hasTargetId = Object.hasOwn(spec, "targetId");
   const hasTargetGeneration = Object.hasOwn(spec, "targetGeneration");
   if (hasTargetId !== hasTargetGeneration) error("INVALID_TARGET_BINDING", "/spec/targetId");
+  const hasProvider = Object.hasOwn(spec, "providerCredentialRef");
+  const hasCPU = Object.hasOwn(spec, "cpuLimitMillis");
+  const hasMemory = Object.hasOwn(spec, "memoryLimitBytes");
+  if (hasProvider !== hasCPU || hasProvider !== hasMemory)
+    error("INVALID_DEPLOYMENT_BINDING", "/spec/providerCredentialRef");
+  const hasWorkerEndpoint = Object.hasOwn(spec, "workerEndpoint");
+  const hasWorkerSPIFFE = Object.hasOwn(spec, "workerSpiffeId");
+  if (hasWorkerEndpoint !== hasWorkerSPIFFE)
+    error("INVALID_DEPLOYMENT_STATE", "/spec/workerEndpoint");
+  const observedPhase = enumValue(
+    spec.observedPhase,
+    ["provisioning", "ready", "terminating", "terminated", "failed"] as const,
+    "/spec/observedPhase",
+  );
+  const stableErrorCode =
+    spec.stableErrorCode === undefined
+      ? ""
+      : boundedString(spec.stableErrorCode, 0, 128, "/spec/stableErrorCode");
+  if (stableErrorCode !== "") identifier(stableErrorCode, "/spec/stableErrorCode");
+  if (
+    (!hasProvider && (hasWorkerEndpoint || stableErrorCode !== "")) ||
+    (hasProvider &&
+      ((observedPhase === "provisioning" && (hasWorkerEndpoint || stableErrorCode !== "")) ||
+        (observedPhase === "ready" && (!hasWorkerEndpoint || stableErrorCode !== "")) ||
+        (observedPhase === "failed" && (hasWorkerEndpoint || stableErrorCode === "")) ||
+        ((observedPhase === "terminating" || observedPhase === "terminated") &&
+          stableErrorCode !== "")))
+  )
+    error("INVALID_DEPLOYMENT_STATE", "/spec");
   return Object.freeze({
     ...root,
     kind: "CloudEnvironmentLease",
@@ -1545,11 +1645,7 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
         ["active", "terminated"] as const,
         "/spec/desiredPhase",
       ),
-      observedPhase: enumValue(
-        spec.observedPhase,
-        ["provisioning", "ready", "terminating", "terminated", "failed"] as const,
-        "/spec/observedPhase",
-      ),
+      observedPhase,
       cleanupPhase: enumValue(
         spec.cleanupPhase,
         ["none", "pending", "revoking", "reaping", "complete", "blocked"] as const,
@@ -1568,6 +1664,28 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
             ),
           }
         : {}),
+      ...(hasProvider
+        ? {
+            providerCredentialRef: identifier(
+              spec.providerCredentialRef,
+              "/spec/providerCredentialRef",
+            ),
+            cpuLimitMillis: integer(spec.cpuLimitMillis, 100, 64000, "/spec/cpuLimitMillis"),
+            memoryLimitBytes: integer(
+              spec.memoryLimitBytes,
+              134217728,
+              1099511627776,
+              "/spec/memoryLimitBytes",
+            ),
+          }
+        : {}),
+      ...(hasWorkerEndpoint
+        ? {
+            workerEndpoint: deploymentTargetEndpoint(spec.workerEndpoint, "/spec/workerEndpoint"),
+            workerSpiffeId: workerSPIFFEID(spec.workerSpiffeId, "/spec/workerSpiffeId"),
+          }
+        : {}),
+      ...(stableErrorCode === "" ? {} : { stableErrorCode }),
       expiresAt: dateTime(spec.expiresAt, "/spec/expiresAt"),
     }),
   });

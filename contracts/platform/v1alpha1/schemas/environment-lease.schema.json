@@ -23,6 +23,12 @@
         "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "targetGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "providerCredentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "cpuLimitMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+        "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+        "workerEndpoint": { "type": "string", "pattern": "^https://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
+        "workerSpiffeId": { "type": "string", "pattern": "^spiffe://[^/?#[:space:]@]+/.+$", "maxLength": 2048 },
+        "stableErrorCode": { "type": "string", "pattern": "^(?:|[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?)$", "maxLength": 128 },
         "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       }
     }
@@ -31,6 +37,8 @@
     "metadata.tenantRef.id == spec.projectRef.id is not required; projectRef is checked against the route project",
     "spec.environmentId is server-controlled",
     "spec.targetId and spec.targetGeneration are both absent only for leases created before target binding was introduced",
+    "spec.providerCredentialRef, resource limits, workerEndpoint, workerSpiffeId, and stableErrorCode are absent only for leases created before target actuation was introduced",
+    "ready leases have workerEndpoint and workerSpiffeId; failed leases have stableErrorCode; provisioning leases have none of those deployment facts",
     "create returns desiredPhase=active, observedPhase=provisioning, cleanupPhase=none",
     "bounded termination returns desiredPhase=terminated, observedPhase=terminated, cleanupPhase=complete"
   ]

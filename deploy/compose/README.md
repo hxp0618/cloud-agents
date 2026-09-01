@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000031.tar` into a directory and copy
+Extract `cloud-agents-deployment-000032.tar` into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
@@ -62,6 +62,29 @@ runtime env file are ignored.
 The Worker accepts at most `CLOUD_AGENTS_RUNTIME_MAX_SESSIONS` concurrent Runtime
 sessions (default `4`). Additional session opens fail immediately with
 `ResourceExhausted`; tune the value to the CPU and memory assigned to the Worker.
+
+For a Docker deployment target, point `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR` at
+a deployment-owned directory. Each registered target `credentialRef` selects a
+subdirectory containing Docker Engine `ca.pem`, `cert.pem`, `key.pem`, and this
+non-secret descriptor:
+
+```json
+{
+  "workerImageRepository": "registry.example/cloud-agents/worker",
+  "workerCredentialRef": "cloud-agents-worker-target-a",
+  "workerSpiffeId": "spiffe://cloud-agents.example/workers/target-a",
+  "workerServerName": "worker-target-a.example"
+}
+```
+
+The target Engine must expose an mTLS HTTPS endpoint and already contain the
+exact Worker image `workerImageRepository@releaseDigest`. It must also have two
+pre-created named volumes: `workerCredentialRef` contains `server.crt`,
+`server.key`, `client-ca.crt`, and `admission-token`; the Environment Lease
+`providerCredentialRef` volume contains the existing tenant-bound Codex and/or
+Claude credential envelopes. Files must be readable by container uid `1000`.
+Never put private keys, admission tokens, Provider keys, or credential payloads
+in `deployment.json`, target API bodies, or Environment Lease fields.
 
 The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
 The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish

@@ -1,0 +1,455 @@
+package dockertarget
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"hash/fnv"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
+)
+
+const (
+	MinCPULimitMillis   = int64(100)
+	MaxCPULimitMillis   = int64(64_000)
+	MinMemoryLimitBytes = int64(128 << 20)
+	MaxMemoryLimitBytes = int64(1 << 40)
+	workerPort          = "8091/tcp"
+	maxDockerBodyBytes  = 1 << 20
+)
+
+var (
+	ErrDeploymentConfigUnavailable = errors.New("docker target deployment configuration is unavailable")
+	ErrDeploymentConfigInvalid     = errors.New("docker target deployment configuration is invalid")
+	ErrDeploymentConflict          = errors.New("docker target deployment conflicts with an existing workload")
+	ErrDeploymentFailed            = errors.New("docker target deployment failed")
+	ErrWorkerUnavailable           = errors.New("docker target worker is unavailable")
+	volumeNamePattern              = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	imageRepositoryPattern         = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
+)
+
+type WorkerTrust struct {
+	ClientCertificate tls.Certificate
+	RootCAs           *x509.CertPool
+}
+
+type DeployRequest struct {
+	TenantID, ProjectID, TargetID, LeaseID string
+	TargetGeneration, LeaseGeneration      int64
+	ReleaseDigest, ProviderCredentialRef   string
+	CPULimitMillis, MemoryLimitBytes       int64
+}
+
+type DeployResult struct {
+	Endpoint       string
+	WorkerSPIFFEID string
+}
+
+type deploymentConfig struct {
+	WorkerImageRepository string `json:"workerImageRepository"`
+	WorkerCredentialRef   string `json:"workerCredentialRef"`
+	WorkerSPIFFEID        string `json:"workerSpiffeId"`
+	WorkerServerName      string `json:"workerServerName"`
+}
+
+type containerInspect struct {
+	Config struct {
+		Image  string            `json:"Image"`
+		Labels map[string]string `json:"Labels"`
+	} `json:"Config"`
+	State struct {
+		Running bool `json:"Running"`
+	} `json:"State"`
+	NetworkSettings struct {
+		Ports map[string][]struct {
+			HostPort string `json:"HostPort"`
+		} `json:"Ports"`
+	} `json:"NetworkSettings"`
+}
+
+func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
+	if ctx == nil || request.validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
+		return DeployResult{}, ErrDeploymentConfigInvalid
+	}
+	config, err := directory.readDeploymentConfig(credentialRef)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	defer transport.CloseIdleConnections()
+	if err := requireVolume(ctx, client, base, config.WorkerCredentialRef); err != nil {
+		return DeployResult{}, err
+	}
+	if err := requireVolume(ctx, client, base, request.ProviderCredentialRef); err != nil {
+		return DeployResult{}, err
+	}
+	labels := deploymentLabels(request, config)
+	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
+	containerID, err := ensureWorkerContainer(ctx, client, base, request, config, image, labels)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	owned := false
+	inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
+	if err == nil && inspect.Config.Image == image && exactLabels(inspect.Config.Labels, labels) {
+		owned = true
+	} else if err == nil {
+		err = ErrDeploymentConflict
+	}
+	if err != nil {
+		return DeployResult{}, err
+	}
+	cleanup := func() {
+		if owned {
+			cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			_ = removeWorkerContainer(cleanupContext, client, base, containerID)
+		}
+	}
+	if err := startWorkerContainer(ctx, client, base, containerID); err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	inspect, err = waitForRunningContainer(ctx, client, base, containerID)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	workerEndpoint, err := deployedWorkerEndpoint(endpoint, inspect)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: spiffeTrustDomain(config.WorkerSPIFFEID)}
+	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: workerEndpoint, ExpectedWorkerIdentity: identity, ClientCertificate: trust.ClientCertificate, RootCAs: trust.RootCAs, ServerName: config.WorkerServerName, Clock: time.Now})
+	if err != nil || waitForWorker(ctx, supervisor) != nil {
+		cleanup()
+		return DeployResult{}, ErrWorkerUnavailable
+	}
+	return DeployResult{Endpoint: workerEndpoint, WorkerSPIFFEID: config.WorkerSPIFFEID}, nil
+}
+
+func (request DeployRequest) validate() error {
+	for path, value := range map[string]string{"/tenantId": request.TenantID, "/projectId": request.ProjectID, "/targetId": request.TargetID, "/leaseId": request.LeaseID, "/providerCredentialRef": request.ProviderCredentialRef} {
+		if commonv1alpha1.ValidateIdentifier(value, path) != nil {
+			return ErrDeploymentConfigInvalid
+		}
+	}
+	if !volumeNamePattern.MatchString(request.ProviderCredentialRef) || request.TargetGeneration < 1 || request.LeaseGeneration < 1 || request.CPULimitMillis < MinCPULimitMillis || request.CPULimitMillis > MaxCPULimitMillis || request.MemoryLimitBytes < MinMemoryLimitBytes || request.MemoryLimitBytes > MaxMemoryLimitBytes || len(request.ReleaseDigest) != 71 || !strings.HasPrefix(request.ReleaseDigest, "sha256:") {
+		return ErrDeploymentConfigInvalid
+	}
+	for _, character := range request.ReleaseDigest[7:] {
+		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
+			return ErrDeploymentConfigInvalid
+		}
+	}
+	return nil
+}
+
+func (directory *CredentialDirectory) readDeploymentConfig(credentialRef string) (deploymentConfig, error) {
+	if directory == nil || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
+		return deploymentConfig{}, ErrDeploymentConfigInvalid
+	}
+	root, err := os.OpenRoot(directory.path)
+	if err != nil {
+		return deploymentConfig{}, ErrDeploymentConfigUnavailable
+	}
+	defer root.Close()
+	value, err := readCredential(root, filepath.Join(credentialRef, "deployment.json"))
+	if err != nil {
+		return deploymentConfig{}, ErrDeploymentConfigUnavailable
+	}
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.DisallowUnknownFields()
+	var config deploymentConfig
+	if decoder.Decode(&config) != nil || decoder.Decode(&struct{}{}) != io.EOF || !validDeploymentConfig(config) {
+		return deploymentConfig{}, ErrDeploymentConfigInvalid
+	}
+	return config, nil
+}
+
+func validDeploymentConfig(config deploymentConfig) bool {
+	parsed, err := url.Parse(config.WorkerSPIFFEID)
+	return imageRepositoryPattern.MatchString(config.WorkerImageRepository) && volumeNamePattern.MatchString(config.WorkerCredentialRef) &&
+		err == nil && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
+		config.WorkerServerName != "" && len(config.WorkerServerName) <= 253 && strings.TrimSpace(config.WorkerServerName) == config.WorkerServerName && !strings.ContainsAny(config.WorkerServerName, "/@")
+}
+
+func spiffeTrustDomain(identity string) string {
+	parsed, _ := url.Parse(identity)
+	return parsed.Host
+}
+
+func deploymentLabels(request DeployRequest, config deploymentConfig) map[string]string {
+	return map[string]string{
+		"cloud-agents.dev/managed":                 "true",
+		"cloud-agents.dev/tenant":                  request.TenantID,
+		"cloud-agents.dev/project":                 request.ProjectID,
+		"cloud-agents.dev/target":                  request.TargetID,
+		"cloud-agents.dev/target-generation":       strconv.FormatInt(request.TargetGeneration, 10),
+		"cloud-agents.dev/lease":                   request.LeaseID,
+		"cloud-agents.dev/lease-generation":        strconv.FormatInt(request.LeaseGeneration, 10),
+		"cloud-agents.dev/release-digest":          request.ReleaseDigest,
+		"cloud-agents.dev/provider-credential-ref": request.ProviderCredentialRef,
+		"cloud-agents.dev/cpu-limit-millis":        strconv.FormatInt(request.CPULimitMillis, 10),
+		"cloud-agents.dev/memory-limit-bytes":      strconv.FormatInt(request.MemoryLimitBytes, 10),
+		"cloud-agents.dev/worker-spiffe-id":        config.WorkerSPIFFEID,
+	}
+}
+
+func exactLabels(actual, expected map[string]string) bool {
+	for key, value := range expected {
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func requireVolume(ctx context.Context, client *http.Client, base, name string) error {
+	var response struct {
+		Name string `json:"Name"`
+	}
+	if err := dockerJSON(ctx, client, http.MethodGet, base+"/volumes/"+url.PathEscape(name), nil, http.StatusOK, &response); err != nil || response.Name != name {
+		return ErrDeploymentConfigUnavailable
+	}
+	return nil
+}
+
+func findWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest) (string, error) {
+	filters, _ := json.Marshal(map[string][]string{"label": {
+		"cloud-agents.dev/managed=true",
+		"cloud-agents.dev/tenant=" + request.TenantID,
+		"cloud-agents.dev/project=" + request.ProjectID,
+		"cloud-agents.dev/lease=" + request.LeaseID,
+	}})
+	var containers []struct {
+		ID string `json:"Id"`
+	}
+	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filters)), nil, http.StatusOK, &containers); err != nil {
+		return "", err
+	}
+	if len(containers) > 1 || len(containers) == 1 && containers[0].ID == "" {
+		return "", ErrDeploymentConflict
+	}
+	if len(containers) == 1 {
+		return containers[0].ID, nil
+	}
+	return "", nil
+}
+
+func ensureWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config deploymentConfig, image string, labels map[string]string) (string, error) {
+	containerID, err := findWorkerContainer(ctx, client, base, request)
+	if err != nil || containerID != "" {
+		return containerID, err
+	}
+	containerID, err = createWorkerContainer(ctx, client, base, request, config, image, labels)
+	if err == nil {
+		return containerID, nil
+	}
+	// A concurrent retry may have won the deterministic-name create.
+	containerID, err = findWorkerContainer(ctx, client, base, request)
+	if err != nil || containerID == "" {
+		return "", ErrDeploymentFailed
+	}
+	return containerID, nil
+}
+
+func createWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config deploymentConfig, image string, labels map[string]string) (string, error) {
+	body := map[string]any{
+		"Image": image,
+		"User":  "1000:1000",
+		"Cmd": []string{
+			"--listen", ":8091",
+			"--tls-cert", "/run/cloud-agents/worker-credentials/server.crt",
+			"--tls-key", "/run/cloud-agents/worker-credentials/server.key",
+			"--client-ca", "/run/cloud-agents/worker-credentials/client-ca.crt",
+			"--worker-spiffe-id", config.WorkerSPIFFEID,
+			"--runtime-command", "/usr/local/bin/cloud-agent-runtime",
+			"--runtime-directory", "/workspace",
+			"--runtime-max-sessions", "1",
+			"--provider-credential-directory", "/run/cloud-agents/provider-credentials",
+			"--admission-lease-id", request.LeaseID,
+			"--admission-generation", strconv.FormatInt(request.LeaseGeneration, 10),
+			"--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token",
+		},
+		"Labels":       labels,
+		"ExposedPorts": map[string]any{workerPort: map[string]any{}},
+		"HostConfig": map[string]any{
+			"Mounts": []map[string]any{
+				{"Type": "volume", "Source": config.WorkerCredentialRef, "Target": "/run/cloud-agents/worker-credentials", "ReadOnly": true},
+				{"Type": "volume", "Source": request.ProviderCredentialRef, "Target": "/run/cloud-agents/provider-credentials", "ReadOnly": true},
+				{"Type": "volume", "Target": "/workspace"},
+			},
+			"Tmpfs":          map[string]string{"/tmp": "rw,noexec,nosuid,size=67108864,mode=1777"},
+			"PortBindings":   map[string]any{workerPort: []map[string]string{{"HostPort": ""}}},
+			"Memory":         request.MemoryLimitBytes,
+			"NanoCpus":       request.CPULimitMillis * 1_000_000,
+			"ReadonlyRootfs": true,
+			"SecurityOpt":    []string{"no-new-privileges"},
+			"CapDrop":        []string{"ALL"},
+			"RestartPolicy":  map[string]string{"Name": "unless-stopped"},
+		},
+	}
+	var response struct {
+		ID string `json:"Id"`
+	}
+	createURL := base + "/containers/create?name=" + url.QueryEscape(workerContainerName(request))
+	if err := dockerJSON(ctx, client, http.MethodPost, createURL, body, http.StatusCreated, &response); err != nil || response.ID == "" {
+		return "", ErrDeploymentFailed
+	}
+	return response.ID, nil
+}
+
+func workerContainerName(request DeployRequest) string {
+	digest := fnv.New64a()
+	for _, value := range []string{request.TenantID, request.ProjectID, request.LeaseID} {
+		_, _ = digest.Write([]byte(value))
+		_, _ = digest.Write([]byte{0})
+	}
+	return "cloud-agents-" + strconv.FormatUint(digest.Sum64(), 16)
+}
+
+func inspectWorkerContainer(ctx context.Context, client *http.Client, base, containerID string) (containerInspect, error) {
+	var response containerInspect
+	if containerID == "" || dockerJSON(ctx, client, http.MethodGet, base+"/containers/"+url.PathEscape(containerID)+"/json", nil, http.StatusOK, &response) != nil {
+		return containerInspect{}, ErrDeploymentFailed
+	}
+	return response, nil
+}
+
+func startWorkerContainer(ctx context.Context, client *http.Client, base, containerID string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/containers/"+url.PathEscape(containerID)+"/start", http.NoBody)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusNotModified {
+		return ErrDeploymentFailed
+	}
+	return nil
+}
+
+func waitForRunningContainer(ctx context.Context, client *http.Client, base, containerID string) (containerInspect, error) {
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
+		if err == nil && inspect.State.Running && len(inspect.NetworkSettings.Ports[workerPort]) == 1 {
+			return inspect, nil
+		}
+		select {
+		case <-ctx.Done():
+			return containerInspect{}, ctx.Err()
+		case <-deadline.C:
+			return containerInspect{}, ErrDeploymentFailed
+		case <-ticker.C:
+		}
+	}
+}
+
+func deployedWorkerEndpoint(targetEndpoint string, inspect containerInspect) (string, error) {
+	target, err := url.Parse(targetEndpoint)
+	bindings := inspect.NetworkSettings.Ports[workerPort]
+	if err != nil || target.Hostname() == "" || len(bindings) != 1 {
+		return "", ErrDeploymentFailed
+	}
+	port, err := strconv.Atoi(bindings[0].HostPort)
+	if err != nil || port < 1 || port > 65535 {
+		return "", ErrDeploymentFailed
+	}
+	return "https://" + net.JoinHostPort(target.Hostname(), strconv.Itoa(port)), nil
+}
+
+func waitForWorker(ctx context.Context, supervisor *workerclient.Supervisor) error {
+	healthContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	for {
+		if err := supervisor.CheckRuntimeHealth(healthContext); err == nil {
+			return nil
+		}
+		select {
+		case <-healthContext.Done():
+			return ErrWorkerUnavailable
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func removeWorkerContainer(ctx context.Context, client *http.Client, base, containerID string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, base+"/containers/"+url.PathEscape(containerID)+"?force=1&v=1", http.NoBody)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusNotFound {
+		return ErrDeploymentFailed
+	}
+	return nil
+}
+
+func dockerJSON(ctx context.Context, client *http.Client, method, target string, body any, expectedStatus int, output any) error {
+	var reader io.Reader = http.NoBody
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return ErrDeploymentFailed
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, target, reader)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	defer response.Body.Close()
+	if response.StatusCode != expectedStatus {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+		return ErrDeploymentFailed
+	}
+	if output == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+		return nil
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, maxDockerBodyBytes+1))
+	if decoder.Decode(output) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return ErrDeploymentFailed
+	}
+	return nil
+}

@@ -471,20 +471,27 @@ func run(args []string, stdout io.Writer) error {
 		var flags struct {
 			name                     string
 			releaseDigest            string
+			providerCredentialRef    string
 			expectedTargetGeneration int64
+			cpuLimitMillis           int64
+			memoryLimitBytes         int64
 			ttlSeconds               int64
 		}
 		if err = parseActionFlags("environment-lease create", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&flags.name, "name", "", "lease name")
 			set.StringVar(&flags.releaseDigest, "release-digest", "", "release artifact digest")
+			set.StringVar(&flags.providerCredentialRef, "provider-credential-ref", "", "target-side Provider credential reference")
 			set.Int64Var(&flags.expectedTargetGeneration, "expected-target-generation", 0, "deployment target fencing generation")
+			set.Int64Var(&flags.cpuLimitMillis, "cpu-limit-millis", 0, "Worker CPU limit in millicores")
+			set.Int64Var(&flags.memoryLimitBytes, "memory-limit-bytes", 0, "Worker memory limit in bytes")
 			set.Int64Var(&flags.ttlSeconds, "ttl-seconds", 0, "lease lifetime in seconds")
 		}); err == nil && flags.expectedTargetGeneration <= 0 {
 			err = errors.New("--expected-target-generation must be greater than zero")
 		} else if err == nil {
 			value, err = client.CreateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseCreateRequest{
 				LeaseID: options.lease, LeaseName: flags.name, ReleaseDigest: flags.releaseDigest, TargetID: options.target,
-				ExpectedTargetGeneration: flags.expectedTargetGeneration, TTLSeconds: flags.ttlSeconds,
+				ExpectedTargetGeneration: flags.expectedTargetGeneration, ProviderCredentialRef: flags.providerCredentialRef,
+				CPULimitMillis: flags.cpuLimitMillis, MemoryLimitBytes: flags.memoryLimitBytes, TTLSeconds: flags.ttlSeconds,
 			})
 		}
 	case "environment-lease get":

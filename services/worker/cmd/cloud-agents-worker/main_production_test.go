@@ -5,6 +5,8 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -81,6 +83,17 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 		return ""
 	}); err != nil || cfg.listen != ":8091" {
 		t.Fatalf("valid listen = %q error = %v", cfg.listen, err)
+	}
+	tokenFile := filepath.Join(t.TempDir(), "admission-token")
+	if err := os.WriteFile(tokenFile, []byte("token-from-file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fileArgs := append(append([]string{}, args...), "--admission-token-file", tokenFile)
+	if cfg, err := parseProductionWorkerConfig(fileArgs, nil); err != nil || string(cfg.admissionToken) != "token-from-file" {
+		t.Fatalf("file token bytes = %d error = %v", len(cfg.admissionToken), err)
+	}
+	if _, err := parseProductionWorkerConfig(fileArgs, func(string) string { return "ambiguous-token" }); !errors.Is(err, errInvalidProductionWorkerConfig) {
+		t.Fatalf("ambiguous token error = %v", err)
 	}
 	environment := map[string]string{
 		admissionLeaseIDEnvironment:    "lease-from-secret",

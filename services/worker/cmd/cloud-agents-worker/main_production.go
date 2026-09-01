@@ -79,6 +79,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "directory containing <tenantID>.<providerKind>.json credentials")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
+	admissionTokenFile := set.String("admission-token-file", "", "file containing the Runtime fencing token")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return productionWorkerConfig{}, errInvalidProductionWorkerConfig
 	}
@@ -93,7 +94,16 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 		*admissionGeneration = value
 	}
 	var admissionToken []byte
-	if getenv != nil {
+	if *admissionTokenFile != "" {
+		if getenv != nil && getenv(admissionTokenEnvironment) != "" {
+			return productionWorkerConfig{}, errInvalidProductionWorkerConfig
+		}
+		value, err := readProductionSecret(*admissionTokenFile)
+		if err != nil {
+			return productionWorkerConfig{}, errInvalidProductionWorkerConfig
+		}
+		admissionToken = value
+	} else if getenv != nil {
 		admissionToken = []byte(getenv(admissionTokenEnvironment))
 	}
 	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
@@ -101,6 +111,26 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 		return productionWorkerConfig{}, err
 	}
 	return cfg, nil
+}
+
+func readProductionSecret(path string) ([]byte, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == string(filepath.Separator) || strings.TrimSpace(path) != path {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > int64(workerkernel.MaxPayloadBytes) {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	value, err := io.ReadAll(io.LimitReader(file, int64(workerkernel.MaxPayloadBytes)+1))
+	if err != nil || len(value) == 0 || len(value) > int(workerkernel.MaxPayloadBytes) {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	return value, nil
 }
 
 func validateProductionWorkerConfig(cfg productionWorkerConfig) error {

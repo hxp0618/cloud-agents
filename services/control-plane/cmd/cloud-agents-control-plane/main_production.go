@@ -260,7 +260,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed agent execution HTTP server is unavailable")
 	}
-	leaseServer, err := server.NewManagedHostEnvironmentLeaseHTTPServer(verifier, coordinationService)
+	leaseServer, err := server.NewManagedHostEnvironmentLeaseHTTPServer(verifier, coordinationService, dockerProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
 	if err != nil {
 		return errors.New("managed host environment lease HTTP server is unavailable")
 	}

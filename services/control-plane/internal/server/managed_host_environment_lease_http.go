@@ -14,6 +14,8 @@ import (
 	openapiv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
@@ -25,18 +27,22 @@ type managedHostEnvironmentLeaseStore interface {
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	ListManagedHostEnvironmentLeases(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedHostEnvironmentLeasePage, error)
 	TerminateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
+	CompleteManagedHostEnvironmentLeaseDeployment(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput) (internalmanagedhost.Snapshot, error)
+	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
 }
 
 type ManagedHostEnvironmentLeaseHTTPServer struct {
-	verifier AccessTokenVerifier
-	store    managedHostEnvironmentLeaseStore
+	verifier          AccessTokenVerifier
+	store             managedHostEnvironmentLeaseStore
+	dockerCredentials *dockertarget.CredentialDirectory
+	workerTrust       dockertarget.WorkerTrust
 }
 
-func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
+func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("managed host environment lease HTTP server configuration is invalid")
 	}
-	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store}, nil
+	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, workerTrust: workerTrust}, nil
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -133,11 +139,45 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	result, err := server.store.CreateManagedHostEnvironmentLease(request.Context(), tenantID, principal, internalmanagedhost.CreateEnvironmentLeaseInput{Scope: internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, LeaseID: validated.Body.LeaseID, LeaseName: validated.Body.LeaseName, ReleaseDigest: validated.Body.ReleaseDigest, TargetID: validated.Body.TargetID, TTLSeconds: validated.Body.TTLSeconds, ExpectedTargetGeneration: validated.Body.ExpectedTargetGeneration, Mutation: internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey}})
+	result, err := server.store.CreateManagedHostEnvironmentLease(request.Context(), tenantID, principal, internalmanagedhost.CreateEnvironmentLeaseInput{Scope: internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, LeaseID: validated.Body.LeaseID, LeaseName: validated.Body.LeaseName, ReleaseDigest: validated.Body.ReleaseDigest, TargetID: validated.Body.TargetID, ProviderCredentialRef: validated.Body.ProviderCredentialRef, CPULimitMillis: validated.Body.CPULimitMillis, MemoryLimitBytes: validated.Body.MemoryLimitBytes, TTLSeconds: validated.Body.TTLSeconds, ExpectedTargetGeneration: validated.Body.ExpectedTargetGeneration, Mutation: internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey}})
 	if err != nil {
 		status, code := managedHostEnvironmentLeaseErrorStatus(err)
 		writePublicProblem(writer, status, code)
 		return
+	}
+	if server.dockerCredentials != nil && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
+		target, targetErr := server.store.GetDeploymentTarget(request.Context(), tenantID, principal, projectID, result.TargetID)
+		completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{Scope: result.Scope, LeaseID: result.LeaseID, TargetID: result.TargetID, ExpectedGeneration: result.Generation, ExpectedTargetGeneration: result.TargetGeneration}
+		if targetErr != nil {
+			status, code := managedHostEnvironmentLeaseErrorStatus(targetErr)
+			writePublicProblem(writer, status, code)
+			return
+		}
+		if target.Generation != result.TargetGeneration || target.ObservedPhase != "ready" || target.Kind != "docker" {
+			completion.StableErrorCode = "docker-target-not-ready"
+		} else if deployed, deployErr := server.dockerCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, dockertarget.DeployRequest{
+			TenantID: tenantID, ProjectID: projectID, TargetID: target.TargetID, LeaseID: result.LeaseID,
+			TargetGeneration: result.TargetGeneration, LeaseGeneration: result.Generation,
+			ReleaseDigest: result.ReleaseDigest, ProviderCredentialRef: result.ProviderCredentialRef,
+			CPULimitMillis: result.CPULimitMillis, MemoryLimitBytes: result.MemoryLimitBytes,
+		}, server.workerTrust); deployErr != nil {
+			completion.StableErrorCode = dockerDeploymentErrorCode(deployErr)
+		} else {
+			completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID = true, deployed.Endpoint, deployed.WorkerSPIFFEID
+		}
+		completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
+		defer cancel()
+		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+		if err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
+		result, err = server.store.CompleteManagedHostEnvironmentLeaseDeployment(completionContext, tenantID, principal, completion)
+		if err != nil {
+			status, code := managedHostEnvironmentLeaseErrorStatus(err)
+			writePublicProblem(writer, status, code)
+			return
+		}
 	}
 	writeManagedHostEnvironmentLease(writer, http.StatusCreated, requestID, result)
 }
@@ -207,7 +247,22 @@ func writeManagedHostEnvironmentLease(writer http.ResponseWriter, status int, re
 
 func managedHostEnvironmentLeaseResource(snapshot internalmanagedhost.Snapshot) platformv1alpha1.EnvironmentLease {
 	tenant := commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID}
-	return platformv1alpha1.EnvironmentLease{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "CloudEnvironmentLease", Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName, TenantRef: tenant, ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, Spec: platformv1alpha1.EnvironmentLeaseSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID}, Generation: snapshot.Generation, DesiredPhase: snapshot.DesiredPhase, ObservedPhase: snapshot.ObservedPhase, CleanupPhase: snapshot.CleanupPhase, EnvironmentID: snapshot.EnvironmentID, ReleaseDigest: snapshot.ReleaseDigest, TargetID: snapshot.TargetID, TargetGeneration: snapshot.TargetGeneration, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)}}
+	return platformv1alpha1.EnvironmentLease{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "CloudEnvironmentLease", Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName, TenantRef: tenant, ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, Spec: platformv1alpha1.EnvironmentLeaseSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID}, Generation: snapshot.Generation, DesiredPhase: snapshot.DesiredPhase, ObservedPhase: snapshot.ObservedPhase, CleanupPhase: snapshot.CleanupPhase, EnvironmentID: snapshot.EnvironmentID, ReleaseDigest: snapshot.ReleaseDigest, TargetID: snapshot.TargetID, TargetGeneration: snapshot.TargetGeneration, ProviderCredentialRef: snapshot.ProviderCredentialRef, CPULimitMillis: snapshot.CPULimitMillis, MemoryLimitBytes: snapshot.MemoryLimitBytes, WorkerEndpoint: snapshot.WorkerEndpoint, WorkerSPIFFEID: snapshot.WorkerSPIFFEID, StableErrorCode: snapshot.StableErrorCode, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)}}
+}
+
+func dockerDeploymentErrorCode(err error) string {
+	switch {
+	case errors.Is(err, dockertarget.ErrDeploymentConfigUnavailable):
+		return "docker-deployment-config-unavailable"
+	case errors.Is(err, dockertarget.ErrDeploymentConfigInvalid):
+		return "docker-deployment-config-invalid"
+	case errors.Is(err, dockertarget.ErrDeploymentConflict):
+		return "docker-deployment-conflict"
+	case errors.Is(err, dockertarget.ErrWorkerUnavailable):
+		return "docker-worker-unavailable"
+	default:
+		return "docker-deployment-failed"
+	}
 }
 
 func writeManagedHostEnvironmentLeasePage(writer http.ResponseWriter, requestID, tenantID, projectID string, page postgres.ManagedHostEnvironmentLeasePage) {

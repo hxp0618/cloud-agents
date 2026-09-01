@@ -1,6 +1,5 @@
 // Package managedhost contains the transport-neutral Managed Host lease
-// admission lifecycle. This slice persists admission state only; no external
-// workload, volume, provider, or Worker actuator is attached yet.
+// admission and deployment lifecycle.
 package managedhost
 
 import (
@@ -8,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -34,7 +34,9 @@ type CreateEnvironmentLeaseInput struct {
 	Scope                                Scope
 	LeaseID, LeaseName, ReleaseDigest    string
 	TargetID                             string
+	ProviderCredentialRef                string
 	TTLSeconds, ExpectedTargetGeneration int64
+	CPULimitMillis, MemoryLimitBytes     int64
 	Mutation                             Mutation
 }
 
@@ -45,12 +47,24 @@ type TerminateEnvironmentLeaseInput struct {
 	Mutation           Mutation
 }
 
+type CompleteEnvironmentLeaseDeploymentInput struct {
+	Scope                                           Scope
+	LeaseID, TargetID                               string
+	ExpectedGeneration, ExpectedTargetGeneration    int64
+	Succeeded                                       bool
+	WorkerEndpoint, WorkerSPIFFEID, StableErrorCode string
+}
+
 type Snapshot struct {
 	Scope                                       Scope
 	LeaseID, LeaseName, ReleaseDigest, TargetID string
+	ProviderCredentialRef                       string
 	Generation, TargetGeneration                int64
+	CPULimitMillis, MemoryLimitBytes            int64
 	DesiredPhase, ObservedPhase, CleanupPhase   string
 	EnvironmentID                               string
+	WorkerEndpoint, WorkerSPIFFEID              string
+	StableErrorCode                             string
 	ExpiresAt, CreatedAt, UpdatedAt             time.Time
 	ResourceVersion                             int64
 }
@@ -59,6 +73,8 @@ func (input CreateEnvironmentLeaseInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
 		!validIdentifier(input.LeaseID) || !validIdentifier(input.LeaseName) ||
 		!validDigest(input.ReleaseDigest) || !validIdentifier(input.TargetID) ||
+		!validIdentifier(input.ProviderCredentialRef) || input.CPULimitMillis < 100 || input.CPULimitMillis > 64_000 ||
+		input.MemoryLimitBytes < 128<<20 || input.MemoryLimitBytes > 1<<40 ||
 		input.ExpectedTargetGeneration < 1 || input.TTLSeconds < MinTTLSeconds || input.TTLSeconds > MaxTTLSeconds {
 		return ErrInvalidInput
 	}
@@ -73,14 +89,28 @@ func (input TerminateEnvironmentLeaseInput) Validate(tenantID string) error {
 	return validateMutation(input.Mutation)
 }
 
+func (input CompleteEnvironmentLeaseDeploymentInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) || !validIdentifier(input.LeaseID) || !validIdentifier(input.TargetID) || input.ExpectedGeneration < 1 || input.ExpectedTargetGeneration < 1 {
+		return ErrInvalidInput
+	}
+	if input.Succeeded {
+		if !validWorkerEndpoint(input.WorkerEndpoint) || !validWorkerSPIFFEID(input.WorkerSPIFFEID) || input.StableErrorCode != "" {
+			return ErrInvalidInput
+		}
+	} else if input.WorkerEndpoint != "" || input.WorkerSPIFFEID != "" || !validIdentifier(input.StableErrorCode) {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
 func CreateMutationDigest(input CreateEnvironmentLeaseInput) (string, error) {
 	if err := input.Validate(input.Scope.TenantID); err != nil {
 		return "", err
 	}
 	return digest(struct {
-		Operation, TenantID, ProjectID, LeaseID, LeaseName, ReleaseDigest, TargetID string
-		TTLSeconds, ExpectedTargetGeneration                                        int64
-	}{"environment-lease.create", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest, input.TargetID, input.TTLSeconds, input.ExpectedTargetGeneration}), nil
+		Operation, TenantID, ProjectID, LeaseID, LeaseName, ReleaseDigest, TargetID, ProviderCredentialRef string
+		TTLSeconds, ExpectedTargetGeneration, CPULimitMillis, MemoryLimitBytes                             int64
+	}{"environment-lease.create", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest, input.TargetID, input.ProviderCredentialRef, input.TTLSeconds, input.ExpectedTargetGeneration, input.CPULimitMillis, input.MemoryLimitBytes}), nil
 }
 
 func TerminateMutationDigest(input TerminateEnvironmentLeaseInput) (string, error) {
@@ -137,6 +167,7 @@ func (snapshot Snapshot) Validate() error {
 		!validDigest(snapshot.ReleaseDigest) || !validIdentifier(snapshot.EnvironmentID) ||
 		(snapshot.TargetID == "") != (snapshot.TargetGeneration == 0) ||
 		snapshot.TargetID != "" && (!validIdentifier(snapshot.TargetID) || snapshot.TargetGeneration < 1) ||
+		!validDeploymentBinding(snapshot) ||
 		snapshot.Generation < 1 || snapshot.ResourceVersion < 1 || snapshot.ExpiresAt.IsZero() ||
 		snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() ||
 		!validPhase(snapshot.DesiredPhase, "active", "terminated") ||
@@ -145,6 +176,38 @@ func (snapshot Snapshot) Validate() error {
 		return ErrInvalidInput
 	}
 	return nil
+}
+
+func validDeploymentBinding(snapshot Snapshot) bool {
+	legacy := snapshot.ProviderCredentialRef == "" && snapshot.CPULimitMillis == 0 && snapshot.MemoryLimitBytes == 0 && snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.StableErrorCode == ""
+	if legacy {
+		return true
+	}
+	if !validIdentifier(snapshot.ProviderCredentialRef) || snapshot.CPULimitMillis < 100 || snapshot.CPULimitMillis > 64_000 || snapshot.MemoryLimitBytes < 128<<20 || snapshot.MemoryLimitBytes > 1<<40 {
+		return false
+	}
+	switch snapshot.ObservedPhase {
+	case "provisioning":
+		return snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && snapshot.StableErrorCode == ""
+	case "ready":
+		return validWorkerEndpoint(snapshot.WorkerEndpoint) && validWorkerSPIFFEID(snapshot.WorkerSPIFFEID) && snapshot.StableErrorCode == ""
+	case "failed":
+		return snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" && validIdentifier(snapshot.StableErrorCode)
+	case "terminating", "terminated":
+		return snapshot.StableErrorCode == "" && (snapshot.WorkerEndpoint == "" && snapshot.WorkerSPIFFEID == "" || validWorkerEndpoint(snapshot.WorkerEndpoint) && validWorkerSPIFFEID(snapshot.WorkerSPIFFEID))
+	default:
+		return false
+	}
+}
+
+func validWorkerEndpoint(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func validWorkerSPIFFEID(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && len(value) <= 2048 && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 func validPhase(value string, allowed ...string) bool {

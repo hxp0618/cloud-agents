@@ -39,6 +39,16 @@ func TestDecodeManagedHostEnvironmentLeasePageRowsBindsProjectAndCursor(t *testi
 	if _, err := decodeManagedHostEnvironmentLeasePageRows(raw, "tenant-alpha", "project-alpha", 1); !errors.Is(err, ErrCoordinationResultDrift) {
 		t.Fatalf("partial target binding error = %v", err)
 	}
+	partial = row("lease-alpha")
+	providerCredentialRef := "provider-alpha"
+	partial.ProviderCredentialRef = &providerCredentialRef
+	raw, err = json.Marshal([]managedHostEnvironmentLeasePageRow{partial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeManagedHostEnvironmentLeasePageRows(raw, "tenant-alpha", "project-alpha", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("partial deployment input error = %v", err)
+	}
 }
 
 func TestManagedHostEnvironmentLeaseListSQLBindsTenantProjectAndCursor(t *testing.T) {

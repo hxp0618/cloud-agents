@@ -9,7 +9,8 @@ func TestMutationDigestsAreStableAndBindTheOperation(t *testing.T) {
 	create := CreateEnvironmentLeaseInput{
 		Scope:   Scope{TenantID: "tenant-a", ProjectID: "project-a"},
 		LeaseID: "lease-a", LeaseName: "default", ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		TargetID: "docker-a", TTLSeconds: 3600, ExpectedTargetGeneration: 1,
+		TargetID: "docker-a", ProviderCredentialRef: "provider-a", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+		TTLSeconds: 3600, ExpectedTargetGeneration: 1,
 		Mutation: Mutation{RequestID: "request-a", IdempotencyKey: "create-key-123456"},
 	}
 	first, err := CreateMutationDigest(create)
@@ -28,6 +29,25 @@ func TestMutationDigestsAreStableAndBindTheOperation(t *testing.T) {
 	create.LeaseID = "-invalid"
 	if err := create.Validate("tenant-a"); err == nil {
 		t.Fatal("invalid identifier was accepted")
+	}
+}
+
+func TestSnapshotDeploymentFactsMatchObservedPhase(t *testing.T) {
+	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+	snapshot := Snapshot{
+		Scope: Scope{TenantID: "tenant-a", ProjectID: "project-a"}, LeaseID: "lease-a", LeaseName: "lease-a",
+		ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		TargetID:      "docker-a", TargetGeneration: 1, ProviderCredentialRef: "provider-a", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+		Generation: 1, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", EnvironmentID: "lease-a",
+		WorkerEndpoint: "https://docker.example.test:32768", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-a",
+		ExpiresAt: now.Add(time.Hour), ResourceVersion: 2, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := snapshot.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot.WorkerEndpoint = ""
+	if err := snapshot.Validate(); err == nil {
+		t.Fatal("ready snapshot without a Worker endpoint was accepted")
 	}
 }
 
