@@ -25,7 +25,7 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 			if err := run([]string{argument}, &stdout); err != nil {
 				t.Fatal(err)
 			}
-			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list|create|terminate"} {
+			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list|create|upgrade|terminate"} {
 				if !strings.Contains(stdout.String(), expected) {
 					t.Fatalf("help output %q does not contain %q", stdout.String(), expected)
 				}
@@ -735,6 +735,16 @@ func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
 			status:      http.StatusOK,
 			idempotency: "lease-terminate-key",
 			bodyParts:   []string{`"expectedGeneration":1`},
+		},
+		{
+			name:        "upgrade",
+			globalArgs:  []string{"--idempotency-key", "lease-upgrade-key"},
+			actionArgs:  []string{"environment-lease", "upgrade", "--release-digest", releaseDigest, "--generation", "1"},
+			method:      http.MethodPost,
+			path:        "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade",
+			status:      http.StatusOK,
+			idempotency: "lease-upgrade-key",
+			bodyParts:   []string{`"releaseDigest":"` + releaseDigest + `"`, `"expectedGeneration":1`},
 		},
 	}
 	for _, test := range tests {

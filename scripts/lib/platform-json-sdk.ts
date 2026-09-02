@@ -64,6 +64,7 @@ const PLATFORM_SCHEMAS = [
   "environment-lease-create-request.schema.json",
   "environment-lease-page.schema.json",
   "environment-lease-terminate-request.schema.json",
+  "environment-lease-upgrade-request.schema.json",
   "environment-lease.schema.json",
   "managed-agent-create-project-organization-ref.schema.json",
   "membership-create-request.schema.json",
@@ -258,6 +259,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedHostProbeDeploymentTarget",
     "managedHostRegisterDeploymentTarget",
     "managedHostTerminateEnvironmentLease",
+    "managedHostUpgradeEnvironmentLease",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {
     throw new Error(`OpenAPI operation set changed: ${operations.join(",")}`);

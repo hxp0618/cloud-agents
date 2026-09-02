@@ -321,6 +321,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 
 	requireCallerClosure(t, tree, "WithVerifiedOperation",
 		"*DurableCoordinationService.BeginDeploymentTargetProbe",
+		"*DurableCoordinationService.BeginManagedHostEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.ClaimIdempotency",
 		"*DurableCoordinationService.CloseManagedAgentSession",
 		"*DurableCoordinationService.CompleteDeploymentTargetProbe",
@@ -365,6 +366,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 	)
 	requireCallerClosure(t, tree, "executeVerifiedRBACOperation",
 		"*DurableCoordinationService.BeginDeploymentTargetProbe",
+		"*DurableCoordinationService.BeginManagedHostEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.ClaimIdempotency",
 		"*DurableCoordinationService.CloseManagedAgentSession",
 		"*DurableCoordinationService.CompleteDeploymentTargetProbe",

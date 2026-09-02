@@ -28,6 +28,7 @@ type managedHostEnvironmentLeaseStoreFake struct {
 	limit     int
 	terminate int
 	finalize  int
+	upgrade   int
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) CreateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CreateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
@@ -54,6 +55,18 @@ func (fake *managedHostEnvironmentLeaseStoreFake) CompleteManagedHostEnvironment
 		fake.snapshot.WorkerSPIFFEID = input.WorkerSPIFFEID
 	}
 	return fake.snapshot, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) BeginManagedHostEnvironmentLeaseUpgrade(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.UpgradeEnvironmentLeaseInput) (internalmanagedhost.UpgradeStart, error) {
+	fake.upgrade++
+	fake.snapshot.Scope = input.Scope
+	fake.snapshot.LeaseID = input.LeaseID
+	fake.snapshot.ReleaseDigest = input.ReleaseDigest
+	fake.snapshot.Generation = input.ExpectedGeneration + 1
+	fake.snapshot.ObservedPhase = "provisioning"
+	fake.snapshot.CleanupPhase = "none"
+	fake.snapshot.DesiredPhase = "active"
+	return internalmanagedhost.UpgradeStart{Snapshot: fake.snapshot, Execute: true}, nil
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error) {

@@ -60,9 +60,25 @@ type remoteContainerInspect struct {
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
 	} `json:"NetworkSettings"`
+	Mounts []struct {
+		Type        string `json:"Type"`
+		Name        string `json:"Name"`
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+	} `json:"Mounts"`
 }
 
 func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint, credentialRef string, request dockertarget.DeployRequest, trust dockertarget.WorkerTrust) (DeployResult, error) {
+	return directory.deployWorker(ctx, endpoint, credentialRef, request, trust, false)
+}
+
+// DeployWorkerUpgrade starts a new remote Docker generation with the existing
+// workspace volume. Older generations remain until the Lease is completed.
+func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, endpoint, credentialRef string, request dockertarget.DeployRequest, trust dockertarget.WorkerTrust) (DeployResult, error) {
+	return directory.deployWorker(ctx, endpoint, credentialRef, request, trust, true)
+}
+
+func (directory *CredentialDirectory) deployWorker(ctx context.Context, endpoint, credentialRef string, request dockertarget.DeployRequest, trust dockertarget.WorkerTrust, upgrade bool) (DeployResult, error) {
 	if ctx == nil || request.Validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
 		return DeployResult{}, ErrDeploymentConfigInvalid
 	}
@@ -80,10 +96,62 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 			return DeployResult{}, err
 		}
 	}
-	name := dockertarget.WorkerContainerName(request)
 	labels := dockertarget.DeploymentLabels(request, config)
 	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
-	if err := ensureRemoteWorker(client, name, image, request, config, labels); err != nil {
+	name := dockertarget.WorkerContainerName(request)
+	if upgrade {
+		names, listErr := listRemoteWorkerNames(client, request.TenantID, request.ProjectID, request.TargetID)
+		if listErr != nil {
+			return DeployResult{}, listErr
+		}
+		workspaceSource := ""
+		current := false
+		for _, candidate := range names {
+			inspect, inspectErr := inspectRemoteWorker(client, candidate)
+			if inspectErr != nil {
+				return DeployResult{}, inspectErr
+			}
+			worker, parseErr := managedWorker(candidate, inspect, request.TargetGeneration)
+			if parseErr != nil || worker.Request.LeaseID != request.LeaseID {
+				continue
+			}
+			if worker.Request.LeaseGeneration == request.LeaseGeneration {
+				if current || inspect.Config.Image != image || !exactLabels(inspect.Config.Labels, labels) {
+					return DeployResult{}, ErrDeploymentConflict
+				}
+				name, current = candidate, true
+				continue
+			}
+			if worker.Request.LeaseGeneration > request.LeaseGeneration {
+				return DeployResult{}, ErrDeploymentConflict
+			}
+			volume, volumeErr := remoteWorkspaceVolume(inspect)
+			if volumeErr != nil {
+				return DeployResult{}, volumeErr
+			}
+			if workspaceSource == "" {
+				workspaceSource = volume
+			} else if workspaceSource != volume {
+				return DeployResult{}, ErrDeploymentConflict
+			}
+		}
+		if !current {
+			if _, runErr := runSSHCommand(client, remoteWorkerRunCommandWithWorkspace(name, image, request, config, labels, workspaceSource)); runErr != nil {
+				found, findErr := findRemoteWorkerForGeneration(client, request)
+				if findErr != nil || !found {
+					_ = cleanupRemoteWorker(context.WithoutCancel(ctx), client, name, image, labels)
+					return DeployResult{}, ErrDeploymentFailed
+				}
+				candidate, inspectErr := inspectRemoteWorker(client, name)
+				if inspectErr != nil {
+					return DeployResult{}, inspectErr
+				}
+				if candidate.Config.Image != image || !exactLabels(candidate.Config.Labels, labels) {
+					return DeployResult{}, ErrDeploymentConflict
+				}
+			}
+		}
+	} else if err := ensureRemoteWorker(client, name, image, request, config, labels); err != nil {
 		if errors.Is(err, ErrDeploymentFailed) {
 			cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			_ = cleanupRemoteWorker(cleanupContext, client, name, image, labels)
@@ -94,6 +162,14 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 	cleanup := func() {
 		cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
+		if upgrade {
+			cleanupClient, _, connectErr := directory.connect(cleanupContext, endpoint, credentialRef, 30*time.Second)
+			if connectErr == nil {
+				_ = cleanupRemoteWorker(cleanupContext, cleanupClient, name, image, labels)
+				_ = cleanupClient.Close()
+			}
+			return
+		}
 		_ = directory.CleanupWorker(cleanupContext, endpoint, credentialRef, request)
 	}
 	inspect, err := waitForRemoteWorker(ctx, client, name)
@@ -117,16 +193,58 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 	if ctx == nil || request.Validate() != nil {
 		return ErrDeploymentConfigInvalid
 	}
-	config, err := directory.readDeploymentConfig(credentialRef)
+	client, _, err := directory.connect(ctx, endpoint, credentialRef, 30*time.Second)
 	if err != nil {
 		return err
+	}
+	defer client.Close()
+	names, err := listRemoteWorkerNames(client, request.TenantID, request.ProjectID, request.TargetID)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		inspect, inspectErr := inspectRemoteWorker(client, name)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		worker, parseErr := managedWorker(name, inspect, request.TargetGeneration)
+		if parseErr != nil || worker.Request.LeaseID != request.LeaseID {
+			continue
+		}
+		if err := cleanupRemoteWorker(ctx, client, name, worker.image, worker.labels); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (directory *CredentialDirectory) CleanupOlderWorkers(ctx context.Context, endpoint, credentialRef string, request dockertarget.DeployRequest) error {
+	if ctx == nil || request.Validate() != nil {
+		return ErrDeploymentConfigInvalid
 	}
 	client, _, err := directory.connect(ctx, endpoint, credentialRef, 30*time.Second)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	return cleanupRemoteWorker(ctx, client, dockertarget.WorkerContainerName(request), config.WorkerImageRepository+"@"+request.ReleaseDigest, dockertarget.DeploymentLabels(request, config))
+	names, err := listRemoteWorkerNames(client, request.TenantID, request.ProjectID, request.TargetID)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		inspect, inspectErr := inspectRemoteWorker(client, name)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		worker, parseErr := managedWorker(name, inspect, request.TargetGeneration)
+		if parseErr != nil || worker.Request.LeaseID != request.LeaseID || worker.Request.LeaseGeneration >= request.LeaseGeneration {
+			continue
+		}
+		if err := cleanupRemoteWorker(ctx, client, name, worker.image, worker.labels); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (directory *CredentialDirectory) ListManagedWorkers(ctx context.Context, endpoint, credentialRef, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
@@ -237,6 +355,7 @@ func findRemoteWorker(client *ssh.Client, name string, request dockertarget.Depl
 		"cloud-agents.dev/managed=true",
 		"cloud-agents.dev/tenant=" + request.TenantID,
 		"cloud-agents.dev/project=" + request.ProjectID,
+		"cloud-agents.dev/target=" + request.TargetID,
 		"cloud-agents.dev/lease=" + request.LeaseID,
 	} {
 		arguments = append(arguments, "--filter", "label="+filter)
@@ -247,6 +366,29 @@ func findRemoteWorker(client *ssh.Client, name string, request dockertarget.Depl
 	}
 	lines := strings.Fields(string(output))
 	if len(lines) > 1 || len(lines) == 1 && lines[0] != name {
+		return false, ErrDeploymentConflict
+	}
+	return len(lines) == 1, nil
+}
+
+func findRemoteWorkerForGeneration(client *ssh.Client, request dockertarget.DeployRequest) (bool, error) {
+	arguments := []string{"ps", "-a", "--format", "{{.Names}}"}
+	for _, filter := range []string{
+		"cloud-agents.dev/managed=true",
+		"cloud-agents.dev/tenant=" + request.TenantID,
+		"cloud-agents.dev/project=" + request.ProjectID,
+		"cloud-agents.dev/target=" + request.TargetID,
+		"cloud-agents.dev/lease=" + request.LeaseID,
+		"cloud-agents.dev/lease-generation=" + strconv.FormatInt(request.LeaseGeneration, 10),
+	} {
+		arguments = append(arguments, "--filter", "label="+filter)
+	}
+	output, err := runSSHCommand(client, dockerCommand(arguments...))
+	if err != nil {
+		return false, ErrDeploymentFailed
+	}
+	lines := strings.Fields(string(output))
+	if len(lines) > 1 {
 		return false, ErrDeploymentConflict
 	}
 	return len(lines) == 1, nil
@@ -300,6 +442,22 @@ func inspectRemoteWorker(client *ssh.Client, name string) (remoteContainerInspec
 	return values[0], nil
 }
 
+func remoteWorkspaceVolume(inspect remoteContainerInspect) (string, error) {
+	for _, mount := range inspect.Mounts {
+		if mount.Destination != "/workspace" || mount.Type != "volume" {
+			continue
+		}
+		name := mount.Name
+		if name == "" {
+			name = mount.Source
+		}
+		if len(name) > 0 && len(name) <= 128 && !strings.ContainsAny(name, "\r\n\x00") {
+			return name, nil
+		}
+	}
+	return "", ErrDeploymentConflict
+}
+
 func waitForRemoteWorker(ctx context.Context, client *ssh.Client, name string) (remoteContainerInspect, error) {
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -321,10 +479,12 @@ func waitForRemoteWorker(ctx context.Context, client *ssh.Client, name string) (
 }
 
 func cleanupRemoteWorker(ctx context.Context, client *ssh.Client, name, image string, labels map[string]string) error {
-	request := dockertarget.DeployRequest{TenantID: labels["cloud-agents.dev/tenant"], ProjectID: labels["cloud-agents.dev/project"], LeaseID: labels["cloud-agents.dev/lease"]}
-	found, err := findRemoteWorker(client, name, request)
-	if err != nil || !found {
+	exists, err := remoteWorkerExists(client, name)
+	if err != nil {
 		return err
+	}
+	if !exists {
+		return nil
 	}
 	inspect, err := inspectRemoteWorker(client, name)
 	if err != nil {
@@ -336,14 +496,32 @@ func cleanupRemoteWorker(ctx context.Context, client *ssh.Client, name, image st
 	if _, err := runSSHCommand(client, dockerCommand("rm", "--force", "--volumes", "--", name)); err == nil {
 		return nil
 	}
-	found, findErr := findRemoteWorker(client, name, request)
-	if findErr == nil && !found {
+	if exists, checkErr := remoteWorkerExists(client, name); checkErr == nil && !exists {
 		return nil
 	}
 	return ErrDeploymentFailed
 }
 
+func remoteWorkerExists(client *ssh.Client, name string) (bool, error) {
+	if name == "" || strings.ContainsAny(name, "\r\n\x00") {
+		return false, ErrDeploymentConfigInvalid
+	}
+	output, err := runSSHCommand(client, dockerCommand("ps", "-a", "--filter", "name=^"+name+"$", "--format", "{{.Names}}"))
+	if err != nil {
+		return false, err
+	}
+	lines := strings.Fields(string(output))
+	if len(lines) > 1 || len(lines) == 1 && lines[0] != name {
+		return false, ErrDeploymentConflict
+	}
+	return len(lines) == 1, nil
+}
+
 func remoteWorkerRunCommand(name, image string, request dockertarget.DeployRequest, config dockertarget.DeploymentConfig, labels map[string]string) string {
+	return remoteWorkerRunCommandWithWorkspace(name, image, request, config, labels, "")
+}
+
+func remoteWorkerRunCommandWithWorkspace(name, image string, request dockertarget.DeployRequest, config dockertarget.DeploymentConfig, labels map[string]string, workspaceSource string) string {
 	arguments := []string{
 		"run", "--detach", "--pull", "never", "--name", name, "--user", "1000:1000",
 		"--env", "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
@@ -353,9 +531,13 @@ func remoteWorkerRunCommand(name, image string, request dockertarget.DeployReque
 		"--cpu-period", "100000", "--cpu-quota", strconv.FormatInt(request.CPULimitMillis*100, 10),
 		"--mount", "type=volume,src=" + config.WorkerCredentialRef + ",dst=/run/cloud-agents/worker-credentials,readonly",
 		"--mount", "type=volume,src=" + request.ProviderCredentialRef + ",dst=/run/cloud-agents/provider-credentials,readonly",
-		"--mount", "type=volume,dst=/workspace",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864,mode=1777", "--publish", "8091",
 	}
+	workspaceMount := "type=volume,dst=/workspace"
+	if workspaceSource != "" {
+		workspaceMount = "type=volume,src=" + workspaceSource + ",dst=/workspace"
+	}
+	arguments = append(arguments, "--mount", workspaceMount)
 	keys := make([]string, 0, len(labels))
 	for key := range labels {
 		keys = append(keys, key)

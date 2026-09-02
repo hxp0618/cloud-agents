@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-lease-upgrade-request.schema.json",
+  "title": "EnvironmentLeaseUpgradeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["releaseDigest", "expectedGeneration"],
+  "properties": {
+    "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }
+  }
+}

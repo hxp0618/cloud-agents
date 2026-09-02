@@ -228,6 +228,10 @@ export type EnvironmentLeaseCreateRequest = Readonly<{
   ttlSeconds: number;
 }>;
 export type EnvironmentLeaseTerminateRequest = Readonly<{ expectedGeneration: number }>;
+export type EnvironmentLeaseUpgradeRequest = Readonly<{
+  releaseDigest: `sha256:${string}`;
+  expectedGeneration: number;
+}>;
 export type EnvironmentLease = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "CloudEnvironmentLease";
@@ -1273,6 +1277,29 @@ export function encodeEnvironmentLeaseTerminateRequest(
   value: EnvironmentLeaseTerminateRequest,
 ): string {
   return JSON.stringify(decodeEnvironmentLeaseTerminateRequest(value));
+}
+export function decodeEnvironmentLeaseUpgradeRequest(
+  value: unknown,
+): EnvironmentLeaseUpgradeRequest {
+  const source = strictRecord(
+    value,
+    ["releaseDigest", "expectedGeneration"],
+    ["releaseDigest", "expectedGeneration"],
+  );
+  return Object.freeze({
+    releaseDigest: digest(source.releaseDigest, "/releaseDigest") as `sha256:${string}`,
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+  });
+}
+export function encodeEnvironmentLeaseUpgradeRequest(
+  value: EnvironmentLeaseUpgradeRequest,
+): string {
+  return JSON.stringify(decodeEnvironmentLeaseUpgradeRequest(value));
 }
 export function decodeDeploymentTargetRegisterRequest(
   value: unknown,
@@ -3849,6 +3876,39 @@ export class Client {
     );
     if (response.status !== 200)
       throw await this.problem("managedHostTerminateEnvironmentLease", response);
+    const result = parseEnvironmentLease(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== leaseId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async upgradeManagedHostEnvironmentLease(
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: EnvironmentLeaseUpgradeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentLease>> {
+    validateLeasePath(tenantId, projectId, leaseId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/managed-host/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}:upgrade`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeEnvironmentLeaseUpgradeRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedHostUpgradeEnvironmentLease", response);
     const result = parseEnvironmentLease(response.body);
     requireVersion(response, result.value.metadata.resourceVersion);
     if (

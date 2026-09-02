@@ -516,6 +516,17 @@ func run(args []string, stdout io.Writer) error {
 		} else if err == nil {
 			value, err = client.TerminateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseTerminateRequest{ExpectedGeneration: generation})
 		}
+	case "environment-lease upgrade":
+		var releaseDigest string
+		var generation int64
+		if err = parseActionFlags("environment-lease upgrade", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&releaseDigest, "release-digest", "", "new release artifact digest")
+			set.Int64Var(&generation, "generation", 0, "lease fencing generation")
+		}); err == nil && generation <= 0 {
+			err = errors.New("--generation must be greater than zero")
+		} else if err == nil {
+			value, err = client.UpgradeManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseUpgradeRequest{ReleaseDigest: releaseDigest, ExpectedGeneration: generation})
+		}
 	default:
 		return fmt.Errorf("unknown command %q; use cloud-agentsctl help", command+" "+action)
 	}
@@ -784,7 +795,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
 		return true
 	default:
 		return false
@@ -820,7 +831,7 @@ func requiresTarget(command, action string) bool {
 	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"
 }
 func requiresIdempotency(command, action string) bool {
-	return (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
+	return (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate" || action == "upgrade"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
@@ -843,7 +854,7 @@ resources and actions:
   role-binding get|list|create|revoke
   managed-host-project get
   managed-host-role-binding get
-  environment-lease get|list|create|terminate`
+  environment-lease get|list|create|upgrade|terminate`
 
 type membershipCreateFlags struct {
 	expectedTenantRevision int64

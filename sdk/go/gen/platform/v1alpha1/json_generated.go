@@ -186,6 +186,10 @@ type EnvironmentLeaseCreateRequest struct {
 type EnvironmentLeaseTerminateRequest struct {
 	ExpectedGeneration int64 `json:"expectedGeneration"`
 }
+type EnvironmentLeaseUpgradeRequest struct {
+	ReleaseDigest      string `json:"releaseDigest"`
+	ExpectedGeneration int64  `json:"expectedGeneration"`
+}
 type EnvironmentLeaseSpec struct {
 	ProjectRef            common.ProjectRef `json:"projectRef"`
 	Generation            int64             `json:"generation"`
@@ -1015,6 +1019,31 @@ func EncodeEnvironmentLeaseTerminateRequestJSON(value EnvironmentLeaseTerminateR
 		return nil, err
 	}
 	if _, err := DecodeEnvironmentLeaseTerminateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeEnvironmentLeaseUpgradeRequestJSON(data []byte) (EnvironmentLeaseUpgradeRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"releaseDigest", "expectedGeneration"}, []string{"releaseDigest", "expectedGeneration"})
+	if err != nil {
+		return EnvironmentLeaseUpgradeRequest{}, err
+	}
+	release, err := fieldString(fields, "releaseDigest", "/releaseDigest")
+	if err != nil || !strings.HasPrefix(release, "sha256:") || len(release) != 71 {
+		return EnvironmentLeaseUpgradeRequest{}, common.ContractError("INVALID_RELEASE_DIGEST", "/releaseDigest")
+	}
+	generation, err := fieldInt64(fields, "expectedGeneration", "/expectedGeneration")
+	if err != nil || generation < 1 {
+		return EnvironmentLeaseUpgradeRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	return EnvironmentLeaseUpgradeRequest{ReleaseDigest: release, ExpectedGeneration: generation}, nil
+}
+func EncodeEnvironmentLeaseUpgradeRequestJSON(value EnvironmentLeaseUpgradeRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeEnvironmentLeaseUpgradeRequestJSON(raw); err != nil {
 		return nil, err
 	}
 	return raw, nil

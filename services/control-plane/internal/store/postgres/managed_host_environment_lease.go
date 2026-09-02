@@ -95,6 +95,13 @@ FROM cloud_agents.complete_managed_host_environment_lease_termination_v1($1, $2,
 	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at
 FROM cloud_agents.complete_managed_host_environment_lease_deployment_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	beginManagedHostEnvironmentLeaseUpgradeSQL = `SELECT lease_uid, lease_name, release_digest,
+	    deployment_target_uid, deployment_target_generation,
+	    generation, provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
+	    desired_phase, observed_phase, cleanup_phase, environment_id,
+	    worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
+	    expires_at, resource_version, created_at, updated_at, execute_upgrade
+FROM cloud_agents.begin_managed_host_environment_lease_upgrade_v1($1, $2, $3, $4, $5, $6, $7)`
 )
 
 func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
@@ -125,6 +132,45 @@ func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
 					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest,
 					input.TargetID, input.ExpectedTargetGeneration, input.ProviderCredentialRef, input.CPULimitMillis,
 					input.MemoryLimitBytes, input.TTLSeconds, input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, mapManagedHostEnvironmentLeaseError(err)
+}
+
+func (service *DurableCoordinationService) BeginManagedHostEnvironmentLeaseUpgrade(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalmanagedhost.UpgradeEnvironmentLeaseInput,
+) (internalmanagedhost.UpgradeStart, error) {
+	if service == nil || service.runner == nil {
+		return internalmanagedhost.UpgradeStart{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		if ctx == nil {
+			return internalmanagedhost.UpgradeStart{}, ErrNilContext
+		}
+		return internalmanagedhost.UpgradeStart{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalmanagedhost.UpgradeMutationDigest(input)
+	if err != nil {
+		return internalmanagedhost.UpgradeStart{}, ErrCoordinationInvalidInput
+	}
+	var result internalmanagedhost.UpgradeStart
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
+				row := handle.transaction.queryRow(ctx, beginManagedHostEnvironmentLeaseUpgradeSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ExpectedGeneration,
+					input.ReleaseDigest, input.Mutation.IdempotencyKey, digest)
+				if err := scanManagedHostEnvironmentLeaseWithExecute(row, input.Scope, &result.Snapshot, &result.Execute); errors.Is(err, pgx.ErrNoRows) {
+					return internalmanagedhost.ErrNotFound
+				} else {
+					return err
+				}
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -355,6 +401,10 @@ func (service *DurableCoordinationService) CompleteManagedHostEnvironmentLeaseTe
 }
 
 func scanManagedHostEnvironmentLease(row rowScanner, scope internalmanagedhost.Scope, result *internalmanagedhost.Snapshot) error {
+	return scanManagedHostEnvironmentLeaseWithExecute(row, scope, result, nil)
+}
+
+func scanManagedHostEnvironmentLeaseWithExecute(row rowScanner, scope internalmanagedhost.Scope, result *internalmanagedhost.Snapshot, execute *bool) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
@@ -363,11 +413,11 @@ func scanManagedHostEnvironmentLease(row rowScanner, scope internalmanagedhost.S
 	var providerCredentialRef *string
 	var cpuLimitMillis *int64
 	var memoryLimitBytes *int64
-	if err := row.Scan(&result.LeaseID, &result.LeaseName, &result.ReleaseDigest, &targetID, &targetGeneration, &result.Generation,
-		&providerCredentialRef, &cpuLimitMillis, &memoryLimitBytes,
-		&result.DesiredPhase, &result.ObservedPhase, &result.CleanupPhase, &result.EnvironmentID,
-		&result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.WorkerServerName, &result.StableErrorCode,
-		&result.ExpiresAt, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt); err != nil {
+	targets := []any{&result.LeaseID, &result.LeaseName, &result.ReleaseDigest, &targetID, &targetGeneration, &result.Generation, &providerCredentialRef, &cpuLimitMillis, &memoryLimitBytes, &result.DesiredPhase, &result.ObservedPhase, &result.CleanupPhase, &result.EnvironmentID, &result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.WorkerServerName, &result.StableErrorCode, &result.ExpiresAt, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt}
+	if execute != nil {
+		targets = append(targets, execute)
+	}
+	if err := row.Scan(targets...); err != nil {
 		return err
 	}
 	if (targetID == nil) != (targetGeneration == nil) {

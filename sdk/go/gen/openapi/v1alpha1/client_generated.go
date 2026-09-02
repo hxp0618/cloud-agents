@@ -659,6 +659,36 @@ func (client *Client) TerminateManagedHostEnvironmentLease(ctx context.Context, 
 	}
 	return value, nil
 }
+func (client *Client) UpgradeManagedHostEnvironmentLease(ctx context.Context, tenantID, projectID, leaseID, requestID, idempotencyKey string, body platform.EnvironmentLeaseUpgradeRequest) (EnvironmentLeaseResult, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return EnvironmentLeaseResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return EnvironmentLeaseResult{}, err
+	}
+	bodyBytes, err := platform.EncodeEnvironmentLeaseUpgradeRequestJSON(body)
+	if err != nil {
+		return EnvironmentLeaseResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/managed-host/tenants/" + tenantID + "/projects/" + projectID + "/environment-leases/" + leaseID + ":upgrade", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return EnvironmentLeaseResult{}, err
+	}
+	if response.Status != 200 {
+		return EnvironmentLeaseResult{}, client.problemError("managedHostUpgradeEnvironmentLease", response)
+	}
+	value, err := DecodeEnvironmentLeaseResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentLeaseResult{}, &ClientError{Operation: "managedHostUpgradeEnvironmentLease", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return EnvironmentLeaseResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID {
+		return EnvironmentLeaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
 func (client *Client) RegisterDeploymentTarget(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.DeploymentTargetRegisterRequest) (DeploymentTargetResult, error) {
 	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
 		return DeploymentTargetResult{}, err
@@ -2490,6 +2520,29 @@ func ValidateTerminateEnvironmentLeaseServerRequest(tenantID, projectID, leaseID
 		return TerminateEnvironmentLeaseServerInput{}, err
 	}
 	return TerminateEnvironmentLeaseServerInput{TenantID: tenantID, ProjectID: projectID, LeaseID: leaseID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type UpgradeEnvironmentLeaseServerInput struct {
+	TenantID       string
+	ProjectID      string
+	LeaseID        string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.EnvironmentLeaseUpgradeRequest
+}
+
+func ValidateUpgradeEnvironmentLeaseServerRequest(tenantID, projectID, leaseID, requestID, idempotencyKey string, body []byte) (UpgradeEnvironmentLeaseServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return UpgradeEnvironmentLeaseServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return UpgradeEnvironmentLeaseServerInput{}, err
+	}
+	value, err := platform.DecodeEnvironmentLeaseUpgradeRequestJSON(body)
+	if err != nil {
+		return UpgradeEnvironmentLeaseServerInput{}, err
+	}
+	return UpgradeEnvironmentLeaseServerInput{TenantID: tenantID, ProjectID: projectID, LeaseID: leaseID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 func validateLeasePath(tenantID, projectID, leaseID, requestID string) error {
 	if err := validatePath(tenantID, requestID); err != nil {

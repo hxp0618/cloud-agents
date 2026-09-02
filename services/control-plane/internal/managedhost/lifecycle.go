@@ -48,6 +48,14 @@ type TerminateEnvironmentLeaseInput struct {
 	Mutation           Mutation
 }
 
+type UpgradeEnvironmentLeaseInput struct {
+	Scope              Scope
+	LeaseID            string
+	ReleaseDigest      string
+	ExpectedGeneration int64
+	Mutation           Mutation
+}
+
 type CompleteEnvironmentLeaseTerminationInput struct {
 	Scope              Scope
 	LeaseID            string
@@ -77,6 +85,11 @@ type Snapshot struct {
 	ResourceVersion                                  int64
 }
 
+type UpgradeStart struct {
+	Snapshot Snapshot
+	Execute  bool
+}
+
 func (input CreateEnvironmentLeaseInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
 		!validIdentifier(input.LeaseID) || !validIdentifier(input.LeaseName) ||
@@ -92,6 +105,14 @@ func (input CreateEnvironmentLeaseInput) Validate(tenantID string) error {
 func (input TerminateEnvironmentLeaseInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
 		!validIdentifier(input.LeaseID) || input.ExpectedGeneration < 1 {
+		return ErrInvalidInput
+	}
+	return validateMutation(input.Mutation)
+}
+
+func (input UpgradeEnvironmentLeaseInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
+		!validIdentifier(input.LeaseID) || !validDigest(input.ReleaseDigest) || input.ExpectedGeneration < 1 {
 		return ErrInvalidInput
 	}
 	return validateMutation(input.Mutation)
@@ -137,6 +158,16 @@ func TerminateMutationDigest(input TerminateEnvironmentLeaseInput) (string, erro
 		Operation, TenantID, ProjectID, LeaseID string
 		ExpectedGeneration                      int64
 	}{"environment-lease.terminate", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ExpectedGeneration}), nil
+}
+
+func UpgradeMutationDigest(input UpgradeEnvironmentLeaseInput) (string, error) {
+	if err := input.Validate(input.Scope.TenantID); err != nil {
+		return "", err
+	}
+	return digest(struct {
+		Operation, TenantID, ProjectID, LeaseID, ReleaseDigest string
+		ExpectedGeneration                                     int64
+	}{"environment-lease.upgrade", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ReleaseDigest, input.ExpectedGeneration}), nil
 }
 
 func validIdentifier(value string) bool {

@@ -92,6 +92,12 @@ type containerInspect struct {
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
 	} `json:"NetworkSettings"`
+	Mounts []struct {
+		Type        string `json:"Type"`
+		Name        string `json:"Name"`
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+	} `json:"Mounts"`
 }
 
 type containerSummary struct {
@@ -167,16 +173,162 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 	if ctx == nil || request.Validate() != nil {
 		return ErrDeploymentConfigInvalid
 	}
-	config, err := directory.readDeploymentConfig(credentialRef)
+	client, transport, base, err := directory.client(endpoint, credentialRef)
 	if err != nil {
 		return err
+	}
+	defer transport.CloseIdleConnections()
+	workers, err := listManagedWorkers(ctx, client, base, request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
+	if err != nil {
+		return err
+	}
+	for _, worker := range workers {
+		if worker.Request.LeaseID != request.LeaseID {
+			continue
+		}
+		if err := cleanupManagedWorker(ctx, client, base, worker); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeployWorkerUpgrade starts the requested generation beside any existing
+// generation and reuses its workspace volume. Older generations are removed
+// only by CleanupOlderWorkers after the Lease records the new ready endpoint.
+func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
+	if ctx == nil || request.Validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
+		return DeployResult{}, ErrDeploymentConfigInvalid
+	}
+	config, err := directory.readDeploymentConfig(credentialRef)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	defer transport.CloseIdleConnections()
+	if err := requireVolume(ctx, client, base, config.WorkerCredentialRef); err != nil {
+		return DeployResult{}, err
+	}
+	if err := requireVolume(ctx, client, base, request.ProviderCredentialRef); err != nil {
+		return DeployResult{}, err
+	}
+	workers, err := listManagedWorkers(ctx, client, base, request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	labels := DeploymentLabels(request, config)
+	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
+	var current *ManagedWorker
+	workspaceSource := ""
+	for index := range workers {
+		worker := &workers[index]
+		if worker.Request.LeaseID != request.LeaseID {
+			continue
+		}
+		inspect, inspectErr := inspectWorkerContainer(ctx, client, base, worker.id)
+		if inspectErr != nil {
+			return DeployResult{}, inspectErr
+		}
+		if worker.Request.LeaseGeneration == request.LeaseGeneration {
+			if current != nil || inspect.Config.Image != image || !exactLabels(inspect.Config.Labels, labels) {
+				return DeployResult{}, ErrDeploymentConflict
+			}
+			current = worker
+			continue
+		}
+		if worker.Request.LeaseGeneration > request.LeaseGeneration {
+			return DeployResult{}, ErrDeploymentConflict
+		}
+		volume, volumeErr := workspaceVolume(inspect)
+		if volumeErr != nil {
+			return DeployResult{}, volumeErr
+		}
+		if workspaceSource == "" {
+			workspaceSource = volume
+		} else if workspaceSource != volume {
+			return DeployResult{}, ErrDeploymentConflict
+		}
+	}
+	containerID := ""
+	created := false
+	if current != nil {
+		containerID = current.id
+	} else {
+		containerID, err = createWorkerContainerNamed(ctx, client, base, request, config, image, labels, WorkerContainerName(request), workspaceSource)
+		if err != nil {
+			if found, findErr := findWorkerContainerForGeneration(ctx, client, base, request); findErr == nil && found != "" {
+				candidate, inspectErr := inspectWorkerContainer(ctx, client, base, found)
+				if inspectErr != nil {
+					return DeployResult{}, inspectErr
+				}
+				if candidate.Name != "/"+WorkerContainerName(request) || candidate.Config.Image != image || !exactLabels(candidate.Config.Labels, labels) {
+					return DeployResult{}, ErrDeploymentConflict
+				}
+				containerID = found
+			} else {
+				return DeployResult{}, err
+			}
+		} else {
+			created = true
+		}
+	}
+	cleanup := func() {
+		if !created || containerID == "" {
+			return
+		}
+		cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = removeWorkerContainer(cleanupContext, client, base, containerID)
+	}
+	if err := startWorkerContainer(ctx, client, base, containerID); err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	inspect, err := waitForRunningContainer(ctx, client, base, containerID)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	workerEndpoint, err := deployedWorkerEndpoint(endpoint, inspect)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: spiffeTrustDomain(config.WorkerSPIFFEID)}
+	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: workerEndpoint, ExpectedWorkerIdentity: identity, ClientCertificate: trust.ClientCertificate, RootCAs: trust.RootCAs, ServerName: config.WorkerServerName, Clock: time.Now})
+	if err != nil || waitForWorker(ctx, supervisor) != nil {
+		cleanup()
+		return DeployResult{}, ErrWorkerUnavailable
+	}
+	return DeployResult{Endpoint: workerEndpoint, WorkerSPIFFEID: config.WorkerSPIFFEID, WorkerServerName: config.WorkerServerName}, nil
+}
+
+// CleanupOlderWorkers removes lower lease generations after a newer one has
+// become ready. Repeating it is safe because missing workers are ignored.
+func (directory *CredentialDirectory) CleanupOlderWorkers(ctx context.Context, endpoint, credentialRef string, request DeployRequest) error {
+	if ctx == nil || request.Validate() != nil {
+		return ErrDeploymentConfigInvalid
 	}
 	client, transport, base, err := directory.client(endpoint, credentialRef)
 	if err != nil {
 		return err
 	}
 	defer transport.CloseIdleConnections()
-	return cleanupWorkerContainer(ctx, client, base, request, config)
+	workers, err := listManagedWorkers(ctx, client, base, request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
+	if err != nil {
+		return err
+	}
+	for _, worker := range workers {
+		if worker.Request.LeaseID == request.LeaseID && worker.Request.LeaseGeneration < request.LeaseGeneration {
+			if err := cleanupManagedWorker(ctx, client, base, worker); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (directory *CredentialDirectory) ListManagedWorkers(ctx context.Context, endpoint, credentialRef, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
@@ -354,6 +506,28 @@ func findWorkerContainer(ctx context.Context, client *http.Client, base string, 
 	return "", nil
 }
 
+func findWorkerContainerForGeneration(ctx context.Context, client *http.Client, base string, request DeployRequest) (string, error) {
+	filters, _ := json.Marshal(map[string][]string{"label": {
+		"cloud-agents.dev/managed=true",
+		"cloud-agents.dev/tenant=" + request.TenantID,
+		"cloud-agents.dev/project=" + request.ProjectID,
+		"cloud-agents.dev/target=" + request.TargetID,
+		"cloud-agents.dev/lease=" + request.LeaseID,
+		"cloud-agents.dev/lease-generation=" + strconv.FormatInt(request.LeaseGeneration, 10),
+	}})
+	var containers []containerSummary
+	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filters)), nil, http.StatusOK, &containers); err != nil {
+		return "", err
+	}
+	if len(containers) > 1 || len(containers) == 1 && containers[0].ID == "" {
+		return "", ErrDeploymentConflict
+	}
+	if len(containers) == 1 {
+		return containers[0].ID, nil
+	}
+	return "", nil
+}
+
 func listManagedWorkers(ctx context.Context, client *http.Client, base, tenantID, projectID, targetID string, targetGeneration int64) ([]ManagedWorker, error) {
 	filters, _ := json.Marshal(map[string][]string{"label": {
 		"cloud-agents.dev/managed=true",
@@ -425,6 +599,10 @@ func ensureWorkerContainer(ctx context.Context, client *http.Client, base string
 }
 
 func createWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string) (string, error) {
+	return createWorkerContainerNamed(ctx, client, base, request, config, image, labels, WorkerContainerName(request), "")
+}
+
+func createWorkerContainerNamed(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string, name, workspaceSource string) (string, error) {
 	body := map[string]any{
 		"Image": image,
 		"User":  "1000:1000",
@@ -452,7 +630,6 @@ func createWorkerContainer(ctx context.Context, client *http.Client, base string
 			"Mounts": []map[string]any{
 				{"Type": "volume", "Source": config.WorkerCredentialRef, "Target": "/run/cloud-agents/worker-credentials", "ReadOnly": true},
 				{"Type": "volume", "Source": request.ProviderCredentialRef, "Target": "/run/cloud-agents/provider-credentials", "ReadOnly": true},
-				{"Type": "volume", "Target": "/workspace"},
 			},
 			"Tmpfs":          map[string]string{"/tmp": "rw,noexec,nosuid,size=67108864,mode=1777"},
 			"PortBindings":   map[string]any{workerPort: []map[string]string{{"HostPort": ""}}},
@@ -464,10 +641,19 @@ func createWorkerContainer(ctx context.Context, client *http.Client, base string
 			"RestartPolicy":  map[string]string{"Name": "unless-stopped"},
 		},
 	}
+	workspaceMount := map[string]any{"Type": "volume", "Target": "/workspace"}
+	if workspaceSource != "" {
+		workspaceMount["Source"] = workspaceSource
+	}
+	hostConfig := body["HostConfig"].(map[string]any)
+	hostConfig["Mounts"] = append(hostConfig["Mounts"].([]map[string]any), workspaceMount)
 	var response struct {
 		ID string `json:"Id"`
 	}
-	createURL := base + "/containers/create?name=" + url.QueryEscape(WorkerContainerName(request))
+	if !volumeNamePattern.MatchString(name) {
+		return "", ErrDeploymentConfigInvalid
+	}
+	createURL := base + "/containers/create?name=" + url.QueryEscape(name)
 	if err := dockerJSON(ctx, client, http.MethodPost, createURL, body, http.StatusCreated, &response); err != nil || response.ID == "" {
 		return "", ErrDeploymentFailed
 	}
@@ -475,12 +661,36 @@ func createWorkerContainer(ctx context.Context, client *http.Client, base string
 }
 
 func WorkerContainerName(request DeployRequest) string {
+	base := workerContainerBaseName(request)
+	if request.LeaseGeneration <= 1 {
+		return base
+	}
+	return base + "-g" + strconv.FormatInt(request.LeaseGeneration, 10)
+}
+
+func workerContainerBaseName(request DeployRequest) string {
 	digest := fnv.New64a()
 	for _, value := range []string{request.TenantID, request.ProjectID, request.LeaseID} {
 		_, _ = digest.Write([]byte(value))
 		_, _ = digest.Write([]byte{0})
 	}
 	return "cloud-agents-" + strconv.FormatUint(digest.Sum64(), 16)
+}
+
+func workspaceVolume(inspect containerInspect) (string, error) {
+	for _, mount := range inspect.Mounts {
+		if mount.Destination != "/workspace" || mount.Type != "volume" {
+			continue
+		}
+		name := mount.Name
+		if name == "" {
+			name = mount.Source
+		}
+		if volumeNamePattern.MatchString(name) {
+			return name, nil
+		}
+	}
+	return "", ErrDeploymentConflict
 }
 
 func inspectWorkerContainer(ctx context.Context, client *http.Client, base, containerID string) (containerInspect, error) {

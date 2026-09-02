@@ -90,6 +90,7 @@ type resource struct {
 	Status   struct {
 		ObservedGeneration int64 `json:"observedGeneration"`
 		AvailableReplicas  int64 `json:"availableReplicas"`
+		UpdatedReplicas    int64 `json:"updatedReplicas"`
 		LoadBalancer       struct {
 			Ingress []struct {
 				IP       string `json:"ip"`
@@ -105,6 +106,16 @@ type desiredResource struct {
 }
 
 func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
+	return directory.deployWorker(ctx, endpoint, credentialRef, request, trust, false)
+}
+
+// DeployWorkerUpgrade applies a rolling update to the existing Deployment and
+// waits for one updated replica before the caller advances the Lease.
+func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
+	return directory.deployWorker(ctx, endpoint, credentialRef, request, trust, true)
+}
+
+func (directory *CredentialDirectory) deployWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust, rolling bool) (DeployResult, error) {
 	if ctx == nil || request.validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
 		return DeployResult{}, ErrDeploymentConfigInvalid
 	}
@@ -124,28 +135,30 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 	}
 	name := workerResourceName(request)
 	annotations := deploymentAnnotations(request, config)
-	resources := desiredResources(name, request, config, annotations)
-	for _, resource := range resources {
-		if err := applyResource(ctx, client, base, resource); err != nil {
-			cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			_ = cleanupResources(cleanupContext, client, base, config.Namespace, name, annotations)
-			cancel()
-			return DeployResult{}, err
+	resources := desiredResourcesWithStrategy(name, request, config, annotations, rolling)
+	cleanupOnFailure := func() {
+		if rolling {
+			return
 		}
-	}
-	workerEndpoint, err := waitForReadyResources(ctx, client, base, config.Namespace, name, annotations)
-	if err != nil {
 		cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		_ = cleanupResources(cleanupContext, client, base, config.Namespace, name, annotations)
 		cancel()
+	}
+	for _, resource := range resources {
+		if err := applyResource(ctx, client, base, resource); err != nil {
+			cleanupOnFailure()
+			return DeployResult{}, err
+		}
+	}
+	workerEndpoint, err := waitForReadyResourcesMode(ctx, client, base, config.Namespace, name, annotations, rolling)
+	if err != nil {
+		cleanupOnFailure()
 		return DeployResult{}, err
 	}
 	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: spiffeTrustDomain(config.WorkerSPIFFEID)}
 	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: workerEndpoint, ExpectedWorkerIdentity: identity, ClientCertificate: trust.ClientCertificate, RootCAs: trust.RootCAs, ServerName: config.WorkerServerName, Clock: time.Now})
 	if err != nil || waitForWorker(ctx, supervisor) != nil {
-		cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		_ = cleanupResources(cleanupContext, client, base, config.Namespace, name, annotations)
-		cancel()
+		cleanupOnFailure()
 		return DeployResult{}, ErrWorkerUnavailable
 	}
 	return DeployResult{Endpoint: workerEndpoint, WorkerSPIFFEID: config.WorkerSPIFFEID, WorkerServerName: config.WorkerServerName}, nil
@@ -341,11 +354,19 @@ func managedWorker(metadata resourceMetadata, expectedTargetGeneration int64, co
 }
 
 func desiredResources(name string, request DeployRequest, config deploymentConfig, annotations map[string]string) []desiredResource {
+	return desiredResourcesWithStrategy(name, request, config, annotations, false)
+}
+
+func desiredResourcesWithStrategy(name string, request DeployRequest, config deploymentConfig, annotations map[string]string, rolling bool) []desiredResource {
 	metadata := func() map[string]any {
 		return map[string]any{"name": name, "namespace": config.Namespace, "labels": map[string]string{"cloud-agents.dev/managed": "true", "cloud-agents.dev/worker": name}, "annotations": annotations}
 	}
 	selector := map[string]string{"cloud-agents.dev/worker": name}
 	base := "/api/v1/namespaces/" + url.PathEscape(config.Namespace)
+	strategy := any(map[string]any{"type": "Recreate"})
+	if rolling {
+		strategy = map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]string{"maxUnavailable": "0", "maxSurge": "1"}}
+	}
 	return []desiredResource{
 		{path: base + "/persistentvolumeclaims/" + url.PathEscape(name), body: map[string]any{
 			"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": metadata(),
@@ -357,7 +378,7 @@ func desiredResources(name string, request DeployRequest, config deploymentConfi
 		}},
 		{path: "/apis/apps/v1/namespaces/" + url.PathEscape(config.Namespace) + "/deployments/" + url.PathEscape(name), body: map[string]any{
 			"apiVersion": "apps/v1", "kind": "Deployment", "metadata": metadata(),
-			"spec": map[string]any{"replicas": 1, "strategy": map[string]string{"type": "Recreate"}, "selector": map[string]any{"matchLabels": selector}, "template": map[string]any{
+			"spec": map[string]any{"replicas": 1, "strategy": strategy, "selector": map[string]any{"matchLabels": selector}, "template": map[string]any{
 				"metadata": map[string]any{"labels": selector},
 				"spec": map[string]any{"automountServiceAccountToken": false, "terminationGracePeriodSeconds": 30, "securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1000, "runAsGroup": 1000, "fsGroup": 1000, "fsGroupChangePolicy": "OnRootMismatch", "seccompProfile": map[string]string{"type": "RuntimeDefault"}}, "containers": []map[string]any{{
 					"name": "worker", "image": config.WorkerImageRepository + "@" + request.ReleaseDigest, "imagePullPolicy": "IfNotPresent",
@@ -397,6 +418,10 @@ func applyResource(ctx context.Context, client *http.Client, base string, desire
 }
 
 func waitForReadyResources(ctx context.Context, client *http.Client, base, namespace, name string, annotations map[string]string) (string, error) {
+	return waitForReadyResourcesMode(ctx, client, base, namespace, name, annotations, false)
+}
+
+func waitForReadyResourcesMode(ctx context.Context, client *http.Client, base, namespace, name string, annotations map[string]string, rolling bool) (string, error) {
 	waitContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -411,7 +436,7 @@ func waitForReadyResources(ctx context.Context, client *http.Client, base, names
 			if !ownedResource(deployment.Metadata, name, namespace, annotations) || !ownedResource(service.Metadata, name, namespace, annotations) {
 				return "", ErrDeploymentConflict
 			}
-			if deployment.Status.AvailableReplicas >= 1 && deployment.Status.ObservedGeneration >= deployment.Metadata.Generation {
+			if deployment.Status.AvailableReplicas >= 1 && deployment.Status.ObservedGeneration >= deployment.Metadata.Generation && (!rolling || deployment.Status.UpdatedReplicas >= 1) {
 				if address := loadBalancerAddress(service); address != "" {
 					return "https://" + net.JoinHostPort(address, strconv.Itoa(workerPort)), nil
 				}

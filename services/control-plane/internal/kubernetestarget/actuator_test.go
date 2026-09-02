@@ -194,6 +194,28 @@ func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 	}
 }
 
+func TestKubernetesUpgradeKeepsAnOldReplicaUntilTheNewOneIsReady(t *testing.T) {
+	request := DeployRequest{
+		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "kubernetes-alpha", LeaseID: "lease-alpha",
+		TargetGeneration: 1, LeaseGeneration: 2, ReleaseDigest: "sha256:" + strings.Repeat("a", 64),
+		ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+	}
+	config := deploymentConfig{
+		Namespace: "agents", WorkerImageRepository: "registry.example.test/cloud-agents/worker",
+		WorkerCredentialSecretRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/kubernetes-alpha", WorkerServerName: "worker.example.test",
+	}
+	resources := desiredResourcesWithStrategy(workerResourceName(request), request, config, deploymentAnnotations(request, config), true)
+	deploymentSpec := resources[2].body["spec"].(map[string]any)
+	strategy := deploymentSpec["strategy"].(map[string]any)
+	if strategy["type"] != "RollingUpdate" {
+		t.Fatalf("upgrade strategy=%#v", strategy)
+	}
+	rollingUpdate := strategy["rollingUpdate"].(map[string]string)
+	if rollingUpdate["maxUnavailable"] != "0" || rollingUpdate["maxSurge"] != "1" {
+		t.Fatalf("rolling update policy=%#v", rollingUpdate)
+	}
+}
+
 func TestCredentialDirectoryReadsKubernetesDeploymentDescriptor(t *testing.T) {
 	directory := t.TempDir()
 	descriptor := `{"namespace":"agents","workerImageRepository":"registry.example.test/cloud-agents/worker","workerCredentialSecretRef":"worker-alpha","workerSpiffeId":"spiffe://cloud-agents.test/workers/kubernetes-alpha","workerServerName":"worker.example.test"}`
