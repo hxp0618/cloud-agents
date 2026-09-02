@@ -203,6 +203,8 @@ const (
 	maxRuntimeInteractionAnswers             = 3
 	maxRuntimeInteractionAnswerValues        = 20
 	maxRuntimeInteractionAnswerCharacters    = 2000
+	runtimeWorkerReconnectWindow             = 30 * time.Second
+	runtimeWorkerReconnectInterval           = 250 * time.Millisecond
 )
 
 var (
@@ -260,6 +262,44 @@ func (coordinator *DurableRuntimeExecutionCoordinator) workerForSession(session 
 		return runtimeWorker{}, ErrRuntimeEnvironmentUnavailable
 	}
 	return runtimeWorker{supervisor: supervisor, leaseID: session.EnvironmentLeaseID, generation: session.EnvironmentGeneration}, nil
+}
+
+func openRuntimeSessionWithRetry(ctx context.Context, open func(context.Context) (*workerclient.RuntimeSession, error)) (*workerclient.RuntimeSession, error) {
+	if ctx == nil || open == nil {
+		return nil, ErrDurableRuntimeExecutionUnavailable
+	}
+	retryDeadline := time.Now().Add(runtimeWorkerReconnectWindow)
+	var lastErr error
+	for {
+		session, err := open(ctx)
+		if err == nil {
+			return session, nil
+		}
+		lastErr = err
+		if !retryableRuntimeOpenError(err) || ctx.Err() != nil {
+			return nil, lastErr
+		}
+		remaining := time.Until(retryDeadline)
+		if remaining <= 0 {
+			return nil, lastErr
+		}
+		interval := runtimeWorkerReconnectInterval
+		if remaining < interval {
+			interval = remaining
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, lastErr
+		case <-timer.C:
+		}
+	}
+}
+
+func retryableRuntimeOpenError(err error) bool {
+	code := connect.CodeOf(err)
+	return code == connect.CodeUnavailable || code == connect.CodeDeadlineExceeded
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) Cancel(ctx context.Context, principal *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
@@ -640,8 +680,10 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, nil
 	}
 	// Claim Worker capacity before the durable running transition so saturation remains replayable as queued.
-	runtimeSession, openErr := worker.supervisor.OpenRuntimeSession(runtimeCtx, input.Scope.TenantID, input.ExecutionID, session.ProviderKind, worker.generation, &workerv1alpha1.FencingProof{
-		LeaseId: worker.leaseID, Generation: worker.generation, Token: append([]byte(nil), coordinator.fencingToken...),
+	runtimeSession, openErr := openRuntimeSessionWithRetry(runtimeCtx, func(openContext context.Context) (*workerclient.RuntimeSession, error) {
+		return worker.supervisor.OpenRuntimeSession(openContext, input.Scope.TenantID, input.ExecutionID, session.ProviderKind, worker.generation, &workerv1alpha1.FencingProof{
+			LeaseId: worker.leaseID, Generation: worker.generation, Token: append([]byte(nil), coordinator.fencingToken...),
+		})
 	})
 	if connect.CodeOf(openErr) == connect.CodeResourceExhausted {
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}}, fmt.Errorf("%w: %v", ErrRuntimeCapacityExhausted, openErr)

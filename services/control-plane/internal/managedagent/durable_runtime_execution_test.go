@@ -214,6 +214,22 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 	}
 }
 
+func TestOpenRuntimeSessionWithRetryRecoversUnavailableWorker(t *testing.T) {
+	attempts := 0
+	var openedContext context.Context
+	_, err := openRuntimeSessionWithRetry(context.Background(), func(ctx context.Context) (*workerclient.RuntimeSession, error) {
+		attempts++
+		if attempts < 3 {
+			return nil, connect.NewError(connect.CodeUnavailable, errors.New("worker unavailable"))
+		}
+		openedContext = ctx
+		return nil, nil
+	})
+	if err != nil || attempts != 3 || openedContext == nil || openedContext.Err() != nil {
+		t.Fatalf("retry result err=%v attempts=%d", err, attempts)
+	}
+}
+
 func TestRuntimeWorkerRouteUsesBoundEnvironmentGeneration(t *testing.T) {
 	coordinator := &DurableRuntimeExecutionCoordinator{
 		now: func() time.Time { return time.Now() }, fencingToken: []byte("token"),
