@@ -268,6 +268,7 @@
       },
       "post": {
         "operationId": "managedHostRegisterDeploymentTarget",
+        "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -315,6 +316,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:probe": {
       "post": {
         "operationId": "managedHostProbeDeploymentTarget",
+        "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -346,6 +348,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:cleanup": {
       "post": {
         "operationId": "managedHostCleanupDeploymentTarget",
+        "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
