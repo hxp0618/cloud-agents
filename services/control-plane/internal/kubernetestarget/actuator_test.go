@@ -210,8 +210,8 @@ func TestKubernetesUpgradeKeepsAnOldReplicaUntilTheNewOneIsReady(t *testing.T) {
 	if strategy["type"] != "RollingUpdate" {
 		t.Fatalf("upgrade strategy=%#v", strategy)
 	}
-	rollingUpdate := strategy["rollingUpdate"].(map[string]string)
-	if rollingUpdate["maxUnavailable"] != "0" || rollingUpdate["maxSurge"] != "1" {
+	rollingUpdate := strategy["rollingUpdate"].(map[string]any)
+	if rollingUpdate["maxUnavailable"] != 0 || rollingUpdate["maxSurge"] != 1 {
 		t.Fatalf("rolling update policy=%#v", rollingUpdate)
 	}
 }

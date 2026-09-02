@@ -365,7 +365,7 @@ func desiredResourcesWithStrategy(name string, request DeployRequest, config dep
 	base := "/api/v1/namespaces/" + url.PathEscape(config.Namespace)
 	strategy := any(map[string]any{"type": "Recreate"})
 	if rolling {
-		strategy = map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]string{"maxUnavailable": "0", "maxSurge": "1"}}
+		strategy = map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}}
 	}
 	return []desiredResource{
 		{path: base + "/persistentvolumeclaims/" + url.PathEscape(name), body: map[string]any{
