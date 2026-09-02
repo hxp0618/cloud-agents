@@ -255,6 +255,7 @@ describe("Agent recovery and errors", () => {
   it("retries transient polling failures but stops on authority and cursor failures", () => {
     expect(isAgentPollingFatal(new ClientError("events", 401))).toBe(true);
     expect(isAgentPollingFatal(new ClientError("events", 403))).toBe(true);
+    expect(isAgentPollingFatal(new ClientError("events", 404))).toBe(false);
     expect(isAgentPollingFatal(new ClientError("events", 503))).toBe(false);
     expect(isAgentPollingFatal(new AgentEventStreamError("cursor stalled"))).toBe(true);
     expect(isAgentPollingFatal(new Error("network disconnected"))).toBe(false);

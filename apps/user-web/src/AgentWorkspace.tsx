@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  ClientError,
   type EnvironmentLease,
   type ManagedAgentEvent,
   type ManagedAgentExecution,
@@ -105,6 +106,7 @@ export function AgentWorkspace({
   const [prompt, setPrompt] = useState("");
   const [localPrompts, setLocalPrompts] = useState<readonly LocalPrompt[]>([]);
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission>();
+  const [executionRequestPending, setExecutionRequestPending] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
   const [error, setError] = useState("");
   const [pollError, setPollError] = useState("");
@@ -112,6 +114,7 @@ export function AgentWorkspace({
   const [initialEventsRead, setInitialEventsRead] = useState(false);
   const [resolvedInteractions, setResolvedInteractions] = useState<ReadonlySet<string>>(new Set());
   const operationControllerRef = useRef<AbortController | null>(null);
+  const executionControllerRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pendingKeysRef = useRef(new Map<string, string>());
   const pendingInteractionRef = useRef(new Map<string, InteractionResolution>());
@@ -124,9 +127,12 @@ export function AgentWorkspace({
     resources.execution?.metadata.uid === selectedExecutionId
       ? resources.execution
       : resources.executions.find(({ metadata }) => metadata.uid === selectedExecutionId);
+  const pendingExecution =
+    pendingSubmission?.sessionId === selectedSessionId ? pendingSubmission : undefined;
   const readyLease = lease?.spec.observedPhase === "ready" ? lease : undefined;
   const pollingNeeded =
-    selectedSession !== undefined && (!initialEventsRead || isExecutionActive(selectedExecution));
+    selectedSession !== undefined &&
+    (pendingExecution !== undefined || !initialEventsRead || isExecutionActive(selectedExecution));
   const interactions = agentInteractions(selectedExecution);
   const artifacts = agentArtifacts(selectedExecution);
 
@@ -195,6 +201,7 @@ export function AgentWorkspace({
   useEffect(
     () => () => {
       operationControllerRef.current?.abort();
+      executionControllerRef.current?.abort();
     },
     [],
   );
@@ -206,13 +213,13 @@ export function AgentWorkspace({
   useEffect(() => {
     if (!pollingNeeded || pollingStopped || selectedSession === undefined) return;
     const session = selectedSession;
-    const turnId = selectedExecution?.metadata.turnId ?? "";
-    const executionId = selectedExecution?.metadata.uid ?? "";
+    const turnId = selectedExecution?.metadata.turnId ?? pendingExecution?.turnId ?? "";
+    const executionId = selectedExecution?.metadata.uid ?? pendingExecution?.executionId ?? "";
     const controller = new AbortController();
     let polling = false;
 
     const poll = async () => {
-      if (document.visibilityState !== "visible" || polling || busyRef.current) return;
+      if (document.visibilityState !== "visible" || polling) return;
       polling = true;
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
       try {
@@ -251,6 +258,14 @@ export function AgentWorkspace({
         setPollError("");
       } catch (cause) {
         if (controller.signal.aborted) return;
+        if (
+          pendingExecution !== undefined &&
+          cause instanceof ClientError &&
+          cause.status === 404
+        ) {
+          setPollError("");
+          return;
+        }
         setPollError(agentErrorMessage(cause));
         if (isAgentPollingFatal(cause)) setPollingStopped(true);
       } finally {
@@ -269,6 +284,8 @@ export function AgentWorkspace({
     initialEventsRead,
     pollingNeeded,
     pollingStopped,
+    pendingExecution?.executionId,
+    pendingExecution?.turnId,
     projectId,
     selectedExecution?.metadata.turnId,
     selectedExecution?.metadata.uid,
@@ -515,7 +532,12 @@ export function AgentWorkspace({
 
   function sendTurn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selectedSession === undefined || selectedSession.spec.state !== "active") return;
+    if (
+      selectedSession === undefined ||
+      selectedSession.spec.state !== "active" ||
+      executionRequestPending
+    )
+      return;
     let submission = pendingSubmission;
     if (submission === undefined) {
       const inputText = prompt.trim();
@@ -527,6 +549,8 @@ export function AgentWorkspace({
         inputText,
       };
       setPendingSubmission(submission);
+      setSelectedExecutionId(submission.executionId);
+      setInitialEventsRead(false);
       persistSelection(submission.sessionId, submission.turnId, submission.executionId);
     }
     if (submission.sessionId !== selectedSession.metadata.uid) {
@@ -535,10 +559,13 @@ export function AgentWorkspace({
     }
     const turnKey = `create-turn:${submission.turnId}`;
     const executionKey = `execute:${submission.executionId}`;
-    void runOperation(
-      executionKey,
-      "Creating Turn and starting Agent Execution",
-      async (signal) => {
+    const controller = new AbortController();
+    executionControllerRef.current = controller;
+    setExecutionRequestPending(true);
+    setError("");
+    void (async () => {
+      try {
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(315_000)]);
         await client.createManagedAgentTurn(
           tenantId,
           projectId,
@@ -583,8 +610,17 @@ export function AgentWorkspace({
           result.value.metadata.turnId,
           result.value.metadata.uid,
         );
-      },
-    );
+      } catch (cause) {
+        setError(
+          controller.signal.aborted
+            ? "Execution request wait was cancelled. Retry keeps the same Turn and Execution identity."
+            : agentErrorMessage(cause),
+        );
+      } finally {
+        if (executionControllerRef.current === controller) executionControllerRef.current = null;
+        setExecutionRequestPending(false);
+      }
+    })();
   }
 
   function controlExecution(action: "cancel" | "interrupt") {
@@ -1034,11 +1070,12 @@ export function AgentWorkspace({
               type="submit"
               disabled={
                 busy !== null ||
+                executionRequestPending ||
                 selectedSession?.spec.state !== "active" ||
                 (pendingSubmission === undefined && prompt.trim() === "")
               }
             >
-              {pendingSubmission ? "Retry send" : "Send"}
+              {executionRequestPending ? "Running" : pendingSubmission ? "Retry send" : "Send"}
             </button>
           </div>
         </form>
@@ -1051,9 +1088,11 @@ export function AgentWorkspace({
             <h2>Activity</h2>
           </span>
           <span
-            className={`live-badge ${busy || isExecutionActive(selectedExecution) ? "running" : ""}`}
+            className={`live-badge ${busy || executionRequestPending || isExecutionActive(selectedExecution) ? "running" : ""}`}
           >
-            {busy ? "Working" : (selectedExecution?.spec.state ?? "Idle")}
+            {busy || executionRequestPending
+              ? "Working"
+              : (selectedExecution?.spec.state ?? "Idle")}
           </span>
         </div>
         <dl className="status-table">
@@ -1085,6 +1124,21 @@ export function AgentWorkspace({
               </small>
             </span>
             <button type="button" onClick={() => operationControllerRef.current?.abort()}>
+              Cancel wait
+            </button>
+          </div>
+        ) : null}
+
+        {executionRequestPending && pendingSubmission ? (
+          <div className="operation-stage" role="status" aria-live="polite">
+            <span className="status-dot" aria-hidden="true" />
+            <span>
+              <strong>Running Agent Execution</strong>
+              <small>
+                Polling durable state; interactions and execution controls remain available.
+              </small>
+            </span>
+            <button type="button" onClick={() => executionControllerRef.current?.abort()}>
               Cancel wait
             </button>
           </div>
