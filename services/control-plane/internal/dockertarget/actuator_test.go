@@ -214,8 +214,48 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if present || deletes != 2 || targetLists != 2 {
+	if present || deletes != 2 || targetLists != 4 {
 		t.Fatalf("managed cleanup present=%v deletes=%d targetLists=%d", present, deletes, targetLists)
+	}
+}
+
+func TestCleanupManagedWorkerTargetsItsGenerationDuringUpgrade(t *testing.T) {
+	request := DeployRequest{
+		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "docker-alpha", LeaseID: "lease-alpha",
+		TargetGeneration: 1, LeaseGeneration: 1, ReleaseDigest: "sha256:" + strings.Repeat("a", 64),
+		ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+	}
+	config := DeploymentConfig{
+		WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha",
+		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
+	}
+	image, labels := config.WorkerImageRepository+"@"+request.ReleaseDigest, DeploymentLabels(request, config)
+	deletes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
+		switch {
+		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/json":
+			if strings.Contains(httpRequest.URL.Query().Get("filters"), "cloud-agents.dev/lease-generation=1") {
+				_, _ = writer.Write([]byte(`[{"Id":"container-old"}]`))
+			} else {
+				_, _ = writer.Write([]byte(`[{"Id":"container-old"},{"Id":"container-new"}]`))
+			}
+		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/container-old/json":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": "/" + WorkerContainerName(request), "Config": map[string]any{"Image": image, "Labels": labels}})
+		case httpRequest.Method == http.MethodDelete && httpRequest.URL.Path == "/containers/container-old":
+			deletes++
+			writer.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(writer, httpRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	worker := ManagedWorker{Request: request, id: "container-old", image: image, labels: labels}
+	if err := cleanupManagedWorker(context.Background(), server.Client(), server.URL, worker); err != nil {
+		t.Fatal(err)
+	}
+	if deletes != 1 {
+		t.Fatalf("delete calls = %d", deletes)
 	}
 }
 

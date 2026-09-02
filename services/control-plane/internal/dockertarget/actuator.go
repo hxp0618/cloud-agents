@@ -560,7 +560,7 @@ func listManagedWorkers(ctx context.Context, client *http.Client, base, tenantID
 }
 
 func cleanupManagedWorker(ctx context.Context, client *http.Client, base string, worker ManagedWorker) error {
-	containerID, err := findWorkerContainer(ctx, client, base, worker.Request)
+	containerID, err := findWorkerContainerForGeneration(ctx, client, base, worker.Request)
 	if err != nil || containerID == "" {
 		return err
 	}
@@ -569,7 +569,7 @@ func cleanupManagedWorker(ctx context.Context, client *http.Client, base string,
 	}
 	inspect, err := inspectWorkerContainer(ctx, client, base, worker.id)
 	if err != nil {
-		remaining, findErr := findWorkerContainer(ctx, client, base, worker.Request)
+		remaining, findErr := findWorkerContainerForGeneration(ctx, client, base, worker.Request)
 		if findErr != nil || remaining != "" {
 			return ErrDeploymentFailed
 		}
