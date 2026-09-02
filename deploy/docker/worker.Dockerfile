@@ -5,7 +5,10 @@ ARG TARGETOS
 ARG TARGETARCH
 COPY cloud-agents-worker-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-worker
 COPY cloud-agent-runtime-standalone.mjs /usr/local/bin/cloud-agent-runtime
-RUN case "${TARGETARCH}" in \
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && case "${TARGETARCH}" in \
         amd64) claude_arch=x64 ;; \
         arm64) claude_arch=arm64 ;; \
         *) echo "unsupported Worker architecture: ${TARGETARCH}" >&2; exit 1 ;; \

@@ -44,18 +44,20 @@ export function startClaudeProviderRun(
     credential,
     applyClaudeCredentialEnvironment,
   );
+  const effectiveInput = withCredentialModel(input, credential);
   const hasDurableHistory = hasAuthoritativeResumeData(input.workload, input.memoryDocuments);
   return startClaudeAgentSdkRun({
-    input,
+    input: effectiveInput,
     environment,
     usesAmbientAuthentication: credential === null,
     redact,
     emit,
     authoritativePrompt: hasDurableHistory
-      ? reconstructedPrompt(input, options.hostIdentity)
-      : input.workload.inputText,
+      ? reconstructedPrompt(effectiveInput, options.hostIdentity)
+      : effectiveInput.workload.inputText,
     nativeResumePrompt:
-      nativeResumeContinuationPrompt(input, options.hostIdentity) ?? input.workload.inputText,
+      nativeResumeContinuationPrompt(effectiveInput, options.hostIdentity) ??
+      effectiveInput.workload.inputText,
     interactive: options.interactive ?? true,
     ...(options.operation ? { operation: options.operation } : {}),
     ...(options.claudeQueryFactory ? { queryFactory: options.claudeQueryFactory } : {}),
@@ -91,7 +93,7 @@ function applyClaudeCredentialEnvironment(
   environment: NodeJS.ProcessEnv,
   payload: Record<string, unknown>,
 ): void {
-  assertOnlyKeys(payload, ["apiKey", "authToken", "baseUrl"]);
+  assertOnlyKeys(payload, ["apiKey", "authToken", "baseUrl", "baseURL", "model"]);
   const apiKey = optionalString(payload.apiKey, "Claude Credential apiKey");
   const authToken = optionalString(payload.authToken, "Claude Credential authToken");
   if ((apiKey ? 1 : 0) + (authToken ? 1 : 0) !== 1) {
@@ -99,8 +101,40 @@ function applyClaudeCredentialEnvironment(
   }
   if (apiKey) environment.ANTHROPIC_API_KEY = apiKey;
   if (authToken) environment.ANTHROPIC_AUTH_TOKEN = authToken;
-  const baseUrl = optionalString(payload.baseUrl, "Claude Credential baseUrl");
-  if (baseUrl) environment.ANTHROPIC_BASE_URL = baseUrl;
+  const baseUrl = optionalString(
+    credentialBaseUrl(payload, "Claude Credential"),
+    "Claude Credential baseUrl",
+  );
+  if (baseUrl) environment.ANTHROPIC_BASE_URL = normalizeClaudeBaseUrl(baseUrl);
+}
+
+function normalizeClaudeBaseUrl(value: string): string {
+  return value.replace(/\/v1\/?$/u, "");
+}
+
+function withCredentialModel(input: RunnerInput, credential: RunnerCredential | null): RunnerInput {
+  const configured = credentialModel(credential?.payload);
+  if (!configured || input.workload.model?.trim()) return input;
+  return { ...input, workload: { ...input.workload, model: configured } };
+}
+
+function credentialModel(payload: Record<string, unknown> | undefined): string | undefined {
+  if (payload?.model === undefined) return undefined;
+  const value = optionalString(payload.model, "Provider Credential model");
+  if (!value) return undefined;
+  if (value.length > 128) throw new Error("Provider Credential model exceeds 128 characters");
+  return value;
+}
+
+function credentialBaseUrl(payload: Record<string, unknown>, label: string): unknown {
+  if (payload.baseUrl !== undefined && payload.baseURL !== undefined) {
+    const lower = optionalString(payload.baseUrl, `${label} baseUrl`);
+    const upper = optionalString(payload.baseURL, `${label} baseURL`);
+    if (lower !== upper)
+      throw new Error(`${label} contains conflicting baseUrl and baseURL values`);
+    return lower;
+  }
+  return payload.baseUrl ?? payload.baseURL;
 }
 
 function assertOnlyKeys(payload: Record<string, unknown>, allowed: ReadonlyArray<string>): void {

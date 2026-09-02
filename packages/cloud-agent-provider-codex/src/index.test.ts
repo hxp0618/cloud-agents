@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -18,7 +21,7 @@ vi.mock("./codexAppServerRuntime", () => ({
   })),
 }));
 
-import { createCodexProvider } from "./index";
+import { createCodexProvider, startCodexProviderRun } from "./index";
 import { startCodexAppServerRun } from "./codexAppServerRuntime";
 
 process.env.CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE = "single-tenant-trusted-v1";
@@ -88,6 +91,42 @@ describe("createCodexProvider", () => {
       expect((await session.events[Symbol.asyncIterator]().next()).value).toBeDefined();
     } finally {
       await session.close();
+    }
+  });
+
+  it("accepts deployment credential aliases and uses its model as a default", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-provider-codex-credential-"));
+    try {
+      const run = startCodexProviderRun(
+        {
+          execution: { id: "execution-credential" },
+          workload: { provider: "codex", inputText: "hello" },
+          workspaceDirectory: root,
+          providerStateDirectory: join(root, "provider-state"),
+        },
+        {
+          payload: {
+            apiKey: "provider-key",
+            baseURL: "https://provider.example/v1",
+            model: "gpt-test",
+          },
+        },
+        () => undefined,
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex",
+          },
+          codexToolPolicyHookCommand: "node /opt/cloud-agents/provider-host/index.mjs",
+        },
+      );
+      await run.result;
+      const call = vi.mocked(startCodexAppServerRun).mock.calls.at(-1)?.[0];
+      expect(call?.input.workload.model).toBe("gpt-test");
+      expect(call?.environment.OPENAI_BASE_URL).toBe("https://provider.example/v1");
+      expect(call?.environment.CODEX_HOME).toBe(join(root, "provider-state", "codex-home"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

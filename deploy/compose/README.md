@@ -57,7 +57,10 @@ using the Runtime's existing anonymous-FD envelopes. Files are tenant-bound:
 under `payload`. Optional `baseUrl` values and Codex
 `organization` use the same payload object. The Worker binds one file to the
 requested Provider before starting each Runtime process; provider keys in the
-runtime env file are ignored.
+runtime env file are ignored. `baseURL` is accepted as an alias for `baseUrl`,
+and an optional credential `model` is used only when the execution request has
+no explicit model. Claude credentials may use the same `/v1` endpoint form as
+Codex; the Claude provider removes that suffix before the SDK adds its API path.
 
 The Worker accepts at most `CLOUD_AGENTS_RUNTIME_MAX_SESSIONS` concurrent Runtime
 sessions (default `4`). Additional session opens fail immediately with

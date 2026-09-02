@@ -61,8 +61,11 @@ export function startCodexProviderRun(
     credential,
     applyCodexCredentialEnvironment,
   );
+  const effectiveInput = withCredentialModel(input, credential);
   if (credential) {
-    const stateRoot = input.providerStateDirectory?.trim() || input.runtimeOutputDirectory?.trim();
+    const stateRoot =
+      effectiveInput.providerStateDirectory?.trim() ||
+      effectiveInput.runtimeOutputDirectory?.trim();
     if (!stateRoot)
       throw new Error(
         "Codex Credential requires an agentd-owned providerStateDirectory or runtimeOutputDirectory for isolated CODEX_HOME.",
@@ -77,7 +80,7 @@ export function startCodexProviderRun(
     writeCloudAgentEnvironment(environment, CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation, "1");
   const durable = hasAuthoritativeResumeData(input.workload, input.memoryDocuments);
   return startCodexAppServerRun({
-    input,
+    input: effectiveInput,
     environment,
     redact,
     emit,
@@ -138,15 +141,45 @@ function applyCodexCredentialEnvironment(
   environment: NodeJS.ProcessEnv,
   payload: Record<string, unknown>,
 ): void {
-  assertOnlyKeys(payload, ["apiKey", "baseUrl", "organization"]);
+  assertOnlyKeys(payload, ["apiKey", "baseUrl", "baseURL", "organization", "model"]);
   environment.OPENAI_API_KEY = requiredString(payload.apiKey, "Codex Credential apiKey");
-  assignOptional(environment, "OPENAI_BASE_URL", payload.baseUrl, "Codex Credential baseUrl");
+  assignOptional(
+    environment,
+    "OPENAI_BASE_URL",
+    credentialBaseUrl(payload, "Codex Credential"),
+    "Codex Credential baseUrl",
+  );
   assignOptional(
     environment,
     "OPENAI_ORGANIZATION",
     payload.organization,
     "Codex Credential organization",
   );
+}
+
+function withCredentialModel(input: RunnerInput, credential: RunnerCredential | null): RunnerInput {
+  const configured = credentialModel(credential?.payload);
+  if (!configured || input.workload.model?.trim()) return input;
+  return { ...input, workload: { ...input.workload, model: configured } };
+}
+
+function credentialModel(payload: Record<string, unknown> | undefined): string | undefined {
+  if (payload?.model === undefined) return undefined;
+  const value = optionalString(payload.model, "Provider Credential model");
+  if (!value) return undefined;
+  if (value.length > 128) throw new Error("Provider Credential model exceeds 128 characters");
+  return value;
+}
+
+function credentialBaseUrl(payload: Record<string, unknown>, label: string): unknown {
+  if (payload.baseUrl !== undefined && payload.baseURL !== undefined) {
+    const lower = optionalString(payload.baseUrl, `${label} baseUrl`);
+    const upper = optionalString(payload.baseURL, `${label} baseURL`);
+    if (lower !== upper)
+      throw new Error(`${label} contains conflicting baseUrl and baseURL values`);
+    return lower;
+  }
+  return payload.baseUrl ?? payload.baseURL;
 }
 function writeControlledCodexConfig(root: string, environment: NodeJS.ProcessEnv): string {
   const apiKey = requiredString(environment.OPENAI_API_KEY, "Codex Credential apiKey");
