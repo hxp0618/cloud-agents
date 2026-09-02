@@ -130,6 +130,9 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 			t.Fatalf("run command lacks %q: %s", expected, runCommand)
 		}
 	}
+	if !strings.Contains(runCommand, "'--publish' '"+remoteWorkerHostPort(request)+":8091'") {
+		t.Fatalf("run command does not pin a restart-stable host port: %s", runCommand)
+	}
 	for _, forbidden := range []string{"PRIVATE KEY", "apiKey", "authToken"} {
 		if strings.Contains(runCommand, forbidden) {
 			t.Fatalf("run command contains %q", forbidden)

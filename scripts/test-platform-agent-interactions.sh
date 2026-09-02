@@ -205,6 +205,24 @@ run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$approval_session" --turn "
   --generation "$(interaction_field "$approval_interaction" generation)" \
   --interaction-request "$(interaction_field "$approval_interaction" requestId)" --decision accept >/dev/null
 wait_for_success "$approval_final"
+approval_artifact_index=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$approval_final" CLOUD_AGENTS_E2E_ARTIFACT_PATH="$approval_path" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const indexes = (value.messages ?? []).flatMap((message, index) => {
+  const artifact = message.payload?.artifact;
+  return message.messageType === "ArtifactCandidate" && artifact?.sourceRoot === "workspace" && artifact?.path === process.env.CLOUD_AGENTS_E2E_ARTIFACT_PATH && typeof artifact?.kind === "string" && artifact.kind.replaceAll("_", "-") === "generated-file" ? [index] : [];
+});
+if (indexes.length !== 1) throw new Error("approval interaction did not produce one workspace ArtifactCandidate");
+process.stdout.write(String(indexes[0]));
+NODE
+)
+approval_artifact_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$approval_execution-artifact.txt"
+run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$approval_session" --turn "$approval_turn" --execution "$approval_execution" \
+  --request-id "$approval_execution-artifact" execution download-artifact --message-index "$approval_artifact_index" >"$approval_artifact_file"
+CLOUD_AGENTS_E2E_ARTIFACT_FILE="$approval_artifact_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+if (!readFileSync(process.env.CLOUD_AGENTS_E2E_ARTIFACT_FILE).equals(Buffer.from("approved interaction E2E\n"))) throw new Error("approval interaction Artifact content changed");
+NODE
 
 input_turn="$input_session-turn"
 input_execution="$input_session-execution"

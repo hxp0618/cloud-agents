@@ -456,10 +456,13 @@ export function classifyMigrationStatement(
         ]).get(targetIdentity) === subcommand[2] &&
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
-      const dropDeploymentTargetKindConstraint =
-        new Set(["000035", "000036"]).has(migrationId) &&
+      const dropDeploymentTargetConstraint =
         targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_targets" &&
-        subcommand.join("\0") === ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_KIND"].join("\0");
+        ((new Set(["000035", "000036"]).has(migrationId) &&
+          subcommand.join("\0") === ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_KIND"].join("\0")) ||
+          (migrationId === "000038" &&
+            subcommand.join("\0") ===
+              ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_ENDPOINT"].join("\0")));
       if (
         !exact &&
         !addConstraint &&
@@ -467,7 +470,7 @@ export function classifyMigrationStatement(
         !dropResourceKindConstraint &&
         !dropAuditFactConstraint &&
         !dropCoordinationRegistryConstraint &&
-        !dropDeploymentTargetKindConstraint
+        !dropDeploymentTargetConstraint
       )
         reject(tokens);
       return classification("ALTER", "TABLE", targetIdentity, null);

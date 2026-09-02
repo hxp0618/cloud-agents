@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"hash/fnv"
 	"io"
 	"net"
 	"net/url"
@@ -23,6 +24,8 @@ import (
 
 const (
 	remoteWorkerPort     = "8091/tcp"
+	remoteWorkerPortBase = 20000
+	remoteWorkerPortSpan = 40000
 	maxCommandOutputSize = 1 << 20
 )
 
@@ -531,7 +534,7 @@ func remoteWorkerRunCommandWithWorkspace(name, image string, request dockertarge
 		"--cpu-period", "100000", "--cpu-quota", strconv.FormatInt(request.CPULimitMillis*100, 10),
 		"--mount", "type=volume,src=" + config.WorkerCredentialRef + ",dst=/run/cloud-agents/worker-credentials,readonly",
 		"--mount", "type=volume,src=" + request.ProviderCredentialRef + ",dst=/run/cloud-agents/provider-credentials,readonly",
-		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864,mode=1777", "--publish", "8091",
+		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864,mode=1777", "--publish", remoteWorkerHostPort(request) + ":8091",
 	}
 	workspaceMount := "type=volume,dst=/workspace"
 	if workspaceSource != "" {
@@ -562,6 +565,20 @@ func remoteWorkerRunCommandWithWorkspace(name, image string, request dockertarge
 		"--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token",
 	)
 	return dockerCommand(arguments...)
+}
+
+func remoteWorkerHostPort(request dockertarget.DeployRequest) string {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(request.TenantID))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(request.ProjectID))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(request.TargetID))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(request.LeaseID))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(strconv.FormatInt(request.LeaseGeneration, 10)))
+	return strconv.Itoa(remoteWorkerPortBase + int(hash.Sum32()%remoteWorkerPortSpan))
 }
 
 func dockerCommand(arguments ...string) string {

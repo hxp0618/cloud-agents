@@ -766,6 +766,28 @@ describe("postgresql-lex-v1 bootstrap", () => {
     });
   });
 
+  it("classifies the SSH endpoint constraint expansion", () => {
+    const bytes = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000038_allow_ssh_deployment_target_endpoints.sql",
+      ),
+    );
+    const statements = splitPostgresStatements(bytes);
+    const classifications = statements.map((statement) =>
+      classifyMigrationStatement(statement, "000038"),
+    );
+    expect(classifications).toHaveLength(2);
+    expect(
+      classifications.every(
+        ({ command, object_kind, target_identity }) =>
+          command === "ALTER" &&
+          object_kind === "TABLE" &&
+          target_identity === "table:unquoted:cloud_agents/unquoted:deployment_targets",
+      ),
+    ).toBe(true);
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

@@ -128,10 +128,16 @@ func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
 		}
 		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
-				return scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, createManagedHostEnvironmentLeaseSQL,
+				if err := scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, createManagedHostEnvironmentLeaseSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest,
 					input.TargetID, input.ExpectedTargetGeneration, input.ProviderCredentialRef, input.CPULimitMillis,
-					input.MemoryLimitBytes, input.TTLSeconds, input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+					input.MemoryLimitBytes, input.TTLSeconds, input.Mutation.IdempotencyKey, digest), input.Scope, &result); err != nil {
+					return err
+				}
+				if result.ObservedPhase == "ready" && result.WorkerServerName == "" {
+					return scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, getManagedHostEnvironmentLeaseSQL, input.Scope.ProjectID, input.LeaseID), input.Scope, &result)
+				}
+				return nil
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)

@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000037.tar` into a directory and copy
+Extract `cloud-agents-deployment-000038.tar` into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
@@ -188,9 +188,12 @@ Add `<credentialRef>.deployment.json` with the same non-secret
 the exact Worker image and the named Worker/provider credential volumes. A
 Lease starts the same read-only Worker image with an isolated workspace volume,
 the requested CPU/memory limits, generation labels, and `unless-stopped`
-restart policy. Exact retries reuse the owned container; termination removes it
-and its anonymous workspace volume. A container with mismatched ownership,
-generation, image, or credential references is never replaced or deleted.
+restart policy. Exact retries reuse the owned container; an
+`environment-lease upgrade` starts the next generation on the same workspace
+and keeps the previous generation until the new Worker is ready. Termination
+removes the active generation and its anonymous workspace volume. A container
+with mismatched ownership, generation, image, or credential references is never
+replaced or deleted.
 
 After a target is ready, run `cloud-agentsctl ... target cleanup
 --expected-generation GENERATION` to remove stale managed Docker/SSH Worker
