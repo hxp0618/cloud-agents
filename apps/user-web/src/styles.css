@@ -1396,6 +1396,164 @@ textarea:focus {
   width: 100%;
 }
 
+.interaction-stack,
+.artifact-stack {
+  display: grid;
+  max-height: min(46vh, 520px);
+  gap: 8px;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  overflow-y: auto;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.activity-section-title,
+.interaction-card header,
+.artifact-row,
+.interaction-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-section-title strong,
+.interaction-card header strong,
+.artifact-row strong {
+  color: #c9c9cf;
+  font-size: 10px;
+}
+
+.activity-section-title small,
+.interaction-card header span,
+.artifact-row small {
+  color: #686b74;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+}
+
+.interaction-card {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgba(210, 169, 94, 0.24);
+  border-radius: var(--radius-small);
+  background: rgba(210, 169, 94, 0.055);
+}
+
+.interaction-card > p,
+.interaction-card fieldset > p {
+  margin: 0;
+  color: #b8b9bf;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.interaction-card > ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+  color: #8e9098;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+.interaction-authority {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.interaction-authority div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.interaction-authority dt,
+.interaction-authority dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+}
+
+.interaction-authority dt {
+  color: #72757e;
+}
+
+.interaction-authority dd {
+  color: #a7a9b0;
+  overflow-wrap: anywhere;
+}
+
+.interaction-card fieldset {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.interaction-card legend,
+.custom-answer > span {
+  color: #c1c2c8;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.answer-option {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  color: #b6b7bd;
+  font-size: 9px;
+}
+
+.answer-option > input {
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.answer-option > span,
+.custom-answer,
+.artifact-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.answer-option small {
+  color: #70737c;
+  font-size: 8px;
+}
+
+.custom-answer input {
+  height: 32px;
+  font-size: 9px;
+}
+
+.interaction-actions {
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.artifact-row {
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.artifact-row small {
+  overflow-wrap: anywhere;
+}
+
 .activity-timeline {
   min-height: 0;
   flex: 1;

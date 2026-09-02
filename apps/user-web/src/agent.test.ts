@@ -7,7 +7,12 @@ import {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
+  AgentEventStreamError,
+  agentArtifacts,
   agentErrorMessage,
+  agentInteractions,
+  executionMessageText,
+  isAgentPollingFatal,
   isExecutionActive,
   loadAgentResources,
   mergeAgentEvents,
@@ -41,6 +46,12 @@ function execution(uid: string, turnId: string, updatedAt: string): ManagedAgent
 
 function event(uid: string, sequence: string): ManagedAgentEvent {
   return { metadata: { uid, sequence } } as ManagedAgentEvent;
+}
+
+function messageAt(value: ManagedAgentExecution, index: number) {
+  const message = value.messages?.[index];
+  if (message === undefined) throw new Error(`missing test message ${index}`);
+  return message;
 }
 
 describe("Agent server authority", () => {
@@ -241,6 +252,14 @@ describe("Agent recovery and errors", () => {
     expect(agentErrorMessage(new ClientError("events", 403))).toContain("cannot run Agents");
   });
 
+  it("retries transient polling failures but stops on authority and cursor failures", () => {
+    expect(isAgentPollingFatal(new ClientError("events", 401))).toBe(true);
+    expect(isAgentPollingFatal(new ClientError("events", 403))).toBe(true);
+    expect(isAgentPollingFatal(new ClientError("events", 503))).toBe(false);
+    expect(isAgentPollingFatal(new AgentEventStreamError("cursor stalled"))).toBe(true);
+    expect(isAgentPollingFatal(new Error("network disconnected"))).toBe(false);
+  });
+
   it("polls only queued and running Executions", () => {
     expect(
       isExecutionActive(execution("execution-running", "turn-1", "2026-09-02T00:00:00Z")),
@@ -251,5 +270,104 @@ describe("Agent recovery and errors", () => {
         spec: { generation: 1, state: "succeeded" },
       } as ManagedAgentExecution),
     ).toBe(false);
+  });
+});
+
+describe("Agent interaction and Artifact payloads", () => {
+  it("keeps only current-generation interactions and de-duplicates request IDs", () => {
+    const value = {
+      ...execution("execution-alpha", "turn-alpha", "2026-09-02T00:00:00Z"),
+      messages: [
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "InteractionRequest",
+          payload: {
+            requestId: "approval-1",
+            interactionType: "approval",
+            summary: "Run tests",
+            command: "bun test",
+          },
+        },
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "InteractionRequest",
+          payload: { requestId: "approval-1", interactionType: "approval" },
+        },
+        {
+          executionId: "execution-alpha",
+          generation: 0,
+          messageType: "InteractionRequest",
+          payload: { requestId: "stale", interactionType: "approval" },
+        },
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "InteractionRequest",
+          payload: {
+            requestId: "input-1",
+            interactionType: "user-input",
+            questions: [
+              {
+                id: "scope",
+                header: "Scope",
+                question: "Choose files",
+                options: [{ label: "Focused", description: "Only changed files" }],
+                multiSelect: false,
+              },
+            ],
+          },
+        },
+      ],
+    } as unknown as ManagedAgentExecution;
+
+    const interactions = agentInteractions(value);
+    expect(interactions.map(({ requestId }) => requestId)).toEqual(["approval-1", "input-1"]);
+    expect(interactions[0]).toMatchObject({ summary: "Run tests", details: ["command: bun test"] });
+    expect(interactions[1]).toMatchObject({
+      kind: "user-input",
+      questions: [{ id: "scope", options: [{ label: "Focused" }] }],
+    });
+    expect(executionMessageText(messageAt(value, 3))).toBe("Agent requested user input.");
+  });
+
+  it("retains the backend message index used by the Artifact download API", () => {
+    const value = {
+      ...execution("execution-alpha", "turn-alpha", "2026-09-02T00:00:00Z"),
+      messages: [
+        { executionId: "execution-alpha", generation: 1, messageType: "Progress" },
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "ArtifactCandidate",
+          payload: {
+            artifact: {
+              path: "provider-output/result.diff",
+              kind: "diff",
+              sourceRoot: "runtime-output",
+              contentType: "text/x-diff",
+              reportedSize: 42,
+            },
+          },
+        },
+      ],
+    } as unknown as ManagedAgentExecution;
+
+    expect(agentArtifacts(value)).toEqual([
+      {
+        executionId: "execution-alpha",
+        generation: 1,
+        messageIndex: 1,
+        path: "provider-output/result.diff",
+        kind: "diff",
+        sourceRoot: "runtime-output",
+        contentType: "text/x-diff",
+        reportedSize: 42,
+      },
+    ]);
+    expect(executionMessageText(messageAt(value, 1))).toBe(
+      "Artifact ready: provider-output/result.diff",
+    );
   });
 });

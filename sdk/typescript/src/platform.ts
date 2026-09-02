@@ -422,6 +422,7 @@ export type ManagedAgentExecutionPage = Readonly<{
 }>;
 export type ManagedAgentArtifactResult = Readonly<{
   data: Uint8Array;
+  fileName: string;
   contentType: string;
   etag?: string;
 }>;
@@ -962,6 +963,31 @@ function assertScalar(value: string, path: string): void {
       index++;
     } else if (code >= 0xdc00 && code <= 0xdfff) error("INVALID_UNICODE_SCALAR", path);
   }
+}
+function artifactFileName(value: string | undefined): string | undefined {
+  if (value === undefined || value.length > 16384 || !/^attachment(?:;|$)/iu.test(value.trim()))
+    return undefined;
+  const encoded = /(?:^|;)\s*filename\*=utf-8''([^;]+)\s*(?:;|$)/iu.exec(value)?.[1];
+  const quoted = /(?:^|;)\s*filename=(?:"((?:[^"\\]|\\.)*)"|([^;]+))\s*(?:;|$)/iu.exec(value);
+  let fileName: string | undefined;
+  try {
+    fileName =
+      encoded === undefined
+        ? (quoted?.[1]?.replace(/\\(.)/gu, "$1") ?? quoted?.[2]?.trim())
+        : decodeURIComponent(encoded);
+  } catch {
+    return undefined;
+  }
+  if (
+    fileName === undefined ||
+    fileName === "" ||
+    fileName === "." ||
+    fileName === ".." ||
+    fileName.length > 4096 ||
+    /[\\/\u0000-\u001f\u007f]/u.test(fileName)
+  )
+    return undefined;
+  return fileName;
 }
 function namespace(value: unknown, expectedKind: string, path: string): NamespaceRef {
   const source = strictRecord(
@@ -3226,9 +3252,20 @@ export class Client {
         undefined,
         new Error("artifact Content-Type is missing"),
       );
+    const fileName = artifactFileName(
+      response.headers["Content-Disposition"] ?? response.headers["content-disposition"],
+    );
+    if (fileName === undefined)
+      throw new ClientError(
+        "managedAgentDownloadArtifact",
+        response.status,
+        undefined,
+        new Error("artifact Content-Disposition is invalid"),
+      );
     const etag = response.headers.ETag ?? response.headers.Etag ?? response.headers.etag;
     return Object.freeze({
       data: data.slice(),
+      fileName,
       contentType,
       ...(etag === undefined || etag === "" ? {} : { etag }),
     });

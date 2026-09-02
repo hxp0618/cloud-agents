@@ -284,7 +284,7 @@ func TestManagedAgentExecutionHTTPServerDownloadsVisibleArtifactCandidate(t *tes
 		Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha",
 		Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Messages: []runtimeprotocol.Message{candidate, terminal}, Version: 2, CreatedAt: now, UpdatedAt: now,
 	}}
-	runner := &managedAgentExecutionRunnerFake{artifactResult: internalmanagedagent.RuntimeArtifact{Data: []byte("diff bytes"), ContentType: "text/x-diff", SHA256: strings.Repeat("a", 64)}}
+	runner := &managedAgentExecutionRunnerFake{artifactResult: internalmanagedagent.RuntimeArtifact{Data: []byte("diff bytes"), FileName: "result.diff", ContentType: "text/x-diff", SHA256: strings.Repeat("a", 64)}}
 	verifier := &projectHTTPVerifierFake{}
 	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
 	if err != nil {
@@ -295,7 +295,7 @@ func TestManagedAgentExecutionHTTPServerDownloadsVisibleArtifactCandidate(t *tes
 	request.Header.Set("X-Request-ID", "request-download")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Body.String() != "diff bytes" || response.Header().Get("Content-Type") != "text/x-diff" || response.Header().Get("ETag") != `"sha256:`+strings.Repeat("a", 64)+`"` || verifier.seen.RequiredPermission != "projects.get" || runner.artifactInput.Message.MessageType != "ArtifactCandidate" {
+	if response.Code != http.StatusOK || response.Body.String() != "diff bytes" || response.Header().Get("Content-Type") != "text/x-diff" || response.Header().Get("Content-Disposition") != "attachment; filename=result.diff" || response.Header().Get("ETag") != `"sha256:`+strings.Repeat("a", 64)+`"` || verifier.seen.RequiredPermission != "projects.get" || runner.artifactInput.Message.MessageType != "ArtifactCandidate" {
 		t.Fatalf("status=%d headers=%v body=%q verification=%#v input=%#v", response.Code, response.Header(), response.Body.String(), verifier.seen, runner.artifactInput)
 	}
 	notArtifact := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/1/artifact", nil)

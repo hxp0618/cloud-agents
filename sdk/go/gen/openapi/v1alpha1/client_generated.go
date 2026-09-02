@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 
@@ -102,6 +104,7 @@ type ManagedAgentExecutionPageResult = common.ResponseEnvelope[ManagedAgentExecu
 type ManagedAgentEventPageResult = common.ResponseEnvelope[ManagedAgentEventPage]
 type ManagedAgentArtifactResult struct {
 	Data        []byte
+	FileName    string
 	ContentType string
 	ETag        string
 }
@@ -1315,11 +1318,16 @@ func (client *Client) DownloadManagedAgentArtifact(ctx context.Context, tenantID
 	if contentType == "" {
 		return ManagedAgentArtifactResult{}, &ClientError{Operation: "managedAgentDownloadArtifact", Status: response.Status, Cause: errors.New("artifact Content-Type is missing")}
 	}
+	disposition, parameters, parseErr := mime.ParseMediaType(response.Headers["Content-Disposition"])
+	fileName := parameters["filename"]
+	if parseErr != nil || disposition != "attachment" || fileName == "" || fileName == "." || fileName == ".." || len(fileName) > 4096 || path.Base(fileName) != fileName || strings.Contains(fileName, `\`) || strings.IndexFunc(fileName, func(character rune) bool { return character < 0x20 || character == 0x7f }) >= 0 {
+		return ManagedAgentArtifactResult{}, &ClientError{Operation: "managedAgentDownloadArtifact", Status: response.Status, Cause: errors.New("artifact Content-Disposition is invalid")}
+	}
 	etag := response.Headers["ETag"]
 	if etag == "" {
 		etag = response.Headers["Etag"]
 	}
-	return ManagedAgentArtifactResult{Data: append([]byte(nil), response.Body...), ContentType: contentType, ETag: etag}, nil
+	return ManagedAgentArtifactResult{Data: append([]byte(nil), response.Body...), FileName: fileName, ContentType: contentType, ETag: etag}, nil
 }
 func (client *Client) CancelManagedAgentExecution(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID, idempotencyKey string, body ManagedAgentExecutionCancelRequest) (ManagedAgentExecutionResult, error) {
 	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  ClientError,
   type EnvironmentLease,
   type ManagedAgentEvent,
   type ManagedAgentExecution,
@@ -8,9 +7,11 @@ import {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
-  AgentEventStreamError,
+  agentArtifacts,
   agentErrorMessage,
+  agentInteractions,
   executionMessageText,
+  isAgentPollingFatal,
   isExecutionActive,
   loadAgentResources,
   loadSessionExecutions,
@@ -19,9 +20,12 @@ import {
   readAgentSelection,
   writeAgentSelection,
   type AgentClient,
+  type AgentArtifact,
+  type AgentInteraction,
   type AgentResources,
 } from "./agent";
 import { newIdempotencyKey, newRequestId } from "./infrastructure";
+import { InteractionCard } from "./InteractionCard";
 
 type AgentWorkspaceProps = Readonly<{
   client: AgentClient;
@@ -41,6 +45,9 @@ type PendingSubmission = Readonly<{
   inputText: string;
 }>;
 type LocalPrompt = Readonly<{ turnId: string; text: string }>;
+type InteractionResolution =
+  | Readonly<{ kind: "approval"; decision: "accept" | "decline" }>
+  | Readonly<{ kind: "user-input"; answers: Readonly<Record<string, readonly string[]>> }>;
 
 const emptyResources: AgentResources = Object.freeze({
   sessions: Object.freeze([]),
@@ -103,9 +110,11 @@ export function AgentWorkspace({
   const [pollError, setPollError] = useState("");
   const [pollingStopped, setPollingStopped] = useState(false);
   const [initialEventsRead, setInitialEventsRead] = useState(false);
+  const [resolvedInteractions, setResolvedInteractions] = useState<ReadonlySet<string>>(new Set());
   const operationControllerRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pendingKeysRef = useRef(new Map<string, string>());
+  const pendingInteractionRef = useRef(new Map<string, InteractionResolution>());
   const eventCursorRef = useRef(savedSelection.current.eventCursor);
 
   const selectedSession = resources.sessions.find(
@@ -118,6 +127,8 @@ export function AgentWorkspace({
   const readyLease = lease?.spec.observedPhase === "ready" ? lease : undefined;
   const pollingNeeded =
     selectedSession !== undefined && (!initialEventsRead || isExecutionActive(selectedExecution));
+  const interactions = agentInteractions(selectedExecution);
+  const artifacts = agentArtifacts(selectedExecution);
 
   function persistSelection(
     nextSessionId: string,
@@ -189,6 +200,10 @@ export function AgentWorkspace({
   );
 
   useEffect(() => {
+    setResolvedInteractions(new Set());
+  }, [selectedExecutionId]);
+
+  useEffect(() => {
     if (!pollingNeeded || pollingStopped || selectedSession === undefined) return;
     const session = selectedSession;
     const turnId = selectedExecution?.metadata.turnId ?? "";
@@ -237,11 +252,7 @@ export function AgentWorkspace({
       } catch (cause) {
         if (controller.signal.aborted) return;
         setPollError(agentErrorMessage(cause));
-        if (
-          (cause instanceof ClientError && (cause.status === 401 || cause.status === 403)) ||
-          cause instanceof AgentEventStreamError
-        )
-          setPollingStopped(true);
+        if (isAgentPollingFatal(cause)) setPollingStopped(true);
       } finally {
         polling = false;
       }
@@ -608,6 +619,119 @@ export function AgentWorkspace({
     );
   }
 
+  function interactionKey(interaction: AgentInteraction): string {
+    return `${interaction.executionId}:${interaction.generation}:${interaction.requestId}`;
+  }
+
+  function resolveApproval(
+    interaction: Extract<AgentInteraction, { kind: "approval" }>,
+    decision: "accept" | "decline",
+  ) {
+    if (
+      selectedSession === undefined ||
+      selectedExecution?.metadata.uid !== interaction.executionId
+    )
+      return;
+    const identity = interactionKey(interaction);
+    const existing = pendingInteractionRef.current.get(identity);
+    const resolution: InteractionResolution =
+      existing?.kind === "approval" ? existing : { kind: "approval", decision };
+    pendingInteractionRef.current.set(identity, resolution);
+    void runOperation(
+      `resolve-approval:${identity}`,
+      "Resolving Agent approval",
+      async (signal) => {
+        if (resolution.kind !== "approval") return;
+        await client.resolveManagedAgentApproval(
+          tenantId,
+          projectId,
+          selectedSession.metadata.uid,
+          selectedExecution.metadata.turnId,
+          interaction.executionId,
+          newRequestId(),
+          {
+            generation: interaction.generation,
+            requestId: interaction.requestId,
+            decision: resolution.decision,
+          },
+          signal,
+        );
+        pendingInteractionRef.current.delete(identity);
+        setResolvedInteractions((current) => new Set(current).add(identity));
+        setInitialEventsRead(false);
+      },
+    );
+  }
+
+  function resolveUserInput(
+    interaction: Extract<AgentInteraction, { kind: "user-input" }>,
+    answers: Readonly<Record<string, readonly string[]>>,
+  ) {
+    if (
+      selectedSession === undefined ||
+      selectedExecution?.metadata.uid !== interaction.executionId
+    )
+      return;
+    const identity = interactionKey(interaction);
+    const existing = pendingInteractionRef.current.get(identity);
+    const resolution: InteractionResolution =
+      existing?.kind === "user-input" ? existing : { kind: "user-input", answers };
+    pendingInteractionRef.current.set(identity, resolution);
+    void runOperation(
+      `resolve-input:${identity}`,
+      "Submitting Agent user input",
+      async (signal) => {
+        if (resolution.kind !== "user-input") return;
+        await client.resolveManagedAgentUserInput(
+          tenantId,
+          projectId,
+          selectedSession.metadata.uid,
+          selectedExecution.metadata.turnId,
+          interaction.executionId,
+          newRequestId(),
+          {
+            generation: interaction.generation,
+            requestId: interaction.requestId,
+            answers: resolution.answers,
+          },
+          signal,
+        );
+        pendingInteractionRef.current.delete(identity);
+        setResolvedInteractions((current) => new Set(current).add(identity));
+        setInitialEventsRead(false);
+      },
+    );
+  }
+
+  function downloadArtifact(artifact: AgentArtifact) {
+    if (selectedSession === undefined || selectedExecution?.metadata.uid !== artifact.executionId)
+      return;
+    void runOperation(
+      `download-artifact:${artifact.executionId}:${artifact.messageIndex}`,
+      "Downloading verified Artifact",
+      async (signal) => {
+        const result = await client.downloadManagedAgentArtifact(
+          tenantId,
+          projectId,
+          selectedSession.metadata.uid,
+          selectedExecution.metadata.turnId,
+          artifact.executionId,
+          newRequestId(),
+          artifact.messageIndex,
+          signal,
+        );
+        const url = URL.createObjectURL(
+          new Blob([new Uint8Array(result.data)], { type: result.contentType }),
+        );
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = result.fileName;
+        anchor.click();
+        queueMicrotask(() => URL.revokeObjectURL(url));
+      },
+    );
+  }
+
   function resetEventCursor() {
     eventCursorRef.current = "";
     setEvents([]);
@@ -957,7 +1081,7 @@ export function AgentWorkspace({
             <span>
               <strong>{busy.label}</strong>
               <small>
-                Duplicate submission is disabled; retries keep the same idempotency key.
+                Duplicate submission is disabled; retry identity and request body stay stable.
               </small>
             </span>
             <button type="button" onClick={() => operationControllerRef.current?.abort()}>
@@ -981,6 +1105,65 @@ export function AgentWorkspace({
               ) : null}
             </div>
           </details>
+        ) : null}
+
+        {interactions.length > 0 ? (
+          <section className="interaction-stack" aria-label="Agent interactions">
+            <div className="activity-section-title">
+              <strong>Interactions</strong>
+              <small>{interactions.length} request(s)</small>
+            </div>
+            {interactions.map((interaction) => {
+              const identity = interactionKey(interaction);
+              return (
+                <InteractionCard
+                  key={identity}
+                  interaction={interaction}
+                  active={isExecutionActive(selectedExecution)}
+                  disabled={busy !== null || !isExecutionActive(selectedExecution)}
+                  resolved={resolvedInteractions.has(identity)}
+                  onApproval={(decision) =>
+                    interaction.kind === "approval"
+                      ? resolveApproval(interaction, decision)
+                      : undefined
+                  }
+                  onUserInput={(answers) =>
+                    interaction.kind === "user-input"
+                      ? resolveUserInput(interaction, answers)
+                      : undefined
+                  }
+                />
+              );
+            })}
+          </section>
+        ) : null}
+
+        {artifacts.length > 0 ? (
+          <section className="artifact-stack" aria-label="Execution Artifacts">
+            <div className="activity-section-title">
+              <strong>Artifacts</strong>
+              <small>{artifacts.length} available</small>
+            </div>
+            {artifacts.map((artifact) => (
+              <div className="artifact-row" key={artifact.messageIndex}>
+                <span>
+                  <strong>{artifact.kind}</strong>
+                  <small>
+                    {artifact.path} · {artifact.contentType}
+                    {artifact.reportedSize === undefined ? "" : ` · ${artifact.reportedSize} B`}
+                  </small>
+                </span>
+                <button
+                  className="button ghost compact"
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => downloadArtifact(artifact)}
+                >
+                  Download
+                </button>
+              </div>
+            ))}
+          </section>
         ) : null}
 
         <div className="activity-timeline">

@@ -23,6 +23,9 @@ export type AgentClient = Pick<
   | "listManagedAgentExecutions"
   | "cancelManagedAgentExecution"
   | "interruptManagedAgentExecution"
+  | "resolveManagedAgentApproval"
+  | "resolveManagedAgentUserInput"
+  | "downloadManagedAgentArtifact"
   | "listManagedAgentEvents"
 >;
 
@@ -46,6 +49,46 @@ export type AgentEventBatch = Readonly<{
   events: readonly ManagedAgentEvent[];
   nextCursor: string;
   hasMore: boolean;
+}>;
+
+export type AgentApprovalInteraction = Readonly<{
+  kind: "approval";
+  executionId: string;
+  generation: number;
+  requestId: string;
+  summary: string;
+  details: readonly string[];
+}>;
+
+export type AgentUserInputQuestion = Readonly<{
+  id: string;
+  header: string;
+  question: string;
+  options: readonly Readonly<{ label: string; description: string }>[];
+  multiSelect: boolean;
+  isOther: boolean;
+  isSecret: boolean;
+}>;
+
+export type AgentUserInputInteraction = Readonly<{
+  kind: "user-input";
+  executionId: string;
+  generation: number;
+  requestId: string;
+  questions: readonly AgentUserInputQuestion[];
+}>;
+
+export type AgentInteraction = AgentApprovalInteraction | AgentUserInputInteraction;
+
+export type AgentArtifact = Readonly<{
+  executionId: string;
+  generation: number;
+  messageIndex: number;
+  path: string;
+  kind: string;
+  sourceRoot: "workspace" | "runtime-output";
+  contentType: string;
+  reportedSize?: number;
 }>;
 
 type SelectionStorage = Pick<Storage, "getItem" | "setItem">;
@@ -229,12 +272,190 @@ export function isExecutionActive(execution: ManagedAgentExecution | undefined):
   return execution?.spec.state === "queued" || execution?.spec.state === "running";
 }
 
+function payloadRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function payloadText(value: unknown, maxLength: number): string | undefined {
+  return typeof value === "string" &&
+    value !== "" &&
+    value.length <= maxLength &&
+    !value.includes("\0")
+    ? value
+    : undefined;
+}
+
+function payloadToken(value: unknown, maxLength: number): string | undefined {
+  const text = payloadText(value, maxLength);
+  return text !== undefined && !/[\u0000-\u001f\u007f]/u.test(text) ? text : undefined;
+}
+
+function inputQuestions(value: unknown): readonly AgentUserInputQuestion[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 3) return undefined;
+  const seen = new Set<string>();
+  const questions: AgentUserInputQuestion[] = [];
+  for (const item of value) {
+    const source = payloadRecord(item);
+    const id = payloadToken(source?.id, 200);
+    const question = payloadText(source?.question, 2_000);
+    if (source === undefined || id === undefined || question === undefined || seen.has(id))
+      return undefined;
+    seen.add(id);
+    const header = payloadText(source.header, 200) ?? id;
+    const options: { label: string; description: string }[] = [];
+    const optionLabels = new Set<string>();
+    if (source.options !== undefined && source.options !== null) {
+      if (!Array.isArray(source.options) || source.options.length > 20) return undefined;
+      for (const optionValue of source.options) {
+        const option = payloadRecord(optionValue);
+        const label = payloadText(option?.label, 200);
+        if (option === undefined || label === undefined || optionLabels.has(label))
+          return undefined;
+        optionLabels.add(label);
+        const description = option.description ?? "";
+        if (
+          typeof description !== "string" ||
+          description.length > 2_000 ||
+          description.includes("\0")
+        )
+          return undefined;
+        options.push({ label, description });
+      }
+    }
+    questions.push(
+      Object.freeze({
+        id,
+        header,
+        question,
+        options: Object.freeze(options),
+        multiSelect: source.multiSelect === true,
+        isOther: source.isOther === true,
+        isSecret: source.isSecret === true,
+      }),
+    );
+  }
+  return Object.freeze(questions);
+}
+
+export function agentInteractions(
+  execution: ManagedAgentExecution | undefined,
+): readonly AgentInteraction[] {
+  if (execution === undefined) return Object.freeze([]);
+  const interactions: AgentInteraction[] = [];
+  const seen = new Set<string>();
+  for (const message of execution.messages ?? []) {
+    if (
+      message.messageType !== "InteractionRequest" ||
+      message.executionId !== execution.metadata.uid ||
+      message.generation !== execution.spec.generation
+    )
+      continue;
+    const payload = payloadRecord(message.payload);
+    const requestId = payloadToken(payload?.requestId, 200);
+    if (payload === undefined || requestId === undefined || seen.has(requestId)) continue;
+    if (payload.interactionType === "approval") {
+      const summary = payloadText(payload.summary, 4_096) ?? "Agent requests approval.";
+      const details = ["provider", "requestKind", "command", "cwd", "path", "toolName"].flatMap(
+        (key) => {
+          const value = payloadText(payload[key], 4_096);
+          return value === undefined ? [] : [`${key}: ${value}`];
+        },
+      );
+      interactions.push(
+        Object.freeze({
+          kind: "approval",
+          executionId: execution.metadata.uid,
+          generation: message.generation,
+          requestId,
+          summary,
+          details: Object.freeze(details),
+        }),
+      );
+      seen.add(requestId);
+    } else if (payload.interactionType === "user-input") {
+      const questions = inputQuestions(payload.questions);
+      if (questions === undefined) continue;
+      interactions.push(
+        Object.freeze({
+          kind: "user-input",
+          executionId: execution.metadata.uid,
+          generation: message.generation,
+          requestId,
+          questions,
+        }),
+      );
+      seen.add(requestId);
+    }
+  }
+  return Object.freeze(interactions);
+}
+
+export function agentArtifacts(
+  execution: ManagedAgentExecution | undefined,
+): readonly AgentArtifact[] {
+  if (execution === undefined) return Object.freeze([]);
+  const artifacts: AgentArtifact[] = [];
+  for (const [messageIndex, message] of (execution.messages ?? []).entries()) {
+    if (
+      message.messageType !== "ArtifactCandidate" ||
+      message.executionId !== execution.metadata.uid ||
+      message.generation !== execution.spec.generation
+    )
+      continue;
+    const artifact = payloadRecord(payloadRecord(message.payload)?.artifact);
+    const path = payloadText(artifact?.path, 4_096);
+    const kind = payloadText(artifact?.kind, 64);
+    const sourceRoot = artifact?.sourceRoot;
+    const contentType = payloadText(artifact?.contentType, 255) ?? "application/octet-stream";
+    if (
+      artifact === undefined ||
+      path === undefined ||
+      kind === undefined ||
+      (sourceRoot !== "workspace" && sourceRoot !== "runtime-output")
+    )
+      continue;
+    const reportedSize = artifact.reportedSize;
+    artifacts.push(
+      Object.freeze({
+        executionId: execution.metadata.uid,
+        generation: message.generation,
+        messageIndex,
+        path,
+        kind,
+        sourceRoot,
+        contentType,
+        ...(typeof reportedSize === "number" &&
+        Number.isSafeInteger(reportedSize) &&
+        reportedSize >= 0
+          ? { reportedSize }
+          : {}),
+      }),
+    );
+  }
+  return Object.freeze(artifacts);
+}
+
+export function isAgentPollingFatal(error: unknown): boolean {
+  return (
+    (error instanceof ClientError && (error.status === 401 || error.status === 403)) ||
+    error instanceof AgentEventStreamError
+  );
+}
+
 export function executionMessageText(message: ManagedAgentExecutionMessage): string {
   if (message.error?.message) return message.error.message;
-  if (typeof message.payload === "object" && message.payload !== null) {
-    const payload = message.payload as Record<string, unknown>;
+  const payload = payloadRecord(message.payload);
+  if (payload !== undefined) {
     if (typeof payload.text === "string") return payload.text;
     if (typeof payload.summary === "string") return payload.summary;
+    if (message.messageType === "InteractionRequest" && payload.interactionType === "user-input")
+      return "Agent requested user input.";
+    if (message.messageType === "ArtifactCandidate") {
+      const path = payloadText(payloadRecord(payload.artifact)?.path, 4_096);
+      if (path !== undefined) return `Artifact ready: ${path}`;
+    }
     return JSON.stringify(payload, null, 2);
   }
   return message.messageType;

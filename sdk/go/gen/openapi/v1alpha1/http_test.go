@@ -166,6 +166,7 @@ func TestHTTPClientUsesArtifactLimitOnlyForSuccessfulDownloads(t *testing.T) {
 	artifact := strings.Repeat("x", maxHTTPJSONResponseBytes+1)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/octet-stream")
+		writer.Header().Set("Content-Disposition", "attachment; filename=artifact.bin")
 		_, _ = writer.Write([]byte(artifact))
 	}))
 	defer server.Close()

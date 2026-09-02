@@ -658,9 +658,19 @@ describe("generated platform client", () => {
         response.end(Buffer.alloc(16 * 1024 * 1024 + 1, 0x80));
         return;
       }
+      if (request.url?.includes("/execution-artifact-invalid/messages/0/artifact")) {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "text/plain");
+        response.end("missing disposition");
+        return;
+      }
       if (request.url?.includes("/execution-artifact/messages/0/artifact")) {
         response.statusCode = 200;
         response.setHeader("Content-Type", "application/octet-stream");
+        response.setHeader(
+          "Content-Disposition",
+          "attachment; filename*=utf-8''result%20%E2%9C%93.bin",
+        );
         response.setHeader("ETag", '"sha256:artifact"');
         response.end(Buffer.alloc(16 * 1024 * 1024, 0x80));
         return;
@@ -698,9 +708,13 @@ describe("generated platform client", () => {
         0,
       );
       expect(artifact.data).toHaveLength(16 * 1024 * 1024);
-      expect([artifact.data[0], artifact.data.at(-1), artifact.contentType, artifact.etag]).toEqual(
-        [0x80, 0x80, "application/octet-stream", '"sha256:artifact"'],
-      );
+      expect([
+        artifact.data[0],
+        artifact.data.at(-1),
+        artifact.fileName,
+        artifact.contentType,
+        artifact.etag,
+      ]).toEqual([0x80, 0x80, "result ✓.bin", "application/octet-stream", '"sha256:artifact"']);
       await expect(
         client.downloadManagedAgentArtifact(
           "tenant-alpha",
@@ -712,6 +726,17 @@ describe("generated platform client", () => {
           0,
         ),
       ).rejects.toThrow("Cloud Agents HTTP response exceeds the SDK limit");
+      await expect(
+        client.downloadManagedAgentArtifact(
+          "tenant-alpha",
+          "project-alpha",
+          "session-alpha",
+          "turn-alpha",
+          "execution-artifact-invalid",
+          "request-alpha",
+          0,
+        ),
+      ).rejects.toThrow("artifact Content-Disposition is invalid");
       expect(() => createHTTPClient(`${baseURL}/`, "token-alpha")).toThrow(TypeError);
       expect(() => createHTTPClient(baseURL, "token alpha")).toThrow(TypeError);
       expect(() => createHTTPClient("ftp://127.0.0.1", "token-alpha")).toThrow(TypeError);

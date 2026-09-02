@@ -16,6 +16,9 @@ The Agent workspace supports Codex and Claude Code Session create/list/get/close
 Execution start/get/list, and generation-fenced Cancel/Interrupt. Bounded cursor polling stops while
 the page is hidden or after terminal state, rejects cursor stalls, de-duplicates events, and refreshes
 the authoritative Execution transcript without persisting prompt or message text in browser storage.
+Approval and User Input cards send generation-fenced resolutions without persisting answers. Artifact
+downloads use the validated message index plus the backend-provided filename, media type, and bytes;
+the browser never derives a download path from the candidate payload.
 
 For local development, proxy `/v1` to a Control Plane instead of enabling broad CORS:
 

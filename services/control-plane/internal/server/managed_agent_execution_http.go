@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -279,6 +280,7 @@ func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.Resp
 	}
 	writer.Header().Set("X-Request-ID", requestID)
 	writer.Header().Set("Content-Type", artifact.ContentType)
+	writer.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": artifact.FileName}))
 	writer.Header().Set("Content-Length", strconv.Itoa(len(artifact.Data)))
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	if artifact.SHA256 != "" {

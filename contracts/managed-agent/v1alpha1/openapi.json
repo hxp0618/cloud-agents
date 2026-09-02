@@ -629,6 +629,12 @@
         "responses": {
           "200": {
             "description": "Artifact bytes",
+            "headers": {
+              "Content-Disposition": {
+                "description": "Attachment disposition carrying the validated artifact basename.",
+                "schema": { "type": "string", "pattern": "^attachment;\\s*filename(?:\\*=[Uu][Tt][Ff]-8''|=).+$", "maxLength": 16384 }
+              }
+            },
             "content": {
               "*/*": {
                 "schema": { "type": "string", "format": "binary", "maxLength": 16777216 }

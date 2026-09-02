@@ -122,6 +122,7 @@ type RuntimeArtifactReadInput struct {
 
 type RuntimeArtifact struct {
 	Data        []byte
+	FileName    string
 	ContentType string
 	SHA256      string
 }
@@ -406,7 +407,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) ReadArtifact(ctx context.
 	if err != nil {
 		return RuntimeArtifact{}, fmt.Errorf("%w: %v", ErrRuntimeArtifactUnavailable, err)
 	}
-	return RuntimeArtifact{Data: data, ContentType: candidate.contentType, SHA256: candidate.sha256}, nil
+	return RuntimeArtifact{Data: data, FileName: path.Base(candidate.relativePath), ContentType: candidate.contentType, SHA256: candidate.sha256}, nil
 }
 
 type runtimeArtifactReference struct {
