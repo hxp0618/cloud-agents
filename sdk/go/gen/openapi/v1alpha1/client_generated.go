@@ -91,6 +91,7 @@ type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
+type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
@@ -686,6 +687,47 @@ func (client *Client) UpgradeManagedHostEnvironmentLease(ctx context.Context, te
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID {
 		return EnvironmentLeaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListDeploymentTargets(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (DeploymentTargetPageResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return DeploymentTargetPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return DeploymentTargetPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return DeploymentTargetPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return DeploymentTargetPageResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetPageResult{}, client.problemError("managedHostListDeploymentTargets", response)
+	}
+	value, err := platform.DecodeDeploymentTargetPageResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetPageResult{}, &ClientError{Operation: "managedHostListDeploymentTargets", Status: response.Status, Cause: err}
+	}
+	for _, target := range value.Value.DeploymentTargets {
+		if target.Metadata.TenantRef.ID != tenantID || target.Spec.ProjectRef.ID != projectID {
+			return DeploymentTargetPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets")
+		}
 	}
 	return value, nil
 }
@@ -2555,6 +2597,29 @@ func validateLeasePath(tenantID, projectID, leaseID, requestID string) error {
 		return common.ValidateIdentifier(leaseID, "/leaseId")
 	}
 	return nil
+}
+
+type ListDeploymentTargetsServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListDeploymentTargetsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListDeploymentTargetsServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return ListDeploymentTargetsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListDeploymentTargetsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListDeploymentTargetsServerInput{}, err
+		}
+	}
+	return ListDeploymentTargetsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 
 type RegisterDeploymentTargetServerInput struct {

@@ -12,15 +12,18 @@ import (
 	"time"
 
 	openapiv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
+	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
 type deploymentTargetStoreFake struct {
 	snapshot   internaldeploymenttarget.Snapshot
 	register   int
+	list       int
 	get        int
 	begin      int
 	complete   int
@@ -86,6 +89,11 @@ func (fake *deploymentTargetStoreFake) GetDeploymentTarget(context.Context, stri
 	return fake.snapshot, nil
 }
 
+func (fake *deploymentTargetStoreFake) ListDeploymentTargets(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.DeploymentTargetPage, error) {
+	fake.list++
+	return postgres.DeploymentTargetPage{DeploymentTargets: []internaldeploymenttarget.Snapshot{fake.snapshot}}, nil
+}
+
 func (fake *deploymentTargetStoreFake) GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error) {
 	return fake.lease, fake.leaseErr
 }
@@ -146,16 +154,34 @@ func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 	if _, err := openapiv1alpha1.DecodeDeploymentTargetResponseJSON(created.Body.Bytes()); err != nil {
 		t.Fatalf("register response contract: %v", err)
 	}
+	listed := request(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=50", "", "request-list", "")
+	page, pageErr := platformv1alpha1.DecodeDeploymentTargetPageResponseJSON(listed.Body.Bytes())
+	if listed.Code != http.StatusOK || store.list != 1 || verifier.seen.RequiredPermission != "projects.get" || pageErr != nil || len(page.Value.DeploymentTargets) != 1 || page.Value.DeploymentTargets[0].Metadata.UID != "ssh-alpha" {
+		t.Fatalf("list status=%d calls=%d verification=%#v page=%#v error=%v body=%s", listed.Code, store.list, verifier.seen, page, pageErr, listed.Body.String())
+	}
 	got := request(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha", "", "request-get", "")
 	if got.Code != http.StatusOK || store.get != 1 || verifier.seen.RequiredPermission != "projects.get" {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
 	}
 	probed := request(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe", `{"expectedGeneration":1}`, "request-probe", "probe-key-12345678")
-	if probed.Code != http.StatusOK || store.begin != 1 || store.complete != 1 || verifier.calls != 4 || store.completion.Succeeded || store.completion.StableErrorCode != "ssh-probe-unconfigured" || !strings.Contains(probed.Body.String(), `"observedPhase":"unavailable"`) {
+	if probed.Code != http.StatusOK || store.begin != 1 || store.complete != 1 || verifier.calls != 5 || store.completion.Succeeded || store.completion.StableErrorCode != "ssh-probe-unconfigured" || !strings.Contains(probed.Body.String(), `"observedPhase":"unavailable"`) {
 		t.Fatalf("probe status=%d begin=%d complete=%d verifier=%d completion=%#v body=%s", probed.Code, store.begin, store.complete, verifier.calls, store.completion, probed.Body.String())
 	}
 	if strings.Contains(probed.Body.String(), "PRIVATE KEY") {
 		t.Fatal("probe response leaked credential bytes")
+	}
+}
+
+func TestDeploymentTargetPageTokenBindsTenantAndProject(t *testing.T) {
+	token, ok := encodeDeploymentTargetPageToken("tenant-alpha", "project-alpha", "target-alpha")
+	if !ok {
+		t.Fatal("page token was not encoded")
+	}
+	if targetID, ok := decodeDeploymentTargetPageToken("tenant-alpha", "project-alpha", token); !ok || targetID != "target-alpha" {
+		t.Fatalf("decoded target = %q / %v", targetID, ok)
+	}
+	if _, ok := decodeDeploymentTargetPageToken("tenant-alpha", "project-other", token); ok {
+		t.Fatal("cross-project token was accepted")
 	}
 }
 

@@ -12,6 +12,7 @@ import {
   writeSavedConnection,
   type SavedConnection,
 } from "./connection";
+import { InfrastructureWorkspace } from "./InfrastructureWorkspace";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -44,14 +45,14 @@ export function App() {
   const [tenantName, setTenantName] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [error, setError] = useState("");
-  const clientRef = useRef<Client | null>(null);
+  const [client, setClient] = useState<Client | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const connectingRef = useRef(false);
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
   const selectedProject = projects.find(({ metadata }) => metadata.uid === connection.projectId);
-  const connected = status === "connected";
+  const connected = status === "connected" && client !== null;
 
   function updateConnection(field: keyof SavedConnection, value: string) {
     setConnection((current) => ({ ...current, [field]: value }));
@@ -60,7 +61,7 @@ export function App() {
   function disconnect() {
     requestRef.current?.abort();
     requestRef.current = null;
-    clientRef.current = null;
+    setClient(null);
     connectingRef.current = false;
     setToken("");
     setProjects([]);
@@ -98,7 +99,7 @@ export function App() {
         : (activeProjects[0]?.metadata.uid ?? "");
       const nextConnection = { endpoint, tenantId, projectId };
 
-      clientRef.current = client;
+      setClient(client);
       setProjects(data.projects);
       setTenantName(data.tenant.spec.displayName);
       setConnection(nextConnection);
@@ -106,7 +107,7 @@ export function App() {
       setToken("");
       setStatus("connected");
     } catch (cause) {
-      clientRef.current = null;
+      setClient(null);
       setStatus(controller.signal.aborted ? "disconnected" : "error");
       setError(controller.signal.aborted ? "" : connectionErrorMessage(cause));
     } finally {
@@ -182,117 +183,13 @@ export function App() {
 
       {connected ? (
         <div className="workspace">
-          <aside className="left-rail" aria-label="Targets and leases">
-            <section className="panel rail-section">
-              <div className="panel-heading">
-                <span>
-                  <small>Infrastructure</small>
-                  <h2>Deployment Targets</h2>
-                </span>
-                <button className="icon-button" type="button" disabled aria-label="Register target">
-                  +
-                </button>
-              </div>
-              <div className="empty-state compact-empty">
-                <span className="empty-glyph">01</span>
-                <strong>No targets loaded</strong>
-                <p>Register and probe Docker, Kubernetes, or SSH in the next setup step.</p>
-              </div>
-            </section>
-            <section className="panel rail-section lease-section">
-              <div className="panel-heading">
-                <span>
-                  <small>Runtime</small>
-                  <h2>Environment Leases</h2>
-                </span>
-              </div>
-              <div className="empty-row">
-                <span className="status-dot neutral" aria-hidden="true" />
-                No active lease
-              </div>
-            </section>
-          </aside>
-
-          <main className="conversation panel">
-            <div className="conversation-toolbar">
-              <div>
-                <small>Agent workspace</small>
-                <h1>{selectedProject?.spec.displayName ?? "Select a project"}</h1>
-              </div>
-              <div className="toolbar-controls">
-                <label>
-                  <span>Provider</span>
-                  <select aria-label="Agent provider" disabled>
-                    <option>Codex</option>
-                    <option>Claude Code</option>
-                  </select>
-                </label>
-                <button className="button secondary compact" type="button" disabled>
-                  New session
-                </button>
-              </div>
-            </div>
-            <div className="conversation-empty">
-              <div className="agent-orbit" aria-hidden="true">
-                <span>CA</span>
-              </div>
-              <strong>Infrastructure first, then a real turn</strong>
-              <p>Choose a target and ready lease before starting a Codex or Claude Code session.</p>
-              <div className="phase-line" aria-label="Agent workflow">
-                <span className="complete">Control Plane</span>
-                <span>Target</span>
-                <span>Lease</span>
-                <span>Session</span>
-              </div>
-            </div>
-            <form className="prompt-bar" aria-label="Agent prompt">
-              <label className="sr-only" htmlFor="prompt">
-                Prompt
-              </label>
-              <textarea
-                id="prompt"
-                placeholder="A ready lease is required before sending a turn"
-                rows={2}
-                disabled
-              />
-              <button className="button primary" type="submit" disabled>
-                Send
-              </button>
-            </form>
-          </main>
-
-          <aside className="activity panel" aria-label="Activity and interactions">
-            <div className="panel-heading activity-heading">
-              <span>
-                <small>Live state</small>
-                <h2>Activity</h2>
-              </span>
-              <span className="live-badge">Idle</span>
-            </div>
-            <dl className="status-table">
-              <div>
-                <dt>Target</dt>
-                <dd>Not selected</dd>
-              </div>
-              <div>
-                <dt>Lease</dt>
-                <dd>Not created</dd>
-              </div>
-              <div>
-                <dt>Worker</dt>
-                <dd>Offline</dd>
-              </div>
-              <div>
-                <dt>Execution</dt>
-                <dd>Idle</dd>
-              </div>
-            </dl>
-            <div className="timeline-empty">
-              <span className="timeline-rule" aria-hidden="true" />
-              <strong>Event timeline</strong>
-              <p>Agent messages, tool events, approvals, and user input will appear here.</p>
-            </div>
-          </aside>
+          <InfrastructureWorkspace
+            key={connection.projectId}
+            client={client}
+            tenantId={connection.tenantId}
+            projectId={connection.projectId}
+            projectName={selectedProject?.spec.displayName ?? connection.projectId}
+          />
         </div>
       ) : (
         <main className="connect-view">

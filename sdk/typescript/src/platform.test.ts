@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   Client,
   createHTTPClient,
+  decodeDeploymentTargetPage,
   decodeEnvironmentLeasePage,
   decodeIdempotency,
   decodeMembership,
@@ -28,6 +29,7 @@ import {
   decodeWatchCursor,
   encodeResponse,
   parseProblem,
+  parseDeploymentTargetPage,
   parseEnvironmentLeasePage,
   parseProject,
   parseProjectCreateRequest,
@@ -177,6 +179,58 @@ describe("generated platform JSON models", () => {
     expect(result.value.environmentLeases[0]?.metadata.uid).toBe("lease-alpha");
     expect(seen?.path).toBe(
       "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
+    );
+  });
+  it("lists deployment targets with project-bound pagination", async () => {
+    const page = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "DeploymentTargetPage",
+      deploymentTargets: [
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "DeploymentTarget",
+          metadata: {
+            uid: "docker-alpha",
+            name: "docker-alpha",
+            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            resourceVersion: "1",
+            createdAt: "2026-09-02T08:00:00Z",
+            updatedAt: "2026-09-02T08:00:00Z",
+          },
+          spec: {
+            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            generation: 1,
+            targetKind: "docker",
+            endpoint: "https://docker.example.test:2376",
+            credentialRef: "docker-alpha",
+            observedPhase: "unprobed",
+            apiVersion: "",
+            engineVersion: "",
+            os: "",
+            architecture: "",
+            stableErrorCode: "",
+          },
+        },
+      ],
+      nextPageToken: "target-page-token-2",
+    });
+    expect(decodeDeploymentTargetPage(JSON.parse(page)).deploymentTargets).toHaveLength(1);
+    expect(parseDeploymentTargetPage(page).value.nextPageToken).toBe("target-page-token-2");
+    let seen: FixtureRequest | undefined;
+    const client = new Client(async (request) => {
+      seen = request;
+      return { status: 200, headers: {}, body: page };
+    });
+    const result = await client.listDeploymentTargets(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "target-page-token-1",
+    );
+    expect(result.value.deploymentTargets[0]?.metadata.uid).toBe("docker-alpha");
+    expect(seen?.path).toBe(
+      "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
     );
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {

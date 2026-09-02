@@ -7,6 +7,8 @@ import {
   type Project,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
+import { recordPageToken } from "./pagination";
+
 export type SavedConnection = Readonly<{
   endpoint: string;
   tenantId: string;
@@ -81,8 +83,7 @@ async function listOrganizations(
     const page = await client.listOrganizations(tenantId, requestId(), 200, pageToken, signal);
     organizations.push(...page.value.organizations);
     pageToken = page.value.nextPageToken;
-    if (pageToken !== undefined && !seenTokens.add(pageToken))
-      throw new Error("Control Plane repeated an organization page token");
+    recordPageToken(seenTokens, pageToken, "organization");
   } while (pageToken !== undefined);
   return organizations;
 }
@@ -107,8 +108,7 @@ async function listProjects(
     );
     projects.push(...page.value.projects);
     pageToken = page.value.nextPageToken;
-    if (pageToken !== undefined && !seenTokens.add(pageToken))
-      throw new Error("Control Plane repeated a project page token");
+    recordPageToken(seenTokens, pageToken, "project");
   } while (pageToken !== undefined);
   return projects;
 }

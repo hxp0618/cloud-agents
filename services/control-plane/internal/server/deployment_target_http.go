@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -26,6 +27,7 @@ const deploymentTargetCompletionTimeout = 5 * time.Second
 type deploymentTargetStore interface {
 	RegisterDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.RegisterInput) (internaldeploymenttarget.Snapshot, error)
 	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
+	ListDeploymentTargets(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.DeploymentTargetPage, error)
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	BeginDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeInput) (internaldeploymenttarget.ProbeStart, error)
 	CompleteDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeCompletion) (internaldeploymenttarget.Snapshot, error)
@@ -79,6 +81,8 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		return
 	}
 	switch {
+	case action == "collection" && request.Method == http.MethodGet:
+		server.list(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "collection" && request.Method == http.MethodPost:
 		server.register(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "get" && request.Method == http.MethodGet:
@@ -90,6 +94,37 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 	default:
 		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 	}
+}
+
+func (server *DeploymentTargetHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateListDeploymentTargetsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterTargetID := ""
+	if validated.PageToken != "" {
+		if afterTargetID, ok = decodeDeploymentTargetPageToken(validated.TenantID, validated.ProjectID, validated.PageToken); !ok {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	principal, err := server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.store.ListDeploymentTargets(request.Context(), validated.TenantID, principal, validated.ProjectID, afterTargetID, validated.PageSize)
+	if err != nil {
+		writeDeploymentTargetError(writer, err)
+		return
+	}
+	writeDeploymentTargetPage(writer, requestID, tenantID, projectID, page)
 }
 
 func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, request *http.Request, tenantID, projectID, targetID, requestID, bearer string) {
@@ -389,6 +424,31 @@ func writeDeploymentTarget(writer http.ResponseWriter, status int, requestID str
 	_, _ = writer.Write(body)
 }
 
+func writeDeploymentTargetPage(writer http.ResponseWriter, requestID, tenantID, projectID string, page postgres.DeploymentTargetPage) {
+	targets := make([]platformv1alpha1.DeploymentTarget, 0, len(page.DeploymentTargets))
+	for _, snapshot := range page.DeploymentTargets {
+		targets = append(targets, deploymentTargetResource(snapshot))
+	}
+	nextPageToken := ""
+	if page.NextTargetID != "" {
+		var ok bool
+		nextPageToken, ok = encodeDeploymentTargetPageToken(tenantID, projectID, page.NextTargetID)
+		if !ok {
+			writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeDeploymentTargetPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.DeploymentTargetPage]{Value: platformv1alpha1.DeploymentTargetPage{APIVersion: platformv1alpha1.APIVersion, Kind: "DeploymentTargetPage", DeploymentTargets: targets, NextPageToken: nextPageToken}})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func deploymentTargetResource(snapshot internaldeploymenttarget.Snapshot) platformv1alpha1.DeploymentTarget {
 	lastProbeAt := ""
 	if snapshot.LastProbeAt != nil {
@@ -437,6 +497,30 @@ func deploymentTargetPath(path string) (tenantID, projectID, targetID, action st
 func HandlesDeploymentTargetPath(path string) bool {
 	_, _, _, _, ok := deploymentTargetPath(path)
 	return ok
+}
+
+func encodeDeploymentTargetPageToken(tenantID, projectID, targetID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(targetID, "/targetId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("deployment-target/v1\x00" + tenantID + "\x00" + projectID + "\x00" + targetID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeDeploymentTargetPageToken(tenantID, projectID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 4 || parts[0] != "deployment-target/v1" || parts[1] != tenantID || parts[2] != projectID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/targetId") != nil {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func dockerTargetProbeErrorCode(err error) string {

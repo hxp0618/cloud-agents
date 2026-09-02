@@ -2,14 +2,42 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/jackc/pgx/v5"
 )
+
+type DeploymentTargetPage struct {
+	DeploymentTargets []internaldeploymenttarget.Snapshot
+	NextTargetID      string
+}
+
+type deploymentTargetPageRow struct {
+	TenantID        string     `json:"tenant_id"`
+	ProjectID       string     `json:"project_uid"`
+	TargetID        string     `json:"target_uid"`
+	TargetName      string     `json:"target_name"`
+	Kind            string     `json:"target_kind"`
+	Endpoint        string     `json:"endpoint"`
+	CredentialRef   string     `json:"credential_ref"`
+	Generation      int64      `json:"generation"`
+	ObservedPhase   string     `json:"observed_phase"`
+	APIVersion      string     `json:"api_version"`
+	EngineVersion   string     `json:"engine_version"`
+	OS              string     `json:"target_os"`
+	Arch            string     `json:"target_arch"`
+	StableErrorCode string     `json:"stable_error_code"`
+	LastProbeAt     *time.Time `json:"last_probe_at"`
+	ResourceVersion int64      `json:"resource_version"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
 
 const deploymentTargetColumns = `target_uid, target_name, target_kind, endpoint, credential_ref, generation,
     observed_phase, api_version, engine_version, target_os, target_arch, stable_error_code,
@@ -21,6 +49,20 @@ FROM cloud_agents.register_deployment_target_v2($1, $2, $3, $4, $5, $6, $7, $8, 
 	getDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.deployment_targets
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`
+	deploymentTargetPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.deployment_targets
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`
+	listDeploymentTargetsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(deployment_target)
+    ORDER BY deployment_target.target_uid), '[]'::jsonb)
+FROM (
+    SELECT tenant_id, project_uid, ` + deploymentTargetColumns + `
+    FROM cloud_agents.deployment_targets
+    WHERE tenant_id = cloud_agents.require_tenant_id()
+        AND project_uid = $1
+        AND target_uid > $2
+    ORDER BY target_uid
+    LIMIT $3
+) AS deployment_target`
 	beginDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `, execute_probe
 FROM cloud_agents.begin_deployment_target_probe_v1($1, $2, $3, $4, $5, $6)`
 	completeDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `
@@ -90,6 +132,79 @@ func (service *DurableCoordinationService) GetDeploymentTarget(
 		})
 	})
 	return result, mapDeploymentTargetError(err)
+}
+
+func (service *DurableCoordinationService) ListDeploymentTargets(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, afterTargetID string, limit int,
+) (DeploymentTargetPage, error) {
+	if service == nil || service.runner == nil {
+		return DeploymentTargetPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		afterTargetID != "" && !validMutationIdentifier(afterTargetID) || limit < 1 || limit > 200 {
+		return DeploymentTargetPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result DeploymentTargetPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterTargetID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, deploymentTargetPageCursorIdentitySQL, projectID, afterTargetID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapCoordinationDatabaseError("deployment target page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listDeploymentTargetsSQL, projectID, afterTargetID, limit+1).Scan(&raw); err != nil {
+					return mapCoordinationDatabaseError("deployment targets", err)
+				}
+				var err error
+				result, err = decodeDeploymentTargetPageRows(raw, tenantID, projectID, limit)
+				return err
+			})
+		})
+	})
+	return result, mapDeploymentTargetError(err)
+}
+
+func decodeDeploymentTargetPageRows(raw []byte, tenantID, projectID string, limit int) (DeploymentTargetPage, error) {
+	var rows []deploymentTargetPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return DeploymentTargetPage{}, ErrCoordinationResultDrift
+	}
+	targets := make([]internaldeploymenttarget.Snapshot, 0, len(rows))
+	for _, row := range rows {
+		snapshot := internaldeploymenttarget.Snapshot{
+			Scope:    internaldeploymenttarget.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
+			TargetID: row.TargetID, TargetName: row.TargetName, Kind: row.Kind, Endpoint: row.Endpoint,
+			CredentialRef: row.CredentialRef, Generation: row.Generation, ObservedPhase: row.ObservedPhase,
+			APIVersion: row.APIVersion, EngineVersion: row.EngineVersion, OS: row.OS, Arch: row.Arch,
+			StableErrorCode: row.StableErrorCode, LastProbeAt: row.LastProbeAt, ResourceVersion: row.ResourceVersion,
+			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if row.TenantID != tenantID || row.ProjectID != projectID || snapshot.Validate() != nil {
+			return DeploymentTargetPage{}, ErrCoordinationResultDrift
+		}
+		targets = append(targets, snapshot)
+	}
+	result := DeploymentTargetPage{DeploymentTargets: targets}
+	if len(targets) > limit {
+		result.DeploymentTargets = targets[:limit]
+		result.NextTargetID = result.DeploymentTargets[len(result.DeploymentTargets)-1].TargetID
+	}
+	return result, nil
 }
 
 func (service *DurableCoordinationService) BeginDeploymentTargetProbe(

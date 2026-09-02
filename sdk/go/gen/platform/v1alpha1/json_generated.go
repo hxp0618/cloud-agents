@@ -247,6 +247,12 @@ type DeploymentTarget struct {
 	ResourceBase
 	Spec DeploymentTargetSpec `json:"spec"`
 }
+type DeploymentTargetPage struct {
+	APIVersion        string             `json:"apiVersion"`
+	Kind              string             `json:"kind"`
+	DeploymentTargets []DeploymentTarget `json:"deploymentTargets"`
+	NextPageToken     string             `json:"nextPageToken,omitempty"`
+}
 
 var (
 	resourceMetadataResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
@@ -319,6 +325,10 @@ var roleBindingPageResponseShape = common.ObjectResponseShape(map[string]common.
 var environmentLeasePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentLeases": common.ArrayResponseShape(resourceResponseShape("CloudEnvironmentLease")), "nextPageToken": common.ScalarResponseShape(),
+})
+var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
+	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
+	"deploymentTargets": common.ArrayResponseShape(resourceResponseShape("DeploymentTarget")), "nextPageToken": common.ScalarResponseShape(),
 })
 
 func strictResource(data []byte, kind string) (map[string]json.RawMessage, common.JSONSidecar, error) {
@@ -1412,6 +1422,54 @@ func DecodeDeploymentTargetResponseJSON(data []byte) (common.ResponseEnvelope[De
 		return common.ResponseEnvelope[DeploymentTarget]{}, err
 	}
 	return common.ResponseEnvelope[DeploymentTarget]{Value: value, Unknown: sidecar}, nil
+}
+func DecodeDeploymentTargetPageJSON(data []byte) (DeploymentTargetPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "deploymentTargets", "nextPageToken"}, []string{"apiVersion", "kind", "deploymentTargets"})
+	if err != nil {
+		return DeploymentTargetPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return DeploymentTargetPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "DeploymentTargetPage" {
+		return DeploymentTargetPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawTargets []json.RawMessage
+	if err := json.Unmarshal(fields["deploymentTargets"], &rawTargets); err != nil || rawTargets == nil || len(rawTargets) > 200 {
+		return DeploymentTargetPage{}, common.ContractError("INVALID_DEPLOYMENT_TARGET_PAGE", "/deploymentTargets")
+	}
+	targets := make([]DeploymentTarget, 0, len(rawTargets))
+	for index, raw := range rawTargets {
+		target, err := DecodeDeploymentTargetJSON(raw)
+		if err != nil {
+			return DeploymentTargetPage{}, common.ContractError("INVALID_DEPLOYMENT_TARGET", "/deploymentTargets/"+itoa(index))
+		}
+		targets = append(targets, target)
+	}
+	page := DeploymentTargetPage{APIVersion: apiVersion, Kind: kind, DeploymentTargets: targets}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return DeploymentTargetPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeDeploymentTargetPageResponseJSON(data []byte) (common.ResponseEnvelope[DeploymentTargetPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, deploymentTargetPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTargetPage]{}, err
+	}
+	value, err := DecodeDeploymentTargetPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTargetPage]{}, err
+	}
+	return common.ResponseEnvelope[DeploymentTargetPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeDeploymentTargetPageResponseJSON(value common.ResponseEnvelope[DeploymentTargetPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func EncodeDeploymentTargetResponseJSON(value common.ResponseEnvelope[DeploymentTarget]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

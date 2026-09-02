@@ -1,7 +1,15 @@
 # Cloud Agents User Console
 
 The console uses the generated TypeScript Platform SDK and keeps the bearer token in memory only.
-Endpoint, tenant, and selected project are the only values restored from `sessionStorage`.
+Endpoint, tenant, project, Target ID, and Lease ID are the only values restored from `sessionStorage`;
+the page always reloads current generations and phases from Control Plane.
+
+The infrastructure workspace supports Target list/register/get/probe/cleanup and Environment Lease
+list/create/get/upgrade/terminate. Forms send credential references only. Docker sockets, kubeconfig,
+SSH keys, and Provider JSON stay in deployment-owned Control Plane or target-side mounts.
+
+Lease upgrade reuses the existing workspace. Docker and SSH keep the old Worker generation until the
+successor is recorded Ready; Kubernetes uses a zero-unavailable rolling update.
 
 For local development, proxy `/v1` to a Control Plane instead of enabling broad CORS:
 

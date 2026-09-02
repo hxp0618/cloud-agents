@@ -289,6 +289,12 @@ export type DeploymentTarget = Readonly<{
     lastProbeAt?: string;
   }>;
 }>;
+export type DeploymentTargetPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "DeploymentTargetPage";
+  deploymentTargets: readonly DeploymentTarget[];
+  nextPageToken?: string;
+}>;
 export type ManagedAgentSessionCreateRequest = Readonly<{
   sessionId: string;
   providerKind: string;
@@ -602,6 +608,14 @@ const deploymentTargetResponseShape = resourceResponseShape({
   stableErrorCode: scalarResponseShape,
   lastProbeAt: scalarResponseShape,
 });
+const deploymentTargetPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    deploymentTargets: { item: deploymentTargetResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
 const rbacMutationResultResponseShape: ResponseShape = {
   fields: {
     resourceUid: scalarResponseShape,
@@ -1890,6 +1904,26 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
       : { ...target, spec: Object.freeze({ ...target.spec, lastProbeAt }) },
   );
 }
+export function decodeDeploymentTargetPage(value: unknown): DeploymentTargetPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "deploymentTargets", "nextPageToken"],
+    ["apiVersion", "kind", "deploymentTargets"],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "DeploymentTargetPage")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const targets = Array.isArray(source.deploymentTargets)
+    ? source.deploymentTargets
+    : error("INVALID_DEPLOYMENT_TARGET_PAGE", "/deploymentTargets");
+  if (targets.length > 200) error("INVALID_DEPLOYMENT_TARGET_PAGE", "/deploymentTargets");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "DeploymentTargetPage" as const,
+    deploymentTargets: Object.freeze(targets.map(decodeDeploymentTarget)),
+  };
+  if (source.nextPageToken === undefined) return Object.freeze(page);
+  return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
+}
 export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
   const source = strictRecord(
     value,
@@ -2556,6 +2590,9 @@ export function parseEnvironmentLeasePage(text: string): ResponseEnvelope<Enviro
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
+}
+export function parseDeploymentTargetPage(text: string): ResponseEnvelope<DeploymentTargetPage> {
+  return parseResponse(text, deploymentTargetPageResponseShape, decodeDeploymentTargetPage);
 }
 export function parseManagedAgentSession(text: string): ResponseEnvelope<ManagedAgentSession> {
   return parseResponse(text, managedAgentSessionResponseShape, decodeManagedAgentSession);
@@ -3917,6 +3954,41 @@ export class Client {
       result.value.spec.projectRef.id !== projectId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listDeploymentTargets(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTargetPage>> {
+    validateDeploymentTargetPath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedHostListDeploymentTargets", response);
+    const result = parseDeploymentTargetPage(response.body);
+    if (
+      result.value.deploymentTargets.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets");
     return result;
   }
   async registerDeploymentTarget(

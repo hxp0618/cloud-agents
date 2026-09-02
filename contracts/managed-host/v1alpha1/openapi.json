@@ -136,7 +136,16 @@
           { "$ref": "#/components/parameters/RequestId" },
           { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-create-request.schema.json" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/environment-lease-create-request.schema.json"
+              }
+            }
+          }
+        },
         "responses": {
           "201": { "$ref": "#/components/responses/EnvironmentLease" },
           "400": { "$ref": "#/components/responses/Problem" },
@@ -176,7 +185,16 @@
           { "$ref": "#/components/parameters/RequestId" },
           { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-terminate-request.schema.json" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/environment-lease-terminate-request.schema.json"
+              }
+            }
+          }
+        },
         "responses": {
           "200": { "$ref": "#/components/responses/EnvironmentLease" },
           "400": { "$ref": "#/components/responses/Problem" },
@@ -199,7 +217,16 @@
           { "$ref": "#/components/parameters/RequestId" },
           { "$ref": "#/components/parameters/IdempotencyKey" }
         ],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-request.schema.json" } } } },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-request.schema.json"
+              }
+            }
+          }
+        },
         "responses": {
           "200": { "$ref": "#/components/responses/EnvironmentLease" },
           "400": { "$ref": "#/components/responses/Problem" },
@@ -214,6 +241,31 @@
       }
     },
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets": {
+      "get": {
+        "operationId": "managedHostListDeploymentTargets",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/deployment-target-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
       "post": {
         "operationId": "managedHostRegisterDeploymentTarget",
         "parameters": [
@@ -226,7 +278,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/deployment-target-register-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/deployment-target-register-request.schema.json"
+              }
             }
           }
         },
@@ -272,7 +326,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/deployment-target-probe-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/deployment-target-probe-request.schema.json"
+              }
             }
           }
         },
@@ -301,7 +357,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/deployment-target-probe-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/deployment-target-probe-request.schema.json"
+              }
             }
           }
         },

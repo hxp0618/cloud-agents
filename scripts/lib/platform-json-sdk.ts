@@ -58,6 +58,7 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+  "deployment-target-page.schema.json",
   "deployment-target-probe-request.schema.json",
   "deployment-target-register-request.schema.json",
   "deployment-target.schema.json",
@@ -255,6 +256,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedHostGetEnvironmentLease",
     "managedHostGetProjectContext",
     "managedHostGetRoleBinding",
+    "managedHostListDeploymentTargets",
     "managedHostListEnvironmentLeases",
     "managedHostProbeDeploymentTarget",
     "managedHostRegisterDeploymentTarget",
