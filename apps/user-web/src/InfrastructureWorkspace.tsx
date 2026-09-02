@@ -16,9 +16,11 @@ import {
   type InfrastructureClient,
   type InfrastructureResources,
 } from "./infrastructure";
+import { AgentWorkspace } from "./AgentWorkspace";
+import type { AgentClient } from "./agent";
 
 type InfrastructureWorkspaceProps = Readonly<{
-  client: InfrastructureClient;
+  client: InfrastructureClient & AgentClient;
   tenantId: string;
   projectId: string;
   projectName: string;
@@ -890,152 +892,49 @@ export function InfrastructureWorkspace({
               </button>
             </div>
           ) : null}
+
+          {busy ? (
+            <div className="operation-stage compact-operation" role="status" aria-live="polite">
+              <span className="status-dot" aria-hidden="true" />
+              <span>
+                <strong>{busy.label}</strong>
+                <small>Duplicate submission is disabled.</small>
+              </span>
+              <button type="button" onClick={() => operationControllerRef.current?.abort()}>
+                Cancel wait
+              </button>
+            </div>
+          ) : null}
+
+          {error ? (
+            <details className="diagnostic compact-diagnostic" open>
+              <summary>Infrastructure operation failed</summary>
+              <p>{error}</p>
+              <button className="button ghost compact" type="button" onClick={refreshAll}>
+                Refresh state
+              </button>
+            </details>
+          ) : null}
+
+          {selectedTarget?.spec.stableErrorCode || selectedLease?.spec.stableErrorCode ? (
+            <details className="diagnostic compact-diagnostic">
+              <summary>Infrastructure diagnostic</summary>
+              <code>
+                {selectedLease?.spec.stableErrorCode || selectedTarget?.spec.stableErrorCode}
+              </code>
+            </details>
+          ) : null}
         </section>
       </aside>
 
-      <main className="conversation panel">
-        <div className="conversation-toolbar">
-          <div>
-            <small>Agent workspace</small>
-            <h1>{projectName || projectId}</h1>
-          </div>
-          <div className="toolbar-controls">
-            <label>
-              <span>Provider</span>
-              <select aria-label="Agent provider" disabled>
-                <option>Codex</option>
-                <option>Claude Code</option>
-              </select>
-            </label>
-            <button className="button secondary compact" type="button" disabled>
-              New session
-            </button>
-          </div>
-        </div>
-        <div className="conversation-empty">
-          <div className="agent-orbit" aria-hidden="true">
-            <span>CA</span>
-          </div>
-          <strong>
-            {selectedLease?.spec.observedPhase === "ready"
-              ? "Worker ready for an Agent session"
-              : "Ready the infrastructure before a real turn"}
-          </strong>
-          <p>
-            {selectedLease?.spec.observedPhase === "ready"
-              ? `Lease ${selectedLease.metadata.name} is fenced at generation ${selectedLease.spec.generation}. Session and Turn controls arrive in M3.`
-              : "Select and probe a target, then deploy an isolated Environment Lease."}
-          </p>
-          <div className="phase-line" aria-label="Agent workflow">
-            <span className="complete">Control Plane</span>
-            <span className={selectedTarget?.spec.observedPhase === "ready" ? "complete" : ""}>
-              Target
-            </span>
-            <span className={selectedLease?.spec.observedPhase === "ready" ? "complete" : ""}>
-              Lease
-            </span>
-            <span>Session</span>
-          </div>
-        </div>
-        <form className="prompt-bar" aria-label="Agent prompt">
-          <label className="sr-only" htmlFor="prompt">
-            Prompt
-          </label>
-          <textarea
-            id="prompt"
-            placeholder="Session support is added after the Target and Lease slice"
-            rows={2}
-            disabled
-          />
-          <button className="button primary" type="submit" disabled>
-            Send
-          </button>
-        </form>
-      </main>
-
-      <aside className="activity panel" aria-label="Activity and interactions">
-        <div className="panel-heading activity-heading">
-          <span>
-            <small>Live state</small>
-            <h2>Activity</h2>
-          </span>
-          <span className={`live-badge ${busy ? "running" : ""}`}>
-            {busy ? "Working" : selectedLease?.spec.observedPhase === "ready" ? "Ready" : "Idle"}
-          </span>
-        </div>
-        <dl className="status-table">
-          <div>
-            <dt>Target</dt>
-            <dd>{selectedTarget?.spec.observedPhase ?? "Not selected"}</dd>
-          </div>
-          <div>
-            <dt>Lease</dt>
-            <dd>{selectedLease?.spec.observedPhase ?? "Not created"}</dd>
-          </div>
-          <div>
-            <dt>Worker</dt>
-            <dd>{selectedLease?.spec.workerEndpoint ? "Online" : "Offline"}</dd>
-          </div>
-          <div>
-            <dt>Execution</dt>
-            <dd>Idle</dd>
-          </div>
-        </dl>
-
-        {busy ? (
-          <div className="operation-stage" role="status" aria-live="polite">
-            <span className="status-dot" aria-hidden="true" />
-            <span>
-              <strong>{busy.label}</strong>
-              <small>Request is fenced and duplicate submission is disabled.</small>
-            </span>
-            <button type="button" onClick={() => operationControllerRef.current?.abort()}>
-              Cancel wait
-            </button>
-          </div>
-        ) : null}
-
-        {error ? (
-          <details className="diagnostic" open>
-            <summary>Infrastructure operation failed</summary>
-            <p>{error}</p>
-            <button className="button ghost compact" type="button" onClick={refreshAll}>
-              Refresh server state
-            </button>
-          </details>
-        ) : null}
-
-        {selectedTarget?.spec.stableErrorCode ? (
-          <details className="diagnostic">
-            <summary>Target diagnostic</summary>
-            <code>{selectedTarget.spec.stableErrorCode}</code>
-            <p>
-              Generation {selectedTarget.spec.generation} remains authoritative and can be probed
-              again.
-            </p>
-          </details>
-        ) : null}
-
-        {selectedLease?.spec.stableErrorCode ? (
-          <details className="diagnostic">
-            <summary>Lease diagnostic</summary>
-            <code>{selectedLease.spec.stableErrorCode}</code>
-            <p>Refresh before retrying so the current Lease generation remains fenced.</p>
-          </details>
-        ) : null}
-
-        <div className="timeline-empty">
-          <span className="timeline-rule" aria-hidden="true" />
-          <strong>Infrastructure timeline</strong>
-          <p>
-            {selectedLease
-              ? `Lease generation ${selectedLease.spec.generation} · cleanup ${selectedLease.spec.cleanupPhase}`
-              : selectedTarget
-                ? `Target generation ${selectedTarget.spec.generation} · ${selectedTarget.spec.targetKind}`
-                : "Select a target to inspect its generation and probe state."}
-          </p>
-        </div>
-      </aside>
+      <AgentWorkspace
+        client={client}
+        tenantId={tenantId}
+        projectId={projectId}
+        projectName={projectName}
+        targetPhase={selectedTarget?.spec.observedPhase}
+        lease={selectedLease}
+      />
     </>
   );
 }
