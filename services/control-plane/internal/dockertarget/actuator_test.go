@@ -79,6 +79,18 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 	if host["Memory"] != float64(request.MemoryLimitBytes) || host["NanoCpus"] != float64(request.CPULimitMillis*1_000_000) || host["ReadonlyRootfs"] != true {
 		t.Fatalf("host config = %#v", host)
 	}
+	var workspace map[string]any
+	for _, value := range host["Mounts"].([]any) {
+		mount, _ := value.(map[string]any)
+		if mount["Target"] == "/workspace" {
+			workspace = mount
+		}
+	}
+	volumeOptions, _ := workspace["VolumeOptions"].(map[string]any)
+	volumeLabels, _ := volumeOptions["Labels"].(map[string]any)
+	if workspace["Source"] != workspaceVolumeName(request) || volumeLabels["cloud-agents.dev/lease"] != request.LeaseID {
+		t.Fatalf("workspace mount = %#v", workspace)
+	}
 	if err := startWorkerContainer(context.Background(), server.Client(), server.URL, containerID); err != nil {
 		t.Fatal(err)
 	}
@@ -165,10 +177,15 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 	}
 	ownedImage, ownedLabels := config.WorkerImageRepository+"@"+request.ReleaseDigest, DeploymentLabels(request, config)
 	actualLabels := maps.Clone(ownedLabels)
-	present, deletes, targetLists := true, 0, 0
+	present, volumePresent, deletes, volumeDeletes, targetLists := true, true, 0, 0, 0
+	workspace := workspaceVolumeName(request)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
 		switch {
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/json":
+			if strings.Contains(httpRequest.URL.Query().Get("filters"), `"volume"`) {
+				_, _ = writer.Write([]byte("[]"))
+				return
+			}
 			if strings.Contains(httpRequest.URL.Query().Get("filters"), "cloud-agents.dev/target=docker-alpha") {
 				targetLists++
 			}
@@ -178,9 +195,21 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 				_, _ = writer.Write([]byte("[]"))
 			}
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/container-alpha/json":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": "/" + WorkerContainerName(request), "Config": map[string]any{"Image": ownedImage, "Labels": actualLabels}})
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"Name": "/" + WorkerContainerName(request), "Config": map[string]any{"Image": ownedImage, "Labels": actualLabels},
+				"Mounts": []map[string]any{{"Type": "volume", "Name": workspace, "Destination": "/workspace"}},
+			})
+		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/volumes/"+workspace:
+			if !volumePresent {
+				http.NotFound(writer, httpRequest)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": workspace, "Labels": workspaceVolumeLabels(request)})
 		case httpRequest.Method == http.MethodDelete && httpRequest.URL.Path == "/containers/container-alpha":
 			present, deletes = false, deletes+1
+			writer.WriteHeader(http.StatusNoContent)
+		case httpRequest.Method == http.MethodDelete && httpRequest.URL.Path == "/volumes/"+workspace:
+			volumePresent, volumeDeletes = false, volumeDeletes+1
 			writer.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(writer, httpRequest)
@@ -214,8 +243,8 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if present || deletes != 2 || targetLists != 4 {
-		t.Fatalf("managed cleanup present=%v deletes=%d targetLists=%d", present, deletes, targetLists)
+	if present || volumePresent || deletes != 2 || volumeDeletes != 1 || targetLists != 4 {
+		t.Fatalf("managed cleanup present=%v volume=%v deletes=%d/%d targetLists=%d", present, volumePresent, deletes, volumeDeletes, targetLists)
 	}
 }
 
@@ -230,19 +259,34 @@ func TestCleanupManagedWorkerTargetsItsGenerationDuringUpgrade(t *testing.T) {
 		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
 	}
 	image, labels := config.WorkerImageRepository+"@"+request.ReleaseDigest, DeploymentLabels(request, config)
-	deletes := 0
+	workspace, inUse, deletes, volumeDeletes := strings.Repeat("b", 64), true, 0, 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
 		switch {
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/json":
-			if strings.Contains(httpRequest.URL.Query().Get("filters"), "cloud-agents.dev/lease-generation=1") {
+			filters := httpRequest.URL.Query().Get("filters")
+			if strings.Contains(filters, `"volume"`) {
+				if inUse {
+					_, _ = writer.Write([]byte(`[{"Id":"container-new"}]`))
+				} else {
+					_, _ = writer.Write([]byte("[]"))
+				}
+			} else if strings.Contains(filters, "cloud-agents.dev/lease-generation=1") {
 				_, _ = writer.Write([]byte(`[{"Id":"container-old"}]`))
 			} else {
 				_, _ = writer.Write([]byte(`[{"Id":"container-old"},{"Id":"container-new"}]`))
 			}
 		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/containers/container-old/json":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": "/" + WorkerContainerName(request), "Config": map[string]any{"Image": image, "Labels": labels}})
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"Name": "/" + WorkerContainerName(request), "Config": map[string]any{"Image": image, "Labels": labels},
+				"Mounts": []map[string]any{{"Type": "volume", "Name": workspace, "Destination": "/workspace"}},
+			})
 		case httpRequest.Method == http.MethodDelete && httpRequest.URL.Path == "/containers/container-old":
 			deletes++
+			writer.WriteHeader(http.StatusNoContent)
+		case httpRequest.Method == http.MethodGet && httpRequest.URL.Path == "/volumes/"+workspace:
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": workspace})
+		case httpRequest.Method == http.MethodDelete && strings.HasPrefix(httpRequest.URL.Path, "/volumes/"):
+			volumeDeletes++
 			writer.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(writer, httpRequest)
@@ -254,8 +298,15 @@ func TestCleanupManagedWorkerTargetsItsGenerationDuringUpgrade(t *testing.T) {
 	if err := cleanupManagedWorker(context.Background(), server.Client(), server.URL, worker); err != nil {
 		t.Fatal(err)
 	}
-	if deletes != 1 {
-		t.Fatalf("delete calls = %d", deletes)
+	if deletes != 1 || volumeDeletes != 0 {
+		t.Fatalf("delete calls = %d/%d", deletes, volumeDeletes)
+	}
+	inUse = false
+	if err := removeWorkspaceVolumeIfUnused(context.Background(), server.Client(), server.URL, workspace, request, config.WorkerCredentialRef); err != nil {
+		t.Fatal(err)
+	}
+	if volumeDeletes != 1 {
+		t.Fatalf("legacy workspace delete calls = %d", volumeDeletes)
 	}
 }
 

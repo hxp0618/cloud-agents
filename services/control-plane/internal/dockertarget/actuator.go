@@ -43,6 +43,7 @@ var (
 	ErrDeploymentFailed            = errors.New("docker target deployment failed")
 	ErrWorkerUnavailable           = errors.New("docker target worker is unavailable")
 	volumeNamePattern              = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	anonymousVolumeNamePattern     = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	imageRepositoryPattern         = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
 )
 
@@ -104,6 +105,11 @@ type containerSummary struct {
 	ID string `json:"Id"`
 }
 
+type volumeInspect struct {
+	Name   string            `json:"Name"`
+	Labels map[string]string `json:"Labels"`
+}
+
 func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint, credentialRef string, request DeployRequest, trust WorkerTrust) (DeployResult, error) {
 	if ctx == nil || request.Validate() != nil || trust.RootCAs == nil || len(trust.ClientCertificate.Certificate) == 0 || trust.ClientCertificate.PrivateKey == nil {
 		return DeployResult{}, ErrDeploymentConfigInvalid
@@ -130,9 +136,16 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 		return DeployResult{}, err
 	}
 	owned := false
+	workspace := ""
 	inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
 	if err == nil && inspect.Config.Image == image && exactLabels(inspect.Config.Labels, labels) {
-		owned = true
+		workspace, err = workspaceVolume(inspect)
+		if err == nil && !managedWorkspaceVolumeName(request, workspace, config.WorkerCredentialRef) {
+			err = ErrDeploymentConflict
+		} else if err == nil && workspace == workspaceVolumeName(request) {
+			err = requireOwnedWorkspaceVolume(ctx, client, base, workspace, request)
+		}
+		owned = err == nil
 	} else if err == nil {
 		err = ErrDeploymentConflict
 	}
@@ -144,6 +157,7 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 			cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			defer cancel()
 			_ = removeWorkerContainer(cleanupContext, client, base, containerID)
+			_ = removeWorkspaceVolumeIfUnused(cleanupContext, client, base, workspace, request, config.WorkerCredentialRef)
 		}
 	}
 	if err := startWorkerContainer(ctx, client, base, containerID); err != nil {
@@ -190,7 +204,7 @@ func (directory *CredentialDirectory) CleanupWorker(ctx context.Context, endpoin
 			return err
 		}
 	}
-	return nil
+	return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(request), request)
 }
 
 // DeployWorkerUpgrade starts the requested generation beside any existing
@@ -275,6 +289,7 @@ func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, e
 			created = true
 		}
 	}
+	workspace := ""
 	cleanup := func() {
 		if !created || containerID == "" {
 			return
@@ -282,12 +297,34 @@ func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, e
 		cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		_ = removeWorkerContainer(cleanupContext, client, base, containerID)
+		if workspace != "" {
+			_ = removeWorkspaceVolumeIfUnused(cleanupContext, client, base, workspace, request, config.WorkerCredentialRef)
+		}
+	}
+	inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, err
+	}
+	workspace, err = workspaceVolume(inspect)
+	if err != nil || workspaceSource != "" && workspace != workspaceSource || !managedWorkspaceVolumeName(request, workspace, config.WorkerCredentialRef) {
+		cleanup()
+		return DeployResult{}, ErrDeploymentConflict
+	}
+	if workspaceSource == "" {
+		workspaceSource = workspaceVolumeName(request)
+	}
+	if workspaceSource == workspaceVolumeName(request) {
+		if err := requireOwnedWorkspaceVolume(ctx, client, base, workspaceSource, request); err != nil {
+			cleanup()
+			return DeployResult{}, err
+		}
 	}
 	if err := startWorkerContainer(ctx, client, base, containerID); err != nil {
 		cleanup()
 		return DeployResult{}, err
 	}
-	inspect, err := waitForRunningContainer(ctx, client, base, containerID)
+	inspect, err = waitForRunningContainer(ctx, client, base, containerID)
 	if err != nil {
 		cleanup()
 		return DeployResult{}, err
@@ -561,8 +598,11 @@ func listManagedWorkers(ctx context.Context, client *http.Client, base, tenantID
 
 func cleanupManagedWorker(ctx context.Context, client *http.Client, base string, worker ManagedWorker) error {
 	containerID, err := findWorkerContainerForGeneration(ctx, client, base, worker.Request)
-	if err != nil || containerID == "" {
+	if err != nil {
 		return err
+	}
+	if containerID == "" {
+		return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(worker.Request), worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"])
 	}
 	if containerID != worker.id {
 		return ErrDeploymentConflict
@@ -573,12 +613,19 @@ func cleanupManagedWorker(ctx context.Context, client *http.Client, base string,
 		if findErr != nil || remaining != "" {
 			return ErrDeploymentFailed
 		}
-		return nil
+		return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(worker.Request), worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"])
 	}
 	if inspect.Name != "/"+WorkerContainerName(worker.Request) || inspect.Config.Image != worker.image || !exactLabels(inspect.Config.Labels, worker.labels) {
 		return ErrDeploymentConflict
 	}
-	return removeWorkerContainer(ctx, client, base, worker.id)
+	workspace, err := workspaceVolume(inspect)
+	if err != nil {
+		return err
+	}
+	if err := removeWorkerContainer(ctx, client, base, worker.id); err != nil {
+		return err
+	}
+	return removeWorkspaceVolumeIfUnused(ctx, client, base, workspace, worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"])
 }
 
 func ensureWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string) (string, error) {
@@ -641,9 +688,12 @@ func createWorkerContainerNamed(ctx context.Context, client *http.Client, base s
 			"RestartPolicy":  map[string]string{"Name": "unless-stopped"},
 		},
 	}
-	workspaceMount := map[string]any{"Type": "volume", "Target": "/workspace"}
-	if workspaceSource != "" {
-		workspaceMount["Source"] = workspaceSource
+	if workspaceSource == "" {
+		workspaceSource = workspaceVolumeName(request)
+	}
+	workspaceMount := map[string]any{"Type": "volume", "Source": workspaceSource, "Target": "/workspace"}
+	if workspaceSource == workspaceVolumeName(request) {
+		workspaceMount["VolumeOptions"] = map[string]any{"Labels": workspaceVolumeLabels(request)}
 	}
 	hostConfig := body["HostConfig"].(map[string]any)
 	hostConfig["Mounts"] = append(hostConfig["Mounts"].([]map[string]any), workspaceMount)
@@ -677,6 +727,27 @@ func workerContainerBaseName(request DeployRequest) string {
 	return "cloud-agents-" + strconv.FormatUint(digest.Sum64(), 16)
 }
 
+func workspaceVolumeName(request DeployRequest) string {
+	return workerContainerBaseName(request) + "-workspace"
+}
+
+func workspaceVolumeLabels(request DeployRequest) map[string]string {
+	return map[string]string{
+		"cloud-agents.dev/managed": "true",
+		"cloud-agents.dev/tenant":  request.TenantID,
+		"cloud-agents.dev/project": request.ProjectID,
+		"cloud-agents.dev/target":  request.TargetID,
+		"cloud-agents.dev/lease":   request.LeaseID,
+	}
+}
+
+func managedWorkspaceVolumeName(request DeployRequest, name string, protected ...string) bool {
+	if name != workspaceVolumeName(request) && !anonymousVolumeNamePattern.MatchString(name) || name == request.ProviderCredentialRef {
+		return false
+	}
+	return !slices.Contains(protected, name)
+}
+
 func workspaceVolume(inspect containerInspect) (string, error) {
 	for _, mount := range inspect.Mounts {
 		if mount.Destination != "/workspace" || mount.Type != "volume" {
@@ -691,6 +762,81 @@ func workspaceVolume(inspect containerInspect) (string, error) {
 		}
 	}
 	return "", ErrDeploymentConflict
+}
+
+func requireOwnedWorkspaceVolume(ctx context.Context, client *http.Client, base, name string, request DeployRequest) error {
+	volume, exists, err := inspectWorkspaceVolume(ctx, client, base, name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrDeploymentFailed
+	}
+	if volume.Name != workspaceVolumeName(request) || !exactLabels(volume.Labels, workspaceVolumeLabels(request)) {
+		return ErrDeploymentConflict
+	}
+	return nil
+}
+
+func removeWorkspaceVolumeIfUnused(ctx context.Context, client *http.Client, base, name string, request DeployRequest, protected ...string) error {
+	if !managedWorkspaceVolumeName(request, name, protected...) {
+		return ErrDeploymentConflict
+	}
+	filters, _ := json.Marshal(map[string][]string{"volume": {name}})
+	var containers []containerSummary
+	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filters)), nil, http.StatusOK, &containers); err != nil {
+		return err
+	}
+	if len(containers) > 0 {
+		return nil
+	}
+	volume, exists, err := inspectWorkspaceVolume(ctx, client, base, name)
+	if err != nil || !exists {
+		return err
+	}
+	if name == workspaceVolumeName(request) && !exactLabels(volume.Labels, workspaceVolumeLabels(request)) {
+		return ErrDeploymentConflict
+	}
+	deleteRequest, err := http.NewRequestWithContext(ctx, http.MethodDelete, base+"/volumes/"+url.PathEscape(name), http.NoBody)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	response, err := client.Do(deleteRequest)
+	if err != nil {
+		return ErrDeploymentFailed
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusNotFound {
+		return ErrDeploymentFailed
+	}
+	return nil
+}
+
+func inspectWorkspaceVolume(ctx context.Context, client *http.Client, base, name string) (volumeInspect, bool, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/volumes/"+url.PathEscape(name), http.NoBody)
+	if err != nil {
+		return volumeInspect{}, false, ErrDeploymentFailed
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return volumeInspect{}, false, ErrDeploymentFailed
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+		return volumeInspect{}, false, nil
+	}
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
+		return volumeInspect{}, false, ErrDeploymentFailed
+	}
+	var volume volumeInspect
+	decoder := json.NewDecoder(io.LimitReader(response.Body, maxDockerBodyBytes+1))
+	if decoder.Decode(&volume) != nil || decoder.Decode(&struct{}{}) != io.EOF || volume.Name != name {
+		return volumeInspect{}, false, ErrDeploymentFailed
+	}
+	return volume, true, nil
 }
 
 func inspectWorkerContainer(ctx context.Context, client *http.Client, base, containerID string) (containerInspect, error) {
