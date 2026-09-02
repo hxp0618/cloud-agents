@@ -1388,6 +1388,29 @@ textarea:focus {
   align-items: flex-end;
 }
 
+.prompt-mode {
+  display: grid;
+  gap: 4px;
+}
+
+.prompt-mode span {
+  color: #686b74;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prompt-mode select {
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-small);
+  background: #0f0f12;
+  color: #b8bac2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+}
+
 .execution-controls {
   flex-direction: column;
 }

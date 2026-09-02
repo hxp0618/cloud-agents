@@ -43,6 +43,7 @@ type PendingSubmission = Readonly<{
   sessionId: string;
   turnId: string;
   executionId: string;
+  interactionMode: "default" | "plan";
   inputText: string;
 }>;
 type LocalPrompt = Readonly<{ turnId: string; text: string }>;
@@ -104,6 +105,7 @@ export function AgentWorkspace({
   const [sessionFormOpen, setSessionFormOpen] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [interactionMode, setInteractionMode] = useState<"default" | "plan">("default");
   const [localPrompts, setLocalPrompts] = useState<readonly LocalPrompt[]>([]);
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission>();
   const [executionRequestPending, setExecutionRequestPending] = useState(false);
@@ -546,6 +548,7 @@ export function AgentWorkspace({
         sessionId: selectedSession.metadata.uid,
         turnId: newResourceId("turn"),
         executionId: newResourceId("execution"),
+        interactionMode,
         inputText,
       };
       setPendingSubmission(submission);
@@ -586,7 +589,7 @@ export function AgentWorkspace({
             executionId: submission.executionId,
             inputText: submission.inputText,
             runtimeMode: "approval-required",
-            interactionMode: "default",
+            interactionMode: submission.interactionMode,
           },
           signal,
         );
@@ -1045,6 +1048,24 @@ export function AgentWorkspace({
             required
           />
           <div className="prompt-actions">
+            <label className="prompt-mode">
+              <span>Interaction mode</span>
+              <select
+                aria-label="Interaction mode"
+                value={pendingSubmission?.interactionMode ?? interactionMode}
+                onChange={(event) =>
+                  setInteractionMode(event.target.value === "plan" ? "plan" : "default")
+                }
+                disabled={
+                  busy !== null ||
+                  pendingSubmission !== undefined ||
+                  selectedSession?.spec.state !== "active"
+                }
+              >
+                <option value="default">Default</option>
+                <option value="plan">Plan / user input</option>
+              </select>
+            </label>
             {isExecutionActive(selectedExecution) ? (
               <div className="execution-controls">
                 <button

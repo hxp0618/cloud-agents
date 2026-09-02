@@ -19,6 +19,8 @@ the authoritative Execution transcript without persisting prompt or message text
 Approval and User Input cards send generation-fenced resolutions without persisting answers. Artifact
 downloads use the validated message index plus the backend-provided filename, media type, and bytes;
 the browser never derives a download path from the candidate payload.
+Choose `Plan / user input` for Turns that need Codex `request_user_input`; retries keep that mode with
+the original Turn and Execution identity.
 
 For local development, proxy `/v1` to a Control Plane instead of enabling broad CORS:
 
