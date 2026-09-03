@@ -3,22 +3,25 @@ import {
   createHTTPClient,
   type DeploymentTarget,
   type DeploymentTargetRegisterRequest,
+  type EnvironmentLease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   adminErrorMessage,
+  listAdminLeases,
   listAdminTargets,
   newIdempotencyKey,
   newRequestId,
   readSavedAdminConnection,
+  replaceLease,
   replaceTarget,
   writeSavedAdminConnection,
-  type AdminTargetClient,
+  type AdminClient,
   type SavedAdminConnection,
 } from "./admin";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page = "overview" | "targets";
+type Page = "overview" | "targets" | "leases";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type BusyOperation = Readonly<{ key: string; label: string }>;
 
@@ -45,9 +48,10 @@ function statusLabel(status: ConnectionStatus): string {
 }
 
 function phaseTone(phase: string): string {
-  if (phase === "ready") return "success";
-  if (phase === "probing") return "running";
-  if (phase === "unavailable") return "danger";
+  if (phase === "ready" || phase === "complete") return "success";
+  if (["probing", "provisioning", "terminating", "pending", "revoking", "reaping"].includes(phase))
+    return "running";
+  if (phase === "unavailable" || phase === "failed" || phase === "blocked") return "danger";
   return "neutral";
 }
 
@@ -58,7 +62,7 @@ function formatTime(value: string | undefined): string {
 }
 
 async function loadTargetAuthority(
-  client: AdminTargetClient,
+  client: AdminClient,
   connection: SavedAdminConnection,
   preferredTargetId: string,
   signal: AbortSignal,
@@ -80,13 +84,38 @@ async function loadTargetAuthority(
   return Object.freeze({ targets, selectedTargetId });
 }
 
+async function loadLeaseAuthority(
+  client: AdminClient,
+  connection: SavedAdminConnection,
+  preferredLeaseId: string,
+  signal: AbortSignal,
+): Promise<Readonly<{ leases: readonly EnvironmentLease[]; selectedLeaseId: string }>> {
+  let leases = await listAdminLeases(client, connection.tenantId, connection.projectId, signal);
+  const selectedLeaseId = leases.some(({ metadata }) => metadata.uid === preferredLeaseId)
+    ? preferredLeaseId
+    : (leases[0]?.metadata.uid ?? "");
+  if (selectedLeaseId !== "") {
+    const detail = await client.getAdminEnvironmentLease(
+      connection.tenantId,
+      connection.projectId,
+      selectedLeaseId,
+      newRequestId(),
+      signal,
+    );
+    leases = replaceLease(leases, detail.value);
+  }
+  return Object.freeze({ leases, selectedLeaseId });
+}
+
 export function App() {
   const [connection, setConnection] = useState(initialConnection);
   const [token, setToken] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
-  const [client, setClient] = useState<AdminTargetClient | null>(null);
+  const [client, setClient] = useState<AdminClient | null>(null);
   const [targets, setTargets] = useState<readonly DeploymentTarget[]>(Object.freeze([]));
   const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
+  const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [page, setPage] = useState<Page>("overview");
   const [registering, setRegistering] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
@@ -105,11 +134,16 @@ export function App() {
 
   const connected = status === "connected" && client !== null;
   const selectedTarget = targets.find(({ metadata }) => metadata.uid === selectedTargetId);
+  const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
   const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
   const unavailableCount = targets.filter(
     ({ spec }) => spec.observedPhase === "unavailable",
   ).length;
   const attentionCount = targets.length - readyCount;
+  const readyLeaseCount = leases.filter(({ spec }) => spec.observedPhase === "ready").length;
+  const leaseAttentionCount = leases.filter(
+    ({ spec }) => spec.observedPhase === "failed" || spec.cleanupPhase === "blocked",
+  ).length;
 
   useEffect(
     () => () => {
@@ -122,21 +156,28 @@ export function App() {
     if (
       !connected ||
       client === null ||
-      !targets.some(({ spec }) => spec.observedPhase === "probing")
+      (!targets.some(({ spec }) => spec.observedPhase === "probing") &&
+        !leases.some(
+          ({ spec }) =>
+            spec.observedPhase === "provisioning" ||
+            spec.observedPhase === "terminating" ||
+            ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
+        ))
     )
       return;
     const controller = new AbortController();
     const interval = window.setInterval(() => {
       if (document.visibilityState !== "visible" || busyRef.current) return;
-      void loadTargetAuthority(
-        client,
-        connection,
-        selectedTargetId,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
-      )
-        .then((loaded) => {
-          setTargets(loaded.targets);
-          setSelectedTargetId(loaded.selectedTargetId);
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+      void Promise.all([
+        loadTargetAuthority(client, connection, selectedTargetId, signal),
+        loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+      ])
+        .then(([loadedTargets, loadedLeases]) => {
+          setTargets(loadedTargets.targets);
+          setSelectedTargetId(loadedTargets.selectedTargetId);
+          setLeases(loadedLeases.leases);
+          setSelectedLeaseId(loadedLeases.selectedLeaseId);
         })
         .catch((cause: unknown) => {
           if (!controller.signal.aborted) setError(adminErrorMessage(cause));
@@ -146,7 +187,7 @@ export function App() {
       controller.abort();
       window.clearInterval(interval);
     };
-  }, [client, connected, connection, selectedTargetId, targets]);
+  }, [client, connected, connection, leases, selectedLeaseId, selectedTargetId, targets]);
 
   function updateConnection(field: keyof SavedAdminConnection, value: string) {
     setConnection((current) => ({ ...current, [field]: value }));
@@ -159,6 +200,8 @@ export function App() {
     setToken("");
     setTargets(Object.freeze([]));
     setSelectedTargetId("");
+    setLeases(Object.freeze([]));
+    setSelectedLeaseId("");
     setBusy(null);
     setError("");
     setNotice("");
@@ -185,16 +228,17 @@ export function App() {
     setError("");
     try {
       const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
-      const loaded = await loadTargetAuthority(
-        nextClient,
-        nextConnection,
-        selectedTargetId,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
-      );
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+      const [loadedTargets, loadedLeases] = await Promise.all([
+        loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
+        loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
+      ]);
       setClient(nextClient);
       setConnection(nextConnection);
-      setTargets(loaded.targets);
-      setSelectedTargetId(loaded.selectedTargetId);
+      setTargets(loadedTargets.targets);
+      setSelectedTargetId(loadedTargets.selectedTargetId);
+      setLeases(loadedLeases.leases);
+      setSelectedLeaseId(loadedLeases.selectedLeaseId);
       writeSavedAdminConnection(window.sessionStorage, nextConnection);
       setToken("");
       setStatus("connected");
@@ -243,9 +287,14 @@ export function App() {
   function refresh() {
     if (client === null) return;
     void runOperation("refresh", "Authority refresh", async (signal) => {
-      const loaded = await loadTargetAuthority(client, connection, selectedTargetId, signal);
-      setTargets(loaded.targets);
-      setSelectedTargetId(loaded.selectedTargetId);
+      const [loadedTargets, loadedLeases] = await Promise.all([
+        loadTargetAuthority(client, connection, selectedTargetId, signal),
+        loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+      ]);
+      setTargets(loadedTargets.targets);
+      setSelectedTargetId(loadedTargets.selectedTargetId);
+      setLeases(loadedLeases.leases);
+      setSelectedLeaseId(loadedLeases.selectedLeaseId);
     });
   }
 
@@ -264,6 +313,24 @@ export function App() {
         signal,
       );
       setTargets((current) => replaceTarget(current, result.value));
+    });
+  }
+
+  function selectLease(leaseId: string) {
+    if (client === null || leaseId === selectedLeaseId) {
+      setSelectedLeaseId(leaseId);
+      return;
+    }
+    setSelectedLeaseId(leaseId);
+    void runOperation(`get-lease:${leaseId}`, "Lease detail refresh", async (signal) => {
+      const result = await client.getAdminEnvironmentLease(
+        connection.tenantId,
+        connection.projectId,
+        leaseId,
+        newRequestId(),
+        signal,
+      );
+      setLeases((current) => replaceLease(current, result.value));
     });
   }
 
@@ -332,10 +399,10 @@ export function App() {
             </span>
           </div>
           <div className="eyebrow">Control Plane · Admin API</div>
-          <h1 id="connect-title">Operate deployment targets.</h1>
+          <h1 id="connect-title">Operate Cloud Agents infrastructure.</h1>
           <p className="lede">
-            Connect with an admin-scoped token. The bearer stays in memory and every target action
-            runs through Control Plane.
+            Connect with an admin-scoped token. The bearer stays in memory and every resource read
+            or action runs through Control Plane.
           </p>
           <form className="connect-form" onSubmit={connect}>
             <label>
@@ -383,7 +450,7 @@ export function App() {
                 type="password"
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
-                placeholder="Required scopes: targets.list/get/create/act"
+                placeholder="Required scopes: targets.* and leases.list/get"
                 autoComplete="off"
                 spellCheck={false}
                 required
@@ -436,6 +503,10 @@ export function App() {
             <span aria-hidden="true">◎</span> Deployment Targets
             <b>{targets.length}</b>
           </button>
+          <button className={page === "leases" ? "active" : ""} onClick={() => setPage("leases")}>
+            <span aria-hidden="true">◇</span> Environment Leases
+            <b>{leases.length}</b>
+          </button>
         </nav>
         <div className="sidebar-boundary">
           <small>Admin boundary</small>
@@ -446,7 +517,14 @@ export function App() {
       <section className="app-main">
         <header className="topbar">
           <div className="breadcrumbs">
-            <small>Admin / {page === "overview" ? "Overview" : "Deployment Targets"}</small>
+            <small>
+              Admin /{" "}
+              {page === "overview"
+                ? "Overview"
+                : page === "targets"
+                  ? "Deployment Targets"
+                  : "Environment Leases"}
+            </small>
             <strong>{connection.projectId}</strong>
           </div>
           <div className="topbar-context">
@@ -465,11 +543,19 @@ export function App() {
           <div className="page-heading">
             <div>
               <div className="eyebrow">Live Control Plane authority</div>
-              <h1>{page === "overview" ? "Operations overview" : "Deployment targets"}</h1>
+              <h1>
+                {page === "overview"
+                  ? "Operations overview"
+                  : page === "targets"
+                    ? "Deployment targets"
+                    : "Environment leases"}
+              </h1>
               <p>
                 {page === "overview"
-                  ? "Current target health for the selected tenant and project."
-                  : "Register and operate Docker, Kubernetes, and SSH execution capacity."}
+                  ? "Current infrastructure authority for the selected tenant and project."
+                  : page === "targets"
+                    ? "Register and operate Docker, Kubernetes, and SSH execution capacity."
+                    : "Inspect server-authoritative environment lifecycle and cleanup state."}
               </p>
             </div>
             <div className="heading-actions">
@@ -481,17 +567,19 @@ export function App() {
               >
                 Refresh
               </button>
-              <button
-                className="button primary"
-                type="button"
-                onClick={() => {
-                  setPage("targets");
-                  setRegistering(true);
-                }}
-                disabled={busy !== null}
-              >
-                Register target
-              </button>
+              {page !== "leases" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => {
+                    setPage("targets");
+                    setRegistering(true);
+                  }}
+                  disabled={busy !== null}
+                >
+                  Register target
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -516,21 +604,28 @@ export function App() {
 
           {page === "overview" ? (
             <>
-              <section className="metric-grid" aria-label="Target overview">
+              <section className="metric-grid" aria-label="Infrastructure overview">
                 <article className="metric-card">
                   <small>Total targets</small>
                   <strong>{targets.length}</strong>
                   <span>Across Docker, Kubernetes, and SSH</span>
                 </article>
+                <article className="metric-card warning-accent">
+                  <small>Target attention</small>
+                  <strong>{attentionCount}</strong>
+                  <span>
+                    {readyCount} ready · {unavailableCount} unavailable
+                  </span>
+                </article>
                 <article className="metric-card success-accent">
-                  <small>Ready</small>
-                  <strong>{readyCount}</strong>
-                  <span>Passed the latest Control Plane probe</span>
+                  <small>Environment leases</small>
+                  <strong>{leases.length}</strong>
+                  <span>{readyLeaseCount} currently ready</span>
                 </article>
                 <article className="metric-card warning-accent">
-                  <small>Needs attention</small>
-                  <strong>{attentionCount}</strong>
-                  <span>{unavailableCount} currently unavailable</span>
+                  <small>Lease attention</small>
+                  <strong>{leaseAttentionCount}</strong>
+                  <span>Failed lifecycle or blocked cleanup</span>
                 </article>
               </section>
               <section className="panel overview-panel">
@@ -552,8 +647,27 @@ export function App() {
                   }}
                 />
               </section>
+              <section className="panel overview-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Lease lifecycle</h2>
+                    <p>Desired, observed, and cleanup phases from Control Plane.</p>
+                  </div>
+                  <button className="text-button" type="button" onClick={() => setPage("leases")}>
+                    View all leases →
+                  </button>
+                </div>
+                <LeaseTable
+                  leases={leases.slice(0, 6)}
+                  selectedLeaseId={selectedLeaseId}
+                  onSelect={(leaseId) => {
+                    setPage("leases");
+                    selectLease(leaseId);
+                  }}
+                />
+              </section>
             </>
-          ) : (
+          ) : page === "targets" ? (
             <section className="target-layout">
               <div className="panel target-list-panel">
                 <div className="panel-heading">
@@ -583,6 +697,35 @@ export function App() {
                     onProbe={probeTarget}
                     disabled={busy !== null}
                   />
+                )}
+              </aside>
+            </section>
+          ) : (
+            <section className="target-layout">
+              <div className="panel target-list-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Leases</h2>
+                    <p>{leases.length} server-authoritative resources</p>
+                  </div>
+                  <span className="scope-chip">leases.list</span>
+                </div>
+                <LeaseTable
+                  leases={leases}
+                  selectedLeaseId={selectedLeaseId}
+                  onSelect={selectLease}
+                />
+              </div>
+
+              <aside className="panel detail-panel" aria-label="Selected environment lease">
+                {selectedLease === undefined ? (
+                  <div className="empty-state">
+                    <span aria-hidden="true">◇</span>
+                    <h2>No lease selected</h2>
+                    <p>Select a lease from the live Admin API list.</p>
+                  </div>
+                ) : (
+                  <LeaseDetail lease={selectedLease} />
                 )}
               </aside>
             </section>
@@ -759,6 +902,64 @@ function TargetTable({
   );
 }
 
+function LeaseTable({
+  leases,
+  selectedLeaseId,
+  onSelect,
+}: Readonly<{
+  leases: readonly EnvironmentLease[];
+  selectedLeaseId: string;
+  onSelect: (leaseId: string) => void;
+}>) {
+  if (leases.length === 0)
+    return <div className="table-empty">No environment leases exist in this project.</div>;
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Observed</th>
+            <th>Cleanup</th>
+            <th>Generation</th>
+            <th>Expires</th>
+          </tr>
+        </thead>
+        <tbody>
+          {leases.map((lease) => (
+            <tr
+              key={lease.metadata.uid}
+              className={lease.metadata.uid === selectedLeaseId ? "selected" : ""}
+              onClick={() => onSelect(lease.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(lease.metadata.uid)}>
+                  <strong>{lease.metadata.name}</strong>
+                  <small>{lease.metadata.uid}</small>
+                </button>
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(lease.spec.observedPhase)}`}>
+                  <i />
+                  {lease.spec.observedPhase}
+                </span>
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(lease.spec.cleanupPhase)}`}>
+                  <i />
+                  {lease.spec.cleanupPhase}
+                </span>
+              </td>
+              <td className="mono">g{lease.spec.generation}</td>
+              <td>{formatTime(lease.spec.expiresAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TargetDetail({
   target,
   onProbe,
@@ -847,6 +1048,92 @@ function TargetDetail({
           Run probe
         </button>
       </section>
+    </>
+  );
+}
+
+function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
+  return (
+    <>
+      <div className="detail-heading">
+        <div className="target-glyph" aria-hidden="true">
+          L
+        </div>
+        <div>
+          <div className="eyebrow">Environment lease</div>
+          <h2>{lease.metadata.name}</h2>
+          <span className={`phase ${phaseTone(lease.spec.observedPhase)}`}>
+            <i />
+            {lease.spec.observedPhase}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>Lease ID</dt>
+          <dd className="mono">{lease.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>Environment ID</dt>
+          <dd className="mono">{lease.spec.environmentId}</dd>
+        </div>
+        <div>
+          <dt>Target</dt>
+          <dd className="mono">{lease.spec.targetId ?? "Legacy lease"}</dd>
+        </div>
+        <div>
+          <dt>Desired phase</dt>
+          <dd>{lease.spec.desiredPhase}</dd>
+        </div>
+        <div>
+          <dt>Cleanup phase</dt>
+          <dd className={lease.spec.cleanupPhase === "blocked" ? "danger-text" : ""}>
+            {lease.spec.cleanupPhase}
+          </dd>
+        </div>
+        <div>
+          <dt>Generation</dt>
+          <dd className="mono">{lease.spec.generation}</dd>
+        </div>
+        <div>
+          <dt>Resource version</dt>
+          <dd className="mono">{lease.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>Release digest</dt>
+          <dd className="mono break">{lease.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>CPU / memory</dt>
+          <dd>
+            {lease.spec.cpuLimitMillis === undefined
+              ? "Not bound"
+              : `${lease.spec.cpuLimitMillis} mCPU / ${Math.round((lease.spec.memoryLimitBytes ?? 0) / 1_048_576)} MiB`}
+          </dd>
+        </div>
+        <div>
+          <dt>Provider credential ref</dt>
+          <dd className="mono">{lease.spec.providerCredentialRef ?? "Legacy lease"}</dd>
+        </div>
+        <div>
+          <dt>Worker endpoint</dt>
+          <dd className="mono break">{lease.spec.workerEndpoint ?? "Not ready"}</dd>
+        </div>
+        <div>
+          <dt>Expires</dt>
+          <dd>{formatTime(lease.spec.expiresAt)}</dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{formatTime(lease.metadata.updatedAt)}</dd>
+        </div>
+        {lease.spec.stableErrorCode !== undefined && lease.spec.stableErrorCode !== "" ? (
+          <div>
+            <dt>Stable error</dt>
+            <dd className="danger-text">{lease.spec.stableErrorCode}</dd>
+          </div>
+        ) : null}
+      </dl>
     </>
   );
 }

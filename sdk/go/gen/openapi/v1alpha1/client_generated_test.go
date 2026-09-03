@@ -153,6 +153,32 @@ func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetRoute(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientUsesAdminEnvironmentLeaseRoutes(t *testing.T) {
+	page := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentLeasePage","environmentLeases":[]}`)
+	lease := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"CloudEnvironmentLease","metadata":{"uid":"lease-alpha","name":"lease-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"desiredPhase":"active","observedPhase":"provisioning","cleanupPhase":"none","environmentId":"environment-alpha","releaseDigest":"sha256:` + strings.Repeat("a", 64) + `","expiresAt":"2026-09-03T09:00:00Z"}}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		if strings.HasSuffix(request.Path, "/lease-alpha") {
+			return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "1"}, Body: lease}, nil
+		}
+		return Response{Status: 200, Body: page}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.ListAdminEnvironmentLeases(ctx, "tenant-alpha", "project-alpha", "req-alpha", 1, "lease-page-token-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetAdminEnvironmentLease(ctx, "tenant-alpha", "project-alpha", "lease-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1" || seen[1].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha" {
+		t.Fatalf("requests = %#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
 	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}],"nextPageToken":"session-page-token-1"}`)

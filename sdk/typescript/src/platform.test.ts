@@ -164,9 +164,9 @@ describe("generated platform JSON models", () => {
     });
     expect(decodeEnvironmentLeasePage(JSON.parse(page)).environmentLeases).toHaveLength(1);
     expect(parseEnvironmentLeasePage(page).value.nextPageToken).toBe("lease-page-token-2");
-    let seen: FixtureRequest | undefined;
+    const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
-      seen = request;
+      seen.push(request);
       return { status: 200, headers: {}, body: page };
     });
     const result = await client.listManagedHostEnvironmentLeases(
@@ -177,8 +177,18 @@ describe("generated platform JSON models", () => {
       "lease-page-token-1",
     );
     expect(result.value.environmentLeases[0]?.metadata.uid).toBe("lease-alpha");
-    expect(seen?.path).toBe(
+    await client.listAdminEnvironmentLeases(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "lease-page-token-1",
+    );
+    expect(seen[0]?.path).toBe(
       "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
+    );
+    expect(seen[1]?.path).toBe(
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
     );
   });
   it("lists deployment targets with project-bound pagination", async () => {

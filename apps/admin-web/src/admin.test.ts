@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  listAdminLeases,
   listAdminTargets,
   readSavedAdminConnection,
   writeSavedAdminConnection,
-  type AdminTargetClient,
+  type AdminClient,
 } from "./admin";
 
 describe("Admin Web boundary", () => {
@@ -28,10 +29,36 @@ describe("Admin Web boundary", () => {
           },
         };
       },
-    } as unknown as AdminTargetClient;
+    } as unknown as AdminClient;
 
     await listAdminTargets(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(paths).toEqual([undefined, "next-page"]);
+  });
+
+  it("uses only Admin API lease pagination", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminEnvironmentLeases: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        tokens.push(pageToken);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "EnvironmentLeasePage" as const,
+            environmentLeases: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    await listAdminLeases(client, "tenant-alpha", "project-alpha", new AbortController().signal);
+    expect(tokens).toEqual([undefined, "next-page"]);
   });
 
   it("persists context but never bearer or target credentials", () => {

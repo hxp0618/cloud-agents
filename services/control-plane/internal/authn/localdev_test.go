@@ -126,16 +126,18 @@ func TestLocalVerifierSeparatesAdminScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "targets.list"}
-	if _, err := verifier.Verify(userToken, request); errorCategory(err) != errorScopeMismatch {
-		t.Fatalf("user token admin scope error=%v", err)
-	}
 	adminToken, err := verifier.IssueAdminToken(claims)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := verifier.Verify(adminToken, request); err != nil {
-		t.Fatalf("admin token verification failed: %v", err)
+	for _, permission := range []string{"leases.get", "leases.list", "targets.list"} {
+		request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: permission}
+		if _, err := verifier.Verify(userToken, request); errorCategory(err) != errorScopeMismatch {
+			t.Fatalf("user token %s error=%v", permission, err)
+		}
+		if _, err := verifier.Verify(adminToken, request); err != nil {
+			t.Fatalf("admin token %s verification failed: %v", permission, err)
+		}
 	}
 }
 

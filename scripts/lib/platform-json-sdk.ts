@@ -216,7 +216,9 @@ function validateJSONSDKAuthority(root: string): void {
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
   const expected = [
     "adminGetDeploymentTarget",
+    "adminGetEnvironmentLease",
     "adminListDeploymentTargets",
+    "adminListEnvironmentLeases",
     "adminProbeDeploymentTarget",
     "adminRegisterDeploymentTarget",
     "managedAgentBindRole",

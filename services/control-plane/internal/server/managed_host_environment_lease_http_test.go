@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -160,11 +161,67 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 
 type managedHostEnvironmentLeaseVerifierFake struct {
 	requests []authn.VerificationRequest
+	failAt   int
 }
 
 func (fake *managedHostEnvironmentLeaseVerifierFake) Verify(_ string, request authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
 	fake.requests = append(fake.requests, request)
+	if fake.failAt == len(fake.requests) {
+		return nil, errors.New("verification failed")
+	}
 	return &authn.VerifiedPrincipal{}, nil
+}
+
+func TestAdminEnvironmentLeaseHTTPIsReadOnlyAndChecksAdminScope(t *testing.T) {
+	now := time.Date(2026, time.September, 3, 9, 0, 0, 0, time.UTC)
+	verifier := &managedHostEnvironmentLeaseVerifierFake{}
+	store := &managedHostEnvironmentLeaseStoreFake{snapshot: internalmanagedhost.Snapshot{
+		Scope:   internalmanagedhost.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
+		LeaseID: "lease-alpha", LeaseName: "Lease Alpha", EnvironmentID: "environment-alpha",
+		ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Generation:    2, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", ResourceVersion: 3,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+	}}
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		req.Header.Set("X-Request-ID", "request-admin-lease")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response
+	}
+	listed := request(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=50")
+	if listed.Code != http.StatusOK || store.list != 1 || len(verifier.requests) != 3 || verifier.requests[0].RequiredPermission != "projects.get" || verifier.requests[1].RequiredPermission != "leases.list" || verifier.requests[2].RequiredPermission != "projects.get" {
+		t.Fatalf("list status=%d calls=%d requests=%#v body=%s", listed.Code, store.list, verifier.requests, listed.Body.String())
+	}
+	got := request(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha")
+	if got.Code != http.StatusOK || store.get != 1 || len(verifier.requests) != 6 || verifier.requests[4].RequiredPermission != "leases.get" {
+		t.Fatalf("get status=%d calls=%d requests=%#v body=%s", got.Code, store.get, verifier.requests, got.Body.String())
+	}
+	created := request(http.MethodPost, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases")
+	if created.Code != http.StatusMethodNotAllowed || store.create != 0 {
+		t.Fatalf("admin create status=%d calls=%d body=%s", created.Code, store.create, created.Body.String())
+	}
+}
+
+func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T) {
+	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-admin-lease")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"AUTHORIZATION_DENIED"`) || len(verifier.requests) != 2 {
+		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
+	}
 }
 
 func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testing.T) {

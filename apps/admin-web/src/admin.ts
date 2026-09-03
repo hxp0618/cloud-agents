@@ -3,14 +3,17 @@ import {
   JSONContractError,
   type Client,
   type DeploymentTarget,
+  type EnvironmentLease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-export type AdminTargetClient = Pick<
+export type AdminClient = Pick<
   Client,
   | "listAdminDeploymentTargets"
   | "registerAdminDeploymentTarget"
   | "getAdminDeploymentTarget"
   | "probeAdminDeploymentTarget"
+  | "listAdminEnvironmentLeases"
+  | "getAdminEnvironmentLease"
 >;
 
 export type SavedAdminConnection = Readonly<{
@@ -81,7 +84,7 @@ export function newIdempotencyKey(): string {
 }
 
 export async function listAdminTargets(
-  client: AdminTargetClient,
+  client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
@@ -110,6 +113,36 @@ export async function listAdminTargets(
   );
 }
 
+export async function listAdminLeases(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly EnvironmentLease[]> {
+  const leases: EnvironmentLease[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminEnvironmentLeases(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    leases.push(...page.value.environmentLeases);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated a lease page token.");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    leases.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
 export function replaceTarget(
   targets: readonly DeploymentTarget[],
   target: DeploymentTarget,
@@ -121,13 +154,24 @@ export function replaceTarget(
   );
 }
 
+export function replaceLease(
+  leases: readonly EnvironmentLease[],
+  lease: EnvironmentLease,
+): readonly EnvironmentLease[] {
+  return Object.freeze(
+    [...leases.filter(({ metadata }) => metadata.uid !== lease.metadata.uid), lease].toSorted(
+      (left, right) => left.metadata.name.localeCompare(right.metadata.name),
+    ),
+  );
+}
+
 export function adminErrorMessage(error: unknown): string {
   if (error instanceof ClientError && error.status === 401)
     return "The admin token expired or was rejected. Disconnect and authenticate again.";
   if (error instanceof ClientError && error.status === 403)
     return "This token is valid but lacks the required Admin API scope or project authority.";
   if (error instanceof ClientError && error.status === 404)
-    return "The selected target no longer exists. Refresh the project authority.";
+    return "The selected resource no longer exists. Refresh the project authority.";
   if (error instanceof ClientError && error.status === 409)
     return "The target generation changed or the operation conflicts with current state. Refresh and retry.";
   if (error instanceof ClientError && error.status === 400)

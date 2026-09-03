@@ -24,6 +24,7 @@ import (
 
 const (
 	ManagedHostEnvironmentLeaseRoutePrefix = "/v1/managed-host/tenants/"
+	AdminEnvironmentLeaseRoutePrefix       = "/v1/admin/tenants/"
 	environmentActuationTimeout            = 2 * time.Minute
 )
 
@@ -46,6 +47,7 @@ type ManagedHostEnvironmentLeaseHTTPServer struct {
 	sshCredentials        *sshtarget.CredentialDirectory
 	workerTrust           dockertarget.WorkerTrust
 	kubernetesWorkerTrust kubernetestarget.WorkerTrust
+	admin                 bool
 }
 
 func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, kubernetesCredentials *kubernetestarget.CredentialDirectory, sshCredentials *sshtarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
@@ -55,6 +57,15 @@ func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, stor
 	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, kubernetesCredentials: kubernetesCredentials, sshCredentials: sshCredentials, workerTrust: workerTrust, kubernetesWorkerTrust: kubernetestarget.WorkerTrust{ClientCertificate: workerTrust.ClientCertificate, RootCAs: workerTrust.RootCAs}}, nil
 }
 
+func NewAdminEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
+	server, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		return nil, err
+	}
+	server.admin = true
+	return server, nil
+}
+
 func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
 	if server == nil || server.verifier == nil || server.store == nil || request == nil {
@@ -62,6 +73,9 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		return
 	}
 	tenantID, projectID, leaseID, action, ok := managedHostEnvironmentLeasePath(request.URL.Path)
+	if server.admin {
+		tenantID, projectID, leaseID, action, ok = adminEnvironmentLeasePath(request.URL.Path)
+	}
 	if !ok {
 		writePublicProblem(writer, http.StatusNotFound, "route_not_found")
 		return
@@ -80,6 +94,21 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 	if !ok {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
+	}
+	if server.admin {
+		permission, allowed := environmentLeaseAdminPermission(action, request.Method)
+		if !allowed {
+			writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"}); err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
+		if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
+			writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
+			return
+		}
 	}
 	switch {
 	case action == "collection" && request.Method == http.MethodGet:
@@ -600,10 +629,18 @@ func writeManagedHostEnvironmentLeasePage(writer http.ResponseWriter, requestID,
 }
 
 func managedHostEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, action string, ok bool) {
-	if !strings.HasPrefix(path, ManagedHostEnvironmentLeaseRoutePrefix) {
+	return environmentLeasePathWithPrefix(path, ManagedHostEnvironmentLeaseRoutePrefix)
+}
+
+func adminEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, action string, ok bool) {
+	return environmentLeasePathWithPrefix(path, AdminEnvironmentLeaseRoutePrefix)
+}
+
+func environmentLeasePathWithPrefix(path, prefix string) (tenantID, projectID, leaseID, action string, ok bool) {
+	if !strings.HasPrefix(path, prefix) {
 		return "", "", "", "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(path, ManagedHostEnvironmentLeaseRoutePrefix), "/")
+	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "environment-leases" && parts[0] != "" && parts[2] != "" {
 		return parts[0], parts[2], "", "collection", true
 	}
@@ -652,6 +689,22 @@ func decodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, token strin
 func HandlesManagedHostEnvironmentLeasePath(path string) bool {
 	_, _, _, _, ok := managedHostEnvironmentLeasePath(path)
 	return ok
+}
+
+func HandlesAdminEnvironmentLeasePath(path string) bool {
+	_, _, _, _, ok := adminEnvironmentLeasePath(path)
+	return ok
+}
+
+func environmentLeaseAdminPermission(action, method string) (string, bool) {
+	switch {
+	case action == "collection" && method == http.MethodGet:
+		return "leases.list", true
+	case action == "get" && method == http.MethodGet:
+		return "leases.get", true
+	default:
+		return "", false
+	}
 }
 
 func managedHostEnvironmentLeaseErrorStatus(err error) (int, string) {
