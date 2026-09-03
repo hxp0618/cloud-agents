@@ -693,6 +693,130 @@ func (client *Client) UpgradeManagedHostEnvironmentLease(ctx context.Context, te
 	}
 	return value, nil
 }
+func (client *Client) ListAdminDeploymentTargets(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (DeploymentTargetPageResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return DeploymentTargetPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return DeploymentTargetPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return DeploymentTargetPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return DeploymentTargetPageResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetPageResult{}, client.problemError("adminListDeploymentTargets", response)
+	}
+	value, err := platform.DecodeDeploymentTargetPageResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetPageResult{}, &ClientError{Operation: "adminListDeploymentTargets", Status: response.Status, Cause: err}
+	}
+	for _, target := range value.Value.DeploymentTargets {
+		if target.Metadata.TenantRef.ID != tenantID || target.Spec.ProjectRef.ID != projectID {
+			return DeploymentTargetPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets")
+		}
+	}
+	return value, nil
+}
+func (client *Client) RegisterAdminDeploymentTarget(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.DeploymentTargetRegisterRequest) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetRegisterRequestJSON(body)
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 201 {
+		return DeploymentTargetResult{}, client.problemError("adminRegisterDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "adminRegisterDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.TargetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetAdminDeploymentTarget(ctx context.Context, tenantID, projectID, targetID, requestID string) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetResult{}, client.problemError("adminGetDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "adminGetDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ProbeAdminDeploymentTarget(ctx context.Context, tenantID, projectID, targetID, requestID, idempotencyKey string, body platform.DeploymentTargetProbeRequest) (DeploymentTargetResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetProbeRequestJSON(body)
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":probe", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetResult{}, client.problemError("adminProbeDeploymentTarget", response)
+	}
+	value, err := DecodeDeploymentTargetResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetResult{}, &ClientError{Operation: "adminProbeDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
 func (client *Client) ListDeploymentTargets(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (DeploymentTargetPageResult, error) {
 	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
 		return DeploymentTargetPageResult{}, err

@@ -216,9 +216,9 @@ describe("generated platform JSON models", () => {
     });
     expect(decodeDeploymentTargetPage(JSON.parse(page)).deploymentTargets).toHaveLength(1);
     expect(parseDeploymentTargetPage(page).value.nextPageToken).toBe("target-page-token-2");
-    let seen: FixtureRequest | undefined;
+    const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
-      seen = request;
+      seen.push(request);
       return { status: 200, headers: {}, body: page };
     });
     const result = await client.listDeploymentTargets(
@@ -229,8 +229,18 @@ describe("generated platform JSON models", () => {
       "target-page-token-1",
     );
     expect(result.value.deploymentTargets[0]?.metadata.uid).toBe("docker-alpha");
-    expect(seen?.path).toBe(
+    await client.listAdminDeploymentTargets(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "target-page-token-1",
+    );
+    expect(seen[0]?.path).toBe(
       "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
+    );
+    expect(seen[1]?.path).toBe(
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
     );
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {

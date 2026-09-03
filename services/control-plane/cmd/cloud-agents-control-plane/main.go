@@ -239,6 +239,7 @@ type controlPlaneConfig struct {
 	listen                string
 	databaseURL           string
 	localTokenFile        string
+	localAdminTokenFile   string
 	localTenantID         string
 	localSubject          string
 	workerEndpoint        string
@@ -300,7 +301,7 @@ func run(ctx context.Context, args []string) error {
 	if config.databaseURL == "" {
 		return errMissingDatabaseURL
 	}
-	if config.localTokenFile == "" {
+	if config.localTokenFile == "" || config.localAdminTokenFile == "" || config.localTokenFile == config.localAdminTokenFile {
 		return errInvalidTokenFilePath
 	}
 
@@ -345,8 +346,16 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(config.localTokenFile) }()
+	adminToken, issueAdminErr := verifier.IssueAdminToken(authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject})
+	if issueAdminErr != nil {
+		return errors.New("local admin token issuance failed")
+	}
+	if err := writeLocalTokenFile(config.localAdminTokenFile, adminToken); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(config.localAdminTokenFile) }()
 	refreshContext, stopTokenRefresh := context.WithCancel(ctx)
-	tokenRefreshErrors := refreshLocalTokenFile(refreshContext, verifier, authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject}, config.localTokenFile, localTokenRefreshInterval)
+	tokenRefreshErrors := refreshLocalTokenFiles(refreshContext, verifier, authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject}, config.localTokenFile, config.localAdminTokenFile, localTokenRefreshInterval)
 	defer func() {
 		stopTokenRefresh()
 		for range tokenRefreshErrors {
@@ -438,7 +447,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local deployment target HTTP server is unavailable")
 	}
+	adminDeploymentTargetHTTPServer, err := server.NewAdminDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber, sshProber)
+	if err != nil {
+		return errors.New("local admin deployment target HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
+	mux.Handle("/v1/admin/", adminDeploymentTargetHTTPServer)
 	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
 	mux.Handle(server.RoleCollectionRoute, roleHTTPServer)
@@ -577,6 +591,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	listen := set.String("listen", "127.0.0.1:8080", "loopback listen address")
 	databaseURL := set.String("database-url", "", "task-local PostgreSQL URL")
 	localTokenFile := set.String("local-token-file", "", "write one ephemeral local bearer token to this 0600 file")
+	localAdminTokenFile := set.String("local-admin-token-file", "", "write one ephemeral local admin bearer token to this 0600 file")
 	localTenantID := set.String("local-tenant-id", "tenant-coordination-normal", "tenant for the optional local token")
 	localSubject := set.String("local-subject", "user-admin", "subject for the optional local token")
 	workerEndpoint := set.String("worker-endpoint", "", "loopback HTTP endpoint of the localdev Worker")
@@ -613,7 +628,9 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 			resolvedSSHCredentials = getenv(localSSHCredentialsEnvironment)
 		}
 	}
-	if *localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator))) {
+	if (*localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator)))) ||
+		(*localAdminTokenFile != "" && (strings.TrimSpace(*localAdminTokenFile) != *localAdminTokenFile || strings.HasSuffix(*localAdminTokenFile, string(os.PathSeparator)))) ||
+		(*localTokenFile != "" && *localTokenFile == *localAdminTokenFile) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
 	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || strings.TrimSpace(resolvedSSHCredentials) != resolvedSSHCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
@@ -623,6 +640,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		listen:                *listen,
 		databaseURL:           resolvedDatabaseURL,
 		localTokenFile:        *localTokenFile,
+		localAdminTokenFile:   *localAdminTokenFile,
 		localTenantID:         *localTenantID,
 		localSubject:          *localSubject,
 		workerEndpoint:        resolvedWorkerEndpoint,
@@ -859,7 +877,7 @@ func replaceLocalTokenFile(path, token string) error {
 	return nil
 }
 
-func refreshLocalTokenFile(ctx context.Context, verifier *authn.LocalVerifier, claims authn.LocalTokenClaims, path string, interval time.Duration) <-chan error {
+func refreshLocalTokenFiles(ctx context.Context, verifier *authn.LocalVerifier, claims authn.LocalTokenClaims, userPath, adminPath string, interval time.Duration) <-chan error {
 	errorsChannel := make(chan error, 1)
 	go func() {
 		defer close(errorsChannel)
@@ -876,7 +894,13 @@ func refreshLocalTokenFile(ctx context.Context, verifier *authn.LocalVerifier, c
 			case <-ticker.C:
 				token, err := verifier.IssueToken(claims)
 				if err == nil {
-					err = replaceLocalTokenFile(path, token)
+					err = replaceLocalTokenFile(userPath, token)
+				}
+				if err == nil {
+					token, err = verifier.IssueAdminToken(claims)
+				}
+				if err == nil {
+					err = replaceLocalTokenFile(adminPath, token)
 				}
 				if err != nil {
 					errorsChannel <- errors.New("local token refresh failed")

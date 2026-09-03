@@ -24,6 +24,8 @@ import (
 
 const deploymentTargetCompletionTimeout = 5 * time.Second
 
+const adminDeploymentTargetRoutePrefix = "/v1/admin/tenants/"
+
 type deploymentTargetStore interface {
 	RegisterDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.RegisterInput) (internaldeploymenttarget.Snapshot, error)
 	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
@@ -39,6 +41,7 @@ type DeploymentTargetHTTPServer struct {
 	dockerProber     *dockertarget.CredentialDirectory
 	kubernetesProber *kubernetestarget.CredentialDirectory
 	sshProber        *sshtarget.CredentialDirectory
+	admin            bool
 }
 
 type managedDeploymentTargetWorker struct {
@@ -54,6 +57,15 @@ func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymen
 	return &DeploymentTargetHTTPServer{verifier: verifier, store: store, dockerProber: dockerProber, kubernetesProber: kubernetesProber, sshProber: sshProber}, nil
 }
 
+func NewAdminDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, dockerProber *dockertarget.CredentialDirectory, kubernetesProber *kubernetestarget.CredentialDirectory, sshProber *sshtarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
+	server, err := NewDeploymentTargetHTTPServer(verifier, store, dockerProber, kubernetesProber, sshProber)
+	if err != nil {
+		return nil, err
+	}
+	server.admin = true
+	return server, nil
+}
+
 func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
 	if server == nil || server.verifier == nil || server.store == nil || request == nil {
@@ -61,6 +73,9 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		return
 	}
 	tenantID, projectID, targetID, action, ok := deploymentTargetPath(request.URL.Path)
+	if server.admin {
+		tenantID, projectID, targetID, action, ok = adminDeploymentTargetPath(request.URL.Path)
+	}
 	if !ok {
 		writePublicProblem(writer, http.StatusNotFound, "route_not_found")
 		return
@@ -79,6 +94,25 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 	if !ok {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
+	}
+	if server.admin {
+		permission, allowed := deploymentTargetAdminPermission(action, request.Method)
+		if !allowed {
+			writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		projectPermission := "projects.get"
+		if request.Method != http.MethodGet {
+			projectPermission = "projects.act"
+		}
+		if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
+		if _, err := server.verify(bearer, tenantID, projectID, permission); err != nil {
+			writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
+			return
+		}
 	}
 	switch {
 	case action == "collection" && request.Method == http.MethodGet:
@@ -469,10 +503,18 @@ func deploymentTargetResource(snapshot internaldeploymenttarget.Snapshot) platfo
 }
 
 func deploymentTargetPath(path string) (tenantID, projectID, targetID, action string, ok bool) {
-	if !strings.HasPrefix(path, ProjectRoutePrefix) {
+	return deploymentTargetPathWithPrefix(path, ProjectRoutePrefix)
+}
+
+func adminDeploymentTargetPath(path string) (tenantID, projectID, targetID, action string, ok bool) {
+	return deploymentTargetPathWithPrefix(path, adminDeploymentTargetRoutePrefix)
+}
+
+func deploymentTargetPathWithPrefix(path, prefix string) (tenantID, projectID, targetID, action string, ok bool) {
+	if !strings.HasPrefix(path, prefix) {
 		return "", "", "", "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(path, ProjectRoutePrefix), "/")
+	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "deployment-targets" && parts[0] != "" && parts[2] != "" {
 		return parts[0], parts[2], "", "collection", true
 	}
@@ -494,8 +536,28 @@ func deploymentTargetPath(path string) (tenantID, projectID, targetID, action st
 	return "", "", "", "", false
 }
 
+func deploymentTargetAdminPermission(action, method string) (string, bool) {
+	switch {
+	case action == "collection" && method == http.MethodGet:
+		return "targets.list", true
+	case action == "collection" && method == http.MethodPost:
+		return "targets.create", true
+	case action == "get" && method == http.MethodGet:
+		return "targets.get", true
+	case action == "probe" && method == http.MethodPost:
+		return "targets.act", true
+	default:
+		return "", false
+	}
+}
+
 func HandlesDeploymentTargetPath(path string) bool {
 	_, _, _, _, ok := deploymentTargetPath(path)
+	return ok
+}
+
+func HandlesAdminDeploymentTargetPath(path string) bool {
+	_, _, _, _, ok := adminDeploymentTargetPath(path)
 	return ok
 }
 

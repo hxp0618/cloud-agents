@@ -1,0 +1,852 @@
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  createHTTPClient,
+  type DeploymentTarget,
+  type DeploymentTargetRegisterRequest,
+} from "@cloud-agents/cloud-agent-platform-sdk/platform";
+
+import {
+  adminErrorMessage,
+  listAdminTargets,
+  newIdempotencyKey,
+  newRequestId,
+  readSavedAdminConnection,
+  replaceTarget,
+  writeSavedAdminConnection,
+  type AdminTargetClient,
+  type SavedAdminConnection,
+} from "./admin";
+
+type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+type Page = "overview" | "targets";
+type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
+type BusyOperation = Readonly<{ key: string; label: string }>;
+
+const targetEndpointPlaceholder: Readonly<Record<TargetKind, string>> = Object.freeze({
+  docker: "https://docker.example.test:2376",
+  kubernetes: "https://kubernetes.example.test:6443",
+  ssh: "ssh://worker.example.test:22",
+});
+
+function initialConnection(): SavedAdminConnection {
+  const saved = readSavedAdminConnection(window.sessionStorage);
+  return {
+    endpoint: saved.endpoint || window.location.origin,
+    tenantId: saved.tenantId,
+    projectId: saved.projectId,
+  };
+}
+
+function statusLabel(status: ConnectionStatus): string {
+  if (status === "connected") return "Admin API connected";
+  if (status === "connecting") return "Authorizing";
+  if (status === "error") return "Connection failed";
+  return "Disconnected";
+}
+
+function phaseTone(phase: string): string {
+  if (phase === "ready") return "success";
+  if (phase === "probing") return "running";
+  if (phase === "unavailable") return "danger";
+  return "neutral";
+}
+
+function formatTime(value: string | undefined): string {
+  if (value === undefined || value === "") return "Never";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString();
+}
+
+async function loadTargetAuthority(
+  client: AdminTargetClient,
+  connection: SavedAdminConnection,
+  preferredTargetId: string,
+  signal: AbortSignal,
+): Promise<Readonly<{ targets: readonly DeploymentTarget[]; selectedTargetId: string }>> {
+  let targets = await listAdminTargets(client, connection.tenantId, connection.projectId, signal);
+  const selectedTargetId = targets.some(({ metadata }) => metadata.uid === preferredTargetId)
+    ? preferredTargetId
+    : (targets[0]?.metadata.uid ?? "");
+  if (selectedTargetId !== "") {
+    const detail = await client.getAdminDeploymentTarget(
+      connection.tenantId,
+      connection.projectId,
+      selectedTargetId,
+      newRequestId(),
+      signal,
+    );
+    targets = replaceTarget(targets, detail.value);
+  }
+  return Object.freeze({ targets, selectedTargetId });
+}
+
+export function App() {
+  const [connection, setConnection] = useState(initialConnection);
+  const [token, setToken] = useState("");
+  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [client, setClient] = useState<AdminTargetClient | null>(null);
+  const [targets, setTargets] = useState<readonly DeploymentTarget[]>(Object.freeze([]));
+  const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [page, setPage] = useState<Page>("overview");
+  const [registering, setRegistering] = useState(false);
+  const [busy, setBusy] = useState<BusyOperation | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [targetForm, setTargetForm] = useState({
+    targetId: "",
+    targetName: "",
+    targetKind: "docker" as TargetKind,
+    endpoint: "",
+    credentialRef: "",
+  });
+  const requestRef = useRef<AbortController | null>(null);
+  const busyRef = useRef(false);
+  const pendingKeysRef = useRef(new Map<string, string>());
+
+  const connected = status === "connected" && client !== null;
+  const selectedTarget = targets.find(({ metadata }) => metadata.uid === selectedTargetId);
+  const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
+  const unavailableCount = targets.filter(
+    ({ spec }) => spec.observedPhase === "unavailable",
+  ).length;
+  const attentionCount = targets.length - readyCount;
+
+  useEffect(
+    () => () => {
+      requestRef.current?.abort();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      !connected ||
+      client === null ||
+      !targets.some(({ spec }) => spec.observedPhase === "probing")
+    )
+      return;
+    const controller = new AbortController();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible" || busyRef.current) return;
+      void loadTargetAuthority(
+        client,
+        connection,
+        selectedTargetId,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+      )
+        .then((loaded) => {
+          setTargets(loaded.targets);
+          setSelectedTargetId(loaded.selectedTargetId);
+        })
+        .catch((cause: unknown) => {
+          if (!controller.signal.aborted) setError(adminErrorMessage(cause));
+        });
+    }, 5_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [client, connected, connection, selectedTargetId, targets]);
+
+  function updateConnection(field: keyof SavedAdminConnection, value: string) {
+    setConnection((current) => ({ ...current, [field]: value }));
+  }
+
+  function disconnect() {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    setClient(null);
+    setToken("");
+    setTargets(Object.freeze([]));
+    setSelectedTargetId("");
+    setBusy(null);
+    setError("");
+    setNotice("");
+    setStatus("disconnected");
+  }
+
+  async function connect(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (status === "connecting") return;
+    const nextConnection = {
+      endpoint: connection.endpoint.trim().replace(/\/+$/u, ""),
+      tenantId: connection.tenantId.trim(),
+      projectId: connection.projectId.trim(),
+    };
+    const bearer = token.trim();
+    if (Object.values(nextConnection).some((value) => value === "") || bearer === "") {
+      setStatus("error");
+      setError("Endpoint, tenant, project, and admin bearer token are required.");
+      return;
+    }
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setStatus("connecting");
+    setError("");
+    try {
+      const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
+      const loaded = await loadTargetAuthority(
+        nextClient,
+        nextConnection,
+        selectedTargetId,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+      );
+      setClient(nextClient);
+      setConnection(nextConnection);
+      setTargets(loaded.targets);
+      setSelectedTargetId(loaded.selectedTargetId);
+      writeSavedAdminConnection(window.sessionStorage, nextConnection);
+      setToken("");
+      setStatus("connected");
+    } catch (cause) {
+      setClient(null);
+      setStatus(controller.signal.aborted ? "disconnected" : "error");
+      setError(controller.signal.aborted ? "" : adminErrorMessage(cause));
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
+  function idempotencyKey(key: string): string {
+    const existing = pendingKeysRef.current.get(key);
+    if (existing !== undefined) return existing;
+    const created = newIdempotencyKey();
+    pendingKeysRef.current.set(key, created);
+    return created;
+  }
+
+  async function runOperation(
+    key: string,
+    label: string,
+    operation: (signal: AbortSignal) => Promise<void>,
+  ) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy({ key, label });
+    setError("");
+    setNotice("");
+    const controller = new AbortController();
+    requestRef.current = controller;
+    try {
+      await operation(AbortSignal.any([controller.signal, AbortSignal.timeout(150_000)]));
+      pendingKeysRef.current.delete(key);
+      setNotice(`${label} completed.`);
+    } catch (cause) {
+      setError(adminErrorMessage(cause));
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+      busyRef.current = false;
+      setBusy(null);
+    }
+  }
+
+  function refresh() {
+    if (client === null) return;
+    void runOperation("refresh", "Authority refresh", async (signal) => {
+      const loaded = await loadTargetAuthority(client, connection, selectedTargetId, signal);
+      setTargets(loaded.targets);
+      setSelectedTargetId(loaded.selectedTargetId);
+    });
+  }
+
+  function selectTarget(targetId: string) {
+    if (client === null || targetId === selectedTargetId) {
+      setSelectedTargetId(targetId);
+      return;
+    }
+    setSelectedTargetId(targetId);
+    void runOperation(`get:${targetId}`, "Target detail refresh", async (signal) => {
+      const result = await client.getAdminDeploymentTarget(
+        connection.tenantId,
+        connection.projectId,
+        targetId,
+        newRequestId(),
+        signal,
+      );
+      setTargets((current) => replaceTarget(current, result.value));
+    });
+  }
+
+  function registerTarget(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null) return;
+    const body: DeploymentTargetRegisterRequest = {
+      targetId: targetForm.targetId.trim(),
+      targetName: targetForm.targetName.trim(),
+      targetKind: targetForm.targetKind,
+      endpoint: targetForm.endpoint.trim(),
+      credentialRef: targetForm.credentialRef.trim(),
+    };
+    const key = `register:${body.targetId}`;
+    void runOperation(key, `Register ${body.targetName}`, async (signal) => {
+      const result = await client.registerAdminDeploymentTarget(
+        connection.tenantId,
+        connection.projectId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      setTargets((current) => replaceTarget(current, result.value));
+      setSelectedTargetId(result.value.metadata.uid);
+      setTargetForm({
+        targetId: "",
+        targetName: "",
+        targetKind: "docker",
+        endpoint: "",
+        credentialRef: "",
+      });
+      setRegistering(false);
+    });
+  }
+
+  function probeTarget() {
+    if (client === null || selectedTarget === undefined) return;
+    const target = selectedTarget;
+    const key = `probe:${target.metadata.uid}:${target.spec.generation}`;
+    void runOperation(key, `Probe ${target.metadata.name}`, async (signal) => {
+      const result = await client.probeAdminDeploymentTarget(
+        connection.tenantId,
+        connection.projectId,
+        target.metadata.uid,
+        newRequestId(),
+        idempotencyKey(key),
+        { expectedGeneration: target.spec.generation },
+        signal,
+      );
+      setTargets((current) => replaceTarget(current, result.value));
+    });
+  }
+
+  if (!connected) {
+    return (
+      <main className="connect-view">
+        <section className="connect-card" aria-labelledby="connect-title">
+          <div className="brand-lockup">
+            <span className="brand-mark" aria-hidden="true">
+              CA
+            </span>
+            <span>
+              <strong>Cloud Agents</strong>
+              <small>Admin Console</small>
+            </span>
+          </div>
+          <div className="eyebrow">Control Plane · Admin API</div>
+          <h1 id="connect-title">Operate deployment targets.</h1>
+          <p className="lede">
+            Connect with an admin-scoped token. The bearer stays in memory and every target action
+            runs through Control Plane.
+          </p>
+          <form className="connect-form" onSubmit={connect}>
+            <label>
+              <span>Control Plane endpoint</span>
+              <input
+                type="url"
+                value={connection.endpoint}
+                onChange={(event) => updateConnection("endpoint", event.target.value)}
+                placeholder="https://agents.example.com"
+                autoComplete="url"
+                required
+                disabled={status === "connecting"}
+              />
+              <small>
+                Use this origin when <code>/v1/admin</code> is reverse proxied.
+              </small>
+            </label>
+            <div className="form-row">
+              <label>
+                <span>Tenant ID</span>
+                <input
+                  value={connection.tenantId}
+                  onChange={(event) => updateConnection("tenantId", event.target.value)}
+                  placeholder="tenant-local"
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                />
+              </label>
+              <label>
+                <span>Project ID</span>
+                <input
+                  value={connection.projectId}
+                  onChange={(event) => updateConnection("projectId", event.target.value)}
+                  placeholder="project-local"
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                />
+              </label>
+            </div>
+            <label>
+              <span>Admin bearer token</span>
+              <input
+                type="password"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                placeholder="Required scopes: targets.list/get/create/act"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                disabled={status === "connecting"}
+              />
+              <small>Never written to local or session storage.</small>
+            </label>
+            {error !== "" ? (
+              <p className="banner danger" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <button
+              className="button primary wide"
+              type="submit"
+              disabled={status === "connecting"}
+            >
+              {status === "connecting" ? "Authorizing…" : "Connect to Admin API"}
+            </button>
+          </form>
+          <div className={`connection-state state-${status}`} role="status" aria-live="polite">
+            <span className="status-dot" aria-hidden="true" />
+            {statusLabel(status)}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-lockup sidebar-brand">
+          <span className="brand-mark" aria-hidden="true">
+            CA
+          </span>
+          <span>
+            <strong>Cloud Agents</strong>
+            <small>Admin Console</small>
+          </span>
+        </div>
+        <nav aria-label="Admin resources">
+          <button
+            className={page === "overview" ? "active" : ""}
+            onClick={() => setPage("overview")}
+          >
+            <span aria-hidden="true">⌁</span> Overview
+          </button>
+          <button className={page === "targets" ? "active" : ""} onClick={() => setPage("targets")}>
+            <span aria-hidden="true">◎</span> Deployment Targets
+            <b>{targets.length}</b>
+          </button>
+        </nav>
+        <div className="sidebar-boundary">
+          <small>Admin boundary</small>
+          <p>No conversations, prompts, workspace files, artifacts, or secret bytes.</p>
+        </div>
+      </aside>
+
+      <section className="app-main">
+        <header className="topbar">
+          <div className="breadcrumbs">
+            <small>Admin / {page === "overview" ? "Overview" : "Deployment Targets"}</small>
+            <strong>{connection.projectId}</strong>
+          </div>
+          <div className="topbar-context">
+            <span title={connection.endpoint}>{connection.endpoint}</span>
+            <span>{connection.tenantId}</span>
+            <span className="live">
+              <i /> Admin API
+            </span>
+          </div>
+          <button className="button ghost compact" type="button" onClick={disconnect}>
+            Disconnect
+          </button>
+        </header>
+
+        <main className="content">
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">Live Control Plane authority</div>
+              <h1>{page === "overview" ? "Operations overview" : "Deployment targets"}</h1>
+              <p>
+                {page === "overview"
+                  ? "Current target health for the selected tenant and project."
+                  : "Register and operate Docker, Kubernetes, and SSH execution capacity."}
+              </p>
+            </div>
+            <div className="heading-actions">
+              <button
+                className="button ghost"
+                type="button"
+                onClick={refresh}
+                disabled={busy !== null}
+              >
+                Refresh
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => {
+                  setPage("targets");
+                  setRegistering(true);
+                }}
+                disabled={busy !== null}
+              >
+                Register target
+              </button>
+            </div>
+          </div>
+
+          {busy !== null ? (
+            <div className="banner running" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" /> {busy.label}…
+              <button type="button" onClick={() => requestRef.current?.abort()}>
+                Cancel wait
+              </button>
+            </div>
+          ) : null}
+          {error !== "" ? (
+            <div className="banner danger" role="alert">
+              {error}
+            </div>
+          ) : null}
+          {notice !== "" ? (
+            <div className="banner success" role="status">
+              {notice}
+            </div>
+          ) : null}
+
+          {page === "overview" ? (
+            <>
+              <section className="metric-grid" aria-label="Target overview">
+                <article className="metric-card">
+                  <small>Total targets</small>
+                  <strong>{targets.length}</strong>
+                  <span>Across Docker, Kubernetes, and SSH</span>
+                </article>
+                <article className="metric-card success-accent">
+                  <small>Ready</small>
+                  <strong>{readyCount}</strong>
+                  <span>Passed the latest Control Plane probe</span>
+                </article>
+                <article className="metric-card warning-accent">
+                  <small>Needs attention</small>
+                  <strong>{attentionCount}</strong>
+                  <span>{unavailableCount} currently unavailable</span>
+                </article>
+              </section>
+              <section className="panel overview-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Target health</h2>
+                    <p>Live resources returned by the Admin API.</p>
+                  </div>
+                  <button className="text-button" type="button" onClick={() => setPage("targets")}>
+                    View all targets →
+                  </button>
+                </div>
+                <TargetTable
+                  targets={targets.slice(0, 6)}
+                  selectedTargetId={selectedTargetId}
+                  onSelect={(targetId) => {
+                    setPage("targets");
+                    selectTarget(targetId);
+                  }}
+                />
+              </section>
+            </>
+          ) : (
+            <section className="target-layout">
+              <div className="panel target-list-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Targets</h2>
+                    <p>{targets.length} registered resources</p>
+                  </div>
+                  <span className="scope-chip">targets.list</span>
+                </div>
+                <TargetTable
+                  targets={targets}
+                  selectedTargetId={selectedTargetId}
+                  onSelect={selectTarget}
+                />
+              </div>
+
+              <aside className="panel detail-panel" aria-label="Selected deployment target">
+                {selectedTarget === undefined ? (
+                  <div className="empty-state">
+                    <span aria-hidden="true">◎</span>
+                    <h2>No target selected</h2>
+                    <p>Register a target or select one from the live Admin API list.</p>
+                  </div>
+                ) : (
+                  <TargetDetail
+                    target={selectedTarget}
+                    onProbe={probeTarget}
+                    disabled={busy !== null}
+                  />
+                )}
+              </aside>
+            </section>
+          )}
+        </main>
+      </section>
+
+      {registering ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="register-title"
+          >
+            <div className="panel-heading">
+              <div>
+                <div className="eyebrow">targets.create</div>
+                <h2 id="register-title">Register deployment target</h2>
+                <p>References resolve server-side; credential bytes never enter the browser.</p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close"
+                onClick={() => setRegistering(false)}
+              >
+                ×
+              </button>
+            </div>
+            <form className="resource-form" onSubmit={registerTarget}>
+              <div className="form-row">
+                <label>
+                  <span>Target ID</span>
+                  <input
+                    value={targetForm.targetId}
+                    onChange={(event) =>
+                      setTargetForm({ ...targetForm, targetId: event.target.value })
+                    }
+                    placeholder="docker-primary"
+                    maxLength={128}
+                    required
+                    autoFocus
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span>Display name</span>
+                  <input
+                    value={targetForm.targetName}
+                    onChange={(event) =>
+                      setTargetForm({ ...targetForm, targetName: event.target.value })
+                    }
+                    placeholder="docker-primary"
+                    maxLength={128}
+                    required
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Target kind</span>
+                <select
+                  value={targetForm.targetKind}
+                  onChange={(event) =>
+                    setTargetForm({ ...targetForm, targetKind: event.target.value as TargetKind })
+                  }
+                >
+                  <option value="docker">Docker API</option>
+                  <option value="kubernetes">Kubernetes API</option>
+                  <option value="ssh">SSH host</option>
+                </select>
+              </label>
+              <label>
+                <span>Endpoint</span>
+                <input
+                  type="url"
+                  value={targetForm.endpoint}
+                  onChange={(event) =>
+                    setTargetForm({ ...targetForm, endpoint: event.target.value })
+                  }
+                  placeholder={targetEndpointPlaceholder[targetForm.targetKind]}
+                  maxLength={2048}
+                  required
+                  spellCheck={false}
+                />
+                <small>Control Plane connects to this endpoint; the browser never does.</small>
+              </label>
+              <label>
+                <span>Credential reference</span>
+                <input
+                  value={targetForm.credentialRef}
+                  onChange={(event) =>
+                    setTargetForm({ ...targetForm, credentialRef: event.target.value })
+                  }
+                  placeholder={`${targetForm.targetKind}-primary`}
+                  maxLength={128}
+                  required
+                  spellCheck={false}
+                />
+                <small>Opaque reference to a deployment-owned credential bundle.</small>
+              </label>
+              <div className="dialog-actions">
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => setRegistering(false)}
+                >
+                  Cancel
+                </button>
+                <button className="button primary" type="submit" disabled={busy !== null}>
+                  Register target
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TargetTable({
+  targets,
+  selectedTargetId,
+  onSelect,
+}: Readonly<{
+  targets: readonly DeploymentTarget[];
+  selectedTargetId: string;
+  onSelect: (targetId: string) => void;
+}>) {
+  if (targets.length === 0)
+    return <div className="table-empty">No deployment targets are registered in this project.</div>;
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Kind</th>
+            <th>Status</th>
+            <th>Generation</th>
+            <th>Last probe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {targets.map((target) => (
+            <tr
+              key={target.metadata.uid}
+              className={target.metadata.uid === selectedTargetId ? "selected" : ""}
+              onClick={() => onSelect(target.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(target.metadata.uid)}>
+                  <strong>{target.metadata.name}</strong>
+                  <small>{target.metadata.uid}</small>
+                </button>
+              </td>
+              <td>
+                <span className="kind-badge">{target.spec.targetKind}</span>
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
+                  <i />
+                  {target.spec.observedPhase}
+                </span>
+              </td>
+              <td className="mono">g{target.spec.generation}</td>
+              <td>{formatTime(target.spec.lastProbeAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TargetDetail({
+  target,
+  onProbe,
+  disabled,
+}: Readonly<{
+  target: DeploymentTarget;
+  onProbe: () => void;
+  disabled: boolean;
+}>) {
+  return (
+    <>
+      <div className="detail-heading">
+        <div className="target-glyph" aria-hidden="true">
+          {target.spec.targetKind.slice(0, 1).toUpperCase()}
+        </div>
+        <div>
+          <div className="eyebrow">{target.spec.targetKind} target</div>
+          <h2>{target.metadata.name}</h2>
+          <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
+            <i />
+            {target.spec.observedPhase}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>Target ID</dt>
+          <dd className="mono">{target.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>Endpoint</dt>
+          <dd className="mono break">{target.spec.endpoint}</dd>
+        </div>
+        <div>
+          <dt>Credential ref</dt>
+          <dd className="mono">{target.spec.credentialRef}</dd>
+        </div>
+        <div>
+          <dt>Generation</dt>
+          <dd className="mono">{target.spec.generation}</dd>
+        </div>
+        <div>
+          <dt>Resource version</dt>
+          <dd className="mono">{target.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>Runtime API</dt>
+          <dd>{target.spec.apiVersion || "Not observed"}</dd>
+        </div>
+        <div>
+          <dt>Engine</dt>
+          <dd>{target.spec.engineVersion || "Not observed"}</dd>
+        </div>
+        <div>
+          <dt>Platform</dt>
+          <dd>
+            {[target.spec.os, target.spec.architecture].filter(Boolean).join(" / ") ||
+              "Not observed"}
+          </dd>
+        </div>
+        <div>
+          <dt>Last probe</dt>
+          <dd>{formatTime(target.spec.lastProbeAt)}</dd>
+        </div>
+        {target.spec.stableErrorCode !== "" ? (
+          <div>
+            <dt>Stable error</dt>
+            <dd className="danger-text">{target.spec.stableErrorCode}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <section className="action-block">
+        <div>
+          <h3>Probe target</h3>
+          <p>
+            Checks connectivity from Control Plane using expected generation{" "}
+            {target.spec.generation}.
+          </p>
+        </div>
+        <button
+          className="button primary"
+          type="button"
+          onClick={onProbe}
+          disabled={disabled || target.spec.observedPhase === "probing"}
+        >
+          Run probe
+        </button>
+      </section>
+    </>
+  );
+}

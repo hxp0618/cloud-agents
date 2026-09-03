@@ -135,6 +135,24 @@ func rawTenantRef(id string) *json.RawMessage {
 	return &raw
 }
 
+func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetRoute(t *testing.T) {
+	page := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetPage","deploymentTargets":[]}`)
+	var seen Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		return Response{Status: 200, Body: page}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListAdminDeploymentTargets(context.Background(), "tenant-alpha", "project-alpha", "req-alpha", 1, "target-page-token-1"); err != nil {
+		t.Fatal(err)
+	}
+	if seen.Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1" {
+		t.Fatalf("path = %q", seen.Path)
+	}
+}
+
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
 	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}],"nextPageToken":"session-page-token-1"}`)

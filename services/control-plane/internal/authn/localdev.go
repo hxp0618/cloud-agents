@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	localIssuer     = "https://local.invalid/cloud-agents/authn"
-	localAudience   = "https://local.invalid/cloud-agents/control-plane"
-	localKeyID      = "local-ephemeral-rs256"
-	localClientID   = "local-control-plane"
-	localPermission = "memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list tenants.get"
-	localTokenTTL   = 5 * time.Minute
+	localIssuer          = "https://local.invalid/cloud-agents/authn"
+	localAudience        = "https://local.invalid/cloud-agents/control-plane"
+	localKeyID           = "local-ephemeral-rs256"
+	localClientID        = "local-control-plane"
+	localPermission      = "memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list tenants.get"
+	localAdminPermission = "memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list targets.act targets.create targets.get targets.list tenants.get"
+	localTokenTTL        = 5 * time.Minute
 )
 
 // LocalVerifierConfig configures the explicitly local-only verifier. The
@@ -100,6 +101,15 @@ func NewLocalVerifier(config LocalVerifierConfig) (*LocalVerifier, error) {
 // IssueToken signs a short-lived local bearer. No key, token input, or signing
 // failure detail is retained in returned errors.
 func (verifier *LocalVerifier) IssueToken(claims LocalTokenClaims) (string, error) {
+	return verifier.issueToken(claims, localPermission)
+}
+
+// IssueAdminToken signs a local bearer with the additional Admin API scopes.
+func (verifier *LocalVerifier) IssueAdminToken(claims LocalTokenClaims) (string, error) {
+	return verifier.issueToken(claims, localAdminPermission)
+}
+
+func (verifier *LocalVerifier) issueToken(claims LocalTokenClaims, permission string) (string, error) {
 	if verifier == nil {
 		return "", verifierError(errorInternalFailure)
 	}
@@ -127,7 +137,7 @@ func (verifier *LocalVerifier) IssueToken(claims LocalTokenClaims) (string, erro
 		"iat":              now,
 		"jti":              base64.RawURLEncoding.EncodeToString(tokenIDBytes),
 		"client_id":        localClientID,
-		"scope":            localPermission,
+		"scope":            permission,
 		claimSubjectKind:   "user",
 		claimTenantID:      claims.TenantID,
 		claimSecurityEpoch: int64(1),

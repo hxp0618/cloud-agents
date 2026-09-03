@@ -116,6 +116,29 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 	}
 }
 
+func TestLocalVerifierSeparatesAdminScopes(t *testing.T) {
+	verifier, err := NewLocalVerifier(LocalVerifierConfig{Clock: func() time.Time { return time.Unix(1_800_000_000, 0) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := LocalTokenClaims{TenantID: "tenant-1", Subject: "local-admin"}
+	userToken, err := verifier.IssueToken(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "targets.list"}
+	if _, err := verifier.Verify(userToken, request); errorCategory(err) != errorScopeMismatch {
+		t.Fatalf("user token admin scope error=%v", err)
+	}
+	adminToken, err := verifier.IssueAdminToken(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.Verify(adminToken, request); err != nil {
+		t.Fatalf("admin token verification failed: %v", err)
+	}
+}
+
 func TestLocalVerifierInvalidateFailsClosed(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	verifier, err := NewLocalVerifier(LocalVerifierConfig{Clock: func() time.Time { return now }})

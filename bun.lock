@@ -18,6 +18,22 @@
         "vitest": "4.1.10",
       },
     },
+    "apps/admin-web": {
+      "name": "@cloud-agents/admin-web",
+      "version": "0.0.0",
+      "dependencies": {
+        "@cloud-agents/cloud-agent-platform-sdk": "workspace:*",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+      },
+      "devDependencies": {
+        "@types/react": "19.2.18",
+        "@types/react-dom": "19.2.5",
+        "typescript": "5.7.3",
+        "vite": "8.2.1",
+        "vitest": "4.1.10",
+      },
+    },
     "apps/user-web": {
       "name": "@cloud-agents/user-web",
       "version": "0.0.0",
@@ -183,6 +199,8 @@
     "@bufbuild/protoc-gen-es": ["@bufbuild/protoc-gen-es@2.14.0", "https://registry.npmmirror.com/@bufbuild/protoc-gen-es/-/protoc-gen-es-2.14.0.tgz", { "dependencies": { "@bufbuild/protobuf": "2.14.0", "@bufbuild/protoplugin": "2.14.0" }, "bin": { "protoc-gen-es": "bin/protoc-gen-es" } }, "sha512-/Rrui0BJWSRONiKGYzqWq9ivGN3+cYkmc47QWITufr7K6yDb8HfssuJUSQZeptyg/rHbHrfDzCUjzoJ2pwuafg=="],
 
     "@bufbuild/protoplugin": ["@bufbuild/protoplugin@2.14.0", "https://registry.npmmirror.com/@bufbuild/protoplugin/-/protoplugin-2.14.0.tgz", { "dependencies": { "@bufbuild/protobuf": "2.14.0", "@typescript/vfs": "^1.6.2", "typescript": "5.4.5" } }, "sha512-S0TvZhVtTEkZQRj2JsXBCXiib/b0+bLQtJCcn+hj9O/usgbcgxHn4D+ii22Ao3qj0/kKxVYeo7BtAI2dMk+iig=="],
+
+    "@cloud-agents/admin-web": ["@cloud-agents/admin-web@workspace:apps/admin-web"],
 
     "@cloud-agents/cloud-agent-distribution": ["@cloud-agents/cloud-agent-distribution@workspace:packages/cloud-agent-distribution"],
 

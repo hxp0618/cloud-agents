@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,6 +31,19 @@ type deploymentTargetStoreFake struct {
 	completion internaldeploymenttarget.ProbeCompletion
 	lease      internalmanagedhost.Snapshot
 	leaseErr   error
+}
+
+type deploymentTargetVerifierFake struct {
+	requests []authn.VerificationRequest
+	failAt   int
+}
+
+func (fake *deploymentTargetVerifierFake) Verify(_ string, request authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	fake.requests = append(fake.requests, request)
+	if fake.failAt == len(fake.requests) {
+		return nil, errors.New("verification failed")
+	}
+	return &authn.VerifiedPrincipal{}, nil
 }
 
 func TestDeploymentTargetHTTPProbesKubernetesTarget(t *testing.T) {
@@ -188,6 +202,64 @@ func TestDeploymentTargetPageTokenBindsTenantAndProject(t *testing.T) {
 func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
 	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:cleanup") {
 		t.Fatal("deployment target route ownership drifted")
+	}
+	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") {
+		t.Fatal("admin deployment target route ownership drifted")
+	}
+}
+
+func TestAdminDeploymentTargetHTTPChecksProjectAndAdminAuthority(t *testing.T) {
+	now := time.Date(2026, time.September, 3, 8, 0, 0, 0, time.UTC)
+	verifier := &deploymentTargetVerifierFake{}
+	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{
+		Scope: internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "docker-alpha", TargetName: "Docker Alpha", Kind: "docker",
+		Endpoint: "unix:///var/run/docker.sock", CredentialRef: "docker-alpha", Generation: 1, ObservedPhase: "ready", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
+	}}
+	handler, err := NewAdminDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-admin-list")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || len(verifier.requests) != 3 || verifier.requests[0].RequiredPermission != "projects.get" || verifier.requests[1].RequiredPermission != "targets.list" || verifier.requests[2].RequiredPermission != "projects.get" {
+		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
+	}
+}
+
+func TestDeploymentTargetAdminPermissions(t *testing.T) {
+	tests := []struct{ action, method, permission string }{
+		{"collection", http.MethodGet, "targets.list"},
+		{"collection", http.MethodPost, "targets.create"},
+		{"get", http.MethodGet, "targets.get"},
+		{"probe", http.MethodPost, "targets.act"},
+	}
+	for _, test := range tests {
+		permission, ok := deploymentTargetAdminPermission(test.action, test.method)
+		if !ok || permission != test.permission {
+			t.Fatalf("action=%q method=%q permission=%q ok=%t", test.action, test.method, permission, ok)
+		}
+	}
+	if _, ok := deploymentTargetAdminPermission("cleanup", http.MethodPost); ok {
+		t.Fatal("admin cleanup must remain closed until impact preview and operation audit exist")
+	}
+}
+
+func TestAdminDeploymentTargetHTTPReturnsForbiddenWhenAdminScopeFails(t *testing.T) {
+	verifier := &deploymentTargetVerifierFake{failAt: 2}
+	handler, err := NewAdminDeploymentTargetHTTPServer(verifier, &deploymentTargetStoreFake{}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-admin-route")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"AUTHORIZATION_DENIED"`) || len(verifier.requests) != 2 {
+		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
 	}
 }
 
