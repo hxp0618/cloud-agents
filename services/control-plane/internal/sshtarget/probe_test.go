@@ -3,7 +3,9 @@ package sshtarget
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/binary"
@@ -67,6 +69,14 @@ func newTestSSHHost(t *testing.T, handler func(string) (string, uint32)) testSSH
 	if err != nil {
 		t.Fatal(err)
 	}
+	otherHostPrivate, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherHostSigner, err := ssh.NewSignerFromKey(otherHostPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +88,7 @@ func newTestSSHHost(t *testing.T, handler func(string) (string, uint32)) testSSH
 		}
 		return nil, nil
 	}}
+	serverConfig.AddHostKey(otherHostSigner)
 	serverConfig.AddHostKey(hostSigner)
 	go serveSSH(listener, serverConfig, handler)
 

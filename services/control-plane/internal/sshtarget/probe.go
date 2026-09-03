@@ -107,6 +107,7 @@ func (directory *CredentialDirectory) connect(ctx context.Context, endpoint, cre
 	verifiedHostKey := false
 	config := &ssh.ClientConfig{
 		User: user, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, Timeout: 10 * time.Second,
+		HostKeyAlgorithms: []string{hostKey.Type()},
 		HostKeyCallback: func(_ string, _ net.Addr, actual ssh.PublicKey) error {
 			if actual.Type() != hostKey.Type() || !bytes.Equal(actual.Marshal(), hostKey.Marshal()) {
 				return ErrHostKeyMismatch
