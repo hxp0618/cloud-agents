@@ -44,10 +44,15 @@ type DeployResult struct {
 }
 
 type ManagedWorker struct {
-	Request dockertarget.DeployRequest
-	name    string
-	image   string
-	labels  map[string]string
+	Request   dockertarget.DeployRequest
+	name      string
+	image     string
+	labels    map[string]string
+	workspace string
+}
+
+func (worker ManagedWorker) CleanupResourceNames() (container, workspace string) {
+	return worker.name, worker.workspace
 }
 
 type remoteContainerInspect struct {
@@ -429,7 +434,11 @@ func managedWorker(name string, inspect remoteContainerInspect, expectedTargetGe
 	if err != nil {
 		return ManagedWorker{}, ErrDeploymentConflict
 	}
-	return ManagedWorker{Request: request, name: name, image: inspect.Config.Image, labels: inspect.Config.Labels}, nil
+	workspace, err := remoteWorkspaceVolume(inspect)
+	if err != nil || workspace == request.ProviderCredentialRef || workspace == inspect.Config.Labels["cloud-agents.dev/worker-credential-ref"] {
+		return ManagedWorker{}, ErrDeploymentConflict
+	}
+	return ManagedWorker{Request: request, name: name, image: inspect.Config.Image, labels: inspect.Config.Labels, workspace: workspace}, nil
 }
 
 func inspectRemoteWorker(client *ssh.Client, name string) (remoteContainerInspect, error) {

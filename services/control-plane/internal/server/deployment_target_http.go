@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,11 @@ const deploymentTargetCompletionTimeout = 5 * time.Second
 
 const adminDeploymentTargetRoutePrefix = "/v1/admin/tenants/"
 
+var (
+	errDeploymentTargetCleanupUnavailable = errors.New("deployment target cleanup actuator is unavailable")
+	errDeploymentTargetCleanupConflict    = errors.New("deployment target cleanup authority conflicts with current state")
+)
+
 type deploymentTargetStore interface {
 	RegisterDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.RegisterInput) (internaldeploymenttarget.Snapshot, error)
 	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
@@ -45,9 +51,10 @@ type DeploymentTargetHTTPServer struct {
 }
 
 type managedDeploymentTargetWorker struct {
-	tenantID, projectID, targetID, leaseID string
-	targetGeneration, leaseGeneration      int64
-	cleanup                                func(context.Context) error
+	tenantID, projectID, targetID, leaseID, workerName string
+	targetGeneration, leaseGeneration                  int64
+	resources                                          []platformv1alpha1.DeploymentTargetCleanupResource
+	cleanup                                            func(context.Context) error
 }
 
 func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, dockerProber *dockertarget.CredentialDirectory, kubernetesProber *kubernetestarget.CredentialDirectory, sshProber *sshtarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
@@ -123,6 +130,8 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		server.get(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "probe" && request.Method == http.MethodPost:
 		server.probe(writer, request, tenantID, projectID, targetID, requestID, bearer)
+	case action == "cleanup-preview" && request.Method == http.MethodGet:
+		server.cleanupPreview(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "cleanup" && request.Method == http.MethodPost:
 		server.cleanup(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	default:
@@ -197,73 +206,9 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 	}
 	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
 	defer cancel()
-	workers := []managedDeploymentTargetWorker{}
-	switch target.Kind {
-	case "docker":
-		if server.dockerProber == nil {
-			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-			return
-		}
-		listed, listErr := server.dockerProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
-		if listErr != nil {
-			writeDeploymentTargetCleanupError(writer, target.Kind, listErr)
-			return
-		}
-		for _, worker := range listed {
-			worker := worker
-			request := worker.Request
-			workers = append(workers, managedDeploymentTargetWorker{
-				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID,
-				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
-				cleanup: func(ctx context.Context) error {
-					return server.dockerProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
-				},
-			})
-		}
-	case "kubernetes":
-		if server.kubernetesProber == nil {
-			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-			return
-		}
-		listed, listErr := server.kubernetesProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
-		if listErr != nil {
-			writeDeploymentTargetCleanupError(writer, target.Kind, listErr)
-			return
-		}
-		for _, worker := range listed {
-			worker := worker
-			request := worker.Request
-			workers = append(workers, managedDeploymentTargetWorker{
-				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID,
-				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
-				cleanup: func(ctx context.Context) error {
-					return server.kubernetesProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
-				},
-			})
-		}
-	case "ssh":
-		if server.sshProber == nil {
-			writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-			return
-		}
-		listed, listErr := server.sshProber.ListManagedWorkers(cleanupContext, target.Endpoint, target.CredentialRef, tenantID, projectID, targetID, target.Generation)
-		if listErr != nil {
-			writeDeploymentTargetCleanupError(writer, target.Kind, listErr)
-			return
-		}
-		for _, worker := range listed {
-			worker := worker
-			request := worker.Request
-			workers = append(workers, managedDeploymentTargetWorker{
-				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID,
-				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
-				cleanup: func(ctx context.Context) error {
-					return server.sshProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
-				},
-			})
-		}
-	default:
-		writePublicProblem(writer, http.StatusConflict, "target_conflict")
+	workers, err := server.listManagedDeploymentTargetWorkers(cleanupContext, target)
+	if err != nil {
+		writeDeploymentTargetCleanupError(writer, target.Kind, err)
 		return
 	}
 	orphans := make([]managedDeploymentTargetWorker, 0, len(workers))
@@ -297,6 +242,144 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 	writeDeploymentTarget(writer, http.StatusOK, requestID, target)
 }
 
+func (server *DeploymentTargetHTTPServer) listManagedDeploymentTargetWorkers(ctx context.Context, target internaldeploymenttarget.Snapshot) ([]managedDeploymentTargetWorker, error) {
+	workers := make([]managedDeploymentTargetWorker, 0)
+	switch target.Kind {
+	case "docker":
+		if server.dockerProber == nil {
+			return nil, errDeploymentTargetCleanupUnavailable
+		}
+		listed, err := server.dockerProber.ListManagedWorkers(ctx, target.Endpoint, target.CredentialRef, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID, target.Generation)
+		if err != nil {
+			return nil, err
+		}
+		for _, worker := range listed {
+			worker := worker
+			request := worker.Request
+			container, workspace := worker.CleanupResourceNames()
+			workers = append(workers, managedDeploymentTargetWorker{
+				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID, workerName: container,
+				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
+				resources: []platformv1alpha1.DeploymentTargetCleanupResource{{ResourceKind: "container", ResourceName: container}, {ResourceKind: "workspace-volume", ResourceName: workspace}},
+				cleanup: func(ctx context.Context) error {
+					return server.dockerProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+				},
+			})
+		}
+	case "kubernetes":
+		if server.kubernetesProber == nil {
+			return nil, errDeploymentTargetCleanupUnavailable
+		}
+		listed, err := server.kubernetesProber.ListManagedWorkers(ctx, target.Endpoint, target.CredentialRef, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID, target.Generation)
+		if err != nil {
+			return nil, err
+		}
+		for _, worker := range listed {
+			worker := worker
+			request := worker.Request
+			namespace, name := worker.CleanupResourceNames()
+			resourceName := namespace + "/" + name
+			workers = append(workers, managedDeploymentTargetWorker{
+				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID, workerName: name,
+				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
+				resources: []platformv1alpha1.DeploymentTargetCleanupResource{{ResourceKind: "deployment", ResourceName: resourceName}, {ResourceKind: "pods", ResourceName: namespace + "/cloud-agents.dev/worker=" + name}, {ResourceKind: "service", ResourceName: resourceName}, {ResourceKind: "workspace-volume", ResourceName: resourceName}},
+				cleanup: func(ctx context.Context) error {
+					return server.kubernetesProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+				},
+			})
+		}
+	case "ssh":
+		if server.sshProber == nil {
+			return nil, errDeploymentTargetCleanupUnavailable
+		}
+		listed, err := server.sshProber.ListManagedWorkers(ctx, target.Endpoint, target.CredentialRef, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID, target.Generation)
+		if err != nil {
+			return nil, err
+		}
+		for _, worker := range listed {
+			worker := worker
+			request := worker.Request
+			container, workspace := worker.CleanupResourceNames()
+			workers = append(workers, managedDeploymentTargetWorker{
+				tenantID: request.TenantID, projectID: request.ProjectID, targetID: request.TargetID, leaseID: request.LeaseID, workerName: container,
+				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
+				resources: []platformv1alpha1.DeploymentTargetCleanupResource{{ResourceKind: "container", ResourceName: container}, {ResourceKind: "workspace-volume", ResourceName: workspace}},
+				cleanup: func(ctx context.Context) error {
+					return server.sshProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+				},
+			})
+		}
+	default:
+		return nil, errDeploymentTargetCleanupConflict
+	}
+	slices.SortFunc(workers, func(left, right managedDeploymentTargetWorker) int {
+		return strings.Compare(left.workerName, right.workerName)
+	})
+	return workers, nil
+}
+
+func (server *DeploymentTargetHTTPServer) cleanupPreview(writer http.ResponseWriter, request *http.Request, tenantID, projectID, targetID, requestID, bearer string) {
+	validated, err := openapiv1alpha1.ValidatePreviewAdminDeploymentTargetCleanupServerRequest(tenantID, projectID, targetID, requestID)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	target, err := server.store.GetDeploymentTarget(request.Context(), validated.TenantID, principal, validated.ProjectID, validated.TargetID)
+	if err != nil {
+		writeDeploymentTargetError(writer, err)
+		return
+	}
+	previewContext, cancel := context.WithTimeout(request.Context(), environmentActuationTimeout)
+	defer cancel()
+	workers, err := server.listManagedDeploymentTargetWorkers(previewContext, target)
+	if err != nil {
+		writeDeploymentTargetCleanupError(writer, target.Kind, err)
+		return
+	}
+	canCleanup := true
+	previewWorkers := make([]platformv1alpha1.DeploymentTargetCleanupWorker, 0, len(workers))
+	for _, worker := range workers {
+		principal, err = server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+		if err != nil {
+			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+			return
+		}
+		lease, leaseErr := server.store.GetManagedHostEnvironmentLease(previewContext, validated.TenantID, principal, validated.ProjectID, worker.leaseID)
+		disposition := "cleanup"
+		if leaseErr == nil && managedDeploymentTargetWorkerActive(target.Generation, worker, lease) {
+			disposition = "blocked"
+			canCleanup = false
+		}
+		if leaseErr != nil && !errors.Is(leaseErr, postgres.ErrManagedHostEnvironmentLeaseNotFound) {
+			status, code := managedHostEnvironmentLeaseErrorStatus(leaseErr)
+			writePublicProblem(writer, status, code)
+			return
+		}
+		previewWorkers = append(previewWorkers, platformv1alpha1.DeploymentTargetCleanupWorker{WorkerName: worker.workerName, LeaseID: worker.leaseID, LeaseGeneration: worker.leaseGeneration, Disposition: disposition, Resources: worker.resources})
+	}
+	resourceVersion := strconv.FormatInt(target.ResourceVersion, 10)
+	preview := platformv1alpha1.DeploymentTargetCleanupPreview{
+		ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "DeploymentTargetCleanupPreview", Metadata: commonv1alpha1.ResourceMetadata{UID: target.TargetID, Name: target.TargetName, TenantRef: commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: target.Scope.TenantID}, ResourceVersion: resourceVersion, CreatedAt: target.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: target.UpdatedAt.UTC().Format(time.RFC3339Nano)}},
+		Spec:         platformv1alpha1.DeploymentTargetCleanupPreviewSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: target.Scope.ProjectID}, TargetKind: target.Kind, ExpectedGeneration: target.Generation, ExpectedResourceVersion: resourceVersion, CanCleanup: canCleanup, Workers: previewWorkers},
+	}
+	body, err := platformv1alpha1.EncodeDeploymentTargetCleanupPreviewResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.DeploymentTargetCleanupPreview]{Value: preview})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("X-Resource-Version", resourceVersion)
+	writer.Header().Set("ETag", `"`+resourceVersion+`"`)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func managedDeploymentTargetWorkerActive(targetGeneration int64, worker managedDeploymentTargetWorker, lease internalmanagedhost.Snapshot) bool {
 	return worker.targetGeneration == targetGeneration && lease.Scope.TenantID == worker.tenantID && lease.Scope.ProjectID == worker.projectID &&
 		lease.LeaseID == worker.leaseID && lease.TargetID == worker.targetID && lease.TargetGeneration == worker.targetGeneration &&
@@ -304,6 +387,14 @@ func managedDeploymentTargetWorkerActive(targetGeneration int64, worker managedD
 }
 
 func writeDeploymentTargetCleanupError(writer http.ResponseWriter, kind string, err error) {
+	if errors.Is(err, errDeploymentTargetCleanupUnavailable) {
+		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
+		return
+	}
+	if errors.Is(err, errDeploymentTargetCleanupConflict) {
+		writePublicProblem(writer, http.StatusConflict, "target_conflict")
+		return
+	}
 	if (kind == "docker" && errors.Is(err, dockertarget.ErrDeploymentConflict)) ||
 		(kind == "kubernetes" && errors.Is(err, kubernetestarget.ErrDeploymentConflict)) ||
 		(kind == "ssh" && errors.Is(err, sshtarget.ErrDeploymentConflict)) {
@@ -503,14 +594,14 @@ func deploymentTargetResource(snapshot internaldeploymenttarget.Snapshot) platfo
 }
 
 func deploymentTargetPath(path string) (tenantID, projectID, targetID, action string, ok bool) {
-	return deploymentTargetPathWithPrefix(path, ProjectRoutePrefix)
+	return deploymentTargetPathWithPrefix(path, ProjectRoutePrefix, false)
 }
 
 func adminDeploymentTargetPath(path string) (tenantID, projectID, targetID, action string, ok bool) {
-	return deploymentTargetPathWithPrefix(path, adminDeploymentTargetRoutePrefix)
+	return deploymentTargetPathWithPrefix(path, adminDeploymentTargetRoutePrefix, true)
 }
 
-func deploymentTargetPathWithPrefix(path, prefix string) (tenantID, projectID, targetID, action string, ok bool) {
+func deploymentTargetPathWithPrefix(path, prefix string, admin bool) (tenantID, projectID, targetID, action string, ok bool) {
 	if !strings.HasPrefix(path, prefix) {
 		return "", "", "", "", false
 	}
@@ -519,7 +610,12 @@ func deploymentTargetPathWithPrefix(path, prefix string) (tenantID, projectID, t
 		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "deployment-targets" && parts[0] != "" && parts[2] != "" {
-		if strings.HasSuffix(parts[4], ":probe") {
+		if admin && strings.HasSuffix(parts[4], ":cleanup-preview") {
+			targetID = strings.TrimSuffix(parts[4], ":cleanup-preview")
+			if targetID != "" {
+				return parts[0], parts[2], targetID, "cleanup-preview", true
+			}
+		} else if strings.HasSuffix(parts[4], ":probe") {
 			targetID = strings.TrimSuffix(parts[4], ":probe")
 			if targetID != "" {
 				return parts[0], parts[2], targetID, "probe", true
@@ -543,6 +639,8 @@ func deploymentTargetAdminPermission(action, method string) (string, bool) {
 	case action == "collection" && method == http.MethodPost:
 		return "targets.create", true
 	case action == "get" && method == http.MethodGet:
+		return "targets.get", true
+	case action == "cleanup-preview" && method == http.MethodGet:
 		return "targets.get", true
 	case action == "probe" && method == http.MethodPost:
 		return "targets.act", true

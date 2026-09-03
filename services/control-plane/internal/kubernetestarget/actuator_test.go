@@ -78,6 +78,9 @@ func TestCredentialDirectoryListsAndCleansManagedWorkers(t *testing.T) {
 	if err != nil || len(workers) != 1 || workers[0].Request != request {
 		t.Fatalf("workers=%#v error=%v", workers, err)
 	}
+	if namespace, gotName := workers[0].CleanupResourceNames(); namespace != config.Namespace || gotName != name {
+		t.Fatalf("cleanup resources=%q/%q", namespace, gotName)
+	}
 	for range 2 {
 		if err := credentials.CleanupManagedWorker(context.Background(), cluster.URL, "cluster-alpha", workers[0]); err != nil {
 			t.Fatal(err)

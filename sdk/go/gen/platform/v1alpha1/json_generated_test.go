@@ -159,6 +159,18 @@ func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGeneratedDeploymentTargetCleanupPreviewContract(t *testing.T) {
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetCleanupPreview","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"7","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"targetKind":"docker","expectedGeneration":2,"expectedResourceVersion":"7","canCleanup":false,"workers":[{"workerName":"cloud-agents-worker-alpha","leaseId":"lease-alpha","leaseGeneration":3,"disposition":"blocked","resources":[{"resourceKind":"container","resourceName":"cloud-agents-worker-alpha"},{"resourceKind":"workspace-volume","resourceName":"workspace-alpha"}]}]}}`)
+	preview, err := DecodeDeploymentTargetCleanupPreviewResponseJSON(body)
+	if err != nil || preview.Value.Spec.CanCleanup || preview.Value.Spec.Workers[0].Resources[1].ResourceName != "workspace-alpha" {
+		t.Fatalf("preview=%#v error=%v", preview, err)
+	}
+	invalid := bytes.Replace(body, []byte(`"canCleanup":false`), []byte(`"canCleanup":true`), 1)
+	if _, err := DecodeDeploymentTargetCleanupPreviewResponseJSON(invalid); err == nil {
+		t.Fatal("preview allowed cleanup while an active Lease blocker was present")
+	}
+}
+
 func TestGeneratedPlatformJSONCanonicalFraming(t *testing.T) {
 	data := readPlatformFixture(t, "golden/project.json")
 	for _, suffix := range [][]byte{[]byte("[]")} {

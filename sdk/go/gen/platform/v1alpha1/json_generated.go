@@ -253,6 +253,29 @@ type DeploymentTargetPage struct {
 	DeploymentTargets []DeploymentTarget `json:"deploymentTargets"`
 	NextPageToken     string             `json:"nextPageToken,omitempty"`
 }
+type DeploymentTargetCleanupResource struct {
+	ResourceKind string `json:"resourceKind"`
+	ResourceName string `json:"resourceName"`
+}
+type DeploymentTargetCleanupWorker struct {
+	WorkerName      string                            `json:"workerName"`
+	LeaseID         string                            `json:"leaseId"`
+	LeaseGeneration int64                             `json:"leaseGeneration"`
+	Disposition     string                            `json:"disposition"`
+	Resources       []DeploymentTargetCleanupResource `json:"resources"`
+}
+type DeploymentTargetCleanupPreviewSpec struct {
+	ProjectRef              common.ProjectRef               `json:"projectRef"`
+	TargetKind              string                          `json:"targetKind"`
+	ExpectedGeneration      int64                           `json:"expectedGeneration"`
+	ExpectedResourceVersion string                          `json:"expectedResourceVersion"`
+	CanCleanup              bool                            `json:"canCleanup"`
+	Workers                 []DeploymentTargetCleanupWorker `json:"workers"`
+}
+type DeploymentTargetCleanupPreview struct {
+	ResourceBase
+	Spec DeploymentTargetCleanupPreviewSpec `json:"spec"`
+}
 
 var (
 	resourceMetadataResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
@@ -293,6 +316,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
+	case "DeploymentTargetCleanupPreview":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetKind": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "canCleanup": common.ScalarResponseShape(), "workers": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"workerName": common.ScalarResponseShape(), "leaseId": common.ScalarResponseShape(), "leaseGeneration": common.ScalarResponseShape(), "disposition": common.ScalarResponseShape(), "resources": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"resourceKind": common.ScalarResponseShape(), "resourceName": common.ScalarResponseShape()}))}))}
 	default:
 		return common.ObjectResponseShape(nil)
 	}
@@ -1472,6 +1497,123 @@ func EncodeDeploymentTargetPageResponseJSON(value common.ResponseEnvelope[Deploy
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func EncodeDeploymentTargetResponseJSON(value common.ResponseEnvelope[DeploymentTarget]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func decodeDeploymentTargetCleanupResource(raw json.RawMessage, path string) (DeploymentTargetCleanupResource, error) {
+	fields, err := common.DecodeStrictObject(raw, []string{"resourceKind", "resourceName"}, []string{"resourceKind", "resourceName"})
+	if err != nil {
+		return DeploymentTargetCleanupResource{}, err
+	}
+	kind, err := fieldString(fields, "resourceKind", path+"/resourceKind")
+	if err != nil || kind != "container" && kind != "deployment" && kind != "pods" && kind != "service" && kind != "workspace-volume" {
+		return DeploymentTargetCleanupResource{}, common.ContractError("INVALID_CLEANUP_RESOURCE_KIND", path+"/resourceKind")
+	}
+	name, err := fieldString(fields, "resourceName", path+"/resourceName")
+	if err != nil || common.ValidateString(name, 1, 512, path+"/resourceName") != nil || strings.IndexFunc(name, func(character rune) bool { return character < 0x20 || character == 0x7f }) >= 0 {
+		return DeploymentTargetCleanupResource{}, common.ContractError("INVALID_CLEANUP_RESOURCE_NAME", path+"/resourceName")
+	}
+	return DeploymentTargetCleanupResource{ResourceKind: kind, ResourceName: name}, nil
+}
+func decodeDeploymentTargetCleanupWorker(raw json.RawMessage, path string) (DeploymentTargetCleanupWorker, error) {
+	fields, err := common.DecodeStrictObject(raw, []string{"workerName", "leaseId", "leaseGeneration", "disposition", "resources"}, []string{"workerName", "leaseId", "leaseGeneration", "disposition", "resources"})
+	if err != nil {
+		return DeploymentTargetCleanupWorker{}, err
+	}
+	name, err := fieldString(fields, "workerName", path+"/workerName")
+	if err != nil || common.ValidateIdentifier(name, path+"/workerName") != nil {
+		return DeploymentTargetCleanupWorker{}, common.ContractError("INVALID_IDENTIFIER", path+"/workerName")
+	}
+	leaseID, err := fieldString(fields, "leaseId", path+"/leaseId")
+	if err != nil || common.ValidateIdentifier(leaseID, path+"/leaseId") != nil {
+		return DeploymentTargetCleanupWorker{}, common.ContractError("INVALID_IDENTIFIER", path+"/leaseId")
+	}
+	generation, err := fieldInt64(fields, "leaseGeneration", path+"/leaseGeneration")
+	if err != nil || generation < 1 {
+		return DeploymentTargetCleanupWorker{}, common.ContractError("INVALID_GENERATION", path+"/leaseGeneration")
+	}
+	disposition, err := fieldString(fields, "disposition", path+"/disposition")
+	if err != nil || disposition != "cleanup" && disposition != "blocked" {
+		return DeploymentTargetCleanupWorker{}, common.ContractError("INVALID_CLEANUP_DISPOSITION", path+"/disposition")
+	}
+	var rawResources []json.RawMessage
+	if err := json.Unmarshal(fields["resources"], &rawResources); err != nil || len(rawResources) < 2 || len(rawResources) > 4 {
+		return DeploymentTargetCleanupWorker{}, common.ContractError("INVALID_CLEANUP_RESOURCES", path+"/resources")
+	}
+	resources := make([]DeploymentTargetCleanupResource, 0, len(rawResources))
+	for index, rawResource := range rawResources {
+		resource, err := decodeDeploymentTargetCleanupResource(rawResource, path+"/resources/"+itoa(index))
+		if err != nil {
+			return DeploymentTargetCleanupWorker{}, err
+		}
+		resources = append(resources, resource)
+	}
+	return DeploymentTargetCleanupWorker{WorkerName: name, LeaseID: leaseID, LeaseGeneration: generation, Disposition: disposition, Resources: resources}, nil
+}
+func DecodeDeploymentTargetCleanupPreviewJSON(data []byte) (DeploymentTargetCleanupPreview, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return DeploymentTargetCleanupPreview{}, err
+	}
+	base, err := checkResourceBase(fields, "DeploymentTargetCleanupPreview")
+	if err != nil {
+		return DeploymentTargetCleanupPreview{}, err
+	}
+	spec, err := strictSpec(fields["spec"], []string{"projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "canCleanup", "workers"}, []string{"projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "canCleanup", "workers"})
+	if err != nil {
+		return DeploymentTargetCleanupPreview{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return DeploymentTargetCleanupPreview{}, err
+	}
+	kind, err := fieldString(spec, "targetKind", "/spec/targetKind")
+	if err != nil || kind != "docker" && kind != "kubernetes" && kind != "ssh" {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
+	}
+	generation, err := fieldInt64(spec, "expectedGeneration", "/spec/expectedGeneration")
+	if err != nil || generation < 1 {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_GENERATION", "/spec/expectedGeneration")
+	}
+	resourceVersion, err := fieldString(spec, "expectedResourceVersion", "/spec/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/spec/expectedResourceVersion") != nil || resourceVersion != base.Metadata.ResourceVersion {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion")
+	}
+	var canCleanup bool
+	if err := json.Unmarshal(spec["canCleanup"], &canCleanup); err != nil {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_FIELD_TYPE", "/spec/canCleanup")
+	}
+	var rawWorkers []json.RawMessage
+	if err := json.Unmarshal(spec["workers"], &rawWorkers); err != nil || rawWorkers == nil || len(rawWorkers) > 200 {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_CLEANUP_WORKERS", "/spec/workers")
+	}
+	workers := make([]DeploymentTargetCleanupWorker, 0, len(rawWorkers))
+	blocked := false
+	for index, rawWorker := range rawWorkers {
+		worker, err := decodeDeploymentTargetCleanupWorker(rawWorker, "/spec/workers/"+itoa(index))
+		if err != nil {
+			return DeploymentTargetCleanupPreview{}, err
+		}
+		blocked = blocked || worker.Disposition == "blocked"
+		workers = append(workers, worker)
+	}
+	if canCleanup == blocked {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_CLEANUP_AUTHORITY", "/spec/canCleanup")
+	}
+	return DeploymentTargetCleanupPreview{ResourceBase: base, Spec: DeploymentTargetCleanupPreviewSpec{ProjectRef: project, TargetKind: kind, ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, CanCleanup: canCleanup, Workers: workers}}, nil
+}
+func DecodeDeploymentTargetCleanupPreviewResponseJSON(data []byte) (common.ResponseEnvelope[DeploymentTargetCleanupPreview], error) {
+	fields, sidecar, err := strictResource(data, "DeploymentTargetCleanupPreview")
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTargetCleanupPreview]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeDeploymentTargetCleanupPreviewJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTargetCleanupPreview]{}, err
+	}
+	return common.ResponseEnvelope[DeploymentTargetCleanupPreview]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeDeploymentTargetCleanupPreviewResponseJSON(value common.ResponseEnvelope[DeploymentTargetCleanupPreview]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

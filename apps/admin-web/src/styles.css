@@ -873,6 +873,60 @@ td button small {
   font-size: 10px;
 }
 
+.cleanup-preview {
+  display: grid;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.cleanup-preview-summary,
+.cleanup-worker > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cleanup-preview-summary > .mono,
+.cleanup-worker > small {
+  color: #6f798c;
+  font-size: 9px;
+}
+
+.cleanup-worker {
+  padding: 10px;
+  background: #111722;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.cleanup-worker ul {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cleanup-worker li {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  color: #788297;
+  font-size: 9px;
+}
+
+.cleanup-worker code {
+  overflow-wrap: anywhere;
+  color: #b9c1cf;
+  text-align: right;
+}
+
+.preview-boundary {
+  color: #8b7351;
+}
+
 .dialog-backdrop {
   position: fixed;
   z-index: 10;

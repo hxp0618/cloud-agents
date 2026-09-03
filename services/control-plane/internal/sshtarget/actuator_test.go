@@ -50,6 +50,7 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 			value, _ := json.Marshal([]map[string]any{{
 				"Config": map[string]any{"Image": image, "Labels": actualLabels},
 				"State":  map[string]any{"Running": running},
+				"Mounts": []map[string]any{{"Type": "volume", "Name": "workspace-alpha", "Destination": "/workspace"}},
 				"NetworkSettings": map[string]any{"Ports": map[string]any{
 					remoteWorkerPort: []map[string]string{{"HostPort": "32768"}},
 				}},
@@ -110,6 +111,9 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 	workers, err := host.credentials.ListManagedWorkers(context.Background(), host.endpoint, "host-alpha", request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
 	if err != nil || len(workers) != 1 || workers[0].Request != request {
 		t.Fatalf("managed workers=%#v error=%v", workers, err)
+	}
+	if container, workspace := workers[0].CleanupResourceNames(); container != name || workspace != "workspace-alpha" {
+		t.Fatalf("cleanup resources=%q/%q", container, workspace)
 	}
 	for range 2 {
 		if err := host.credentials.CleanupManagedWorker(context.Background(), host.endpoint, "host-alpha", workers[0]); err != nil {

@@ -66,10 +66,15 @@ type DeployResult struct {
 }
 
 type ManagedWorker struct {
-	Request DeployRequest
-	id      string
-	image   string
-	labels  map[string]string
+	Request   DeployRequest
+	id        string
+	image     string
+	labels    map[string]string
+	workspace string
+}
+
+func (worker ManagedWorker) CleanupResourceNames() (container, workspace string) {
+	return WorkerContainerName(worker.Request), worker.workspace
 }
 
 type DeploymentConfig struct {
@@ -591,7 +596,11 @@ func listManagedWorkers(ctx context.Context, client *http.Client, base, tenantID
 		if inspect.Name != "/"+name || parseErr != nil || request.TenantID != tenantID || request.ProjectID != projectID || request.TargetID != targetID {
 			return nil, ErrDeploymentConflict
 		}
-		workers = append(workers, ManagedWorker{Request: request, id: container.ID, image: inspect.Config.Image, labels: maps.Clone(inspect.Config.Labels)})
+		workspace, workspaceErr := workspaceVolume(inspect)
+		if workspaceErr != nil || !managedWorkspaceVolumeName(request, workspace, inspect.Config.Labels["cloud-agents.dev/worker-credential-ref"]) {
+			return nil, ErrDeploymentConflict
+		}
+		workers = append(workers, ManagedWorker{Request: request, id: container.ID, image: inspect.Config.Image, labels: maps.Clone(inspect.Config.Labels), workspace: workspace})
 	}
 	return workers, nil
 }

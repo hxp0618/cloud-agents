@@ -68,6 +68,10 @@ type ManagedWorker struct {
 	annotations map[string]string
 }
 
+func (worker ManagedWorker) CleanupResourceNames() (namespace, name string) {
+	return worker.namespace, worker.name
+}
+
 type deploymentConfig struct {
 	Namespace                 string `json:"namespace"`
 	WorkerImageRepository     string `json:"workerImageRepository"`

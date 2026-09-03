@@ -58,6 +58,7 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+  "deployment-target-cleanup-preview.schema.json",
   "deployment-target-page.schema.json",
   "deployment-target-probe-request.schema.json",
   "deployment-target-register-request.schema.json",
@@ -219,6 +220,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminGetEnvironmentLease",
     "adminListDeploymentTargets",
     "adminListEnvironmentLeases",
+    "adminPreviewDeploymentTargetCleanup",
     "adminProbeDeploymentTarget",
     "adminRegisterDeploymentTarget",
     "managedAgentBindRole",

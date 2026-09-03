@@ -94,6 +94,7 @@ type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
+type DeploymentTargetCleanupPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetCleanupPreview]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
@@ -848,6 +849,29 @@ func (client *Client) GetAdminDeploymentTarget(ctx context.Context, tenantID, pr
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
 		return DeploymentTargetResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) PreviewAdminDeploymentTargetCleanup(ctx context.Context, tenantID, projectID, targetID, requestID string) (DeploymentTargetCleanupPreviewResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetCleanupPreviewResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":cleanup-preview", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return DeploymentTargetCleanupPreviewResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetCleanupPreviewResult{}, client.problemError("adminPreviewDeploymentTargetCleanup", response)
+	}
+	value, err := platform.DecodeDeploymentTargetCleanupPreviewResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetCleanupPreviewResult{}, &ClientError{Operation: "adminPreviewDeploymentTargetCleanup", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetCleanupPreviewResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetCleanupPreviewResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
 }
@@ -2875,6 +2899,20 @@ func ValidateProbeDeploymentTargetServerRequest(tenantID, projectID, targetID, r
 		return ProbeDeploymentTargetServerInput{}, err
 	}
 	return ProbeDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type PreviewAdminDeploymentTargetCleanupServerInput struct {
+	TenantID  string
+	ProjectID string
+	TargetID  string
+	RequestID string
+}
+
+func ValidatePreviewAdminDeploymentTargetCleanupServerRequest(tenantID, projectID, targetID, requestID string) (PreviewAdminDeploymentTargetCleanupServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return PreviewAdminDeploymentTargetCleanupServerInput{}, err
+	}
+	return PreviewAdminDeploymentTargetCleanupServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID}, nil
 }
 
 type CleanupDeploymentTargetServerInput struct {

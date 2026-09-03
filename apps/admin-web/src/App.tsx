@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   createHTTPClient,
   type DeploymentTarget,
+  type DeploymentTargetCleanupPreview,
   type DeploymentTargetRegisterRequest,
   type EnvironmentLease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -114,6 +115,7 @@ export function App() {
   const [client, setClient] = useState<AdminClient | null>(null);
   const [targets, setTargets] = useState<readonly DeploymentTarget[]>(Object.freeze([]));
   const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [cleanupPreview, setCleanupPreview] = useState<DeploymentTargetCleanupPreview | null>(null);
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [page, setPage] = useState<Page>("overview");
@@ -134,6 +136,12 @@ export function App() {
 
   const connected = status === "connected" && client !== null;
   const selectedTarget = targets.find(({ metadata }) => metadata.uid === selectedTargetId);
+  const selectedCleanupPreview =
+    selectedTarget !== undefined &&
+    cleanupPreview?.metadata.uid === selectedTarget?.metadata.uid &&
+    cleanupPreview.metadata.resourceVersion === selectedTarget.metadata.resourceVersion
+      ? cleanupPreview
+      : null;
   const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
   const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
   const unavailableCount = targets.filter(
@@ -200,6 +208,7 @@ export function App() {
     setToken("");
     setTargets(Object.freeze([]));
     setSelectedTargetId("");
+    setCleanupPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
     setBusy(null);
@@ -303,6 +312,7 @@ export function App() {
       setSelectedTargetId(targetId);
       return;
     }
+    setCleanupPreview(null);
     setSelectedTargetId(targetId);
     void runOperation(`get:${targetId}`, "Target detail refresh", async (signal) => {
       const result = await client.getAdminDeploymentTarget(
@@ -356,6 +366,7 @@ export function App() {
       );
       setTargets((current) => replaceTarget(current, result.value));
       setSelectedTargetId(result.value.metadata.uid);
+      setCleanupPreview(null);
       setTargetForm({
         targetId: "",
         targetName: "",
@@ -382,7 +393,27 @@ export function App() {
         signal,
       );
       setTargets((current) => replaceTarget(current, result.value));
+      setCleanupPreview(null);
     });
+  }
+
+  function previewTargetCleanup() {
+    if (client === null || selectedTarget === undefined) return;
+    const target = selectedTarget;
+    void runOperation(
+      `cleanup-preview:${target.metadata.uid}:${target.metadata.resourceVersion}`,
+      `Preview cleanup for ${target.metadata.name}`,
+      async (signal) => {
+        const result = await client.previewAdminDeploymentTargetCleanup(
+          connection.tenantId,
+          connection.projectId,
+          target.metadata.uid,
+          newRequestId(),
+          signal,
+        );
+        setCleanupPreview(result.value);
+      },
+    );
   }
 
   if (!connected) {
@@ -694,7 +725,9 @@ export function App() {
                 ) : (
                   <TargetDetail
                     target={selectedTarget}
+                    cleanupPreview={selectedCleanupPreview}
                     onProbe={probeTarget}
+                    onPreviewCleanup={previewTargetCleanup}
                     disabled={busy !== null}
                   />
                 )}
@@ -962,11 +995,15 @@ function LeaseTable({
 
 function TargetDetail({
   target,
+  cleanupPreview,
   onProbe,
+  onPreviewCleanup,
   disabled,
 }: Readonly<{
   target: DeploymentTarget;
+  cleanupPreview: DeploymentTargetCleanupPreview | null;
   onProbe: () => void;
+  onPreviewCleanup: () => void;
   disabled: boolean;
 }>) {
   return (
@@ -1047,6 +1084,69 @@ function TargetDetail({
         >
           Run probe
         </button>
+      </section>
+      <section className="action-block cleanup-preview-block">
+        <div>
+          <h3>Cleanup impact</h3>
+          <p>Reads platform-owned resources from this target without deleting them.</p>
+        </div>
+        <button
+          className="button ghost"
+          type="button"
+          onClick={onPreviewCleanup}
+          disabled={disabled}
+        >
+          Preview cleanup
+        </button>
+        {cleanupPreview === null ? null : (
+          <div className="cleanup-preview" aria-live="polite">
+            <div className="cleanup-preview-summary">
+              <span className={`phase ${cleanupPreview.spec.canCleanup ? "success" : "danger"}`}>
+                <i />
+                {cleanupPreview.spec.canCleanup
+                  ? "No active Lease blockers"
+                  : "Blocked by active Lease"}
+              </span>
+              <span className="mono">
+                g{cleanupPreview.spec.expectedGeneration} · rv
+                {cleanupPreview.spec.expectedResourceVersion}
+              </span>
+            </div>
+            {cleanupPreview.spec.workers.length === 0 ? (
+              <p>No platform-owned Workers were found.</p>
+            ) : (
+              cleanupPreview.spec.workers.map((worker) => (
+                <article
+                  className="cleanup-worker"
+                  key={`${worker.workerName}:${worker.leaseGeneration}`}
+                >
+                  <div>
+                    <strong className="mono">{worker.workerName}</strong>
+                    <span
+                      className={`phase ${worker.disposition === "blocked" ? "danger" : "success"}`}
+                    >
+                      <i /> {worker.disposition}
+                    </span>
+                  </div>
+                  <small className="mono">
+                    {worker.leaseId} · g{worker.leaseGeneration}
+                  </small>
+                  <ul>
+                    {worker.resources.map((resource) => (
+                      <li key={`${resource.resourceKind}:${resource.resourceName}`}>
+                        <span>{resource.resourceKind}</span>
+                        <code>{resource.resourceName}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))
+            )}
+            <p className="preview-boundary">
+              Execution remains closed until durable Operation and Audit authority is available.
+            </p>
+          </div>
+        )}
       </section>
     </>
   );

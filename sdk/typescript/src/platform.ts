@@ -295,6 +295,30 @@ export type DeploymentTargetPage = Readonly<{
   deploymentTargets: readonly DeploymentTarget[];
   nextPageToken?: string;
 }>;
+export type DeploymentTargetCleanupResource = Readonly<{
+  resourceKind: "container" | "deployment" | "pods" | "service" | "workspace-volume";
+  resourceName: string;
+}>;
+export type DeploymentTargetCleanupWorker = Readonly<{
+  workerName: string;
+  leaseId: string;
+  leaseGeneration: number;
+  disposition: "cleanup" | "blocked";
+  resources: readonly DeploymentTargetCleanupResource[];
+}>;
+export type DeploymentTargetCleanupPreview = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "DeploymentTargetCleanupPreview";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    targetKind: "docker" | "kubernetes" | "ssh";
+    expectedGeneration: number;
+    expectedResourceVersion: string;
+    canCleanup: boolean;
+    workers: readonly DeploymentTargetCleanupWorker[];
+  }>;
+}>;
 export type ManagedAgentSessionCreateRequest = Readonly<{
   sessionId: string;
   providerKind: string;
@@ -617,6 +641,26 @@ const deploymentTargetPageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const deploymentTargetCleanupResourceResponseShape: ResponseShape = {
+  fields: { resourceKind: scalarResponseShape, resourceName: scalarResponseShape },
+};
+const deploymentTargetCleanupWorkerResponseShape: ResponseShape = {
+  fields: {
+    workerName: scalarResponseShape,
+    leaseId: scalarResponseShape,
+    leaseGeneration: scalarResponseShape,
+    disposition: scalarResponseShape,
+    resources: { item: deploymentTargetCleanupResourceResponseShape },
+  },
+};
+const deploymentTargetCleanupPreviewResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  targetKind: scalarResponseShape,
+  expectedGeneration: scalarResponseShape,
+  expectedResourceVersion: scalarResponseShape,
+  canCleanup: scalarResponseShape,
+  workers: { item: deploymentTargetCleanupWorkerResponseShape },
+});
 const rbacMutationResultResponseShape: ResponseShape = {
   fields: {
     resourceUid: scalarResponseShape,
@@ -1950,6 +1994,127 @@ export function decodeDeploymentTargetPage(value: unknown): DeploymentTargetPage
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+export function decodeDeploymentTargetCleanupPreview(
+  value: unknown,
+): DeploymentTargetCleanupPreview {
+  const source = record(value);
+  const root = base(source, "DeploymentTargetCleanupPreview");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "targetKind",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "canCleanup",
+      "workers",
+    ],
+    [
+      "projectRef",
+      "targetKind",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "canCleanup",
+      "workers",
+    ],
+    "/spec",
+  );
+  const expectedResourceVersion = string(
+    spec.expectedResourceVersion,
+    "/spec/expectedResourceVersion",
+  );
+  if (
+    !/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) ||
+    expectedResourceVersion.length > 20 ||
+    expectedResourceVersion !== root.metadata.resourceVersion
+  )
+    error("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion");
+  const workerValues: unknown[] = Array.isArray(spec.workers)
+    ? spec.workers
+    : error("INVALID_CLEANUP_WORKERS", "/spec/workers");
+  if (workerValues.length > 200) error("INVALID_CLEANUP_WORKERS", "/spec/workers");
+  let blocked = false;
+  const workers = workerValues.map((entry, workerIndex) => {
+    const path = `/spec/workers/${workerIndex}`;
+    const worker = strictRecord(
+      entry,
+      ["workerName", "leaseId", "leaseGeneration", "disposition", "resources"],
+      ["workerName", "leaseId", "leaseGeneration", "disposition", "resources"],
+      path,
+    );
+    const disposition = enumValue(
+      worker.disposition,
+      ["cleanup", "blocked"] as const,
+      `${path}/disposition`,
+    );
+    blocked ||= disposition === "blocked";
+    const resourceValues: unknown[] = Array.isArray(worker.resources)
+      ? worker.resources
+      : error("INVALID_CLEANUP_RESOURCES", `${path}/resources`);
+    if (resourceValues.length < 2 || resourceValues.length > 4)
+      error("INVALID_CLEANUP_RESOURCES", `${path}/resources`);
+    const resources = resourceValues.map((entry, resourceIndex) => {
+      const resourcePath = `${path}/resources/${resourceIndex}`;
+      const resource = strictRecord(
+        entry,
+        ["resourceKind", "resourceName"],
+        ["resourceKind", "resourceName"],
+        resourcePath,
+      );
+      const resourceName = boundedString(
+        resource.resourceName,
+        1,
+        512,
+        `${resourcePath}/resourceName`,
+      );
+      if (/[\u0000-\u001f\u007f]/u.test(resourceName))
+        error("INVALID_CLEANUP_RESOURCE_NAME", `${resourcePath}/resourceName`);
+      return Object.freeze({
+        resourceKind: enumValue(
+          resource.resourceKind,
+          ["container", "deployment", "pods", "service", "workspace-volume"] as const,
+          `${resourcePath}/resourceKind`,
+        ),
+        resourceName,
+      });
+    });
+    return Object.freeze({
+      workerName: identifier(worker.workerName, `${path}/workerName`),
+      leaseId: identifier(worker.leaseId, `${path}/leaseId`),
+      leaseGeneration: integer(
+        worker.leaseGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        `${path}/leaseGeneration`,
+      ),
+      disposition,
+      resources: Object.freeze(resources),
+    });
+  });
+  const canCleanup = boolean(spec.canCleanup, "/spec/canCleanup");
+  if (canCleanup === blocked) error("INVALID_CLEANUP_AUTHORITY", "/spec/canCleanup");
+  return Object.freeze({
+    ...root,
+    kind: "DeploymentTargetCleanupPreview",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      targetKind: enumValue(
+        spec.targetKind,
+        ["docker", "kubernetes", "ssh"] as const,
+        "/spec/targetKind",
+      ),
+      expectedGeneration: integer(
+        spec.expectedGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/expectedGeneration",
+      ),
+      expectedResourceVersion,
+      canCleanup,
+      workers: Object.freeze(workers),
+    }),
+  });
+}
 export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
   const source = strictRecord(
     value,
@@ -2619,6 +2784,15 @@ export function parseDeploymentTarget(text: string): ResponseEnvelope<Deployment
 }
 export function parseDeploymentTargetPage(text: string): ResponseEnvelope<DeploymentTargetPage> {
   return parseResponse(text, deploymentTargetPageResponseShape, decodeDeploymentTargetPage);
+}
+export function parseDeploymentTargetCleanupPreview(
+  text: string,
+): ResponseEnvelope<DeploymentTargetCleanupPreview> {
+  return parseResponse(
+    text,
+    deploymentTargetCleanupPreviewResponseShape,
+    decodeDeploymentTargetCleanupPreview,
+  );
 }
 export function parseManagedAgentSession(text: string): ResponseEnvelope<ManagedAgentSession> {
   return parseResponse(text, managedAgentSessionResponseShape, decodeManagedAgentSession);
@@ -4138,6 +4312,34 @@ export class Client {
     );
     if (response.status !== 200) throw await this.problem("adminGetDeploymentTarget", response);
     const result = parseDeploymentTarget(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== targetId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async previewAdminDeploymentTargetCleanup(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTargetCleanupPreview>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:cleanup-preview`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminPreviewDeploymentTargetCleanup", response);
+    const result = parseDeploymentTargetCleanupPreview(response.body);
     requireVersion(response, result.value.metadata.resourceVersion);
     if (
       result.value.metadata.tenantRef.id !== tenantId ||

@@ -238,6 +238,9 @@ func TestCleanupWorkerContainerIsOwnedAndIdempotent(t *testing.T) {
 	if err != nil || len(workers) != 1 || workers[0].Request != request {
 		t.Fatalf("managed workers = %#v, error = %v", workers, err)
 	}
+	if container, gotWorkspace := workers[0].CleanupResourceNames(); container != WorkerContainerName(request) || gotWorkspace != workspace {
+		t.Fatalf("cleanup resources = %q/%q", container, gotWorkspace)
+	}
 	for range 2 {
 		if err := cleanupManagedWorker(context.Background(), server.Client(), server.URL, workers[0]); err != nil {
 			t.Fatal(err)

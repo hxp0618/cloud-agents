@@ -396,6 +396,37 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:cleanup-preview": {
+      "get": {
+        "operationId": "adminPreviewDeploymentTargetCleanup",
+        "x-cloud-agents-required-scope": "targets.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/TargetId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current server-authoritative cleanup impact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/deployment-target-cleanup-preview.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "502": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets": {
       "get": {
         "operationId": "managedHostListDeploymentTargets",

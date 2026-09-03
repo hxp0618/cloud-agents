@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   Client,
   createHTTPClient,
+  decodeDeploymentTargetCleanupPreview,
   decodeDeploymentTargetPage,
   decodeEnvironmentLeasePage,
   decodeIdempotency,
@@ -29,6 +30,7 @@ import {
   decodeWatchCursor,
   encodeResponse,
   parseProblem,
+  parseDeploymentTargetCleanupPreview,
   parseDeploymentTargetPage,
   parseEnvironmentLeasePage,
   parseProject,
@@ -251,6 +253,56 @@ describe("generated platform JSON models", () => {
     );
     expect(seen[1]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
+    );
+  });
+  it("previews Admin cleanup impact with generation authority", async () => {
+    const body = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "DeploymentTargetCleanupPreview",
+      metadata: {
+        uid: "docker-alpha",
+        name: "docker-alpha",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "7",
+        createdAt: "2026-09-03T08:00:00Z",
+        updatedAt: "2026-09-03T08:01:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        targetKind: "docker",
+        expectedGeneration: 2,
+        expectedResourceVersion: "7",
+        canCleanup: false,
+        workers: [
+          {
+            workerName: "cloud-agents-worker-alpha",
+            leaseId: "lease-alpha",
+            leaseGeneration: 3,
+            disposition: "blocked",
+            resources: [
+              { resourceKind: "container", resourceName: "cloud-agents-worker-alpha" },
+              { resourceKind: "workspace-volume", resourceName: "workspace-alpha" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(decodeDeploymentTargetCleanupPreview(JSON.parse(body)).spec.canCleanup).toBe(false);
+    expect(parseDeploymentTargetCleanupPreview(body).value.spec.workers).toHaveLength(1);
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: { "X-Resource-Version": "7" }, body };
+    });
+    await client.previewAdminDeploymentTargetCleanup(
+      "tenant-alpha",
+      "project-alpha",
+      "docker-alpha",
+      "request-alpha",
+    );
+    expect(seen[0]?.method).toBe("GET");
+    expect(seen[0]?.path).toBe(
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview",
     );
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {

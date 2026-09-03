@@ -12,6 +12,7 @@ export type AdminClient = Pick<
   | "registerAdminDeploymentTarget"
   | "getAdminDeploymentTarget"
   | "probeAdminDeploymentTarget"
+  | "previewAdminDeploymentTargetCleanup"
   | "listAdminEnvironmentLeases"
   | "getAdminEnvironmentLease"
 >;

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/deployment-target-cleanup-preview.schema.json",
+  "title": "DeploymentTargetCleanupPreview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "DeploymentTargetCleanupPreview" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "canCleanup", "workers"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
+        "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "canCleanup": { "type": "boolean" },
+        "workers": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["workerName", "leaseId", "leaseGeneration", "disposition", "resources"],
+            "properties": {
+              "workerName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "leaseId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "leaseGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+              "disposition": { "enum": ["cleanup", "blocked"] },
+              "resources": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["resourceKind", "resourceName"],
+                  "properties": {
+                    "resourceKind": { "enum": ["container", "deployment", "pods", "service", "workspace-volume"] },
+                    "resourceName": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata identifies the Deployment Target and carries its current resourceVersion",
+    "expectedGeneration and expectedResourceVersion are the confirmation fences for a later cleanup request",
+    "canCleanup is false if any listed Worker is blocked by its exact active Environment Lease authority",
+    "resource names are actuator-observed or actuator-owned selectors and never contain credential or Secret bytes"
+  ]
+}

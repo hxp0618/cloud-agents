@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"net/http"
@@ -16,6 +19,7 @@ import (
 	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -203,7 +207,7 @@ func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
 	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:cleanup") {
 		t.Fatal("deployment target route ownership drifted")
 	}
-	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") {
+	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") {
 		t.Fatal("admin deployment target route ownership drifted")
 	}
 }
@@ -234,6 +238,7 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 		{"collection", http.MethodGet, "targets.list"},
 		{"collection", http.MethodPost, "targets.create"},
 		{"get", http.MethodGet, "targets.get"},
+		{"cleanup-preview", http.MethodGet, "targets.get"},
 		{"probe", http.MethodPost, "targets.act"},
 	}
 	for _, test := range tests {
@@ -244,6 +249,91 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 	}
 	if _, ok := deploymentTargetAdminPermission("cleanup", http.MethodPost); ok {
 		t.Fatal("admin cleanup must remain closed until impact preview and operation audit exist")
+	}
+}
+
+func TestAdminDeploymentTargetCleanupPreviewUsesLiveDockerAuthorityAndBlocksActiveLease(t *testing.T) {
+	deployRequest := dockertarget.DeployRequest{
+		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "docker-alpha", LeaseID: "lease-alpha",
+		TargetGeneration: 1, LeaseGeneration: 2, ReleaseDigest: "sha256:" + strings.Repeat("a", 64), ProviderCredentialRef: "provider-alpha",
+		CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+	}
+	config := dockertarget.DeploymentConfig{WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test"}
+	containerName := dockertarget.WorkerContainerName(deployRequest)
+	workspaceName := strings.Repeat("b", 64)
+	requests := 0
+	docker := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		switch request.URL.Path {
+		case "/containers/json":
+			_, _ = writer.Write([]byte(`[{"Id":"container-alpha"}]`))
+		case "/containers/container-alpha/json":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"Name":   "/" + containerName,
+				"Config": map[string]any{"Image": config.WorkerImageRepository + "@" + deployRequest.ReleaseDigest, "Labels": dockertarget.DeploymentLabels(deployRequest, config)},
+				"Mounts": []map[string]any{{"Type": "volume", "Name": workspaceName, "Destination": "/workspace"}},
+			})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	docker.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert}
+	docker.StartTLS()
+	t.Cleanup(docker.Close)
+
+	credentialRoot := t.TempDir()
+	credentialPath := filepath.Join(credentialRoot, "credential-alpha")
+	if err := os.Mkdir(credentialPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	certificate := docker.TLS.Certificates[0]
+	privateKey, err := x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKey})
+	for name, value := range map[string][]byte{"ca.pem": certPEM, "cert.pem": certPEM, "key.pem": keyPEM} {
+		if err := os.WriteFile(filepath.Join(credentialPath, name), value, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	credentials, err := dockertarget.NewCredentialDirectory(credentialRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 3, 8, 0, 0, 0, time.UTC)
+	store := &deploymentTargetStoreFake{
+		snapshot: internaldeploymenttarget.Snapshot{Scope: internaldeploymenttarget.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, TargetID: deployRequest.TargetID, TargetName: deployRequest.TargetID, Kind: "docker", Endpoint: docker.URL, CredentialRef: "credential-alpha", Generation: 1, ObservedPhase: "ready", ResourceVersion: 7, CreatedAt: now, UpdatedAt: now},
+		lease:    internalmanagedhost.Snapshot{Scope: internalmanagedhost.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, LeaseID: deployRequest.LeaseID, TargetID: deployRequest.TargetID, TargetGeneration: deployRequest.TargetGeneration, Generation: deployRequest.LeaseGeneration, DesiredPhase: "active"},
+	}
+	handler, err := NewAdminDeploymentTargetHTTPServer(&deploymentTargetVerifierFake{}, store, credentials, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview", nil)
+		request.Header.Set("Authorization", "Bearer admin-token")
+		request.Header.Set("X-Request-ID", "request-cleanup-preview")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	response := call()
+	preview, decodeErr := platformv1alpha1.DecodeDeploymentTargetCleanupPreviewResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || preview.Value.Spec.CanCleanup || len(preview.Value.Spec.Workers) != 1 || preview.Value.Spec.Workers[0].Disposition != "blocked" || preview.Value.Spec.Workers[0].Resources[1].ResourceName != workspaceName || response.Header().Get("X-Resource-Version") != "7" || response.Header().Get("ETag") != `"7"` {
+		t.Fatalf("status=%d preview=%#v error=%v headers=%#v body=%s", response.Code, preview, decodeErr, response.Header(), response.Body.String())
+	}
+	store.leaseErr = postgres.ErrManagedHostEnvironmentLeaseNotFound
+	response = call()
+	preview, decodeErr = platformv1alpha1.DecodeDeploymentTargetCleanupPreviewResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || !preview.Value.Spec.CanCleanup || preview.Value.Spec.Workers[0].Disposition != "cleanup" || requests != 4 {
+		t.Fatalf("status=%d preview=%#v error=%v docker requests=%d", response.Code, preview, decodeErr, requests)
+	}
+	for _, forbidden := range []string{docker.URL, "credential-alpha", "provider-alpha", "worker-alpha", "PRIVATE KEY"} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("cleanup preview leaked %q: %s", forbidden, response.Body.String())
+		}
 	}
 }
 
