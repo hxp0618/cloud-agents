@@ -231,6 +231,11 @@ type DeploymentTargetRegisterRequest struct {
 type DeploymentTargetProbeRequest struct {
 	ExpectedGeneration int64 `json:"expectedGeneration"`
 }
+type DeploymentTargetCleanupRequest struct {
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ImpactDigest            string `json:"impactDigest"`
+}
 type DeploymentTargetSpec struct {
 	ProjectRef      common.ProjectRef `json:"projectRef"`
 	Generation      int64             `json:"generation"`
@@ -317,6 +322,7 @@ type DeploymentTargetCleanupPreviewSpec struct {
 	TargetKind              string                          `json:"targetKind"`
 	ExpectedGeneration      int64                           `json:"expectedGeneration"`
 	ExpectedResourceVersion string                          `json:"expectedResourceVersion"`
+	ImpactDigest            string                          `json:"impactDigest"`
 	CanCleanup              bool                            `json:"canCleanup"`
 	Workers                 []DeploymentTargetCleanupWorker `json:"workers"`
 }
@@ -365,7 +371,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetKind": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "canCleanup": common.ScalarResponseShape(), "workers": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"workerName": common.ScalarResponseShape(), "leaseId": common.ScalarResponseShape(), "leaseGeneration": common.ScalarResponseShape(), "disposition": common.ScalarResponseShape(), "resources": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"resourceKind": common.ScalarResponseShape(), "resourceName": common.ScalarResponseShape()}))}))}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetKind": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape(), "canCleanup": common.ScalarResponseShape(), "workers": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"workerName": common.ScalarResponseShape(), "leaseId": common.ScalarResponseShape(), "leaseGeneration": common.ScalarResponseShape(), "disposition": common.ScalarResponseShape(), "resources": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"resourceKind": common.ScalarResponseShape(), "resourceName": common.ScalarResponseShape()}))}))}
 	default:
 		return common.ObjectResponseShape(nil)
 	}
@@ -1410,6 +1416,35 @@ func EncodeDeploymentTargetProbeRequestJSON(value DeploymentTargetProbeRequest) 
 	}
 	return raw, nil
 }
+func DecodeDeploymentTargetCleanupRequestJSON(data []byte) (DeploymentTargetCleanupRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedGeneration", "expectedResourceVersion", "impactDigest"}, []string{"expectedGeneration", "expectedResourceVersion", "impactDigest"})
+	if err != nil {
+		return DeploymentTargetCleanupRequest{}, err
+	}
+	generation, err := fieldInt64(fields, "expectedGeneration", "/expectedGeneration")
+	if err != nil || generation < 1 {
+		return DeploymentTargetCleanupRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	resourceVersion, err := fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/expectedResourceVersion") != nil {
+		return DeploymentTargetCleanupRequest{}, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	impactDigest, err := fieldString(fields, "impactDigest", "/impactDigest")
+	if err != nil || !digestPattern.MatchString(impactDigest) {
+		return DeploymentTargetCleanupRequest{}, common.ContractError("INVALID_DIGEST", "/impactDigest")
+	}
+	return DeploymentTargetCleanupRequest{ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, ImpactDigest: impactDigest}, nil
+}
+func EncodeDeploymentTargetCleanupRequestJSON(value DeploymentTargetCleanupRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeDeploymentTargetCleanupRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 	fields, err := strictResourceExact(data)
 	if err != nil {
@@ -1561,7 +1596,7 @@ func DecodeMaintenanceOperationJSON(data []byte) (MaintenanceOperation, error) {
 	if value.APIVersion != APIVersion || value.Kind != "MaintenanceOperation" {
 		return MaintenanceOperation{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
+	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
 		return MaintenanceOperation{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "")
 	}
 	return value, nil
@@ -1570,6 +1605,20 @@ func maintenanceOperationTimesValid(requestedAt, updatedAt string) bool {
 	requested, requestedErr := time.Parse(time.RFC3339Nano, requestedAt)
 	updated, updatedErr := time.Parse(time.RFC3339Nano, updatedAt)
 	return requestedErr == nil && updatedErr == nil && !updated.Before(requested)
+}
+func DecodeMaintenanceOperationResponseJSON(data []byte) (common.ResponseEnvelope[MaintenanceOperation], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, maintenanceOperationResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[MaintenanceOperation]{}, err
+	}
+	value, err := DecodeMaintenanceOperationJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[MaintenanceOperation]{}, err
+	}
+	return common.ResponseEnvelope[MaintenanceOperation]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeMaintenanceOperationResponseJSON(value common.ResponseEnvelope[MaintenanceOperation]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func DecodeMaintenanceOperationPageJSON(data []byte) (MaintenanceOperationPage, error) {
 	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "operations", "nextPageToken"}, []string{"apiVersion", "kind", "operations"})
@@ -1619,7 +1668,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil
@@ -1721,7 +1770,7 @@ func DecodeDeploymentTargetCleanupPreviewJSON(data []byte) (DeploymentTargetClea
 	if err != nil {
 		return DeploymentTargetCleanupPreview{}, err
 	}
-	spec, err := strictSpec(fields["spec"], []string{"projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "canCleanup", "workers"}, []string{"projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "canCleanup", "workers"})
+	spec, err := strictSpec(fields["spec"], []string{"projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "impactDigest", "canCleanup", "workers"}, []string{"projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "impactDigest", "canCleanup", "workers"})
 	if err != nil {
 		return DeploymentTargetCleanupPreview{}, err
 	}
@@ -1740,6 +1789,10 @@ func DecodeDeploymentTargetCleanupPreviewJSON(data []byte) (DeploymentTargetClea
 	resourceVersion, err := fieldString(spec, "expectedResourceVersion", "/spec/expectedResourceVersion")
 	if err != nil || common.ValidateResourceVersion(resourceVersion, "/spec/expectedResourceVersion") != nil || resourceVersion != base.Metadata.ResourceVersion {
 		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion")
+	}
+	impactDigest, err := fieldString(spec, "impactDigest", "/spec/impactDigest")
+	if err != nil || !digestPattern.MatchString(impactDigest) {
+		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_DIGEST", "/spec/impactDigest")
 	}
 	var canCleanup bool
 	if err := json.Unmarshal(spec["canCleanup"], &canCleanup); err != nil {
@@ -1762,7 +1815,7 @@ func DecodeDeploymentTargetCleanupPreviewJSON(data []byte) (DeploymentTargetClea
 	if canCleanup == blocked {
 		return DeploymentTargetCleanupPreview{}, common.ContractError("INVALID_CLEANUP_AUTHORITY", "/spec/canCleanup")
 	}
-	return DeploymentTargetCleanupPreview{ResourceBase: base, Spec: DeploymentTargetCleanupPreviewSpec{ProjectRef: project, TargetKind: kind, ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, CanCleanup: canCleanup, Workers: workers}}, nil
+	return DeploymentTargetCleanupPreview{ResourceBase: base, Spec: DeploymentTargetCleanupPreviewSpec{ProjectRef: project, TargetKind: kind, ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, ImpactDigest: impactDigest, CanCleanup: canCleanup, Workers: workers}}, nil
 }
 func DecodeDeploymentTargetCleanupPreviewResponseJSON(data []byte) (common.ResponseEnvelope[DeploymentTargetCleanupPreview], error) {
 	fields, sidecar, err := strictResource(data, "DeploymentTargetCleanupPreview")

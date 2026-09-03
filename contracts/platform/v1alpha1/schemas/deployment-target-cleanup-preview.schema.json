@@ -12,12 +12,13 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "canCleanup", "workers"],
+      "required": ["projectRef", "targetKind", "expectedGeneration", "expectedResourceVersion", "impactDigest", "canCleanup", "workers"],
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
         "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
         "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "canCleanup": { "type": "boolean" },
         "workers": {
           "type": "array",
@@ -53,7 +54,7 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "metadata identifies the Deployment Target and carries its current resourceVersion",
-    "expectedGeneration and expectedResourceVersion are the confirmation fences for a later cleanup request",
+    "expectedGeneration, expectedResourceVersion and impactDigest are the confirmation fences for a later cleanup request",
     "canCleanup is false if any listed Worker is blocked by its exact active Environment Lease authority",
     "resource names are actuator-observed or actuator-owned selectors and never contain credential or Secret bytes"
   ]

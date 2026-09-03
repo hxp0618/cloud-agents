@@ -26,17 +26,25 @@ import (
 )
 
 type deploymentTargetStoreFake struct {
-	snapshot   internaldeploymenttarget.Snapshot
-	register   int
-	list       int
-	get        int
-	begin      int
-	complete   int
-	completion internaldeploymenttarget.ProbeCompletion
-	operations []internaldeploymenttarget.Operation
-	audit      []internaldeploymenttarget.AuditEvent
-	lease      internalmanagedhost.Snapshot
-	leaseErr   error
+	snapshot           internaldeploymenttarget.Snapshot
+	register           int
+	list               int
+	get                int
+	begin              int
+	complete           int
+	completion         internaldeploymenttarget.ProbeCompletion
+	cleanupBegin       int
+	cleanupComplete    int
+	cleanupExecute     bool
+	cleanupInput       internaldeploymenttarget.CleanupInput
+	cleanupCompletion  internaldeploymenttarget.CleanupCompletion
+	cleanupOperation   internaldeploymenttarget.Operation
+	cleanupBeginErr    error
+	cleanupCompleteErr error
+	operations         []internaldeploymenttarget.Operation
+	audit              []internaldeploymenttarget.AuditEvent
+	lease              internalmanagedhost.Snapshot
+	leaseErr           error
 }
 
 type deploymentTargetVerifierFake struct {
@@ -153,6 +161,48 @@ func (fake *deploymentTargetStoreFake) CompleteDeploymentTargetProbe(_ context.C
 	return fake.snapshot, nil
 }
 
+func (fake *deploymentTargetStoreFake) BeginDeploymentTargetCleanup(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internaldeploymenttarget.CleanupInput) (internaldeploymenttarget.CleanupStart, error) {
+	fake.cleanupBegin++
+	fake.cleanupInput = input
+	if fake.cleanupBeginErr != nil {
+		return internaldeploymenttarget.CleanupStart{}, fake.cleanupBeginErr
+	}
+	operation := fake.cleanupOperation
+	if operation.OperationID == "" {
+		now := fake.snapshot.UpdatedAt
+		operation = internaldeploymenttarget.Operation{
+			Scope: input.Scope, OperationID: "cleanup-operation-alpha", IdempotencyKey: input.Mutation.IdempotencyKey,
+			Action: "target.cleanup", TargetID: input.TargetID, TargetGeneration: input.ExpectedGeneration,
+			RequestedBy: "sha256:" + strings.Repeat("a", 64), RequestID: input.Mutation.RequestID,
+			RequestedAt: now, UpdatedAt: now, State: "running", CurrentStep: "cleanup",
+			ImpactSummary: "Clean deployment target resources confirmed by preview",
+		}
+	}
+	return internaldeploymenttarget.CleanupStart{Operation: operation, Execute: fake.cleanupExecute}, nil
+}
+
+func (fake *deploymentTargetStoreFake) CompleteDeploymentTargetCleanup(_ context.Context, _ string, _ *authn.VerifiedPrincipal, completion internaldeploymenttarget.CleanupCompletion) (internaldeploymenttarget.Operation, error) {
+	fake.cleanupComplete++
+	fake.cleanupCompletion = completion
+	if fake.cleanupCompleteErr != nil {
+		return internaldeploymenttarget.Operation{}, fake.cleanupCompleteErr
+	}
+	now := fake.snapshot.UpdatedAt
+	state, step, retryable := "succeeded", "complete", false
+	if !completion.Succeeded {
+		state, step, retryable = "failed", "failed", true
+	}
+	operation := internaldeploymenttarget.Operation{
+		Scope: completion.Input.Scope, OperationID: "cleanup-operation-alpha", IdempotencyKey: completion.Input.Mutation.IdempotencyKey,
+		Action: "target.cleanup", TargetID: completion.Input.TargetID, TargetGeneration: completion.Input.ExpectedGeneration,
+		RequestedBy: "sha256:" + strings.Repeat("a", 64), RequestID: completion.Input.Mutation.RequestID,
+		RequestedAt: now, UpdatedAt: now, State: state, CurrentStep: step, StableErrorCode: completion.StableErrorCode,
+		ImpactSummary: completion.ImpactSummary, Retryable: retryable,
+	}
+	fake.cleanupOperation = operation
+	return operation, nil
+}
+
 func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC)
 	verifier := &projectHTTPVerifierFake{}
@@ -217,7 +267,7 @@ func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
 	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:cleanup") {
 		t.Fatal("deployment target route ownership drifted")
 	}
-	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events") {
+	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events") {
 		t.Fatal("admin deployment target route ownership drifted")
 	}
 }
@@ -306,6 +356,7 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 		{"operations", http.MethodGet, "operations.list"},
 		{"audit-events", http.MethodGet, "audit.list"},
 		{"probe", http.MethodPost, "targets.act"},
+		{"cleanup", http.MethodPost, "targets.act"},
 	}
 	for _, test := range tests {
 		permission, ok := deploymentTargetAdminPermission(test.action, test.method)
@@ -313,8 +364,8 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 			t.Fatalf("action=%q method=%q permission=%q ok=%t", test.action, test.method, permission, ok)
 		}
 	}
-	if _, ok := deploymentTargetAdminPermission("cleanup", http.MethodPost); ok {
-		t.Fatal("admin cleanup must remain closed until impact preview and operation audit exist")
+	if _, ok := deploymentTargetAdminPermission("cleanup", http.MethodGet); ok {
+		t.Fatal("admin cleanup accepted the wrong method")
 	}
 }
 
@@ -327,18 +378,33 @@ func TestAdminDeploymentTargetCleanupPreviewUsesLiveDockerAuthorityAndBlocksActi
 	config := dockertarget.DeploymentConfig{WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test"}
 	containerName := dockertarget.WorkerContainerName(deployRequest)
 	workspaceName := strings.Repeat("b", 64)
-	requests := 0
+	requests, containerDeletes, volumeDeletes := 0, 0, 0
+	containerPresent, volumePresent := true, true
 	docker := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requests++
-		switch request.URL.Path {
-		case "/containers/json":
-			_, _ = writer.Write([]byte(`[{"Id":"container-alpha"}]`))
-		case "/containers/container-alpha/json":
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/containers/json":
+			if containerPresent && !strings.Contains(request.URL.Query().Get("filters"), `"volume"`) {
+				_, _ = writer.Write([]byte(`[{"Id":"container-alpha"}]`))
+			} else {
+				_, _ = writer.Write([]byte(`[]`))
+			}
+		case request.Method == http.MethodGet && request.URL.Path == "/containers/container-alpha/json" && containerPresent:
 			_ = json.NewEncoder(writer).Encode(map[string]any{
 				"Name":   "/" + containerName,
 				"Config": map[string]any{"Image": config.WorkerImageRepository + "@" + deployRequest.ReleaseDigest, "Labels": dockertarget.DeploymentLabels(deployRequest, config)},
 				"Mounts": []map[string]any{{"Type": "volume", "Name": workspaceName, "Destination": "/workspace"}},
 			})
+		case request.Method == http.MethodDelete && request.URL.Path == "/containers/container-alpha":
+			containerPresent = false
+			containerDeletes++
+			writer.WriteHeader(http.StatusNoContent)
+		case request.Method == http.MethodGet && request.URL.Path == "/volumes/"+workspaceName && volumePresent:
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Name": workspaceName, "Labels": map[string]string{}})
+		case request.Method == http.MethodDelete && request.URL.Path == "/volumes/"+workspaceName:
+			volumePresent = false
+			volumeDeletes++
+			writer.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(writer, request)
 		}
@@ -373,7 +439,8 @@ func TestAdminDeploymentTargetCleanupPreviewUsesLiveDockerAuthorityAndBlocksActi
 		snapshot: internaldeploymenttarget.Snapshot{Scope: internaldeploymenttarget.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, TargetID: deployRequest.TargetID, TargetName: deployRequest.TargetID, Kind: "docker", Endpoint: docker.URL, CredentialRef: "credential-alpha", Generation: 1, ObservedPhase: "ready", ResourceVersion: 7, CreatedAt: now, UpdatedAt: now},
 		lease:    internalmanagedhost.Snapshot{Scope: internalmanagedhost.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, LeaseID: deployRequest.LeaseID, TargetID: deployRequest.TargetID, TargetGeneration: deployRequest.TargetGeneration, Generation: deployRequest.LeaseGeneration, DesiredPhase: "active"},
 	}
-	handler, err := NewAdminDeploymentTargetHTTPServer(&deploymentTargetVerifierFake{}, store, credentials, nil, nil)
+	verifier := &deploymentTargetVerifierFake{}
+	handler, err := NewAdminDeploymentTargetHTTPServer(verifier, store, credentials, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,20 +452,63 @@ func TestAdminDeploymentTargetCleanupPreviewUsesLiveDockerAuthorityAndBlocksActi
 		handler.ServeHTTP(response, request)
 		return response
 	}
+	cleanup := func(key, impactDigest string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup", strings.NewReader(`{"expectedGeneration":1,"expectedResourceVersion":"7","impactDigest":"`+impactDigest+`"}`))
+		request.Header.Set("Authorization", "Bearer admin-token")
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Request-ID", "request-"+key)
+		request.Header.Set("Idempotency-Key", key)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
 	response := call()
 	preview, decodeErr := platformv1alpha1.DecodeDeploymentTargetCleanupPreviewResponseJSON(response.Body.Bytes())
-	if response.Code != http.StatusOK || decodeErr != nil || preview.Value.Spec.CanCleanup || len(preview.Value.Spec.Workers) != 1 || preview.Value.Spec.Workers[0].Disposition != "blocked" || preview.Value.Spec.Workers[0].Resources[1].ResourceName != workspaceName || response.Header().Get("X-Resource-Version") != "7" || response.Header().Get("ETag") != `"7"` {
+	if response.Code != http.StatusOK || decodeErr != nil || preview.Value.Spec.CanCleanup || !strings.HasPrefix(preview.Value.Spec.ImpactDigest, "sha256:") || len(preview.Value.Spec.Workers) != 1 || preview.Value.Spec.Workers[0].Disposition != "blocked" || preview.Value.Spec.Workers[0].Resources[1].ResourceName != workspaceName || response.Header().Get("X-Resource-Version") != "7" || response.Header().Get("ETag") != `"7"` {
 		t.Fatalf("status=%d preview=%#v error=%v headers=%#v body=%s", response.Code, preview, decodeErr, response.Header(), response.Body.String())
 	}
+	if len(verifier.requests) != 4 || verifier.requests[3].RequiredPermission != "projects.get" {
+		t.Fatalf("cleanup preview did not obtain distinct target and Lease read authorities: %#v", verifier.requests)
+	}
+	store.cleanupExecute = true
+	blocked := cleanup("cleanup-active-key", preview.Value.Spec.ImpactDigest)
+	if blocked.Code != http.StatusConflict || !strings.Contains(blocked.Body.String(), `"code":"CLEANUP_ACTIVE_LEASE_CONFLICT"`) || store.cleanupComplete != 1 || store.cleanupCompletion.Succeeded || store.cleanupCompletion.StableErrorCode != "target-cleanup-active-lease" || containerDeletes != 0 {
+		t.Fatalf("blocked status=%d completion=%#v deletes=%d body=%s", blocked.Code, store.cleanupCompletion, containerDeletes, blocked.Body.String())
+	}
+	store.cleanupOperation = internaldeploymenttarget.Operation{}
 	store.leaseErr = postgres.ErrManagedHostEnvironmentLeaseNotFound
 	response = call()
 	preview, decodeErr = platformv1alpha1.DecodeDeploymentTargetCleanupPreviewResponseJSON(response.Body.Bytes())
-	if response.Code != http.StatusOK || decodeErr != nil || !preview.Value.Spec.CanCleanup || preview.Value.Spec.Workers[0].Disposition != "cleanup" || requests != 4 {
+	if response.Code != http.StatusOK || decodeErr != nil || !preview.Value.Spec.CanCleanup || preview.Value.Spec.Workers[0].Disposition != "cleanup" || requests != 6 {
 		t.Fatalf("status=%d preview=%#v error=%v docker requests=%d", response.Code, preview, decodeErr, requests)
 	}
-	for _, forbidden := range []string{docker.URL, "credential-alpha", "provider-alpha", "worker-alpha", "PRIVATE KEY"} {
-		if strings.Contains(response.Body.String(), forbidden) {
-			t.Fatalf("cleanup preview leaked %q: %s", forbidden, response.Body.String())
+	confirmedDigest := preview.Value.Spec.ImpactDigest
+	store.cleanupExecute = true
+	operationResponse := cleanup("cleanup-success-key", confirmedDigest)
+	operation, operationErr := platformv1alpha1.DecodeMaintenanceOperationResponseJSON(operationResponse.Body.Bytes())
+	if operationResponse.Code != http.StatusOK || operationErr != nil || operation.Value.State != "succeeded" || operation.Value.Action != "target.cleanup" || store.cleanupComplete != 2 || !store.cleanupCompletion.Succeeded || store.cleanupInput.ExpectedResourceVersion != 7 || store.cleanupInput.ImpactDigest != confirmedDigest || containerPresent || volumePresent || containerDeletes != 1 || volumeDeletes != 1 {
+		t.Fatalf("status=%d operation=%#v error=%v input=%#v completion=%#v resources=%t/%t deletes=%d/%d body=%s", operationResponse.Code, operation, operationErr, store.cleanupInput, store.cleanupCompletion, containerPresent, volumePresent, containerDeletes, volumeDeletes, operationResponse.Body.String())
+	}
+	if verifier.requests[len(verifier.requests)-1].RequiredPermission != "projects.act" {
+		t.Fatalf("cleanup completion reused an earlier authority: %#v", verifier.requests)
+	}
+	requestsBeforeReplay := requests
+	store.cleanupExecute = false
+	replay := cleanup("cleanup-success-key", confirmedDigest)
+	if replay.Code != http.StatusOK || requests != requestsBeforeReplay || store.cleanupComplete != 2 {
+		t.Fatalf("replay status=%d requests=%d/%d completions=%d body=%s", replay.Code, requests, requestsBeforeReplay, store.cleanupComplete, replay.Body.String())
+	}
+	store.cleanupOperation = internaldeploymenttarget.Operation{}
+	store.cleanupExecute = true
+	stale := cleanup("cleanup-stale-key", confirmedDigest)
+	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), `"code":"CLEANUP_IMPACT_CONFLICT"`) || store.cleanupComplete != 3 || store.cleanupCompletion.StableErrorCode != "target-cleanup-impact-conflict" {
+		t.Fatalf("stale status=%d completion=%#v body=%s", stale.Code, store.cleanupCompletion, stale.Body.String())
+	}
+	for _, body := range []string{response.Body.String(), operationResponse.Body.String(), replay.Body.String(), stale.Body.String()} {
+		for _, forbidden := range []string{docker.URL, "credential-alpha", "provider-alpha", "worker-alpha", "PRIVATE KEY"} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("cleanup response leaked %q: %s", forbidden, body)
+			}
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package deploymenttarget
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -56,5 +57,26 @@ func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {
 	snapshot.StableErrorCode = "must-not-coexist"
 	if err := snapshot.Validate(); err == nil {
 		t.Fatal("ready target accepted a failure code")
+	}
+}
+
+func TestDeploymentTargetCleanupDigestBindsConfirmationFences(t *testing.T) {
+	input := CleanupInput{
+		Scope: Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "target-alpha",
+		ExpectedGeneration: 2, ExpectedResourceVersion: 7, ImpactDigest: "sha256:" + strings.Repeat("a", 64),
+		Mutation: Mutation{RequestID: "request-cleanup", IdempotencyKey: "cleanup-key-1234~"},
+	}
+	first, err := CleanupMutationDigest(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ExpectedResourceVersion++
+	second, err := CleanupMutationDigest(input)
+	if err != nil || first == second {
+		t.Fatalf("cleanup digest did not bind resourceVersion: %q %q %v", first, second, err)
+	}
+	completion := CleanupCompletion{Input: input, Succeeded: false, StableErrorCode: "target-cleanup-impact-conflict", ImpactSummary: "Cleanup stopped because the confirmed resource impact changed"}
+	if err := completion.Validate("tenant-alpha"); err != nil {
+		t.Fatal(err)
 	}
 }

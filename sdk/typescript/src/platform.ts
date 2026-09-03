@@ -270,6 +270,11 @@ export type DeploymentTargetRegisterRequest = Readonly<{
   credentialRef: string;
 }>;
 export type DeploymentTargetProbeRequest = Readonly<{ expectedGeneration: number }>;
+export type DeploymentTargetCleanupRequest = Readonly<{
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  impactDigest: `sha256:${string}`;
+}>;
 export type DeploymentTarget = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "DeploymentTarget";
@@ -300,7 +305,7 @@ export type MaintenanceOperation = Readonly<{
   kind: "MaintenanceOperation";
   operationId: string;
   idempotencyKey: string;
-  action: "target.register" | "target.probe";
+  action: "target.register" | "target.probe" | "target.cleanup";
   resourceKind: "DeploymentTarget";
   resourceId: string;
   resourceGeneration: number;
@@ -325,7 +330,7 @@ export type AdminAuditEvent = Readonly<{
   kind: "AdminAuditEvent";
   eventId: string;
   actor: `sha256:${string}`;
-  action: "target.register" | "target.probe";
+  action: "target.register" | "target.probe" | "target.cleanup";
   resourceKind: "DeploymentTarget";
   resourceId: string;
   resourceGeneration: number;
@@ -361,6 +366,7 @@ export type DeploymentTargetCleanupPreview = Readonly<{
     targetKind: "docker" | "kubernetes" | "ssh";
     expectedGeneration: number;
     expectedResourceVersion: string;
+    impactDigest: `sha256:${string}`;
     canCleanup: boolean;
     workers: readonly DeploymentTargetCleanupWorker[];
   }>;
@@ -758,6 +764,7 @@ const deploymentTargetCleanupPreviewResponseShape = resourceResponseShape({
   targetKind: scalarResponseShape,
   expectedGeneration: scalarResponseShape,
   expectedResourceVersion: scalarResponseShape,
+  impactDigest: scalarResponseShape,
   canCleanup: scalarResponseShape,
   workers: { item: deploymentTargetCleanupWorkerResponseShape },
 });
@@ -1525,6 +1532,36 @@ export function decodeDeploymentTargetProbeRequest(value: unknown): DeploymentTa
 export function encodeDeploymentTargetProbeRequest(value: DeploymentTargetProbeRequest): string {
   return JSON.stringify(decodeDeploymentTargetProbeRequest(value));
 }
+export function decodeDeploymentTargetCleanupRequest(
+  value: unknown,
+): DeploymentTargetCleanupRequest {
+  const source = strictRecord(
+    value,
+    ["expectedGeneration", "expectedResourceVersion", "impactDigest"],
+    ["expectedGeneration", "expectedResourceVersion", "impactDigest"],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) || expectedResourceVersion.length > 20)
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    impactDigest: digest(source.impactDigest, "/impactDigest") as `sha256:${string}`,
+  });
+}
+export function encodeDeploymentTargetCleanupRequest(
+  value: DeploymentTargetCleanupRequest,
+): string {
+  return JSON.stringify(decodeDeploymentTargetCleanupRequest(value));
+}
 export function parseRBACMutationResult(text: string): ResponseEnvelope<RBACMutationResult> {
   return parseResponse(text, rbacMutationResultResponseShape, decodeRBACMutationResult);
 }
@@ -2167,7 +2204,11 @@ export function decodeMaintenanceOperation(value: unknown): MaintenanceOperation
     kind: "MaintenanceOperation" as const,
     operationId: identifier(source.operationId, "/operationId"),
     idempotencyKey,
-    action: enumValue(source.action, ["target.register", "target.probe"] as const, "/action"),
+    action: enumValue(
+      source.action,
+      ["target.register", "target.probe", "target.cleanup"] as const,
+      "/action",
+    ),
     resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
     resourceId: identifier(source.resourceId, "/resourceId"),
     resourceGeneration: integer(
@@ -2205,7 +2246,7 @@ export function decodeMaintenanceOperationPage(value: unknown): MaintenanceOpera
   const page = {
     apiVersion: platformApiVersion,
     kind: "MaintenanceOperationPage" as const,
-    operations: Object.freeze(source.operations.map(decodeMaintenanceOperation)),
+    operations: Object.freeze((source.operations as unknown[]).map(decodeMaintenanceOperation)),
   };
   return Object.freeze(
     source.nextPageToken === undefined
@@ -2260,7 +2301,11 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
     kind: "AdminAuditEvent" as const,
     eventId: identifier(source.eventId, "/eventId"),
     actor: digest(source.actor, "/actor") as `sha256:${string}`,
-    action: enumValue(source.action, ["target.register", "target.probe"] as const, "/action"),
+    action: enumValue(
+      source.action,
+      ["target.register", "target.probe", "target.cleanup"] as const,
+      "/action",
+    ),
     resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
     resourceId: identifier(source.resourceId, "/resourceId"),
     resourceGeneration: integer(
@@ -2292,7 +2337,7 @@ export function decodeAdminAuditEventPage(value: unknown): AdminAuditEventPage {
   const page = {
     apiVersion: platformApiVersion,
     kind: "AdminAuditEventPage" as const,
-    events: Object.freeze(source.events.map(decodeAdminAuditEvent)),
+    events: Object.freeze((source.events as unknown[]).map(decodeAdminAuditEvent)),
   };
   return Object.freeze(
     source.nextPageToken === undefined
@@ -2312,6 +2357,7 @@ export function decodeDeploymentTargetCleanupPreview(
       "targetKind",
       "expectedGeneration",
       "expectedResourceVersion",
+      "impactDigest",
       "canCleanup",
       "workers",
     ],
@@ -2320,6 +2366,7 @@ export function decodeDeploymentTargetCleanupPreview(
       "targetKind",
       "expectedGeneration",
       "expectedResourceVersion",
+      "impactDigest",
       "canCleanup",
       "workers",
     ],
@@ -2416,6 +2463,7 @@ export function decodeDeploymentTargetCleanupPreview(
         "/spec/expectedGeneration",
       ),
       expectedResourceVersion,
+      impactDigest: digest(spec.impactDigest, "/spec/impactDigest") as `sha256:${string}`,
       canCleanup,
       workers: Object.freeze(workers),
     }),
@@ -3090,6 +3138,9 @@ export function parseDeploymentTarget(text: string): ResponseEnvelope<Deployment
 }
 export function parseDeploymentTargetPage(text: string): ResponseEnvelope<DeploymentTargetPage> {
   return parseResponse(text, deploymentTargetPageResponseShape, decodeDeploymentTargetPage);
+}
+export function parseMaintenanceOperation(text: string): ResponseEnvelope<MaintenanceOperation> {
+  return parseResponse(text, maintenanceOperationResponseShape, decodeMaintenanceOperation);
 }
 export function parseMaintenanceOperationPage(
   text: string,
@@ -4723,6 +4774,36 @@ export class Client {
       result.value.spec.projectRef.id !== projectId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async cleanupAdminDeploymentTarget(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: DeploymentTargetCleanupRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperation>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:cleanup`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeDeploymentTargetCleanupRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminCleanupDeploymentTarget", response);
+    const result = parseMaintenanceOperation(response.body);
+    if (
+      result.value.resourceId !== targetId ||
+      result.value.resourceGeneration !== body.expectedGeneration
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/resourceId");
     return result;
   }
   async probeAdminDeploymentTarget(

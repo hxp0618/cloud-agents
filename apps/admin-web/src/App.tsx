@@ -11,6 +11,7 @@ import {
 
 import {
   adminErrorMessage,
+  cleanupRequestFromPreview,
   listAdminLeases,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
@@ -206,6 +207,7 @@ export function App() {
   const [page, setPage] = useState<Page>("overview");
   const [query, setQuery] = useState("");
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
+  const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = useState(false);
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
@@ -347,6 +349,7 @@ export function App() {
     setQuery("");
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
+    setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
   }
 
@@ -363,6 +366,7 @@ export function App() {
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
     setTargetDetailOpen(false);
+    setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setMobileNavOpen(false);
     setBusy(null);
@@ -475,6 +479,7 @@ export function App() {
 
   function selectTarget(targetId: string) {
     setTargetDetailOpen(true);
+    setCleanupConfirmationOpen(false);
     if (client === null) return;
     setCleanupPreview(null);
     setTargetOperations(Object.freeze([]));
@@ -592,8 +597,38 @@ export function App() {
           signal,
         );
         setCleanupPreview(result.value);
+        setCleanupConfirmationOpen(true);
       },
     );
+  }
+
+  function cleanupTarget() {
+    if (
+      client === null ||
+      selectedTarget === undefined ||
+      selectedCleanupPreview === null ||
+      !selectedCleanupPreview.spec.canCleanup
+    )
+      return;
+    const target = selectedTarget;
+    const preview = selectedCleanupPreview;
+    const key = `cleanup:${target.metadata.uid}:${preview.spec.expectedGeneration}:${preview.spec.expectedResourceVersion}:${preview.spec.impactDigest}`;
+    setCleanupConfirmationOpen(false);
+    void runOperation(key, `Cleanup ${target.metadata.name}`, async (signal) => {
+      await client.cleanupAdminDeploymentTarget(
+        connection.tenantId,
+        connection.projectId,
+        target.metadata.uid,
+        newRequestId(),
+        idempotencyKey(key),
+        cleanupRequestFromPreview(preview),
+        signal,
+      );
+      const activity = await loadTargetActivity(client, connection, target.metadata.uid, signal);
+      setTargetOperations(activity.operations);
+      setTargetAudit(activity.audit);
+      setCleanupPreview(null);
+    });
   }
 
   if (!connected) {
@@ -975,7 +1010,10 @@ export function App() {
       {targetDetailOpen && selectedTarget !== undefined ? (
         <AdminSheet
           label={`Deployment target ${selectedTarget.metadata.name}`}
-          onClose={() => setTargetDetailOpen(false)}
+          onClose={() => {
+            setTargetDetailOpen(false);
+            setCleanupConfirmationOpen(false);
+          }}
         >
           <aside className="detail-panel" aria-label="Selected deployment target">
             <button
@@ -990,12 +1028,28 @@ export function App() {
               target={selectedTarget}
               operations={targetOperations}
               audit={targetAudit}
-              cleanupPreview={selectedCleanupPreview}
               onProbe={probeTarget}
               onPreviewCleanup={previewTargetCleanup}
               disabled={busy !== null}
             />
           </aside>
+        </AdminSheet>
+      ) : null}
+
+      {cleanupConfirmationOpen &&
+      selectedTarget !== undefined &&
+      selectedCleanupPreview !== null ? (
+        <AdminSheet
+          label={`Confirm cleanup for ${selectedTarget.metadata.name}`}
+          onClose={() => setCleanupConfirmationOpen(false)}
+        >
+          <CleanupConfirmation
+            target={selectedTarget}
+            preview={selectedCleanupPreview}
+            disabled={busy !== null}
+            onClose={() => setCleanupConfirmationOpen(false)}
+            onConfirm={cleanupTarget}
+          />
         </AdminSheet>
       ) : null}
 
@@ -1267,7 +1321,6 @@ function TargetDetail({
   target,
   operations,
   audit,
-  cleanupPreview,
   onProbe,
   onPreviewCleanup,
   disabled,
@@ -1275,7 +1328,6 @@ function TargetDetail({
   target: DeploymentTarget;
   operations: readonly MaintenanceOperation[];
   audit: readonly AdminAuditEvent[];
-  cleanupPreview: DeploymentTargetCleanupPreview | null;
   onProbe: () => void;
   onPreviewCleanup: () => void;
   disabled: boolean;
@@ -1426,57 +1478,125 @@ function TargetDetail({
         >
           Preview cleanup
         </button>
-        {cleanupPreview === null ? null : (
-          <div className="cleanup-preview" aria-live="polite">
-            <div className="cleanup-preview-summary">
-              <span className={`phase ${cleanupPreview.spec.canCleanup ? "success" : "danger"}`}>
-                <i />
-                {cleanupPreview.spec.canCleanup
-                  ? "No active Lease blockers"
-                  : "Blocked by active Lease"}
-              </span>
-              <span className="mono">
-                g{cleanupPreview.spec.expectedGeneration} · rv
-                {cleanupPreview.spec.expectedResourceVersion}
-              </span>
-            </div>
-            {cleanupPreview.spec.workers.length === 0 ? (
-              <p>No platform-owned Workers were found.</p>
-            ) : (
-              cleanupPreview.spec.workers.map((worker) => (
-                <article
-                  className="cleanup-worker"
-                  key={`${worker.workerName}:${worker.leaseGeneration}`}
-                >
-                  <div>
-                    <strong className="mono">{worker.workerName}</strong>
-                    <span
-                      className={`phase ${worker.disposition === "blocked" ? "danger" : "success"}`}
-                    >
-                      <i /> {worker.disposition}
-                    </span>
-                  </div>
-                  <small className="mono">
-                    {worker.leaseId} · g{worker.leaseGeneration}
-                  </small>
-                  <ul>
-                    {worker.resources.map((resource) => (
-                      <li key={`${resource.resourceKind}:${resource.resourceName}`}>
-                        <span>{resource.resourceKind}</span>
-                        <code>{resource.resourceName}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              ))
-            )}
-            <p className="preview-boundary">
-              Cleanup preview is read-only; execution is not enabled in this slice.
-            </p>
-          </div>
-        )}
       </section>
     </>
+  );
+}
+
+function CleanupConfirmation({
+  target,
+  preview,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  target: DeploymentTarget;
+  preview: DeploymentTargetCleanupPreview;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const [confirmed, setConfirmed] = useState(false);
+  const resourceCount = preview.spec.workers.reduce(
+    (count, worker) => count + worker.resources.length,
+    0,
+  );
+  return (
+    <section className="dialog" aria-labelledby="cleanup-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">targets.act · destructive</div>
+          <h2 id="cleanup-title">Confirm target cleanup</h2>
+          <p>{target.metadata.name}</p>
+        </div>
+        <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className={`banner ${preview.spec.canCleanup ? "running" : "danger"}`} role="status">
+          {preview.spec.canCleanup
+            ? `${preview.spec.workers.length} Workers and ${resourceCount} resources will be deleted.`
+            : "Cleanup is blocked because at least one Worker has an active Lease."}
+        </div>
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>Target</dt>
+            <dd className="mono">{target.metadata.uid}</dd>
+          </div>
+          <div>
+            <dt>Generation</dt>
+            <dd className="mono">{preview.spec.expectedGeneration}</dd>
+          </div>
+          <div>
+            <dt>Resource version</dt>
+            <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
+          </div>
+        </dl>
+        <div className="cleanup-preview" aria-label="Cleanup impact">
+          {preview.spec.workers.length === 0 ? (
+            <p>No platform-owned Workers or resources were found.</p>
+          ) : (
+            preview.spec.workers.map((worker) => (
+              <article
+                className="cleanup-worker"
+                key={`${worker.workerName}:${worker.leaseGeneration}`}
+              >
+                <div>
+                  <strong className="mono">{worker.workerName}</strong>
+                  <span
+                    className={`phase ${worker.disposition === "blocked" ? "danger" : "success"}`}
+                  >
+                    <i /> {worker.disposition}
+                  </span>
+                </div>
+                <small className="mono">
+                  {worker.leaseId} · g{worker.leaseGeneration}
+                </small>
+                <ul>
+                  {worker.resources.map((resource) => (
+                    <li key={`${resource.resourceKind}:${resource.resourceName}`}>
+                      <span>{resource.resourceKind}</span>
+                      <code>{resource.resourceName}</code>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))
+          )}
+        </div>
+        {preview.spec.canCleanup ? (
+          <label className="confirmation-check">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+              disabled={disabled}
+              data-sheet-autofocus
+            />
+            <span>I reviewed the resource names and generation above.</span>
+          </label>
+        ) : null}
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="button danger"
+            type="submit"
+            disabled={disabled || !preview.spec.canCleanup || !confirmed}
+          >
+            Confirm cleanup
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 

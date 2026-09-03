@@ -46,6 +46,22 @@ type ProbeCompletion struct {
 	StableErrorCode                     string
 }
 
+type CleanupInput struct {
+	Scope                   Scope
+	TargetID                string
+	ExpectedGeneration      int64
+	ExpectedResourceVersion int64
+	ImpactDigest            string
+	Mutation                Mutation
+}
+
+type CleanupCompletion struct {
+	Input           CleanupInput
+	Succeeded       bool
+	StableErrorCode string
+	ImpactSummary   string
+}
+
 type Snapshot struct {
 	Scope                                                Scope
 	TargetID, TargetName, Kind, Endpoint, CredentialRef  string
@@ -62,6 +78,11 @@ type ProbeStart struct {
 	Execute bool
 }
 
+type CleanupStart struct {
+	Operation Operation
+	Execute   bool
+}
+
 func (input RegisterInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
 		invalidIdentifier(input.TargetID) || invalidIdentifier(input.TargetName) || !validKind(input.Kind) ||
@@ -74,6 +95,14 @@ func (input RegisterInput) Validate(tenantID string) error {
 func (input ProbeInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
 		invalidIdentifier(input.TargetID) || input.ExpectedGeneration < 1 {
+		return ErrInvalidInput
+	}
+	return validateMutation(input.Mutation)
+}
+
+func (input CleanupInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) || invalidIdentifier(input.TargetID) ||
+		input.ExpectedGeneration < 1 || input.ExpectedResourceVersion < 1 || !digestPattern.MatchString(input.ImpactDigest) {
 		return ErrInvalidInput
 	}
 	return validateMutation(input.Mutation)
@@ -98,6 +127,16 @@ func ProbeMutationDigest(input ProbeInput) (string, error) {
 	}{"deployment-target.probe", input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.ExpectedGeneration}), nil
 }
 
+func CleanupMutationDigest(input CleanupInput) (string, error) {
+	if err := input.Validate(input.Scope.TenantID); err != nil {
+		return "", err
+	}
+	return digest(struct {
+		Operation, TenantID, ProjectID, TargetID, ImpactDigest string
+		ExpectedGeneration, ExpectedResourceVersion            int64
+	}{"deployment-target.cleanup", input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.ImpactDigest, input.ExpectedGeneration, input.ExpectedResourceVersion}), nil
+}
+
 func (completion ProbeCompletion) Validate(tenantID string) error {
 	if completion.Input.Validate(tenantID) != nil {
 		return ErrInvalidInput
@@ -113,6 +152,16 @@ func (completion ProbeCompletion) Validate(tenantID string) error {
 		if len(value) > 128 || strings.ContainsAny(value, "\r\n\x00") {
 			return ErrInvalidInput
 		}
+	}
+	return nil
+}
+
+func (completion CleanupCompletion) Validate(tenantID string) error {
+	if completion.Input.Validate(tenantID) != nil || len(completion.ImpactSummary) < 1 || len(completion.ImpactSummary) > 256 ||
+		strings.ContainsAny(completion.ImpactSummary, "\r\n\x00") ||
+		(completion.Succeeded && completion.StableErrorCode != "") ||
+		(!completion.Succeeded && invalidIdentifier(completion.StableErrorCode)) {
+		return ErrInvalidInput
 	}
 	return nil
 }

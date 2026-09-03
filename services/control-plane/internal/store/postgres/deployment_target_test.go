@@ -8,6 +8,7 @@ import (
 	"time"
 
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestDecodeDeploymentTargetPageRowsBindsProjectAndCursor(t *testing.T) {
@@ -77,5 +78,31 @@ func TestDeploymentTargetProjectionRejectsPhaseFactDrift(t *testing.T) {
 	err := scanDeploymentTarget(row, internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
 	if !errors.Is(err, ErrCoordinationResultDrift) {
 		t.Fatalf("projection error = %v", err)
+	}
+}
+
+func TestDeploymentTargetCleanupOperationProjectionAndConflicts(t *testing.T) {
+	now := time.Date(2026, time.September, 3, 9, 0, 0, 0, time.UTC)
+	row := rowValues("operation-alpha", "cleanup-key-1234~", "target.cleanup", "target-alpha",
+		int64(2), "sha256:"+strings.Repeat("a", 64), "request-alpha", now, now,
+		"succeeded", "complete", "", "Cleaned 1 orphan worker and 2 resources", false, true)
+	var result internaldeploymenttarget.CleanupStart
+	if err := scanDeploymentTargetCleanupStart(row, internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &result); err != nil || !result.Execute || result.Operation.Action != "target.cleanup" {
+		t.Fatalf("cleanup start = %#v / %v", result, err)
+	}
+	for message, expected := range map[string]error{
+		"deployment target cleanup idempotency conflict": ErrDeploymentTargetCleanupIdempotencyConflict,
+		"deployment target cleanup is already running":   ErrDeploymentTargetCleanupBusy,
+		"deployment target generation conflict":          ErrDeploymentTargetCleanupGenerationConflict,
+		"deployment target resource version conflict":    ErrDeploymentTargetCleanupResourceVersionConflict,
+		"deployment target is not ready":                 ErrDeploymentTargetCleanupNotReady,
+	} {
+		if err := mapDeploymentTargetCleanupError(&pgconn.PgError{Code: "23505", Message: message}); !errors.Is(err, expected) {
+			t.Fatalf("%s mapped to %v", message, err)
+		}
+	}
+	if !strings.Contains(beginDeploymentTargetCleanupSQL, "begin_deployment_target_cleanup_v1") ||
+		!strings.Contains(completeDeploymentTargetCleanupSQL, "complete_deployment_target_cleanup_v1") {
+		t.Fatal("cleanup store SQL is not bound to the migration authority")
 	}
 }

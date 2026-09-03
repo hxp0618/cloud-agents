@@ -56,7 +56,7 @@ FROM cloud_agents.schema_migrations`
 func CheckProductSchemaReadiness(ctx context.Context, queryer interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }) error {
-	current := productRunnerBindingSelector("000039")
+	current := productRunnerBindingSelector("000040")
 	var count int64
 	var first, last, bundleDigest string
 	if err := queryer.QueryRow(ctx, productSchemaReadinessSQL, current.schemaHead).Scan(&count, &first, &last, &bundleDigest); err != nil {

@@ -94,6 +94,7 @@ type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
+type MaintenanceOperationResult = common.ResponseEnvelope[platform.MaintenanceOperation]
 type MaintenanceOperationPageResult = common.ResponseEnvelope[platform.MaintenanceOperationPage]
 type AdminAuditEventPageResult = common.ResponseEnvelope[platform.AdminAuditEventPage]
 type DeploymentTargetCleanupPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetCleanupPreview]
@@ -956,6 +957,33 @@ func (client *Client) PreviewAdminDeploymentTargetCleanup(ctx context.Context, t
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
 		return DeploymentTargetCleanupPreviewResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) CleanupAdminDeploymentTarget(ctx context.Context, tenantID, projectID, targetID, requestID, idempotencyKey string, body platform.DeploymentTargetCleanupRequest) (MaintenanceOperationResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetCleanupRequestJSON(body)
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":cleanup", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationResult{}, client.problemError("adminCleanupDeploymentTarget", response)
+	}
+	value, err := platform.DecodeMaintenanceOperationResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationResult{}, &ClientError{Operation: "adminCleanupDeploymentTarget", Status: response.Status, Cause: err}
+	}
+	if value.Value.ResourceID != targetID || value.Value.ResourceGeneration != body.ExpectedGeneration {
+		return MaintenanceOperationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/resourceId")
 	}
 	return value, nil
 }
@@ -3027,6 +3055,29 @@ func ValidatePreviewAdminDeploymentTargetCleanupServerRequest(tenantID, projectI
 		return PreviewAdminDeploymentTargetCleanupServerInput{}, err
 	}
 	return PreviewAdminDeploymentTargetCleanupServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID}, nil
+}
+
+type CleanupAdminDeploymentTargetServerInput struct {
+	TenantID       string
+	ProjectID      string
+	TargetID       string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.DeploymentTargetCleanupRequest
+}
+
+func ValidateCleanupAdminDeploymentTargetServerRequest(tenantID, projectID, targetID, requestID, idempotencyKey string, body []byte) (CleanupAdminDeploymentTargetServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return CleanupAdminDeploymentTargetServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CleanupAdminDeploymentTargetServerInput{}, err
+	}
+	value, err := platform.DecodeDeploymentTargetCleanupRequestJSON(body)
+	if err != nil {
+		return CleanupAdminDeploymentTargetServerInput{}, err
+	}
+	return CleanupAdminDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type CleanupDeploymentTargetServerInput struct {

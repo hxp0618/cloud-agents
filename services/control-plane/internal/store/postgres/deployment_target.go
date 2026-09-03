@@ -11,6 +11,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type DeploymentTargetPage struct {
@@ -89,6 +90,10 @@ const deploymentTargetColumns = `target_uid, target_name, target_kind, endpoint,
     observed_phase, api_version, engine_version, target_os, target_arch, stable_error_code,
     last_probe_at, resource_version, created_at, updated_at`
 
+const deploymentTargetOperationColumns = `operation_uid, idempotency_key, action, target_uid,
+    target_generation, subject_digest, request_id, requested_at, updated_at, state, current_step,
+    stable_error_code, impact_summary, retryable`
+
 var (
 	registerDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.register_deployment_target_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
@@ -113,6 +118,10 @@ FROM (
 FROM cloud_agents.begin_deployment_target_probe_v2($1, $2, $3, $4, $5, $6, $7, $8)`
 	completeDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.complete_deployment_target_probe_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	beginDeploymentTargetCleanupSQL = `SELECT ` + deploymentTargetOperationColumns + `, execute_cleanup
+FROM cloud_agents.begin_deployment_target_cleanup_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	completeDeploymentTargetCleanupSQL = `SELECT ` + deploymentTargetOperationColumns + `
+FROM cloud_agents.complete_deployment_target_cleanup_v1($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	deploymentTargetOperationCursorIdentitySQL = `SELECT 1
 FROM cloud_agents.deployment_target_activity
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
@@ -534,6 +543,88 @@ func (service *DurableCoordinationService) CompleteDeploymentTargetProbe(
 	return result, mapDeploymentTargetError(err)
 }
 
+func (service *DurableCoordinationService) BeginDeploymentTargetCleanup(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internaldeploymenttarget.CleanupInput,
+) (internaldeploymenttarget.CleanupStart, error) {
+	if service == nil || service.runner == nil {
+		return internaldeploymenttarget.CleanupStart{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return internaldeploymenttarget.CleanupStart{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internaldeploymenttarget.CleanupMutationDigest(input)
+	if err != nil {
+		return internaldeploymenttarget.CleanupStart{}, ErrCoordinationInvalidInput
+	}
+	var result internaldeploymenttarget.CleanupStart
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
+		subjectDigest, digestErr := actor.Digest()
+		if digestErr != nil {
+			return authz.ErrOperationDenied
+		}
+		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				row := handle.transaction.queryRow(ctx, beginDeploymentTargetCleanupSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.ExpectedGeneration,
+					input.ExpectedResourceVersion, input.ImpactDigest, input.Mutation.IdempotencyKey, digest,
+					input.Mutation.RequestID, subjectDigest)
+				if err := scanDeploymentTargetCleanupStart(row, input.Scope, &result); errors.Is(err, pgx.ErrNoRows) {
+					return internaldeploymenttarget.ErrNotFound
+				} else {
+					return err
+				}
+			})
+		})
+	})
+	return result, mapDeploymentTargetCleanupError(err)
+}
+
+func (service *DurableCoordinationService) CompleteDeploymentTargetCleanup(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, completion internaldeploymenttarget.CleanupCompletion,
+) (internaldeploymenttarget.Operation, error) {
+	if service == nil || service.runner == nil {
+		return internaldeploymenttarget.Operation{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || completion.Validate(tenantID) != nil {
+		return internaldeploymenttarget.Operation{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internaldeploymenttarget.CleanupMutationDigest(completion.Input)
+	if err != nil {
+		return internaldeploymenttarget.Operation{}, ErrCoordinationInvalidInput
+	}
+	var result internaldeploymenttarget.Operation
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: completion.Input.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				row := handle.transaction.queryRow(ctx, completeDeploymentTargetCleanupSQL,
+					completion.Input.Scope.TenantID, completion.Input.Scope.ProjectID, completion.Input.TargetID,
+					completion.Input.ExpectedGeneration, completion.Input.Mutation.IdempotencyKey, digest,
+					completion.Succeeded, completion.StableErrorCode, completion.ImpactSummary)
+				if err := scanDeploymentTargetOperation(row, completion.Input.Scope, &result); errors.Is(err, pgx.ErrNoRows) {
+					return internaldeploymenttarget.ErrNotFound
+				} else {
+					return err
+				}
+			})
+		})
+	})
+	return result, mapDeploymentTargetCleanupError(err)
+}
+
 func scanDeploymentTarget(row rowScanner, scope internaldeploymenttarget.Scope, result *internaldeploymenttarget.Snapshot) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
@@ -568,6 +659,59 @@ func scanDeploymentTargetWithExecute(row rowScanner, scope internaldeploymenttar
 	return nil
 }
 
+func scanDeploymentTargetOperation(row rowScanner, scope internaldeploymenttarget.Scope, result *internaldeploymenttarget.Operation) error {
+	if row == nil || result == nil {
+		return ErrCoordinationResultDrift
+	}
+	if err := row.Scan(&result.OperationID, &result.IdempotencyKey, &result.Action, &result.TargetID,
+		&result.TargetGeneration, &result.RequestedBy, &result.RequestID, &result.RequestedAt, &result.UpdatedAt,
+		&result.State, &result.CurrentStep, &result.StableErrorCode, &result.ImpactSummary, &result.Retryable); err != nil {
+		return err
+	}
+	result.Scope = scope
+	if result.Validate() != nil {
+		return ErrCoordinationResultDrift
+	}
+	return nil
+}
+
+func scanDeploymentTargetCleanupStart(row rowScanner, scope internaldeploymenttarget.Scope, result *internaldeploymenttarget.CleanupStart) error {
+	if row == nil || result == nil {
+		return ErrCoordinationResultDrift
+	}
+	if err := row.Scan(&result.Operation.OperationID, &result.Operation.IdempotencyKey, &result.Operation.Action,
+		&result.Operation.TargetID, &result.Operation.TargetGeneration, &result.Operation.RequestedBy,
+		&result.Operation.RequestID, &result.Operation.RequestedAt, &result.Operation.UpdatedAt,
+		&result.Operation.State, &result.Operation.CurrentStep, &result.Operation.StableErrorCode,
+		&result.Operation.ImpactSummary, &result.Operation.Retryable, &result.Execute); err != nil {
+		return err
+	}
+	result.Operation.Scope = scope
+	if result.Operation.Validate() != nil {
+		return ErrCoordinationResultDrift
+	}
+	return nil
+}
+
+func mapDeploymentTargetCleanupError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" {
+		switch postgresError.Message {
+		case "deployment target cleanup idempotency conflict":
+			return ErrDeploymentTargetCleanupIdempotencyConflict
+		case "deployment target cleanup is already running":
+			return ErrDeploymentTargetCleanupBusy
+		case "deployment target generation conflict":
+			return ErrDeploymentTargetCleanupGenerationConflict
+		case "deployment target resource version conflict":
+			return ErrDeploymentTargetCleanupResourceVersionConflict
+		case "deployment target is not ready":
+			return ErrDeploymentTargetCleanupNotReady
+		}
+	}
+	return mapDeploymentTargetError(err)
+}
+
 func mapDeploymentTargetError(err error) error {
 	switch {
 	case errors.Is(err, internaldeploymenttarget.ErrNotFound), errors.Is(err, pgx.ErrNoRows):
@@ -582,3 +726,8 @@ func mapDeploymentTargetError(err error) error {
 }
 
 var ErrDeploymentTargetNotFound = errors.New("deployment target was not found")
+var ErrDeploymentTargetCleanupIdempotencyConflict = errors.New("deployment target cleanup idempotency key conflicts")
+var ErrDeploymentTargetCleanupBusy = errors.New("deployment target cleanup is already running")
+var ErrDeploymentTargetCleanupGenerationConflict = errors.New("deployment target cleanup generation conflicts")
+var ErrDeploymentTargetCleanupResourceVersionConflict = errors.New("deployment target cleanup resource version conflicts")
+var ErrDeploymentTargetCleanupNotReady = errors.New("deployment target cleanup target is not ready")

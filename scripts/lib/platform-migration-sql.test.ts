@@ -818,6 +818,27 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
+  it("classifies the deployment-target cleanup operation migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000040_add_deployment_target_cleanup_operation.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(10);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000040").command),
+    ).toEqual([
+      "ALTER", "ALTER", "CREATE", "CREATE", "ALTER", "ALTER", "REVOKE", "REVOKE",
+      "GRANT", "GRANT",
+    ]);
+    expect(() => classifyMigrationStatement(statements[0]!, "000039")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

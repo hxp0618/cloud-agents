@@ -312,41 +312,61 @@ describe("generated platform JSON models", () => {
     const auditPage = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "AdminAuditEventPage",
-      events: [{
-        apiVersion: "platform.cloud-agents.dev/v1alpha1",
-        kind: "AdminAuditEvent",
-        eventId: "event-alpha",
-        actor: `sha256:${"a".repeat(64)}`,
-        action: "target.probe",
-        resourceKind: "DeploymentTarget",
-        resourceId: "docker-alpha",
-        resourceGeneration: 2,
-        result: "succeeded",
-        occurredAt: "2026-09-03T08:01:00Z",
-        requestId: "request-alpha",
-        operationId: "operation-alpha",
-      }],
+      events: [
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "AdminAuditEvent",
+          eventId: "event-alpha",
+          actor: `sha256:${"a".repeat(64)}`,
+          action: "target.probe",
+          resourceKind: "DeploymentTarget",
+          resourceId: "docker-alpha",
+          resourceGeneration: 2,
+          result: "succeeded",
+          occurredAt: "2026-09-03T08:01:00Z",
+          requestId: "request-alpha",
+          operationId: "operation-alpha",
+        },
+      ],
       nextPageToken: "audit-page-token-2",
     });
     expect(decodeMaintenanceOperationPage(JSON.parse(operationPage)).operations).toHaveLength(1);
-    expect(parseMaintenanceOperationPage(operationPage).value.nextPageToken).toBe("operation-page-token-2");
+    expect(parseMaintenanceOperationPage(operationPage).value.nextPageToken).toBe(
+      "operation-page-token-2",
+    );
     expect(decodeAdminAuditEventPage(JSON.parse(auditPage)).events).toHaveLength(1);
     expect(parseAdminAuditEventPage(auditPage).value.nextPageToken).toBe("audit-page-token-2");
-    expect(() => decodeMaintenanceOperationPage({
-      apiVersion: "platform.cloud-agents.dev/v1alpha1",
-      kind: "MaintenanceOperationPage",
-      operations: [{ ...operation, updatedAt: "2026-09-03T07:59:59Z" }],
-    })).toThrow(/INVALID_MAINTENANCE_OPERATION/u);
+    expect(() =>
+      decodeMaintenanceOperationPage({
+        apiVersion: "platform.cloud-agents.dev/v1alpha1",
+        kind: "MaintenanceOperationPage",
+        operations: [{ ...operation, updatedAt: "2026-09-03T07:59:59Z" }],
+      }),
+    ).toThrow(/INVALID_MAINTENANCE_OPERATION/u);
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
-      return { status: 200, headers: {}, body: request.path.includes("/audit-events") ? auditPage : operationPage };
+      return {
+        status: 200,
+        headers: {},
+        body: request.path.includes("/audit-events") ? auditPage : operationPage,
+      };
     });
     await client.listAdminDeploymentTargetOperations(
-      "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "operation-page-token-1",
+      "tenant-alpha",
+      "project-alpha",
+      "docker-alpha",
+      "request-alpha",
+      1,
+      "operation-page-token-1",
     );
     await client.listAdminDeploymentTargetAuditEvents(
-      "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "audit-page-token-1",
+      "tenant-alpha",
+      "project-alpha",
+      "docker-alpha",
+      "request-alpha",
+      1,
+      "audit-page-token-1",
     );
     expect(seen.map(({ path }) => path)).toEqual([
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations?pageSize=1&pageToken=operation-page-token-1",
@@ -370,6 +390,7 @@ describe("generated platform JSON models", () => {
         targetKind: "docker",
         expectedGeneration: 2,
         expectedResourceVersion: "7",
+        impactDigest: `sha256:${"a".repeat(64)}`,
         canCleanup: false,
         workers: [
           {
@@ -402,6 +423,46 @@ describe("generated platform JSON models", () => {
     expect(seen[0]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview",
     );
+  });
+  it("executes Admin cleanup through the generated contract", async () => {
+    const impactDigest = `sha256:${"a".repeat(64)}` as const;
+    const operation = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "MaintenanceOperation",
+      operationId: "operation-alpha",
+      idempotencyKey: "cleanup-key-1234~",
+      action: "target.cleanup",
+      resourceKind: "DeploymentTarget",
+      resourceId: "docker-alpha",
+      resourceGeneration: 2,
+      requestedBy: `sha256:${"b".repeat(64)}`,
+      requestId: "request-alpha",
+      requestedAt: "2026-09-03T08:00:00Z",
+      updatedAt: "2026-09-03T08:01:00Z",
+      state: "succeeded",
+      currentStep: "complete",
+      impactSummary: "Cleaned 0 orphan workers and 0 resources",
+      retryable: false,
+    });
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: {}, body: operation };
+    });
+    const result = await client.cleanupAdminDeploymentTarget(
+      "tenant-alpha",
+      "project-alpha",
+      "docker-alpha",
+      "request-alpha",
+      "cleanup-key-1234~",
+      { expectedGeneration: 2, expectedResourceVersion: "7", impactDigest },
+    );
+    expect(result.value.action).toBe("target.cleanup");
+    expect(seen[0]).toMatchObject({
+      method: "POST",
+      path: "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup",
+      headers: { "Idempotency-Key": "cleanup-key-1234~" },
+    });
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {
     const turn = JSON.stringify({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cleanupRequestFromPreview,
   listAdminLeases,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
@@ -11,6 +12,22 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("submits the exact cleanup fences returned by the preview", () => {
+    expect(
+      cleanupRequestFromPreview({
+        spec: {
+          expectedGeneration: 7,
+          expectedResourceVersion: "42",
+          impactDigest: `sha256:${"a".repeat(64)}`,
+        },
+      } as unknown as Parameters<typeof cleanupRequestFromPreview>[0]),
+    ).toEqual({
+      expectedGeneration: 7,
+      expectedResourceVersion: "42",
+      impactDigest: `sha256:${"a".repeat(64)}`,
+    });
+  });
+
   it("uses only Admin API target pagination", async () => {
     const paths: Array<string | undefined> = [];
     const client = {

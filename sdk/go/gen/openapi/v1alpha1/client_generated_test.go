@@ -184,7 +184,7 @@ func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetActivityRoutes(t *testin
 }
 
 func TestGeneratedOpenAPIClientUsesAdminCleanupPreviewRoute(t *testing.T) {
-	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetCleanupPreview","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"7","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"targetKind":"docker","expectedGeneration":2,"expectedResourceVersion":"7","canCleanup":true,"workers":[]}}`)
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetCleanupPreview","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"7","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"targetKind":"docker","expectedGeneration":2,"expectedResourceVersion":"7","impactDigest":"sha256:` + strings.Repeat("a", 64) + `","canCleanup":true,"workers":[]}}`)
 	var seen Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = request
@@ -198,6 +198,27 @@ func TestGeneratedOpenAPIClientUsesAdminCleanupPreviewRoute(t *testing.T) {
 		t.Fatalf("preview=%#v error=%v", preview, err)
 	}
 	if seen.Method != "GET" || seen.Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview" {
+		t.Fatalf("request=%#v", seen)
+	}
+}
+
+func TestGeneratedOpenAPIClientUsesAdminCleanupRoute(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MaintenanceOperation","operationId":"operation-alpha","idempotencyKey":"cleanup-key-1234~","action":"target.cleanup","resourceKind":"DeploymentTarget","resourceId":"docker-alpha","resourceGeneration":2,"requestedBy":"sha256:` + strings.Repeat("b", 64) + `","requestId":"request-alpha","requestedAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z","state":"succeeded","currentStep":"complete","impactSummary":"Cleaned 0 orphan workers and 0 resources","retryable":false}`)
+	var seen Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		return Response{Status: 200, Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := platform.DeploymentTargetCleanupRequest{ExpectedGeneration: 2, ExpectedResourceVersion: "7", ImpactDigest: digest}
+	operation, err := client.CleanupAdminDeploymentTarget(context.Background(), "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", "cleanup-key-1234~", request)
+	if err != nil || operation.Value.Action != "target.cleanup" {
+		t.Fatalf("operation=%#v error=%v", operation, err)
+	}
+	if seen.Method != "POST" || seen.Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup" || seen.Headers[HeaderIdempotencyKey] != "cleanup-key-1234~" {
 		t.Fatalf("request=%#v", seen)
 	}
 }

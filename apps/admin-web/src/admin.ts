@@ -4,6 +4,8 @@ import {
   type Client,
   type AdminAuditEvent,
   type DeploymentTarget,
+  type DeploymentTargetCleanupPreview,
+  type DeploymentTargetCleanupRequest,
   type EnvironmentLease,
   type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -17,6 +19,7 @@ export type AdminClient = Pick<
   | "getAdminDeploymentTarget"
   | "probeAdminDeploymentTarget"
   | "previewAdminDeploymentTargetCleanup"
+  | "cleanupAdminDeploymentTarget"
   | "listAdminEnvironmentLeases"
   | "getAdminEnvironmentLease"
 >;
@@ -86,6 +89,16 @@ export function newRequestId(): string {
 
 export function newIdempotencyKey(): string {
   return `admin-${crypto.randomUUID()}`;
+}
+
+export function cleanupRequestFromPreview(
+  preview: DeploymentTargetCleanupPreview,
+): DeploymentTargetCleanupRequest {
+  return Object.freeze({
+    expectedGeneration: preview.spec.expectedGeneration,
+    expectedResourceVersion: preview.spec.expectedResourceVersion,
+    impactDigest: preview.spec.impactDigest,
+  });
 }
 
 export async function listAdminTargets(

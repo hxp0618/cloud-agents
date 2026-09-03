@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/deployment-target-cleanup-request.schema.json",
+  "title": "DeploymentTargetCleanupRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedGeneration", "expectedResourceVersion", "impactDigest"],
+  "properties": {
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "all fields must exactly match one current server-authoritative cleanup preview",
+    "impactDigest binds the confirmed Worker and platform-owned resource names without accepting client-authored cleanup scope"
+  ]
+}

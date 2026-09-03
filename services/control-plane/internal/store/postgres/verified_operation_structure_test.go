@@ -320,11 +320,13 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 	}
 
 	requireCallerClosure(t, tree, "WithVerifiedOperation",
+		"*DurableCoordinationService.BeginDeploymentTargetCleanup",
 		"*DurableCoordinationService.BeginDeploymentTargetProbe",
 		"*DurableCoordinationService.BeginManagedHostEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.ClaimIdempotency",
 		"*DurableCoordinationService.CloseManagedAgentSession",
 		"*DurableCoordinationService.CompleteDeploymentTargetProbe",
+		"*DurableCoordinationService.CompleteDeploymentTargetCleanup",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseDeployment",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseTermination",
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
@@ -368,11 +370,13 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"withManagedAgentProjectMutation",
 	)
 	requireCallerClosure(t, tree, "executeVerifiedRBACOperation",
+		"*DurableCoordinationService.BeginDeploymentTargetCleanup",
 		"*DurableCoordinationService.BeginDeploymentTargetProbe",
 		"*DurableCoordinationService.BeginManagedHostEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.ClaimIdempotency",
 		"*DurableCoordinationService.CloseManagedAgentSession",
 		"*DurableCoordinationService.CompleteDeploymentTargetProbe",
+		"*DurableCoordinationService.CompleteDeploymentTargetCleanup",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseDeployment",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseTermination",
 		"*DurableCoordinationService.CompleteIdempotencyFailure",

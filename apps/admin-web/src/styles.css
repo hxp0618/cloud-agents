@@ -186,6 +186,15 @@ p {
   background: color-mix(in oklch, var(--primary) 90%, transparent);
 }
 
+.button.danger {
+  color: white;
+  background: var(--danger);
+}
+
+.button.danger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--danger) 90%, transparent);
+}
+
 .button.outline,
 .button.ghost {
   background: var(--background);
@@ -1219,6 +1228,28 @@ td > button small {
 .cleanup-worker > small {
   color: var(--muted-foreground);
   font-size: 11px;
+}
+
+.cleanup-fence {
+  padding: 0;
+}
+
+.confirmation-check {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.confirmation-check input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .cleanup-worker {

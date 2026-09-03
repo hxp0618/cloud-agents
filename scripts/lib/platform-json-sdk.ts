@@ -60,6 +60,7 @@ const COMMON_SCHEMAS = [
 const PLATFORM_SCHEMAS = [
   "admin-audit-event-page.schema.json",
   "admin-audit-event.schema.json",
+  "deployment-target-cleanup-request.schema.json",
   "deployment-target-cleanup-preview.schema.json",
   "deployment-target-page.schema.json",
   "deployment-target-probe-request.schema.json",
@@ -220,6 +221,7 @@ function validateJSONSDKAuthority(root: string): void {
   }
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
   const expected = [
+    "adminCleanupDeploymentTarget",
     "adminGetDeploymentTarget",
     "adminGetEnvironmentLease",
     "adminListDeploymentTargetAuditEvents",
