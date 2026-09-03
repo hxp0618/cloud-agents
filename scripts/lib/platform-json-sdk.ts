@@ -73,6 +73,7 @@ const PLATFORM_SCHEMAS = [
   "environment-lease.schema.json",
   "environment-profile-create-request.schema.json",
   "environment-profile-page.schema.json",
+  "environment-profile-transition-request.schema.json",
   "environment-profile.schema.json",
   "managed-agent-create-project-organization-ref.schema.json",
   "membership-create-request.schema.json",
@@ -226,6 +227,7 @@ function validateJSONSDKAuthority(root: string): void {
   const expected = [
     "adminCleanupDeploymentTarget",
     "adminCreateEnvironmentProfile",
+    "adminDisableEnvironmentProfile",
     "adminGetDeploymentTarget",
     "adminGetEnvironmentLease",
     "adminGetEnvironmentProfile",
@@ -237,6 +239,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminListEnvironmentProfiles",
     "adminPreviewDeploymentTargetCleanup",
     "adminProbeDeploymentTarget",
+    "adminPublishEnvironmentProfile",
     "adminRegisterDeploymentTarget",
     "managedAgentBindRole",
     "managedAgentCancelExecution",

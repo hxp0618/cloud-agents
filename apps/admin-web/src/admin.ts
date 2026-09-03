@@ -25,6 +25,8 @@ export type AdminClient = Pick<
   | "getAdminEnvironmentLease"
   | "listAdminEnvironmentProfiles"
   | "createAdminEnvironmentProfile"
+  | "publishAdminEnvironmentProfile"
+  | "disableAdminEnvironmentProfile"
   | "getAdminEnvironmentProfile"
   | "listAdminEnvironmentProfileAuditEvents"
 >;

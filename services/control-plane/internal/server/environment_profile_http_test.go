@@ -22,8 +22,34 @@ type environmentProfileStoreFake struct {
 	getPrincipal   *authn.VerifiedPrincipal
 	auditPrincipal *authn.VerifiedPrincipal
 	created        int
+	transitioned   int
+	transition     internalenvironmentprofile.TransitionInput
 	listed         int
 	got            int
+}
+
+func (fake *environmentProfileStoreFake) TransitionEnvironmentProfile(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalenvironmentprofile.TransitionInput) (internalenvironmentprofile.Snapshot, error) {
+	fake.transitioned++
+	fake.transition = input
+	next := fake.snapshot
+	transitionedAt := next.UpdatedAt.Add(time.Minute)
+	next.ResourceVersion++
+	next.UpdatedAt = transitionedAt
+	if input.Action == internalenvironmentprofile.TransitionPublish {
+		next.Status = "published"
+		next.PublishedAt = &transitionedAt
+	} else {
+		next.Status = "disabled"
+		next.DisabledAt = &transitionedAt
+	}
+	fake.snapshot = next
+	fake.audit = append(fake.audit, internalenvironmentprofile.AuditEvent{
+		Scope: next.Scope, EventID: "event-profile-" + input.Action, OperationID: "operation-profile-" + input.Action,
+		Actor: "sha256:" + strings.Repeat("b", 64), Action: "profile." + input.Action,
+		ProfileUID: next.ProfileVersionUID, ProfileVersion: next.Version, Result: "succeeded",
+		RequestID: input.Mutation.RequestID, OccurredAt: transitionedAt,
+	})
+	return next, nil
 }
 
 func (fake *environmentProfileStoreFake) CreateEnvironmentProfile(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalenvironmentprofile.CreateInput) (internalenvironmentprofile.Snapshot, error) {
@@ -111,9 +137,28 @@ func TestAdminEnvironmentProfileHTTPDraftLifecycle(t *testing.T) {
 	if got.Code != http.StatusOK || store.got != 1 {
 		t.Fatalf("get status=%d body=%s", got.Code, got.Body.String())
 	}
+	transition := func(action, expectedResourceVersion, requestID string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/1:"+action, strings.NewReader(`{"expectedResourceVersion":"`+expectedResourceVersion+`"}`))
+		req.Header.Set("Authorization", "Bearer admin-token")
+		req.Header.Set("X-Request-ID", requestID)
+		req.Header.Set("Idempotency-Key", "profile-"+action+"-key")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response
+	}
+	published := transition("publish", "1", "request-profile-publish")
+	publishedProfile, decodeErr := platformv1alpha1.DecodeEnvironmentProfileResponseJSON(published.Body.Bytes())
+	if published.Code != http.StatusOK || decodeErr != nil || publishedProfile.Value.Spec.Status != "published" || publishedProfile.Value.Metadata.ResourceVersion != "2" || store.transition.Action != internalenvironmentprofile.TransitionPublish {
+		t.Fatalf("publish status=%d decodeErr=%v profile=%#v input=%#v", published.Code, decodeErr, publishedProfile.Value, store.transition)
+	}
+	disabled := transition("disable", "2", "request-profile-disable")
+	disabledProfile, decodeErr := platformv1alpha1.DecodeEnvironmentProfileResponseJSON(disabled.Body.Bytes())
+	if disabled.Code != http.StatusOK || decodeErr != nil || disabledProfile.Value.Spec.Status != "disabled" || disabledProfile.Value.Metadata.ResourceVersion != "3" || store.transition.Action != internalenvironmentprofile.TransitionDisable {
+		t.Fatalf("disable status=%d decodeErr=%v profile=%#v input=%#v", disabled.Code, decodeErr, disabledProfile.Value, store.transition)
+	}
 	audit := request("/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/1/audit-events?pageSize=50", "request-profile-audit")
 	auditPage, decodeErr := platformv1alpha1.DecodeAdminAuditEventPageResponseJSON(audit.Body.Bytes())
-	if audit.Code != http.StatusOK || decodeErr != nil || len(auditPage.Value.Events) != 1 || auditPage.Value.Events[0].Action != "profile.create" || store.got != 2 {
+	if audit.Code != http.StatusOK || decodeErr != nil || len(auditPage.Value.Events) != 3 || auditPage.Value.Events[1].Action != "profile.publish" || auditPage.Value.Events[2].Action != "profile.disable" || store.got != 2 || store.transitioned != 2 {
 		t.Fatalf("audit status=%d decodeErr=%v body=%s", audit.Code, decodeErr, audit.Body.String())
 	}
 	if store.getPrincipal == nil || store.auditPrincipal == nil || store.getPrincipal == store.auditPrincipal {
@@ -123,10 +168,28 @@ func TestAdminEnvironmentProfileHTTPDraftLifecycle(t *testing.T) {
 	for _, request := range verifier.requests {
 		permissions = append(permissions, request.RequiredPermission)
 	}
-	for _, required := range []string{"profiles.create", "profiles.list", "profiles.get", "audit.list"} {
+	for _, required := range []string{"profiles.create", "profiles.list", "profiles.get", "profiles.act", "audit.list"} {
 		if !strings.Contains(strings.Join(permissions, " "), required) {
 			t.Fatalf("missing permission %q in %v", required, permissions)
 		}
+	}
+}
+
+func TestAdminEnvironmentProfileHTTPRejectsUserTransitionScope(t *testing.T) {
+	store := &environmentProfileStoreFake{}
+	verifier := &environmentProfileVerifierFake{failPermission: "profiles.act"}
+	handler, err := NewAdminEnvironmentProfileHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/1:publish", strings.NewReader(`{"expectedResourceVersion":"1"}`))
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-profile-publish")
+	request.Header.Set("Idempotency-Key", "profile-publish-key")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || store.transitioned != 0 || len(verifier.requests) != 2 || verifier.requests[1].RequiredPermission != "profiles.act" {
+		t.Fatalf("status=%d transitioned=%d requests=%#v", response.Code, store.transitioned, verifier.requests)
 	}
 }
 
@@ -145,7 +208,7 @@ func TestAdminEnvironmentProfileHTTPRejectsUserScope(t *testing.T) {
 	if response.Code != http.StatusForbidden || store.listed != 0 || len(verifier.requests) != 2 || verifier.requests[1].RequiredPermission != "profiles.list" {
 		t.Fatalf("status=%d listed=%d requests=%#v", response.Code, store.listed, verifier.requests)
 	}
-	if !HandlesAdminEnvironmentProfilePath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/1") || HandlesAdminEnvironmentProfilePath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/0") {
+	if !HandlesAdminEnvironmentProfilePath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/1") || !HandlesAdminEnvironmentProfilePath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/1:disable") || HandlesAdminEnvironmentProfilePath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/profile-alpha/versions/0") {
 		t.Fatal("environment profile route classification drifted")
 	}
 }

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-profile-transition-request.schema.json",
+  "title": "EnvironmentProfileTransitionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion"],
+  "properties": {
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "publish accepts only draft and disable accepts only published",
+    "the expected resource version and Idempotency-Key fence every transition"
+  ]
+}

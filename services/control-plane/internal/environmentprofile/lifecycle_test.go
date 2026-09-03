@@ -1,6 +1,7 @@
 package environmentprofile
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -48,5 +49,26 @@ func TestDraftProfileValidationAndDigestBindSchedulingInputs(t *testing.T) {
 func TestProfileRejectsDuplicateAuthorityLists(t *testing.T) {
 	if validProviderKinds([]string{"codex", "codex"}) || validIdentifiers([]string{"target-a", "target-a"}, 32) {
 		t.Fatal("profile accepted duplicate provider or target authority")
+	}
+}
+
+func TestProfileTransitionDigestBindsActionAndResourceVersion(t *testing.T) {
+	input := TransitionInput{
+		Scope: Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, ProfileID: "standard",
+		Version: 1, ExpectedResourceVersion: 1, Action: TransitionPublish,
+		Mutation: Mutation{RequestID: "request-publish", IdempotencyKey: "profile-publish-1234"},
+	}
+	publish, err := TransitionMutationDigest(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Action = TransitionDisable
+	disable, err := TransitionMutationDigest(input)
+	if err != nil || publish == disable {
+		t.Fatalf("transition digest did not bind action: %q %q %v", publish, disable, err)
+	}
+	input.Action = "delete"
+	if _, err := TransitionMutationDigest(input); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("unsupported transition error = %v", err)
 	}
 }

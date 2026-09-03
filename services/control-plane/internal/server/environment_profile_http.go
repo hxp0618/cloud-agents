@@ -22,6 +22,7 @@ const adminEnvironmentProfileRoutePrefix = "/v1/admin/tenants/"
 
 type environmentProfileStore interface {
 	CreateEnvironmentProfile(context.Context, string, *authn.VerifiedPrincipal, internalenvironmentprofile.CreateInput) (internalenvironmentprofile.Snapshot, error)
+	TransitionEnvironmentProfile(context.Context, string, *authn.VerifiedPrincipal, internalenvironmentprofile.TransitionInput) (internalenvironmentprofile.Snapshot, error)
 	GetEnvironmentProfile(context.Context, string, *authn.VerifiedPrincipal, string, string, int64) (internalenvironmentprofile.Snapshot, error)
 	ListEnvironmentProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.EnvironmentProfilePage, error)
 	ListEnvironmentProfileAuditEvents(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.EnvironmentProfileAuditPage, error)
@@ -91,9 +92,60 @@ func (server *EnvironmentProfileHTTPServer) ServeHTTP(writer http.ResponseWriter
 		}
 	case "get":
 		server.get(writer, request, tenantID, projectID, profileID, version, requestID, bearer)
+	case "publish", "disable":
+		server.transition(writer, request, tenantID, projectID, profileID, version, action, requestID, bearer)
 	case "audit-events":
 		server.listAuditEvents(writer, request, tenantID, projectID, profileID, version, requestID, bearer)
 	}
+}
+
+func (server *EnvironmentProfileHTTPServer) transition(writer http.ResponseWriter, request *http.Request, tenantID, projectID, profileID string, version int64, action, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	var transition platformv1alpha1.EnvironmentProfileTransitionRequest
+	if action == internalenvironmentprofile.TransitionPublish {
+		validated, validateErr := openapiv1alpha1.ValidatePublishAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID, version, requestID, idempotencyKey, body)
+		if validateErr != nil {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		transition = validated.Body
+	} else {
+		validated, validateErr := openapiv1alpha1.ValidateDisableAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID, version, requestID, idempotencyKey, body)
+		if validateErr != nil {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		transition = validated.Body
+	}
+	expectedResourceVersion, err := strconv.ParseInt(transition.ExpectedResourceVersion, 10, 64)
+	if err != nil || expectedResourceVersion < 1 {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	result, err := server.store.TransitionEnvironmentProfile(request.Context(), tenantID, principal, internalenvironmentprofile.TransitionInput{
+		Scope:     internalenvironmentprofile.Scope{TenantID: tenantID, ProjectID: projectID},
+		ProfileID: profileID, Version: version, ExpectedResourceVersion: expectedResourceVersion, Action: action,
+		Mutation: internalenvironmentprofile.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
+	})
+	if err != nil {
+		writeEnvironmentProfileError(writer, err)
+		return
+	}
+	writeEnvironmentProfile(writer, http.StatusOK, requestID, result)
 }
 
 func (server *EnvironmentProfileHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
@@ -319,15 +371,23 @@ func adminEnvironmentProfilePath(path string) (tenantID, projectID, profileID st
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "environment-profiles" && parts[0] != "" && parts[2] != "" {
 		return parts[0], parts[2], "", 0, "collection", true
 	}
-	if (len(parts) == 7 || len(parts) == 8) && parts[1] == "projects" && parts[3] == "environment-profiles" && parts[4] != "" && parts[5] == "versions" {
-		parsedVersion, err := strconv.ParseInt(parts[6], 10, 64)
-		if err == nil && parsedVersion > 0 && parsedVersion <= 2147483647 && (len(parts) == 7 || parts[7] == "audit-events") {
-			action := "get"
-			if len(parts) == 8 {
-				action = "audit-events"
-			}
-			return parts[0], parts[2], parts[4], parsedVersion, action, true
+	if (len(parts) != 7 && len(parts) != 8) || parts[1] != "projects" || parts[3] != "environment-profiles" || parts[4] == "" || parts[5] != "versions" {
+		return "", "", "", 0, "", false
+	}
+	versionPart, detailAction := parts[6], "get"
+	if len(parts) == 8 {
+		if parts[7] != "audit-events" {
+			return "", "", "", 0, "", false
 		}
+		detailAction = "audit-events"
+	} else if value, found := strings.CutSuffix(versionPart, ":publish"); found {
+		versionPart, detailAction = value, internalenvironmentprofile.TransitionPublish
+	} else if value, found := strings.CutSuffix(versionPart, ":disable"); found {
+		versionPart, detailAction = value, internalenvironmentprofile.TransitionDisable
+	}
+	parsedVersion, err := strconv.ParseInt(versionPart, 10, 64)
+	if err == nil && parsedVersion > 0 && parsedVersion <= 2147483647 {
+		return parts[0], parts[2], parts[4], parsedVersion, detailAction, true
 	}
 	return "", "", "", 0, "", false
 }
@@ -340,6 +400,10 @@ func environmentProfileAdminPermission(action, method string) (string, bool) {
 		return "profiles.create", true
 	case action == "get" && method == http.MethodGet:
 		return "profiles.get", true
+	case action == internalenvironmentprofile.TransitionPublish && method == http.MethodPost:
+		return "profiles.act", true
+	case action == internalenvironmentprofile.TransitionDisable && method == http.MethodPost:
+		return "profiles.act", true
 	case action == "audit-events" && method == http.MethodGet:
 		return "audit.list", true
 	default:
@@ -406,6 +470,8 @@ func writeEnvironmentProfileError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, http.StatusConflict, "idempotency_conflict")
 	case errors.Is(err, postgres.ErrEnvironmentProfileVersionConflict), errors.Is(err, postgres.ErrCoordinationRejected):
 		writePublicProblem(writer, http.StatusConflict, "profile_version_conflict")
+	case errors.Is(err, postgres.ErrEnvironmentProfileTransitionConflict):
+		writePublicProblem(writer, http.StatusConflict, "profile_transition_conflict")
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 	default:

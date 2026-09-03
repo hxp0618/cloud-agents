@@ -56,12 +56,17 @@ func TestEnvironmentProfileProjectionAndConflictMapping(t *testing.T) {
 		"environment profile idempotency conflict": ErrEnvironmentProfileIdempotencyConflict,
 		"environment profile version conflict":     ErrEnvironmentProfileVersionConflict,
 		"environment profile name conflict":        ErrEnvironmentProfileVersionConflict,
+		"environment profile transition conflict":  ErrEnvironmentProfileTransitionConflict,
 	} {
 		if err := mapEnvironmentProfileError(&pgconn.PgError{Code: "23505", Message: message}); !errors.Is(err, expected) {
 			t.Fatalf("%s mapped to %v", message, err)
 		}
 	}
+	if err := mapEnvironmentProfileError(&pgconn.PgError{Code: "23503", Message: "environment profile was not found"}); !errors.Is(err, ErrEnvironmentProfileNotFound) {
+		t.Fatalf("missing profile mapped to %v", err)
+	}
 	if !strings.Contains(createEnvironmentProfileSQL, "create_environment_profile_draft_v1") ||
+		!strings.Contains(transitionEnvironmentProfileSQL, "transition_environment_profile_v1") ||
 		!strings.Contains(listEnvironmentProfilesSQL, "cloud_agents.require_tenant_id()") {
 		t.Fatal("environment profile store is not bound to migration and tenant authority")
 	}

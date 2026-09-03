@@ -276,6 +276,7 @@ export type EnvironmentProfileCreateRequest = Readonly<{
   targetRefs: readonly string[];
   providerCredentialRef: string;
 }>;
+export type EnvironmentProfileTransitionRequest = Readonly<{ expectedResourceVersion: string }>;
 export type EnvironmentProfile = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "EnvironmentProfile";
@@ -372,7 +373,13 @@ export type AdminAuditEvent = Readonly<{
   kind: "AdminAuditEvent";
   eventId: string;
   actor: `sha256:${string}`;
-  action: "target.register" | "target.probe" | "target.cleanup" | "profile.create";
+  action:
+    | "target.register"
+    | "target.probe"
+    | "target.cleanup"
+    | "profile.create"
+    | "profile.publish"
+    | "profile.disable";
   resourceKind: "DeploymentTarget" | "EnvironmentProfile";
   resourceId: string;
   resourceGeneration: number;
@@ -1605,6 +1612,23 @@ export function encodeEnvironmentProfileCreateRequest(
 ): string {
   return JSON.stringify(decodeEnvironmentProfileCreateRequest(value));
 }
+export function decodeEnvironmentProfileTransitionRequest(
+  value: unknown,
+): EnvironmentProfileTransitionRequest {
+  const source = strictRecord(value, ["expectedResourceVersion"], ["expectedResourceVersion"]);
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) || expectedResourceVersion.length > 20)
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({ expectedResourceVersion });
+}
+export function encodeEnvironmentProfileTransitionRequest(
+  value: EnvironmentProfileTransitionRequest,
+): string {
+  return JSON.stringify(decodeEnvironmentProfileTransitionRequest(value));
+}
 export function decodeEnvironmentLeaseTerminateRequest(
   value: unknown,
 ): EnvironmentLeaseTerminateRequest {
@@ -2562,7 +2586,14 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
     actor: digest(source.actor, "/actor") as `sha256:${string}`,
     action: enumValue(
       source.action,
-      ["target.register", "target.probe", "target.cleanup", "profile.create"] as const,
+      [
+        "target.register",
+        "target.probe",
+        "target.cleanup",
+        "profile.create",
+        "profile.publish",
+        "profile.disable",
+      ] as const,
       "/action",
     ),
     resourceKind: enumValue(
@@ -4929,6 +4960,88 @@ export class Client {
       result.value.spec.profileId !== checked.profileId ||
       result.value.spec.version !== checked.version ||
       result.value.metadata.name !== checked.profileName
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async publishAdminEnvironmentProfile(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    profileVersion: number,
+    requestId: string,
+    idempotencyKey: string,
+    body: EnvironmentProfileTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfile>> {
+    return this.transitionAdminEnvironmentProfile(
+      "publish",
+      tenantId,
+      projectId,
+      profileId,
+      profileVersion,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  async disableAdminEnvironmentProfile(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    profileVersion: number,
+    requestId: string,
+    idempotencyKey: string,
+    body: EnvironmentProfileTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfile>> {
+    return this.transitionAdminEnvironmentProfile(
+      "disable",
+      tenantId,
+      projectId,
+      profileId,
+      profileVersion,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  private async transitionAdminEnvironmentProfile(
+    action: "publish" | "disable",
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    profileVersion: number,
+    requestId: string,
+    idempotencyKey: string,
+    body: EnvironmentProfileTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfile>> {
+    validateEnvironmentProfilePath(tenantId, projectId, profileId, profileVersion, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeEnvironmentProfileTransitionRequest(body);
+    const operation =
+      action === "publish" ? "adminPublishEnvironmentProfile" : "adminDisableEnvironmentProfile";
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-profiles/${profileId}/versions/${profileVersion}:${action}`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeEnvironmentProfileTransitionRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem(operation, response);
+    const result = parseEnvironmentProfile(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.profileId !== profileId ||
+      result.value.spec.version !== profileVersion
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;

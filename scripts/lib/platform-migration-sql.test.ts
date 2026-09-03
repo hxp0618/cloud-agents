@@ -910,6 +910,37 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
   });
 
+  it("classifies the environment-profile lifecycle migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000042_transition_environment_profiles.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(12);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000042").command),
+    ).toEqual([
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "GRANT",
+    ]);
+    expect(() => classifyMigrationStatement(statements[6]!, "000041")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

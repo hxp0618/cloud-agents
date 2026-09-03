@@ -774,6 +774,42 @@ func (client *Client) CreateAdminEnvironmentProfile(ctx context.Context, tenantI
 	}
 	return value, nil
 }
+func (client *Client) PublishAdminEnvironmentProfile(ctx context.Context, tenantID, projectID, profileID string, version int64, requestID, idempotencyKey string, body platform.EnvironmentProfileTransitionRequest) (EnvironmentProfileResult, error) {
+	return client.transitionAdminEnvironmentProfile(ctx, "publish", "adminPublishEnvironmentProfile", tenantID, projectID, profileID, version, requestID, idempotencyKey, body)
+}
+func (client *Client) DisableAdminEnvironmentProfile(ctx context.Context, tenantID, projectID, profileID string, version int64, requestID, idempotencyKey string, body platform.EnvironmentProfileTransitionRequest) (EnvironmentProfileResult, error) {
+	return client.transitionAdminEnvironmentProfile(ctx, "disable", "adminDisableEnvironmentProfile", tenantID, projectID, profileID, version, requestID, idempotencyKey, body)
+}
+func (client *Client) transitionAdminEnvironmentProfile(ctx context.Context, action, operation, tenantID, projectID, profileID string, version int64, requestID, idempotencyKey string, body platform.EnvironmentProfileTransitionRequest) (EnvironmentProfileResult, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	bodyBytes, err := platform.EncodeEnvironmentProfileTransitionRequestJSON(body)
+	if err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-profiles/" + profileID + "/versions/" + strconv.FormatInt(version, 10) + ":" + action, Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if response.Status != 200 {
+		return EnvironmentProfileResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeEnvironmentProfileResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentProfileResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.ProfileID != profileID || value.Value.Spec.Version != version {
+		return EnvironmentProfileResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
 func (client *Client) GetAdminEnvironmentProfile(ctx context.Context, tenantID, projectID, profileID string, version int64, requestID string) (EnvironmentProfileResult, error) {
 	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
 		return EnvironmentProfileResult{}, err
@@ -3088,6 +3124,36 @@ func ValidateCreateAdminEnvironmentProfileServerRequest(tenantID, projectID, req
 		return CreateAdminEnvironmentProfileServerInput{}, err
 	}
 	return CreateAdminEnvironmentProfileServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type TransitionAdminEnvironmentProfileServerInput struct {
+	TenantID       string
+	ProjectID      string
+	ProfileID      string
+	Version        int64
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.EnvironmentProfileTransitionRequest
+}
+
+func ValidatePublishAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID string, version int64, requestID, idempotencyKey string, body []byte) (TransitionAdminEnvironmentProfileServerInput, error) {
+	return validateTransitionAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID, version, requestID, idempotencyKey, body)
+}
+func ValidateDisableAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID string, version int64, requestID, idempotencyKey string, body []byte) (TransitionAdminEnvironmentProfileServerInput, error) {
+	return validateTransitionAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID, version, requestID, idempotencyKey, body)
+}
+func validateTransitionAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID string, version int64, requestID, idempotencyKey string, body []byte) (TransitionAdminEnvironmentProfileServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
+		return TransitionAdminEnvironmentProfileServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return TransitionAdminEnvironmentProfileServerInput{}, err
+	}
+	value, err := platform.DecodeEnvironmentProfileTransitionRequestJSON(body)
+	if err != nil {
+		return TransitionAdminEnvironmentProfileServerInput{}, err
+	}
+	return TransitionAdminEnvironmentProfileServerInput{TenantID: tenantID, ProjectID: projectID, ProfileID: profileID, Version: version, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type ListAdminEnvironmentProfilesServerInput struct {

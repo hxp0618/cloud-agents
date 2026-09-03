@@ -34,6 +34,7 @@ import {
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 type Page = "overview" | "targets" | "profiles" | "leases";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
+type ProfileTransition = "publish" | "disable";
 type BusyOperation = Readonly<{ key: string; label: string }>;
 type Theme = "light" | "dark";
 
@@ -266,6 +267,7 @@ export function App() {
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
+  const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
   const [error, setError] = useState("");
@@ -440,6 +442,7 @@ export function App() {
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setProfileDetailOpen(false);
+    setProfileTransition(null);
   }
 
   function disconnect() {
@@ -461,6 +464,7 @@ export function App() {
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setProfileDetailOpen(false);
+    setProfileTransition(null);
     setCreatingProfile(false);
     setMobileNavOpen(false);
     setBusy(null);
@@ -630,6 +634,7 @@ export function App() {
 
   function selectProfile(profileVersionId: string) {
     setProfileDetailOpen(true);
+    setProfileTransition(null);
     if (client === null) return;
     const profile = profiles.find(({ metadata }) => metadata.uid === profileVersionId);
     if (profile === undefined) return;
@@ -709,6 +714,36 @@ export function App() {
       });
       setCreatingProfile(false);
     });
+  }
+
+  function transitionProfile() {
+    if (client === null || selectedProfile === undefined || profileTransition === null) return;
+    const profile = selectedProfile;
+    const action = profileTransition;
+    const key = `${action}-profile:${profile.metadata.uid}:${profile.metadata.resourceVersion}`;
+    setProfileTransition(null);
+    void runOperation(
+      key,
+      `${action === "publish" ? "Publish" : "Disable"} ${profile.metadata.name} v${profile.spec.version}`,
+      async (signal) => {
+        const args = [
+          connection.tenantId,
+          connection.projectId,
+          profile.spec.profileId,
+          profile.spec.version,
+          newRequestId(),
+          idempotencyKey(key),
+          { expectedResourceVersion: profile.metadata.resourceVersion },
+          signal,
+        ] as const;
+        const result =
+          action === "publish"
+            ? await client.publishAdminEnvironmentProfile(...args)
+            : await client.disableAdminEnvironmentProfile(...args);
+        setProfiles((current) => replaceProfile(current, result.value));
+        setProfileAudit(await loadProfileAudit(client, connection, result.value, signal));
+      },
+    );
   }
 
   function registerTarget(event: FormEvent<HTMLFormElement>) {
@@ -1307,19 +1342,45 @@ export function App() {
       {profileDetailOpen && selectedProfile !== undefined ? (
         <AdminSheet
           label={`Environment profile ${selectedProfile.metadata.name}`}
-          onClose={() => setProfileDetailOpen(false)}
+          onClose={() => {
+            setProfileDetailOpen(false);
+            setProfileTransition(null);
+          }}
         >
           <aside className="detail-panel" aria-label="Selected environment profile">
             <button
               className="sheet-close"
               type="button"
               aria-label="Close"
-              onClick={() => setProfileDetailOpen(false)}
+              onClick={() => {
+                setProfileDetailOpen(false);
+                setProfileTransition(null);
+              }}
             >
               ×
             </button>
-            <ProfileDetail profile={selectedProfile} audit={profileAudit} />
+            <ProfileDetail
+              profile={selectedProfile}
+              audit={profileAudit}
+              disabled={busy !== null}
+              onTransition={setProfileTransition}
+            />
           </aside>
+        </AdminSheet>
+      ) : null}
+
+      {profileTransition !== null && selectedProfile !== undefined ? (
+        <AdminSheet
+          label={`${profileTransition === "publish" ? "Publish" : "Disable"} ${selectedProfile.metadata.name}`}
+          onClose={() => setProfileTransition(null)}
+        >
+          <ProfileTransitionConfirmation
+            profile={selectedProfile}
+            action={profileTransition}
+            disabled={busy !== null}
+            onClose={() => setProfileTransition(null)}
+            onConfirm={transitionProfile}
+          />
         </AdminSheet>
       ) : null}
 
@@ -2220,10 +2281,99 @@ function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
   );
 }
 
+function ProfileTransitionConfirmation({
+  profile,
+  action,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  profile: EnvironmentProfile;
+  action: ProfileTransition;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const [confirmed, setConfirmed] = useState(false);
+  const publishing = action === "publish";
+  return (
+    <section className="dialog" aria-labelledby="profile-transition-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">profiles.act</div>
+          <h2 id="profile-transition-title">{publishing ? "Publish" : "Disable"} profile</h2>
+          <p>
+            {profile.metadata.name} · v{profile.spec.version}
+          </p>
+        </div>
+        <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className={`banner ${publishing ? "running" : "danger"}`} role="status">
+          {publishing
+            ? "This immutable draft will enter the published lifecycle state."
+            : "This published version will be disabled. Existing leases are not terminated."}
+        </div>
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>Profile ID</dt>
+            <dd className="mono">{profile.spec.profileId}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd className="mono">{profile.spec.version}</dd>
+          </div>
+          <div>
+            <dt>Expected resource version</dt>
+            <dd className="mono">{profile.metadata.resourceVersion}</dd>
+          </div>
+        </dl>
+        <label className="confirmation-check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+            disabled={disabled}
+            data-sheet-autofocus
+          />
+          <span>I reviewed the profile version and lifecycle impact.</span>
+        </label>
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className={`button ${publishing ? "primary" : "danger"}`}
+            type="submit"
+            disabled={disabled || !confirmed}
+          >
+            Confirm {action}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function ProfileDetail({
   profile,
   audit,
-}: Readonly<{ profile: EnvironmentProfile; audit: readonly AdminAuditEvent[] }>) {
+  disabled,
+  onTransition,
+}: Readonly<{
+  profile: EnvironmentProfile;
+  audit: readonly AdminAuditEvent[];
+  disabled: boolean;
+  onTransition: (action: ProfileTransition) => void;
+}>) {
   return (
     <>
       <div className="detail-heading">
@@ -2299,6 +2449,26 @@ function ProfileDetail({
           <dd>{formatTime(profile.spec.disabledAt)}</dd>
         </div>
       </dl>
+      {profile.spec.status !== "disabled" ? (
+        <section className="action-block">
+          <div>
+            <h3>{profile.spec.status === "draft" ? "Publish profile" : "Disable profile"}</h3>
+            <p>
+              {profile.spec.status === "draft"
+                ? "Publishes this immutable version using the current resource-version fence."
+                : "Disables this version without terminating existing environment leases."}
+            </p>
+          </div>
+          <button
+            className={`button ${profile.spec.status === "draft" ? "primary" : "danger"}`}
+            type="button"
+            onClick={() => onTransition(profile.spec.status === "draft" ? "publish" : "disable")}
+            disabled={disabled}
+          >
+            {profile.spec.status === "draft" ? "Publish version" : "Disable version"}
+          </button>
+        </section>
+      ) : null}
       <section className="activity-block" aria-labelledby="profile-audit-title">
         <div className="activity-heading">
           <h3 id="profile-audit-title">Audit</h3>

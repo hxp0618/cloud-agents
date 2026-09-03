@@ -235,6 +235,9 @@ type EnvironmentProfileCreateRequest struct {
 	TargetRefs            []string `json:"targetRefs"`
 	ProviderCredentialRef string   `json:"providerCredentialRef"`
 }
+type EnvironmentProfileTransitionRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+}
 type EnvironmentProfileSpec struct {
 	ProjectRef            common.ProjectRef `json:"projectRef"`
 	ProfileID             string            `json:"profileId"`
@@ -1451,6 +1454,27 @@ func EncodeEnvironmentProfileCreateRequestJSON(value EnvironmentProfileCreateReq
 	}
 	return raw, nil
 }
+func DecodeEnvironmentProfileTransitionRequestJSON(data []byte) (EnvironmentProfileTransitionRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedResourceVersion"}, []string{"expectedResourceVersion"})
+	if err != nil {
+		return EnvironmentProfileTransitionRequest{}, err
+	}
+	resourceVersion, err := fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/expectedResourceVersion") != nil {
+		return EnvironmentProfileTransitionRequest{}, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	return EnvironmentProfileTransitionRequest{ExpectedResourceVersion: resourceVersion}, nil
+}
+func EncodeEnvironmentProfileTransitionRequestJSON(value EnvironmentProfileTransitionRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeEnvironmentProfileTransitionRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeEnvironmentProfileJSON(data []byte) (EnvironmentProfile, error) {
 	fields, err := strictResourceExact(data)
 	if err != nil {
@@ -1907,7 +1931,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" && value.Action != "profile.create" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

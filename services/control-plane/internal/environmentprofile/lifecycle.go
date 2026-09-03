@@ -15,6 +15,11 @@ import (
 
 const LifecycleProfileID = "cloud-agents/environment-profile/v1alpha1"
 
+const (
+	TransitionPublish = "publish"
+	TransitionDisable = "disable"
+)
+
 var (
 	ErrInvalidInput        = errors.New("environment profile input is invalid")
 	ErrNotFound            = errors.New("environment profile was not found")
@@ -41,6 +46,15 @@ type CreateInput struct {
 	TargetRefs            []string
 	ProviderCredentialRef string
 	Mutation              Mutation
+}
+
+type TransitionInput struct {
+	Scope                   Scope
+	ProfileID               string
+	Version                 int64
+	ExpectedResourceVersion int64
+	Action                  string
+	Mutation                Mutation
 }
 
 type Snapshot struct {
@@ -113,6 +127,33 @@ func CreateMutationDigest(input CreateInput) (string, error) {
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
+func (input TransitionInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
+		invalidIdentifier(input.ProfileID) || input.Version < 1 || input.Version > 2147483647 ||
+		input.ExpectedResourceVersion < 1 || !validTransition(input.Action) {
+		return ErrInvalidInput
+	}
+	return validateMutation(input.Mutation)
+}
+
+func TransitionMutationDigest(input TransitionInput) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidInput
+	}
+	encoded, err := json.Marshal(struct {
+		Operation, TenantID, ProjectID, ProfileID string
+		Version, ExpectedResourceVersion          int64
+	}{
+		"environment-profile." + input.Action, input.Scope.TenantID, input.Scope.ProjectID,
+		input.ProfileID, input.Version, input.ExpectedResourceVersion,
+	})
+	if err != nil {
+		return "", ErrInvalidInput
+	}
+	sum := sha256.Sum256(encoded)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
 func (snapshot Snapshot) Validate() error {
 	if invalidIdentifier(snapshot.Scope.TenantID) || invalidIdentifier(snapshot.Scope.ProjectID) ||
 		invalidIdentifier(snapshot.ProfileVersionUID) || invalidIdentifier(snapshot.ProfileID) ||
@@ -148,12 +189,20 @@ func (snapshot Snapshot) Validate() error {
 func (event AuditEvent) Validate() error {
 	if invalidIdentifier(event.Scope.TenantID) || invalidIdentifier(event.Scope.ProjectID) ||
 		invalidIdentifier(event.EventID) || invalidIdentifier(event.OperationID) ||
-		!digestPattern.MatchString(event.Actor) || event.Action != "profile.create" ||
+		!digestPattern.MatchString(event.Actor) || !validAuditAction(event.Action) ||
 		invalidIdentifier(event.ProfileUID) || event.ProfileVersion < 1 ||
 		event.Result != "succeeded" || invalidIdentifier(event.RequestID) || event.OccurredAt.IsZero() {
 		return ErrInvalidInput
 	}
 	return nil
+}
+
+func validTransition(action string) bool {
+	return action == TransitionPublish || action == TransitionDisable
+}
+
+func validAuditAction(action string) bool {
+	return action == "profile.create" || action == "profile.publish" || action == "profile.disable"
 }
 
 func validProviderKinds(values []string) bool {

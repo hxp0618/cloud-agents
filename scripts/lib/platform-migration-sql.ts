@@ -504,6 +504,11 @@ export function classifyMigrationStatement(
         targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_target_activity" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGET_ACTIVITY_ACTION"].join("\0");
+      const dropEnvironmentProfileActivityConstraint =
+        migrationId === "000042" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:environment_profile_activity" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILE_ACTIVITY_ACTION"].join("\0");
       if (
         !exact &&
         !addConstraint &&
@@ -512,7 +517,8 @@ export function classifyMigrationStatement(
         !dropAuditFactConstraint &&
         !dropCoordinationRegistryConstraint &&
         !dropDeploymentTargetConstraint &&
-        !dropDeploymentTargetActivityConstraint
+        !dropDeploymentTargetActivityConstraint &&
+        !dropEnvironmentProfileActivityConstraint
       )
         reject(tokens);
       return classification("ALTER", "TABLE", targetIdentity, null);

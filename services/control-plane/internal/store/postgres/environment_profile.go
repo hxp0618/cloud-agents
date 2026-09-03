@@ -72,6 +72,8 @@ const environmentProfileColumns = `profile_version_uid, profile_uid, profile_nam
 var (
 	createEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
 FROM cloud_agents.create_environment_profile_draft_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+	transitionEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
+FROM cloud_agents.transition_environment_profile_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
 FROM cloud_agents.environment_profiles
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
@@ -143,6 +145,46 @@ func (service *DurableCoordinationService) CreateEnvironmentProfile(
 					input.MemoryLimitBytes, input.StoragePolicyRef, input.NetworkPolicyRef,
 					input.ReleaseDigest, strings.Join(input.TargetRefs, ","), input.ProviderCredentialRef,
 					input.Mutation.IdempotencyKey, digest, input.Mutation.RequestID, subjectDigest), input.Scope, &result)
+			})
+		})
+	})
+	return result, mapEnvironmentProfileError(err)
+}
+
+func (service *DurableCoordinationService) TransitionEnvironmentProfile(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalenvironmentprofile.TransitionInput,
+) (internalenvironmentprofile.Snapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalenvironmentprofile.Snapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return internalenvironmentprofile.Snapshot{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalenvironmentprofile.TransitionMutationDigest(input)
+	if err != nil {
+		return internalenvironmentprofile.Snapshot{}, ErrCoordinationInvalidInput
+	}
+	var result internalenvironmentprofile.Snapshot
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
+		subjectDigest, digestErr := actor.Digest()
+		if digestErr != nil {
+			return authz.ErrOperationDenied
+		}
+		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				return scanEnvironmentProfile(handle.transaction.queryRow(ctx, transitionEnvironmentProfileSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID, input.Version,
+					input.ExpectedResourceVersion, input.Action, input.Mutation.IdempotencyKey,
+					digest, input.Mutation.RequestID, subjectDigest), input.Scope, &result)
 			})
 		})
 	})
@@ -363,12 +405,19 @@ func environmentProfileSnapshot(row environmentProfilePageRow, tenantID, project
 
 func mapEnvironmentProfileError(err error) error {
 	var postgresError *pgconn.PgError
-	if errors.As(err, &postgresError) && postgresError.Code == "23505" {
-		switch postgresError.Message {
-		case "environment profile idempotency conflict":
-			return ErrEnvironmentProfileIdempotencyConflict
-		case "environment profile version conflict", "environment profile name conflict":
-			return ErrEnvironmentProfileVersionConflict
+	if errors.As(err, &postgresError) {
+		if postgresError.Code == "23503" && postgresError.Message == "environment profile was not found" {
+			return ErrEnvironmentProfileNotFound
+		}
+		if postgresError.Code == "23505" {
+			switch postgresError.Message {
+			case "environment profile idempotency conflict":
+				return ErrEnvironmentProfileIdempotencyConflict
+			case "environment profile version conflict", "environment profile name conflict":
+				return ErrEnvironmentProfileVersionConflict
+			case "environment profile transition conflict":
+				return ErrEnvironmentProfileTransitionConflict
+			}
 		}
 	}
 	switch {
@@ -386,3 +435,4 @@ func mapEnvironmentProfileError(err error) error {
 var ErrEnvironmentProfileNotFound = errors.New("environment profile was not found")
 var ErrEnvironmentProfileIdempotencyConflict = errors.New("environment profile idempotency key conflicts")
 var ErrEnvironmentProfileVersionConflict = errors.New("environment profile version conflicts")
+var ErrEnvironmentProfileTransitionConflict = errors.New("environment profile transition conflicts")

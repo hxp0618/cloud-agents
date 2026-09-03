@@ -201,7 +201,7 @@ describe("generated platform JSON models", () => {
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
     );
   });
-  it("creates and reads Admin environment profile drafts", async () => {
+  it("drives the Admin environment profile lifecycle", async () => {
     const profile = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "EnvironmentProfile",
@@ -234,6 +234,22 @@ describe("generated platform JSON models", () => {
       kind: "EnvironmentProfilePage",
       environmentProfiles: [JSON.parse(profile)],
     });
+    const profileValue = JSON.parse(profile);
+    const publishedProfile = JSON.stringify({
+      ...profileValue,
+      metadata: { ...profileValue.metadata, resourceVersion: "2" },
+      spec: { ...profileValue.spec, status: "published", publishedAt: "2026-09-03T08:01:00Z" },
+    });
+    const disabledProfile = JSON.stringify({
+      ...profileValue,
+      metadata: { ...profileValue.metadata, resourceVersion: "3" },
+      spec: {
+        ...profileValue.spec,
+        status: "disabled",
+        publishedAt: "2026-09-03T08:01:00Z",
+        disabledAt: "2026-09-03T08:02:00Z",
+      },
+    });
     const audit = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "AdminAuditEventPage",
@@ -265,6 +281,12 @@ describe("generated platform JSON models", () => {
         return { status: 200, headers: {}, body: audit };
       if (request.method === "GET" && request.path.includes("environment-profiles?"))
         return { status: 200, headers: {}, body: page };
+      if (request.path.endsWith(":publish"))
+        return seen.some(({ path }) => path.endsWith(":disable"))
+          ? { status: 200, headers: { "X-Resource-Version": "3" }, body: disabledProfile }
+          : { status: 200, headers: { "X-Resource-Version": "2" }, body: publishedProfile };
+      if (request.path.endsWith(":disable"))
+        return { status: 200, headers: { "X-Resource-Version": "3" }, body: disabledProfile };
       return {
         status: request.method === "POST" ? 201 : 200,
         headers: { "X-Resource-Version": "1" },
@@ -292,6 +314,33 @@ describe("generated platform JSON models", () => {
       "profile-create-idempotency",
       body,
     );
+    await client.publishAdminEnvironmentProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "development",
+      1,
+      "request-profile-publish",
+      "profile-publish-idempotency",
+      { expectedResourceVersion: "1" },
+    );
+    await client.disableAdminEnvironmentProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "development",
+      1,
+      "request-profile-disable",
+      "profile-disable-idempotency",
+      { expectedResourceVersion: "2" },
+    );
+    await client.publishAdminEnvironmentProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "development",
+      1,
+      "request-profile-publish-replay",
+      "profile-publish-idempotency",
+      { expectedResourceVersion: "1" },
+    );
     await client.listAdminEnvironmentProfiles(
       "tenant-alpha",
       "project-alpha",
@@ -315,6 +364,9 @@ describe("generated platform JSON models", () => {
     );
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles",
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1:publish",
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1:disable",
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1:publish",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1/audit-events?pageSize=1",
