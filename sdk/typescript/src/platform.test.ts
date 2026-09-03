@@ -223,10 +223,35 @@ describe("generated platform JSON models", () => {
             stableErrorCode: "",
           },
         },
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "DeploymentTarget",
+          metadata: {
+            uid: "ssh-alpha",
+            name: "ssh-alpha",
+            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            resourceVersion: "1",
+            createdAt: "2026-09-02T08:00:00Z",
+            updatedAt: "2026-09-02T08:00:00Z",
+          },
+          spec: {
+            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            generation: 1,
+            targetKind: "ssh",
+            endpoint: "ssh://ssh.example.test:22",
+            credentialRef: "ssh-alpha",
+            observedPhase: "unprobed",
+            apiVersion: "",
+            engineVersion: "",
+            os: "",
+            architecture: "",
+            stableErrorCode: "",
+          },
+        },
       ],
       nextPageToken: "target-page-token-2",
     });
-    expect(decodeDeploymentTargetPage(JSON.parse(page)).deploymentTargets).toHaveLength(1);
+    expect(decodeDeploymentTargetPage(JSON.parse(page)).deploymentTargets).toHaveLength(2);
     expect(parseDeploymentTargetPage(page).value.nextPageToken).toBe("target-page-token-2");
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {

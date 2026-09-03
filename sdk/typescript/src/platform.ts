@@ -969,7 +969,7 @@ function registeredTargetEndpoint(
       parsed.password !== "" ||
       parsed.search !== "" ||
       parsed.hash !== "" ||
-      parsed.pathname !== "/"
+      (kind === "ssh" ? parsed.pathname !== "" && parsed.pathname !== "/" : parsed.pathname !== "/")
     )
       error("INVALID_TARGET_ENDPOINT", path);
   } catch (cause) {
