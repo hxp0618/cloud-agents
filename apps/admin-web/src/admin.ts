@@ -7,6 +7,7 @@ import {
   type DeploymentTargetCleanupPreview,
   type DeploymentTargetCleanupRequest,
   type EnvironmentLease,
+  type EnvironmentProfile,
   type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
@@ -22,6 +23,10 @@ export type AdminClient = Pick<
   | "cleanupAdminDeploymentTarget"
   | "listAdminEnvironmentLeases"
   | "getAdminEnvironmentLease"
+  | "listAdminEnvironmentProfiles"
+  | "createAdminEnvironmentProfile"
+  | "getAdminEnvironmentProfile"
+  | "listAdminEnvironmentProfileAuditEvents"
 >;
 
 export type SavedAdminConnection = Readonly<{
@@ -161,6 +166,73 @@ export async function listAdminLeases(
   );
 }
 
+export async function listAdminProfiles(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly EnvironmentProfile[]> {
+  const profiles: EnvironmentProfile[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminEnvironmentProfiles(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    profiles.push(...page.value.environmentProfiles);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken))
+        throw new Error("Control Plane repeated a profile page token.");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    profiles.toSorted(
+      (left, right) =>
+        left.metadata.name.localeCompare(right.metadata.name) ||
+        right.spec.version - left.spec.version,
+    ),
+  );
+}
+
+export async function listAdminProfileAuditEvents(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  profileId: string,
+  version: number,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  const events: AdminAuditEvent[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminEnvironmentProfileAuditEvents(
+      tenantId,
+      projectId,
+      profileId,
+      version,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    events.push(...page.value.events);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated an audit page token.");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(events);
+}
+
 export async function listAdminTargetOperations(
   client: AdminClient,
   tenantId: string,
@@ -244,6 +316,19 @@ export function replaceLease(
   );
 }
 
+export function replaceProfile(
+  profiles: readonly EnvironmentProfile[],
+  profile: EnvironmentProfile,
+): readonly EnvironmentProfile[] {
+  return Object.freeze(
+    [...profiles.filter(({ metadata }) => metadata.uid !== profile.metadata.uid), profile].toSorted(
+      (left, right) =>
+        left.metadata.name.localeCompare(right.metadata.name) ||
+        right.spec.version - left.spec.version,
+    ),
+  );
+}
+
 export function adminErrorMessage(error: unknown): string {
   if (error instanceof ClientError && error.status === 401)
     return "The admin token expired or was rejected. Disconnect and authenticate again.";
@@ -252,7 +337,7 @@ export function adminErrorMessage(error: unknown): string {
   if (error instanceof ClientError && error.status === 404)
     return "The selected resource no longer exists. Refresh the project authority.";
   if (error instanceof ClientError && error.status === 409)
-    return "The target generation changed or the operation conflicts with current state. Refresh and retry.";
+    return "The resource version changed or the operation conflicts with current state. Refresh and retry.";
   if (error instanceof ClientError && error.status === 400)
     return "Control Plane rejected the request fields. Check identifiers and generation.";
   if (error instanceof ClientError && (error.status === 502 || error.status === 503))

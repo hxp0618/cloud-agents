@@ -262,6 +262,48 @@ export type EnvironmentLeasePage = Readonly<{
   environmentLeases: readonly EnvironmentLease[];
   nextPageToken?: string;
 }>;
+export type EnvironmentProfileCreateRequest = Readonly<{
+  profileId: string;
+  profileName: string;
+  version: number;
+  description: string;
+  providerKinds: readonly ("codex" | "claudeAgent")[];
+  cpuLimitMillis: number;
+  memoryLimitBytes: number;
+  storagePolicyRef: string;
+  networkPolicyRef: string;
+  releaseDigest: `sha256:${string}`;
+  targetRefs: readonly string[];
+  providerCredentialRef: string;
+}>;
+export type EnvironmentProfile = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "EnvironmentProfile";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    profileId: string;
+    version: number;
+    description: string;
+    status: "draft" | "published" | "disabled";
+    providerKinds: readonly ("codex" | "claudeAgent")[];
+    cpuLimitMillis: number;
+    memoryLimitBytes: number;
+    storagePolicyRef: string;
+    networkPolicyRef: string;
+    releaseDigest: `sha256:${string}`;
+    targetRefs: readonly string[];
+    providerCredentialRef: string;
+    publishedAt?: string;
+    disabledAt?: string;
+  }>;
+}>;
+export type EnvironmentProfilePage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "EnvironmentProfilePage";
+  environmentProfiles: readonly EnvironmentProfile[];
+  nextPageToken?: string;
+}>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
@@ -330,8 +372,8 @@ export type AdminAuditEvent = Readonly<{
   kind: "AdminAuditEvent";
   eventId: string;
   actor: `sha256:${string}`;
-  action: "target.register" | "target.probe" | "target.cleanup";
-  resourceKind: "DeploymentTarget";
+  action: "target.register" | "target.probe" | "target.cleanup" | "profile.create";
+  resourceKind: "DeploymentTarget" | "EnvironmentProfile";
   resourceId: string;
   resourceGeneration: number;
   result: "requested" | "succeeded" | "failed";
@@ -668,6 +710,31 @@ const environmentLeasePageResponseShape: ResponseShape = {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
     environmentLeases: { item: environmentLeaseResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const environmentProfileResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  profileId: scalarResponseShape,
+  version: scalarResponseShape,
+  description: scalarResponseShape,
+  status: scalarResponseShape,
+  providerKinds: { item: scalarResponseShape },
+  cpuLimitMillis: scalarResponseShape,
+  memoryLimitBytes: scalarResponseShape,
+  storagePolicyRef: scalarResponseShape,
+  networkPolicyRef: scalarResponseShape,
+  releaseDigest: scalarResponseShape,
+  targetRefs: { item: scalarResponseShape },
+  providerCredentialRef: scalarResponseShape,
+  publishedAt: scalarResponseShape,
+  disabledAt: scalarResponseShape,
+});
+const environmentProfilePageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    environmentProfiles: { item: environmentProfileResponseShape },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -1016,6 +1083,34 @@ function enumValue<T extends string>(value: unknown, values: readonly T[], path:
   const text = string(value, path) as T;
   if (!values.includes(text)) error("INVALID_ENUM", path);
   return text;
+}
+function profileDescription(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 1024, path);
+  for (const character of text) {
+    const code = character.codePointAt(0)!;
+    if (code < 32 || code === 127) error("INVALID_PROFILE_DESCRIPTION", path);
+  }
+  return text;
+}
+function profileProviderKinds(value: unknown, path: string): readonly ("codex" | "claudeAgent")[] {
+  const values: unknown[] = Array.isArray(value)
+    ? value
+    : error("INVALID_PROFILE_PROVIDER_KINDS", path);
+  if (values.length < 1 || values.length > 2) error("INVALID_PROFILE_PROVIDER_KINDS", path);
+  const kinds = values.map((entry, index) =>
+    enumValue(entry, ["codex", "claudeAgent"] as const, `${path}/${index}`),
+  );
+  if (new Set(kinds).size !== kinds.length) error("INVALID_PROFILE_PROVIDER_KINDS", path);
+  return Object.freeze(kinds);
+}
+function profileTargetRefs(value: unknown, path: string): readonly string[] {
+  const values: unknown[] = Array.isArray(value)
+    ? value
+    : error("INVALID_PROFILE_TARGET_REFS", path);
+  if (values.length < 1 || values.length > 32) error("INVALID_PROFILE_TARGET_REFS", path);
+  const refs = values.map((entry, index) => identifier(entry, `${path}/${index}`));
+  if (new Set(refs).size !== refs.length) error("INVALID_PROFILE_TARGET_REFS", path);
+  return Object.freeze(refs);
 }
 function roleNameValue(value: unknown, path: string): RoleName {
   const text = string(value, path) as RoleName;
@@ -1450,6 +1545,65 @@ export function decodeEnvironmentLeaseCreateRequest(value: unknown): Environment
 }
 export function encodeEnvironmentLeaseCreateRequest(value: EnvironmentLeaseCreateRequest): string {
   return JSON.stringify(decodeEnvironmentLeaseCreateRequest(value));
+}
+export function decodeEnvironmentProfileCreateRequest(
+  value: unknown,
+): EnvironmentProfileCreateRequest {
+  const source = strictRecord(
+    value,
+    [
+      "profileId",
+      "profileName",
+      "version",
+      "description",
+      "providerKinds",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "storagePolicyRef",
+      "networkPolicyRef",
+      "releaseDigest",
+      "targetRefs",
+      "providerCredentialRef",
+    ],
+    [
+      "profileId",
+      "profileName",
+      "version",
+      "description",
+      "providerKinds",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "storagePolicyRef",
+      "networkPolicyRef",
+      "releaseDigest",
+      "targetRefs",
+      "providerCredentialRef",
+    ],
+  );
+  return Object.freeze({
+    profileId: identifier(source.profileId, "/profileId"),
+    profileName: identifier(source.profileName, "/profileName"),
+    version: integer(source.version, 1, 2147483647, "/version"),
+    description: profileDescription(source.description, "/description"),
+    providerKinds: profileProviderKinds(source.providerKinds, "/providerKinds"),
+    cpuLimitMillis: integer(source.cpuLimitMillis, 100, 64000, "/cpuLimitMillis"),
+    memoryLimitBytes: integer(
+      source.memoryLimitBytes,
+      134217728,
+      1099511627776,
+      "/memoryLimitBytes",
+    ),
+    storagePolicyRef: identifier(source.storagePolicyRef, "/storagePolicyRef"),
+    networkPolicyRef: identifier(source.networkPolicyRef, "/networkPolicyRef"),
+    releaseDigest: digest(source.releaseDigest, "/releaseDigest") as `sha256:${string}`,
+    targetRefs: profileTargetRefs(source.targetRefs, "/targetRefs"),
+    providerCredentialRef: identifier(source.providerCredentialRef, "/providerCredentialRef"),
+  });
+}
+export function encodeEnvironmentProfileCreateRequest(
+  value: EnvironmentProfileCreateRequest,
+): string {
+  return JSON.stringify(decodeEnvironmentProfileCreateRequest(value));
 }
 export function decodeEnvironmentLeaseTerminateRequest(
   value: unknown,
@@ -2013,6 +2167,111 @@ export function decodeEnvironmentLeasePage(value: unknown): EnvironmentLeasePage
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
+  const source = record(value);
+  const root = base(source, "EnvironmentProfile");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "profileId",
+      "version",
+      "description",
+      "status",
+      "providerKinds",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "storagePolicyRef",
+      "networkPolicyRef",
+      "releaseDigest",
+      "targetRefs",
+      "providerCredentialRef",
+      "publishedAt",
+      "disabledAt",
+    ],
+    [
+      "projectRef",
+      "profileId",
+      "version",
+      "description",
+      "status",
+      "providerKinds",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "storagePolicyRef",
+      "networkPolicyRef",
+      "releaseDigest",
+      "targetRefs",
+      "providerCredentialRef",
+    ],
+    "/spec",
+  );
+  const status = enumValue(
+    spec.status,
+    ["draft", "published", "disabled"] as const,
+    "/spec/status",
+  );
+  const publishedAt =
+    spec.publishedAt === undefined ? undefined : dateTime(spec.publishedAt, "/spec/publishedAt");
+  const disabledAt =
+    spec.disabledAt === undefined ? undefined : dateTime(spec.disabledAt, "/spec/disabledAt");
+  if (
+    status === "draft"
+      ? publishedAt !== undefined || disabledAt !== undefined
+      : status === "published"
+        ? publishedAt === undefined || disabledAt !== undefined
+        : publishedAt === undefined ||
+          disabledAt === undefined ||
+          Date.parse(disabledAt) < Date.parse(publishedAt)
+  )
+    error("INVALID_PROFILE_LIFECYCLE", "/spec/status");
+  return Object.freeze({
+    ...root,
+    kind: "EnvironmentProfile",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      profileId: identifier(spec.profileId, "/spec/profileId"),
+      version: integer(spec.version, 1, 2147483647, "/spec/version"),
+      description: profileDescription(spec.description, "/spec/description"),
+      status,
+      providerKinds: profileProviderKinds(spec.providerKinds, "/spec/providerKinds"),
+      cpuLimitMillis: integer(spec.cpuLimitMillis, 100, 64000, "/spec/cpuLimitMillis"),
+      memoryLimitBytes: integer(
+        spec.memoryLimitBytes,
+        134217728,
+        1099511627776,
+        "/spec/memoryLimitBytes",
+      ),
+      storagePolicyRef: identifier(spec.storagePolicyRef, "/spec/storagePolicyRef"),
+      networkPolicyRef: identifier(spec.networkPolicyRef, "/spec/networkPolicyRef"),
+      releaseDigest: digest(spec.releaseDigest, "/spec/releaseDigest") as `sha256:${string}`,
+      targetRefs: profileTargetRefs(spec.targetRefs, "/spec/targetRefs"),
+      providerCredentialRef: identifier(spec.providerCredentialRef, "/spec/providerCredentialRef"),
+      ...(publishedAt === undefined ? {} : { publishedAt }),
+      ...(disabledAt === undefined ? {} : { disabledAt }),
+    }),
+  });
+}
+export function decodeEnvironmentProfilePage(value: unknown): EnvironmentProfilePage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "environmentProfiles", "nextPageToken"],
+    ["apiVersion", "kind", "environmentProfiles"],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "EnvironmentProfilePage")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const profiles = Array.isArray(source.environmentProfiles)
+    ? source.environmentProfiles
+    : error("INVALID_ENVIRONMENT_PROFILE_PAGE", "/environmentProfiles");
+  if (profiles.length > 200) error("INVALID_ENVIRONMENT_PROFILE_PAGE", "/environmentProfiles");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "EnvironmentProfilePage" as const,
+    environmentProfiles: Object.freeze(profiles.map(decodeEnvironmentProfile)),
+  };
+  if (source.nextPageToken === undefined) return Object.freeze(page);
+  return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
+}
 export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
   const source = record(value);
   const root = base(source, "DeploymentTarget");
@@ -2303,10 +2562,14 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
     actor: digest(source.actor, "/actor") as `sha256:${string}`,
     action: enumValue(
       source.action,
-      ["target.register", "target.probe", "target.cleanup"] as const,
+      ["target.register", "target.probe", "target.cleanup", "profile.create"] as const,
       "/action",
     ),
-    resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
+    resourceKind: enumValue(
+      source.resourceKind,
+      ["DeploymentTarget", "EnvironmentProfile"] as const,
+      "/resourceKind",
+    ),
     resourceId: identifier(source.resourceId, "/resourceId"),
     resourceGeneration: integer(
       source.resourceGeneration,
@@ -3132,6 +3395,14 @@ export function parseEnvironmentLease(text: string): ResponseEnvelope<Environmen
 }
 export function parseEnvironmentLeasePage(text: string): ResponseEnvelope<EnvironmentLeasePage> {
   return parseResponse(text, environmentLeasePageResponseShape, decodeEnvironmentLeasePage);
+}
+export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
+  return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
+}
+export function parseEnvironmentProfilePage(
+  text: string,
+): ResponseEnvelope<EnvironmentProfilePage> {
+  return parseResponse(text, environmentProfilePageResponseShape, decodeEnvironmentProfilePage);
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
@@ -4593,6 +4864,141 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  async listAdminEnvironmentProfiles(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfilePage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-profiles${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListEnvironmentProfiles", response);
+    const result = parseEnvironmentProfilePage(response.body);
+    if (
+      result.value.environmentProfiles.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentProfiles");
+    return result;
+  }
+  async createAdminEnvironmentProfile(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: EnvironmentProfileCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfile>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeEnvironmentProfileCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-profiles`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeEnvironmentProfileCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201)
+      throw await this.problem("adminCreateEnvironmentProfile", response);
+    const result = parseEnvironmentProfile(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.profileId !== checked.profileId ||
+      result.value.spec.version !== checked.version ||
+      result.value.metadata.name !== checked.profileName
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async getAdminEnvironmentProfile(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    version: number,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfile>> {
+    validateEnvironmentProfilePath(tenantId, projectId, profileId, version, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-profiles/${profileId}/versions/${version}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetEnvironmentProfile", response);
+    const result = parseEnvironmentProfile(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.profileId !== profileId ||
+      result.value.spec.version !== version
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminEnvironmentProfileAuditEvents(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    version: number,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminAuditEventPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, profileId, version, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-profiles/${profileId}/versions/${version}/audit-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListEnvironmentProfileAuditEvents", response);
+    const result = parseAdminAuditEventPage(response.body);
+    if (
+      result.value.events.some(
+        (event) =>
+          event.resourceKind !== "EnvironmentProfile" || event.resourceGeneration !== version,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
+  }
   async listAdminDeploymentTargets(
     tenantId: string,
     projectId: string,
@@ -5139,6 +5545,20 @@ function validateLeasePath(
   validatePath(tenantId, requestId);
   identifier(projectId, "/projectId");
   if (leaseId !== undefined) identifier(leaseId, "/leaseId");
+}
+function validateEnvironmentProfilePath(
+  tenantId: string,
+  projectId: string,
+  profileId: string | undefined,
+  version: number | undefined,
+  requestId: string,
+): void {
+  validatePath(tenantId, requestId);
+  identifier(projectId, "/projectId");
+  if ((profileId === undefined) !== (version === undefined))
+    error("INVALID_PROFILE_PATH", "/profileId");
+  if (profileId !== undefined) identifier(profileId, "/profileId");
+  if (version !== undefined) integer(version, 1, 2147483647, "/version");
 }
 function validateDeploymentTargetPath(
   tenantId: string,

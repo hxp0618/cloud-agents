@@ -221,6 +221,47 @@ type EnvironmentLeasePage struct {
 	EnvironmentLeases []EnvironmentLease `json:"environmentLeases"`
 	NextPageToken     string             `json:"nextPageToken,omitempty"`
 }
+type EnvironmentProfileCreateRequest struct {
+	ProfileID             string   `json:"profileId"`
+	ProfileName           string   `json:"profileName"`
+	Version               int64    `json:"version"`
+	Description           string   `json:"description"`
+	ProviderKinds         []string `json:"providerKinds"`
+	CPULimitMillis        int64    `json:"cpuLimitMillis"`
+	MemoryLimitBytes      int64    `json:"memoryLimitBytes"`
+	StoragePolicyRef      string   `json:"storagePolicyRef"`
+	NetworkPolicyRef      string   `json:"networkPolicyRef"`
+	ReleaseDigest         string   `json:"releaseDigest"`
+	TargetRefs            []string `json:"targetRefs"`
+	ProviderCredentialRef string   `json:"providerCredentialRef"`
+}
+type EnvironmentProfileSpec struct {
+	ProjectRef            common.ProjectRef `json:"projectRef"`
+	ProfileID             string            `json:"profileId"`
+	Version               int64             `json:"version"`
+	Description           string            `json:"description"`
+	Status                string            `json:"status"`
+	ProviderKinds         []string          `json:"providerKinds"`
+	CPULimitMillis        int64             `json:"cpuLimitMillis"`
+	MemoryLimitBytes      int64             `json:"memoryLimitBytes"`
+	StoragePolicyRef      string            `json:"storagePolicyRef"`
+	NetworkPolicyRef      string            `json:"networkPolicyRef"`
+	ReleaseDigest         string            `json:"releaseDigest"`
+	TargetRefs            []string          `json:"targetRefs"`
+	ProviderCredentialRef string            `json:"providerCredentialRef"`
+	PublishedAt           string            `json:"publishedAt,omitempty"`
+	DisabledAt            string            `json:"disabledAt,omitempty"`
+}
+type EnvironmentProfile struct {
+	ResourceBase
+	Spec EnvironmentProfileSpec `json:"spec"`
+}
+type EnvironmentProfilePage struct {
+	APIVersion          string               `json:"apiVersion"`
+	Kind                string               `json:"kind"`
+	EnvironmentProfiles []EnvironmentProfile `json:"environmentProfiles"`
+	NextPageToken       string               `json:"nextPageToken,omitempty"`
+}
 type DeploymentTargetRegisterRequest struct {
 	TargetID      string `json:"targetId"`
 	TargetName    string `json:"targetName"`
@@ -368,6 +409,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"tenantRef": resourceTenantRefResponseShape, "subject": resourceSubjectResponseShape, "roleName": common.ScalarResponseShape(), "roleVersion": common.ScalarResponseShape(), "scope": resourceScopeResponseShape, "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "CloudEnvironmentLease":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
+	case "EnvironmentProfile":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
@@ -404,6 +447,10 @@ var roleBindingPageResponseShape = common.ObjectResponseShape(map[string]common.
 var environmentLeasePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentLeases": common.ArrayResponseShape(resourceResponseShape("CloudEnvironmentLease")), "nextPageToken": common.ScalarResponseShape(),
+})
+var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
+	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
+	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
 })
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -1324,6 +1371,198 @@ func DecodeEnvironmentLeasePageResponseJSON(data []byte) (common.ResponseEnvelop
 func EncodeEnvironmentLeasePageResponseJSON(value common.ResponseEnvelope[EnvironmentLeasePage]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
+
+func validateEnvironmentProfileValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, storagePolicyRef, networkPolicyRef, releaseDigest string, targetRefs []string, providerCredentialRef, path string) error {
+	if err := common.ValidateIdentifier(profileID, path+"/profileId"); err != nil {
+		return err
+	}
+	if version < 1 || version > 2147483647 {
+		return common.ContractError("INVALID_PROFILE_VERSION", path+"/version")
+	}
+	if common.ValidateString(description, 1, 1024, path+"/description") != nil || strings.IndexFunc(description, func(value rune) bool { return value < 32 || value == 127 }) >= 0 {
+		return common.ContractError("INVALID_DESCRIPTION", path+"/description")
+	}
+	if len(providerKinds) < 1 || len(providerKinds) > 2 {
+		return common.ContractError("INVALID_PROVIDER_KINDS", path+"/providerKinds")
+	}
+	seenProviders := map[string]struct{}{}
+	for index, providerKind := range providerKinds {
+		if providerKind != "codex" && providerKind != "claudeAgent" {
+			return common.ContractError("INVALID_PROVIDER_KIND", path+"/providerKinds/"+itoa(index))
+		}
+		if _, duplicate := seenProviders[providerKind]; duplicate {
+			return common.ContractError("DUPLICATE_PROVIDER_KIND", path+"/providerKinds/"+itoa(index))
+		}
+		seenProviders[providerKind] = struct{}{}
+	}
+	if cpuLimitMillis < 100 || cpuLimitMillis > 64000 {
+		return common.ContractError("INVALID_RESOURCE_LIMIT", path+"/cpuLimitMillis")
+	}
+	if memoryLimitBytes < 134217728 || memoryLimitBytes > 1099511627776 {
+		return common.ContractError("INVALID_RESOURCE_LIMIT", path+"/memoryLimitBytes")
+	}
+	for field, value := range map[string]string{"storagePolicyRef": storagePolicyRef, "networkPolicyRef": networkPolicyRef, "providerCredentialRef": providerCredentialRef} {
+		if err := common.ValidateIdentifier(value, path+"/"+field); err != nil {
+			return err
+		}
+	}
+	if !digestPattern.MatchString(releaseDigest) {
+		return common.ContractError("INVALID_RELEASE_DIGEST", path+"/releaseDigest")
+	}
+	if len(targetRefs) < 1 || len(targetRefs) > 32 {
+		return common.ContractError("INVALID_TARGET_REFS", path+"/targetRefs")
+	}
+	seenTargets := map[string]struct{}{}
+	for index, targetRef := range targetRefs {
+		if err := common.ValidateIdentifier(targetRef, path+"/targetRefs/"+itoa(index)); err != nil {
+			return err
+		}
+		if _, duplicate := seenTargets[targetRef]; duplicate {
+			return common.ContractError("DUPLICATE_TARGET_REF", path+"/targetRefs/"+itoa(index))
+		}
+		seenTargets[targetRef] = struct{}{}
+	}
+	return nil
+}
+func DecodeEnvironmentProfileCreateRequestJSON(data []byte) (EnvironmentProfileCreateRequest, error) {
+	allowed := []string{"profileId", "profileName", "version", "description", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storagePolicyRef", "networkPolicyRef", "releaseDigest", "targetRefs", "providerCredentialRef"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return EnvironmentProfileCreateRequest{}, err
+	}
+	var value EnvironmentProfileCreateRequest
+	if err := json.Unmarshal(data, &value); err != nil {
+		return EnvironmentProfileCreateRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if err := common.ValidateIdentifier(value.ProfileName, "/profileName"); err != nil {
+		return EnvironmentProfileCreateRequest{}, err
+	}
+	if err := validateEnvironmentProfileValues(value.ProfileID, value.Version, value.Description, value.ProviderKinds, value.CPULimitMillis, value.MemoryLimitBytes, value.StoragePolicyRef, value.NetworkPolicyRef, value.ReleaseDigest, value.TargetRefs, value.ProviderCredentialRef, ""); err != nil {
+		return EnvironmentProfileCreateRequest{}, err
+	}
+	return value, nil
+}
+func EncodeEnvironmentProfileCreateRequestJSON(value EnvironmentProfileCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeEnvironmentProfileCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeEnvironmentProfileJSON(data []byte) (EnvironmentProfile, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return EnvironmentProfile{}, err
+	}
+	base, err := checkResourceBase(fields, "EnvironmentProfile")
+	if err != nil {
+		return EnvironmentProfile{}, err
+	}
+	allowed := []string{"projectRef", "profileId", "version", "description", "status", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storagePolicyRef", "networkPolicyRef", "releaseDigest", "targetRefs", "providerCredentialRef", "publishedAt", "disabledAt"}
+	required := allowed[:13]
+	specFields, err := strictSpec(fields["spec"], allowed, required)
+	if err != nil {
+		return EnvironmentProfile{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return EnvironmentProfile{}, err
+	}
+	var spec EnvironmentProfileSpec
+	if err := json.Unmarshal(fields["spec"], &spec); err != nil {
+		return EnvironmentProfile{}, common.ContractError("INVALID_FIELD_TYPE", "/spec")
+	}
+	spec.ProjectRef = project
+	if err := validateEnvironmentProfileValues(spec.ProfileID, spec.Version, spec.Description, spec.ProviderKinds, spec.CPULimitMillis, spec.MemoryLimitBytes, spec.StoragePolicyRef, spec.NetworkPolicyRef, spec.ReleaseDigest, spec.TargetRefs, spec.ProviderCredentialRef, "/spec"); err != nil {
+		return EnvironmentProfile{}, err
+	}
+	if spec.Status != "draft" && spec.Status != "published" && spec.Status != "disabled" {
+		return EnvironmentProfile{}, common.ContractError("INVALID_STATE", "/spec/status")
+	}
+	if spec.PublishedAt != "" && common.ValidateDateTime(spec.PublishedAt, "/spec/publishedAt") != nil {
+		return EnvironmentProfile{}, common.ContractError("INVALID_DATE_TIME", "/spec/publishedAt")
+	}
+	if spec.DisabledAt != "" && common.ValidateDateTime(spec.DisabledAt, "/spec/disabledAt") != nil {
+		return EnvironmentProfile{}, common.ContractError("INVALID_DATE_TIME", "/spec/disabledAt")
+	}
+	if spec.Status == "draft" && (spec.PublishedAt != "" || spec.DisabledAt != "") || spec.Status == "published" && (spec.PublishedAt == "" || spec.DisabledAt != "") || spec.Status == "disabled" && (spec.PublishedAt == "" || spec.DisabledAt == "") {
+		return EnvironmentProfile{}, common.ContractError("INVALID_PROFILE_LIFECYCLE", "/spec/status")
+	}
+	if spec.DisabledAt != "" {
+		publishedAt, _ := time.Parse(time.RFC3339Nano, spec.PublishedAt)
+		disabledAt, _ := time.Parse(time.RFC3339Nano, spec.DisabledAt)
+		if disabledAt.Before(publishedAt) {
+			return EnvironmentProfile{}, common.ContractError("INVALID_PROFILE_LIFECYCLE", "/spec/disabledAt")
+		}
+	}
+	return EnvironmentProfile{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeEnvironmentProfileResponseJSON(data []byte) (common.ResponseEnvelope[EnvironmentProfile], error) {
+	fields, sidecar, err := strictResource(data, "EnvironmentProfile")
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentProfile]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeEnvironmentProfileJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentProfile]{}, err
+	}
+	return common.ResponseEnvelope[EnvironmentProfile]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeEnvironmentProfileResponseJSON(value common.ResponseEnvelope[EnvironmentProfile]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeEnvironmentProfilePageJSON(data []byte) (EnvironmentProfilePage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "environmentProfiles", "nextPageToken"}, []string{"apiVersion", "kind", "environmentProfiles"})
+	if err != nil {
+		return EnvironmentProfilePage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return EnvironmentProfilePage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "EnvironmentProfilePage" {
+		return EnvironmentProfilePage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawProfiles []json.RawMessage
+	if err := json.Unmarshal(fields["environmentProfiles"], &rawProfiles); err != nil || rawProfiles == nil || len(rawProfiles) > 200 {
+		return EnvironmentProfilePage{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE_PAGE", "/environmentProfiles")
+	}
+	profiles := make([]EnvironmentProfile, 0, len(rawProfiles))
+	for index, raw := range rawProfiles {
+		profile, err := DecodeEnvironmentProfileJSON(raw)
+		if err != nil {
+			return EnvironmentProfilePage{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE", "/environmentProfiles/"+itoa(index))
+		}
+		profiles = append(profiles, profile)
+	}
+	page := EnvironmentProfilePage{APIVersion: apiVersion, Kind: kind, EnvironmentProfiles: profiles}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return EnvironmentProfilePage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeEnvironmentProfilePageResponseJSON(data []byte) (common.ResponseEnvelope[EnvironmentProfilePage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, environmentProfilePageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentProfilePage]{}, err
+	}
+	value, err := DecodeEnvironmentProfilePageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentProfilePage]{}, err
+	}
+	return common.ResponseEnvelope[EnvironmentProfilePage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeEnvironmentProfilePageResponseJSON(value common.ResponseEnvelope[EnvironmentProfilePage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
 func validDeploymentTargetEndpoint(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil && (parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
@@ -1668,7 +1907,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" && value.Action != "profile.create" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

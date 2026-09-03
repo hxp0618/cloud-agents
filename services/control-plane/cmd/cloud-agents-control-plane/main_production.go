@@ -259,6 +259,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("admin environment lease HTTP server is unavailable")
 	}
+	adminEnvironmentProfileServer, err := server.NewAdminEnvironmentProfileHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("admin environment profile HTTP server is unavailable")
+	}
 	tenantServer, err := server.NewPlatformTenantHTTPServer(verifier, coordinationService)
 	if err != nil {
 		return errors.New("tenant HTTP server is unavailable")
@@ -297,6 +301,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesAdminEnvironmentProfilePath(request.URL.Path) {
+			adminEnvironmentProfileServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesAdminEnvironmentLeasePath(request.URL.Path) {
 			adminEnvironmentLeaseServer.ServeHTTP(writer, request)
 			return

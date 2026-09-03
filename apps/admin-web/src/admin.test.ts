@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   cleanupRequestFromPreview,
   listAdminLeases,
+  listAdminProfiles,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
   listAdminTargets,
@@ -77,6 +78,32 @@ describe("Admin Web boundary", () => {
     } as unknown as AdminClient;
 
     await listAdminLeases(client, "tenant-alpha", "project-alpha", new AbortController().signal);
+    expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("uses only Admin API profile pagination", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminEnvironmentProfiles: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        tokens.push(pageToken);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "EnvironmentProfilePage" as const,
+            environmentProfiles: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    await listAdminProfiles(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
   });
 

@@ -92,6 +92,8 @@ type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
 type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
+type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
+type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
 type MaintenanceOperationResult = common.ResponseEnvelope[platform.MaintenanceOperation]
@@ -698,6 +700,141 @@ func (client *Client) GetAdminEnvironmentLease(ctx context.Context, tenantID, pr
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID {
 		return EnvironmentLeaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminEnvironmentProfiles(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (EnvironmentProfilePageResult, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return EnvironmentProfilePageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return EnvironmentProfilePageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return EnvironmentProfilePageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-profiles"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return EnvironmentProfilePageResult{}, err
+	}
+	if response.Status != 200 {
+		return EnvironmentProfilePageResult{}, client.problemError("adminListEnvironmentProfiles", response)
+	}
+	value, err := platform.DecodeEnvironmentProfilePageResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentProfilePageResult{}, &ClientError{Operation: "adminListEnvironmentProfiles", Status: response.Status, Cause: err}
+	}
+	for _, profile := range value.Value.EnvironmentProfiles {
+		if profile.Metadata.TenantRef.ID != tenantID || profile.Spec.ProjectRef.ID != projectID {
+			return EnvironmentProfilePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/environmentProfiles")
+		}
+	}
+	return value, nil
+}
+func (client *Client) CreateAdminEnvironmentProfile(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.EnvironmentProfileCreateRequest) (EnvironmentProfileResult, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	bodyBytes, err := platform.EncodeEnvironmentProfileCreateRequestJSON(body)
+	if err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-profiles", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if response.Status != 201 {
+		return EnvironmentProfileResult{}, client.problemError("adminCreateEnvironmentProfile", response)
+	}
+	value, err := platform.DecodeEnvironmentProfileResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentProfileResult{}, &ClientError{Operation: "adminCreateEnvironmentProfile", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.Name != body.ProfileName || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.ProfileID != body.ProfileID || value.Value.Spec.Version != body.Version {
+		return EnvironmentProfileResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetAdminEnvironmentProfile(ctx context.Context, tenantID, projectID, profileID string, version int64, requestID string) (EnvironmentProfileResult, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-profiles/" + profileID + "/versions/" + strconv.FormatInt(version, 10), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if response.Status != 200 {
+		return EnvironmentProfileResult{}, client.problemError("adminGetEnvironmentProfile", response)
+	}
+	value, err := platform.DecodeEnvironmentProfileResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentProfileResult{}, &ClientError{Operation: "adminGetEnvironmentProfile", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return EnvironmentProfileResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.ProfileID != profileID || value.Value.Spec.Version != version {
+		return EnvironmentProfileResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminEnvironmentProfileAuditEvents(ctx context.Context, tenantID, projectID, profileID string, version int64, requestID string, pageSize int, pageToken string) (AdminAuditEventPageResult, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return AdminAuditEventPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return AdminAuditEventPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-profiles/" + profileID + "/versions/" + strconv.FormatInt(version, 10) + "/audit-events"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminAuditEventPageResult{}, client.problemError("adminListEnvironmentProfileAuditEvents", response)
+	}
+	value, err := platform.DecodeAdminAuditEventPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminAuditEventPageResult{}, &ClientError{Operation: "adminListEnvironmentProfileAuditEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range value.Value.Events {
+		if event.ResourceKind != "EnvironmentProfile" || event.ResourceGeneration != version {
+			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
 	}
 	return value, nil
 }
@@ -2927,6 +3064,111 @@ func validateLeasePath(tenantID, projectID, leaseID, requestID string) error {
 	}
 	if leaseID != "" {
 		return common.ValidateIdentifier(leaseID, "/leaseId")
+	}
+	return nil
+}
+
+type CreateAdminEnvironmentProfileServerInput struct {
+	TenantID       string
+	ProjectID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.EnvironmentProfileCreateRequest
+}
+
+func ValidateCreateAdminEnvironmentProfileServerRequest(tenantID, projectID, requestID, idempotencyKey string, body []byte) (CreateAdminEnvironmentProfileServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return CreateAdminEnvironmentProfileServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CreateAdminEnvironmentProfileServerInput{}, err
+	}
+	value, err := platform.DecodeEnvironmentProfileCreateRequestJSON(body)
+	if err != nil {
+		return CreateAdminEnvironmentProfileServerInput{}, err
+	}
+	return CreateAdminEnvironmentProfileServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type ListAdminEnvironmentProfilesServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminEnvironmentProfilesServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminEnvironmentProfilesServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return ListAdminEnvironmentProfilesServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminEnvironmentProfilesServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminEnvironmentProfilesServerInput{}, err
+		}
+	}
+	return ListAdminEnvironmentProfilesServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type GetAdminEnvironmentProfileServerInput struct {
+	TenantID  string
+	ProjectID string
+	ProfileID string
+	Version   int64
+	RequestID string
+}
+
+func ValidateGetAdminEnvironmentProfileServerRequest(tenantID, projectID, profileID string, version int64, requestID string) (GetAdminEnvironmentProfileServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
+		return GetAdminEnvironmentProfileServerInput{}, err
+	}
+	return GetAdminEnvironmentProfileServerInput{TenantID: tenantID, ProjectID: projectID, ProfileID: profileID, Version: version, RequestID: requestID}, nil
+}
+
+type ListAdminEnvironmentProfileAuditEventsServerInput struct {
+	TenantID  string
+	ProjectID string
+	ProfileID string
+	Version   int64
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminEnvironmentProfileAuditEventsServerRequest(tenantID, projectID, profileID string, version int64, requestID string, pageSize int, pageToken string) (ListAdminEnvironmentProfileAuditEventsServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, profileID, version, requestID); err != nil {
+		return ListAdminEnvironmentProfileAuditEventsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminEnvironmentProfileAuditEventsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminEnvironmentProfileAuditEventsServerInput{}, err
+		}
+	}
+	return ListAdminEnvironmentProfileAuditEventsServerInput{TenantID: tenantID, ProjectID: projectID, ProfileID: profileID, Version: version, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+func validateEnvironmentProfilePath(tenantID, projectID, profileID string, version int64, requestID string) error {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return err
+	}
+	if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil {
+		return err
+	}
+	if (profileID == "") != (version == 0) {
+		return common.ContractError("INVALID_PROFILE_PATH", "/profileId")
+	}
+	if profileID != "" {
+		if err := common.ValidateIdentifier(profileID, "/profileId"); err != nil {
+			return err
+		}
+		if version < 1 || version > 2147483647 {
+			return common.ContractError("INVALID_PROFILE_VERSION", "/profileVersion")
+		}
 	}
 	return nil
 }

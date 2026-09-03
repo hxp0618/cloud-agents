@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-profile.schema.json",
+  "title": "EnvironmentProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "EnvironmentProfile" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "profileId", "version", "description", "status", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storagePolicyRef", "networkPolicyRef", "releaseDigest", "targetRefs", "providerCredentialRef"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "status": { "enum": ["draft", "published", "disabled"] },
+        "providerKinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["codex", "claudeAgent"] }
+        },
+        "cpuLimitMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+        "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+        "storagePolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "targetRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+        },
+        "providerCredentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "publishedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "disabledAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "draft has neither publishedAt nor disabledAt, published has only publishedAt, and disabled has both timestamps",
+    "all scheduling fields are immutable for a profileId and version",
+    "providerCredentialRef and targetRefs are visible only through the Admin API"
+  ]
+}

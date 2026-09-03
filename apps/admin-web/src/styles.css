@@ -1136,6 +1136,12 @@ td > button small {
   overflow-wrap: anywhere;
 }
 
+.detail-list dd.break {
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
 .danger-text {
   color: var(--danger) !important;
 }
@@ -1250,6 +1256,21 @@ td > button small {
   margin: 1px 0 0;
   padding: 0;
   box-shadow: none;
+}
+
+.provider-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.provider-options legend {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .cleanup-worker {

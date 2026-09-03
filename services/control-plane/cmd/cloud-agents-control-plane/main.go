@@ -455,8 +455,16 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local admin environment lease HTTP server is unavailable")
 	}
+	adminEnvironmentProfileHTTPServer, err := server.NewAdminEnvironmentProfileHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local admin environment profile HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesAdminEnvironmentProfilePath(request.URL.Path) {
+			adminEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesAdminEnvironmentLeasePath(request.URL.Path) {
 			adminEnvironmentLeaseHTTPServer.ServeHTTP(writer, request)
 			return

@@ -287,6 +287,108 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
+      "get": {
+        "operationId": "adminListEnvironmentProfiles",
+        "x-cloud-agents-required-scope": "profiles.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin environment profile versions",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateEnvironmentProfile",
+        "x-cloud-agents-required-scope": "profiles.create",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-create-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/EnvironmentProfile" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles/{profileId}/versions/{profileVersion}": {
+      "get": {
+        "operationId": "adminGetEnvironmentProfile",
+        "x-cloud-agents-required-scope": "profiles.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/EnvironmentProfileId" },
+          { "$ref": "#/components/parameters/EnvironmentProfileVersion" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/EnvironmentProfile" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles/{profileId}/versions/{profileVersion}/audit-events": {
+      "get": {
+        "operationId": "adminListEnvironmentProfileAuditEvents",
+        "x-cloud-agents-required-scope": "audit.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/EnvironmentProfileId" },
+          { "$ref": "#/components/parameters/EnvironmentProfileVersion" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted environment profile audit events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/deployment-targets": {
       "get": {
         "operationId": "adminListDeploymentTargets",
@@ -701,6 +803,18 @@
         "required": true,
         "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
       },
+      "EnvironmentProfileId": {
+        "name": "profileId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
+      "EnvironmentProfileVersion": {
+        "name": "profileVersion",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      },
       "TargetId": {
         "name": "targetId",
         "in": "path",
@@ -767,6 +881,17 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease.schema.json" }
+          }
+        }
+      },
+      "EnvironmentProfile": {
+        "description": "Environment profile version",
+        "headers": {
+          "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile.schema.json" }
           }
         }
       },

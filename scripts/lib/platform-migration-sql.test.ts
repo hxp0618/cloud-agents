@@ -801,16 +801,41 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(
       statements.map((statement) => classifyMigrationStatement(statement, "000039").command),
     ).toEqual([
-      "CREATE", "CREATE", "CREATE", "CREATE", "ALTER", "ALTER", "ALTER", "CREATE", "CREATE",
-      "REVOKE", "GRANT", "INSERT", "INSERT", "INSERT", "CREATE", "CREATE", "CREATE", "ALTER",
-      "ALTER", "ALTER", "REVOKE", "REVOKE", "REVOKE", "GRANT", "GRANT", "GRANT",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "REVOKE",
+      "GRANT",
+      "INSERT",
+      "INSERT",
+      "INSERT",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+      "GRANT",
     ]);
     expect(() => classifyMigrationStatement(statements[3]!, "000038")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/u,
     );
     const mutatedBackfill = splitPostgresStatements(
       new TextEncoder().encode(
-        new TextDecoder().decode(statements[11]!.bytes).replace("target.register", "target.cleanup"),
+        new TextDecoder()
+          .decode(statements[11]!.bytes)
+          .replace("target.register", "target.cleanup"),
       ),
     )[0]!;
     expect(() => classifyMigrationStatement(mutatedBackfill, "000039")).toThrow(
@@ -831,12 +856,58 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(
       statements.map((statement) => classifyMigrationStatement(statement, "000040").command),
     ).toEqual([
-      "ALTER", "ALTER", "CREATE", "CREATE", "ALTER", "ALTER", "REVOKE", "REVOKE",
-      "GRANT", "GRANT",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
     ]);
     expect(() => classifyMigrationStatement(statements[0]!, "000039")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/u,
     );
+  });
+
+  it("classifies the environment-profile draft migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000041_add_environment_profile_drafts.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(22);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000041").command),
+    ).toEqual([
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "GRANT",
+    ]);
   });
 
   it("admits only the exact generated-profile operation-effect partial index", () => {

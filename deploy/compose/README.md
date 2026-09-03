@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000040.tar` into a directory and copy
+Extract `cloud-agents-deployment-000041.tar` into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-profile-create-request.schema.json",
+  "title": "EnvironmentProfileCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profileId", "profileName", "version", "description", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storagePolicyRef", "networkPolicyRef", "releaseDigest", "targetRefs", "providerCredentialRef"],
+  "properties": {
+    "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "profileName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "providerKinds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["codex", "claudeAgent"] }
+    },
+    "cpuLimitMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+    "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+    "storagePolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "targetRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+    },
+    "providerCredentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "a new profileId starts at version 1 and each later immutable draft uses the next consecutive version",
+    "providerCredentialRef and targetRefs are Admin API fields and must never appear in the User API profile summary"
+  ]
+}

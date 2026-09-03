@@ -6,6 +6,8 @@ import {
   type DeploymentTargetCleanupPreview,
   type DeploymentTargetRegisterRequest,
   type EnvironmentLease,
+  type EnvironmentProfile,
+  type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
@@ -13,6 +15,8 @@ import {
   adminErrorMessage,
   cleanupRequestFromPreview,
   listAdminLeases,
+  listAdminProfileAuditEvents,
+  listAdminProfiles,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
   listAdminTargets,
@@ -20,6 +24,7 @@ import {
   newRequestId,
   readSavedAdminConnection,
   replaceLease,
+  replaceProfile,
   replaceTarget,
   writeSavedAdminConnection,
   type AdminClient,
@@ -27,7 +32,7 @@ import {
 } from "./admin";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page = "overview" | "targets" | "leases";
+type Page = "overview" | "targets" | "profiles" | "leases";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type BusyOperation = Readonly<{ key: string; label: string }>;
 type Theme = "light" | "dark";
@@ -61,7 +66,8 @@ function statusLabel(status: ConnectionStatus): string {
 }
 
 function phaseTone(phase: string): string {
-  if (phase === "ready" || phase === "complete" || phase === "succeeded") return "success";
+  if (phase === "ready" || phase === "complete" || phase === "succeeded" || phase === "published")
+    return "success";
   if (
     [
       "probing",
@@ -76,7 +82,8 @@ function phaseTone(phase: string): string {
     ].includes(phase)
   )
     return "running";
-  if (phase === "unavailable" || phase === "failed" || phase === "blocked") return "danger";
+  if (phase === "unavailable" || phase === "failed" || phase === "blocked" || phase === "disabled")
+    return "danger";
   return "neutral";
 }
 
@@ -169,6 +176,35 @@ async function loadLeaseAuthority(
   return Object.freeze({ leases, selectedLeaseId });
 }
 
+async function loadProfileAuthority(
+  client: AdminClient,
+  connection: SavedAdminConnection,
+  preferredProfileVersionId: string,
+  signal: AbortSignal,
+): Promise<
+  Readonly<{ profiles: readonly EnvironmentProfile[]; selectedProfileVersionId: string }>
+> {
+  let profiles = await listAdminProfiles(client, connection.tenantId, connection.projectId, signal);
+  const selectedProfileVersionId = profiles.some(
+    ({ metadata }) => metadata.uid === preferredProfileVersionId,
+  )
+    ? preferredProfileVersionId
+    : (profiles[0]?.metadata.uid ?? "");
+  const selected = profiles.find(({ metadata }) => metadata.uid === selectedProfileVersionId);
+  if (selected !== undefined) {
+    const detail = await client.getAdminEnvironmentProfile(
+      connection.tenantId,
+      connection.projectId,
+      selected.spec.profileId,
+      selected.spec.version,
+      newRequestId(),
+      signal,
+    );
+    profiles = replaceProfile(profiles, detail.value);
+  }
+  return Object.freeze({ profiles, selectedProfileVersionId });
+}
+
 async function loadTargetActivity(
   client: AdminClient,
   connection: SavedAdminConnection,
@@ -185,6 +221,22 @@ async function loadTargetActivity(
     listAdminTargetAuditEvents(client, connection.tenantId, connection.projectId, targetId, signal),
   ]);
   return Object.freeze({ operations, audit });
+}
+
+async function loadProfileAudit(
+  client: AdminClient,
+  connection: SavedAdminConnection,
+  profile: EnvironmentProfile,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  return listAdminProfileAuditEvents(
+    client,
+    connection.tenantId,
+    connection.projectId,
+    profile.spec.profileId,
+    profile.spec.version,
+    signal,
+  );
 }
 
 export function App() {
@@ -204,12 +256,17 @@ export function App() {
   const [cleanupPreview, setCleanupPreview] = useState<DeploymentTargetCleanupPreview | null>(null);
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
+  const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
+  const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
+  const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
   const [page, setPage] = useState<Page>("overview");
   const [query, setQuery] = useState("");
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = useState(false);
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [profileDetailOpen, setProfileDetailOpen] = useState(false);
+  const [creatingProfile, setCreatingProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -219,6 +276,21 @@ export function App() {
     targetKind: "docker" as TargetKind,
     endpoint: "",
     credentialRef: "",
+  });
+  const [profileForm, setProfileForm] = useState({
+    profileId: "",
+    profileName: "",
+    version: "1",
+    description: "",
+    codex: true,
+    claudeAgent: true,
+    cpuLimitMillis: "2000",
+    memoryLimitMiB: "4096",
+    storagePolicyRef: "",
+    networkPolicyRef: "",
+    releaseDigest: "",
+    targetRefs: "",
+    providerCredentialRef: "",
   });
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
@@ -234,6 +306,9 @@ export function App() {
       ? cleanupPreview
       : null;
   const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
+  const selectedProfile = profiles.find(
+    ({ metadata }) => metadata.uid === selectedProfileVersionId,
+  );
   const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
   const unavailableCount = targets.filter(
     ({ spec }) => spec.observedPhase === "unavailable",
@@ -262,6 +337,19 @@ export function App() {
             spec.environmentId,
             spec.observedPhase,
             spec.cleanupPhase,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleProfiles =
+    normalizedQuery === ""
+      ? profiles
+      : profiles.filter(({ metadata, spec }) =>
+          [
+            metadata.uid,
+            metadata.name,
+            spec.profileId,
+            String(spec.version),
+            spec.status,
+            ...spec.providerKinds,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
         );
 
@@ -351,6 +439,7 @@ export function App() {
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
+    setProfileDetailOpen(false);
   }
 
   function disconnect() {
@@ -365,9 +454,14 @@ export function App() {
     setCleanupPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
+    setProfiles(Object.freeze([]));
+    setSelectedProfileVersionId("");
+    setProfileAudit(Object.freeze([]));
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
+    setProfileDetailOpen(false);
+    setCreatingProfile(false);
     setMobileNavOpen(false);
     setBusy(null);
     setError("");
@@ -396,9 +490,10 @@ export function App() {
     try {
       const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-      const [loadedTargets, loadedLeases] = await Promise.all([
+      const [loadedTargets, loadedLeases, loadedProfiles] = await Promise.all([
         loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
         loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
+        loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
       ]);
       setClient(nextClient);
       setConnection(nextConnection);
@@ -408,6 +503,9 @@ export function App() {
       setTargetAudit(Object.freeze([]));
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
+      setProfiles(loadedProfiles.profiles);
+      setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
+      setProfileAudit(Object.freeze([]));
       writeSavedAdminConnection(window.sessionStorage, nextConnection);
       setToken("");
       setStatus("connected");
@@ -456,14 +554,17 @@ export function App() {
   function refresh() {
     if (client === null) return;
     void runOperation("refresh", "Authority refresh", async (signal) => {
-      const [loadedTargets, loadedLeases] = await Promise.all([
+      const [loadedTargets, loadedLeases, loadedProfiles] = await Promise.all([
         loadTargetAuthority(client, connection, selectedTargetId, signal),
         loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+        loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
       ]);
       setTargets(loadedTargets.targets);
       setSelectedTargetId(loadedTargets.selectedTargetId);
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
+      setProfiles(loadedProfiles.profiles);
+      setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       if (targetDetailOpen && loadedTargets.selectedTargetId !== "") {
         const activity = await loadTargetActivity(
           client,
@@ -473,6 +574,12 @@ export function App() {
         );
         setTargetOperations(activity.operations);
         setTargetAudit(activity.audit);
+      }
+      const profile = loadedProfiles.profiles.find(
+        ({ metadata }) => metadata.uid === loadedProfiles.selectedProfileVersionId,
+      );
+      if (profileDetailOpen && profile !== undefined) {
+        setProfileAudit(await loadProfileAudit(client, connection, profile, signal));
       }
     });
   }
@@ -518,6 +625,89 @@ export function App() {
         signal,
       );
       setLeases((current) => replaceLease(current, result.value));
+    });
+  }
+
+  function selectProfile(profileVersionId: string) {
+    setProfileDetailOpen(true);
+    if (client === null) return;
+    const profile = profiles.find(({ metadata }) => metadata.uid === profileVersionId);
+    if (profile === undefined) return;
+    setSelectedProfileVersionId(profileVersionId);
+    setProfileAudit(Object.freeze([]));
+    void runOperation(
+      `get-profile:${profileVersionId}`,
+      "Profile detail refresh",
+      async (signal) => {
+        const [result, audit] = await Promise.all([
+          client.getAdminEnvironmentProfile(
+            connection.tenantId,
+            connection.projectId,
+            profile.spec.profileId,
+            profile.spec.version,
+            newRequestId(),
+            signal,
+          ),
+          loadProfileAudit(client, connection, profile, signal),
+        ]);
+        setProfiles((current) => replaceProfile(current, result.value));
+        setProfileAudit(audit);
+      },
+    );
+  }
+
+  function createProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null) return;
+    const providerKinds: ("codex" | "claudeAgent")[] = [];
+    if (profileForm.codex) providerKinds.push("codex");
+    if (profileForm.claudeAgent) providerKinds.push("claudeAgent");
+    const body: EnvironmentProfileCreateRequest = {
+      profileId: profileForm.profileId.trim(),
+      profileName: profileForm.profileName.trim(),
+      version: Number(profileForm.version),
+      description: profileForm.description.trim(),
+      providerKinds,
+      cpuLimitMillis: Number(profileForm.cpuLimitMillis),
+      memoryLimitBytes: Number(profileForm.memoryLimitMiB) * 1_048_576,
+      storagePolicyRef: profileForm.storagePolicyRef.trim(),
+      networkPolicyRef: profileForm.networkPolicyRef.trim(),
+      releaseDigest: profileForm.releaseDigest.trim() as `sha256:${string}`,
+      targetRefs: [
+        ...new Set(profileForm.targetRefs.split(",").map((value) => value.trim())),
+      ].filter(Boolean),
+      providerCredentialRef: profileForm.providerCredentialRef.trim(),
+    };
+    const key = `create-profile:${body.profileId}:${body.version}`;
+    void runOperation(key, `Create ${body.profileName} v${body.version}`, async (signal) => {
+      const result = await client.createAdminEnvironmentProfile(
+        connection.tenantId,
+        connection.projectId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      setProfiles((current) => replaceProfile(current, result.value));
+      setSelectedProfileVersionId(result.value.metadata.uid);
+      setProfileAudit(await loadProfileAudit(client, connection, result.value, signal));
+      setProfileDetailOpen(true);
+      setProfileForm({
+        profileId: "",
+        profileName: "",
+        version: "1",
+        description: "",
+        codex: true,
+        claudeAgent: true,
+        cpuLimitMillis: "2000",
+        memoryLimitMiB: "4096",
+        storagePolicyRef: "",
+        networkPolicyRef: "",
+        releaseDigest: "",
+        targetRefs: "",
+        providerCredentialRef: "",
+      });
+      setCreatingProfile(false);
     });
   }
 
@@ -703,7 +893,7 @@ export function App() {
                 type="password"
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
-                placeholder="Required scopes: targets.* and leases.list/get"
+                placeholder="Required scopes: targets.*, leases.*, profiles.*, audit.list"
                 autoComplete="off"
                 spellCheck={false}
                 required
@@ -785,6 +975,15 @@ export function App() {
             <span aria-hidden="true">◇</span> <span className="nav-label">Environment Leases</span>
             <b>{leases.length}</b>
           </button>
+          <button
+            className={page === "profiles" ? "active" : ""}
+            onClick={() => navigate("profiles")}
+            title="Environment Profiles"
+          >
+            <span aria-hidden="true">▣</span>{" "}
+            <span className="nav-label">Environment Profiles</span>
+            <b>{profiles.length}</b>
+          </button>
         </nav>
         <div className="sidebar-boundary">
           <small>Admin boundary</small>
@@ -844,14 +1043,18 @@ export function App() {
                   ? "Operations overview"
                   : page === "targets"
                     ? "Deployment targets"
-                    : "Environment leases"}
+                    : page === "profiles"
+                      ? "Environment profiles"
+                      : "Environment leases"}
               </h1>
               <p>
                 {page === "overview"
                   ? "Current infrastructure authority for the selected tenant and project."
                   : page === "targets"
                     ? "Register and operate Docker, Kubernetes, and SSH execution capacity."
-                    : "Inspect server-authoritative environment lifecycle and cleanup state."}
+                    : page === "profiles"
+                      ? "Create immutable environment versions before publishing them to users."
+                      : "Inspect server-authoritative environment lifecycle and cleanup state."}
               </p>
             </div>
             <div className="heading-actions">
@@ -863,7 +1066,16 @@ export function App() {
               >
                 Refresh
               </button>
-              {page !== "leases" ? (
+              {page === "profiles" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setCreatingProfile(true)}
+                  disabled={busy !== null}
+                >
+                  Create profile
+                </button>
+              ) : page !== "leases" ? (
                 <button
                   className="button primary"
                   type="button"
@@ -983,6 +1195,26 @@ export function App() {
                 />
               </div>
             </section>
+          ) : page === "profiles" ? (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label="Search environment profiles"
+                  placeholder="Search by ID, name, version, or provider"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">profiles.list · {visibleProfiles.length}</span>
+              </div>
+              <div className="panel target-list-panel">
+                <ProfileTable
+                  profiles={visibleProfiles}
+                  selectedProfileVersionId={selectedProfileVersionId}
+                  onSelect={selectProfile}
+                />
+              </div>
+            </section>
           ) : (
             <section className="resource-list">
               <div className="list-toolbar">
@@ -1069,6 +1301,238 @@ export function App() {
             </button>
             <LeaseDetail lease={selectedLease} />
           </aside>
+        </AdminSheet>
+      ) : null}
+
+      {profileDetailOpen && selectedProfile !== undefined ? (
+        <AdminSheet
+          label={`Environment profile ${selectedProfile.metadata.name}`}
+          onClose={() => setProfileDetailOpen(false)}
+        >
+          <aside className="detail-panel" aria-label="Selected environment profile">
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label="Close"
+              onClick={() => setProfileDetailOpen(false)}
+            >
+              ×
+            </button>
+            <ProfileDetail profile={selectedProfile} audit={profileAudit} />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
+      {creatingProfile ? (
+        <AdminSheet label="Create environment profile" onClose={() => setCreatingProfile(false)}>
+          <section className="dialog" aria-labelledby="create-profile-title">
+            <div className="panel-heading">
+              <div>
+                <div className="eyebrow">profiles.create</div>
+                <h2 id="create-profile-title">Create environment profile</h2>
+                <p>Creates one immutable draft version in Control Plane.</p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close"
+                onClick={() => setCreatingProfile(false)}
+              >
+                ×
+              </button>
+            </div>
+            <form className="resource-form" onSubmit={createProfile}>
+              <div className="form-row">
+                <label>
+                  <span>Profile ID</span>
+                  <input
+                    value={profileForm.profileId}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, profileId: event.target.value })
+                    }
+                    placeholder="development"
+                    maxLength={128}
+                    required
+                    autoFocus
+                    data-sheet-autofocus
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span>Profile name</span>
+                  <input
+                    value={profileForm.profileName}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, profileName: event.target.value })
+                    }
+                    placeholder="development"
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Version</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="2147483647"
+                  step="1"
+                  value={profileForm.version}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, version: event.target.value })
+                  }
+                  required
+                />
+                <small>New profile IDs begin at 1; later drafts use the next version.</small>
+              </label>
+              <label>
+                <span>Description</span>
+                <input
+                  value={profileForm.description}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, description: event.target.value })
+                  }
+                  placeholder="Coding workspace for daily development"
+                  maxLength={1024}
+                  required
+                />
+              </label>
+              <fieldset className="provider-options">
+                <legend>Providers</legend>
+                <label className="confirmation-check">
+                  <input
+                    type="checkbox"
+                    checked={profileForm.codex}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, codex: event.target.checked })
+                    }
+                  />
+                  <span>Codex</span>
+                </label>
+                <label className="confirmation-check">
+                  <input
+                    type="checkbox"
+                    checked={profileForm.claudeAgent}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, claudeAgent: event.target.checked })
+                    }
+                  />
+                  <span>Claude Code</span>
+                </label>
+              </fieldset>
+              <div className="form-row">
+                <label>
+                  <span>CPU limit (mCPU)</span>
+                  <input
+                    type="number"
+                    min="100"
+                    max="64000"
+                    step="100"
+                    value={profileForm.cpuLimitMillis}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, cpuLimitMillis: event.target.value })
+                    }
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Memory limit (MiB)</span>
+                  <input
+                    type="number"
+                    min="128"
+                    max="1048576"
+                    step="128"
+                    value={profileForm.memoryLimitMiB}
+                    onChange={(event) =>
+                      setProfileForm({ ...profileForm, memoryLimitMiB: event.target.value })
+                    }
+                    required
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Storage policy reference</span>
+                <input
+                  value={profileForm.storagePolicyRef}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, storagePolicyRef: event.target.value })
+                  }
+                  placeholder="storage-standard"
+                  maxLength={128}
+                  required
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Network policy reference</span>
+                <input
+                  value={profileForm.networkPolicyRef}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, networkPolicyRef: event.target.value })
+                  }
+                  placeholder="network-egress"
+                  maxLength={128}
+                  required
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Release digest</span>
+                <input
+                  value={profileForm.releaseDigest}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, releaseDigest: event.target.value })
+                  }
+                  placeholder={`sha256:${"a".repeat(64)}`}
+                  minLength={71}
+                  maxLength={71}
+                  required
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Target references</span>
+                <input
+                  value={profileForm.targetRefs}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, targetRefs: event.target.value })
+                  }
+                  placeholder="docker-primary, ssh-overflow"
+                  required
+                  spellCheck={false}
+                />
+                <small>Comma-separated Target IDs or selectors resolved by Control Plane.</small>
+              </label>
+              <label>
+                <span>Provider credential reference</span>
+                <input
+                  value={profileForm.providerCredentialRef}
+                  onChange={(event) =>
+                    setProfileForm({ ...profileForm, providerCredentialRef: event.target.value })
+                  }
+                  placeholder="provider-default"
+                  maxLength={128}
+                  required
+                  spellCheck={false}
+                />
+                <small>Only this opaque reference enters the browser; secret bytes do not.</small>
+              </label>
+              <div className="dialog-actions">
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => setCreatingProfile(false)}
+                >
+                  Cancel
+                </button>
+                <button className="button primary" type="submit" disabled={busy !== null}>
+                  Create draft
+                </button>
+              </div>
+            </form>
+          </section>
         </AdminSheet>
       ) : null}
 
@@ -1305,6 +1769,76 @@ function LeaseTable({
                   type="button"
                   aria-label={`View ${lease.metadata.name}`}
                   onClick={() => onSelect(lease.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProfileTable({
+  profiles,
+  selectedProfileVersionId,
+  onSelect,
+}: Readonly<{
+  profiles: readonly EnvironmentProfile[];
+  selectedProfileVersionId: string;
+  onSelect: (profileVersionId: string) => void;
+}>) {
+  if (profiles.length === 0)
+    return (
+      <div className="table-empty">No environment profile versions exist in this project.</div>
+    );
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Providers</th>
+            <th>Capacity</th>
+            <th>Updated</th>
+            <th aria-label="Actions" />
+          </tr>
+        </thead>
+        <tbody>
+          {profiles.map((profile) => (
+            <tr
+              key={profile.metadata.uid}
+              className={profile.metadata.uid === selectedProfileVersionId ? "selected" : ""}
+              onClick={() => onSelect(profile.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(profile.metadata.uid)}>
+                  <strong>{profile.metadata.name}</strong>
+                  <small>{profile.spec.profileId}</small>
+                </button>
+              </td>
+              <td className="mono">v{profile.spec.version}</td>
+              <td>
+                <span className={`phase ${phaseTone(profile.spec.status)}`}>
+                  <i /> {profile.spec.status}
+                </span>
+              </td>
+              <td>{profile.spec.providerKinds.join(" · ")}</td>
+              <td>
+                {profile.spec.cpuLimitMillis} mCPU ·{" "}
+                {Math.round(profile.spec.memoryLimitBytes / 1_048_576)} MiB
+              </td>
+              <td>{formatTime(profile.metadata.updatedAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={`View ${profile.metadata.name} version ${profile.spec.version}`}
+                  onClick={() => onSelect(profile.metadata.uid)}
                 >
                   ···
                 </button>
@@ -1682,6 +2216,115 @@ function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
           </div>
         ) : null}
       </dl>
+    </>
+  );
+}
+
+function ProfileDetail({
+  profile,
+  audit,
+}: Readonly<{ profile: EnvironmentProfile; audit: readonly AdminAuditEvent[] }>) {
+  return (
+    <>
+      <div className="detail-heading">
+        <div className="target-glyph" aria-hidden="true">
+          P
+        </div>
+        <div>
+          <div className="eyebrow">Environment profile · v{profile.spec.version}</div>
+          <h2>{profile.metadata.name}</h2>
+          <span className={`phase ${phaseTone(profile.spec.status)}`}>
+            <i /> {profile.spec.status}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>Profile ID</dt>
+          <dd className="mono">{profile.spec.profileId}</dd>
+        </div>
+        <div>
+          <dt>Version resource</dt>
+          <dd className="mono break">{profile.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>Description</dt>
+          <dd>{profile.spec.description}</dd>
+        </div>
+        <div>
+          <dt>Providers</dt>
+          <dd>{profile.spec.providerKinds.join(" · ")}</dd>
+        </div>
+        <div>
+          <dt>CPU / memory</dt>
+          <dd>
+            {profile.spec.cpuLimitMillis} mCPU /{" "}
+            {Math.round(profile.spec.memoryLimitBytes / 1_048_576)} MiB
+          </dd>
+        </div>
+        <div>
+          <dt>Storage policy</dt>
+          <dd className="mono">{profile.spec.storagePolicyRef}</dd>
+        </div>
+        <div>
+          <dt>Network policy</dt>
+          <dd className="mono">{profile.spec.networkPolicyRef}</dd>
+        </div>
+        <div>
+          <dt>Release digest</dt>
+          <dd className="mono break">{profile.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>Target references</dt>
+          <dd className="mono break">{profile.spec.targetRefs.join(", ")}</dd>
+        </div>
+        <div>
+          <dt>Provider credential ref</dt>
+          <dd className="mono break">{profile.spec.providerCredentialRef}</dd>
+        </div>
+        <div>
+          <dt>Resource version</dt>
+          <dd className="mono">{profile.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{formatTime(profile.metadata.createdAt)}</dd>
+        </div>
+        <div>
+          <dt>Published</dt>
+          <dd>{formatTime(profile.spec.publishedAt)}</dd>
+        </div>
+        <div>
+          <dt>Disabled</dt>
+          <dd>{formatTime(profile.spec.disabledAt)}</dd>
+        </div>
+      </dl>
+      <section className="activity-block" aria-labelledby="profile-audit-title">
+        <div className="activity-heading">
+          <h3 id="profile-audit-title">Audit</h3>
+          <span className="scope-chip">audit.list · {audit.length}</span>
+        </div>
+        {audit.length === 0 ? (
+          <p className="activity-empty">No audit events were recorded for this profile version.</p>
+        ) : (
+          <ol className="activity-list compact">
+            {audit.map((event) => (
+              <li key={event.eventId}>
+                <div>
+                  <strong>{event.action}</strong>
+                  <span className={`phase ${phaseTone(event.result)}`}>
+                    <i /> {event.result}
+                  </span>
+                </div>
+                <small className="mono break">actor {event.actor}</small>
+                <small className="mono">
+                  {event.requestId} · {formatTime(event.occurredAt)}
+                </small>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
     </>
   );
 }

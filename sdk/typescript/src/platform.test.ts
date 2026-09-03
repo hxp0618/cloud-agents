@@ -10,6 +10,8 @@ import {
   decodeDeploymentTargetCleanupPreview,
   decodeDeploymentTargetPage,
   decodeEnvironmentLeasePage,
+  decodeEnvironmentProfile,
+  decodeEnvironmentProfilePage,
   decodeIdempotency,
   decodeMembership,
   decodeMembershipPage,
@@ -35,6 +37,8 @@ import {
   parseDeploymentTargetCleanupPreview,
   parseDeploymentTargetPage,
   parseEnvironmentLeasePage,
+  parseEnvironmentProfile,
+  parseEnvironmentProfilePage,
   parseAdminAuditEventPage,
   parseMaintenanceOperationPage,
   parseProject,
@@ -196,6 +200,125 @@ describe("generated platform JSON models", () => {
     expect(seen[1]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
     );
+  });
+  it("creates and reads Admin environment profile drafts", async () => {
+    const profile = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "EnvironmentProfile",
+      metadata: {
+        uid: "ep-0123456789abcdef0123456789abcdef",
+        name: "development",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-03T08:00:00Z",
+        updatedAt: "2026-09-03T08:00:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        profileId: "development",
+        version: 1,
+        description: "Daily coding workspace",
+        status: "draft",
+        providerKinds: ["codex", "claudeAgent"],
+        cpuLimitMillis: 2000,
+        memoryLimitBytes: 4294967296,
+        storagePolicyRef: "storage-standard",
+        networkPolicyRef: "network-egress",
+        releaseDigest: `sha256:${"a".repeat(64)}`,
+        targetRefs: ["docker-primary"],
+        providerCredentialRef: "provider-default",
+      },
+    });
+    const page = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "EnvironmentProfilePage",
+      environmentProfiles: [JSON.parse(profile)],
+    });
+    const audit = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "AdminAuditEventPage",
+      events: [
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "AdminAuditEvent",
+          eventId: "profile-create-succeeded",
+          actor: `sha256:${"b".repeat(64)}`,
+          action: "profile.create",
+          resourceKind: "EnvironmentProfile",
+          resourceId: "ep-0123456789abcdef0123456789abcdef",
+          resourceGeneration: 1,
+          result: "succeeded",
+          occurredAt: "2026-09-03T08:00:00Z",
+          requestId: "request-profile-create",
+          operationId: "operation-profile-create",
+        },
+      ],
+    });
+    expect(decodeEnvironmentProfile(JSON.parse(profile)).spec.status).toBe("draft");
+    expect(parseEnvironmentProfile(profile).value.spec.profileId).toBe("development");
+    expect(decodeEnvironmentProfilePage(JSON.parse(page)).environmentProfiles).toHaveLength(1);
+    expect(parseEnvironmentProfilePage(page).value.environmentProfiles).toHaveLength(1);
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      if (request.path.endsWith("/audit-events?pageSize=1"))
+        return { status: 200, headers: {}, body: audit };
+      if (request.method === "GET" && request.path.includes("environment-profiles?"))
+        return { status: 200, headers: {}, body: page };
+      return {
+        status: request.method === "POST" ? 201 : 200,
+        headers: { "X-Resource-Version": "1" },
+        body: profile,
+      };
+    });
+    const body = {
+      profileId: "development",
+      profileName: "development",
+      version: 1,
+      description: "Daily coding workspace",
+      providerKinds: ["codex", "claudeAgent"] as const,
+      cpuLimitMillis: 2000,
+      memoryLimitBytes: 4294967296,
+      storagePolicyRef: "storage-standard",
+      networkPolicyRef: "network-egress",
+      releaseDigest: `sha256:${"a".repeat(64)}` as const,
+      targetRefs: ["docker-primary"],
+      providerCredentialRef: "provider-default",
+    };
+    await client.createAdminEnvironmentProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "request-profile-create",
+      "profile-create-idempotency",
+      body,
+    );
+    await client.listAdminEnvironmentProfiles(
+      "tenant-alpha",
+      "project-alpha",
+      "request-profile-list",
+      1,
+    );
+    await client.getAdminEnvironmentProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "development",
+      1,
+      "request-profile-get",
+    );
+    await client.listAdminEnvironmentProfileAuditEvents(
+      "tenant-alpha",
+      "project-alpha",
+      "development",
+      1,
+      "request-profile-audit",
+      1,
+    );
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1/audit-events?pageSize=1",
+    ]);
   });
   it("lists deployment targets with project-bound pagination", async () => {
     const page = JSON.stringify({
