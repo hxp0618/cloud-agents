@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   listAdminLeases,
+  listAdminTargetAuditEvents,
+  listAdminTargetOperations,
   listAdminTargets,
   readSavedAdminConnection,
   writeSavedAdminConnection,
@@ -59,6 +61,49 @@ describe("Admin Web boundary", () => {
 
     await listAdminLeases(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("reads target activity only through scoped Admin API pagination", async () => {
+    const calls: string[] = [];
+    const client = {
+      listAdminDeploymentTargetOperations: async (
+        _tenantId: string,
+        _projectId: string,
+        targetId: string,
+        _requestId: string,
+        _pageSize?: number,
+        _pageToken?: string,
+      ) => {
+        calls.push(`operations:${targetId}`);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "MaintenanceOperationPage" as const,
+            operations: [],
+          },
+        };
+      },
+      listAdminDeploymentTargetAuditEvents: async (
+        _tenantId: string,
+        _projectId: string,
+        targetId: string,
+      ) => {
+        calls.push(`audit:${targetId}`);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "AdminAuditEventPage" as const,
+            events: [],
+          },
+        };
+      },
+    } as unknown as AdminClient;
+    const signal = new AbortController().signal;
+    await Promise.all([
+      listAdminTargetOperations(client, "tenant-alpha", "project-alpha", "docker-alpha", signal),
+      listAdminTargetAuditEvents(client, "tenant-alpha", "project-alpha", "docker-alpha", signal),
+    ]);
+    expect(calls).toEqual(["operations:docker-alpha", "audit:docker-alpha"]);
   });
 
   it("persists context but never bearer or target credentials", () => {

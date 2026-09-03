@@ -169,7 +169,7 @@ func invalidIdentifier(value string) bool {
 }
 
 func validateMutation(mutation Mutation) error {
-	if invalidIdentifier(mutation.RequestID) || len(mutation.IdempotencyKey) < 16 || len(mutation.IdempotencyKey) > 128 || invalidIdentifier(mutation.IdempotencyKey) {
+	if invalidIdentifier(mutation.RequestID) || commonv1alpha1.ValidateIdempotencyKey(mutation.IdempotencyKey, "/idempotencyKey") != nil {
 		return ErrInvalidInput
 	}
 	return nil

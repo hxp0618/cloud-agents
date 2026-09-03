@@ -788,6 +788,36 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ).toBe(true);
   });
 
+  it("classifies only the exact deployment-target activity migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000039_add_deployment_target_activity.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(26);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000039").command),
+    ).toEqual([
+      "CREATE", "CREATE", "CREATE", "CREATE", "ALTER", "ALTER", "ALTER", "CREATE", "CREATE",
+      "REVOKE", "GRANT", "INSERT", "INSERT", "INSERT", "CREATE", "CREATE", "CREATE", "ALTER",
+      "ALTER", "ALTER", "REVOKE", "REVOKE", "REVOKE", "GRANT", "GRANT", "GRANT",
+    ]);
+    expect(() => classifyMigrationStatement(statements[3]!, "000038")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+    const mutatedBackfill = splitPostgresStatements(
+      new TextEncoder().encode(
+        new TextDecoder().decode(statements[11]!.bytes).replace("target.register", "target.cleanup"),
+      ),
+    )[0]!;
+    expect(() => classifyMigrationStatement(mutatedBackfill, "000039")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

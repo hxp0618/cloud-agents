@@ -19,7 +19,7 @@ const (
 	localKeyID           = "local-ephemeral-rs256"
 	localClientID        = "local-control-plane"
 	localPermission      = "memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list tenants.get"
-	localAdminPermission = "leases.get leases.list memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list targets.act targets.create targets.get targets.list tenants.get"
+	localAdminPermission = "audit.list leases.get leases.list memberships.create memberships.delete memberships.get memberships.list memberships.update operations.list organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list targets.act targets.create targets.get targets.list tenants.get"
 	localTokenTTL        = 5 * time.Minute
 )
 

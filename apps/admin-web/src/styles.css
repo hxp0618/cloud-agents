@@ -1152,6 +1152,54 @@ td > button small {
   font-size: 12px;
 }
 
+.activity-block {
+  margin: 0 20px 16px;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.activity-heading,
+.activity-list li > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activity-heading h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.activity-list {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-list li {
+  display: grid;
+  gap: 5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.activity-list p,
+.activity-list small,
+.activity-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.activity-empty {
+  padding-top: 14px;
+}
+
 .cleanup-preview {
   display: grid;
   gap: 10px;

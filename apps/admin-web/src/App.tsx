@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   createHTTPClient,
+  type AdminAuditEvent,
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
   type DeploymentTargetRegisterRequest,
   type EnvironmentLease,
+  type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   adminErrorMessage,
   listAdminLeases,
+  listAdminTargetAuditEvents,
+  listAdminTargetOperations,
   listAdminTargets,
   newIdempotencyKey,
   newRequestId,
@@ -56,8 +60,20 @@ function statusLabel(status: ConnectionStatus): string {
 }
 
 function phaseTone(phase: string): string {
-  if (phase === "ready" || phase === "complete") return "success";
-  if (["probing", "provisioning", "terminating", "pending", "revoking", "reaping"].includes(phase))
+  if (phase === "ready" || phase === "complete" || phase === "succeeded") return "success";
+  if (
+    [
+      "probing",
+      "provisioning",
+      "terminating",
+      "pending",
+      "revoking",
+      "reaping",
+      "requested",
+      "running",
+      "queued",
+    ].includes(phase)
+  )
     return "running";
   if (phase === "unavailable" || phase === "failed" || phase === "blocked") return "danger";
   return "neutral";
@@ -152,6 +168,24 @@ async function loadLeaseAuthority(
   return Object.freeze({ leases, selectedLeaseId });
 }
 
+async function loadTargetActivity(
+  client: AdminClient,
+  connection: SavedAdminConnection,
+  targetId: string,
+  signal: AbortSignal,
+): Promise<
+  Readonly<{
+    operations: readonly MaintenanceOperation[];
+    audit: readonly AdminAuditEvent[];
+  }>
+> {
+  const [operations, audit] = await Promise.all([
+    listAdminTargetOperations(client, connection.tenantId, connection.projectId, targetId, signal),
+    listAdminTargetAuditEvents(client, connection.tenantId, connection.projectId, targetId, signal),
+  ]);
+  return Object.freeze({ operations, audit });
+}
+
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -162,6 +196,10 @@ export function App() {
   const [client, setClient] = useState<AdminClient | null>(null);
   const [targets, setTargets] = useState<readonly DeploymentTarget[]>(Object.freeze([]));
   const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [targetOperations, setTargetOperations] = useState<readonly MaintenanceOperation[]>(
+    Object.freeze([]),
+  );
+  const [targetAudit, setTargetAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
   const [cleanupPreview, setCleanupPreview] = useState<DeploymentTargetCleanupPreview | null>(null);
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
@@ -319,6 +357,8 @@ export function App() {
     setToken("");
     setTargets(Object.freeze([]));
     setSelectedTargetId("");
+    setTargetOperations(Object.freeze([]));
+    setTargetAudit(Object.freeze([]));
     setCleanupPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
@@ -360,6 +400,8 @@ export function App() {
       setConnection(nextConnection);
       setTargets(loadedTargets.targets);
       setSelectedTargetId(loadedTargets.selectedTargetId);
+      setTargetOperations(Object.freeze([]));
+      setTargetAudit(Object.freeze([]));
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
       writeSavedAdminConnection(window.sessionStorage, nextConnection);
@@ -418,26 +460,40 @@ export function App() {
       setSelectedTargetId(loadedTargets.selectedTargetId);
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
+      if (targetDetailOpen && loadedTargets.selectedTargetId !== "") {
+        const activity = await loadTargetActivity(
+          client,
+          connection,
+          loadedTargets.selectedTargetId,
+          signal,
+        );
+        setTargetOperations(activity.operations);
+        setTargetAudit(activity.audit);
+      }
     });
   }
 
   function selectTarget(targetId: string) {
     setTargetDetailOpen(true);
-    if (client === null || targetId === selectedTargetId) {
-      setSelectedTargetId(targetId);
-      return;
-    }
+    if (client === null) return;
     setCleanupPreview(null);
+    setTargetOperations(Object.freeze([]));
+    setTargetAudit(Object.freeze([]));
     setSelectedTargetId(targetId);
     void runOperation(`get:${targetId}`, "Target detail refresh", async (signal) => {
-      const result = await client.getAdminDeploymentTarget(
-        connection.tenantId,
-        connection.projectId,
-        targetId,
-        newRequestId(),
-        signal,
-      );
+      const [result, activity] = await Promise.all([
+        client.getAdminDeploymentTarget(
+          connection.tenantId,
+          connection.projectId,
+          targetId,
+          newRequestId(),
+          signal,
+        ),
+        loadTargetActivity(client, connection, targetId, signal),
+      ]);
       setTargets((current) => replaceTarget(current, result.value));
+      setTargetOperations(activity.operations);
+      setTargetAudit(activity.audit);
     });
   }
 
@@ -509,6 +565,14 @@ export function App() {
         signal,
       );
       setTargets((current) => replaceTarget(current, result.value));
+      const activity = await loadTargetActivity(
+        client,
+        connection,
+        result.value.metadata.uid,
+        signal,
+      );
+      setTargetOperations(activity.operations);
+      setTargetAudit(activity.audit);
       setCleanupPreview(null);
     });
   }
@@ -924,6 +988,8 @@ export function App() {
             </button>
             <TargetDetail
               target={selectedTarget}
+              operations={targetOperations}
+              audit={targetAudit}
               cleanupPreview={selectedCleanupPreview}
               onProbe={probeTarget}
               onPreviewCleanup={previewTargetCleanup}
@@ -1199,12 +1265,16 @@ function LeaseTable({
 
 function TargetDetail({
   target,
+  operations,
+  audit,
   cleanupPreview,
   onProbe,
   onPreviewCleanup,
   disabled,
 }: Readonly<{
   target: DeploymentTarget;
+  operations: readonly MaintenanceOperation[];
+  audit: readonly AdminAuditEvent[];
   cleanupPreview: DeploymentTargetCleanupPreview | null;
   onProbe: () => void;
   onPreviewCleanup: () => void;
@@ -1289,6 +1359,60 @@ function TargetDetail({
           Run probe
         </button>
       </section>
+      <section className="activity-block" aria-labelledby="target-operations-title">
+        <div className="activity-heading">
+          <h3 id="target-operations-title">Operations</h3>
+          <span className="scope-chip">operations.list · {operations.length}</span>
+        </div>
+        {operations.length === 0 ? (
+          <p className="activity-empty">No durable operations were recorded for this target.</p>
+        ) : (
+          <ol className="activity-list">
+            {operations.map((operation) => (
+              <li key={operation.operationId}>
+                <div>
+                  <strong>{operation.action}</strong>
+                  <span className={`phase ${phaseTone(operation.state)}`}>
+                    <i /> {operation.state}
+                  </span>
+                </div>
+                <p>{operation.impactSummary}</p>
+                <small className="mono">
+                  {operation.operationId} · g{operation.resourceGeneration} ·{" "}
+                  {operation.currentStep}
+                </small>
+                <small>{formatTime(operation.updatedAt)}</small>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+      <section className="activity-block" aria-labelledby="target-audit-title">
+        <div className="activity-heading">
+          <h3 id="target-audit-title">Audit</h3>
+          <span className="scope-chip">audit.list · {audit.length}</span>
+        </div>
+        {audit.length === 0 ? (
+          <p className="activity-empty">No audit events were recorded for this target.</p>
+        ) : (
+          <ol className="activity-list compact">
+            {audit.map((event) => (
+              <li key={event.eventId}>
+                <div>
+                  <strong>{event.action}</strong>
+                  <span className={`phase ${phaseTone(event.result)}`}>
+                    <i /> {event.result}
+                  </span>
+                </div>
+                <small className="mono break">actor {event.actor}</small>
+                <small className="mono">
+                  {event.requestId} · {formatTime(event.occurredAt)}
+                </small>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
       <section className="action-block cleanup-preview-block">
         <div>
           <h3>Cleanup impact</h3>
@@ -1347,7 +1471,7 @@ function TargetDetail({
               ))
             )}
             <p className="preview-boundary">
-              Execution remains closed until durable Operation and Audit authority is available.
+              Cleanup preview is read-only; execution is not enabled in this slice.
             </p>
           </div>
         )}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/admin-audit-event.schema.json",
+  "title": "AdminAuditEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "eventId",
+    "actor",
+    "action",
+    "resourceKind",
+    "resourceId",
+    "resourceGeneration",
+    "result",
+    "occurredAt",
+    "requestId",
+    "operationId"
+  ],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "AdminAuditEvent" },
+    "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "actor": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "action": { "enum": ["target.register", "target.probe"] },
+    "resourceKind": { "const": "DeploymentTarget" },
+    "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "resourceGeneration": { "type": "integer", "minimum": 1 },
+    "result": { "enum": ["requested", "succeeded", "failed"] },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "requestId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

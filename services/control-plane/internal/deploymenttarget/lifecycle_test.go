@@ -32,6 +32,10 @@ func TestDeploymentTargetValidationAndDigests(t *testing.T) {
 	if err := input.Validate("tenant-alpha"); err != nil {
 		t.Fatalf("SSH target validation: %v", err)
 	}
+	input.Mutation.IdempotencyKey = "register-key-12345~"
+	if err := input.Validate("tenant-alpha"); err != nil {
+		t.Fatalf("contract-valid idempotency key: %v", err)
+	}
 	input.Endpoint = "https://ssh.example.test:22"
 	if err := input.Validate("tenant-alpha"); err == nil {
 		t.Fatal("SSH target accepted an HTTPS endpoint")

@@ -2,13 +2,17 @@ import {
   ClientError,
   JSONContractError,
   type Client,
+  type AdminAuditEvent,
   type DeploymentTarget,
   type EnvironmentLease,
+  type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 export type AdminClient = Pick<
   Client,
   | "listAdminDeploymentTargets"
+  | "listAdminDeploymentTargetOperations"
+  | "listAdminDeploymentTargetAuditEvents"
   | "registerAdminDeploymentTarget"
   | "getAdminDeploymentTarget"
   | "probeAdminDeploymentTarget"
@@ -142,6 +146,67 @@ export async function listAdminLeases(
   return Object.freeze(
     leases.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
   );
+}
+
+export async function listAdminTargetOperations(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  targetId: string,
+  signal: AbortSignal,
+): Promise<readonly MaintenanceOperation[]> {
+  const operations: MaintenanceOperation[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminDeploymentTargetOperations(
+      tenantId,
+      projectId,
+      targetId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    operations.push(...page.value.operations);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken))
+        throw new Error("Control Plane repeated an operation page token.");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(operations);
+}
+
+export async function listAdminTargetAuditEvents(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  targetId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  const events: AdminAuditEvent[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminDeploymentTargetAuditEvents(
+      tenantId,
+      projectId,
+      targetId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    events.push(...page.value.events);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated an audit page token.");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(events);
 }
 
 export function replaceTarget(

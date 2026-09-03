@@ -94,6 +94,8 @@ type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
+type MaintenanceOperationPageResult = common.ResponseEnvelope[platform.MaintenanceOperationPage]
+type AdminAuditEventPageResult = common.ResponseEnvelope[platform.AdminAuditEventPage]
 type DeploymentTargetCleanupPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetCleanupPreview]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
@@ -795,6 +797,88 @@ func (client *Client) ListAdminDeploymentTargets(ctx context.Context, tenantID, 
 	for _, target := range value.Value.DeploymentTargets {
 		if target.Metadata.TenantRef.ID != tenantID || target.Spec.ProjectRef.ID != projectID {
 			return DeploymentTargetPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets")
+		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminDeploymentTargetOperations(ctx context.Context, tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (MaintenanceOperationPageResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return MaintenanceOperationPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return MaintenanceOperationPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return MaintenanceOperationPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + "/operations"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return MaintenanceOperationPageResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationPageResult{}, client.problemError("adminListDeploymentTargetOperations", response)
+	}
+	value, err := platform.DecodeMaintenanceOperationPageResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationPageResult{}, &ClientError{Operation: "adminListDeploymentTargetOperations", Status: response.Status, Cause: err}
+	}
+	for _, operation := range value.Value.Operations {
+		if operation.ResourceID != targetID {
+			return MaintenanceOperationPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/operations")
+		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminDeploymentTargetAuditEvents(ctx context.Context, tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (AdminAuditEventPageResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return AdminAuditEventPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return AdminAuditEventPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + "/audit-events"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminAuditEventPageResult{}, client.problemError("adminListDeploymentTargetAuditEvents", response)
+	}
+	value, err := platform.DecodeAdminAuditEventPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminAuditEventPageResult{}, &ClientError{Operation: "adminListDeploymentTargetAuditEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range value.Value.Events {
+		if event.ResourceID != targetID {
+			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
 		}
 	}
 	return value, nil
@@ -2840,6 +2924,36 @@ func ValidateListDeploymentTargetsServerRequest(tenantID, projectID, requestID s
 		}
 	}
 	return ListDeploymentTargetsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type ListDeploymentTargetActivityServerInput struct {
+	TenantID  string
+	ProjectID string
+	TargetID  string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListDeploymentTargetOperationsServerRequest(tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (ListDeploymentTargetActivityServerInput, error) {
+	return validateListDeploymentTargetActivityServerRequest(tenantID, projectID, targetID, requestID, pageSize, pageToken)
+}
+func ValidateListDeploymentTargetAuditEventsServerRequest(tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (ListDeploymentTargetActivityServerInput, error) {
+	return validateListDeploymentTargetActivityServerRequest(tenantID, projectID, targetID, requestID, pageSize, pageToken)
+}
+func validateListDeploymentTargetActivityServerRequest(tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (ListDeploymentTargetActivityServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return ListDeploymentTargetActivityServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListDeploymentTargetActivityServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListDeploymentTargetActivityServerInput{}, err
+		}
+	}
+	return ListDeploymentTargetActivityServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 
 type RegisterDeploymentTargetServerInput struct {

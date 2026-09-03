@@ -295,6 +295,52 @@ export type DeploymentTargetPage = Readonly<{
   deploymentTargets: readonly DeploymentTarget[];
   nextPageToken?: string;
 }>;
+export type MaintenanceOperation = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "MaintenanceOperation";
+  operationId: string;
+  idempotencyKey: string;
+  action: "target.register" | "target.probe";
+  resourceKind: "DeploymentTarget";
+  resourceId: string;
+  resourceGeneration: number;
+  requestedBy: `sha256:${string}`;
+  requestId: string;
+  requestedAt: string;
+  updatedAt: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  currentStep: string;
+  stableErrorCode?: string;
+  impactSummary: string;
+  retryable: boolean;
+}>;
+export type MaintenanceOperationPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "MaintenanceOperationPage";
+  operations: readonly MaintenanceOperation[];
+  nextPageToken?: string;
+}>;
+export type AdminAuditEvent = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminAuditEvent";
+  eventId: string;
+  actor: `sha256:${string}`;
+  action: "target.register" | "target.probe";
+  resourceKind: "DeploymentTarget";
+  resourceId: string;
+  resourceGeneration: number;
+  result: "requested" | "succeeded" | "failed";
+  occurredAt: string;
+  requestId: string;
+  operationId: string;
+  stableErrorCode?: string;
+}>;
+export type AdminAuditEventPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminAuditEventPage";
+  events: readonly AdminAuditEvent[];
+  nextPageToken?: string;
+}>;
 export type DeploymentTargetCleanupResource = Readonly<{
   resourceKind: "container" | "deployment" | "pods" | "service" | "workspace-volume";
   resourceName: string;
@@ -638,6 +684,60 @@ const deploymentTargetPageResponseShape: ResponseShape = {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
     deploymentTargets: { item: deploymentTargetResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const maintenanceOperationResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    operationId: scalarResponseShape,
+    idempotencyKey: scalarResponseShape,
+    action: scalarResponseShape,
+    resourceKind: scalarResponseShape,
+    resourceId: scalarResponseShape,
+    resourceGeneration: scalarResponseShape,
+    requestedBy: scalarResponseShape,
+    requestId: scalarResponseShape,
+    requestedAt: scalarResponseShape,
+    updatedAt: scalarResponseShape,
+    state: scalarResponseShape,
+    currentStep: scalarResponseShape,
+    stableErrorCode: scalarResponseShape,
+    impactSummary: scalarResponseShape,
+    retryable: scalarResponseShape,
+  },
+};
+const maintenanceOperationPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    operations: { item: maintenanceOperationResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const adminAuditEventResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    eventId: scalarResponseShape,
+    actor: scalarResponseShape,
+    action: scalarResponseShape,
+    resourceKind: scalarResponseShape,
+    resourceId: scalarResponseShape,
+    resourceGeneration: scalarResponseShape,
+    result: scalarResponseShape,
+    occurredAt: scalarResponseShape,
+    requestId: scalarResponseShape,
+    operationId: scalarResponseShape,
+    stableErrorCode: scalarResponseShape,
+  },
+};
+const adminAuditEventPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    events: { item: adminAuditEventResponseShape },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -1994,6 +2094,212 @@ export function decodeDeploymentTargetPage(value: unknown): DeploymentTargetPage
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+export function decodeMaintenanceOperation(value: unknown): MaintenanceOperation {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "operationId",
+      "idempotencyKey",
+      "action",
+      "resourceKind",
+      "resourceId",
+      "resourceGeneration",
+      "requestedBy",
+      "requestId",
+      "requestedAt",
+      "updatedAt",
+      "state",
+      "currentStep",
+      "stableErrorCode",
+      "impactSummary",
+      "retryable",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "operationId",
+      "idempotencyKey",
+      "action",
+      "resourceKind",
+      "resourceId",
+      "resourceGeneration",
+      "requestedBy",
+      "requestId",
+      "requestedAt",
+      "updatedAt",
+      "state",
+      "currentStep",
+      "impactSummary",
+      "retryable",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "MaintenanceOperation")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const idempotencyKey = boundedString(source.idempotencyKey, 16, 128, "/idempotencyKey");
+  if (!/^[A-Za-z0-9._~-]+$/u.test(idempotencyKey))
+    error("INVALID_IDEMPOTENCY_KEY", "/idempotencyKey");
+  const requestedAt = dateTime(source.requestedAt, "/requestedAt");
+  const updatedAt = dateTime(source.updatedAt, "/updatedAt");
+  if (Date.parse(updatedAt) < Date.parse(requestedAt))
+    error("INVALID_MAINTENANCE_OPERATION", "/updatedAt");
+  const state = enumValue(
+    source.state,
+    ["queued", "running", "succeeded", "failed", "cancelled"] as const,
+    "/state",
+  );
+  const stableErrorCode =
+    source.stableErrorCode === undefined
+      ? undefined
+      : identifier(source.stableErrorCode, "/stableErrorCode");
+  const retryable = boolean(source.retryable, "/retryable");
+  if (
+    state === "failed"
+      ? stableErrorCode === undefined || !retryable
+      : stableErrorCode !== undefined || retryable
+  )
+    error("INVALID_MAINTENANCE_OPERATION", "/state");
+  const impactSummary = boundedString(source.impactSummary, 1, 256, "/impactSummary");
+  if (/[\u0000\r\n]/u.test(impactSummary)) error("INVALID_MAINTENANCE_OPERATION", "/impactSummary");
+  const operation = {
+    apiVersion: platformApiVersion,
+    kind: "MaintenanceOperation" as const,
+    operationId: identifier(source.operationId, "/operationId"),
+    idempotencyKey,
+    action: enumValue(source.action, ["target.register", "target.probe"] as const, "/action"),
+    resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
+    resourceId: identifier(source.resourceId, "/resourceId"),
+    resourceGeneration: integer(
+      source.resourceGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/resourceGeneration",
+    ),
+    requestedBy: digest(source.requestedBy, "/requestedBy") as `sha256:${string}`,
+    requestId: identifier(source.requestId, "/requestId"),
+    requestedAt,
+    updatedAt,
+    state,
+    currentStep: identifier(source.currentStep, "/currentStep"),
+    impactSummary,
+    retryable,
+  };
+  return Object.freeze(
+    stableErrorCode === undefined ? operation : { ...operation, stableErrorCode },
+  );
+}
+export function decodeMaintenanceOperationPage(value: unknown): MaintenanceOperationPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "operations", "nextPageToken"],
+    ["apiVersion", "kind", "operations"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "MaintenanceOperationPage" ||
+    !Array.isArray(source.operations) ||
+    source.operations.length > 200
+  )
+    error("INVALID_MAINTENANCE_OPERATION_PAGE", "/operations");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "MaintenanceOperationPage" as const,
+    operations: Object.freeze(source.operations.map(decodeMaintenanceOperation)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "eventId",
+      "actor",
+      "action",
+      "resourceKind",
+      "resourceId",
+      "resourceGeneration",
+      "result",
+      "occurredAt",
+      "requestId",
+      "operationId",
+      "stableErrorCode",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "eventId",
+      "actor",
+      "action",
+      "resourceKind",
+      "resourceId",
+      "resourceGeneration",
+      "result",
+      "occurredAt",
+      "requestId",
+      "operationId",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "AdminAuditEvent")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const result = enumValue(source.result, ["requested", "succeeded", "failed"] as const, "/result");
+  const stableErrorCode =
+    source.stableErrorCode === undefined
+      ? undefined
+      : identifier(source.stableErrorCode, "/stableErrorCode");
+  if ((result === "failed") !== (stableErrorCode !== undefined))
+    error("INVALID_ADMIN_AUDIT_EVENT", "/result");
+  const event = {
+    apiVersion: platformApiVersion,
+    kind: "AdminAuditEvent" as const,
+    eventId: identifier(source.eventId, "/eventId"),
+    actor: digest(source.actor, "/actor") as `sha256:${string}`,
+    action: enumValue(source.action, ["target.register", "target.probe"] as const, "/action"),
+    resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
+    resourceId: identifier(source.resourceId, "/resourceId"),
+    resourceGeneration: integer(
+      source.resourceGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/resourceGeneration",
+    ),
+    result,
+    occurredAt: dateTime(source.occurredAt, "/occurredAt"),
+    requestId: identifier(source.requestId, "/requestId"),
+    operationId: identifier(source.operationId, "/operationId"),
+  };
+  return Object.freeze(stableErrorCode === undefined ? event : { ...event, stableErrorCode });
+}
+export function decodeAdminAuditEventPage(value: unknown): AdminAuditEventPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "events", "nextPageToken"],
+    ["apiVersion", "kind", "events"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "AdminAuditEventPage" ||
+    !Array.isArray(source.events) ||
+    source.events.length > 200
+  )
+    error("INVALID_ADMIN_AUDIT_EVENT_PAGE", "/events");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "AdminAuditEventPage" as const,
+    events: Object.freeze(source.events.map(decodeAdminAuditEvent)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
 export function decodeDeploymentTargetCleanupPreview(
   value: unknown,
 ): DeploymentTargetCleanupPreview {
@@ -2784,6 +3090,14 @@ export function parseDeploymentTarget(text: string): ResponseEnvelope<Deployment
 }
 export function parseDeploymentTargetPage(text: string): ResponseEnvelope<DeploymentTargetPage> {
   return parseResponse(text, deploymentTargetPageResponseShape, decodeDeploymentTargetPage);
+}
+export function parseMaintenanceOperationPage(
+  text: string,
+): ResponseEnvelope<MaintenanceOperationPage> {
+  return parseResponse(text, maintenanceOperationPageResponseShape, decodeMaintenanceOperationPage);
+}
+export function parseAdminAuditEventPage(text: string): ResponseEnvelope<AdminAuditEventPage> {
+  return parseResponse(text, adminAuditEventPageResponseShape, decodeAdminAuditEventPage);
 }
 export function parseDeploymentTargetCleanupPreview(
   text: string,
@@ -4260,6 +4574,68 @@ export class Client {
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets");
+    return result;
+  }
+  async listAdminDeploymentTargetOperations(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperationPage>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}/operations${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListDeploymentTargetOperations", response);
+    const result = parseMaintenanceOperationPage(response.body);
+    if (result.value.operations.some((operation) => operation.resourceId !== targetId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/operations");
+    return result;
+  }
+  async listAdminDeploymentTargetAuditEvents(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminAuditEventPage>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}/audit-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListDeploymentTargetAuditEvents", response);
+    const result = parseAdminAuditEventPage(response.body);
+    if (result.value.events.some((event) => event.resourceId !== targetId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
     return result;
   }
   async registerAdminDeploymentTarget(

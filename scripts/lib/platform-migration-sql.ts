@@ -50,6 +50,21 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
       targetIdentity: "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
     },
   ],
+  ...[
+    ["sha256:db2e0b4fd4de31148de656ef0dae22b56df2ca849210a50135f283c19f4fddef", 11],
+    ["sha256:33fe97ecb61ab7cfa2a052a5bd12def489f64195a8a00fb557ec329badd6afba", 12],
+    ["sha256:a7a12b830059c90bc169e082191893fc7624b0653648d08fae3f597b3afcc42d", 13],
+  ].map(
+    ([sha256, statementIndex]) =>
+      [
+        sha256,
+        {
+          migrationId: "000039",
+          statementIndex,
+          targetIdentity: "table:unquoted:cloud_agents/unquoted:deployment_target_activity",
+        },
+      ] as const,
+  ),
 ]);
 const DURABLE_COORDINATION_OPERATION_EFFECT_INDEX = {
   migrationId: "000007",
@@ -62,6 +77,12 @@ const MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX = {
   statementIndex: 1,
   sha256: "sha256:a8bf73adb48cb4be976422e41e1ec546a4490a7f1e8b167ae5287e7743c6f83d",
   targetIdentity: "index:unquoted:cloud_agents/unquoted:managed_host_leases_create_key_idx",
+} as const;
+const DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX = {
+  migrationId: "000039",
+  statementIndex: 3,
+  sha256: "sha256:3e4b0db7f82734bf6f0237fd19679cce1bd4fd31c6e34612c417694b58681984",
+  name: "DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_IDX",
 } as const;
 
 export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlStatementSlice> {
@@ -196,6 +217,21 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
+      if (
+        migrationId === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.migrationId &&
+        statement.index === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.statementIndex &&
+        statement.sha256 === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.sha256 &&
+        tokens[3] === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.name &&
+        tokens[4] === "ON"
+      ) {
+        requireCloudAgentsQualified(tokens, 5);
+        return classification(
+          "CREATE",
+          "INDEX",
+          qualifiedDerivedIdentity("index", tokens, 5, tokens[3]),
+          null,
+        );
+      }
       if (
         migrationId === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.migrationId &&
         statement.index === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.statementIndex &&

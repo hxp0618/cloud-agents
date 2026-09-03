@@ -153,6 +153,36 @@ func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetRoute(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetActivityRoutes(t *testing.T) {
+	operationPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MaintenanceOperationPage","operations":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MaintenanceOperation","operationId":"operation-alpha","idempotencyKey":"operation-key-123~","action":"target.probe","resourceKind":"DeploymentTarget","resourceId":"docker-alpha","resourceGeneration":2,"requestedBy":"sha256:` + strings.Repeat("a", 64) + `","requestId":"request-alpha","requestedAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z","state":"succeeded","currentStep":"complete","impactSummary":"Probe deployment target connectivity and capabilities","retryable":false}],"nextPageToken":"operation-page-token-2"}`)
+	auditPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"AdminAuditEventPage","events":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"AdminAuditEvent","eventId":"event-alpha","actor":"sha256:` + strings.Repeat("a", 64) + `","action":"target.probe","resourceKind":"DeploymentTarget","resourceId":"docker-alpha","resourceGeneration":2,"result":"succeeded","occurredAt":"2026-09-03T08:01:00Z","requestId":"request-alpha","operationId":"operation-alpha"}],"nextPageToken":"audit-page-token-2"}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		if strings.Contains(request.Path, "/audit-events") {
+			return Response{Status: 200, Body: auditPage}, nil
+		}
+		return Response{Status: 200, Body: operationPage}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if page, err := client.ListAdminDeploymentTargetOperations(ctx, "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "operation-page-token-1"); err != nil || len(page.Value.Operations) != 1 {
+		t.Fatalf("operation page = %#v / %v", page, err)
+	}
+	if page, err := client.ListAdminDeploymentTargetAuditEvents(ctx, "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "audit-page-token-1"); err != nil || len(page.Value.Events) != 1 {
+		t.Fatalf("audit page = %#v / %v", page, err)
+	}
+	if len(seen) != 2 || seen[0].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations?pageSize=1&pageToken=operation-page-token-1" || seen[1].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events?pageSize=1&pageToken=audit-page-token-1" {
+		t.Fatalf("requests = %#v", seen)
+	}
+	regressed := []byte(strings.Replace(string(operationPage), `"updatedAt":"2026-09-03T08:01:00Z"`, `"updatedAt":"2026-09-03T07:59:59Z"`, 1))
+	if _, err := platform.DecodeMaintenanceOperationPageJSON(regressed); err == nil {
+		t.Fatal("operation page accepted updatedAt before requestedAt")
+	}
+}
+
 func TestGeneratedOpenAPIClientUsesAdminCleanupPreviewRoute(t *testing.T) {
 	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetCleanupPreview","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"7","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"targetKind":"docker","expectedGeneration":2,"expectedResourceVersion":"7","canCleanup":true,"workers":[]}}`)
 	var seen Request

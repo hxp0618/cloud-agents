@@ -40,6 +40,35 @@ func TestDeploymentTargetListSQLBindsTenantProjectAndCursor(t *testing.T) {
 	}
 }
 
+func TestDecodeDeploymentTargetActivityRowsBindsTargetAndCursor(t *testing.T) {
+	now := time.Date(2026, time.September, 3, 9, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	operationRow := func(id string) deploymentTargetOperationPageRow {
+		return deploymentTargetOperationPageRow{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "target-alpha", OperationID: id,
+			IdempotencyKey: id + "-key-123456789", Action: "target.probe", RequestID: "request-alpha", RequestedBy: digest,
+			TargetGeneration: 1, State: "succeeded", CurrentStep: "probe-complete", ImpactSummary: "Probed deployment target target-alpha", RequestedAt: now, UpdatedAt: now}
+	}
+	raw, err := json.Marshal([]deploymentTargetOperationPageRow{operationRow("operation-a"), operationRow("operation-b")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operations, err := decodeDeploymentTargetOperationRows(raw, "tenant-alpha", "project-alpha", "target-alpha", 1)
+	if err != nil || len(operations.Operations) != 1 || operations.NextRequestedAt == nil || operations.NextOperationID != "operation-a" {
+		t.Fatalf("operation page = %#v / %v", operations, err)
+	}
+	if _, err := decodeDeploymentTargetOperationRows(raw, "tenant-alpha", "project-alpha", "target-other", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cross-target operation page error = %v", err)
+	}
+	auditRaw, err := json.Marshal([]deploymentTargetAuditPageRow{{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "target-alpha", EventID: "event-a", OperationID: "operation-a", Actor: digest, Action: "target.probe", TargetGeneration: 1, State: "succeeded", RequestID: "request-alpha", OccurredAt: now}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := decodeDeploymentTargetAuditRows(auditRaw, "tenant-alpha", "project-alpha", "target-alpha", 1)
+	if err != nil || len(audit.Events) != 1 || audit.Events[0].Result != "succeeded" {
+		t.Fatalf("audit page = %#v / %v", audit, err)
+	}
+}
+
 func TestDeploymentTargetProjectionRejectsPhaseFactDrift(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 8, 0, 0, 0, time.UTC)
 	row := rowValues("target-alpha", "docker-alpha", "docker", "https://docker.example.test:2376", "docker-alpha",

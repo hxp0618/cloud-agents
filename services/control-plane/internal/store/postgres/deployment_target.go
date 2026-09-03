@@ -18,6 +18,18 @@ type DeploymentTargetPage struct {
 	NextTargetID      string
 }
 
+type DeploymentTargetOperationPage struct {
+	Operations      []internaldeploymenttarget.Operation
+	NextRequestedAt *time.Time
+	NextOperationID string
+}
+
+type DeploymentTargetAuditPage struct {
+	Events         []internaldeploymenttarget.AuditEvent
+	NextOccurredAt *time.Time
+	NextEventID    string
+}
+
 type deploymentTargetPageRow struct {
 	TenantID        string     `json:"tenant_id"`
 	ProjectID       string     `json:"project_uid"`
@@ -39,13 +51,47 @@ type deploymentTargetPageRow struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
+type deploymentTargetOperationPageRow struct {
+	TenantID         string    `json:"tenant_id"`
+	ProjectID        string    `json:"project_uid"`
+	TargetID         string    `json:"target_uid"`
+	OperationID      string    `json:"operation_uid"`
+	IdempotencyKey   string    `json:"idempotency_key"`
+	Action           string    `json:"action"`
+	RequestID        string    `json:"request_id"`
+	RequestedBy      string    `json:"subject_digest"`
+	TargetGeneration int64     `json:"target_generation"`
+	State            string    `json:"state"`
+	CurrentStep      string    `json:"current_step"`
+	StableErrorCode  string    `json:"stable_error_code"`
+	ImpactSummary    string    `json:"impact_summary"`
+	Retryable        bool      `json:"retryable"`
+	RequestedAt      time.Time `json:"requested_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type deploymentTargetAuditPageRow struct {
+	TenantID         string    `json:"tenant_id"`
+	ProjectID        string    `json:"project_uid"`
+	TargetID         string    `json:"target_uid"`
+	EventID          string    `json:"event_uid"`
+	OperationID      string    `json:"operation_uid"`
+	Actor            string    `json:"subject_digest"`
+	Action           string    `json:"action"`
+	TargetGeneration int64     `json:"target_generation"`
+	State            string    `json:"state"`
+	StableErrorCode  string    `json:"stable_error_code"`
+	RequestID        string    `json:"request_id"`
+	OccurredAt       time.Time `json:"occurred_at"`
+}
+
 const deploymentTargetColumns = `target_uid, target_name, target_kind, endpoint, credential_ref, generation,
     observed_phase, api_version, engine_version, target_os, target_arch, stable_error_code,
     last_probe_at, resource_version, created_at, updated_at`
 
 var (
 	registerDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
-FROM cloud_agents.register_deployment_target_v2($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+FROM cloud_agents.register_deployment_target_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	getDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.deployment_targets
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`
@@ -64,9 +110,45 @@ FROM (
     LIMIT $3
 ) AS deployment_target`
 	beginDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `, execute_probe
-FROM cloud_agents.begin_deployment_target_probe_v1($1, $2, $3, $4, $5, $6)`
+FROM cloud_agents.begin_deployment_target_probe_v2($1, $2, $3, $4, $5, $6, $7, $8)`
 	completeDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `
-FROM cloud_agents.complete_deployment_target_probe_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+FROM cloud_agents.complete_deployment_target_probe_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	deploymentTargetOperationCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.deployment_target_activity
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
+    AND operation_uid = $3 AND requested_at = $4`
+	listDeploymentTargetOperationsSQL = `WITH latest AS (
+    SELECT DISTINCT ON (operation_uid)
+        tenant_id, project_uid, target_uid, operation_uid, idempotency_key, action, request_id,
+        subject_digest, target_generation, state, current_step, stable_error_code, impact_summary,
+        retryable, requested_at, occurred_at AS updated_at
+    FROM cloud_agents.deployment_target_activity
+    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
+    ORDER BY operation_uid, occurred_at DESC, event_uid DESC
+), operation_page AS (
+    SELECT * FROM latest
+    WHERE $3::timestamptz IS NULL OR (requested_at, operation_uid) < ($3, $4)
+    ORDER BY requested_at DESC, operation_uid DESC
+    LIMIT $5
+)
+SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(operation_row)
+    ORDER BY operation_row.requested_at DESC, operation_row.operation_uid DESC), '[]'::jsonb)
+FROM operation_page AS operation_row`
+	deploymentTargetAuditCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.deployment_target_activity
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
+    AND event_uid = $3 AND occurred_at = $4`
+	listDeploymentTargetAuditSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(audit_row)
+    ORDER BY audit_row.occurred_at DESC, audit_row.event_uid DESC), '[]'::jsonb)
+FROM (
+    SELECT tenant_id, project_uid, target_uid, event_uid, operation_uid, subject_digest, action,
+        target_generation, state, stable_error_code, request_id, occurred_at
+    FROM cloud_agents.deployment_target_activity
+    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
+        AND ($3::timestamptz IS NULL OR (occurred_at, event_uid) < ($3, $4))
+    ORDER BY occurred_at DESC, event_uid DESC
+    LIMIT $5
+) AS audit_row`
 )
 
 func (service *DurableCoordinationService) RegisterDeploymentTarget(
@@ -89,11 +171,20 @@ func (service *DurableCoordinationService) RegisterDeploymentTarget(
 		if bindErr != nil {
 			return mapVerifiedCoordinationAuthorizationError(bindErr)
 		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
+		subjectDigest, digestErr := actor.Digest()
+		if digestErr != nil {
+			return authz.ErrOperationDenied
+		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
 				return scanDeploymentTarget(handle.transaction.queryRow(ctx, registerDeploymentTargetSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.TargetName, input.Kind,
-					input.Endpoint, input.CredentialRef, input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+					input.Endpoint, input.CredentialRef, input.Mutation.IdempotencyKey, digest,
+					input.Mutation.RequestID, subjectDigest), input.Scope, &result)
 			})
 		})
 	})
@@ -207,6 +298,161 @@ func decodeDeploymentTargetPageRows(raw []byte, tenantID, projectID string, limi
 	return result, nil
 }
 
+func (service *DurableCoordinationService) ListDeploymentTargetOperations(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, targetID string,
+	afterRequestedAt *time.Time, afterOperationID string, limit int,
+) (DeploymentTargetOperationPage, error) {
+	if service == nil || service.runner == nil {
+		return DeploymentTargetOperationPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(targetID) ||
+		(afterRequestedAt == nil) != (afterOperationID == "") || afterOperationID != "" && !validMutationIdentifier(afterOperationID) || limit < 1 || limit > 200 {
+		return DeploymentTargetOperationPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result DeploymentTargetOperationPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterRequestedAt != nil {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, deploymentTargetOperationCursorIdentitySQL,
+						projectID, targetID, afterOperationID, *afterRequestedAt).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return err
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listDeploymentTargetOperationsSQL,
+					projectID, targetID, afterRequestedAt, afterOperationID, limit+1).Scan(&raw); err != nil {
+					return err
+				}
+				var decodeErr error
+				result, decodeErr = decodeDeploymentTargetOperationRows(raw, tenantID, projectID, targetID, limit)
+				return decodeErr
+			})
+		})
+	})
+	return result, mapDeploymentTargetError(err)
+}
+
+func decodeDeploymentTargetOperationRows(raw []byte, tenantID, projectID, targetID string, limit int) (DeploymentTargetOperationPage, error) {
+	var rows []deploymentTargetOperationPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return DeploymentTargetOperationPage{}, ErrCoordinationResultDrift
+	}
+	operations := make([]internaldeploymenttarget.Operation, 0, len(rows))
+	for _, row := range rows {
+		operation := internaldeploymenttarget.Operation{
+			Scope:       internaldeploymenttarget.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
+			OperationID: row.OperationID, IdempotencyKey: row.IdempotencyKey, Action: row.Action,
+			TargetID: row.TargetID, TargetGeneration: row.TargetGeneration, RequestedBy: row.RequestedBy,
+			RequestID: row.RequestID, State: row.State, CurrentStep: row.CurrentStep,
+			StableErrorCode: row.StableErrorCode, ImpactSummary: row.ImpactSummary, Retryable: row.Retryable,
+			RequestedAt: row.RequestedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if row.TenantID != tenantID || row.ProjectID != projectID || row.TargetID != targetID || operation.Validate() != nil {
+			return DeploymentTargetOperationPage{}, ErrCoordinationResultDrift
+		}
+		operations = append(operations, operation)
+	}
+	result := DeploymentTargetOperationPage{Operations: operations}
+	if len(operations) > limit {
+		result.Operations = operations[:limit]
+		last := result.Operations[len(result.Operations)-1]
+		requestedAt := last.RequestedAt
+		result.NextRequestedAt, result.NextOperationID = &requestedAt, last.OperationID
+	}
+	return result, nil
+}
+
+func (service *DurableCoordinationService) ListDeploymentTargetAuditEvents(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, targetID string,
+	afterOccurredAt *time.Time, afterEventID string, limit int,
+) (DeploymentTargetAuditPage, error) {
+	if service == nil || service.runner == nil {
+		return DeploymentTargetAuditPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(targetID) ||
+		(afterOccurredAt == nil) != (afterEventID == "") || afterEventID != "" && !validMutationIdentifier(afterEventID) || limit < 1 || limit > 200 {
+		return DeploymentTargetAuditPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result DeploymentTargetAuditPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterOccurredAt != nil {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, deploymentTargetAuditCursorIdentitySQL,
+						projectID, targetID, afterEventID, *afterOccurredAt).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return err
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listDeploymentTargetAuditSQL,
+					projectID, targetID, afterOccurredAt, afterEventID, limit+1).Scan(&raw); err != nil {
+					return err
+				}
+				var decodeErr error
+				result, decodeErr = decodeDeploymentTargetAuditRows(raw, tenantID, projectID, targetID, limit)
+				return decodeErr
+			})
+		})
+	})
+	return result, mapDeploymentTargetError(err)
+}
+
+func decodeDeploymentTargetAuditRows(raw []byte, tenantID, projectID, targetID string, limit int) (DeploymentTargetAuditPage, error) {
+	var rows []deploymentTargetAuditPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return DeploymentTargetAuditPage{}, ErrCoordinationResultDrift
+	}
+	events := make([]internaldeploymenttarget.AuditEvent, 0, len(rows))
+	for _, row := range rows {
+		result := map[string]string{"running": "requested", "succeeded": "succeeded", "failed": "failed"}[row.State]
+		event := internaldeploymenttarget.AuditEvent{
+			Scope:   internaldeploymenttarget.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
+			EventID: row.EventID, Actor: row.Actor, Action: row.Action, TargetID: row.TargetID,
+			TargetGeneration: row.TargetGeneration, Result: result, RequestID: row.RequestID,
+			OperationID: row.OperationID, StableErrorCode: row.StableErrorCode, OccurredAt: row.OccurredAt,
+		}
+		if row.TenantID != tenantID || row.ProjectID != projectID || row.TargetID != targetID || event.Validate() != nil {
+			return DeploymentTargetAuditPage{}, ErrCoordinationResultDrift
+		}
+		events = append(events, event)
+	}
+	result := DeploymentTargetAuditPage{Events: events}
+	if len(events) > limit {
+		result.Events = events[:limit]
+		last := result.Events[len(result.Events)-1]
+		occurredAt := last.OccurredAt
+		result.NextOccurredAt, result.NextEventID = &occurredAt, last.EventID
+	}
+	return result, nil
+}
+
 func (service *DurableCoordinationService) BeginDeploymentTargetProbe(
 	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internaldeploymenttarget.ProbeInput,
 ) (internaldeploymenttarget.ProbeStart, error) {
@@ -227,10 +473,19 @@ func (service *DurableCoordinationService) BeginDeploymentTargetProbe(
 		if bindErr != nil {
 			return mapVerifiedCoordinationAuthorizationError(bindErr)
 		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
+		subjectDigest, digestErr := actor.Digest()
+		if digestErr != nil {
+			return authz.ErrOperationDenied
+		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
 				row := handle.transaction.queryRow(ctx, beginDeploymentTargetProbeSQL, input.Scope.TenantID, input.Scope.ProjectID,
-					input.TargetID, input.ExpectedGeneration, input.Mutation.IdempotencyKey, digest)
+					input.TargetID, input.ExpectedGeneration, input.Mutation.IdempotencyKey, digest,
+					input.Mutation.RequestID, subjectDigest)
 				if err := scanDeploymentTargetWithExecute(row, input.Scope, &result); errors.Is(err, pgx.ErrNoRows) {
 					return internaldeploymenttarget.ErrNotFound
 				} else {

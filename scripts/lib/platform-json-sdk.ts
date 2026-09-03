@@ -58,6 +58,8 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+  "admin-audit-event-page.schema.json",
+  "admin-audit-event.schema.json",
   "deployment-target-cleanup-preview.schema.json",
   "deployment-target-page.schema.json",
   "deployment-target-probe-request.schema.json",
@@ -72,6 +74,8 @@ const PLATFORM_SCHEMAS = [
   "membership-create-request.schema.json",
   "membership-page.schema.json",
   "membership.schema.json",
+  "maintenance-operation-page.schema.json",
+  "maintenance-operation.schema.json",
   "membership-transition-request.schema.json",
   "organization-create-request.schema.json",
   "organization-page.schema.json",
@@ -218,6 +222,8 @@ function validateJSONSDKAuthority(root: string): void {
   const expected = [
     "adminGetDeploymentTarget",
     "adminGetEnvironmentLease",
+    "adminListDeploymentTargetAuditEvents",
+    "adminListDeploymentTargetOperations",
     "adminListDeploymentTargets",
     "adminListEnvironmentLeases",
     "adminPreviewDeploymentTargetCleanup",

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
@@ -17,6 +18,7 @@ const APIVersion = "platform.cloud-agents.dev/v1alpha1"
 
 var (
 	permissionPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
+	digestPattern     = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	roleNames         = map[string]struct{}{
 		"platform.admin": {}, "tenant.admin": {}, "organization.admin": {}, "project.admin": {},
 		"project.operator": {}, "project.developer": {}, "project.viewer": {},
@@ -253,6 +255,52 @@ type DeploymentTargetPage struct {
 	DeploymentTargets []DeploymentTarget `json:"deploymentTargets"`
 	NextPageToken     string             `json:"nextPageToken,omitempty"`
 }
+type MaintenanceOperation struct {
+	APIVersion         string `json:"apiVersion"`
+	Kind               string `json:"kind"`
+	OperationID        string `json:"operationId"`
+	IdempotencyKey     string `json:"idempotencyKey"`
+	Action             string `json:"action"`
+	ResourceKind       string `json:"resourceKind"`
+	ResourceID         string `json:"resourceId"`
+	ResourceGeneration int64  `json:"resourceGeneration"`
+	RequestedBy        string `json:"requestedBy"`
+	RequestID          string `json:"requestId"`
+	RequestedAt        string `json:"requestedAt"`
+	UpdatedAt          string `json:"updatedAt"`
+	State              string `json:"state"`
+	CurrentStep        string `json:"currentStep"`
+	StableErrorCode    string `json:"stableErrorCode,omitempty"`
+	ImpactSummary      string `json:"impactSummary"`
+	Retryable          bool   `json:"retryable"`
+}
+type MaintenanceOperationPage struct {
+	APIVersion    string                 `json:"apiVersion"`
+	Kind          string                 `json:"kind"`
+	Operations    []MaintenanceOperation `json:"operations"`
+	NextPageToken string                 `json:"nextPageToken,omitempty"`
+}
+type AdminAuditEvent struct {
+	APIVersion         string `json:"apiVersion"`
+	Kind               string `json:"kind"`
+	EventID            string `json:"eventId"`
+	Actor              string `json:"actor"`
+	Action             string `json:"action"`
+	ResourceKind       string `json:"resourceKind"`
+	ResourceID         string `json:"resourceId"`
+	ResourceGeneration int64  `json:"resourceGeneration"`
+	Result             string `json:"result"`
+	OccurredAt         string `json:"occurredAt"`
+	RequestID          string `json:"requestId"`
+	OperationID        string `json:"operationId"`
+	StableErrorCode    string `json:"stableErrorCode,omitempty"`
+}
+type AdminAuditEventPage struct {
+	APIVersion    string            `json:"apiVersion"`
+	Kind          string            `json:"kind"`
+	Events        []AdminAuditEvent `json:"events"`
+	NextPageToken string            `json:"nextPageToken,omitempty"`
+}
 type DeploymentTargetCleanupResource struct {
 	ResourceKind string `json:"resourceKind"`
 	ResourceName string `json:"resourceName"`
@@ -355,6 +403,10 @@ var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]co
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"deploymentTargets": common.ArrayResponseShape(resourceResponseShape("DeploymentTarget")), "nextPageToken": common.ScalarResponseShape(),
 })
+var maintenanceOperationResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "idempotencyKey": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "resourceKind": common.ScalarResponseShape(), "resourceId": common.ScalarResponseShape(), "resourceGeneration": common.ScalarResponseShape(), "requestedBy": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "requestedAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "currentStep": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "impactSummary": common.ScalarResponseShape(), "retryable": common.ScalarResponseShape()})
+var maintenanceOperationPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "operations": common.ArrayResponseShape(maintenanceOperationResponseShape), "nextPageToken": common.ScalarResponseShape()})
+var adminAuditEventResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "eventId": common.ScalarResponseShape(), "actor": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "resourceKind": common.ScalarResponseShape(), "resourceId": common.ScalarResponseShape(), "resourceGeneration": common.ScalarResponseShape(), "result": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()})
+var adminAuditEventPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "events": common.ArrayResponseShape(adminAuditEventResponseShape), "nextPageToken": common.ScalarResponseShape()})
 
 func strictResource(data []byte, kind string) (map[string]json.RawMessage, common.JSONSidecar, error) {
 	known, sidecar, err := common.DecodeResponseJSONWithSidecar(data, resourceResponseShape(kind))
@@ -1494,6 +1546,117 @@ func DecodeDeploymentTargetPageResponseJSON(data []byte) (common.ResponseEnvelop
 	return common.ResponseEnvelope[DeploymentTargetPage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeDeploymentTargetPageResponseJSON(value common.ResponseEnvelope[DeploymentTargetPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeMaintenanceOperationJSON(data []byte) (MaintenanceOperation, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "operationId", "idempotencyKey", "action", "resourceKind", "resourceId", "resourceGeneration", "requestedBy", "requestId", "requestedAt", "updatedAt", "state", "currentStep", "stableErrorCode", "impactSummary", "retryable"}, []string{"apiVersion", "kind", "operationId", "idempotencyKey", "action", "resourceKind", "resourceId", "resourceGeneration", "requestedBy", "requestId", "requestedAt", "updatedAt", "state", "currentStep", "impactSummary", "retryable"})
+	if err != nil {
+		return MaintenanceOperation{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var value MaintenanceOperation
+	if json.Unmarshal(raw, &value) != nil {
+		return MaintenanceOperation{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "MaintenanceOperation" {
+		return MaintenanceOperation{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
+		return MaintenanceOperation{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "")
+	}
+	return value, nil
+}
+func maintenanceOperationTimesValid(requestedAt, updatedAt string) bool {
+	requested, requestedErr := time.Parse(time.RFC3339Nano, requestedAt)
+	updated, updatedErr := time.Parse(time.RFC3339Nano, updatedAt)
+	return requestedErr == nil && updatedErr == nil && !updated.Before(requested)
+}
+func DecodeMaintenanceOperationPageJSON(data []byte) (MaintenanceOperationPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "operations", "nextPageToken"}, []string{"apiVersion", "kind", "operations"})
+	if err != nil {
+		return MaintenanceOperationPage{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var page MaintenanceOperationPage
+	if json.Unmarshal(raw, &page) != nil || page.APIVersion != APIVersion || page.Kind != "MaintenanceOperationPage" || page.Operations == nil || len(page.Operations) > 200 {
+		return MaintenanceOperationPage{}, common.ContractError("INVALID_MAINTENANCE_OPERATION_PAGE", "/operations")
+	}
+	for index, item := range page.Operations {
+		itemRaw, _ := json.Marshal(item)
+		if _, err := DecodeMaintenanceOperationJSON(itemRaw); err != nil {
+			return MaintenanceOperationPage{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "/operations/"+itoa(index))
+		}
+	}
+	if page.NextPageToken != "" && common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+		return MaintenanceOperationPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return page, nil
+}
+func DecodeMaintenanceOperationPageResponseJSON(data []byte) (common.ResponseEnvelope[MaintenanceOperationPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, maintenanceOperationPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[MaintenanceOperationPage]{}, err
+	}
+	value, err := DecodeMaintenanceOperationPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[MaintenanceOperationPage]{}, err
+	}
+	return common.ResponseEnvelope[MaintenanceOperationPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeMaintenanceOperationPageResponseJSON(value common.ResponseEnvelope[MaintenanceOperationPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "eventId", "actor", "action", "resourceKind", "resourceId", "resourceGeneration", "result", "occurredAt", "requestId", "operationId", "stableErrorCode"}, []string{"apiVersion", "kind", "eventId", "actor", "action", "resourceKind", "resourceId", "resourceGeneration", "result", "occurredAt", "requestId", "operationId"})
+	if err != nil {
+		return AdminAuditEvent{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var value AdminAuditEvent
+	if json.Unmarshal(raw, &value) != nil {
+		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
+		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
+	}
+	return value, nil
+}
+func DecodeAdminAuditEventPageJSON(data []byte) (AdminAuditEventPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "events", "nextPageToken"}, []string{"apiVersion", "kind", "events"})
+	if err != nil {
+		return AdminAuditEventPage{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var page AdminAuditEventPage
+	if json.Unmarshal(raw, &page) != nil || page.APIVersion != APIVersion || page.Kind != "AdminAuditEventPage" || page.Events == nil || len(page.Events) > 200 {
+		return AdminAuditEventPage{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT_PAGE", "/events")
+	}
+	for index, item := range page.Events {
+		itemRaw, _ := json.Marshal(item)
+		if _, err := DecodeAdminAuditEventJSON(itemRaw); err != nil {
+			return AdminAuditEventPage{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "/events/"+itoa(index))
+		}
+	}
+	if page.NextPageToken != "" && common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+		return AdminAuditEventPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return page, nil
+}
+func DecodeAdminAuditEventPageResponseJSON(data []byte) (common.ResponseEnvelope[AdminAuditEventPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, adminAuditEventPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[AdminAuditEventPage]{}, err
+	}
+	value, err := DecodeAdminAuditEventPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[AdminAuditEventPage]{}, err
+	}
+	return common.ResponseEnvelope[AdminAuditEventPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeAdminAuditEventPageResponseJSON(value common.ResponseEnvelope[AdminAuditEventPage]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func EncodeDeploymentTargetResponseJSON(value common.ResponseEnvelope[DeploymentTarget]) ([]byte, error) {

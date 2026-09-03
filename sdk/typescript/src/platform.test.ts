@@ -6,12 +6,14 @@ import { describe, expect, it } from "vitest";
 import {
   Client,
   createHTTPClient,
+  decodeAdminAuditEventPage,
   decodeDeploymentTargetCleanupPreview,
   decodeDeploymentTargetPage,
   decodeEnvironmentLeasePage,
   decodeIdempotency,
   decodeMembership,
   decodeMembershipPage,
+  decodeMaintenanceOperationPage,
   decodeOrganization,
   decodeOrganizationPage,
   decodePlatformTenant,
@@ -33,6 +35,8 @@ import {
   parseDeploymentTargetCleanupPreview,
   parseDeploymentTargetPage,
   parseEnvironmentLeasePage,
+  parseAdminAuditEventPage,
+  parseMaintenanceOperationPage,
   parseProject,
   parseProjectCreateRequest,
   parseManagedAgentSession,
@@ -279,6 +283,75 @@ describe("generated platform JSON models", () => {
     expect(seen[1]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
     );
+  });
+  it("lists durable Admin target operations and audit events", async () => {
+    const operation = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "MaintenanceOperation",
+      operationId: "operation-alpha",
+      idempotencyKey: "operation-key-123~",
+      action: "target.probe",
+      resourceKind: "DeploymentTarget",
+      resourceId: "docker-alpha",
+      resourceGeneration: 2,
+      requestedBy: `sha256:${"a".repeat(64)}`,
+      requestId: "request-alpha",
+      requestedAt: "2026-09-03T08:00:00Z",
+      updatedAt: "2026-09-03T08:01:00Z",
+      state: "succeeded",
+      currentStep: "complete",
+      impactSummary: "Probe deployment target connectivity and capabilities",
+      retryable: false,
+    };
+    const operationPage = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "MaintenanceOperationPage",
+      operations: [operation],
+      nextPageToken: "operation-page-token-2",
+    });
+    const auditPage = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "AdminAuditEventPage",
+      events: [{
+        apiVersion: "platform.cloud-agents.dev/v1alpha1",
+        kind: "AdminAuditEvent",
+        eventId: "event-alpha",
+        actor: `sha256:${"a".repeat(64)}`,
+        action: "target.probe",
+        resourceKind: "DeploymentTarget",
+        resourceId: "docker-alpha",
+        resourceGeneration: 2,
+        result: "succeeded",
+        occurredAt: "2026-09-03T08:01:00Z",
+        requestId: "request-alpha",
+        operationId: "operation-alpha",
+      }],
+      nextPageToken: "audit-page-token-2",
+    });
+    expect(decodeMaintenanceOperationPage(JSON.parse(operationPage)).operations).toHaveLength(1);
+    expect(parseMaintenanceOperationPage(operationPage).value.nextPageToken).toBe("operation-page-token-2");
+    expect(decodeAdminAuditEventPage(JSON.parse(auditPage)).events).toHaveLength(1);
+    expect(parseAdminAuditEventPage(auditPage).value.nextPageToken).toBe("audit-page-token-2");
+    expect(() => decodeMaintenanceOperationPage({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "MaintenanceOperationPage",
+      operations: [{ ...operation, updatedAt: "2026-09-03T07:59:59Z" }],
+    })).toThrow(/INVALID_MAINTENANCE_OPERATION/u);
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: {}, body: request.path.includes("/audit-events") ? auditPage : operationPage };
+    });
+    await client.listAdminDeploymentTargetOperations(
+      "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "operation-page-token-1",
+    );
+    await client.listAdminDeploymentTargetAuditEvents(
+      "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "audit-page-token-1",
+    );
+    expect(seen.map(({ path }) => path)).toEqual([
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations?pageSize=1&pageToken=operation-page-token-1",
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events?pageSize=1&pageToken=audit-page-token-1",
+    ]);
   });
   it("previews Admin cleanup impact with generation authority", async () => {
     const body = JSON.stringify({
