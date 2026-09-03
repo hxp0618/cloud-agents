@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   createHTTPClient,
   type DeploymentTarget,
@@ -25,6 +25,7 @@ type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 type Page = "overview" | "targets" | "leases";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type BusyOperation = Readonly<{ key: string; label: string }>;
+type Theme = "light" | "dark";
 
 const targetEndpointPlaceholder: Readonly<Record<TargetKind, string>> = Object.freeze({
   docker: "https://docker.example.test:2376",
@@ -39,6 +40,12 @@ function initialConnection(): SavedAdminConnection {
     tenantId: saved.tenantId,
     projectId: saved.projectId,
   };
+}
+
+function initialTheme(): Theme {
+  const saved = window.localStorage.getItem("cloud-agents-admin-theme");
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function statusLabel(status: ConnectionStatus): string {
@@ -60,6 +67,43 @@ function formatTime(value: string | undefined): string {
   if (value === undefined || value === "") return "Never";
   const parsed = new Date(value);
   return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString();
+}
+
+function AdminSheet({
+  label,
+  onClose,
+  children,
+}: Readonly<{ label: string; onClose: () => void; children: ReactNode }>) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog === null) return;
+    if (!dialog.open) {
+      dialog.showModal();
+      dialog.querySelector<HTMLElement>("[data-sheet-autofocus]")?.focus();
+    }
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      className="admin-sheet"
+      aria-label={label}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      {children}
+    </dialog>
+  );
 }
 
 async function loadTargetAuthority(
@@ -109,6 +153,9 @@ async function loadLeaseAuthority(
 }
 
 export function App() {
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [connection, setConnection] = useState(initialConnection);
   const [token, setToken] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
@@ -119,6 +166,9 @@ export function App() {
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [page, setPage] = useState<Page>("overview");
+  const [query, setQuery] = useState("");
+  const [targetDetailOpen, setTargetDetailOpen] = useState(false);
+  const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
   const [error, setError] = useState("");
@@ -133,6 +183,7 @@ export function App() {
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pendingKeysRef = useRef(new Map<string, string>());
+  const profileMenuRef = useRef<HTMLDetailsElement>(null);
 
   const connected = status === "connected" && client !== null;
   const selectedTarget = targets.find(({ metadata }) => metadata.uid === selectedTargetId);
@@ -152,6 +203,58 @@ export function App() {
   const leaseAttentionCount = leases.filter(
     ({ spec }) => spec.observedPhase === "failed" || spec.cleanupPhase === "blocked",
   ).length;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleTargets =
+    normalizedQuery === ""
+      ? targets
+      : targets.filter(({ metadata, spec }) =>
+          [metadata.uid, metadata.name, spec.targetKind, spec.observedPhase].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          ),
+        );
+  const visibleLeases =
+    normalizedQuery === ""
+      ? leases
+      : leases.filter(({ metadata, spec }) =>
+          [
+            metadata.uid,
+            metadata.name,
+            spec.environmentId,
+            spec.observedPhase,
+            spec.cleanupPhase,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem("cloud-agents-admin-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && profileMenuRef.current?.open) {
+        profileMenuRef.current.open = false;
+        profileMenuRef.current.querySelector<HTMLElement>("summary")?.focus();
+        return;
+      }
+      if (event.key.toLocaleLowerCase() !== "b" || (!event.metaKey && !event.ctrlKey)) return;
+      event.preventDefault();
+      setSidebarOpen((open) => !open);
+    };
+    const closeProfileMenu = (event: PointerEvent) => {
+      const menu = profileMenuRef.current;
+      if (menu?.open && event.target instanceof Node && !menu.contains(event.target)) {
+        menu.open = false;
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("pointerdown", closeProfileMenu);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pointerdown", closeProfileMenu);
+    };
+  }, []);
 
   useEffect(
     () => () => {
@@ -201,6 +304,14 @@ export function App() {
     setConnection((current) => ({ ...current, [field]: value }));
   }
 
+  function navigate(nextPage: Page) {
+    setPage(nextPage);
+    setQuery("");
+    setMobileNavOpen(false);
+    setTargetDetailOpen(false);
+    setLeaseDetailOpen(false);
+  }
+
   function disconnect() {
     requestRef.current?.abort();
     requestRef.current = null;
@@ -211,6 +322,9 @@ export function App() {
     setCleanupPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
+    setTargetDetailOpen(false);
+    setLeaseDetailOpen(false);
+    setMobileNavOpen(false);
     setBusy(null);
     setError("");
     setNotice("");
@@ -308,6 +422,7 @@ export function App() {
   }
 
   function selectTarget(targetId: string) {
+    setTargetDetailOpen(true);
     if (client === null || targetId === selectedTargetId) {
       setSelectedTargetId(targetId);
       return;
@@ -327,6 +442,7 @@ export function App() {
   }
 
   function selectLease(leaseId: string) {
+    setLeaseDetailOpen(true);
     if (client === null || leaseId === selectedLeaseId) {
       setSelectedLeaseId(leaseId);
       return;
@@ -419,6 +535,13 @@ export function App() {
   if (!connected) {
     return (
       <main className="connect-view">
+        <button
+          className="button outline connect-theme"
+          type="button"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
         <section className="connect-card" aria-labelledby="connect-title">
           <div className="brand-lockup">
             <span className="brand-mark" aria-hidden="true">
@@ -512,8 +635,14 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
+      <button
+        className={`mobile-nav-backdrop${mobileNavOpen ? " open" : ""}`}
+        type="button"
+        aria-label="Close navigation"
+        onClick={() => setMobileNavOpen(false)}
+      />
+      <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
         <div className="brand-lockup sidebar-brand">
           <span className="brand-mark" aria-hidden="true">
             CA
@@ -522,20 +651,39 @@ export function App() {
             <strong>Cloud Agents</strong>
             <small>Admin Console</small>
           </span>
+          <button
+            className="sidebar-trigger"
+            type="button"
+            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={sidebarOpen}
+            title="Toggle sidebar (⌘/Ctrl+B)"
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            ◧
+          </button>
         </div>
         <nav aria-label="Admin resources">
           <button
             className={page === "overview" ? "active" : ""}
-            onClick={() => setPage("overview")}
+            onClick={() => navigate("overview")}
+            title="Overview"
           >
-            <span aria-hidden="true">⌁</span> Overview
+            <span aria-hidden="true">⌁</span> <span className="nav-label">Overview</span>
           </button>
-          <button className={page === "targets" ? "active" : ""} onClick={() => setPage("targets")}>
-            <span aria-hidden="true">◎</span> Deployment Targets
+          <button
+            className={page === "targets" ? "active" : ""}
+            onClick={() => navigate("targets")}
+            title="Deployment Targets"
+          >
+            <span aria-hidden="true">◎</span> <span className="nav-label">Deployment Targets</span>
             <b>{targets.length}</b>
           </button>
-          <button className={page === "leases" ? "active" : ""} onClick={() => setPage("leases")}>
-            <span aria-hidden="true">◇</span> Environment Leases
+          <button
+            className={page === "leases" ? "active" : ""}
+            onClick={() => navigate("leases")}
+            title="Environment Leases"
+          >
+            <span aria-hidden="true">◇</span> <span className="nav-label">Environment Leases</span>
             <b>{leases.length}</b>
           </button>
         </nav>
@@ -547,33 +695,51 @@ export function App() {
 
       <section className="app-main">
         <header className="topbar">
+          <button
+            className="mobile-nav-trigger"
+            type="button"
+            aria-label="Open navigation"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          >
+            ◧
+          </button>
           <div className="breadcrumbs">
-            <small>
-              Admin /{" "}
-              {page === "overview"
-                ? "Overview"
-                : page === "targets"
-                  ? "Deployment Targets"
-                  : "Environment Leases"}
-            </small>
             <strong>{connection.projectId}</strong>
+            <small>{connection.tenantId}</small>
           </div>
           <div className="topbar-context">
             <span title={connection.endpoint}>{connection.endpoint}</span>
-            <span>{connection.tenantId}</span>
             <span className="live">
               <i /> Admin API
             </span>
           </div>
-          <button className="button ghost compact" type="button" onClick={disconnect}>
-            Disconnect
-          </button>
+          <details ref={profileMenuRef} className="profile-menu">
+            <summary className="button outline compact">Admin</summary>
+            <div className="dropdown-menu">
+              <div className="dropdown-context">
+                <strong>{connection.projectId}</strong>
+                <small>{connection.tenantId}</small>
+              </div>
+              <button
+                type="button"
+                onClick={(event) => {
+                  setTheme(theme === "dark" ? "light" : "dark");
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                }}
+              >
+                {theme === "dark" ? "Light mode" : "Dark mode"}
+              </button>
+              <button type="button" onClick={disconnect}>
+                Disconnect
+              </button>
+            </div>
+          </details>
         </header>
 
         <main className="content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">Live Control Plane authority</div>
               <h1>
                 {page === "overview"
                   ? "Operations overview"
@@ -591,7 +757,7 @@ export function App() {
             </div>
             <div className="heading-actions">
               <button
-                className="button ghost"
+                className="button outline"
                 type="button"
                 onClick={refresh}
                 disabled={busy !== null}
@@ -603,7 +769,7 @@ export function App() {
                   className="button primary"
                   type="button"
                   onClick={() => {
-                    setPage("targets");
+                    navigate("targets");
                     setRegistering(true);
                   }}
                   disabled={busy !== null}
@@ -665,7 +831,7 @@ export function App() {
                     <h2>Target health</h2>
                     <p>Live resources returned by the Admin API.</p>
                   </div>
-                  <button className="text-button" type="button" onClick={() => setPage("targets")}>
+                  <button className="text-button" type="button" onClick={() => navigate("targets")}>
                     View all targets →
                   </button>
                 </div>
@@ -673,7 +839,7 @@ export function App() {
                   targets={targets.slice(0, 6)}
                   selectedTargetId={selectedTargetId}
                   onSelect={(targetId) => {
-                    setPage("targets");
+                    navigate("targets");
                     selectTarget(targetId);
                   }}
                 />
@@ -684,7 +850,7 @@ export function App() {
                     <h2>Lease lifecycle</h2>
                     <p>Desired, observed, and cleanup phases from Control Plane.</p>
                   </div>
-                  <button className="text-button" type="button" onClick={() => setPage("leases")}>
+                  <button className="text-button" type="button" onClick={() => navigate("leases")}>
                     View all leases →
                   </button>
                 </div>
@@ -692,88 +858,103 @@ export function App() {
                   leases={leases.slice(0, 6)}
                   selectedLeaseId={selectedLeaseId}
                   onSelect={(leaseId) => {
-                    setPage("leases");
+                    navigate("leases");
                     selectLease(leaseId);
                   }}
                 />
               </section>
             </>
           ) : page === "targets" ? (
-            <section className="target-layout">
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label="Search deployment targets"
+                  placeholder="Search by ID or name"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">targets.list · {visibleTargets.length}</span>
+              </div>
               <div className="panel target-list-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>Targets</h2>
-                    <p>{targets.length} registered resources</p>
-                  </div>
-                  <span className="scope-chip">targets.list</span>
-                </div>
                 <TargetTable
-                  targets={targets}
+                  targets={visibleTargets}
                   selectedTargetId={selectedTargetId}
                   onSelect={selectTarget}
                 />
               </div>
-
-              <aside className="panel detail-panel" aria-label="Selected deployment target">
-                {selectedTarget === undefined ? (
-                  <div className="empty-state">
-                    <span aria-hidden="true">◎</span>
-                    <h2>No target selected</h2>
-                    <p>Register a target or select one from the live Admin API list.</p>
-                  </div>
-                ) : (
-                  <TargetDetail
-                    target={selectedTarget}
-                    cleanupPreview={selectedCleanupPreview}
-                    onProbe={probeTarget}
-                    onPreviewCleanup={previewTargetCleanup}
-                    disabled={busy !== null}
-                  />
-                )}
-              </aside>
             </section>
           ) : (
-            <section className="target-layout">
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label="Search environment leases"
+                  placeholder="Search by ID or environment"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">leases.list · {visibleLeases.length}</span>
+              </div>
               <div className="panel target-list-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>Leases</h2>
-                    <p>{leases.length} server-authoritative resources</p>
-                  </div>
-                  <span className="scope-chip">leases.list</span>
-                </div>
                 <LeaseTable
-                  leases={leases}
+                  leases={visibleLeases}
                   selectedLeaseId={selectedLeaseId}
                   onSelect={selectLease}
                 />
               </div>
-
-              <aside className="panel detail-panel" aria-label="Selected environment lease">
-                {selectedLease === undefined ? (
-                  <div className="empty-state">
-                    <span aria-hidden="true">◇</span>
-                    <h2>No lease selected</h2>
-                    <p>Select a lease from the live Admin API list.</p>
-                  </div>
-                ) : (
-                  <LeaseDetail lease={selectedLease} />
-                )}
-              </aside>
             </section>
           )}
         </main>
       </section>
 
+      {targetDetailOpen && selectedTarget !== undefined ? (
+        <AdminSheet
+          label={`Deployment target ${selectedTarget.metadata.name}`}
+          onClose={() => setTargetDetailOpen(false)}
+        >
+          <aside className="detail-panel" aria-label="Selected deployment target">
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label="Close"
+              onClick={() => setTargetDetailOpen(false)}
+            >
+              ×
+            </button>
+            <TargetDetail
+              target={selectedTarget}
+              cleanupPreview={selectedCleanupPreview}
+              onProbe={probeTarget}
+              onPreviewCleanup={previewTargetCleanup}
+              disabled={busy !== null}
+            />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
+      {leaseDetailOpen && selectedLease !== undefined ? (
+        <AdminSheet
+          label={`Environment lease ${selectedLease.metadata.name}`}
+          onClose={() => setLeaseDetailOpen(false)}
+        >
+          <aside className="detail-panel" aria-label="Selected environment lease">
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label="Close"
+              onClick={() => setLeaseDetailOpen(false)}
+            >
+              ×
+            </button>
+            <LeaseDetail lease={selectedLease} />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
       {registering ? (
-        <div className="dialog-backdrop" role="presentation">
-          <section
-            className="dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="register-title"
-          >
+        <AdminSheet label="Register deployment target" onClose={() => setRegistering(false)}>
+          <section className="dialog" aria-labelledby="register-title">
             <div className="panel-heading">
               <div>
                 <div className="eyebrow">targets.create</div>
@@ -802,6 +983,7 @@ export function App() {
                     maxLength={128}
                     required
                     autoFocus
+                    data-sheet-autofocus
                     spellCheck={false}
                   />
                 </label>
@@ -874,7 +1056,7 @@ export function App() {
               </div>
             </form>
           </section>
-        </div>
+        </AdminSheet>
       ) : null}
     </div>
   );
@@ -901,6 +1083,7 @@ function TargetTable({
             <th>Status</th>
             <th>Generation</th>
             <th>Last probe</th>
+            <th aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -927,6 +1110,16 @@ function TargetTable({
               </td>
               <td className="mono">g{target.spec.generation}</td>
               <td>{formatTime(target.spec.lastProbeAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={`View ${target.metadata.name}`}
+                  onClick={() => onSelect(target.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -956,6 +1149,7 @@ function LeaseTable({
             <th>Cleanup</th>
             <th>Generation</th>
             <th>Expires</th>
+            <th aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -985,6 +1179,16 @@ function LeaseTable({
               </td>
               <td className="mono">g{lease.spec.generation}</td>
               <td>{formatTime(lease.spec.expiresAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={`View ${lease.metadata.name}`}
+                  onClick={() => onSelect(lease.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

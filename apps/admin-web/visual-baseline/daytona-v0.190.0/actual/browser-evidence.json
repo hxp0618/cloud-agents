@@ -1,0 +1,50 @@
+{
+  "capturedAt": "2026-09-03T07:25:38.534Z",
+  "appOrigin": "http://127.0.0.1:4174",
+  "projectId": "project-f82787bb3671942785ca7a0758bc2850",
+  "targetKinds": [
+    "docker",
+    "kubernetes",
+    "ssh"
+  ],
+  "targetCount": 3,
+  "requestOrigins": [
+    "http://127.0.0.1:4174"
+  ],
+  "localStorageKeys": [
+    "cloud-agents-admin-theme"
+  ],
+  "sessionStorageKeys": [
+    "cloud-agents.admin-web.connection.v1"
+  ],
+  "bearerPersisted": false,
+  "interactions": {
+    "sidebarShortcut": true,
+    "dropdownEscapeClose": true,
+    "dropdownOutsideClose": true,
+    "sheetEscapeClose": true,
+    "createFormAutofocus": true,
+    "mobileNavigationOpenClose": true
+  },
+  "permissionDenied": "This token is valid but lacks the required Admin API scope or project authority.",
+  "adminConsoleErrors": [],
+  "adminConsoleWarnings": [],
+  "adminHTTPFailures": [],
+  "permissionDeniedConsoleErrors": [
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+  ],
+  "permissionDeniedConsoleWarnings": [],
+  "permissionDeniedHTTPFailures": [
+    {
+      "phase": "permission-denied",
+      "status": 403,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-f82787bb3671942785ca7a0758bc2850/deployment-targets?pageSize=200"
+    },
+    {
+      "phase": "permission-denied",
+      "status": 403,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-f82787bb3671942785ca7a0758bc2850/environment-leases?pageSize=200"
+    }
+  ]
+}
