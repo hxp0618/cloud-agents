@@ -5482,6 +5482,33 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets");
     return result;
   }
+  async listAdminMaintenanceOperations(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperationPage>> {
+    validateDeploymentTargetPath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/maintenance-operations${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListMaintenanceOperations", response);
+    return parseMaintenanceOperationPage(response.body);
+  }
   async listAdminDeploymentTargetOperations(
     tenantId: string,
     projectId: string,

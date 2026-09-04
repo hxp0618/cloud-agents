@@ -978,6 +978,13 @@ td > button small {
   font-size: 11px;
 }
 
+.table-subline {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
 .row-action-cell {
   width: 48px;
   padding-inline: 8px;
@@ -1230,6 +1237,12 @@ td > button small {
   margin: 0;
   color: var(--muted-foreground);
   font-size: 11px;
+}
+
+.activity-block > p {
+  margin: 12px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 
 .operation-diagnostic {

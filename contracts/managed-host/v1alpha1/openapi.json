@@ -625,6 +625,34 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/maintenance-operations": {
+      "get": {
+        "operationId": "adminListMaintenanceOperations",
+        "x-cloud-agents-required-scope": "operations.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project maintenance operations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/maintenance-operation-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}/operations": {
       "get": {
         "operationId": "adminListDeploymentTargetOperations",

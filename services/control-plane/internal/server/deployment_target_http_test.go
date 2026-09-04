@@ -126,6 +126,10 @@ func (fake *deploymentTargetStoreFake) ListDeploymentTargetOperations(context.Co
 	return postgres.DeploymentTargetOperationPage{Operations: fake.operations}, nil
 }
 
+func (fake *deploymentTargetStoreFake) ListMaintenanceOperations(context.Context, string, *authn.VerifiedPrincipal, string, *time.Time, string, string, int) (postgres.DeploymentTargetOperationPage, error) {
+	return postgres.DeploymentTargetOperationPage{Operations: fake.operations}, nil
+}
+
 func (fake *deploymentTargetStoreFake) ListDeploymentTargetAuditEvents(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.DeploymentTargetAuditPage, error) {
 	return postgres.DeploymentTargetAuditPage{Events: fake.audit}, nil
 }
@@ -267,8 +271,45 @@ func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
 	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:cleanup") {
 		t.Fatal("deployment target route ownership drifted")
 	}
-	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events") {
+	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations") {
 		t.Fatal("admin deployment target route ownership drifted")
+	}
+}
+
+func TestAdminDeploymentTargetHTTPListsProjectMaintenanceOperations(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 9, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	operation := func(operationID, targetID string) internaldeploymenttarget.Operation {
+		return internaldeploymenttarget.Operation{
+			Scope: internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, OperationID: operationID,
+			IdempotencyKey: operationID + "-key-123456", Action: "target.probe", TargetID: targetID, TargetGeneration: 1,
+			RequestedBy: digest, RequestID: "request-" + targetID, RequestedAt: now, UpdatedAt: now, State: "succeeded",
+			CurrentStep: "complete", ImpactSummary: "Probed deployment target " + targetID,
+		}
+	}
+	verifier := &deploymentTargetVerifierFake{}
+	handler, err := NewAdminDeploymentTargetHTTPServer(verifier, &deploymentTargetStoreFake{operations: []internaldeploymenttarget.Operation{
+		operation("operation-docker", "docker-alpha"), operation("operation-ssh", "ssh-alpha"),
+	}}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer admin-token")
+	request.Header.Set("X-Request-ID", "request-maintenance")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	page, decodeErr := platformv1alpha1.DecodeMaintenanceOperationPageResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || len(page.Value.Operations) != 2 || page.Value.Operations[1].ResourceID != "ssh-alpha" || verifier.requests[1].RequiredPermission != "operations.list" {
+		t.Fatalf("status=%d page=%#v error=%v requests=%#v body=%s", response.Code, page, decodeErr, verifier.requests, response.Body.String())
+	}
+	token, ok := encodeMaintenanceOperationPageToken("tenant-alpha", "project-alpha", "ssh-alpha", now, "operation-ssh")
+	decodedAt, targetID, operationID, decoded := decodeMaintenanceOperationPageToken("tenant-alpha", "project-alpha", token)
+	if !ok || !decoded || decodedAt == nil || !decodedAt.Equal(now) || targetID != "ssh-alpha" || operationID != "operation-ssh" {
+		t.Fatalf("token round trip failed: ok=%t decoded=%t at=%v target=%q operation=%q", ok, decoded, decodedAt, targetID, operationID)
+	}
+	if _, _, _, decoded = decodeMaintenanceOperationPageToken("tenant-alpha", "project-other", token); decoded {
+		t.Fatal("cross-project maintenance cursor was accepted")
 	}
 }
 
@@ -354,6 +395,7 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 		{"get", http.MethodGet, "targets.get"},
 		{"cleanup-preview", http.MethodGet, "targets.get"},
 		{"operations", http.MethodGet, "operations.list"},
+		{"maintenance-operations", http.MethodGet, "operations.list"},
 		{"audit-events", http.MethodGet, "audit.list"},
 		{"probe", http.MethodPost, "targets.act"},
 		{"cleanup", http.MethodPost, "targets.act"},
@@ -519,7 +561,7 @@ func TestAdminDeploymentTargetHTTPReturnsForbiddenWhenAdminScopeFails(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=50", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations?pageSize=50", nil)
 	request.Header.Set("Authorization", "Bearer user-token")
 	request.Header.Set("X-Request-ID", "request-user-admin-route")
 	response := httptest.NewRecorder()

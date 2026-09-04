@@ -171,10 +171,13 @@ func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetActivityRoutes(t *testin
 	if page, err := client.ListAdminDeploymentTargetOperations(ctx, "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "operation-page-token-1"); err != nil || len(page.Value.Operations) != 1 {
 		t.Fatalf("operation page = %#v / %v", page, err)
 	}
+	if page, err := client.ListAdminMaintenanceOperations(ctx, "tenant-alpha", "project-alpha", "request-alpha", 1, "maintenance-page-token-1"); err != nil || len(page.Value.Operations) != 1 {
+		t.Fatalf("maintenance page = %#v / %v", page, err)
+	}
 	if page, err := client.ListAdminDeploymentTargetAuditEvents(ctx, "tenant-alpha", "project-alpha", "docker-alpha", "request-alpha", 1, "audit-page-token-1"); err != nil || len(page.Value.Events) != 1 {
 		t.Fatalf("audit page = %#v / %v", page, err)
 	}
-	if len(seen) != 2 || seen[0].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations?pageSize=1&pageToken=operation-page-token-1" || seen[1].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events?pageSize=1&pageToken=audit-page-token-1" {
+	if len(seen) != 3 || seen[0].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations?pageSize=1&pageToken=operation-page-token-1" || seen[1].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations?pageSize=1&pageToken=maintenance-page-token-1" || seen[2].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events?pageSize=1&pageToken=audit-page-token-1" {
 		t.Fatalf("requests = %#v", seen)
 	}
 	regressed := []byte(strings.Replace(string(operationPage), `"updatedAt":"2026-09-03T08:01:00Z"`, `"updatedAt":"2026-09-03T07:59:59Z"`, 1))

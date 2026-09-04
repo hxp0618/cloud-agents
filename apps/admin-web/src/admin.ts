@@ -17,6 +17,7 @@ export type AdminClient = Pick<
   Client,
   | "listAdminDeploymentTargets"
   | "listAdminDeploymentTargetOperations"
+  | "listAdminMaintenanceOperations"
   | "listAdminDeploymentTargetAuditEvents"
   | "registerAdminDeploymentTarget"
   | "getAdminDeploymentTarget"
@@ -257,6 +258,34 @@ export async function listAdminTargetOperations(
       tenantId,
       projectId,
       targetId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    operations.push(...page.value.operations);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.operationPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(operations);
+}
+
+export async function listAdminMaintenanceOperations(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly MaintenanceOperation[]> {
+  const operations: MaintenanceOperation[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminMaintenanceOperations(
+      tenantId,
+      projectId,
       newRequestId(),
       200,
       pageToken,

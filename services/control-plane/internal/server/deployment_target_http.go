@@ -40,6 +40,7 @@ type deploymentTargetStore interface {
 	GetDeploymentTarget(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.Snapshot, error)
 	ListDeploymentTargets(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.DeploymentTargetPage, error)
 	ListDeploymentTargetOperations(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.DeploymentTargetOperationPage, error)
+	ListMaintenanceOperations(context.Context, string, *authn.VerifiedPrincipal, string, *time.Time, string, string, int) (postgres.DeploymentTargetOperationPage, error)
 	ListDeploymentTargetAuditEvents(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.DeploymentTargetAuditPage, error)
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	BeginDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeInput) (internaldeploymenttarget.ProbeStart, error)
@@ -143,6 +144,8 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		server.get(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "operations" && request.Method == http.MethodGet:
 		server.listOperations(writer, request, tenantID, projectID, targetID, requestID, bearer)
+	case action == "maintenance-operations" && request.Method == http.MethodGet:
+		server.listOperations(writer, request, tenantID, projectID, "", requestID, bearer)
 	case action == "audit-events" && request.Method == http.MethodGet:
 		server.listAuditEvents(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "probe" && request.Method == http.MethodPost:
@@ -167,14 +170,23 @@ func (server *DeploymentTargetHTTPServer) listOperations(writer http.ResponseWri
 		return
 	}
 	validated, err := openapiv1alpha1.ValidateListDeploymentTargetOperationsServerRequest(tenantID, projectID, targetID, requestID, pageSize, pageToken)
+	if targetID == "" {
+		validated, err = openapiv1alpha1.ValidateListMaintenanceOperationsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	}
 	if err != nil {
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	var after *time.Time
+	afterTargetID := ""
 	afterID := ""
 	if validated.PageToken != "" {
-		if after, afterID, ok = decodeDeploymentTargetActivityPageToken("operation", tenantID, projectID, targetID, validated.PageToken); !ok {
+		if targetID == "" {
+			after, afterTargetID, afterID, ok = decodeMaintenanceOperationPageToken(tenantID, projectID, validated.PageToken)
+		} else {
+			after, afterID, ok = decodeDeploymentTargetActivityPageToken("operation", tenantID, projectID, targetID, validated.PageToken)
+		}
+		if !ok {
 			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 			return
 		}
@@ -184,14 +196,24 @@ func (server *DeploymentTargetHTTPServer) listOperations(writer http.ResponseWri
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	page, err := server.store.ListDeploymentTargetOperations(request.Context(), tenantID, principal, projectID, targetID, after, afterID, validated.PageSize)
+	var page postgres.DeploymentTargetOperationPage
+	if targetID == "" {
+		page, err = server.store.ListMaintenanceOperations(request.Context(), tenantID, principal, projectID, after, afterTargetID, afterID, validated.PageSize)
+	} else {
+		page, err = server.store.ListDeploymentTargetOperations(request.Context(), tenantID, principal, projectID, targetID, after, afterID, validated.PageSize)
+	}
 	if err != nil {
 		writeDeploymentTargetError(writer, err)
 		return
 	}
 	nextPageToken := ""
 	if page.NextRequestedAt != nil {
-		if nextPageToken, ok = encodeDeploymentTargetActivityPageToken("operation", tenantID, projectID, targetID, *page.NextRequestedAt, page.NextOperationID); !ok {
+		if targetID == "" {
+			nextPageToken, ok = encodeMaintenanceOperationPageToken(tenantID, projectID, page.NextTargetID, *page.NextRequestedAt, page.NextOperationID)
+		} else {
+			nextPageToken, ok = encodeDeploymentTargetActivityPageToken("operation", tenantID, projectID, targetID, *page.NextRequestedAt, page.NextOperationID)
+		}
+		if !ok {
 			writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
 			return
 		}
@@ -922,6 +944,9 @@ func deploymentTargetPathWithPrefix(path, prefix string, admin bool) (tenantID, 
 		return "", "", "", "", false
 	}
 	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
+	if admin && len(parts) == 4 && parts[1] == "projects" && parts[3] == "maintenance-operations" && parts[0] != "" && parts[2] != "" {
+		return parts[0], parts[2], "", "maintenance-operations", true
+	}
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "deployment-targets" && parts[0] != "" && parts[2] != "" {
 		return parts[0], parts[2], "", "collection", true
 	}
@@ -964,6 +989,8 @@ func deploymentTargetAdminPermission(action, method string) (string, bool) {
 	case action == "cleanup-preview" && method == http.MethodGet:
 		return "targets.get", true
 	case action == "operations" && method == http.MethodGet:
+		return "operations.list", true
+	case action == "maintenance-operations" && method == http.MethodGet:
 		return "operations.list", true
 	case action == "audit-events" && method == http.MethodGet:
 		return "audit.list", true
@@ -1035,6 +1062,33 @@ func decodeDeploymentTargetActivityPageToken(kind, tenantID, projectID, targetID
 		return nil, "", false
 	}
 	return &timestamp, parts[6], true
+}
+
+func encodeMaintenanceOperationPageToken(tenantID, projectID, targetID string, timestamp time.Time, operationID string) (string, bool) {
+	if timestamp.IsZero() || commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(targetID, "/targetId") != nil || commonv1alpha1.ValidateIdentifier(operationID, "/operationId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("maintenance-operation/v1\x00" + tenantID + "\x00" + projectID + "\x00" + targetID + "\x00" + timestamp.UTC().Format(time.RFC3339Nano) + "\x00" + operationID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeMaintenanceOperationPageToken(tenantID, projectID, token string) (*time.Time, string, string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return nil, "", "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return nil, "", "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 6 || parts[0] != "maintenance-operation/v1" || parts[1] != tenantID || parts[2] != projectID || commonv1alpha1.ValidateIdentifier(parts[3], "/targetId") != nil || commonv1alpha1.ValidateIdentifier(parts[5], "/operationId") != nil {
+		return nil, "", "", false
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, parts[4])
+	if err != nil {
+		return nil, "", "", false
+	}
+	return &timestamp, parts[3], parts[5], true
 }
 
 func dockerTargetProbeErrorCode(err error) string {

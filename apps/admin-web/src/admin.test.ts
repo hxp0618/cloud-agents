@@ -4,6 +4,7 @@ import {
   cleanupRequestFromPreview,
   listAdminLeases,
   listAdminProfiles,
+  listAdminMaintenanceOperations,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
   listAdminTargets,
@@ -148,6 +149,37 @@ describe("Admin Web boundary", () => {
       listAdminTargetAuditEvents(client, "tenant-alpha", "project-alpha", "docker-alpha", signal),
     ]);
     expect(calls).toEqual(["operations:docker-alpha", "audit:docker-alpha"]);
+  });
+
+  it("reads project maintenance operations through the generated Admin API", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminMaintenanceOperations: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        tokens.push(pageToken);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "MaintenanceOperationPage" as const,
+            operations: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    await listAdminMaintenanceOperations(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      new AbortController().signal,
+    );
+    expect(tokens).toEqual([undefined, "next-page"]);
   });
 
   it("persists context but never bearer or target credentials", () => {

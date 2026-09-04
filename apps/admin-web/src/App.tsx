@@ -15,6 +15,7 @@ import {
   adminErrorKey,
   cleanupRequestFromPreview,
   listAdminLeases,
+  listAdminMaintenanceOperations,
   listAdminProfileAuditEvents,
   listAdminProfiles,
   listAdminTargetAuditEvents,
@@ -39,7 +40,7 @@ import {
 } from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page = "overview" | "targets" | "profiles" | "leases";
+type Page = "overview" | "targets" | "profiles" | "leases" | "maintenance";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -343,6 +344,10 @@ export function App() {
   const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
   const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
   const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
+  const [maintenanceOperations, setMaintenanceOperations] = useState<
+    readonly MaintenanceOperation[]
+  >(Object.freeze([]));
+  const [selectedMaintenanceOperationId, setSelectedMaintenanceOperationId] = useState("");
   const [page, setPage] = useState<Page>("overview");
   const [query, setQuery] = useState("");
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
@@ -350,6 +355,7 @@ export function App() {
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
+  const [maintenanceDetailOpen, setMaintenanceDetailOpen] = useState(false);
   const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
@@ -394,6 +400,9 @@ export function App() {
   const selectedProfile = profiles.find(
     ({ metadata }) => metadata.uid === selectedProfileVersionId,
   );
+  const selectedMaintenanceOperation = maintenanceOperations.find(
+    ({ operationId }) => operationId === selectedMaintenanceOperationId,
+  );
   const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
   const unavailableCount = targets.filter(
     ({ spec }) => spec.observedPhase === "unavailable",
@@ -435,6 +444,20 @@ export function App() {
             String(spec.version),
             spec.status,
             ...spec.providerKinds,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleMaintenanceOperations =
+    normalizedQuery === ""
+      ? maintenanceOperations
+      : maintenanceOperations.filter((operation) =>
+          [
+            operation.operationId,
+            operation.action,
+            operation.resourceKind,
+            operation.resourceId,
+            operation.state,
+            operation.currentStep,
+            operation.requestId,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
         );
 
@@ -525,6 +548,7 @@ export function App() {
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setProfileDetailOpen(false);
+    setMaintenanceDetailOpen(false);
     setProfileTransition(null);
   }
 
@@ -543,10 +567,13 @@ export function App() {
     setProfiles(Object.freeze([]));
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
+    setMaintenanceOperations(Object.freeze([]));
+    setSelectedMaintenanceOperationId("");
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setProfileDetailOpen(false);
+    setMaintenanceDetailOpen(false);
     setProfileTransition(null);
     setCreatingProfile(false);
     setMobileNavOpen(false);
@@ -577,11 +604,18 @@ export function App() {
     try {
       const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-      const [loadedTargets, loadedLeases, loadedProfiles] = await Promise.all([
-        loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
-        loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
-        loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
-      ]);
+      const [loadedTargets, loadedLeases, loadedProfiles, loadedMaintenanceOperations] =
+        await Promise.all([
+          loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
+          loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
+          loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
+          listAdminMaintenanceOperations(
+            nextClient,
+            nextConnection.tenantId,
+            nextConnection.projectId,
+            signal,
+          ),
+        ]);
       setClient(nextClient);
       setConnection(nextConnection);
       setTargets(loadedTargets.targets);
@@ -593,6 +627,8 @@ export function App() {
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
+      setMaintenanceOperations(loadedMaintenanceOperations);
+      setSelectedMaintenanceOperationId(loadedMaintenanceOperations[0]?.operationId ?? "");
       writeSavedAdminConnection(window.sessionStorage, nextConnection);
       setToken("");
       setStatus("connected");
@@ -638,20 +674,44 @@ export function App() {
     }
   }
 
+  async function reloadMaintenanceOperations(signal: AbortSignal) {
+    if (client === null) return;
+    const loaded = await listAdminMaintenanceOperations(
+      client,
+      connection.tenantId,
+      connection.projectId,
+      signal,
+    );
+    setMaintenanceOperations(loaded);
+    setSelectedMaintenanceOperationId((current) =>
+      loaded.some(({ operationId }) => operationId === current)
+        ? current
+        : (loaded[0]?.operationId ?? ""),
+    );
+  }
+
   function refresh() {
     if (client === null) return;
     void runOperation("refresh", { key: "operation.refresh" }, async (signal) => {
-      const [loadedTargets, loadedLeases, loadedProfiles] = await Promise.all([
-        loadTargetAuthority(client, connection, selectedTargetId, signal),
-        loadLeaseAuthority(client, connection, selectedLeaseId, signal),
-        loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
-      ]);
+      const [loadedTargets, loadedLeases, loadedProfiles, loadedMaintenanceOperations] =
+        await Promise.all([
+          loadTargetAuthority(client, connection, selectedTargetId, signal),
+          loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+          loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
+          listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
+        ]);
       setTargets(loadedTargets.targets);
       setSelectedTargetId(loadedTargets.selectedTargetId);
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
+      setMaintenanceOperations(loadedMaintenanceOperations);
+      setSelectedMaintenanceOperationId((current) =>
+        loadedMaintenanceOperations.some(({ operationId }) => operationId === current)
+          ? current
+          : (loadedMaintenanceOperations[0]?.operationId ?? ""),
+      );
       if (targetDetailOpen && loadedTargets.selectedTargetId !== "") {
         const activity = await loadTargetActivity(
           client,
@@ -742,6 +802,11 @@ export function App() {
         setProfileAudit(audit);
       },
     );
+  }
+
+  function selectMaintenanceOperation(operationId: string) {
+    setSelectedMaintenanceOperationId(operationId);
+    setMaintenanceDetailOpen(true);
   }
 
   function createProfile(event: FormEvent<HTMLFormElement>) {
@@ -873,6 +938,7 @@ export function App() {
           credentialRef: "",
         });
         setRegistering(false);
+        await reloadMaintenanceOperations(signal);
       },
     );
   }
@@ -904,6 +970,7 @@ export function App() {
         setTargetOperations(activity.operations);
         setTargetAudit(activity.audit);
         setCleanupPreview(null);
+        await reloadMaintenanceOperations(signal);
       },
     );
   }
@@ -957,6 +1024,7 @@ export function App() {
         setTargetOperations(activity.operations);
         setTargetAudit(activity.audit);
         setCleanupPreview(null);
+        await reloadMaintenanceOperations(signal);
       },
     );
   }
@@ -1128,6 +1196,15 @@ export function App() {
             <span aria-hidden="true">▣</span> <span className="nav-label">{t("nav.profiles")}</span>
             <b>{number(profiles.length)}</b>
           </button>
+          <button
+            className={page === "maintenance" ? "active" : ""}
+            onClick={() => navigate("maintenance")}
+            title={t("nav.maintenance")}
+          >
+            <span aria-hidden="true">↻</span>{" "}
+            <span className="nav-label">{t("nav.maintenance")}</span>
+            <b>{number(maintenanceOperations.length)}</b>
+          </button>
         </nav>
         <div className="sidebar-boundary">
           <small>{t("boundary.title")}</small>
@@ -1200,7 +1277,9 @@ export function App() {
                     ? t("page.targets.title")
                     : page === "profiles"
                       ? t("page.profiles.title")
-                      : t("page.leases.title")}
+                      : page === "leases"
+                        ? t("page.leases.title")
+                        : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
@@ -1209,7 +1288,9 @@ export function App() {
                     ? t("page.targets.description")
                     : page === "profiles"
                       ? t("page.profiles.description")
-                      : t("page.leases.description")}
+                      : page === "leases"
+                        ? t("page.leases.description")
+                        : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -1230,7 +1311,7 @@ export function App() {
                 >
                   {t("action.createProfile")}
                 </button>
-              ) : page !== "leases" ? (
+              ) : page === "overview" || page === "targets" ? (
                 <button
                   className="button primary"
                   type="button"
@@ -1374,7 +1455,7 @@ export function App() {
                 />
               </div>
             </section>
-          ) : (
+          ) : page === "leases" ? (
             <section className="resource-list">
               <div className="list-toolbar">
                 <input
@@ -1391,6 +1472,28 @@ export function App() {
                   leases={visibleLeases}
                   selectedLeaseId={selectedLeaseId}
                   onSelect={selectLease}
+                />
+              </div>
+            </section>
+          ) : (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label={t("search.maintenance.label")}
+                  placeholder={t("search.maintenance.placeholder")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">
+                  operations.list · {number(visibleMaintenanceOperations.length)}
+                </span>
+              </div>
+              <div className="panel target-list-panel">
+                <MaintenanceOperationTable
+                  operations={visibleMaintenanceOperations}
+                  selectedOperationId={selectedMaintenanceOperationId}
+                  onSelect={selectMaintenanceOperation}
                 />
               </div>
             </section>
@@ -1489,6 +1592,25 @@ export function App() {
               disabled={busy !== null}
               onTransition={setProfileTransition}
             />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
+      {maintenanceDetailOpen && selectedMaintenanceOperation !== undefined ? (
+        <AdminSheet
+          label={t("sheet.maintenance", { id: selectedMaintenanceOperation.operationId })}
+          onClose={() => setMaintenanceDetailOpen(false)}
+        >
+          <aside className="detail-panel" aria-label={t("sheet.selectedMaintenance")}>
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label={t("action.close")}
+              onClick={() => setMaintenanceDetailOpen(false)}
+            >
+              ×
+            </button>
+            <MaintenanceOperationDetail operation={selectedMaintenanceOperation} />
           </aside>
         </AdminSheet>
       ) : null}
@@ -2042,6 +2164,153 @@ function ProfileTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function MaintenanceOperationTable({
+  operations,
+  selectedOperationId,
+  onSelect,
+}: Readonly<{
+  operations: readonly MaintenanceOperation[];
+  selectedOperationId: string;
+  onSelect: (operationId: string) => void;
+}>) {
+  const { t, dateTime } = useI18n();
+  if (operations.length === 0)
+    return <div className="table-empty">{t("table.empty.maintenance")}</div>;
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("table.operation")}</th>
+            <th>{t("table.resource")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.currentStep")}</th>
+            <th>{t("table.updated")}</th>
+            <th aria-label={t("table.actions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {operations.map((operation) => (
+            <tr
+              key={operation.operationId}
+              className={operation.operationId === selectedOperationId ? "selected" : ""}
+              onClick={() => onSelect(operation.operationId)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(operation.operationId)}>
+                  <strong>{auditLabel(operation.action, t)}</strong>
+                  <small>{operation.operationId}</small>
+                </button>
+              </td>
+              <td>
+                <strong>{operation.resourceId}</strong>
+                <small className="table-subline">{t("maintenance.deploymentTarget")}</small>
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(operation.state)}`}>
+                  <i /> {phaseLabel(operation.state, t)}
+                </span>
+              </td>
+              <td className="mono">{operation.currentStep}</td>
+              <td>{dateTime(operation.updatedAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={t("table.view", { name: operation.operationId })}
+                  onClick={() => onSelect(operation.operationId)}
+                >
+                  ···
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MaintenanceOperationDetail({ operation }: Readonly<{ operation: MaintenanceOperation }>) {
+  const { t, number, dateTime } = useI18n();
+  return (
+    <>
+      <div className="detail-heading">
+        <div className="target-glyph" aria-hidden="true">
+          ↻
+        </div>
+        <div>
+          <div className="eyebrow">{auditLabel(operation.action, t)}</div>
+          <h2>{operation.resourceId}</h2>
+          <span className={`phase ${phaseTone(operation.state)}`}>
+            <i /> {phaseLabel(operation.state, t)}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>{t("maintenance.operationId")}</dt>
+          <dd className="mono break">{operation.operationId}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.resource")}</dt>
+          <dd className="mono">
+            {operation.resourceKind} · {operation.resourceId}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">g{number(operation.resourceGeneration)}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.currentStep")}</dt>
+          <dd className="mono">{operation.currentStep}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.requestId")}</dt>
+          <dd className="mono break">{operation.requestId}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.idempotencyKey")}</dt>
+          <dd className="mono break">{operation.idempotencyKey}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.requestedBy")}</dt>
+          <dd className="mono break">{operation.requestedBy}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.requestedAt")}</dt>
+          <dd>{dateTime(operation.requestedAt)}</dd>
+        </div>
+        <div>
+          <dt>{t("table.updated")}</dt>
+          <dd>{dateTime(operation.updatedAt)}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.retryable")}</dt>
+          <dd>{t(operation.retryable ? "common.yes" : "common.no")}</dd>
+        </div>
+        {operation.stableErrorCode ? (
+          <div>
+            <dt>{t("detail.stableError")}</dt>
+            <dd className="danger-text">{operation.stableErrorCode}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <section className="activity-block" aria-labelledby="maintenance-impact-title">
+        <div className="activity-heading">
+          <h3 id="maintenance-impact-title">{t("maintenance.impact")}</h3>
+        </div>
+        <p>{operationImpactLabel(operation.action, t)}</p>
+        <details className="operation-diagnostic">
+          <summary>{t("common.diagnostics")}</summary>
+          <p>{operation.impactSummary}</p>
+        </details>
+      </section>
+    </>
   );
 }
 

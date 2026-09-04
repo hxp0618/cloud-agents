@@ -625,6 +625,13 @@ describe("generated platform JSON models", () => {
       1,
       "operation-page-token-1",
     );
+    await client.listAdminMaintenanceOperations(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "maintenance-page-token-1",
+    );
     await client.listAdminDeploymentTargetAuditEvents(
       "tenant-alpha",
       "project-alpha",
@@ -635,6 +642,7 @@ describe("generated platform JSON models", () => {
     );
     expect(seen.map(({ path }) => path)).toEqual([
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations?pageSize=1&pageToken=operation-page-token-1",
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations?pageSize=1&pageToken=maintenance-page-token-1",
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events?pageSize=1&pageToken=audit-page-token-1",
     ]);
   });

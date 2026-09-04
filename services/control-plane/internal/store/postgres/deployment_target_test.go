@@ -44,12 +44,12 @@ func TestDeploymentTargetListSQLBindsTenantProjectAndCursor(t *testing.T) {
 func TestDecodeDeploymentTargetActivityRowsBindsTargetAndCursor(t *testing.T) {
 	now := time.Date(2026, time.September, 3, 9, 0, 0, 0, time.UTC)
 	digest := "sha256:" + strings.Repeat("a", 64)
-	operationRow := func(id string) deploymentTargetOperationPageRow {
-		return deploymentTargetOperationPageRow{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "target-alpha", OperationID: id,
+	operationRow := func(id, targetID string) deploymentTargetOperationPageRow {
+		return deploymentTargetOperationPageRow{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: targetID, OperationID: id,
 			IdempotencyKey: id + "-key-123456789", Action: "target.probe", RequestID: "request-alpha", RequestedBy: digest,
 			TargetGeneration: 1, State: "succeeded", CurrentStep: "probe-complete", ImpactSummary: "Probed deployment target target-alpha", RequestedAt: now, UpdatedAt: now}
 	}
-	raw, err := json.Marshal([]deploymentTargetOperationPageRow{operationRow("operation-a"), operationRow("operation-b")})
+	raw, err := json.Marshal([]deploymentTargetOperationPageRow{operationRow("operation-a", "target-alpha"), operationRow("operation-b", "target-alpha")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +59,17 @@ func TestDecodeDeploymentTargetActivityRowsBindsTargetAndCursor(t *testing.T) {
 	}
 	if _, err := decodeDeploymentTargetOperationRows(raw, "tenant-alpha", "project-alpha", "target-other", 1); !errors.Is(err, ErrCoordinationResultDrift) {
 		t.Fatalf("cross-target operation page error = %v", err)
+	}
+	projectRaw, err := json.Marshal([]deploymentTargetOperationPageRow{operationRow("operation-a", "target-alpha"), operationRow("operation-b", "target-beta")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectOperations, err := decodeDeploymentTargetOperationRows(projectRaw, "tenant-alpha", "project-alpha", "", 1)
+	if err != nil || len(projectOperations.Operations) != 1 || projectOperations.NextTargetID != "target-alpha" || projectOperations.NextOperationID != "operation-a" {
+		t.Fatalf("project operation page = %#v / %v", projectOperations, err)
+	}
+	if !strings.Contains(listMaintenanceOperationsSQL, "DISTINCT ON (target_uid, operation_uid)") || !strings.Contains(listMaintenanceOperationsSQL, "(requested_at, target_uid, operation_uid) < ($2, $3, $4)") || !strings.Contains(maintenanceOperationCursorIdentitySQL, "target_uid = $2") {
+		t.Fatal("maintenance operation list does not bind latest state and project cursor identity")
 	}
 	auditRaw, err := json.Marshal([]deploymentTargetAuditPageRow{{TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "target-alpha", EventID: "event-a", OperationID: "operation-a", Actor: digest, Action: "target.probe", TargetGeneration: 1, State: "succeeded", RequestID: "request-alpha", OccurredAt: now}})
 	if err != nil {

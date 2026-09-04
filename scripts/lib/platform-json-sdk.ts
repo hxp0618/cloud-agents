@@ -241,6 +241,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminListEnvironmentLeases",
     "adminListEnvironmentProfileAuditEvents",
     "adminListEnvironmentProfiles",
+    "adminListMaintenanceOperations",
     "adminPreviewDeploymentTargetCleanup",
     "adminProbeDeploymentTarget",
     "adminPublishEnvironmentProfile",

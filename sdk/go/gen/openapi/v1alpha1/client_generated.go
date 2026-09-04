@@ -1067,6 +1067,42 @@ func (client *Client) ListAdminDeploymentTargets(ctx context.Context, tenantID, 
 	}
 	return value, nil
 }
+func (client *Client) ListAdminMaintenanceOperations(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (MaintenanceOperationPageResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, "", requestID); err != nil {
+		return MaintenanceOperationPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return MaintenanceOperationPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return MaintenanceOperationPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/maintenance-operations"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return MaintenanceOperationPageResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationPageResult{}, client.problemError("adminListMaintenanceOperations", response)
+	}
+	value, err := platform.DecodeMaintenanceOperationPageResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationPageResult{}, &ClientError{Operation: "adminListMaintenanceOperations", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
 func (client *Client) ListAdminDeploymentTargetOperations(ctx context.Context, tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (MaintenanceOperationPageResult, error) {
 	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
 		return MaintenanceOperationPageResult{}, err
@@ -3432,6 +3468,9 @@ type ListDeploymentTargetActivityServerInput struct {
 	PageToken string
 }
 
+func ValidateListMaintenanceOperationsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListDeploymentTargetActivityServerInput, error) {
+	return validateListDeploymentTargetActivityServerRequest(tenantID, projectID, "", requestID, pageSize, pageToken)
+}
 func ValidateListDeploymentTargetOperationsServerRequest(tenantID, projectID, targetID, requestID string, pageSize int, pageToken string) (ListDeploymentTargetActivityServerInput, error) {
 	return validateListDeploymentTargetActivityServerRequest(tenantID, projectID, targetID, requestID, pageSize, pageToken)
 }

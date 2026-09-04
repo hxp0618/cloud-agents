@@ -22,6 +22,7 @@ type DeploymentTargetPage struct {
 type DeploymentTargetOperationPage struct {
 	Operations      []internaldeploymenttarget.Operation
 	NextRequestedAt *time.Time
+	NextTargetID    string
 	NextOperationID string
 }
 
@@ -142,6 +143,27 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND targ
 )
 SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(operation_row)
     ORDER BY operation_row.requested_at DESC, operation_row.operation_uid DESC), '[]'::jsonb)
+FROM operation_page AS operation_row`
+	maintenanceOperationCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.deployment_target_activity
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
+    AND operation_uid = $3 AND requested_at = $4`
+	listMaintenanceOperationsSQL = `WITH latest AS (
+    SELECT DISTINCT ON (target_uid, operation_uid)
+        tenant_id, project_uid, target_uid, operation_uid, idempotency_key, action, request_id,
+        subject_digest, target_generation, state, current_step, stable_error_code, impact_summary,
+        retryable, requested_at, occurred_at AS updated_at
+    FROM cloud_agents.deployment_target_activity
+    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
+    ORDER BY target_uid, operation_uid, occurred_at DESC, event_uid DESC
+), operation_page AS (
+    SELECT * FROM latest
+    WHERE $2::timestamptz IS NULL OR (requested_at, target_uid, operation_uid) < ($2, $3, $4)
+    ORDER BY requested_at DESC, target_uid DESC, operation_uid DESC
+    LIMIT $5
+)
+SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(operation_row)
+    ORDER BY operation_row.requested_at DESC, operation_row.target_uid DESC, operation_row.operation_uid DESC), '[]'::jsonb)
 FROM operation_page AS operation_row`
 	deploymentTargetAuditCursorIdentitySQL = `SELECT 1
 FROM cloud_agents.deployment_target_activity
@@ -355,6 +377,55 @@ func (service *DurableCoordinationService) ListDeploymentTargetOperations(
 	return result, mapDeploymentTargetError(err)
 }
 
+func (service *DurableCoordinationService) ListMaintenanceOperations(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID string,
+	afterRequestedAt *time.Time, afterTargetID, afterOperationID string, limit int,
+) (DeploymentTargetOperationPage, error) {
+	if service == nil || service.runner == nil {
+		return DeploymentTargetOperationPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		(afterRequestedAt == nil) != (afterTargetID == "") || (afterTargetID == "") != (afterOperationID == "") ||
+		afterTargetID != "" && (!validMutationIdentifier(afterTargetID) || !validMutationIdentifier(afterOperationID)) || limit < 1 || limit > 200 {
+		return DeploymentTargetOperationPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result DeploymentTargetOperationPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterRequestedAt != nil {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, maintenanceOperationCursorIdentitySQL,
+						projectID, afterTargetID, afterOperationID, *afterRequestedAt).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return err
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listMaintenanceOperationsSQL,
+					projectID, afterRequestedAt, afterTargetID, afterOperationID, limit+1).Scan(&raw); err != nil {
+					return err
+				}
+				var decodeErr error
+				result, decodeErr = decodeDeploymentTargetOperationRows(raw, tenantID, projectID, "", limit)
+				return decodeErr
+			})
+		})
+	})
+	return result, mapDeploymentTargetError(err)
+}
+
 func decodeDeploymentTargetOperationRows(raw []byte, tenantID, projectID, targetID string, limit int) (DeploymentTargetOperationPage, error) {
 	var rows []deploymentTargetOperationPageRow
 	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
@@ -370,7 +441,7 @@ func decodeDeploymentTargetOperationRows(raw []byte, tenantID, projectID, target
 			StableErrorCode: row.StableErrorCode, ImpactSummary: row.ImpactSummary, Retryable: row.Retryable,
 			RequestedAt: row.RequestedAt, UpdatedAt: row.UpdatedAt,
 		}
-		if row.TenantID != tenantID || row.ProjectID != projectID || row.TargetID != targetID || operation.Validate() != nil {
+		if row.TenantID != tenantID || row.ProjectID != projectID || targetID != "" && row.TargetID != targetID || operation.Validate() != nil {
 			return DeploymentTargetOperationPage{}, ErrCoordinationResultDrift
 		}
 		operations = append(operations, operation)
@@ -380,7 +451,7 @@ func decodeDeploymentTargetOperationRows(raw []byte, tenantID, projectID, target
 		result.Operations = operations[:limit]
 		last := result.Operations[len(result.Operations)-1]
 		requestedAt := last.RequestedAt
-		result.NextRequestedAt, result.NextOperationID = &requestedAt, last.OperationID
+		result.NextRequestedAt, result.NextTargetID, result.NextOperationID = &requestedAt, last.TargetID, last.OperationID
 	}
 	return result, nil
 }
