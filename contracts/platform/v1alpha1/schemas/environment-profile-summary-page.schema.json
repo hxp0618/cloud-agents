@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-profile-summary-page.schema.json",
+  "title": "EnvironmentProfileSummaryPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "environmentProfiles"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "EnvironmentProfileSummaryPage" },
+    "environmentProfiles": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "environment-profile-summary.schema.json" }
+    },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

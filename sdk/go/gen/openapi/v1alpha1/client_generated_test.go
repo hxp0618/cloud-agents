@@ -249,6 +249,25 @@ func TestGeneratedOpenAPIClientUsesAdminEnvironmentLeaseRoutes(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientListsPublishedEnvironmentProfiles(t *testing.T) {
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummaryPage","environmentProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296}]}`)
+	var seen Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		return Response{Status: 200, Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.ListEnvironmentProfiles(context.Background(), "tenant-alpha", "project-alpha", "request-alpha", 1, "profile-page-token-1")
+	if err != nil || len(page.Value.EnvironmentProfiles) != 1 || page.Value.EnvironmentProfiles[0].Availability != "available" {
+		t.Fatalf("page=%#v error=%v", page, err)
+	}
+	if seen.Method != "GET" || seen.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1&pageToken=profile-page-token-1" {
+		t.Fatalf("request=%#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
 	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}],"nextPageToken":"session-page-token-1"}`)

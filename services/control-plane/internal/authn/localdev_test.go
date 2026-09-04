@@ -83,6 +83,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 	for _, test := range []struct {
 		permission, level, resourceID string
 	}{
+		{"environment-profiles.list", "project", "project-1"},
 		{"memberships.create", "tenant", "tenant-1"},
 		{"memberships.delete", "tenant", "tenant-1"},
 		{"memberships.get", "tenant", "tenant-1"},

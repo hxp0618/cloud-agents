@@ -12,6 +12,8 @@ import {
   decodeEnvironmentLeasePage,
   decodeEnvironmentProfile,
   decodeEnvironmentProfilePage,
+  decodeEnvironmentProfileSummary,
+  decodeEnvironmentProfileSummaryPage,
   decodeIdempotency,
   decodeMembership,
   decodeMembershipPage,
@@ -39,6 +41,7 @@ import {
   parseEnvironmentLeasePage,
   parseEnvironmentProfile,
   parseEnvironmentProfilePage,
+  parseEnvironmentProfileSummaryPage,
   parseAdminAuditEventPage,
   parseMaintenanceOperationPage,
   parseProject,
@@ -371,6 +374,49 @@ describe("generated platform JSON models", () => {
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-profiles/development/versions/1/audit-events?pageSize=1",
     ]);
+  });
+  it("lists only strict User API environment profile summaries", async () => {
+    const summary = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "EnvironmentProfileSummary",
+      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      profileId: "development",
+      name: "development",
+      version: 1,
+      description: "Daily coding workspace",
+      status: "published",
+      availability: "available",
+      providerKinds: ["codex", "claudeAgent"],
+      cpuLimitMillis: 2000,
+      memoryLimitBytes: 4294967296,
+    };
+    const page = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "EnvironmentProfileSummaryPage",
+      environmentProfiles: [summary],
+    });
+    expect(decodeEnvironmentProfileSummary(summary).status).toBe("published");
+    expect(decodeEnvironmentProfileSummaryPage(JSON.parse(page)).environmentProfiles).toHaveLength(
+      1,
+    );
+    expect(parseEnvironmentProfileSummaryPage(page).value.environmentProfiles).toHaveLength(1);
+    expect(() =>
+      decodeEnvironmentProfileSummary({ ...summary, targetRefs: ["docker-primary"] }),
+    ).toThrow();
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: {}, body: page };
+    });
+    await client.listEnvironmentProfiles(
+      "tenant-alpha",
+      "project-alpha",
+      "request-profile-summary-list",
+      1,
+    );
+    expect(seen[0]?.path).toBe(
+      "/v1/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1",
+    );
   });
   it("lists deployment targets with project-bound pagination", async () => {
     const page = JSON.stringify({

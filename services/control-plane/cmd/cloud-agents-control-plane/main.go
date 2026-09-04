@@ -459,6 +459,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local admin environment profile HTTP server is unavailable")
 	}
+	publishedEnvironmentProfileHTTPServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local published environment profile HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesAdminEnvironmentProfilePath(request.URL.Path) {
@@ -486,6 +490,10 @@ func run(ctx context.Context, args []string) error {
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	if runtimeSupervisor == nil {
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
+				publishedEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesDeploymentTargetPath(request.URL.Path) {
 				deploymentTargetHTTPServer.ServeHTTP(writer, request)
 				return
@@ -522,6 +530,10 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local managed agent execution HTTP server is unavailable")
 		}
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
+				publishedEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesDeploymentTargetPath(request.URL.Path) {
 				deploymentTargetHTTPServer.ServeHTTP(writer, request)
 				return

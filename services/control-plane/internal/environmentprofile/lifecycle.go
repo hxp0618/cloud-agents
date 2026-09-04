@@ -80,6 +80,18 @@ type Snapshot struct {
 	DisabledAt            *time.Time
 }
 
+type Summary struct {
+	Scope             Scope
+	ProfileVersionUID string
+	ProfileID         string
+	ProfileName       string
+	Version           int64
+	Description       string
+	ProviderKinds     []string
+	CPULimitMillis    int64
+	MemoryLimitBytes  int64
+}
+
 type AuditEvent struct {
 	Scope                     Scope
 	EventID, OperationID      string
@@ -181,6 +193,18 @@ func (snapshot Snapshot) Validate() error {
 			return ErrInvalidInput
 		}
 	default:
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+func (summary Summary) Validate() error {
+	if invalidIdentifier(summary.Scope.TenantID) || invalidIdentifier(summary.Scope.ProjectID) ||
+		invalidIdentifier(summary.ProfileVersionUID) || invalidIdentifier(summary.ProfileID) ||
+		invalidIdentifier(summary.ProfileName) || summary.Version < 1 || summary.Version > 2147483647 ||
+		invalidDescription(summary.Description) || !validProviderKinds(summary.ProviderKinds) ||
+		summary.CPULimitMillis < 100 || summary.CPULimitMillis > 64000 ||
+		summary.MemoryLimitBytes < 134217728 || summary.MemoryLimitBytes > 1099511627776 {
 		return ErrInvalidInput
 	}
 	return nil

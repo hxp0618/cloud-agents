@@ -287,6 +287,32 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
+      "get": {
+        "operationId": "managedAgentListEnvironmentProfiles",
+        "x-cloud-agents-required-scope": "environment-profiles.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published and schedulable environment profile summaries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-summary-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "adminListEnvironmentProfiles",

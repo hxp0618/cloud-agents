@@ -265,6 +265,26 @@ type EnvironmentProfilePage struct {
 	EnvironmentProfiles []EnvironmentProfile `json:"environmentProfiles"`
 	NextPageToken       string               `json:"nextPageToken,omitempty"`
 }
+type EnvironmentProfileSummary struct {
+	APIVersion       string            `json:"apiVersion"`
+	Kind             string            `json:"kind"`
+	ProjectRef       common.ProjectRef `json:"projectRef"`
+	ProfileID        string            `json:"profileId"`
+	Name             string            `json:"name"`
+	Version          int64             `json:"version"`
+	Description      string            `json:"description"`
+	Status           string            `json:"status"`
+	Availability     string            `json:"availability"`
+	ProviderKinds    []string          `json:"providerKinds"`
+	CPULimitMillis   int64             `json:"cpuLimitMillis"`
+	MemoryLimitBytes int64             `json:"memoryLimitBytes"`
+}
+type EnvironmentProfileSummaryPage struct {
+	APIVersion          string                      `json:"apiVersion"`
+	Kind                string                      `json:"kind"`
+	EnvironmentProfiles []EnvironmentProfileSummary `json:"environmentProfiles"`
+	NextPageToken       string                      `json:"nextPageToken,omitempty"`
+}
 type DeploymentTargetRegisterRequest struct {
 	TargetID      string `json:"targetId"`
 	TargetName    string `json:"targetName"`
@@ -455,6 +475,8 @@ var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
 })
+var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape()})
+var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "environmentProfiles": common.ArrayResponseShape(environmentProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"deploymentTargets": common.ArrayResponseShape(resourceResponseShape("DeploymentTarget")), "nextPageToken": common.ScalarResponseShape(),
@@ -1375,7 +1397,7 @@ func EncodeEnvironmentLeasePageResponseJSON(value common.ResponseEnvelope[Enviro
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
-func validateEnvironmentProfileValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, storagePolicyRef, networkPolicyRef, releaseDigest string, targetRefs []string, providerCredentialRef, path string) error {
+func validateEnvironmentProfileSummaryValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, path string) error {
 	if err := common.ValidateIdentifier(profileID, path+"/profileId"); err != nil {
 		return err
 	}
@@ -1403,6 +1425,12 @@ func validateEnvironmentProfileValues(profileID string, version int64, descripti
 	}
 	if memoryLimitBytes < 134217728 || memoryLimitBytes > 1099511627776 {
 		return common.ContractError("INVALID_RESOURCE_LIMIT", path+"/memoryLimitBytes")
+	}
+	return nil
+}
+func validateEnvironmentProfileValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, storagePolicyRef, networkPolicyRef, releaseDigest string, targetRefs []string, providerCredentialRef, path string) error {
+	if err := validateEnvironmentProfileSummaryValues(profileID, version, description, providerKinds, cpuLimitMillis, memoryLimitBytes, path); err != nil {
+		return err
 	}
 	for field, value := range map[string]string{"storagePolicyRef": storagePolicyRef, "networkPolicyRef": networkPolicyRef, "providerCredentialRef": providerCredentialRef} {
 		if err := common.ValidateIdentifier(value, path+"/"+field); err != nil {
@@ -1584,6 +1612,83 @@ func DecodeEnvironmentProfilePageResponseJSON(data []byte) (common.ResponseEnvel
 	return common.ResponseEnvelope[EnvironmentProfilePage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeEnvironmentProfilePageResponseJSON(value common.ResponseEnvelope[EnvironmentProfilePage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeEnvironmentProfileSummaryJSON(data []byte) (EnvironmentProfileSummary, error) {
+	allowed := []string{"apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes"}
+	fields, err := common.DecodeStrictObject(data, allowed, allowed)
+	if err != nil {
+		return EnvironmentProfileSummary{}, err
+	}
+	var value EnvironmentProfileSummary
+	if err := json.Unmarshal(data, &value); err != nil {
+		return EnvironmentProfileSummary{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "EnvironmentProfileSummary" {
+		return EnvironmentProfileSummary{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	projectRef, err := common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return EnvironmentProfileSummary{}, err
+	}
+	value.ProjectRef = projectRef
+	if err := common.ValidateIdentifier(value.Name, "/name"); err != nil {
+		return EnvironmentProfileSummary{}, err
+	}
+	if value.Status != "published" || value.Availability != "available" {
+		return EnvironmentProfileSummary{}, common.ContractError("INVALID_PROFILE_AVAILABILITY", "/status")
+	}
+	if err := validateEnvironmentProfileSummaryValues(value.ProfileID, value.Version, value.Description, value.ProviderKinds, value.CPULimitMillis, value.MemoryLimitBytes, ""); err != nil {
+		return EnvironmentProfileSummary{}, err
+	}
+	return value, nil
+}
+func DecodeEnvironmentProfileSummaryPageJSON(data []byte) (EnvironmentProfileSummaryPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "environmentProfiles", "nextPageToken"}, []string{"apiVersion", "kind", "environmentProfiles"})
+	if err != nil {
+		return EnvironmentProfileSummaryPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return EnvironmentProfileSummaryPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "EnvironmentProfileSummaryPage" {
+		return EnvironmentProfileSummaryPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawProfiles []json.RawMessage
+	if err := json.Unmarshal(fields["environmentProfiles"], &rawProfiles); err != nil || rawProfiles == nil || len(rawProfiles) > 200 {
+		return EnvironmentProfileSummaryPage{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE_SUMMARY_PAGE", "/environmentProfiles")
+	}
+	profiles := make([]EnvironmentProfileSummary, 0, len(rawProfiles))
+	for index, raw := range rawProfiles {
+		profile, err := DecodeEnvironmentProfileSummaryJSON(raw)
+		if err != nil {
+			return EnvironmentProfileSummaryPage{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE_SUMMARY", "/environmentProfiles/"+itoa(index))
+		}
+		profiles = append(profiles, profile)
+	}
+	page := EnvironmentProfileSummaryPage{APIVersion: apiVersion, Kind: kind, EnvironmentProfiles: profiles}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return EnvironmentProfileSummaryPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeEnvironmentProfileSummaryPageResponseJSON(data []byte) (common.ResponseEnvelope[EnvironmentProfileSummaryPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, environmentProfileSummaryPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentProfileSummaryPage]{}, err
+	}
+	value, err := DecodeEnvironmentProfileSummaryPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentProfileSummaryPage]{}, err
+	}
+	return common.ResponseEnvelope[EnvironmentProfileSummaryPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeEnvironmentProfileSummaryPageResponseJSON(value common.ResponseEnvelope[EnvironmentProfileSummaryPage]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

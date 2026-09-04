@@ -263,6 +263,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("admin environment profile HTTP server is unavailable")
 	}
+	publishedEnvironmentProfileServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("published environment profile HTTP server is unavailable")
+	}
 	tenantServer, err := server.NewPlatformTenantHTTPServer(verifier, coordinationService)
 	if err != nil {
 		return errors.New("tenant HTTP server is unavailable")
@@ -324,6 +328,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
+			publishedEnvironmentProfileServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesDeploymentTargetPath(request.URL.Path) {
 			deploymentTargetServer.ServeHTTP(writer, request)
 			return

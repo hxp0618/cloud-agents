@@ -20,6 +20,11 @@ type EnvironmentProfilePage struct {
 	NextProfileVersionID string
 }
 
+type PublishedEnvironmentProfilePage struct {
+	EnvironmentProfiles  []internalenvironmentprofile.Summary
+	NextProfileVersionID string
+}
+
 type EnvironmentProfileAuditPage struct {
 	Events         []internalenvironmentprofile.AuditEvent
 	NextOccurredAt *time.Time
@@ -48,6 +53,19 @@ type environmentProfilePageRow struct {
 	UpdatedAt             time.Time  `json:"updated_at"`
 	PublishedAt           *time.Time `json:"published_at"`
 	DisabledAt            *time.Time `json:"disabled_at"`
+}
+
+type publishedEnvironmentProfilePageRow struct {
+	TenantID          string   `json:"tenant_id"`
+	ProjectID         string   `json:"project_uid"`
+	ProfileVersionUID string   `json:"profile_version_uid"`
+	ProfileID         string   `json:"profile_uid"`
+	ProfileName       string   `json:"profile_name"`
+	Version           int64    `json:"profile_version"`
+	Description       string   `json:"description"`
+	ProviderKinds     []string `json:"provider_kinds"`
+	CPULimitMillis    int64    `json:"cpu_limit_millis"`
+	MemoryLimitBytes  int64    `json:"memory_limit_bytes"`
 }
 
 type environmentProfileAuditPageRow struct {
@@ -89,6 +107,32 @@ FROM (
     WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
         AND profile_version_uid > $2
     ORDER BY profile_version_uid
+    LIMIT $3
+) AS profile_row`
+	publishedEnvironmentProfilePageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.environment_profiles AS profile
+WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_uid = $1
+    AND profile.profile_version_uid = $2 AND profile.status = 'published'
+    AND EXISTS (
+        SELECT 1 FROM cloud_agents.deployment_targets AS target
+        WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
+            AND target.target_uid = ANY(profile.target_refs) AND target.observed_phase = 'ready'
+    )`
+	listPublishedEnvironmentProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
+    ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
+FROM (
+    SELECT profile.tenant_id, profile.project_uid, profile.profile_version_uid,
+        profile.profile_uid, profile.profile_name, profile.profile_version, profile.description,
+        profile.provider_kinds, profile.cpu_limit_millis, profile.memory_limit_bytes
+    FROM cloud_agents.environment_profiles AS profile
+    WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_uid = $1
+        AND profile.profile_version_uid > $2 AND profile.status = 'published'
+        AND EXISTS (
+            SELECT 1 FROM cloud_agents.deployment_targets AS target
+            WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
+                AND target.target_uid = ANY(profile.target_refs) AND target.observed_phase = 'ready'
+        )
+    ORDER BY profile.profile_version_uid
     LIMIT $3
 ) AS profile_row`
 	environmentProfileAuditCursorIdentitySQL = `SELECT 1
@@ -273,6 +317,53 @@ func (service *DurableCoordinationService) ListEnvironmentProfiles(
 	return result, mapEnvironmentProfileError(err)
 }
 
+func (service *DurableCoordinationService) ListPublishedEnvironmentProfiles(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, afterProfileVersionID string, limit int,
+) (PublishedEnvironmentProfilePage, error) {
+	if service == nil || service.runner == nil {
+		return PublishedEnvironmentProfilePage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		afterProfileVersionID != "" && !validMutationIdentifier(afterProfileVersionID) || limit < 1 || limit > 200 {
+		return PublishedEnvironmentProfilePage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result PublishedEnvironmentProfilePage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterProfileVersionID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, publishedEnvironmentProfilePageCursorIdentitySQL,
+						projectID, afterProfileVersionID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapCoordinationDatabaseError("published environment profile page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listPublishedEnvironmentProfilesSQL,
+					projectID, afterProfileVersionID, limit+1).Scan(&raw); err != nil {
+					return mapCoordinationDatabaseError("published environment profiles", err)
+				}
+				var decodeErr error
+				result, decodeErr = decodePublishedEnvironmentProfilePageRows(raw, tenantID, projectID, limit)
+				return decodeErr
+			})
+		})
+	})
+	return result, mapEnvironmentProfileError(err)
+}
+
 func (service *DurableCoordinationService) ListEnvironmentProfileAuditEvents(
 	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, profileVersionUID string,
 	afterOccurredAt *time.Time, afterEventID string, limit int,
@@ -336,6 +427,32 @@ func decodeEnvironmentProfilePageRows(raw []byte, tenantID, projectID string, li
 		profiles = append(profiles, snapshot)
 	}
 	result := EnvironmentProfilePage{EnvironmentProfiles: profiles}
+	if len(profiles) > limit {
+		result.EnvironmentProfiles = profiles[:limit]
+		result.NextProfileVersionID = result.EnvironmentProfiles[len(result.EnvironmentProfiles)-1].ProfileVersionUID
+	}
+	return result, nil
+}
+
+func decodePublishedEnvironmentProfilePageRows(raw []byte, tenantID, projectID string, limit int) (PublishedEnvironmentProfilePage, error) {
+	var rows []publishedEnvironmentProfilePageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return PublishedEnvironmentProfilePage{}, ErrCoordinationResultDrift
+	}
+	profiles := make([]internalenvironmentprofile.Summary, 0, len(rows))
+	for _, row := range rows {
+		summary := internalenvironmentprofile.Summary{
+			Scope:             internalenvironmentprofile.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
+			ProfileVersionUID: row.ProfileVersionUID, ProfileID: row.ProfileID, ProfileName: row.ProfileName,
+			Version: row.Version, Description: row.Description, ProviderKinds: row.ProviderKinds,
+			CPULimitMillis: row.CPULimitMillis, MemoryLimitBytes: row.MemoryLimitBytes,
+		}
+		if row.TenantID != tenantID || row.ProjectID != projectID || summary.Validate() != nil {
+			return PublishedEnvironmentProfilePage{}, ErrCoordinationResultDrift
+		}
+		profiles = append(profiles, summary)
+	}
+	result := PublishedEnvironmentProfilePage{EnvironmentProfiles: profiles}
 	if len(profiles) > limit {
 		result.EnvironmentProfiles = profiles[:limit]
 		result.NextProfileVersionID = result.EnvironmentProfiles[len(result.EnvironmentProfiles)-1].ProfileVersionUID

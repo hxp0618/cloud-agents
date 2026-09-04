@@ -160,6 +160,18 @@ func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
 	}
 }
 
+func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testing.T) {
+	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296}`)
+	decoded, err := DecodeEnvironmentProfileSummaryJSON(summary)
+	if err != nil || decoded.Status != "published" || decoded.Availability != "available" {
+		t.Fatalf("summary=%#v error=%v", decoded, err)
+	}
+	withTarget := append(append([]byte(nil), summary[:len(summary)-1]...), []byte(`,"targetRefs":["docker-primary"]}`)...)
+	if _, err := DecodeEnvironmentProfileSummaryJSON(withTarget); err == nil {
+		t.Fatal("User API summary accepted target references")
+	}
+}
+
 func TestGeneratedDeploymentTargetCleanupPreviewContract(t *testing.T) {
 	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetCleanupPreview","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"7","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"targetKind":"docker","expectedGeneration":2,"expectedResourceVersion":"7","impactDigest":"sha256:` + strings.Repeat("a", 64) + `","canCleanup":false,"workers":[{"workerName":"cloud-agents-worker-alpha","leaseId":"lease-alpha","leaseGeneration":3,"disposition":"blocked","resources":[{"resourceKind":"container","resourceName":"cloud-agents-worker-alpha"},{"resourceKind":"workspace-volume","resourceName":"workspace-alpha"}]}]}}`)
 	preview, err := DecodeDeploymentTargetCleanupPreviewResponseJSON(body)

@@ -305,6 +305,26 @@ export type EnvironmentProfilePage = Readonly<{
   environmentProfiles: readonly EnvironmentProfile[];
   nextPageToken?: string;
 }>;
+export type EnvironmentProfileSummary = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "EnvironmentProfileSummary";
+  projectRef: NamespaceRef;
+  profileId: string;
+  name: string;
+  version: number;
+  description: string;
+  status: "published";
+  availability: "available";
+  providerKinds: readonly ("codex" | "claudeAgent")[];
+  cpuLimitMillis: number;
+  memoryLimitBytes: number;
+}>;
+export type EnvironmentProfileSummaryPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "EnvironmentProfileSummaryPage";
+  environmentProfiles: readonly EnvironmentProfileSummary[];
+  nextPageToken?: string;
+}>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
@@ -742,6 +762,30 @@ const environmentProfilePageResponseShape: ResponseShape = {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
     environmentProfiles: { item: environmentProfileResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const environmentProfileSummaryResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    profileId: scalarResponseShape,
+    name: scalarResponseShape,
+    version: scalarResponseShape,
+    description: scalarResponseShape,
+    status: scalarResponseShape,
+    availability: scalarResponseShape,
+    providerKinds: { item: scalarResponseShape },
+    cpuLimitMillis: scalarResponseShape,
+    memoryLimitBytes: scalarResponseShape,
+  },
+};
+const environmentProfileSummaryPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    environmentProfiles: { item: environmentProfileSummaryResponseShape },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -2296,6 +2340,83 @@ export function decodeEnvironmentProfilePage(value: unknown): EnvironmentProfile
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProfileSummary {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "profileId",
+      "name",
+      "version",
+      "description",
+      "status",
+      "availability",
+      "providerKinds",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "profileId",
+      "name",
+      "version",
+      "description",
+      "status",
+      "availability",
+      "providerKinds",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "EnvironmentProfileSummary")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  if (source.status !== "published" || source.availability !== "available")
+    error("INVALID_PROFILE_AVAILABILITY", "/status");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "EnvironmentProfileSummary",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    profileId: identifier(source.profileId, "/profileId"),
+    name: identifier(source.name, "/name"),
+    version: integer(source.version, 1, 2147483647, "/version"),
+    description: profileDescription(source.description, "/description"),
+    status: "published",
+    availability: "available",
+    providerKinds: profileProviderKinds(source.providerKinds, "/providerKinds"),
+    cpuLimitMillis: integer(source.cpuLimitMillis, 100, 64000, "/cpuLimitMillis"),
+    memoryLimitBytes: integer(
+      source.memoryLimitBytes,
+      134217728,
+      1099511627776,
+      "/memoryLimitBytes",
+    ),
+  });
+}
+export function decodeEnvironmentProfileSummaryPage(value: unknown): EnvironmentProfileSummaryPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "environmentProfiles", "nextPageToken"],
+    ["apiVersion", "kind", "environmentProfiles"],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "EnvironmentProfileSummaryPage")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const profiles = Array.isArray(source.environmentProfiles)
+    ? source.environmentProfiles
+    : error("INVALID_ENVIRONMENT_PROFILE_SUMMARY_PAGE", "/environmentProfiles");
+  if (profiles.length > 200)
+    error("INVALID_ENVIRONMENT_PROFILE_SUMMARY_PAGE", "/environmentProfiles");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "EnvironmentProfileSummaryPage" as const,
+    environmentProfiles: Object.freeze(profiles.map(decodeEnvironmentProfileSummary)),
+  };
+  if (source.nextPageToken === undefined) return Object.freeze(page);
+  return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
+}
 export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
   const source = record(value);
   const root = base(source, "DeploymentTarget");
@@ -3434,6 +3555,15 @@ export function parseEnvironmentProfilePage(
   text: string,
 ): ResponseEnvelope<EnvironmentProfilePage> {
   return parseResponse(text, environmentProfilePageResponseShape, decodeEnvironmentProfilePage);
+}
+export function parseEnvironmentProfileSummaryPage(
+  text: string,
+): ResponseEnvelope<EnvironmentProfileSummaryPage> {
+  return parseResponse(
+    text,
+    environmentProfileSummaryPageResponseShape,
+    decodeEnvironmentProfileSummaryPage,
+  );
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
@@ -4893,6 +5023,36 @@ export class Client {
       result.value.spec.projectRef.id !== projectId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listEnvironmentProfiles(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentProfileSummaryPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/environment-profiles${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedAgentListEnvironmentProfiles", response);
+    const result = parseEnvironmentProfileSummaryPage(response.body);
+    if (result.value.environmentProfiles.some(({ projectRef }) => projectRef.id !== projectId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentProfiles");
     return result;
   }
   async listAdminEnvironmentProfiles(

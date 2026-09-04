@@ -40,6 +40,42 @@ func TestDecodeEnvironmentProfileRowsBindsProjectAndCursor(t *testing.T) {
 	}
 }
 
+func TestPublishedEnvironmentProfileRowsAreSchedulableAndRedacted(t *testing.T) {
+	row := func(uid, profileID string) publishedEnvironmentProfilePageRow {
+		return publishedEnvironmentProfilePageRow{
+			TenantID: "tenant-alpha", ProjectID: "project-alpha", ProfileVersionUID: uid,
+			ProfileID: profileID, ProfileName: profileID, Version: 1, Description: "Standard workspace",
+			ProviderKinds: []string{"codex", "claudeAgent"}, CPULimitMillis: 2000, MemoryLimitBytes: 4294967296,
+		}
+	}
+	raw, err := json.Marshal([]publishedEnvironmentProfilePageRow{
+		row("ep-0123456789abcdef0123456789abcdef", "standard"),
+		row("ep-1123456789abcdef0123456789abcdef", "large"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := decodePublishedEnvironmentProfilePageRows(raw, "tenant-alpha", "project-alpha", 1)
+	if err != nil || len(page.EnvironmentProfiles) != 1 || page.NextProfileVersionID != "ep-0123456789abcdef0123456789abcdef" {
+		t.Fatalf("page = %#v / %v", page, err)
+	}
+	if _, err := decodePublishedEnvironmentProfilePageRows(raw, "tenant-alpha", "project-other", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cross-project page error = %v", err)
+	}
+	for _, query := range []string{publishedEnvironmentProfilePageCursorIdentitySQL, listPublishedEnvironmentProfilesSQL} {
+		if !strings.Contains(query, "cloud_agents.require_tenant_id()") ||
+			!strings.Contains(query, "profile.status = 'published'") ||
+			!strings.Contains(query, "target.observed_phase = 'ready'") {
+			t.Fatalf("published profile query lacks authority or schedulability predicate: %s", query)
+		}
+	}
+	for _, forbidden := range []string{"credential_ref", "release_digest", "storage_policy_ref", "network_policy_ref", "endpoint"} {
+		if strings.Contains(listPublishedEnvironmentProfilesSQL, forbidden) {
+			t.Fatalf("published profile query projects %q", forbidden)
+		}
+	}
+}
+
 func TestEnvironmentProfileProjectionAndConflictMapping(t *testing.T) {
 	now := time.Date(2026, time.September, 3, 13, 0, 0, 0, time.UTC)
 	row := rowValues(
