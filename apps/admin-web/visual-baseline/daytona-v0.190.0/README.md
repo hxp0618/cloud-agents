@@ -39,23 +39,25 @@ The corresponding implementation rules are recorded in [DESIGN-SYSTEM.md](./DESI
 
 ## Cloud Agents implementation evidence
 
-The `actual/` captures exercise the Vite application against a running local Control Plane through the Admin API proxy. The database contained three real persisted, unprobed Deployment Targets—Docker, Kubernetes, and SSH—and no static UI fixture. Their hostnames and opaque credential references were synthetic, so this evidence proves Admin API list/detail rendering and browser boundaries, not target connectivity or Probe readiness.
+The `actual/` captures exercise the Vite application against a running local Control Plane through the Admin API proxy. The database contained three real persisted, unprobed Deployment Targets—Docker, Kubernetes, and SSH—and no static UI fixture. Their hostnames and opaque credential references were synthetic, so this evidence proves Admin API list/detail rendering and browser boundaries, not target connectivity or Probe readiness. Unprefixed captures use `en-US`; `zh-CN-*` captures repeat the pinned list/detail/create and responsive states in Simplified Chinese.
 
-| Capture                               | Theme | Viewport | Live behavior                                                        |
-| ------------------------------------- | ----- | -------- | -------------------------------------------------------------------- |
-| `list-light-desktop.png`              | light | desktop  | three persisted Target kinds through generated SDK                   |
-| `list-light-desktop-collapsed.png`    | light | desktop  | 48px sidebar reached with the documented keyboard shortcut           |
-| `list-dark-desktop.png`               | dark  | desktop  | runtime theme switch and dark resource table                         |
-| `list-light-mobile.png`               | light | mobile   | compact PageHeader and horizontally scrollable live table            |
-| `list-dark-mobile.png`                | dark  | mobile   | responsive dark list                                                 |
-| `navigation-light-mobile.png`         | light | mobile   | 288px off-canvas resource navigation                                 |
-| `detail-light-desktop.png`            | light | desktop  | real SSH Target in a 500px right Sheet                               |
-| `detail-dark-mobile.png`              | dark  | mobile   | full-width SSH detail Sheet                                          |
-| `create-form-light-desktop.png`       | light | desktop  | native validated create form in a right Sheet                        |
-| `create-form-dark-mobile.png`         | dark  | mobile   | full-width mobile create form and sticky actions                     |
-| `permission-denied-light-desktop.png` | light | desktop  | ordinary user token rejected by both Admin list endpoints with `403` |
+| Capture                               | Theme | Viewport | Live behavior                                                         |
+| ------------------------------------- | ----- | -------- | --------------------------------------------------------------------- |
+| `list-light-desktop.png`              | light | desktop  | three persisted Target kinds through generated SDK                    |
+| `list-light-desktop-collapsed.png`    | light | desktop  | 48px sidebar reached with the documented keyboard shortcut            |
+| `list-dark-desktop.png`               | dark  | desktop  | runtime theme switch and dark resource table                          |
+| `list-light-mobile.png`               | light | mobile   | compact PageHeader and horizontally scrollable live table             |
+| `list-dark-mobile.png`                | dark  | mobile   | responsive dark list                                                  |
+| `navigation-light-mobile.png`         | light | mobile   | 288px off-canvas resource navigation                                  |
+| `detail-light-desktop.png`            | light | desktop  | real SSH Target in a 500px right Sheet                                |
+| `detail-dark-mobile.png`              | dark  | mobile   | full-width SSH detail Sheet                                           |
+| `create-form-light-desktop.png`       | light | desktop  | native validated create form in a right Sheet                         |
+| `create-form-dark-mobile.png`         | dark  | mobile   | full-width mobile create form and sticky actions                      |
+| `permission-denied-light-desktop.png` | light | desktop  | ordinary user token rejected by three Admin list endpoints with `403` |
 
-`actual/browser-evidence.json` records the machine-readable boundary checks: only the Admin Web origin was contacted; the three Target kinds decoded; no bearer was persisted; connected-state console warnings, errors, and failed HTTP responses were empty; the sidebar shortcut, Dropdown Escape/outside dismissal, Sheet Escape dismissal, and mobile navigation open/close all succeeded; and the two deliberate ordinary-user requests returned `403`. It contains no token or credential bytes.
+The Chinese regression adds `zh-CN-list-{light,dark}-{desktop,mobile}.png`, `zh-CN-detail-light-desktop.png`, `zh-CN-detail-dark-mobile.png`, `zh-CN-create-form-light-desktop.png`, `zh-CN-create-form-dark-mobile.png`, and `zh-CN-navigation-light-mobile.png`. These use the same live resources, fixed viewports, and reduced-motion setting as the English captures.
+
+`actual/browser-evidence.json` records the machine-readable boundary checks: only the Admin Web origin was contacted; the three Target kinds decoded; no bearer was persisted; connected-state console warnings, errors, and failed HTTP responses were empty; locale switching was immediate, survived reload, and recovered an invalid locale to `en-US`; no message key appeared in the page; all 20 desktop/mobile layout checks had zero document overflow; the sidebar, Dropdown, Sheet, and mobile-navigation interactions succeeded; and the three deliberate ordinary-user requests returned `403`. It contains no token or credential bytes.
 
 Reproduce against a running local stack and Admin Web:
 
@@ -93,18 +95,27 @@ shasum -a 256 apps/admin-web/visual-baseline/daytona-v0.190.0/reference/*.png
 ## Cloud Agents implementation integrity
 
 ```text
-4942e4e959c13833297f6f115b7f4e619301efbb3977c41ff18d649070e74ccb  browser-evidence.json
-c015d344c0990f9d49a53612702a3d6fae2c855a9c590521ff9f2082c3eae79e  create-form-dark-mobile.png
-c5fd6d5c6e5f657aba48d2af25457b3bf296115a87326430e8010772b60abd2f  create-form-light-desktop.png
-ff16aff8748d857342aea2f287cea8af6f0d7113a67c136d0cb5882217a0a460  detail-dark-mobile.png
-9019eb31f789b75995e83410e90667f646730b202aab8526692d0d0af4d9cb39  detail-light-desktop.png
-9b9ed5c24f4c37d488c56f4d9bd6d6ee66ef99191e29b1a5f866ffef2866571c  list-dark-desktop.png
-ea39586ecd4644fb27517a7fcf326a77176802c037940c7cf1741a8221d4adf8  list-dark-mobile.png
-690df45ba8822b735984cd5eb1f9b2dccdf36aff6b9e9d8b54b60e637c7023fb  list-light-desktop-collapsed.png
-28b6911ed361a5aceea40e9a9ac2ea9d12a563a8d94f55b83c7a73b5f7a238aa  list-light-desktop.png
-1d66bdfee08a27d065528434f8c4c136b9431d51bcd06907c972fd482c1fc7f6  list-light-mobile.png
-a3995aa02f6c6fc15ff437b8ed13b49cb11f6e66af96f253049999ba331d3581  navigation-light-mobile.png
-1d060f78a229ce62b10b815f9ab5915224e02647dcb9b9af6c20c2094afd9e48  permission-denied-light-desktop.png
+23dc5fbaf3b4e702067666b0ad63e8b686a7c77d4edd01bbf48beef88e4b54a4  browser-evidence.json
+6d35157f0951e75a64ec778b44c7af85f630d2558dec64df0dfe74efdbec9ed0  create-form-dark-mobile.png
+99a5d608b5fd76dba9c439e783238cf03745d438cfb17e8eac16065c492885c0  create-form-light-desktop.png
+e647b2322229b576b97234e3bde5e4baedd750df60f30380885d78c72e4ead98  detail-dark-mobile.png
+fa3be672aa1f92b8a4faf34c434c96c713cb3334e9e58eb160b23f04054e1750  detail-light-desktop.png
+5b2d5bc80c5146d2bcb94cfcc522ef25d363ab5cb9474a815902056c7447e25c  list-dark-desktop.png
+c6d72743d9e9feee37bc7cc4c5bd23e4f0fe415a9fd3fcfe225f9b8e0ed7ef76  list-dark-mobile.png
+8c1e34c02fd37a99700fc4256362606231dafb83e2443a6451a936ac645612f3  list-light-desktop-collapsed.png
+8b950feb39493b3c40b348f880caaca200c0614d83913ca98fb263034305b7ee  list-light-desktop.png
+aef61cbc94b0b802c874b1aa7b50fd35a2d2fecbb185db148335d40ba219cd88  list-light-mobile.png
+b57c66754945762192984925af32394847a475cd9d8690ffb2cc2fcba7ce6e61  navigation-light-mobile.png
+241064d1dc5e691e3215a8e2f533302e12fb6edecebee9ca625bdd9a362ce2e7  permission-denied-light-desktop.png
+cbad83bc4ba8c153f3c86596b43b4d9e9c1c08806aa8f9cb2780e488e21b3a5b  zh-CN-create-form-dark-mobile.png
+70714bdb7bac1a2b5800b94e814c85f42ffe40340160d9920343b9cfac3e45fb  zh-CN-create-form-light-desktop.png
+dcb59e4c85f2dce9c0d1577a878dcdc042e247530dc7f69ae320ff3c0a4cbe73  zh-CN-detail-dark-mobile.png
+a967cc99a49350e7a22cc95a4a6ac29f07eb093af8c3431a63e5526f2d22667b  zh-CN-detail-light-desktop.png
+7c25564da82de2ccf96a032958d476d2c5eaaeac08d78e4ea161b0495ecadb1d  zh-CN-list-dark-desktop.png
+993a702d5a14164133b02611e6f74b4231140888e629602329e26c21999769d9  zh-CN-list-dark-mobile.png
+f3771c13f30fd726e7472ecc561b6f1c6804a860df5fab19163ce29b1bc0a769  zh-CN-list-light-desktop.png
+9719d4f6743a464d0e4374a9f08fc6188c78bdc529a770ef6e4ca207c61cd18c  zh-CN-list-light-mobile.png
+4d2e48573f45d54e24db2a5af4c86745b8c3bb283630dc28aa04d6e628eb4dae  zh-CN-navigation-light-mobile.png
 ```
 
 Verify with:

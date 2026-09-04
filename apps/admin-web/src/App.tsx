@@ -12,7 +12,7 @@ import {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
-  adminErrorMessage,
+  adminErrorKey,
   cleanupRequestFromPreview,
   listAdminLeases,
   listAdminProfileAuditEvents,
@@ -30,12 +30,20 @@ import {
   type AdminClient,
   type SavedAdminConnection,
 } from "./admin";
+import {
+  normalizeLocale,
+  useI18n,
+  type MessageKey,
+  type MessageValues,
+  type Translate,
+} from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 type Page = "overview" | "targets" | "profiles" | "leases";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
-type BusyOperation = Readonly<{ key: string; label: string }>;
+type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
+type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
 
 const targetEndpointPlaceholder: Readonly<Record<TargetKind, string>> = Object.freeze({
@@ -59,11 +67,11 @@ function initialTheme(): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function statusLabel(status: ConnectionStatus): string {
-  if (status === "connected") return "Admin API connected";
-  if (status === "connecting") return "Authorizing";
-  if (status === "error") return "Connection failed";
-  return "Disconnected";
+function statusLabel(status: ConnectionStatus, t: Translate): string {
+  if (status === "connected") return t("connection.connected");
+  if (status === "connecting") return t("connection.authorizing");
+  if (status === "error") return t("connection.failed");
+  return t("connection.disconnected");
 }
 
 function phaseTone(phase: string): string {
@@ -88,10 +96,84 @@ function phaseTone(phase: string): string {
   return "neutral";
 }
 
-function formatTime(value: string | undefined): string {
-  if (value === undefined || value === "") return "Never";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString();
+const phaseMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
+  unprobed: "phase.unprobed",
+  probing: "phase.probing",
+  ready: "phase.ready",
+  unavailable: "phase.unavailable",
+  active: "phase.active",
+  provisioning: "phase.provisioning",
+  terminating: "phase.terminating",
+  terminated: "phase.terminated",
+  failed: "phase.failed",
+  none: "phase.none",
+  pending: "phase.pending",
+  revoking: "phase.revoking",
+  reaping: "phase.reaping",
+  complete: "phase.complete",
+  blocked: "phase.blocked",
+  draft: "phase.draft",
+  published: "phase.published",
+  disabled: "phase.disabled",
+  queued: "phase.queued",
+  running: "phase.running",
+  succeeded: "phase.succeeded",
+  cancelled: "phase.cancelled",
+  requested: "phase.requested",
+  cleanup: "phase.cleanup",
+});
+
+const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
+  "target.register": "audit.targetRegister",
+  "target.probe": "audit.targetProbe",
+  "target.cleanup": "audit.targetCleanup",
+  "profile.create": "audit.profileCreate",
+  "profile.publish": "audit.profilePublish",
+  "profile.disable": "audit.profileDisable",
+});
+
+const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
+  "target.register": "operation.impact.register",
+  "target.probe": "operation.impact.probe",
+  "target.cleanup": "operation.impact.cleanup",
+});
+
+const resourceMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
+  container: "resource.container",
+  deployment: "resource.deployment",
+  pods: "resource.pods",
+  service: "resource.service",
+  "workspace-volume": "resource.workspaceVolume",
+});
+
+function phaseLabel(phase: string, t: Translate): string {
+  const key = phaseMessageKeys[phase];
+  return key === undefined ? phase : t(key);
+}
+
+function auditLabel(action: string, t: Translate): string {
+  const key = auditMessageKeys[action];
+  return key === undefined ? action : t(key);
+}
+
+function operationImpactLabel(action: string, t: Translate): string {
+  const key = operationImpactMessageKeys[action];
+  return key === undefined ? action : t(key);
+}
+
+function resourceLabel(kind: string, t: Translate): string {
+  const key = resourceMessageKeys[kind];
+  return key === undefined ? kind : t(key);
+}
+
+function targetKindLabel(kind: TargetKind, t: Translate): string {
+  if (kind === "kubernetes") return t("target.kind.kubernetes");
+  if (kind === "ssh") return t("target.kind.ssh");
+  return t("target.kind.docker");
+}
+
+function providerLabel(provider: string): string {
+  return provider === "claudeAgent" ? "Claude Code" : "Codex";
 }
 
 function AdminSheet({
@@ -241,6 +323,7 @@ async function loadProfileAudit(
 }
 
 export function App() {
+  const { locale, setLocale, t, number } = useI18n();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -270,8 +353,8 @@ export function App() {
   const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [error, setError] = useState<MessageKey | null>(null);
+  const [notice, setNotice] = useState<LocalizedMessage | null>(null);
   const [targetForm, setTargetForm] = useState({
     targetId: "",
     targetName: "",
@@ -421,7 +504,7 @@ export function App() {
           setSelectedLeaseId(loadedLeases.selectedLeaseId);
         })
         .catch((cause: unknown) => {
-          if (!controller.signal.aborted) setError(adminErrorMessage(cause));
+          if (!controller.signal.aborted) setError(adminErrorKey(cause));
         });
     }, 5_000);
     return () => {
@@ -468,8 +551,8 @@ export function App() {
     setCreatingProfile(false);
     setMobileNavOpen(false);
     setBusy(null);
-    setError("");
-    setNotice("");
+    setError(null);
+    setNotice(null);
     setStatus("disconnected");
   }
 
@@ -484,13 +567,13 @@ export function App() {
     const bearer = token.trim();
     if (Object.values(nextConnection).some((value) => value === "") || bearer === "") {
       setStatus("error");
-      setError("Endpoint, tenant, project, and admin bearer token are required.");
+      setError("connection.required");
       return;
     }
     const controller = new AbortController();
     requestRef.current = controller;
     setStatus("connecting");
-    setError("");
+    setError(null);
     try {
       const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
@@ -516,7 +599,7 @@ export function App() {
     } catch (cause) {
       setClient(null);
       setStatus(controller.signal.aborted ? "disconnected" : "error");
-      setError(controller.signal.aborted ? "" : adminErrorMessage(cause));
+      setError(controller.signal.aborted ? null : adminErrorKey(cause));
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
     }
@@ -531,23 +614,23 @@ export function App() {
   }
 
   async function runOperation(
-    key: string,
-    label: string,
+    operationKey: string,
+    message: LocalizedMessage,
     operation: (signal: AbortSignal) => Promise<void>,
   ) {
     if (busyRef.current) return;
     busyRef.current = true;
-    setBusy({ key, label });
-    setError("");
-    setNotice("");
+    setBusy({ message });
+    setError(null);
+    setNotice(null);
     const controller = new AbortController();
     requestRef.current = controller;
     try {
       await operation(AbortSignal.any([controller.signal, AbortSignal.timeout(150_000)]));
-      pendingKeysRef.current.delete(key);
-      setNotice(`${label} completed.`);
+      pendingKeysRef.current.delete(operationKey);
+      setNotice(message);
     } catch (cause) {
-      setError(adminErrorMessage(cause));
+      setError(adminErrorKey(cause));
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
       busyRef.current = false;
@@ -557,7 +640,7 @@ export function App() {
 
   function refresh() {
     if (client === null) return;
-    void runOperation("refresh", "Authority refresh", async (signal) => {
+    void runOperation("refresh", { key: "operation.refresh" }, async (signal) => {
       const [loadedTargets, loadedLeases, loadedProfiles] = await Promise.all([
         loadTargetAuthority(client, connection, selectedTargetId, signal),
         loadLeaseAuthority(client, connection, selectedLeaseId, signal),
@@ -596,7 +679,7 @@ export function App() {
     setTargetOperations(Object.freeze([]));
     setTargetAudit(Object.freeze([]));
     setSelectedTargetId(targetId);
-    void runOperation(`get:${targetId}`, "Target detail refresh", async (signal) => {
+    void runOperation(`get:${targetId}`, { key: "operation.targetDetail" }, async (signal) => {
       const [result, activity] = await Promise.all([
         client.getAdminDeploymentTarget(
           connection.tenantId,
@@ -620,7 +703,7 @@ export function App() {
       return;
     }
     setSelectedLeaseId(leaseId);
-    void runOperation(`get-lease:${leaseId}`, "Lease detail refresh", async (signal) => {
+    void runOperation(`get-lease:${leaseId}`, { key: "operation.leaseDetail" }, async (signal) => {
       const result = await client.getAdminEnvironmentLease(
         connection.tenantId,
         connection.projectId,
@@ -642,7 +725,7 @@ export function App() {
     setProfileAudit(Object.freeze([]));
     void runOperation(
       `get-profile:${profileVersionId}`,
-      "Profile detail refresh",
+      { key: "operation.profileDetail" },
       async (signal) => {
         const [result, audit] = await Promise.all([
           client.getAdminEnvironmentProfile(
@@ -684,36 +767,43 @@ export function App() {
       providerCredentialRef: profileForm.providerCredentialRef.trim(),
     };
     const key = `create-profile:${body.profileId}:${body.version}`;
-    void runOperation(key, `Create ${body.profileName} v${body.version}`, async (signal) => {
-      const result = await client.createAdminEnvironmentProfile(
-        connection.tenantId,
-        connection.projectId,
-        newRequestId(),
-        idempotencyKey(key),
-        body,
-        signal,
-      );
-      setProfiles((current) => replaceProfile(current, result.value));
-      setSelectedProfileVersionId(result.value.metadata.uid);
-      setProfileAudit(await loadProfileAudit(client, connection, result.value, signal));
-      setProfileDetailOpen(true);
-      setProfileForm({
-        profileId: "",
-        profileName: "",
-        version: "1",
-        description: "",
-        codex: true,
-        claudeAgent: true,
-        cpuLimitMillis: "2000",
-        memoryLimitMiB: "4096",
-        storagePolicyRef: "",
-        networkPolicyRef: "",
-        releaseDigest: "",
-        targetRefs: "",
-        providerCredentialRef: "",
-      });
-      setCreatingProfile(false);
-    });
+    void runOperation(
+      key,
+      {
+        key: "operation.createProfile",
+        values: { name: body.profileName, version: body.version },
+      },
+      async (signal) => {
+        const result = await client.createAdminEnvironmentProfile(
+          connection.tenantId,
+          connection.projectId,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        );
+        setProfiles((current) => replaceProfile(current, result.value));
+        setSelectedProfileVersionId(result.value.metadata.uid);
+        setProfileAudit(await loadProfileAudit(client, connection, result.value, signal));
+        setProfileDetailOpen(true);
+        setProfileForm({
+          profileId: "",
+          profileName: "",
+          version: "1",
+          description: "",
+          codex: true,
+          claudeAgent: true,
+          cpuLimitMillis: "2000",
+          memoryLimitMiB: "4096",
+          storagePolicyRef: "",
+          networkPolicyRef: "",
+          releaseDigest: "",
+          targetRefs: "",
+          providerCredentialRef: "",
+        });
+        setCreatingProfile(false);
+      },
+    );
   }
 
   function transitionProfile() {
@@ -724,7 +814,10 @@ export function App() {
     setProfileTransition(null);
     void runOperation(
       key,
-      `${action === "publish" ? "Publish" : "Disable"} ${profile.metadata.name} v${profile.spec.version}`,
+      {
+        key: action === "publish" ? "operation.publishProfile" : "operation.disableProfile",
+        values: { name: profile.metadata.name, version: profile.spec.version },
+      },
       async (signal) => {
         const args = [
           connection.tenantId,
@@ -757,54 +850,62 @@ export function App() {
       credentialRef: targetForm.credentialRef.trim(),
     };
     const key = `register:${body.targetId}`;
-    void runOperation(key, `Register ${body.targetName}`, async (signal) => {
-      const result = await client.registerAdminDeploymentTarget(
-        connection.tenantId,
-        connection.projectId,
-        newRequestId(),
-        idempotencyKey(key),
-        body,
-        signal,
-      );
-      setTargets((current) => replaceTarget(current, result.value));
-      setSelectedTargetId(result.value.metadata.uid);
-      setCleanupPreview(null);
-      setTargetForm({
-        targetId: "",
-        targetName: "",
-        targetKind: "docker",
-        endpoint: "",
-        credentialRef: "",
-      });
-      setRegistering(false);
-    });
+    void runOperation(
+      key,
+      { key: "operation.registerTarget", values: { name: body.targetName } },
+      async (signal) => {
+        const result = await client.registerAdminDeploymentTarget(
+          connection.tenantId,
+          connection.projectId,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        );
+        setTargets((current) => replaceTarget(current, result.value));
+        setSelectedTargetId(result.value.metadata.uid);
+        setCleanupPreview(null);
+        setTargetForm({
+          targetId: "",
+          targetName: "",
+          targetKind: "docker",
+          endpoint: "",
+          credentialRef: "",
+        });
+        setRegistering(false);
+      },
+    );
   }
 
   function probeTarget() {
     if (client === null || selectedTarget === undefined) return;
     const target = selectedTarget;
     const key = `probe:${target.metadata.uid}:${target.spec.generation}`;
-    void runOperation(key, `Probe ${target.metadata.name}`, async (signal) => {
-      const result = await client.probeAdminDeploymentTarget(
-        connection.tenantId,
-        connection.projectId,
-        target.metadata.uid,
-        newRequestId(),
-        idempotencyKey(key),
-        { expectedGeneration: target.spec.generation },
-        signal,
-      );
-      setTargets((current) => replaceTarget(current, result.value));
-      const activity = await loadTargetActivity(
-        client,
-        connection,
-        result.value.metadata.uid,
-        signal,
-      );
-      setTargetOperations(activity.operations);
-      setTargetAudit(activity.audit);
-      setCleanupPreview(null);
-    });
+    void runOperation(
+      key,
+      { key: "operation.probeTarget", values: { name: target.metadata.name } },
+      async (signal) => {
+        const result = await client.probeAdminDeploymentTarget(
+          connection.tenantId,
+          connection.projectId,
+          target.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          { expectedGeneration: target.spec.generation },
+          signal,
+        );
+        setTargets((current) => replaceTarget(current, result.value));
+        const activity = await loadTargetActivity(
+          client,
+          connection,
+          result.value.metadata.uid,
+          signal,
+        );
+        setTargetOperations(activity.operations);
+        setTargetAudit(activity.audit);
+        setCleanupPreview(null);
+      },
+    );
   }
 
   function previewTargetCleanup() {
@@ -812,7 +913,7 @@ export function App() {
     const target = selectedTarget;
     void runOperation(
       `cleanup-preview:${target.metadata.uid}:${target.metadata.resourceVersion}`,
-      `Preview cleanup for ${target.metadata.name}`,
+      { key: "operation.previewCleanup", values: { name: target.metadata.name } },
       async (signal) => {
         const result = await client.previewAdminDeploymentTargetCleanup(
           connection.tenantId,
@@ -839,33 +940,47 @@ export function App() {
     const preview = selectedCleanupPreview;
     const key = `cleanup:${target.metadata.uid}:${preview.spec.expectedGeneration}:${preview.spec.expectedResourceVersion}:${preview.spec.impactDigest}`;
     setCleanupConfirmationOpen(false);
-    void runOperation(key, `Cleanup ${target.metadata.name}`, async (signal) => {
-      await client.cleanupAdminDeploymentTarget(
-        connection.tenantId,
-        connection.projectId,
-        target.metadata.uid,
-        newRequestId(),
-        idempotencyKey(key),
-        cleanupRequestFromPreview(preview),
-        signal,
-      );
-      const activity = await loadTargetActivity(client, connection, target.metadata.uid, signal);
-      setTargetOperations(activity.operations);
-      setTargetAudit(activity.audit);
-      setCleanupPreview(null);
-    });
+    void runOperation(
+      key,
+      { key: "operation.cleanupTarget", values: { name: target.metadata.name } },
+      async (signal) => {
+        await client.cleanupAdminDeploymentTarget(
+          connection.tenantId,
+          connection.projectId,
+          target.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          cleanupRequestFromPreview(preview),
+          signal,
+        );
+        const activity = await loadTargetActivity(client, connection, target.metadata.uid, signal);
+        setTargetOperations(activity.operations);
+        setTargetAudit(activity.audit);
+        setCleanupPreview(null);
+      },
+    );
   }
 
   if (!connected) {
     return (
       <main className="connect-view">
-        <button
-          className="button outline connect-theme"
-          type="button"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        >
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
+        <div className="connect-preferences">
+          <select
+            value={locale}
+            aria-label={t("account.language")}
+            onChange={(event) => setLocale(normalizeLocale(event.target.value))}
+          >
+            <option value="zh-CN">{t("locale.zhCN")}</option>
+            <option value="en-US">{t("locale.enUS")}</option>
+          </select>
+          <button
+            className="button outline"
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {t(theme === "dark" ? "action.lightMode" : "action.darkMode")}
+          </button>
+        </div>
         <section className="connect-card" aria-labelledby="connect-title">
           <div className="brand-lockup">
             <span className="brand-mark" aria-hidden="true">
@@ -873,18 +988,15 @@ export function App() {
             </span>
             <span>
               <strong>Cloud Agents</strong>
-              <small>Admin Console</small>
+              <small>{t("brand.adminConsole")}</small>
             </span>
           </div>
-          <div className="eyebrow">Control Plane · Admin API</div>
-          <h1 id="connect-title">Operate Cloud Agents infrastructure.</h1>
-          <p className="lede">
-            Connect with an admin-scoped token. The bearer stays in memory and every resource read
-            or action runs through Control Plane.
-          </p>
+          <div className="eyebrow">{t("connection.context")}</div>
+          <h1 id="connect-title">{t("connection.title")}</h1>
+          <p className="lede">{t("connection.description")}</p>
           <form className="connect-form" onSubmit={connect}>
             <label>
-              <span>Control Plane endpoint</span>
+              <span>{t("connection.endpoint")}</span>
               <input
                 type="url"
                 value={connection.endpoint}
@@ -894,13 +1006,11 @@ export function App() {
                 required
                 disabled={status === "connecting"}
               />
-              <small>
-                Use this origin when <code>/v1/admin</code> is reverse proxied.
-              </small>
+              <small>{t("connection.endpointHelp")}</small>
             </label>
             <div className="form-row">
               <label>
-                <span>Tenant ID</span>
+                <span>{t("connection.tenantId")}</span>
                 <input
                   value={connection.tenantId}
                   onChange={(event) => updateConnection("tenantId", event.target.value)}
@@ -911,7 +1021,7 @@ export function App() {
                 />
               </label>
               <label>
-                <span>Project ID</span>
+                <span>{t("connection.projectId")}</span>
                 <input
                   value={connection.projectId}
                   onChange={(event) => updateConnection("projectId", event.target.value)}
@@ -923,22 +1033,22 @@ export function App() {
               </label>
             </div>
             <label>
-              <span>Admin bearer token</span>
+              <span>{t("connection.token")}</span>
               <input
                 type="password"
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
-                placeholder="Required scopes: targets.*, leases.*, profiles.*, audit.list"
+                placeholder={t("connection.tokenPlaceholder")}
                 autoComplete="off"
                 spellCheck={false}
                 required
                 disabled={status === "connecting"}
               />
-              <small>Never written to local or session storage.</small>
+              <small>{t("connection.tokenHelp")}</small>
             </label>
-            {error !== "" ? (
+            {error !== null ? (
               <p className="banner danger" role="alert">
-                {error}
+                {t(error)}
               </p>
             ) : null}
             <button
@@ -946,12 +1056,12 @@ export function App() {
               type="submit"
               disabled={status === "connecting"}
             >
-              {status === "connecting" ? "Authorizing…" : "Connect to Admin API"}
+              {t(status === "connecting" ? "connection.authorizingProgress" : "connection.connect")}
             </button>
           </form>
           <div className={`connection-state state-${status}`} role="status" aria-live="polite">
             <span className="status-dot" aria-hidden="true" />
-            {statusLabel(status)}
+            {statusLabel(status, t)}
           </div>
         </section>
       </main>
@@ -963,7 +1073,7 @@ export function App() {
       <button
         className={`mobile-nav-backdrop${mobileNavOpen ? " open" : ""}`}
         type="button"
-        aria-label="Close navigation"
+        aria-label={t("action.closeNavigation")}
         onClick={() => setMobileNavOpen(false)}
       />
       <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
@@ -973,56 +1083,55 @@ export function App() {
           </span>
           <span>
             <strong>Cloud Agents</strong>
-            <small>Admin Console</small>
+            <small>{t("brand.adminConsole")}</small>
           </span>
           <button
             className="sidebar-trigger"
             type="button"
-            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            aria-label={t(sidebarOpen ? "action.collapseSidebar" : "action.expandSidebar")}
             aria-expanded={sidebarOpen}
-            title="Toggle sidebar (⌘/Ctrl+B)"
+            title={t("action.toggleSidebar")}
             onClick={() => setSidebarOpen((open) => !open)}
           >
             ◧
           </button>
         </div>
-        <nav aria-label="Admin resources">
+        <nav aria-label={t("nav.resources")}>
           <button
             className={page === "overview" ? "active" : ""}
             onClick={() => navigate("overview")}
-            title="Overview"
+            title={t("nav.overview")}
           >
-            <span aria-hidden="true">⌁</span> <span className="nav-label">Overview</span>
+            <span aria-hidden="true">⌁</span> <span className="nav-label">{t("nav.overview")}</span>
           </button>
           <button
             className={page === "targets" ? "active" : ""}
             onClick={() => navigate("targets")}
-            title="Deployment Targets"
+            title={t("nav.targets")}
           >
-            <span aria-hidden="true">◎</span> <span className="nav-label">Deployment Targets</span>
-            <b>{targets.length}</b>
+            <span aria-hidden="true">◎</span> <span className="nav-label">{t("nav.targets")}</span>
+            <b>{number(targets.length)}</b>
           </button>
           <button
             className={page === "leases" ? "active" : ""}
             onClick={() => navigate("leases")}
-            title="Environment Leases"
+            title={t("nav.leases")}
           >
-            <span aria-hidden="true">◇</span> <span className="nav-label">Environment Leases</span>
-            <b>{leases.length}</b>
+            <span aria-hidden="true">◇</span> <span className="nav-label">{t("nav.leases")}</span>
+            <b>{number(leases.length)}</b>
           </button>
           <button
             className={page === "profiles" ? "active" : ""}
             onClick={() => navigate("profiles")}
-            title="Environment Profiles"
+            title={t("nav.profiles")}
           >
-            <span aria-hidden="true">▣</span>{" "}
-            <span className="nav-label">Environment Profiles</span>
-            <b>{profiles.length}</b>
+            <span aria-hidden="true">▣</span> <span className="nav-label">{t("nav.profiles")}</span>
+            <b>{number(profiles.length)}</b>
           </button>
         </nav>
         <div className="sidebar-boundary">
-          <small>Admin boundary</small>
-          <p>No conversations, prompts, workspace files, artifacts, or secret bytes.</p>
+          <small>{t("boundary.title")}</small>
+          <p>{t("boundary.description")}</p>
         </div>
       </aside>
 
@@ -1031,7 +1140,7 @@ export function App() {
           <button
             className="mobile-nav-trigger"
             type="button"
-            aria-label="Open navigation"
+            aria-label={t("action.openNavigation")}
             aria-expanded={mobileNavOpen}
             onClick={() => setMobileNavOpen(true)}
           >
@@ -1048,12 +1157,23 @@ export function App() {
             </span>
           </div>
           <details ref={profileMenuRef} className="profile-menu">
-            <summary className="button outline compact">Admin</summary>
+            <summary className="button outline compact">{t("account.admin")}</summary>
             <div className="dropdown-menu">
               <div className="dropdown-context">
                 <strong>{connection.projectId}</strong>
                 <small>{connection.tenantId}</small>
               </div>
+              <label className="locale-picker">
+                <span>{t("account.language")}</span>
+                <select
+                  value={locale}
+                  aria-label={t("account.language")}
+                  onChange={(event) => setLocale(normalizeLocale(event.target.value))}
+                >
+                  <option value="zh-CN">{t("locale.zhCN")}</option>
+                  <option value="en-US">{t("locale.enUS")}</option>
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={(event) => {
@@ -1061,10 +1181,10 @@ export function App() {
                   event.currentTarget.closest("details")?.removeAttribute("open");
                 }}
               >
-                {theme === "dark" ? "Light mode" : "Dark mode"}
+                {t(theme === "dark" ? "action.lightMode" : "action.darkMode")}
               </button>
               <button type="button" onClick={disconnect}>
-                Disconnect
+                {t("action.disconnect")}
               </button>
             </div>
           </details>
@@ -1075,21 +1195,21 @@ export function App() {
             <div>
               <h1>
                 {page === "overview"
-                  ? "Operations overview"
+                  ? t("page.overview.title")
                   : page === "targets"
-                    ? "Deployment targets"
+                    ? t("page.targets.title")
                     : page === "profiles"
-                      ? "Environment profiles"
-                      : "Environment leases"}
+                      ? t("page.profiles.title")
+                      : t("page.leases.title")}
               </h1>
               <p>
                 {page === "overview"
-                  ? "Current infrastructure authority for the selected tenant and project."
+                  ? t("page.overview.description")
                   : page === "targets"
-                    ? "Register and operate Docker, Kubernetes, and SSH execution capacity."
+                    ? t("page.targets.description")
                     : page === "profiles"
-                      ? "Create immutable environment versions before publishing them to users."
-                      : "Inspect server-authoritative environment lifecycle and cleanup state."}
+                      ? t("page.profiles.description")
+                      : t("page.leases.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -1099,7 +1219,7 @@ export function App() {
                 onClick={refresh}
                 disabled={busy !== null}
               >
-                Refresh
+                {t("action.refresh")}
               </button>
               {page === "profiles" ? (
                 <button
@@ -1108,7 +1228,7 @@ export function App() {
                   onClick={() => setCreatingProfile(true)}
                   disabled={busy !== null}
                 >
-                  Create profile
+                  {t("action.createProfile")}
                 </button>
               ) : page !== "leases" ? (
                 <button
@@ -1120,7 +1240,7 @@ export function App() {
                   }}
                   disabled={busy !== null}
                 >
-                  Register target
+                  {t("action.registerTarget")}
                 </button>
               ) : null}
             </div>
@@ -1128,57 +1248,61 @@ export function App() {
 
           {busy !== null ? (
             <div className="banner running" role="status" aria-live="polite">
-              <span className="spinner" aria-hidden="true" /> {busy.label}…
+              <span className="spinner" aria-hidden="true" />{" "}
+              {t(busy.message.key, busy.message.values)}…
               <button type="button" onClick={() => requestRef.current?.abort()}>
-                Cancel wait
+                {t("action.cancelWait")}
               </button>
             </div>
           ) : null}
-          {error !== "" ? (
+          {error !== null ? (
             <div className="banner danger" role="alert">
-              {error}
+              {t(error)}
             </div>
           ) : null}
-          {notice !== "" ? (
+          {notice !== null ? (
             <div className="banner success" role="status">
-              {notice}
+              {t("notice.completed", { operation: t(notice.key, notice.values) })}
             </div>
           ) : null}
 
           {page === "overview" ? (
             <>
-              <section className="metric-grid" aria-label="Infrastructure overview">
+              <section className="metric-grid" aria-label={t("overview.label")}>
                 <article className="metric-card">
-                  <small>Total targets</small>
-                  <strong>{targets.length}</strong>
-                  <span>Across Docker, Kubernetes, and SSH</span>
+                  <small>{t("overview.totalTargets")}</small>
+                  <strong>{number(targets.length)}</strong>
+                  <span>{t("overview.targetKinds")}</span>
                 </article>
                 <article className="metric-card warning-accent">
-                  <small>Target attention</small>
-                  <strong>{attentionCount}</strong>
+                  <small>{t("overview.targetAttention")}</small>
+                  <strong>{number(attentionCount)}</strong>
                   <span>
-                    {readyCount} ready · {unavailableCount} unavailable
+                    {t("overview.targetSummary", {
+                      ready: number(readyCount),
+                      unavailable: number(unavailableCount),
+                    })}
                   </span>
                 </article>
                 <article className="metric-card success-accent">
-                  <small>Environment leases</small>
-                  <strong>{leases.length}</strong>
-                  <span>{readyLeaseCount} currently ready</span>
+                  <small>{t("overview.environmentLeases")}</small>
+                  <strong>{number(leases.length)}</strong>
+                  <span>{t("overview.readyLeases", { count: number(readyLeaseCount) })}</span>
                 </article>
                 <article className="metric-card warning-accent">
-                  <small>Lease attention</small>
-                  <strong>{leaseAttentionCount}</strong>
-                  <span>Failed lifecycle or blocked cleanup</span>
+                  <small>{t("overview.leaseAttention")}</small>
+                  <strong>{number(leaseAttentionCount)}</strong>
+                  <span>{t("overview.leaseAttentionDescription")}</span>
                 </article>
               </section>
               <section className="panel overview-panel">
                 <div className="panel-heading">
                   <div>
-                    <h2>Target health</h2>
-                    <p>Live resources returned by the Admin API.</p>
+                    <h2>{t("overview.targetHealth")}</h2>
+                    <p>{t("overview.liveResources")}</p>
                   </div>
                   <button className="text-button" type="button" onClick={() => navigate("targets")}>
-                    View all targets →
+                    {t("overview.viewTargets")}
                   </button>
                 </div>
                 <TargetTable
@@ -1193,11 +1317,11 @@ export function App() {
               <section className="panel overview-panel">
                 <div className="panel-heading">
                   <div>
-                    <h2>Lease lifecycle</h2>
-                    <p>Desired, observed, and cleanup phases from Control Plane.</p>
+                    <h2>{t("overview.leaseLifecycle")}</h2>
+                    <p>{t("overview.leaseLifecycleDescription")}</p>
                   </div>
                   <button className="text-button" type="button" onClick={() => navigate("leases")}>
-                    View all leases →
+                    {t("overview.viewLeases")}
                   </button>
                 </div>
                 <LeaseTable
@@ -1215,12 +1339,12 @@ export function App() {
               <div className="list-toolbar">
                 <input
                   type="search"
-                  aria-label="Search deployment targets"
-                  placeholder="Search by ID or name"
+                  aria-label={t("search.targets.label")}
+                  placeholder={t("search.targets.placeholder")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">targets.list · {visibleTargets.length}</span>
+                <span className="scope-chip">targets.list · {number(visibleTargets.length)}</span>
               </div>
               <div className="panel target-list-panel">
                 <TargetTable
@@ -1235,12 +1359,12 @@ export function App() {
               <div className="list-toolbar">
                 <input
                   type="search"
-                  aria-label="Search environment profiles"
-                  placeholder="Search by ID, name, version, or provider"
+                  aria-label={t("search.profiles.label")}
+                  placeholder={t("search.profiles.placeholder")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">profiles.list · {visibleProfiles.length}</span>
+                <span className="scope-chip">profiles.list · {number(visibleProfiles.length)}</span>
               </div>
               <div className="panel target-list-panel">
                 <ProfileTable
@@ -1255,12 +1379,12 @@ export function App() {
               <div className="list-toolbar">
                 <input
                   type="search"
-                  aria-label="Search environment leases"
-                  placeholder="Search by ID or environment"
+                  aria-label={t("search.leases.label")}
+                  placeholder={t("search.leases.placeholder")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">leases.list · {visibleLeases.length}</span>
+                <span className="scope-chip">leases.list · {number(visibleLeases.length)}</span>
               </div>
               <div className="panel target-list-panel">
                 <LeaseTable
@@ -1276,17 +1400,17 @@ export function App() {
 
       {targetDetailOpen && selectedTarget !== undefined ? (
         <AdminSheet
-          label={`Deployment target ${selectedTarget.metadata.name}`}
+          label={t("sheet.target", { name: selectedTarget.metadata.name })}
           onClose={() => {
             setTargetDetailOpen(false);
             setCleanupConfirmationOpen(false);
           }}
         >
-          <aside className="detail-panel" aria-label="Selected deployment target">
+          <aside className="detail-panel" aria-label={t("sheet.selectedTarget")}>
             <button
               className="sheet-close"
               type="button"
-              aria-label="Close"
+              aria-label={t("action.close")}
               onClick={() => setTargetDetailOpen(false)}
             >
               ×
@@ -1307,7 +1431,7 @@ export function App() {
       selectedTarget !== undefined &&
       selectedCleanupPreview !== null ? (
         <AdminSheet
-          label={`Confirm cleanup for ${selectedTarget.metadata.name}`}
+          label={t("sheet.cleanup", { name: selectedTarget.metadata.name })}
           onClose={() => setCleanupConfirmationOpen(false)}
         >
           <CleanupConfirmation
@@ -1322,14 +1446,14 @@ export function App() {
 
       {leaseDetailOpen && selectedLease !== undefined ? (
         <AdminSheet
-          label={`Environment lease ${selectedLease.metadata.name}`}
+          label={t("sheet.lease", { name: selectedLease.metadata.name })}
           onClose={() => setLeaseDetailOpen(false)}
         >
-          <aside className="detail-panel" aria-label="Selected environment lease">
+          <aside className="detail-panel" aria-label={t("sheet.selectedLease")}>
             <button
               className="sheet-close"
               type="button"
-              aria-label="Close"
+              aria-label={t("action.close")}
               onClick={() => setLeaseDetailOpen(false)}
             >
               ×
@@ -1341,17 +1465,17 @@ export function App() {
 
       {profileDetailOpen && selectedProfile !== undefined ? (
         <AdminSheet
-          label={`Environment profile ${selectedProfile.metadata.name}`}
+          label={t("sheet.profile", { name: selectedProfile.metadata.name })}
           onClose={() => {
             setProfileDetailOpen(false);
             setProfileTransition(null);
           }}
         >
-          <aside className="detail-panel" aria-label="Selected environment profile">
+          <aside className="detail-panel" aria-label={t("sheet.selectedProfile")}>
             <button
               className="sheet-close"
               type="button"
-              aria-label="Close"
+              aria-label={t("action.close")}
               onClick={() => {
                 setProfileDetailOpen(false);
                 setProfileTransition(null);
@@ -1371,7 +1495,14 @@ export function App() {
 
       {profileTransition !== null && selectedProfile !== undefined ? (
         <AdminSheet
-          label={`${profileTransition === "publish" ? "Publish" : "Disable"} ${selectedProfile.metadata.name}`}
+          label={t("sheet.profileTransition", {
+            action: t(
+              profileTransition === "publish"
+                ? "profile.transition.publish"
+                : "profile.transition.disable",
+            ),
+            name: selectedProfile.metadata.name,
+          })}
           onClose={() => setProfileTransition(null)}
         >
           <ProfileTransitionConfirmation
@@ -1385,18 +1516,18 @@ export function App() {
       ) : null}
 
       {creatingProfile ? (
-        <AdminSheet label="Create environment profile" onClose={() => setCreatingProfile(false)}>
+        <AdminSheet label={t("profile.create.title")} onClose={() => setCreatingProfile(false)}>
           <section className="dialog" aria-labelledby="create-profile-title">
             <div className="panel-heading">
               <div>
-                <div className="eyebrow">profiles.create</div>
-                <h2 id="create-profile-title">Create environment profile</h2>
-                <p>Creates one immutable draft version in Control Plane.</p>
+                <div className="eyebrow">{t("profile.create.eyebrow")}</div>
+                <h2 id="create-profile-title">{t("profile.create.title")}</h2>
+                <p>{t("profile.create.description")}</p>
               </div>
               <button
                 className="icon-button"
                 type="button"
-                aria-label="Close"
+                aria-label={t("action.close")}
                 onClick={() => setCreatingProfile(false)}
               >
                 ×
@@ -1405,7 +1536,7 @@ export function App() {
             <form className="resource-form" onSubmit={createProfile}>
               <div className="form-row">
                 <label>
-                  <span>Profile ID</span>
+                  <span>{t("profile.id")}</span>
                   <input
                     value={profileForm.profileId}
                     onChange={(event) =>
@@ -1420,7 +1551,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  <span>Profile name</span>
+                  <span>{t("profile.name")}</span>
                   <input
                     value={profileForm.profileName}
                     onChange={(event) =>
@@ -1434,7 +1565,7 @@ export function App() {
                 </label>
               </div>
               <label>
-                <span>Version</span>
+                <span>{t("profile.version")}</span>
                 <input
                   type="number"
                   min="1"
@@ -1446,22 +1577,22 @@ export function App() {
                   }
                   required
                 />
-                <small>New profile IDs begin at 1; later drafts use the next version.</small>
+                <small>{t("profile.versionHelp")}</small>
               </label>
               <label>
-                <span>Description</span>
+                <span>{t("profile.description")}</span>
                 <input
                   value={profileForm.description}
                   onChange={(event) =>
                     setProfileForm({ ...profileForm, description: event.target.value })
                   }
-                  placeholder="Coding workspace for daily development"
+                  placeholder={t("profile.descriptionPlaceholder")}
                   maxLength={1024}
                   required
                 />
               </label>
               <fieldset className="provider-options">
-                <legend>Providers</legend>
+                <legend>{t("profile.providers")}</legend>
                 <label className="confirmation-check">
                   <input
                     type="checkbox"
@@ -1485,7 +1616,7 @@ export function App() {
               </fieldset>
               <div className="form-row">
                 <label>
-                  <span>CPU limit (mCPU)</span>
+                  <span>{t("profile.cpuLimit")}</span>
                   <input
                     type="number"
                     min="100"
@@ -1499,7 +1630,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  <span>Memory limit (MiB)</span>
+                  <span>{t("profile.memoryLimit")}</span>
                   <input
                     type="number"
                     min="128"
@@ -1514,7 +1645,7 @@ export function App() {
                 </label>
               </div>
               <label>
-                <span>Storage policy reference</span>
+                <span>{t("profile.storagePolicyRef")}</span>
                 <input
                   value={profileForm.storagePolicyRef}
                   onChange={(event) =>
@@ -1527,7 +1658,7 @@ export function App() {
                 />
               </label>
               <label>
-                <span>Network policy reference</span>
+                <span>{t("profile.networkPolicyRef")}</span>
                 <input
                   value={profileForm.networkPolicyRef}
                   onChange={(event) =>
@@ -1540,7 +1671,7 @@ export function App() {
                 />
               </label>
               <label>
-                <span>Release digest</span>
+                <span>{t("profile.releaseDigest")}</span>
                 <input
                   value={profileForm.releaseDigest}
                   onChange={(event) =>
@@ -1554,7 +1685,7 @@ export function App() {
                 />
               </label>
               <label>
-                <span>Target references</span>
+                <span>{t("profile.targetRefs")}</span>
                 <input
                   value={profileForm.targetRefs}
                   onChange={(event) =>
@@ -1564,10 +1695,10 @@ export function App() {
                   required
                   spellCheck={false}
                 />
-                <small>Comma-separated Target IDs or selectors resolved by Control Plane.</small>
+                <small>{t("profile.targetRefsHelp")}</small>
               </label>
               <label>
-                <span>Provider credential reference</span>
+                <span>{t("profile.providerCredentialRef")}</span>
                 <input
                   value={profileForm.providerCredentialRef}
                   onChange={(event) =>
@@ -1578,7 +1709,7 @@ export function App() {
                   required
                   spellCheck={false}
                 />
-                <small>Only this opaque reference enters the browser; secret bytes do not.</small>
+                <small>{t("profile.providerCredentialRefHelp")}</small>
               </label>
               <div className="dialog-actions">
                 <button
@@ -1586,10 +1717,10 @@ export function App() {
                   type="button"
                   onClick={() => setCreatingProfile(false)}
                 >
-                  Cancel
+                  {t("action.cancel")}
                 </button>
                 <button className="button primary" type="submit" disabled={busy !== null}>
-                  Create draft
+                  {t("profile.createDraft")}
                 </button>
               </div>
             </form>
@@ -1598,18 +1729,18 @@ export function App() {
       ) : null}
 
       {registering ? (
-        <AdminSheet label="Register deployment target" onClose={() => setRegistering(false)}>
+        <AdminSheet label={t("target.register.title")} onClose={() => setRegistering(false)}>
           <section className="dialog" aria-labelledby="register-title">
             <div className="panel-heading">
               <div>
-                <div className="eyebrow">targets.create</div>
-                <h2 id="register-title">Register deployment target</h2>
-                <p>References resolve server-side; credential bytes never enter the browser.</p>
+                <div className="eyebrow">{t("target.register.eyebrow")}</div>
+                <h2 id="register-title">{t("target.register.title")}</h2>
+                <p>{t("target.register.description")}</p>
               </div>
               <button
                 className="icon-button"
                 type="button"
-                aria-label="Close"
+                aria-label={t("action.close")}
                 onClick={() => setRegistering(false)}
               >
                 ×
@@ -1618,7 +1749,7 @@ export function App() {
             <form className="resource-form" onSubmit={registerTarget}>
               <div className="form-row">
                 <label>
-                  <span>Target ID</span>
+                  <span>{t("target.id")}</span>
                   <input
                     value={targetForm.targetId}
                     onChange={(event) =>
@@ -1633,7 +1764,7 @@ export function App() {
                   />
                 </label>
                 <label>
-                  <span>Display name</span>
+                  <span>{t("target.displayName")}</span>
                   <input
                     value={targetForm.targetName}
                     onChange={(event) =>
@@ -1646,20 +1777,20 @@ export function App() {
                 </label>
               </div>
               <label>
-                <span>Target kind</span>
+                <span>{t("target.kind")}</span>
                 <select
                   value={targetForm.targetKind}
                   onChange={(event) =>
                     setTargetForm({ ...targetForm, targetKind: event.target.value as TargetKind })
                   }
                 >
-                  <option value="docker">Docker API</option>
-                  <option value="kubernetes">Kubernetes API</option>
-                  <option value="ssh">SSH host</option>
+                  <option value="docker">{t("target.kind.docker")}</option>
+                  <option value="kubernetes">{t("target.kind.kubernetes")}</option>
+                  <option value="ssh">{t("target.kind.ssh")}</option>
                 </select>
               </label>
               <label>
-                <span>Endpoint</span>
+                <span>{t("target.endpoint")}</span>
                 <input
                   type="url"
                   value={targetForm.endpoint}
@@ -1671,10 +1802,10 @@ export function App() {
                   required
                   spellCheck={false}
                 />
-                <small>Control Plane connects to this endpoint; the browser never does.</small>
+                <small>{t("target.endpointHelp")}</small>
               </label>
               <label>
-                <span>Credential reference</span>
+                <span>{t("target.credentialRef")}</span>
                 <input
                   value={targetForm.credentialRef}
                   onChange={(event) =>
@@ -1685,7 +1816,7 @@ export function App() {
                   required
                   spellCheck={false}
                 />
-                <small>Opaque reference to a deployment-owned credential bundle.</small>
+                <small>{t("target.credentialRefHelp")}</small>
               </label>
               <div className="dialog-actions">
                 <button
@@ -1693,10 +1824,10 @@ export function App() {
                   type="button"
                   onClick={() => setRegistering(false)}
                 >
-                  Cancel
+                  {t("action.cancel")}
                 </button>
                 <button className="button primary" type="submit" disabled={busy !== null}>
-                  Register target
+                  {t("action.registerTarget")}
                 </button>
               </div>
             </form>
@@ -1716,19 +1847,19 @@ function TargetTable({
   selectedTargetId: string;
   onSelect: (targetId: string) => void;
 }>) {
-  if (targets.length === 0)
-    return <div className="table-empty">No deployment targets are registered in this project.</div>;
+  const { t, number, dateTime } = useI18n();
+  if (targets.length === 0) return <div className="table-empty">{t("table.empty.targets")}</div>;
   return (
     <div className="table-scroll">
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Kind</th>
-            <th>Status</th>
-            <th>Generation</th>
-            <th>Last probe</th>
-            <th aria-label="Actions" />
+            <th>{t("table.name")}</th>
+            <th>{t("table.kind")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.generation")}</th>
+            <th>{t("table.lastProbe")}</th>
+            <th aria-label={t("table.actions")} />
           </tr>
         </thead>
         <tbody>
@@ -1745,21 +1876,23 @@ function TargetTable({
                 </button>
               </td>
               <td>
-                <span className="kind-badge">{target.spec.targetKind}</span>
+                <span className="kind-badge" data-kind={target.spec.targetKind}>
+                  {targetKindLabel(target.spec.targetKind, t)}
+                </span>
               </td>
               <td>
                 <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
                   <i />
-                  {target.spec.observedPhase}
+                  {phaseLabel(target.spec.observedPhase, t)}
                 </span>
               </td>
-              <td className="mono">g{target.spec.generation}</td>
-              <td>{formatTime(target.spec.lastProbeAt)}</td>
+              <td className="mono">g{number(target.spec.generation)}</td>
+              <td>{dateTime(target.spec.lastProbeAt)}</td>
               <td className="row-action-cell">
                 <button
                   className="row-action"
                   type="button"
-                  aria-label={`View ${target.metadata.name}`}
+                  aria-label={t("table.view", { name: target.metadata.name })}
                   onClick={() => onSelect(target.metadata.uid)}
                 >
                   ···
@@ -1782,19 +1915,19 @@ function LeaseTable({
   selectedLeaseId: string;
   onSelect: (leaseId: string) => void;
 }>) {
-  if (leases.length === 0)
-    return <div className="table-empty">No environment leases exist in this project.</div>;
+  const { t, number, dateTime } = useI18n();
+  if (leases.length === 0) return <div className="table-empty">{t("table.empty.leases")}</div>;
   return (
     <div className="table-scroll">
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Observed</th>
-            <th>Cleanup</th>
-            <th>Generation</th>
-            <th>Expires</th>
-            <th aria-label="Actions" />
+            <th>{t("table.name")}</th>
+            <th>{t("table.observed")}</th>
+            <th>{t("table.cleanup")}</th>
+            <th>{t("table.generation")}</th>
+            <th>{t("table.expires")}</th>
+            <th aria-label={t("table.actions")} />
           </tr>
         </thead>
         <tbody>
@@ -1813,22 +1946,22 @@ function LeaseTable({
               <td>
                 <span className={`phase ${phaseTone(lease.spec.observedPhase)}`}>
                   <i />
-                  {lease.spec.observedPhase}
+                  {phaseLabel(lease.spec.observedPhase, t)}
                 </span>
               </td>
               <td>
                 <span className={`phase ${phaseTone(lease.spec.cleanupPhase)}`}>
                   <i />
-                  {lease.spec.cleanupPhase}
+                  {phaseLabel(lease.spec.cleanupPhase, t)}
                 </span>
               </td>
-              <td className="mono">g{lease.spec.generation}</td>
-              <td>{formatTime(lease.spec.expiresAt)}</td>
+              <td className="mono">g{number(lease.spec.generation)}</td>
+              <td>{dateTime(lease.spec.expiresAt)}</td>
               <td className="row-action-cell">
                 <button
                   className="row-action"
                   type="button"
-                  aria-label={`View ${lease.metadata.name}`}
+                  aria-label={t("table.view", { name: lease.metadata.name })}
                   onClick={() => onSelect(lease.metadata.uid)}
                 >
                   ···
@@ -1851,22 +1984,20 @@ function ProfileTable({
   selectedProfileVersionId: string;
   onSelect: (profileVersionId: string) => void;
 }>) {
-  if (profiles.length === 0)
-    return (
-      <div className="table-empty">No environment profile versions exist in this project.</div>
-    );
+  const { t, number, dateTime } = useI18n();
+  if (profiles.length === 0) return <div className="table-empty">{t("table.empty.profiles")}</div>;
   return (
     <div className="table-scroll">
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Version</th>
-            <th>Status</th>
-            <th>Providers</th>
-            <th>Capacity</th>
-            <th>Updated</th>
-            <th aria-label="Actions" />
+            <th>{t("table.name")}</th>
+            <th>{t("table.version")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.providers")}</th>
+            <th>{t("table.capacity")}</th>
+            <th>{t("table.updated")}</th>
+            <th aria-label={t("table.actions")} />
           </tr>
         </thead>
         <tbody>
@@ -1882,23 +2013,25 @@ function ProfileTable({
                   <small>{profile.spec.profileId}</small>
                 </button>
               </td>
-              <td className="mono">v{profile.spec.version}</td>
+              <td className="mono">v{number(profile.spec.version)}</td>
               <td>
                 <span className={`phase ${phaseTone(profile.spec.status)}`}>
-                  <i /> {profile.spec.status}
+                  <i /> {phaseLabel(profile.spec.status, t)}
                 </span>
               </td>
               <td>{profile.spec.providerKinds.join(" · ")}</td>
               <td>
-                {profile.spec.cpuLimitMillis} mCPU ·{" "}
-                {Math.round(profile.spec.memoryLimitBytes / 1_048_576)} MiB
+                {number(profile.spec.cpuLimitMillis)} mCPU ·{" "}
+                {number(Math.round(profile.spec.memoryLimitBytes / 1_048_576))} MiB
               </td>
-              <td>{formatTime(profile.metadata.updatedAt)}</td>
+              <td>{dateTime(profile.metadata.updatedAt)}</td>
               <td className="row-action-cell">
                 <button
                   className="row-action"
                   type="button"
-                  aria-label={`View ${profile.metadata.name} version ${profile.spec.version}`}
+                  aria-label={t("table.view", {
+                    name: `${profile.metadata.name} v${number(profile.spec.version)}`,
+                  })}
                   onClick={() => onSelect(profile.metadata.uid)}
                 >
                   ···
@@ -1927,6 +2060,7 @@ function TargetDetail({
   onPreviewCleanup: () => void;
   disabled: boolean;
 }>) {
+  const { t, number, dateTime } = useI18n();
   return (
     <>
       <div className="detail-heading">
@@ -1934,68 +2068,67 @@ function TargetDetail({
           {target.spec.targetKind.slice(0, 1).toUpperCase()}
         </div>
         <div>
-          <div className="eyebrow">{target.spec.targetKind} target</div>
+          <div className="eyebrow">
+            {t("detail.targetEyebrow", { kind: targetKindLabel(target.spec.targetKind, t) })}
+          </div>
           <h2>{target.metadata.name}</h2>
           <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
             <i />
-            {target.spec.observedPhase}
+            {phaseLabel(target.spec.observedPhase, t)}
           </span>
         </div>
       </div>
       <dl className="detail-list">
         <div>
-          <dt>Target ID</dt>
+          <dt>{t("target.id")}</dt>
           <dd className="mono">{target.metadata.uid}</dd>
         </div>
         <div>
-          <dt>Endpoint</dt>
+          <dt>{t("target.endpoint")}</dt>
           <dd className="mono break">{target.spec.endpoint}</dd>
         </div>
         <div>
-          <dt>Credential ref</dt>
+          <dt>{t("target.credentialRef")}</dt>
           <dd className="mono">{target.spec.credentialRef}</dd>
         </div>
         <div>
-          <dt>Generation</dt>
-          <dd className="mono">{target.spec.generation}</dd>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(target.spec.generation)}</dd>
         </div>
         <div>
-          <dt>Resource version</dt>
+          <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{target.metadata.resourceVersion}</dd>
         </div>
         <div>
-          <dt>Runtime API</dt>
-          <dd>{target.spec.apiVersion || "Not observed"}</dd>
+          <dt>{t("detail.runtimeApi")}</dt>
+          <dd>{target.spec.apiVersion || t("common.notObserved")}</dd>
         </div>
         <div>
-          <dt>Engine</dt>
-          <dd>{target.spec.engineVersion || "Not observed"}</dd>
+          <dt>{t("detail.engine")}</dt>
+          <dd>{target.spec.engineVersion || t("common.notObserved")}</dd>
         </div>
         <div>
-          <dt>Platform</dt>
+          <dt>{t("detail.platform")}</dt>
           <dd>
             {[target.spec.os, target.spec.architecture].filter(Boolean).join(" / ") ||
-              "Not observed"}
+              t("common.notObserved")}
           </dd>
         </div>
         <div>
-          <dt>Last probe</dt>
-          <dd>{formatTime(target.spec.lastProbeAt)}</dd>
+          <dt>{t("table.lastProbe")}</dt>
+          <dd>{dateTime(target.spec.lastProbeAt)}</dd>
         </div>
         {target.spec.stableErrorCode !== "" ? (
           <div>
-            <dt>Stable error</dt>
+            <dt>{t("detail.stableError")}</dt>
             <dd className="danger-text">{target.spec.stableErrorCode}</dd>
           </div>
         ) : null}
       </dl>
       <section className="action-block">
         <div>
-          <h3>Probe target</h3>
-          <p>
-            Checks connectivity from Control Plane using expected generation{" "}
-            {target.spec.generation}.
-          </p>
+          <h3>{t("detail.probeTitle")}</h3>
+          <p>{t("detail.probeDescription", { generation: number(target.spec.generation) })}</p>
         </div>
         <button
           className="button primary"
@@ -2003,32 +2136,37 @@ function TargetDetail({
           onClick={onProbe}
           disabled={disabled || target.spec.observedPhase === "probing"}
         >
-          Run probe
+          {t("detail.runProbe")}
         </button>
       </section>
       <section className="activity-block" aria-labelledby="target-operations-title">
         <div className="activity-heading">
-          <h3 id="target-operations-title">Operations</h3>
-          <span className="scope-chip">operations.list · {operations.length}</span>
+          <h3 id="target-operations-title">{t("detail.operations")}</h3>
+          <span className="scope-chip">operations.list · {number(operations.length)}</span>
         </div>
         {operations.length === 0 ? (
-          <p className="activity-empty">No durable operations were recorded for this target.</p>
+          <p className="activity-empty">{t("detail.noOperations")}</p>
         ) : (
           <ol className="activity-list">
             {operations.map((operation) => (
               <li key={operation.operationId}>
                 <div>
-                  <strong>{operation.action}</strong>
+                  <strong>{auditLabel(operation.action, t)}</strong>
                   <span className={`phase ${phaseTone(operation.state)}`}>
-                    <i /> {operation.state}
+                    <i /> {phaseLabel(operation.state, t)}
                   </span>
                 </div>
-                <p>{operation.impactSummary}</p>
+                <p>{operationImpactLabel(operation.action, t)}</p>
+                <details className="operation-diagnostic">
+                  <summary>{t("common.diagnostics")}</summary>
+                  <p>{operation.impactSummary}</p>
+                  {operation.stableErrorCode ? <code>{operation.stableErrorCode}</code> : null}
+                </details>
                 <small className="mono">
-                  {operation.operationId} · g{operation.resourceGeneration} ·{" "}
+                  {operation.operationId} · g{number(operation.resourceGeneration)} ·{" "}
                   {operation.currentStep}
                 </small>
-                <small>{formatTime(operation.updatedAt)}</small>
+                <small>{dateTime(operation.updatedAt)}</small>
               </li>
             ))}
           </ol>
@@ -2036,24 +2174,24 @@ function TargetDetail({
       </section>
       <section className="activity-block" aria-labelledby="target-audit-title">
         <div className="activity-heading">
-          <h3 id="target-audit-title">Audit</h3>
-          <span className="scope-chip">audit.list · {audit.length}</span>
+          <h3 id="target-audit-title">{t("detail.audit")}</h3>
+          <span className="scope-chip">audit.list · {number(audit.length)}</span>
         </div>
         {audit.length === 0 ? (
-          <p className="activity-empty">No audit events were recorded for this target.</p>
+          <p className="activity-empty">{t("detail.noTargetAudit")}</p>
         ) : (
           <ol className="activity-list compact">
             {audit.map((event) => (
               <li key={event.eventId}>
                 <div>
-                  <strong>{event.action}</strong>
+                  <strong>{auditLabel(event.action, t)}</strong>
                   <span className={`phase ${phaseTone(event.result)}`}>
-                    <i /> {event.result}
+                    <i /> {phaseLabel(event.result, t)}
                   </span>
                 </div>
-                <small className="mono break">actor {event.actor}</small>
+                <small className="mono break">{t("common.actor", { actor: event.actor })}</small>
                 <small className="mono">
-                  {event.requestId} · {formatTime(event.occurredAt)}
+                  {event.requestId} · {dateTime(event.occurredAt)}
                 </small>
               </li>
             ))}
@@ -2062,8 +2200,8 @@ function TargetDetail({
       </section>
       <section className="action-block cleanup-preview-block">
         <div>
-          <h3>Cleanup impact</h3>
-          <p>Reads platform-owned resources from this target without deleting them.</p>
+          <h3>{t("detail.cleanupImpact")}</h3>
+          <p>{t("detail.cleanupImpactDescription")}</p>
         </div>
         <button
           className="button ghost"
@@ -2071,7 +2209,7 @@ function TargetDetail({
           onClick={onPreviewCleanup}
           disabled={disabled}
         >
-          Preview cleanup
+          {t("detail.previewCleanup")}
         </button>
       </section>
     </>
@@ -2091,6 +2229,7 @@ function CleanupConfirmation({
   onClose: () => void;
   onConfirm: () => void;
 }>) {
+  const { t, number } = useI18n();
   const [confirmed, setConfirmed] = useState(false);
   const resourceCount = preview.spec.workers.reduce(
     (count, worker) => count + worker.resources.length,
@@ -2100,11 +2239,16 @@ function CleanupConfirmation({
     <section className="dialog" aria-labelledby="cleanup-title">
       <div className="panel-heading">
         <div>
-          <div className="eyebrow">targets.act · destructive</div>
-          <h2 id="cleanup-title">Confirm target cleanup</h2>
+          <div className="eyebrow">targets.act · {t("common.destructive")}</div>
+          <h2 id="cleanup-title">{t("cleanup.confirmTitle")}</h2>
           <p>{target.metadata.name}</p>
         </div>
-        <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
           ×
         </button>
       </div>
@@ -2117,26 +2261,29 @@ function CleanupConfirmation({
       >
         <div className={`banner ${preview.spec.canCleanup ? "running" : "danger"}`} role="status">
           {preview.spec.canCleanup
-            ? `${preview.spec.workers.length} Workers and ${resourceCount} resources will be deleted.`
-            : "Cleanup is blocked because at least one Worker has an active Lease."}
+            ? t("cleanup.summary", {
+                workers: number(preview.spec.workers.length),
+                resources: number(resourceCount),
+              })
+            : t("cleanup.blocked")}
         </div>
         <dl className="detail-list cleanup-fence">
           <div>
-            <dt>Target</dt>
+            <dt>{t("lease.target")}</dt>
             <dd className="mono">{target.metadata.uid}</dd>
           </div>
           <div>
-            <dt>Generation</dt>
-            <dd className="mono">{preview.spec.expectedGeneration}</dd>
+            <dt>{t("table.generation")}</dt>
+            <dd className="mono">{number(preview.spec.expectedGeneration)}</dd>
           </div>
           <div>
-            <dt>Resource version</dt>
+            <dt>{t("detail.resourceVersion")}</dt>
             <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
           </div>
         </dl>
-        <div className="cleanup-preview" aria-label="Cleanup impact">
+        <div className="cleanup-preview" aria-label={t("detail.cleanupImpact")}>
           {preview.spec.workers.length === 0 ? (
-            <p>No platform-owned Workers or resources were found.</p>
+            <p>{t("cleanup.none")}</p>
           ) : (
             preview.spec.workers.map((worker) => (
               <article
@@ -2148,16 +2295,16 @@ function CleanupConfirmation({
                   <span
                     className={`phase ${worker.disposition === "blocked" ? "danger" : "success"}`}
                   >
-                    <i /> {worker.disposition}
+                    <i /> {phaseLabel(worker.disposition, t)}
                   </span>
                 </div>
                 <small className="mono">
-                  {worker.leaseId} · g{worker.leaseGeneration}
+                  {worker.leaseId} · g{number(worker.leaseGeneration)}
                 </small>
                 <ul>
                   {worker.resources.map((resource) => (
                     <li key={`${resource.resourceKind}:${resource.resourceName}`}>
-                      <span>{resource.resourceKind}</span>
+                      <span>{resourceLabel(resource.resourceKind, t)}</span>
                       <code>{resource.resourceName}</code>
                     </li>
                   ))}
@@ -2175,19 +2322,19 @@ function CleanupConfirmation({
               disabled={disabled}
               data-sheet-autofocus
             />
-            <span>I reviewed the resource names and generation above.</span>
+            <span>{t("cleanup.review")}</span>
           </label>
         ) : null}
         <div className="dialog-actions">
           <button className="button ghost" type="button" onClick={onClose}>
-            Cancel
+            {t("action.cancel")}
           </button>
           <button
             className="button danger"
             type="submit"
             disabled={disabled || !preview.spec.canCleanup || !confirmed}
           >
-            Confirm cleanup
+            {t("cleanup.confirm")}
           </button>
         </div>
       </form>
@@ -2196,6 +2343,7 @@ function CleanupConfirmation({
 }
 
 function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
+  const { t, number, dateTime } = useI18n();
   return (
     <>
       <div className="detail-heading">
@@ -2203,76 +2351,76 @@ function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
           L
         </div>
         <div>
-          <div className="eyebrow">Environment lease</div>
+          <div className="eyebrow">{t("lease.eyebrow")}</div>
           <h2>{lease.metadata.name}</h2>
           <span className={`phase ${phaseTone(lease.spec.observedPhase)}`}>
             <i />
-            {lease.spec.observedPhase}
+            {phaseLabel(lease.spec.observedPhase, t)}
           </span>
         </div>
       </div>
       <dl className="detail-list">
         <div>
-          <dt>Lease ID</dt>
+          <dt>{t("lease.id")}</dt>
           <dd className="mono">{lease.metadata.uid}</dd>
         </div>
         <div>
-          <dt>Environment ID</dt>
+          <dt>{t("lease.environmentId")}</dt>
           <dd className="mono">{lease.spec.environmentId}</dd>
         </div>
         <div>
-          <dt>Target</dt>
-          <dd className="mono">{lease.spec.targetId ?? "Legacy lease"}</dd>
+          <dt>{t("lease.target")}</dt>
+          <dd className="mono">{lease.spec.targetId ?? t("common.legacyLease")}</dd>
         </div>
         <div>
-          <dt>Desired phase</dt>
-          <dd>{lease.spec.desiredPhase}</dd>
+          <dt>{t("lease.desiredPhase")}</dt>
+          <dd>{phaseLabel(lease.spec.desiredPhase, t)}</dd>
         </div>
         <div>
-          <dt>Cleanup phase</dt>
+          <dt>{t("lease.cleanupPhase")}</dt>
           <dd className={lease.spec.cleanupPhase === "blocked" ? "danger-text" : ""}>
-            {lease.spec.cleanupPhase}
+            {phaseLabel(lease.spec.cleanupPhase, t)}
           </dd>
         </div>
         <div>
-          <dt>Generation</dt>
-          <dd className="mono">{lease.spec.generation}</dd>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(lease.spec.generation)}</dd>
         </div>
         <div>
-          <dt>Resource version</dt>
+          <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{lease.metadata.resourceVersion}</dd>
         </div>
         <div>
-          <dt>Release digest</dt>
+          <dt>{t("lease.releaseDigest")}</dt>
           <dd className="mono break">{lease.spec.releaseDigest}</dd>
         </div>
         <div>
-          <dt>CPU / memory</dt>
+          <dt>{t("lease.cpuMemory")}</dt>
           <dd>
             {lease.spec.cpuLimitMillis === undefined
-              ? "Not bound"
-              : `${lease.spec.cpuLimitMillis} mCPU / ${Math.round((lease.spec.memoryLimitBytes ?? 0) / 1_048_576)} MiB`}
+              ? t("common.notBound")
+              : `${number(lease.spec.cpuLimitMillis)} mCPU / ${number(Math.round((lease.spec.memoryLimitBytes ?? 0) / 1_048_576))} MiB`}
           </dd>
         </div>
         <div>
-          <dt>Provider credential ref</dt>
-          <dd className="mono">{lease.spec.providerCredentialRef ?? "Legacy lease"}</dd>
+          <dt>{t("lease.providerCredentialRef")}</dt>
+          <dd className="mono">{lease.spec.providerCredentialRef ?? t("common.legacyLease")}</dd>
         </div>
         <div>
-          <dt>Worker endpoint</dt>
-          <dd className="mono break">{lease.spec.workerEndpoint ?? "Not ready"}</dd>
+          <dt>{t("lease.workerEndpoint")}</dt>
+          <dd className="mono break">{lease.spec.workerEndpoint ?? t("common.notReady")}</dd>
         </div>
         <div>
-          <dt>Expires</dt>
-          <dd>{formatTime(lease.spec.expiresAt)}</dd>
+          <dt>{t("lease.expires")}</dt>
+          <dd>{dateTime(lease.spec.expiresAt)}</dd>
         </div>
         <div>
-          <dt>Updated</dt>
-          <dd>{formatTime(lease.metadata.updatedAt)}</dd>
+          <dt>{t("lease.updated")}</dt>
+          <dd>{dateTime(lease.metadata.updatedAt)}</dd>
         </div>
         {lease.spec.stableErrorCode !== undefined && lease.spec.stableErrorCode !== "" ? (
           <div>
-            <dt>Stable error</dt>
+            <dt>{t("detail.stableError")}</dt>
             <dd className="danger-text">{lease.spec.stableErrorCode}</dd>
           </div>
         ) : null}
@@ -2294,19 +2442,28 @@ function ProfileTransitionConfirmation({
   onClose: () => void;
   onConfirm: () => void;
 }>) {
+  const { t, number } = useI18n();
   const [confirmed, setConfirmed] = useState(false);
   const publishing = action === "publish";
+  const actionLabel = t(publishing ? "profile.transition.publish" : "profile.transition.disable");
   return (
     <section className="dialog" aria-labelledby="profile-transition-title">
       <div className="panel-heading">
         <div>
-          <div className="eyebrow">profiles.act</div>
-          <h2 id="profile-transition-title">{publishing ? "Publish" : "Disable"} profile</h2>
+          <div className="eyebrow">{t("profile.transition.eyebrow")}</div>
+          <h2 id="profile-transition-title">
+            {t("profile.transition.title", { action: actionLabel })}
+          </h2>
           <p>
-            {profile.metadata.name} · v{profile.spec.version}
+            {profile.metadata.name} · v{number(profile.spec.version)}
           </p>
         </div>
-        <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
           ×
         </button>
       </div>
@@ -2319,20 +2476,20 @@ function ProfileTransitionConfirmation({
       >
         <div className={`banner ${publishing ? "running" : "danger"}`} role="status">
           {publishing
-            ? "This immutable draft will enter the published lifecycle state."
-            : "This published version will be disabled. Existing leases are not terminated."}
+            ? t("profile.transition.publishImpact")
+            : t("profile.transition.disableImpact")}
         </div>
         <dl className="detail-list cleanup-fence">
           <div>
-            <dt>Profile ID</dt>
+            <dt>{t("profile.id")}</dt>
             <dd className="mono">{profile.spec.profileId}</dd>
           </div>
           <div>
-            <dt>Version</dt>
-            <dd className="mono">{profile.spec.version}</dd>
+            <dt>{t("profile.version")}</dt>
+            <dd className="mono">{number(profile.spec.version)}</dd>
           </div>
           <div>
-            <dt>Expected resource version</dt>
+            <dt>{t("profile.expectedResourceVersion")}</dt>
             <dd className="mono">{profile.metadata.resourceVersion}</dd>
           </div>
         </dl>
@@ -2344,18 +2501,18 @@ function ProfileTransitionConfirmation({
             disabled={disabled}
             data-sheet-autofocus
           />
-          <span>I reviewed the profile version and lifecycle impact.</span>
+          <span>{t("profile.transition.review")}</span>
         </label>
         <div className="dialog-actions">
           <button className="button ghost" type="button" onClick={onClose}>
-            Cancel
+            {t("action.cancel")}
           </button>
           <button
             className={`button ${publishing ? "primary" : "danger"}`}
             type="submit"
             disabled={disabled || !confirmed}
           >
-            Confirm {action}
+            {t("profile.transition.confirm", { action: actionLabel })}
           </button>
         </div>
       </form>
@@ -2374,6 +2531,7 @@ function ProfileDetail({
   disabled: boolean;
   onTransition: (action: ProfileTransition) => void;
 }>) {
+  const { t, number, dateTime } = useI18n();
   return (
     <>
       <div className="detail-heading">
@@ -2381,82 +2539,88 @@ function ProfileDetail({
           P
         </div>
         <div>
-          <div className="eyebrow">Environment profile · v{profile.spec.version}</div>
+          <div className="eyebrow">
+            {t("profile.eyebrow", { version: number(profile.spec.version) })}
+          </div>
           <h2>{profile.metadata.name}</h2>
           <span className={`phase ${phaseTone(profile.spec.status)}`}>
-            <i /> {profile.spec.status}
+            <i /> {phaseLabel(profile.spec.status, t)}
           </span>
         </div>
       </div>
       <dl className="detail-list">
         <div>
-          <dt>Profile ID</dt>
+          <dt>{t("profile.id")}</dt>
           <dd className="mono">{profile.spec.profileId}</dd>
         </div>
         <div>
-          <dt>Version resource</dt>
+          <dt>{t("profile.versionResource")}</dt>
           <dd className="mono break">{profile.metadata.uid}</dd>
         </div>
         <div>
-          <dt>Description</dt>
+          <dt>{t("profile.description")}</dt>
           <dd>{profile.spec.description}</dd>
         </div>
         <div>
-          <dt>Providers</dt>
-          <dd>{profile.spec.providerKinds.join(" · ")}</dd>
+          <dt>{t("profile.providers")}</dt>
+          <dd>{profile.spec.providerKinds.map(providerLabel).join(" · ")}</dd>
         </div>
         <div>
-          <dt>CPU / memory</dt>
+          <dt>{t("profile.cpuMemory")}</dt>
           <dd>
-            {profile.spec.cpuLimitMillis} mCPU /{" "}
-            {Math.round(profile.spec.memoryLimitBytes / 1_048_576)} MiB
+            {number(profile.spec.cpuLimitMillis)} mCPU /{" "}
+            {number(Math.round(profile.spec.memoryLimitBytes / 1_048_576))} MiB
           </dd>
         </div>
         <div>
-          <dt>Storage policy</dt>
+          <dt>{t("profile.storagePolicy")}</dt>
           <dd className="mono">{profile.spec.storagePolicyRef}</dd>
         </div>
         <div>
-          <dt>Network policy</dt>
+          <dt>{t("profile.networkPolicy")}</dt>
           <dd className="mono">{profile.spec.networkPolicyRef}</dd>
         </div>
         <div>
-          <dt>Release digest</dt>
+          <dt>{t("profile.releaseDigest")}</dt>
           <dd className="mono break">{profile.spec.releaseDigest}</dd>
         </div>
         <div>
-          <dt>Target references</dt>
+          <dt>{t("profile.targetRefs")}</dt>
           <dd className="mono break">{profile.spec.targetRefs.join(", ")}</dd>
         </div>
         <div>
-          <dt>Provider credential ref</dt>
+          <dt>{t("profile.providerCredentialRef")}</dt>
           <dd className="mono break">{profile.spec.providerCredentialRef}</dd>
         </div>
         <div>
-          <dt>Resource version</dt>
+          <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{profile.metadata.resourceVersion}</dd>
         </div>
         <div>
-          <dt>Created</dt>
-          <dd>{formatTime(profile.metadata.createdAt)}</dd>
+          <dt>{t("profile.created")}</dt>
+          <dd>{dateTime(profile.metadata.createdAt)}</dd>
         </div>
         <div>
-          <dt>Published</dt>
-          <dd>{formatTime(profile.spec.publishedAt)}</dd>
+          <dt>{t("profile.published")}</dt>
+          <dd>{dateTime(profile.spec.publishedAt)}</dd>
         </div>
         <div>
-          <dt>Disabled</dt>
-          <dd>{formatTime(profile.spec.disabledAt)}</dd>
+          <dt>{t("profile.disabled")}</dt>
+          <dd>{dateTime(profile.spec.disabledAt)}</dd>
         </div>
       </dl>
       {profile.spec.status !== "disabled" ? (
         <section className="action-block">
           <div>
-            <h3>{profile.spec.status === "draft" ? "Publish profile" : "Disable profile"}</h3>
+            <h3>
+              {t(profile.spec.status === "draft" ? "profile.publishTitle" : "profile.disableTitle")}
+            </h3>
             <p>
-              {profile.spec.status === "draft"
-                ? "Publishes this immutable version using the current resource-version fence."
-                : "Disables this version without terminating existing environment leases."}
+              {t(
+                profile.spec.status === "draft"
+                  ? "profile.publishDescription"
+                  : "profile.disableDescription",
+              )}
             </p>
           </div>
           <button
@@ -2465,30 +2629,32 @@ function ProfileDetail({
             onClick={() => onTransition(profile.spec.status === "draft" ? "publish" : "disable")}
             disabled={disabled}
           >
-            {profile.spec.status === "draft" ? "Publish version" : "Disable version"}
+            {t(
+              profile.spec.status === "draft" ? "profile.publishVersion" : "profile.disableVersion",
+            )}
           </button>
         </section>
       ) : null}
       <section className="activity-block" aria-labelledby="profile-audit-title">
         <div className="activity-heading">
-          <h3 id="profile-audit-title">Audit</h3>
-          <span className="scope-chip">audit.list · {audit.length}</span>
+          <h3 id="profile-audit-title">{t("detail.audit")}</h3>
+          <span className="scope-chip">audit.list · {number(audit.length)}</span>
         </div>
         {audit.length === 0 ? (
-          <p className="activity-empty">No audit events were recorded for this profile version.</p>
+          <p className="activity-empty">{t("profile.noAudit")}</p>
         ) : (
           <ol className="activity-list compact">
             {audit.map((event) => (
               <li key={event.eventId}>
                 <div>
-                  <strong>{event.action}</strong>
+                  <strong>{auditLabel(event.action, t)}</strong>
                   <span className={`phase ${phaseTone(event.result)}`}>
-                    <i /> {event.result}
+                    <i /> {phaseLabel(event.result, t)}
                   </span>
                 </div>
-                <small className="mono break">actor {event.actor}</small>
+                <small className="mono break">{t("common.actor", { actor: event.actor })}</small>
                 <small className="mono">
-                  {event.requestId} · {formatTime(event.occurredAt)}
+                  {event.requestId} · {dateTime(event.occurredAt)}
                 </small>
               </li>
             ))}

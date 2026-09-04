@@ -11,6 +11,8 @@ import {
   type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
+import type { MessageKey } from "./i18n";
+
 export type AdminClient = Pick<
   Client,
   | "listAdminDeploymentTargets"
@@ -45,6 +47,12 @@ const emptyConnection: SavedAdminConnection = Object.freeze({
   tenantId: "",
   projectId: "",
 });
+
+class AdminUIError extends Error {
+  constructor(readonly messageKey: MessageKey) {
+    super(messageKey);
+  }
+}
 
 export function readSavedAdminConnection(storage: ConnectionStorage): SavedAdminConnection {
   try {
@@ -129,7 +137,7 @@ export async function listAdminTargets(
     targets.push(...page.value.deploymentTargets);
     pageToken = page.value.nextPageToken;
     if (pageToken !== undefined) {
-      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated a target page token.");
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.targetPageToken");
       seenTokens.add(pageToken);
     }
   } while (pageToken !== undefined);
@@ -159,7 +167,7 @@ export async function listAdminLeases(
     leases.push(...page.value.environmentLeases);
     pageToken = page.value.nextPageToken;
     if (pageToken !== undefined) {
-      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated a lease page token.");
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.leasePageToken");
       seenTokens.add(pageToken);
     }
   } while (pageToken !== undefined);
@@ -189,8 +197,7 @@ export async function listAdminProfiles(
     profiles.push(...page.value.environmentProfiles);
     pageToken = page.value.nextPageToken;
     if (pageToken !== undefined) {
-      if (seenTokens.has(pageToken))
-        throw new Error("Control Plane repeated a profile page token.");
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.profilePageToken");
       seenTokens.add(pageToken);
     }
   } while (pageToken !== undefined);
@@ -228,7 +235,7 @@ export async function listAdminProfileAuditEvents(
     events.push(...page.value.events);
     pageToken = page.value.nextPageToken;
     if (pageToken !== undefined) {
-      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated an audit page token.");
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.auditPageToken");
       seenTokens.add(pageToken);
     }
   } while (pageToken !== undefined);
@@ -258,8 +265,7 @@ export async function listAdminTargetOperations(
     operations.push(...page.value.operations);
     pageToken = page.value.nextPageToken;
     if (pageToken !== undefined) {
-      if (seenTokens.has(pageToken))
-        throw new Error("Control Plane repeated an operation page token.");
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.operationPageToken");
       seenTokens.add(pageToken);
     }
   } while (pageToken !== undefined);
@@ -289,7 +295,7 @@ export async function listAdminTargetAuditEvents(
     events.push(...page.value.events);
     pageToken = page.value.nextPageToken;
     if (pageToken !== undefined) {
-      if (seenTokens.has(pageToken)) throw new Error("Control Plane repeated an audit page token.");
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.auditPageToken");
       seenTokens.add(pageToken);
     }
   } while (pageToken !== undefined);
@@ -331,26 +337,18 @@ export function replaceProfile(
   );
 }
 
-export function adminErrorMessage(error: unknown): string {
-  if (error instanceof ClientError && error.status === 401)
-    return "The admin token expired or was rejected. Disconnect and authenticate again.";
-  if (error instanceof ClientError && error.status === 403)
-    return "This token is valid but lacks the required Admin API scope or project authority.";
-  if (error instanceof ClientError && error.status === 404)
-    return "The selected resource no longer exists. Refresh the project authority.";
-  if (error instanceof ClientError && error.status === 409)
-    return "The resource version changed or the operation conflicts with current state. Refresh and retry.";
-  if (error instanceof ClientError && error.status === 400)
-    return "Control Plane rejected the request fields. Check identifiers and generation.";
+export function adminErrorKey(error: unknown): MessageKey {
+  if (error instanceof AdminUIError) return error.messageKey;
+  if (error instanceof ClientError && error.status === 401) return "error.tokenExpired";
+  if (error instanceof ClientError && error.status === 403) return "error.forbidden";
+  if (error instanceof ClientError && error.status === 404) return "error.notFound";
+  if (error instanceof ClientError && error.status === 409) return "error.conflict";
+  if (error instanceof ClientError && error.status === 400) return "error.invalidRequest";
   if (error instanceof ClientError && (error.status === 502 || error.status === 503))
-    return "The target actuator is unavailable. Server state is retained; inspect the target and retry.";
-  if (error instanceof JSONContractError)
-    return "Control Plane returned a response outside the generated Admin API contract.";
-  if (error instanceof DOMException && error.name === "TimeoutError")
-    return "The operation timed out. Refresh before retrying because it may have completed server-side.";
-  if (error instanceof DOMException && error.name === "AbortError")
-    return "The operation was cancelled.";
-  if (error instanceof TypeError)
-    return "The Control Plane endpoint or token format is invalid. Use HTTPS or loopback HTTP.";
-  return "The Admin API operation failed. Refresh server state, then retry safely.";
+    return "error.actuatorUnavailable";
+  if (error instanceof JSONContractError) return "error.contract";
+  if (error instanceof DOMException && error.name === "TimeoutError") return "error.timeout";
+  if (error instanceof DOMException && error.name === "AbortError") return "error.cancelled";
+  if (error instanceof TypeError) return "error.connection";
+  return "error.generic";
 }

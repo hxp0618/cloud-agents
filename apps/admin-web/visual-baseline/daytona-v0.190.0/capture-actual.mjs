@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { format } from "oxfmt";
 
 const [output, adminTokenFile, userTokenFile, projectId, tenantId = "tenant-local"] =
   process.argv.slice(2);
@@ -64,6 +65,7 @@ try {
   const consoleErrors = [];
   const consoleWarnings = [];
   const httpFailures = [];
+  const layoutChecks = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
@@ -126,12 +128,6 @@ try {
     );
     if (!clicked) throw new Error(`Missing clickable element: ${selector}`);
   };
-  const clickText = async (selector, text) => {
-    const clicked = await evaluate(
-      `(() => { const element = [...document.querySelectorAll(${JSON.stringify(selector)})].find((candidate) => candidate.textContent.trim() === ${JSON.stringify(text)}); if (!element) return false; element.click(); return true; })()`,
-    );
-    if (!clicked) throw new Error(`Missing ${selector} with text ${text}`);
-  };
   const setViewport = (width, height) =>
     command("Emulation.setDeviceMetricsOverride", {
       width,
@@ -167,6 +163,13 @@ try {
   };
   const screenshot = async (filename) => {
     await delay(250);
+    layoutChecks.push(
+      JSON.parse(
+        await evaluate(
+          `JSON.stringify({ filename: ${JSON.stringify(filename)}, locale: document.documentElement.lang, theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], documentWidth: [document.documentElement.clientWidth, document.documentElement.scrollWidth], overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth })`,
+        ),
+      ),
+    );
     const result = await command("Page.captureScreenshot", {
       format: "png",
       fromSurface: true,
@@ -185,15 +188,41 @@ try {
   const setTheme = async (theme) => {
     if ((await evaluate("document.documentElement.dataset.theme")) === theme) return;
     await click(".profile-menu summary");
-    await clickText(".profile-menu button", theme === "dark" ? "Dark mode" : "Light mode");
+    await click(".profile-menu .dropdown-menu button:first-of-type");
     await waitFor(
       `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`,
       `${theme} theme`,
     );
     await waitFor("!document.querySelector('.profile-menu').open", "profile menu close");
   };
+  const setLocale = async (locale) => {
+    if ((await evaluate("document.documentElement.lang")) === locale) return;
+    await click(".profile-menu summary");
+    const changed = await evaluate(
+      `(() => { const select = document.querySelector('.locale-picker select'); if (!select) return false; const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; setter.call(select, ${JSON.stringify(locale)}); select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`,
+    );
+    if (!changed) throw new Error("Missing locale selector");
+    await waitFor(
+      `document.documentElement.lang === ${JSON.stringify(locale)}`,
+      `${locale} locale`,
+    );
+    if (await evaluate("document.querySelector('.profile-menu').open")) {
+      await click(".profile-menu summary");
+    }
+  };
+  const navigateTargets = async () => {
+    await click(".sidebar nav button:nth-child(2)");
+    await waitFor("document.querySelectorAll('tbody tr').length === 3", "three live targets");
+  };
+  const openTarget = async (name) => {
+    const opened = await evaluate(
+      `(() => { const row = [...document.querySelectorAll('tbody tr')].find((candidate) => candidate.textContent.includes(${JSON.stringify(name)})); const button = row?.querySelector('.row-action'); if (!button) return false; button.click(); return true; })()`,
+    );
+    if (!opened) throw new Error(`Missing target row: ${name}`);
+    await waitFor("document.querySelector('.admin-sheet') !== null", "target detail Sheet");
+  };
   const closeSheet = async () => {
-    await click(".admin-sheet [aria-label='Close']");
+    await click(".admin-sheet .sheet-close, .admin-sheet .icon-button");
     await waitFor("document.querySelector('.admin-sheet') === null", "Sheet close");
   };
 
@@ -208,10 +237,12 @@ try {
   await setViewport(1440, 900);
   await command("Page.navigate", { url: app });
   await waitFor("document.readyState === 'complete'", "page load");
+  await evaluate("localStorage.setItem('cloud-agents-admin-locale', 'en-US'); location.reload()");
+  await waitFor("document.readyState === 'complete'", "English locale reload");
+  await waitFor("document.documentElement.lang === 'en-US'", "English locale");
   await connect(readFileSync(adminTokenFile, "utf8").trim());
   await waitFor("document.querySelector('.app-shell') !== null", "Admin API authority");
-  await click(".sidebar nav button[title='Deployment Targets']");
-  await waitFor("document.querySelectorAll('tbody tr').length === 3", "three live targets");
+  await navigateTargets();
 
   await setTheme("light");
   await screenshot("list-light-desktop.png");
@@ -232,11 +263,10 @@ try {
   await click(".profile-menu summary");
   await clickAt(".page-heading h1");
   await waitFor("!document.querySelector('.profile-menu').open", "dropdown outside close");
-  await click("[aria-label='View visual-ssh']");
-  await waitFor("document.querySelector('.admin-sheet') !== null", "target detail Sheet");
+  await openTarget("visual-ssh");
   await screenshot("detail-light-desktop.png");
   await closeSheet();
-  await clickText("button", "Register target");
+  await click(".heading-actions .button.primary");
   await waitFor("document.querySelector('.resource-form') !== null", "create Sheet");
   await waitFor(
     "document.activeElement.matches('[data-sheet-autofocus]')",
@@ -250,25 +280,73 @@ try {
   await screenshot("list-dark-desktop.png");
   await setViewport(390, 844);
   await screenshot("list-dark-mobile.png");
-  await click("[aria-label='View visual-ssh']");
+  await openTarget("visual-ssh");
   await screenshot("detail-dark-mobile.png");
   await closeSheet();
-  await clickText("button", "Register target");
+  await click(".heading-actions .button.primary");
   await screenshot("create-form-dark-mobile.png");
   await closeSheet();
   await setTheme("light");
   await screenshot("list-light-mobile.png");
-  await click("[aria-label='Open navigation']");
+  await click(".mobile-nav-trigger");
   await screenshot("navigation-light-mobile.png");
-  await click("[aria-label='Close navigation']");
+  await click(".mobile-nav-backdrop");
   await waitFor(
     "!document.querySelector('.sidebar').classList.contains('mobile-open')",
     "mobile navigation close",
   );
 
+  await setViewport(1440, 900);
+  await setLocale("zh-CN");
+  const immediateChineseTitle = await evaluate(
+    "document.querySelector('.page-heading h1').textContent.trim()",
+  );
+  await command("Page.reload", { ignoreCache: true });
+  await waitFor(
+    "document.querySelector('.connect-form') !== null",
+    "Chinese reload connection form",
+  );
+  await waitFor("document.documentElement.lang === 'zh-CN'", "persisted Chinese locale");
+  const persistedChinese = JSON.parse(
+    await evaluate(
+      "JSON.stringify({ locale: document.documentElement.lang, saved: localStorage.getItem('cloud-agents-admin-locale'), title: document.querySelector('#connect-title').textContent.trim(), token: document.querySelector('input[type=password]').value })",
+    ),
+  );
+  await connect(readFileSync(adminTokenFile, "utf8").trim());
+  await waitFor("document.querySelector('.app-shell') !== null", "Chinese Admin API authority");
+  await navigateTargets();
+
+  await setTheme("light");
+  await screenshot("zh-CN-list-light-desktop.png");
+  await openTarget("visual-ssh");
+  await screenshot("zh-CN-detail-light-desktop.png");
+  await closeSheet();
+  await click(".heading-actions .button.primary");
+  await screenshot("zh-CN-create-form-light-desktop.png");
+  await closeSheet();
+  await setTheme("dark");
+  await screenshot("zh-CN-list-dark-desktop.png");
+  await setViewport(390, 844);
+  await screenshot("zh-CN-list-dark-mobile.png");
+  await openTarget("visual-ssh");
+  await screenshot("zh-CN-detail-dark-mobile.png");
+  await closeSheet();
+  await click(".heading-actions .button.primary");
+  await screenshot("zh-CN-create-form-dark-mobile.png");
+  await closeSheet();
+  await setTheme("light");
+  await screenshot("zh-CN-list-light-mobile.png");
+  await click(".mobile-nav-trigger");
+  await screenshot("zh-CN-navigation-light-mobile.png");
+  await click(".mobile-nav-backdrop");
+  await waitFor(
+    "!document.querySelector('.sidebar').classList.contains('mobile-open')",
+    "Chinese mobile navigation close",
+  );
+
   const authority = JSON.parse(
     await evaluate(
-      `JSON.stringify({ rows: [...document.querySelectorAll('tbody tr')].map((row) => ({ name: row.cells[0].innerText, kind: row.cells[1].innerText.trim() })), localKeys: Object.keys(localStorage).sort(), sessionKeys: Object.keys(sessionStorage).sort(), persistedValues: [...Object.values(localStorage), ...Object.values(sessionStorage)] })`,
+      `JSON.stringify({ rows: [...document.querySelectorAll('tbody tr')].map((row) => ({ name: row.cells[0].innerText, kind: row.querySelector('[data-kind]')?.dataset.kind })), localKeys: Object.keys(localStorage).sort(), sessionKeys: Object.keys(sessionStorage).sort(), persistedValues: [...Object.values(localStorage), ...Object.values(sessionStorage)], locale: document.documentElement.lang, savedLocale: localStorage.getItem('cloud-agents-admin-locale'), messageKeyVisible: /\\b(?:action|account|boundary|cleanup|common|connection|detail|document|error|lease|nav|notice|operation|overview|page|phase|profile|resource|search|sheet|table|target)\\.[A-Za-z]/.test(document.body.innerText) })`,
     ),
   );
   const adminConsoleErrors = [...consoleErrors];
@@ -278,8 +356,14 @@ try {
   consoleWarnings.length = 0;
   phase = "permission-denied";
   await setViewport(1440, 900);
-  await command("Page.navigate", { url: app });
+  await evaluate("localStorage.setItem('cloud-agents-admin-locale', 'fr-FR'); location.reload()");
   await waitFor("document.querySelector('.connect-form') !== null", "user-token connection form");
+  await waitFor("document.documentElement.lang === 'en-US'", "invalid locale fallback");
+  const fallbackLocale = JSON.parse(
+    await evaluate(
+      "JSON.stringify({ locale: document.documentElement.lang, saved: localStorage.getItem('cloud-agents-admin-locale'), title: document.querySelector('#connect-title').textContent.trim() })",
+    ),
+  );
   await connect(readFileSync(userTokenFile, "utf8").trim());
   await waitFor("document.querySelector('[role=alert]') !== null", "Admin API permission denial");
   const permissionDenied = await evaluate(
@@ -287,43 +371,63 @@ try {
   );
   await screenshot("permission-denied-light-desktop.png");
 
-  writeFileSync(
-    join(output, "browser-evidence.json"),
-    `${JSON.stringify(
-      {
-        capturedAt: new Date().toISOString(),
-        appOrigin: new URL(app).origin,
-        projectId,
-        targetKinds: authority.rows.map((row) => row.kind),
-        targetCount: authority.rows.length,
-        requestOrigins: [...requestOrigins].sort(),
-        localStorageKeys: authority.localKeys,
-        sessionStorageKeys: authority.sessionKeys,
-        bearerPersisted: authority.persistedValues.some((value) => /^eyJ|bearer\s/i.test(value)),
-        interactions: {
-          sidebarShortcut: true,
-          dropdownEscapeClose: true,
-          dropdownOutsideClose: true,
-          sheetEscapeClose: true,
-          createFormAutofocus: true,
-          mobileNavigationOpenClose: true,
-        },
-        permissionDenied,
-        adminConsoleErrors,
-        adminConsoleWarnings,
-        adminHTTPFailures,
-        permissionDeniedConsoleErrors: consoleErrors,
-        permissionDeniedConsoleWarnings: consoleWarnings,
-        permissionDeniedHTTPFailures: httpFailures.filter(
-          (failure) => failure.phase === "permission-denied",
-        ),
+  const evidence = `${JSON.stringify(
+    {
+      capturedAt: new Date().toISOString(),
+      appOrigin: new URL(app).origin,
+      projectId,
+      targetKinds: authority.rows.map((row) => row.kind),
+      targetCount: authority.rows.length,
+      requestOrigins: [...requestOrigins].sort(),
+      localStorageKeys: authority.localKeys,
+      sessionStorageKeys: authority.sessionKeys,
+      bearerPersisted: authority.persistedValues.some((value) => /^eyJ|bearer\s/i.test(value)),
+      locale: {
+        immediateChineseTitle,
+        persistedChinese,
+        invalidFallback: fallbackLocale,
+        connectedChinese: authority.locale,
+        savedChinese: authority.savedLocale,
+        messageKeyVisible: authority.messageKeyVisible,
       },
-      null,
-      2,
-    )}\n`,
-  );
+      layoutChecks,
+      interactions: {
+        sidebarShortcut: true,
+        dropdownEscapeClose: true,
+        dropdownOutsideClose: true,
+        sheetEscapeClose: true,
+        createFormAutofocus: true,
+        mobileNavigationOpenClose: true,
+        localeImmediateSwitch: true,
+        localeReloadRestore: true,
+        invalidLocaleFallback: true,
+      },
+      permissionDenied,
+      adminConsoleErrors,
+      adminConsoleWarnings,
+      adminHTTPFailures,
+      permissionDeniedConsoleErrors: consoleErrors,
+      permissionDeniedConsoleWarnings: consoleWarnings,
+      permissionDeniedHTTPFailures: httpFailures.filter(
+        (failure) => failure.phase === "permission-denied",
+      ),
+    },
+    null,
+    2,
+  )}\n`;
+  const formattedEvidence = await format("browser-evidence.json", evidence, {
+    printWidth: 100,
+  });
+  if (formattedEvidence.errors.length > 0) {
+    throw new Error(`Could not format browser evidence: ${formattedEvidence.errors[0].message}`);
+  }
+  writeFileSync(join(output, "browser-evidence.json"), formattedEvidence.code);
 } finally {
   socket?.close();
-  browser.kill("SIGTERM");
+  if (browser.exitCode === null && browser.signalCode === null) {
+    const stopped = new Promise((resolve) => browser.once("exit", resolve));
+    browser.kill("SIGTERM");
+    await stopped;
+  }
   renameSync(profile, join(homedir(), ".Trash", `cloud-agents-admin-cdp-${Date.now()}`));
 }

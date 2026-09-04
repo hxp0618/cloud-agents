@@ -1,36 +1,209 @@
 {
-  "capturedAt": "2026-09-03T07:25:38.534Z",
+  "capturedAt": "2026-09-04T04:37:22.601Z",
   "appOrigin": "http://127.0.0.1:4174",
-  "projectId": "project-f82787bb3671942785ca7a0758bc2850",
-  "targetKinds": [
-    "docker",
-    "kubernetes",
-    "ssh"
-  ],
+  "projectId": "project-27b2dc88ec99c1a43118a66ad96b6a5f",
+  "targetKinds": ["docker", "kubernetes", "ssh"],
   "targetCount": 3,
-  "requestOrigins": [
-    "http://127.0.0.1:4174"
-  ],
-  "localStorageKeys": [
-    "cloud-agents-admin-theme"
-  ],
-  "sessionStorageKeys": [
-    "cloud-agents.admin-web.connection.v1"
-  ],
+  "requestOrigins": ["http://127.0.0.1:4174"],
+  "localStorageKeys": ["cloud-agents-admin-locale", "cloud-agents-admin-theme"],
+  "sessionStorageKeys": ["cloud-agents.admin-web.connection.v1"],
   "bearerPersisted": false,
+  "locale": {
+    "immediateChineseTitle": "部署目标",
+    "persistedChinese": {
+      "locale": "zh-CN",
+      "saved": "zh-CN",
+      "title": "运维 Cloud Agents 基础设施",
+      "token": ""
+    },
+    "invalidFallback": {
+      "locale": "en-US",
+      "saved": "en-US",
+      "title": "Operate Cloud Agents infrastructure."
+    },
+    "connectedChinese": "zh-CN",
+    "savedChinese": "zh-CN",
+    "messageKeyVisible": false
+  },
+  "layoutChecks": [
+    {
+      "filename": "list-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "list-light-desktop-collapsed.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "detail-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "create-form-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "list-dark-desktop.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "list-dark-mobile.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "detail-dark-mobile.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "create-form-dark-mobile.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "list-light-mobile.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "navigation-light-mobile.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-light-desktop.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-detail-light-desktop.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-create-form-light-desktop.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-dark-desktop.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-dark-mobile.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-detail-dark-mobile.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-create-form-dark-mobile.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-light-mobile.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-navigation-light-mobile.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [390, 844],
+      "documentWidth": [390, 390],
+      "overflow": false
+    },
+    {
+      "filename": "permission-denied-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [1440, 900],
+      "documentWidth": [1440, 1440],
+      "overflow": false
+    }
+  ],
   "interactions": {
     "sidebarShortcut": true,
     "dropdownEscapeClose": true,
     "dropdownOutsideClose": true,
     "sheetEscapeClose": true,
     "createFormAutofocus": true,
-    "mobileNavigationOpenClose": true
+    "mobileNavigationOpenClose": true,
+    "localeImmediateSwitch": true,
+    "localeReloadRestore": true,
+    "invalidLocaleFallback": true
   },
   "permissionDenied": "This token is valid but lacks the required Admin API scope or project authority.",
   "adminConsoleErrors": [],
   "adminConsoleWarnings": [],
   "adminHTTPFailures": [],
   "permissionDeniedConsoleErrors": [
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)",
     "Failed to load resource: the server responded with a status of 403 (Forbidden)",
     "Failed to load resource: the server responded with a status of 403 (Forbidden)"
   ],
@@ -39,12 +212,17 @@
     {
       "phase": "permission-denied",
       "status": 403,
-      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-f82787bb3671942785ca7a0758bc2850/deployment-targets?pageSize=200"
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-27b2dc88ec99c1a43118a66ad96b6a5f/deployment-targets?pageSize=200"
     },
     {
       "phase": "permission-denied",
       "status": 403,
-      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-f82787bb3671942785ca7a0758bc2850/environment-leases?pageSize=200"
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-27b2dc88ec99c1a43118a66ad96b6a5f/environment-profiles?pageSize=200"
+    },
+    {
+      "phase": "permission-denied",
+      "status": 403,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-27b2dc88ec99c1a43118a66ad96b6a5f/environment-leases?pageSize=200"
     }
   ]
 }

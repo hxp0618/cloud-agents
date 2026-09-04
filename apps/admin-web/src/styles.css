@@ -265,10 +265,16 @@ label > small {
   background: var(--background);
 }
 
-.connect-theme {
+.connect-preferences {
   position: fixed;
   top: 16px;
   right: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+.connect-preferences select {
+  width: auto;
 }
 
 .connect-card {
@@ -683,6 +689,21 @@ label > small {
   color: var(--muted-foreground);
   font-size: 12px;
   text-overflow: ellipsis;
+}
+
+.locale-picker {
+  gap: 4px;
+  padding: 6px 8px 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.locale-picker select {
+  height: 30px;
+  color: var(--popover-foreground);
+  font-size: 13px;
 }
 
 .content {
@@ -1211,6 +1232,20 @@ td > button small {
   font-size: 11px;
 }
 
+.operation-diagnostic {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.operation-diagnostic summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.operation-diagnostic p {
+  margin-top: 6px;
+}
+
 .activity-empty {
   padding-top: 14px;
 }
@@ -1464,6 +1499,11 @@ td > button small {
   .admin-sheet {
     width: 100vw;
     border-left: 0;
+  }
+
+  .detail-list > div {
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 12px;
   }
 
   .connect-card {
