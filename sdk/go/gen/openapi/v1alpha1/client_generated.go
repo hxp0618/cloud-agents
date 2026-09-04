@@ -92,6 +92,7 @@ type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
 type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
+type WorkerPageResult = common.ResponseEnvelope[platform.WorkerPage]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -680,6 +681,47 @@ func (client *Client) ListAdminEnvironmentLeases(ctx context.Context, tenantID, 
 	for _, lease := range value.Value.EnvironmentLeases {
 		if lease.Metadata.TenantRef.ID != tenantID || lease.Spec.ProjectRef.ID != projectID {
 			return EnvironmentLeasePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/environmentLeases")
+		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminWorkers(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (WorkerPageResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return WorkerPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return WorkerPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return WorkerPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/workers"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return WorkerPageResult{}, err
+	}
+	if response.Status != 200 {
+		return WorkerPageResult{}, client.problemError("adminListWorkers", response)
+	}
+	value, err := platform.DecodeWorkerPageResponseJSON(response.Body)
+	if err != nil {
+		return WorkerPageResult{}, &ClientError{Operation: "adminListWorkers", Status: response.Status, Cause: err}
+	}
+	for _, worker := range value.Value.Workers {
+		if worker.Metadata.TenantRef.ID != tenantID || worker.Spec.ProjectRef.ID != projectID || worker.Metadata.UID != worker.Spec.LeaseID {
+			return WorkerPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/workers")
 		}
 	}
 	return value, nil
@@ -3168,6 +3210,29 @@ func ValidateListManagedHostEnvironmentLeasesServerRequest(tenantID, projectID, 
 		}
 	}
 	return ListManagedHostEnvironmentLeasesServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type ListAdminWorkersServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminWorkersServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminWorkersServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ListAdminWorkersServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminWorkersServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminWorkersServerInput{}, err
+		}
+	}
+	return ListAdminWorkersServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 
 type GetEnvironmentLeaseServerInput struct {

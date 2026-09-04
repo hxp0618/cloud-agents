@@ -252,6 +252,24 @@ func TestGeneratedOpenAPIClientUsesAdminEnvironmentLeaseRoutes(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientListsAdminWorkers(t *testing.T) {
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"WorkerPage","workers":[]}`)
+	var seen Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		return Response{Status: 200, Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListAdminWorkers(context.Background(), "tenant-alpha", "project-alpha", "request-alpha", 1, "worker-page-token-1"); err != nil {
+		t.Fatal(err)
+	}
+	if seen.Method != "GET" || seen.Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/workers?pageSize=1&pageToken=worker-page-token-1" {
+		t.Fatalf("request=%#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientListsPublishedEnvironmentProfiles(t *testing.T) {
 	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummaryPage","environmentProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296}]}`)
 	var seen Request

@@ -59,6 +59,63 @@ func TestManagedHostEnvironmentLeaseListSQLBindsTenantProjectAndCursor(t *testin
 	}
 }
 
+func TestDecodeAdminWorkerPageRowsProjectsLeaseBackedWorkers(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 8, 0, 0, 0, time.UTC)
+	row := func(leaseID string) adminWorkerPageRow {
+		return adminWorkerPageRow{
+			TenantID: "tenant-alpha", ProjectID: "project-alpha", LeaseID: leaseID, LeaseName: leaseID,
+			TargetID: "docker-alpha", TargetKind: "docker", TargetGeneration: 2, Generation: 3,
+			DesiredPhase: "active", ReleaseDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			ObservedPhase: "ready", CleanupPhase: "none", EnvironmentID: leaseID,
+			ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 536870912,
+			WorkerEndpoint: "https://worker-alpha.test", WorkerSPIFFEID: "spiffe://cloud-agents.test/worker/" + leaseID,
+			WorkerServerName: "worker-alpha.test", ExpiresAt: now.Add(time.Hour), ResourceVersion: 4,
+			CreatedAt: now.Add(-time.Minute), UpdatedAt: now,
+		}
+	}
+	failed := row("lease-beta")
+	failed.ObservedPhase = "failed"
+	failed.WorkerEndpoint, failed.WorkerSPIFFEID, failed.WorkerServerName = "", "", ""
+	failed.StableErrorCode = "docker-worker-unavailable"
+	raw, err := json.Marshal([]adminWorkerPageRow{row("lease-alpha"), failed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := decodeAdminWorkerPageRows(raw, "tenant-alpha", "project-alpha", 1)
+	if err != nil || len(page.Workers) != 1 || page.Workers[0].WorkerID != "lease-alpha" || page.Workers[0].State != "ready" || page.Workers[0].LastHealthAt == nil || page.NextWorkerID != "lease-alpha" {
+		t.Fatalf("page = %#v / %v", page, err)
+	}
+	if _, err := decodeAdminWorkerPageRows(raw, "tenant-alpha", "project-other", 2); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cross-project worker page error = %v", err)
+	}
+	cleaned := row("lease-cleaned")
+	cleaned.DesiredPhase, cleaned.ObservedPhase, cleaned.CleanupPhase = "terminated", "terminated", "complete"
+	cleaned.WorkerEndpoint, cleaned.WorkerSPIFFEID, cleaned.WorkerServerName = "", "", ""
+	raw, err = json.Marshal([]adminWorkerPageRow{cleaned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeAdminWorkerPageRows(raw, "tenant-alpha", "project-alpha", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cleaned worker projection error = %v", err)
+	}
+}
+
+func TestAdminWorkerListSQLBindsAuthorityAndExcludesCleanedLeases(t *testing.T) {
+	for _, fragment := range []string{
+		"cloud_agents.require_tenant_id()", "lease.project_uid = $1", "lease.lease_uid > $2",
+		"target.target_uid = lease.deployment_target_uid", "NOT (lease.observed_phase = 'terminated' AND lease.cleanup_phase = 'complete')",
+	} {
+		if !strings.Contains(listAdminWorkersSQL, fragment) {
+			t.Fatalf("worker authority SQL missing %q", fragment)
+		}
+	}
+	if !strings.Contains(adminWorkerPageCursorIdentitySQL, "cloud_agents.require_tenant_id()") ||
+		!strings.Contains(adminWorkerPageCursorIdentitySQL, "lease.project_uid = $1") ||
+		!strings.Contains(adminWorkerPageCursorIdentitySQL, "lease.lease_uid = $2") {
+		t.Fatal("worker cursor is not bound to its lease-backed identity")
+	}
+}
+
 func TestTerminateManagedHostEnvironmentLeaseProjectsTransitionState(t *testing.T) {
 	if !strings.Contains(terminateManagedHostEnvironmentLeaseSQL, "begin_managed_host_environment_lease_termination_v1") {
 		t.Fatal("termination does not begin the fenced cleanup transition")

@@ -25,6 +25,7 @@ type managedHostEnvironmentLeaseStoreFake struct {
 	create    int
 	get       int
 	list      int
+	workers   int
 	after     string
 	limit     int
 	terminate int
@@ -84,6 +85,20 @@ func (fake *managedHostEnvironmentLeaseStoreFake) ListManagedHostEnvironmentLeas
 	fake.after = afterLeaseID
 	fake.limit = limit
 	return postgres.ManagedHostEnvironmentLeasePage{EnvironmentLeases: []internalmanagedhost.Snapshot{fake.snapshot}, NextLeaseID: fake.snapshot.LeaseID}, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) ListAdminWorkers(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, afterWorkerID string, limit int) (postgres.AdminWorkerPage, error) {
+	fake.workers++
+	fake.after = afterWorkerID
+	fake.limit = limit
+	return postgres.AdminWorkerPage{Workers: []postgres.AdminWorkerSnapshot{{
+		Scope: fake.snapshot.Scope, WorkerID: fake.snapshot.LeaseID, WorkerName: fake.snapshot.LeaseName,
+		LeaseID: fake.snapshot.LeaseID, TargetID: "docker-alpha", TargetKind: "docker", TargetGeneration: 1,
+		Generation: fake.snapshot.Generation, ReleaseDigest: fake.snapshot.ReleaseDigest, State: "ready", CleanupPhase: "none",
+		CPULimitMillis: 1000, MemoryLimitBytes: 536870912, WorkerSPIFFEID: "spiffe://cloud-agents.test/worker/lease-alpha",
+		WorkerServerName: "worker-alpha", LastHealthAt: &fake.snapshot.UpdatedAt, ReadyAt: &fake.snapshot.UpdatedAt,
+		ResourceVersion: fake.snapshot.ResourceVersion, CreatedAt: fake.snapshot.CreatedAt, UpdatedAt: fake.snapshot.UpdatedAt,
+	}}, NextWorkerID: fake.snapshot.LeaseID}, nil
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) TerminateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
@@ -206,6 +221,10 @@ func TestAdminEnvironmentLeaseHTTPIsReadOnlyAndChecksAdminScope(t *testing.T) {
 	if created.Code != http.StatusMethodNotAllowed || store.create != 0 {
 		t.Fatalf("admin create status=%d calls=%d body=%s", created.Code, store.create, created.Body.String())
 	}
+	workers := request(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/workers?pageSize=1")
+	if workers.Code != http.StatusOK || store.workers != 1 || len(verifier.requests) != 9 || verifier.requests[7].RequiredPermission != "workers.list" || !strings.Contains(workers.Body.String(), `"kind":"WorkerPage"`) || strings.Contains(workers.Body.String(), "providerCredentialRef") || strings.Contains(workers.Body.String(), "workerEndpoint") {
+		t.Fatalf("workers status=%d calls=%d requests=%#v body=%s", workers.Code, store.workers, verifier.requests, workers.Body.String())
+	}
 }
 
 func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T) {
@@ -220,6 +239,22 @@ func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"AUTHORIZATION_DENIED"`) || len(verifier.requests) != 2 {
+		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
+	}
+}
+
+func TestAdminWorkerHTTPReturnsForbiddenWithoutWorkerScope(t *testing.T) {
+	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/workers?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-admin-worker")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"AUTHORIZATION_DENIED"`) || len(verifier.requests) != 2 || verifier.requests[1].RequiredPermission != "workers.list" {
 		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
 	}
 }

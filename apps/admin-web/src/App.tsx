@@ -9,6 +9,7 @@ import {
   type EnvironmentProfile,
   type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
+  type Worker,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
@@ -21,6 +22,7 @@ import {
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
   listAdminTargets,
+  listAdminWorkers,
   newIdempotencyKey,
   newRequestId,
   readSavedAdminConnection,
@@ -40,7 +42,7 @@ import {
 } from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page = "overview" | "targets" | "profiles" | "leases" | "maintenance";
+type Page = "overview" | "targets" | "workers" | "profiles" | "leases" | "maintenance";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -89,10 +91,18 @@ function phaseTone(phase: string): string {
       "requested",
       "running",
       "queued",
+      "starting",
+      "stopping",
     ].includes(phase)
   )
     return "running";
-  if (phase === "unavailable" || phase === "failed" || phase === "blocked" || phase === "disabled")
+  if (
+    phase === "unavailable" ||
+    phase === "failed" ||
+    phase === "blocked" ||
+    phase === "disabled" ||
+    phase === "cleanup-pending"
+  )
     return "danger";
   return "neutral";
 }
@@ -122,6 +132,9 @@ const phaseMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   cancelled: "phase.cancelled",
   requested: "phase.requested",
   cleanup: "phase.cleanup",
+  starting: "phase.starting",
+  stopping: "phase.stopping",
+  "cleanup-pending": "phase.cleanupPending",
 });
 
 const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -175,6 +188,10 @@ function targetKindLabel(kind: TargetKind, t: Translate): string {
 
 function providerLabel(provider: string): string {
   return provider === "claudeAgent" ? "Claude Code" : "Codex";
+}
+
+function shortDigest(value: string): string {
+  return `${value.slice(0, 15)}…${value.slice(-8)}`;
 }
 
 function AdminSheet({
@@ -341,6 +358,8 @@ export function App() {
   const [cleanupPreview, setCleanupPreview] = useState<DeploymentTargetCleanupPreview | null>(null);
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
+  const [workers, setWorkers] = useState<readonly Worker[]>(Object.freeze([]));
+  const [selectedWorkerId, setSelectedWorkerId] = useState("");
   const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
   const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
   const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
@@ -353,6 +372,7 @@ export function App() {
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = useState(false);
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
+  const [workerDetailOpen, setWorkerDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
   const [maintenanceDetailOpen, setMaintenanceDetailOpen] = useState(false);
@@ -397,6 +417,7 @@ export function App() {
       ? cleanupPreview
       : null;
   const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
+  const selectedWorker = workers.find(({ metadata }) => metadata.uid === selectedWorkerId);
   const selectedProfile = profiles.find(
     ({ metadata }) => metadata.uid === selectedProfileVersionId,
   );
@@ -412,6 +433,7 @@ export function App() {
   const leaseAttentionCount = leases.filter(
     ({ spec }) => spec.observedPhase === "failed" || spec.cleanupPhase === "blocked",
   ).length;
+  const readyWorkerCount = workers.filter(({ spec }) => spec.state === "ready").length;
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleTargets =
     normalizedQuery === ""
@@ -431,6 +453,20 @@ export function App() {
             spec.environmentId,
             spec.observedPhase,
             spec.cleanupPhase,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleWorkers =
+    normalizedQuery === ""
+      ? workers
+      : workers.filter(({ metadata, spec }) =>
+          [
+            metadata.uid,
+            metadata.name,
+            spec.leaseId,
+            spec.targetId,
+            spec.targetKind,
+            spec.state,
+            spec.releaseDigest,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
         );
   const visibleProfiles =
@@ -519,12 +555,19 @@ export function App() {
       void Promise.all([
         loadTargetAuthority(client, connection, selectedTargetId, signal),
         loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+        listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
       ])
-        .then(([loadedTargets, loadedLeases]) => {
+        .then(([loadedTargets, loadedLeases, loadedWorkers]) => {
           setTargets(loadedTargets.targets);
           setSelectedTargetId(loadedTargets.selectedTargetId);
           setLeases(loadedLeases.leases);
           setSelectedLeaseId(loadedLeases.selectedLeaseId);
+          setWorkers(loadedWorkers);
+          setSelectedWorkerId((current) =>
+            loadedWorkers.some(({ metadata }) => metadata.uid === current)
+              ? current
+              : (loadedWorkers[0]?.metadata.uid ?? ""),
+          );
         })
         .catch((cause: unknown) => {
           if (!controller.signal.aborted) setError(adminErrorKey(cause));
@@ -547,6 +590,7 @@ export function App() {
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
+    setWorkerDetailOpen(false);
     setProfileDetailOpen(false);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
@@ -564,6 +608,8 @@ export function App() {
     setCleanupPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
+    setWorkers(Object.freeze([]));
+    setSelectedWorkerId("");
     setProfiles(Object.freeze([]));
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
@@ -572,6 +618,7 @@ export function App() {
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
     setLeaseDetailOpen(false);
+    setWorkerDetailOpen(false);
     setProfileDetailOpen(false);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
@@ -604,18 +651,24 @@ export function App() {
     try {
       const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-      const [loadedTargets, loadedLeases, loadedProfiles, loadedMaintenanceOperations] =
-        await Promise.all([
-          loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
-          loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
-          loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
-          listAdminMaintenanceOperations(
-            nextClient,
-            nextConnection.tenantId,
-            nextConnection.projectId,
-            signal,
-          ),
-        ]);
+      const [
+        loadedTargets,
+        loadedLeases,
+        loadedWorkers,
+        loadedProfiles,
+        loadedMaintenanceOperations,
+      ] = await Promise.all([
+        loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
+        loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
+        listAdminWorkers(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
+        loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
+        listAdminMaintenanceOperations(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
+      ]);
       setClient(nextClient);
       setConnection(nextConnection);
       setTargets(loadedTargets.targets);
@@ -624,6 +677,8 @@ export function App() {
       setTargetAudit(Object.freeze([]));
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
+      setWorkers(loadedWorkers);
+      setSelectedWorkerId(loadedWorkers[0]?.metadata.uid ?? "");
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
@@ -693,17 +748,29 @@ export function App() {
   function refresh() {
     if (client === null) return;
     void runOperation("refresh", { key: "operation.refresh" }, async (signal) => {
-      const [loadedTargets, loadedLeases, loadedProfiles, loadedMaintenanceOperations] =
-        await Promise.all([
-          loadTargetAuthority(client, connection, selectedTargetId, signal),
-          loadLeaseAuthority(client, connection, selectedLeaseId, signal),
-          loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
-          listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
-        ]);
+      const [
+        loadedTargets,
+        loadedLeases,
+        loadedWorkers,
+        loadedProfiles,
+        loadedMaintenanceOperations,
+      ] = await Promise.all([
+        loadTargetAuthority(client, connection, selectedTargetId, signal),
+        loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+        listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
+        loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
+        listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
+      ]);
       setTargets(loadedTargets.targets);
       setSelectedTargetId(loadedTargets.selectedTargetId);
       setLeases(loadedLeases.leases);
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
+      setWorkers(loadedWorkers);
+      setSelectedWorkerId((current) =>
+        loadedWorkers.some(({ metadata }) => metadata.uid === current)
+          ? current
+          : (loadedWorkers[0]?.metadata.uid ?? ""),
+      );
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setMaintenanceOperations(loadedMaintenanceOperations);
@@ -773,6 +840,11 @@ export function App() {
       );
       setLeases((current) => replaceLease(current, result.value));
     });
+  }
+
+  function selectWorker(workerId: string) {
+    setSelectedWorkerId(workerId);
+    setWorkerDetailOpen(true);
   }
 
   function selectProfile(profileVersionId: string) {
@@ -1189,6 +1261,14 @@ export function App() {
             <b>{number(leases.length)}</b>
           </button>
           <button
+            className={page === "workers" ? "active" : ""}
+            onClick={() => navigate("workers")}
+            title={t("nav.workers")}
+          >
+            <span aria-hidden="true">◉</span> <span className="nav-label">{t("nav.workers")}</span>
+            <b>{number(workers.length)}</b>
+          </button>
+          <button
             className={page === "profiles" ? "active" : ""}
             onClick={() => navigate("profiles")}
             title={t("nav.profiles")}
@@ -1275,22 +1355,26 @@ export function App() {
                   ? t("page.overview.title")
                   : page === "targets"
                     ? t("page.targets.title")
-                    : page === "profiles"
-                      ? t("page.profiles.title")
-                      : page === "leases"
-                        ? t("page.leases.title")
-                        : t("page.maintenance.title")}
+                    : page === "workers"
+                      ? t("page.workers.title")
+                      : page === "profiles"
+                        ? t("page.profiles.title")
+                        : page === "leases"
+                          ? t("page.leases.title")
+                          : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
                   ? t("page.overview.description")
                   : page === "targets"
                     ? t("page.targets.description")
-                    : page === "profiles"
-                      ? t("page.profiles.description")
-                      : page === "leases"
-                        ? t("page.leases.description")
-                        : t("page.maintenance.description")}
+                    : page === "workers"
+                      ? t("page.workers.description")
+                      : page === "profiles"
+                        ? t("page.profiles.description")
+                        : page === "leases"
+                          ? t("page.leases.description")
+                          : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -1370,6 +1454,11 @@ export function App() {
                   <strong>{number(leases.length)}</strong>
                   <span>{t("overview.readyLeases", { count: number(readyLeaseCount) })}</span>
                 </article>
+                <article className="metric-card success-accent">
+                  <small>{t("overview.workers")}</small>
+                  <strong>{number(workers.length)}</strong>
+                  <span>{t("overview.readyWorkers", { count: number(readyWorkerCount) })}</span>
+                </article>
                 <article className="metric-card warning-accent">
                   <small>{t("overview.leaseAttention")}</small>
                   <strong>{number(leaseAttentionCount)}</strong>
@@ -1432,6 +1521,26 @@ export function App() {
                   targets={visibleTargets}
                   selectedTargetId={selectedTargetId}
                   onSelect={selectTarget}
+                />
+              </div>
+            </section>
+          ) : page === "workers" ? (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label={t("search.workers.label")}
+                  placeholder={t("search.workers.placeholder")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">workers.list · {number(visibleWorkers.length)}</span>
+              </div>
+              <div className="panel target-list-panel">
+                <WorkerTable
+                  workers={visibleWorkers}
+                  selectedWorkerId={selectedWorkerId}
+                  onSelect={selectWorker}
                 />
               </div>
             </section>
@@ -1562,6 +1671,25 @@ export function App() {
               ×
             </button>
             <LeaseDetail lease={selectedLease} />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
+      {workerDetailOpen && selectedWorker !== undefined ? (
+        <AdminSheet
+          label={t("sheet.worker", { name: selectedWorker.metadata.name })}
+          onClose={() => setWorkerDetailOpen(false)}
+        >
+          <aside className="detail-panel" aria-label={t("sheet.selectedWorker")}>
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label={t("action.close")}
+              onClick={() => setWorkerDetailOpen(false)}
+            >
+              ×
+            </button>
+            <WorkerDetail worker={selectedWorker} />
           </aside>
         </AdminSheet>
       ) : null}
@@ -2097,6 +2225,92 @@ function LeaseTable({
   );
 }
 
+function WorkerTable({
+  workers,
+  selectedWorkerId,
+  onSelect,
+}: Readonly<{
+  workers: readonly Worker[];
+  selectedWorkerId: string;
+  onSelect: (workerId: string) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  if (workers.length === 0) return <div className="table-empty">{t("table.empty.workers")}</div>;
+  return (
+    <div className="table-scroll">
+      <table className="worker-table">
+        <thead>
+          <tr>
+            <th>{t("table.workerId")}</th>
+            <th>{t("table.target")}</th>
+            <th>{t("table.lease")}</th>
+            <th>{t("table.release")}</th>
+            <th>{t("table.generation")}</th>
+            <th>{t("table.lastHealth")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.resourceLimits")}</th>
+            <th>{t("table.started")}</th>
+            <th aria-label={t("table.actions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {workers.map((worker) => (
+            <tr
+              key={worker.metadata.uid}
+              className={worker.metadata.uid === selectedWorkerId ? "selected" : ""}
+              onClick={() => onSelect(worker.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(worker.metadata.uid)}>
+                  <strong>{worker.metadata.name}</strong>
+                  <small>{worker.metadata.uid}</small>
+                </button>
+              </td>
+              <td>
+                <strong>{worker.spec.targetId}</strong>
+                <small className="table-subline">
+                  {targetKindLabel(worker.spec.targetKind, t)}
+                </small>
+              </td>
+              <td className="mono">{worker.spec.leaseId}</td>
+              <td className="mono" title={worker.spec.releaseDigest}>
+                {shortDigest(worker.spec.releaseDigest)}
+              </td>
+              <td className="mono">g{number(worker.spec.generation)}</td>
+              <td>
+                {worker.spec.lastHealthAt === undefined
+                  ? t("common.notObserved")
+                  : dateTime(worker.spec.lastHealthAt)}
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(worker.spec.state)}`}>
+                  <i />
+                  {phaseLabel(worker.spec.state, t)}
+                </span>
+              </td>
+              <td>
+                {number(worker.spec.cpuLimitMillis)} mCPU ·{" "}
+                {number(Math.round(worker.spec.memoryLimitBytes / 1_048_576))} MiB
+              </td>
+              <td>{dateTime(worker.metadata.createdAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={t("table.view", { name: worker.metadata.name })}
+                  onClick={() => onSelect(worker.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ProfileTable({
   profiles,
   selectedProfileVersionId,
@@ -2608,6 +2822,106 @@ function CleanupConfirmation({
         </div>
       </form>
     </section>
+  );
+}
+
+function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
+  const { t, number, dateTime } = useI18n();
+  return (
+    <>
+      <div className="detail-heading">
+        <div className="target-glyph" aria-hidden="true">
+          W
+        </div>
+        <div>
+          <div className="eyebrow">{t("worker.eyebrow")}</div>
+          <h2>{worker.metadata.name}</h2>
+          <span className={`phase ${phaseTone(worker.spec.state)}`}>
+            <i />
+            {phaseLabel(worker.spec.state, t)}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>{t("worker.id")}</dt>
+          <dd className="mono">{worker.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.lease")}</dt>
+          <dd className="mono">{worker.spec.leaseId}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.target")}</dt>
+          <dd className="mono">
+            {worker.spec.targetId} · {targetKindLabel(worker.spec.targetKind, t)} · g
+            {number(worker.spec.targetGeneration)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(worker.spec.generation)}</dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{worker.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.releaseDigest")}</dt>
+          <dd className="mono break">{worker.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.resourceLimits")}</dt>
+          <dd>
+            {number(worker.spec.cpuLimitMillis)} mCPU /{" "}
+            {number(Math.round(worker.spec.memoryLimitBytes / 1_048_576))} MiB
+          </dd>
+        </div>
+        <div>
+          <dt>{t("worker.cleanupPhase")}</dt>
+          <dd>{phaseLabel(worker.spec.cleanupPhase, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.lastHealthAt")}</dt>
+          <dd>
+            {worker.spec.lastHealthAt === undefined
+              ? t("common.notObserved")
+              : dateTime(worker.spec.lastHealthAt)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("worker.readyAt")}</dt>
+          <dd>
+            {worker.spec.readyAt === undefined
+              ? t("common.notReady")
+              : dateTime(worker.spec.readyAt)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("worker.startedAt")}</dt>
+          <dd>{dateTime(worker.metadata.createdAt)}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.identity")}</dt>
+          <dd className="mono break">{worker.spec.workerSpiffeId ?? t("common.notReady")}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.serverName")}</dt>
+          <dd className="mono">{worker.spec.workerServerName ?? t("common.notReady")}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.updatedAt")}</dt>
+          <dd>{dateTime(worker.metadata.updatedAt)}</dd>
+        </div>
+        {worker.spec.stableErrorCode !== "" ? (
+          <div>
+            <dt>{t("detail.stableError")}</dt>
+            <dd className="danger-text">{worker.spec.stableErrorCode}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <p className="boundary-note">{t("worker.healthBoundary")}</p>
+    </>
   );
 }
 

@@ -262,6 +262,35 @@ export type EnvironmentLeasePage = Readonly<{
   environmentLeases: readonly EnvironmentLease[];
   nextPageToken?: string;
 }>;
+export type Worker = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "Worker";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    leaseId: string;
+    targetId: string;
+    targetKind: "docker" | "kubernetes" | "ssh";
+    targetGeneration: number;
+    generation: number;
+    releaseDigest: `sha256:${string}`;
+    state: "starting" | "ready" | "stopping" | "failed" | "cleanup-pending";
+    cleanupPhase: "none" | "pending" | "revoking" | "reaping" | "complete" | "blocked";
+    cpuLimitMillis: number;
+    memoryLimitBytes: number;
+    workerSpiffeId?: string;
+    workerServerName?: string;
+    lastHealthAt?: string;
+    readyAt?: string;
+    stableErrorCode: string;
+  }>;
+}>;
+export type WorkerPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "WorkerPage";
+  workers: readonly Worker[];
+  nextPageToken?: string;
+}>;
 export type EnvironmentProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
@@ -751,6 +780,32 @@ const environmentLeasePageResponseShape: ResponseShape = {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
     environmentLeases: { item: environmentLeaseResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const workerResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  leaseId: scalarResponseShape,
+  targetId: scalarResponseShape,
+  targetKind: scalarResponseShape,
+  targetGeneration: scalarResponseShape,
+  generation: scalarResponseShape,
+  releaseDigest: scalarResponseShape,
+  state: scalarResponseShape,
+  cleanupPhase: scalarResponseShape,
+  cpuLimitMillis: scalarResponseShape,
+  memoryLimitBytes: scalarResponseShape,
+  workerSpiffeId: scalarResponseShape,
+  workerServerName: scalarResponseShape,
+  lastHealthAt: scalarResponseShape,
+  readyAt: scalarResponseShape,
+  stableErrorCode: scalarResponseShape,
+});
+const workerPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    workers: { item: workerResponseShape },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -2278,6 +2333,150 @@ export function decodeEnvironmentLeasePage(value: unknown): EnvironmentLeasePage
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+export function decodeWorker(value: unknown): Worker {
+  const source = record(value);
+  const root = base(source, "Worker");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "leaseId",
+      "targetId",
+      "targetKind",
+      "targetGeneration",
+      "generation",
+      "releaseDigest",
+      "state",
+      "cleanupPhase",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "workerSpiffeId",
+      "workerServerName",
+      "lastHealthAt",
+      "readyAt",
+      "stableErrorCode",
+    ],
+    [
+      "projectRef",
+      "leaseId",
+      "targetId",
+      "targetKind",
+      "targetGeneration",
+      "generation",
+      "releaseDigest",
+      "state",
+      "cleanupPhase",
+      "cpuLimitMillis",
+      "memoryLimitBytes",
+      "stableErrorCode",
+    ],
+    "/spec",
+  );
+  const leaseId = identifier(spec.leaseId, "/spec/leaseId");
+  if (root.metadata.uid !== leaseId) error("WORKER_LEASE_AUTHORITY_MISMATCH", "/spec/leaseId");
+  const state = enumValue(
+    spec.state,
+    ["starting", "ready", "stopping", "failed", "cleanup-pending"] as const,
+    "/spec/state",
+  );
+  const cleanupPhase = enumValue(
+    spec.cleanupPhase,
+    ["none", "pending", "revoking", "reaping", "complete", "blocked"] as const,
+    "/spec/cleanupPhase",
+  );
+  if (
+    ((state === "starting" || state === "ready" || state === "failed") &&
+      cleanupPhase !== "none") ||
+    ((state === "stopping" || state === "cleanup-pending") &&
+      (cleanupPhase === "none" || cleanupPhase === "complete"))
+  )
+    error("INVALID_WORKER_STATE", "/spec/cleanupPhase");
+  const hasSpiffeId = Object.hasOwn(spec, "workerSpiffeId");
+  const hasServerName = Object.hasOwn(spec, "workerServerName");
+  const hasLastHealth = Object.hasOwn(spec, "lastHealthAt");
+  const hasReadyAt = Object.hasOwn(spec, "readyAt");
+  const readyFields = hasSpiffeId && hasServerName && hasLastHealth && hasReadyAt;
+  if (
+    state === "ready" ? !readyFields : hasSpiffeId || hasServerName || hasLastHealth || hasReadyAt
+  )
+    error("INVALID_WORKER_STATE", "/spec/state");
+  const stableErrorCode = boundedString(spec.stableErrorCode, 0, 128, "/spec/stableErrorCode");
+  if (stableErrorCode !== "") identifier(stableErrorCode, "/spec/stableErrorCode");
+  if ((state === "failed") !== (stableErrorCode !== ""))
+    error("INVALID_WORKER_STATE", "/spec/stableErrorCode");
+  const worker = {
+    ...root,
+    kind: "Worker" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      leaseId,
+      targetId: identifier(spec.targetId, "/spec/targetId"),
+      targetKind: enumValue(
+        spec.targetKind,
+        ["docker", "kubernetes", "ssh"] as const,
+        "/spec/targetKind",
+      ),
+      targetGeneration: integer(
+        spec.targetGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/targetGeneration",
+      ),
+      generation: integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation"),
+      releaseDigest: digest(spec.releaseDigest, "/spec/releaseDigest") as `sha256:${string}`,
+      state,
+      cleanupPhase,
+      cpuLimitMillis: integer(spec.cpuLimitMillis, 100, 64000, "/spec/cpuLimitMillis"),
+      memoryLimitBytes: integer(
+        spec.memoryLimitBytes,
+        134217728,
+        1099511627776,
+        "/spec/memoryLimitBytes",
+      ),
+      ...(readyFields
+        ? {
+            workerSpiffeId: workerSPIFFEID(spec.workerSpiffeId, "/spec/workerSpiffeId"),
+            workerServerName: boundedString(
+              spec.workerServerName,
+              1,
+              253,
+              "/spec/workerServerName",
+            ),
+            lastHealthAt: dateTime(spec.lastHealthAt, "/spec/lastHealthAt"),
+            readyAt: dateTime(spec.readyAt, "/spec/readyAt"),
+          }
+        : {}),
+      stableErrorCode,
+    }),
+  };
+  if (readyFields && /[/@\p{Cc}]/u.test(worker.spec.workerServerName ?? ""))
+    error("INVALID_WORKER_SERVER_NAME", "/spec/workerServerName");
+  return Object.freeze(worker);
+}
+export function decodeWorkerPage(value: unknown): WorkerPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "workers", "nextPageToken"],
+    ["apiVersion", "kind", "workers"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "WorkerPage" ||
+    !Array.isArray(source.workers) ||
+    source.workers.length > 200
+  )
+    error("INVALID_WORKER_PAGE", "/workers");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "WorkerPage" as const,
+    workers: Object.freeze((source.workers as unknown[]).map(decodeWorker)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
 export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
   const source = record(value);
   const root = base(source, "EnvironmentProfile");
@@ -3666,6 +3865,9 @@ export function parseEnvironmentLease(text: string): ResponseEnvelope<Environmen
 }
 export function parseEnvironmentLeasePage(text: string): ResponseEnvelope<EnvironmentLeasePage> {
   return parseResponse(text, environmentLeasePageResponseShape, decodeEnvironmentLeasePage);
+}
+export function parseWorkerPage(text: string): ResponseEnvelope<WorkerPage> {
+  return parseResponse(text, workerPageResponseShape, decodeWorkerPage);
 }
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
@@ -5118,6 +5320,42 @@ export class Client {
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentLeases");
+    return result;
+  }
+  async listAdminWorkers(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkerPage>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workers${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListWorkers", response);
+    const result = parseWorkerPage(response.body);
+    if (
+      result.value.workers.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId ||
+          spec.projectRef.id !== projectId ||
+          metadata.uid !== spec.leaseId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/workers");
     return result;
   }
   async getAdminEnvironmentLease(

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/worker.schema.json",
+  "title": "Worker",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "Worker" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "leaseId", "targetId", "targetKind", "targetGeneration", "generation", "releaseDigest", "state", "cleanupPhase", "cpuLimitMillis", "memoryLimitBytes", "stableErrorCode"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "leaseId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
+        "targetGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "state": { "enum": ["starting", "ready", "stopping", "failed", "cleanup-pending"] },
+        "cleanupPhase": { "enum": ["none", "pending", "revoking", "reaping", "complete", "blocked"] },
+        "cpuLimitMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+        "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+        "workerSpiffeId": { "type": "string", "pattern": "^spiffe://[^/?#[:space:]@]+/.+$", "maxLength": 2048 },
+        "workerServerName": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^/@\\u0000-\\u001F\\u007F-\\u009F]+$" },
+        "lastHealthAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "readyAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "stableErrorCode": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+          ]
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata.uid equals spec.leaseId because one logical current Worker is projected per Environment Lease",
+    "ready Workers carry workerSpiffeId, workerServerName, lastHealthAt, and readyAt",
+    "lastHealthAt is the successful mTLS Worker health observation recorded by Lease deployment completion; it is not a synthetic periodic heartbeat",
+    "terminated Leases with complete cleanup do not produce a Worker",
+    "endpoint, credential references, user content, Workspace paths, and Secret bytes are absent"
+  ]
+}

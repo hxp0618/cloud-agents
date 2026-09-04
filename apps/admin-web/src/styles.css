@@ -797,7 +797,7 @@ label > small {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -917,6 +917,15 @@ table {
   border-spacing: 0;
   border-collapse: separate;
   font-size: 14px;
+}
+
+.worker-table {
+  min-width: 1280px;
+}
+
+.worker-table td:nth-child(2) strong,
+.worker-table td:nth-child(2) small {
+  white-space: nowrap;
 }
 
 th {
@@ -1168,6 +1177,13 @@ td > button small {
   font-size: 12px;
   line-height: 1.45;
   word-break: break-all;
+}
+
+.boundary-note {
+  margin: 0 20px 20px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .danger-text {

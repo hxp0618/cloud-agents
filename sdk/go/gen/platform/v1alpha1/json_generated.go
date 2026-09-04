@@ -221,6 +221,34 @@ type EnvironmentLeasePage struct {
 	EnvironmentLeases []EnvironmentLease `json:"environmentLeases"`
 	NextPageToken     string             `json:"nextPageToken,omitempty"`
 }
+type WorkerSpec struct {
+	ProjectRef       common.ProjectRef `json:"projectRef"`
+	LeaseID          string            `json:"leaseId"`
+	TargetID         string            `json:"targetId"`
+	TargetKind       string            `json:"targetKind"`
+	TargetGeneration int64             `json:"targetGeneration"`
+	Generation       int64             `json:"generation"`
+	ReleaseDigest    string            `json:"releaseDigest"`
+	State            string            `json:"state"`
+	CleanupPhase     string            `json:"cleanupPhase"`
+	CPULimitMillis   int64             `json:"cpuLimitMillis"`
+	MemoryLimitBytes int64             `json:"memoryLimitBytes"`
+	WorkerSPIFFEID   string            `json:"workerSpiffeId,omitempty"`
+	WorkerServerName string            `json:"workerServerName,omitempty"`
+	LastHealthAt     string            `json:"lastHealthAt,omitempty"`
+	ReadyAt          string            `json:"readyAt,omitempty"`
+	StableErrorCode  string            `json:"stableErrorCode"`
+}
+type Worker struct {
+	ResourceBase
+	Spec WorkerSpec `json:"spec"`
+}
+type WorkerPage struct {
+	APIVersion    string   `json:"apiVersion"`
+	Kind          string   `json:"kind"`
+	Workers       []Worker `json:"workers"`
+	NextPageToken string   `json:"nextPageToken,omitempty"`
+}
 type EnvironmentProfileCreateRequest struct {
 	ProfileID             string   `json:"profileId"`
 	ProfileName           string   `json:"profileName"`
@@ -447,6 +475,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"tenantRef": resourceTenantRefResponseShape, "subject": resourceSubjectResponseShape, "roleName": common.ScalarResponseShape(), "roleVersion": common.ScalarResponseShape(), "scope": resourceScopeResponseShape, "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "CloudEnvironmentLease":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
+	case "Worker":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "leaseId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "lastHealthAt": common.ScalarResponseShape(), "readyAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
@@ -485,6 +515,10 @@ var roleBindingPageResponseShape = common.ObjectResponseShape(map[string]common.
 var environmentLeasePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentLeases": common.ArrayResponseShape(resourceResponseShape("CloudEnvironmentLease")), "nextPageToken": common.ScalarResponseShape(),
+})
+var workerPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
+	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
+	"workers": common.ArrayResponseShape(resourceResponseShape("Worker")), "nextPageToken": common.ScalarResponseShape(),
 })
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -1410,6 +1444,171 @@ func DecodeEnvironmentLeasePageResponseJSON(data []byte) (common.ResponseEnvelop
 	return common.ResponseEnvelope[EnvironmentLeasePage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeEnvironmentLeasePageResponseJSON(value common.ResponseEnvelope[EnvironmentLeasePage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
+func DecodeWorkerJSON(data []byte) (Worker, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return Worker{}, err
+	}
+	base, err := checkResourceBase(fields, "Worker")
+	if err != nil {
+		return Worker{}, err
+	}
+	allowed := []string{"projectRef", "leaseId", "targetId", "targetKind", "targetGeneration", "generation", "releaseDigest", "state", "cleanupPhase", "cpuLimitMillis", "memoryLimitBytes", "workerSpiffeId", "workerServerName", "lastHealthAt", "readyAt", "stableErrorCode"}
+	required := []string{"projectRef", "leaseId", "targetId", "targetKind", "targetGeneration", "generation", "releaseDigest", "state", "cleanupPhase", "cpuLimitMillis", "memoryLimitBytes", "stableErrorCode"}
+	spec, err := strictSpec(fields["spec"], allowed, required)
+	if err != nil {
+		return Worker{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return Worker{}, err
+	}
+	leaseID, err := fieldString(spec, "leaseId", "/spec/leaseId")
+	if err != nil || common.ValidateIdentifier(leaseID, "/spec/leaseId") != nil || base.Metadata.UID != leaseID {
+		return Worker{}, common.ContractError("WORKER_LEASE_AUTHORITY_MISMATCH", "/spec/leaseId")
+	}
+	targetID, err := fieldString(spec, "targetId", "/spec/targetId")
+	if err != nil || common.ValidateIdentifier(targetID, "/spec/targetId") != nil {
+		return Worker{}, common.ContractError("INVALID_IDENTIFIER", "/spec/targetId")
+	}
+	targetKind, err := fieldString(spec, "targetKind", "/spec/targetKind")
+	if err != nil || targetKind != "docker" && targetKind != "kubernetes" && targetKind != "ssh" {
+		return Worker{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
+	}
+	targetGeneration, err := fieldInt64(spec, "targetGeneration", "/spec/targetGeneration")
+	if err != nil || targetGeneration < 1 {
+		return Worker{}, common.ContractError("INVALID_GENERATION", "/spec/targetGeneration")
+	}
+	generation, err := fieldInt64(spec, "generation", "/spec/generation")
+	if err != nil || generation < 1 {
+		return Worker{}, common.ContractError("INVALID_GENERATION", "/spec/generation")
+	}
+	releaseDigest, err := fieldString(spec, "releaseDigest", "/spec/releaseDigest")
+	if err != nil || !digestPattern.MatchString(releaseDigest) {
+		return Worker{}, common.ContractError("INVALID_RELEASE_DIGEST", "/spec/releaseDigest")
+	}
+	state, err := fieldString(spec, "state", "/spec/state")
+	if err != nil || state != "starting" && state != "ready" && state != "stopping" && state != "failed" && state != "cleanup-pending" {
+		return Worker{}, common.ContractError("INVALID_WORKER_STATE", "/spec/state")
+	}
+	cleanupPhase, err := fieldString(spec, "cleanupPhase", "/spec/cleanupPhase")
+	if err != nil || cleanupPhase != "none" && cleanupPhase != "pending" && cleanupPhase != "revoking" && cleanupPhase != "reaping" && cleanupPhase != "complete" && cleanupPhase != "blocked" {
+		return Worker{}, common.ContractError("INVALID_PHASE", "/spec/cleanupPhase")
+	}
+	if (state == "starting" || state == "ready" || state == "failed") && cleanupPhase != "none" || (state == "stopping" || state == "cleanup-pending") && (cleanupPhase == "none" || cleanupPhase == "complete") {
+		return Worker{}, common.ContractError("INVALID_WORKER_STATE", "/spec/cleanupPhase")
+	}
+	cpuLimitMillis, err := fieldInt64(spec, "cpuLimitMillis", "/spec/cpuLimitMillis")
+	if err != nil || cpuLimitMillis < 100 || cpuLimitMillis > 64000 {
+		return Worker{}, common.ContractError("INVALID_RESOURCE_LIMIT", "/spec/cpuLimitMillis")
+	}
+	memoryLimitBytes, err := fieldInt64(spec, "memoryLimitBytes", "/spec/memoryLimitBytes")
+	if err != nil || memoryLimitBytes < 134217728 || memoryLimitBytes > 1099511627776 {
+		return Worker{}, common.ContractError("INVALID_RESOURCE_LIMIT", "/spec/memoryLimitBytes")
+	}
+	workerSPIFFEID, workerServerName, lastHealthAt, readyAt := "", "", "", ""
+	_, hasSPIFFEID := spec["workerSpiffeId"]
+	_, hasServerName := spec["workerServerName"]
+	_, hasLastHealth := spec["lastHealthAt"]
+	_, hasReadyAt := spec["readyAt"]
+	if hasSPIFFEID {
+		workerSPIFFEID, err = fieldString(spec, "workerSpiffeId", "/spec/workerSpiffeId")
+		if err != nil || !validWorkerSPIFFEID(workerSPIFFEID) {
+			return Worker{}, common.ContractError("INVALID_WORKER_IDENTITY", "/spec/workerSpiffeId")
+		}
+	}
+	if hasServerName {
+		workerServerName, err = fieldString(spec, "workerServerName", "/spec/workerServerName")
+		if err != nil || !validWorkerServerName(workerServerName) {
+			return Worker{}, common.ContractError("INVALID_WORKER_SERVER_NAME", "/spec/workerServerName")
+		}
+	}
+	if hasLastHealth {
+		lastHealthAt, err = fieldString(spec, "lastHealthAt", "/spec/lastHealthAt")
+		if err != nil || common.ValidateDateTime(lastHealthAt, "/spec/lastHealthAt") != nil {
+			return Worker{}, common.ContractError("INVALID_DATE_TIME", "/spec/lastHealthAt")
+		}
+	}
+	if hasReadyAt {
+		readyAt, err = fieldString(spec, "readyAt", "/spec/readyAt")
+		if err != nil || common.ValidateDateTime(readyAt, "/spec/readyAt") != nil {
+			return Worker{}, common.ContractError("INVALID_DATE_TIME", "/spec/readyAt")
+		}
+	}
+	readyFields := hasSPIFFEID && hasServerName && hasLastHealth && hasReadyAt
+	if state == "ready" && !readyFields || state != "ready" && (hasSPIFFEID || hasServerName || hasLastHealth || hasReadyAt) {
+		return Worker{}, common.ContractError("INVALID_WORKER_STATE", "/spec/state")
+	}
+	stableErrorCode, err := fieldString(spec, "stableErrorCode", "/spec/stableErrorCode")
+	if err != nil || stableErrorCode != "" && common.ValidateIdentifier(stableErrorCode, "/spec/stableErrorCode") != nil || (state == "failed") != (stableErrorCode != "") {
+		return Worker{}, common.ContractError("INVALID_WORKER_STATE", "/spec/stableErrorCode")
+	}
+	return Worker{ResourceBase: base, Spec: WorkerSpec{ProjectRef: project, LeaseID: leaseID, TargetID: targetID, TargetKind: targetKind, TargetGeneration: targetGeneration, Generation: generation, ReleaseDigest: releaseDigest, State: state, CleanupPhase: cleanupPhase, CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes, WorkerSPIFFEID: workerSPIFFEID, WorkerServerName: workerServerName, LastHealthAt: lastHealthAt, ReadyAt: readyAt, StableErrorCode: stableErrorCode}}, nil
+}
+func DecodeWorkerResponseJSON(data []byte) (common.ResponseEnvelope[Worker], error) {
+	fields, sidecar, err := strictResource(data, "Worker")
+	if err != nil {
+		return common.ResponseEnvelope[Worker]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeWorkerJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[Worker]{}, err
+	}
+	return common.ResponseEnvelope[Worker]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeWorkerResponseJSON(value common.ResponseEnvelope[Worker]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeWorkerPageJSON(data []byte) (WorkerPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "workers", "nextPageToken"}, []string{"apiVersion", "kind", "workers"})
+	if err != nil {
+		return WorkerPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return WorkerPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "WorkerPage" {
+		return WorkerPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawWorkers []json.RawMessage
+	if err := json.Unmarshal(fields["workers"], &rawWorkers); err != nil || rawWorkers == nil || len(rawWorkers) > 200 {
+		return WorkerPage{}, common.ContractError("INVALID_WORKER_PAGE", "/workers")
+	}
+	workers := make([]Worker, 0, len(rawWorkers))
+	for index, raw := range rawWorkers {
+		worker, err := DecodeWorkerJSON(raw)
+		if err != nil {
+			return WorkerPage{}, common.ContractError("INVALID_WORKER", "/workers/"+itoa(index))
+		}
+		workers = append(workers, worker)
+	}
+	page := WorkerPage{APIVersion: apiVersion, Kind: kind, Workers: workers}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return WorkerPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeWorkerPageResponseJSON(data []byte) (common.ResponseEnvelope[WorkerPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, workerPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[WorkerPage]{}, err
+	}
+	value, err := DecodeWorkerPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[WorkerPage]{}, err
+	}
+	return common.ResponseEnvelope[WorkerPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeWorkerPageResponseJSON(value common.ResponseEnvelope[WorkerPage]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

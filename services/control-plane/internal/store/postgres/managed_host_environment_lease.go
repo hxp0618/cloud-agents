@@ -18,6 +18,35 @@ type ManagedHostEnvironmentLeasePage struct {
 	NextLeaseID       string
 }
 
+type AdminWorkerSnapshot struct {
+	Scope            internalmanagedhost.Scope
+	WorkerID         string
+	WorkerName       string
+	LeaseID          string
+	TargetID         string
+	TargetKind       string
+	TargetGeneration int64
+	Generation       int64
+	ReleaseDigest    string
+	State            string
+	CleanupPhase     string
+	CPULimitMillis   int64
+	MemoryLimitBytes int64
+	WorkerSPIFFEID   string
+	WorkerServerName string
+	LastHealthAt     *time.Time
+	ReadyAt          *time.Time
+	StableErrorCode  string
+	ResourceVersion  int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type AdminWorkerPage struct {
+	Workers      []AdminWorkerSnapshot
+	NextWorkerID string
+}
+
 type managedHostEnvironmentLeasePageRow struct {
 	TenantID              string    `json:"tenant_id"`
 	ProjectID             string    `json:"project_uid"`
@@ -34,6 +63,33 @@ type managedHostEnvironmentLeasePageRow struct {
 	ObservedPhase         string    `json:"observed_phase"`
 	CleanupPhase          string    `json:"cleanup_phase"`
 	EnvironmentID         string    `json:"environment_id"`
+	WorkerEndpoint        string    `json:"worker_endpoint"`
+	WorkerSPIFFEID        string    `json:"worker_spiffe_id"`
+	WorkerServerName      string    `json:"worker_server_name"`
+	StableErrorCode       string    `json:"stable_error_code"`
+	ExpiresAt             time.Time `json:"expires_at"`
+	ResourceVersion       int64     `json:"resource_version"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+type adminWorkerPageRow struct {
+	TenantID              string    `json:"tenant_id"`
+	ProjectID             string    `json:"project_uid"`
+	LeaseID               string    `json:"lease_uid"`
+	LeaseName             string    `json:"lease_name"`
+	TargetID              string    `json:"deployment_target_uid"`
+	TargetKind            string    `json:"target_kind"`
+	TargetGeneration      int64     `json:"deployment_target_generation"`
+	Generation            int64     `json:"generation"`
+	DesiredPhase          string    `json:"desired_phase"`
+	ReleaseDigest         string    `json:"release_digest"`
+	ObservedPhase         string    `json:"observed_phase"`
+	CleanupPhase          string    `json:"cleanup_phase"`
+	EnvironmentID         string    `json:"environment_id"`
+	ProviderCredentialRef string    `json:"provider_credential_ref"`
+	CPULimitMillis        int64     `json:"cpu_limit_millis"`
+	MemoryLimitBytes      int64     `json:"memory_limit_bytes"`
 	WorkerEndpoint        string    `json:"worker_endpoint"`
 	WorkerSPIFFEID        string    `json:"worker_spiffe_id"`
 	WorkerServerName      string    `json:"worker_server_name"`
@@ -87,6 +143,48 @@ FROM (
     ORDER BY lease_uid
     LIMIT $3
 ) AS environment_lease`
+	adminWorkerPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.managed_host_environment_leases AS lease
+JOIN cloud_agents.deployment_targets AS target
+    ON target.tenant_id = lease.tenant_id
+    AND target.project_uid = lease.project_uid
+    AND target.target_uid = lease.deployment_target_uid
+WHERE lease.tenant_id = cloud_agents.require_tenant_id()
+    AND lease.project_uid = $1
+    AND lease.lease_uid = $2
+    AND lease.deployment_target_generation IS NOT NULL
+    AND lease.provider_credential_ref IS NOT NULL
+    AND lease.cpu_limit_millis IS NOT NULL
+    AND lease.memory_limit_bytes IS NOT NULL
+    AND NOT (lease.observed_phase = 'terminated' AND lease.cleanup_phase = 'complete')
+    AND (lease.observed_phase <> 'ready' OR (lease.worker_spiffe_id <> '' AND lease.worker_server_name <> ''))`
+	listAdminWorkersSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(worker)
+    ORDER BY worker.lease_uid), '[]'::jsonb)
+FROM (
+    SELECT lease.tenant_id, lease.project_uid, lease.lease_uid, lease.lease_name,
+        lease.deployment_target_uid, target.target_kind, lease.deployment_target_generation,
+        lease.generation, lease.desired_phase, lease.release_digest, lease.observed_phase,
+        lease.cleanup_phase, lease.environment_id, lease.provider_credential_ref,
+        lease.cpu_limit_millis, lease.memory_limit_bytes, lease.worker_endpoint,
+        lease.worker_spiffe_id, lease.worker_server_name, lease.stable_error_code,
+        lease.expires_at, lease.resource_version, lease.created_at, lease.updated_at
+    FROM cloud_agents.managed_host_environment_leases AS lease
+    JOIN cloud_agents.deployment_targets AS target
+        ON target.tenant_id = lease.tenant_id
+        AND target.project_uid = lease.project_uid
+        AND target.target_uid = lease.deployment_target_uid
+    WHERE lease.tenant_id = cloud_agents.require_tenant_id()
+        AND lease.project_uid = $1
+        AND lease.lease_uid > $2
+        AND lease.deployment_target_generation IS NOT NULL
+        AND lease.provider_credential_ref IS NOT NULL
+        AND lease.cpu_limit_millis IS NOT NULL
+        AND lease.memory_limit_bytes IS NOT NULL
+        AND NOT (lease.observed_phase = 'terminated' AND lease.cleanup_phase = 'complete')
+        AND (lease.observed_phase <> 'ready' OR (lease.worker_spiffe_id <> '' AND lease.worker_server_name <> ''))
+    ORDER BY lease.lease_uid
+    LIMIT $3
+) AS worker`
 	terminateManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest,
 	    deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
@@ -386,6 +484,116 @@ func decodeManagedHostEnvironmentLeasePageRows(raw []byte, tenantID, projectID s
 		result.NextLeaseID = result.EnvironmentLeases[len(result.EnvironmentLeases)-1].LeaseID
 	}
 	return result, nil
+}
+
+func (service *DurableCoordinationService) ListAdminWorkers(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, afterWorkerID string, limit int,
+) (AdminWorkerPage, error) {
+	if service == nil || service.runner == nil {
+		return AdminWorkerPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		afterWorkerID != "" && !validMutationIdentifier(afterWorkerID) || limit < 1 || limit > 200 {
+		return AdminWorkerPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result AdminWorkerPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterWorkerID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, adminWorkerPageCursorIdentitySQL, projectID, afterWorkerID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapCoordinationDatabaseError("admin worker page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listAdminWorkersSQL, projectID, afterWorkerID, limit+1).Scan(&raw); err != nil {
+					return mapCoordinationDatabaseError("admin workers", err)
+				}
+				var err error
+				result, err = decodeAdminWorkerPageRows(raw, tenantID, projectID, limit)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, mapManagedHostEnvironmentLeaseError(err)
+}
+
+func decodeAdminWorkerPageRows(raw []byte, tenantID, projectID string, limit int) (AdminWorkerPage, error) {
+	var rows []adminWorkerPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return AdminWorkerPage{}, ErrCoordinationResultDrift
+	}
+	workers := make([]AdminWorkerSnapshot, 0, len(rows))
+	for _, row := range rows {
+		lease := internalmanagedhost.Snapshot{
+			Scope:   internalmanagedhost.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
+			LeaseID: row.LeaseID, LeaseName: row.LeaseName, ReleaseDigest: row.ReleaseDigest,
+			TargetID: row.TargetID, TargetGeneration: row.TargetGeneration, Generation: row.Generation,
+			DesiredPhase: row.DesiredPhase, ObservedPhase: row.ObservedPhase, CleanupPhase: row.CleanupPhase,
+			EnvironmentID: row.EnvironmentID, ProviderCredentialRef: row.ProviderCredentialRef,
+			CPULimitMillis: row.CPULimitMillis, MemoryLimitBytes: row.MemoryLimitBytes,
+			WorkerEndpoint: row.WorkerEndpoint, WorkerSPIFFEID: row.WorkerSPIFFEID,
+			WorkerServerName: row.WorkerServerName, StableErrorCode: row.StableErrorCode,
+			ExpiresAt: row.ExpiresAt, ResourceVersion: row.ResourceVersion,
+			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		state, ok := adminWorkerState(row.ObservedPhase, row.CleanupPhase)
+		if row.TenantID != tenantID || row.ProjectID != projectID || lease.Validate() != nil ||
+			row.TargetKind != "docker" && row.TargetKind != "kubernetes" && row.TargetKind != "ssh" || !ok {
+			return AdminWorkerPage{}, ErrCoordinationResultDrift
+		}
+		worker := AdminWorkerSnapshot{
+			Scope: lease.Scope, WorkerID: row.LeaseID, WorkerName: row.LeaseName, LeaseID: row.LeaseID,
+			TargetID: row.TargetID, TargetKind: row.TargetKind, TargetGeneration: row.TargetGeneration,
+			Generation: row.Generation, ReleaseDigest: row.ReleaseDigest, State: state,
+			CleanupPhase: row.CleanupPhase, CPULimitMillis: row.CPULimitMillis,
+			MemoryLimitBytes: row.MemoryLimitBytes, StableErrorCode: row.StableErrorCode,
+			ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if state == "ready" {
+			observedAt := row.UpdatedAt
+			worker.WorkerSPIFFEID, worker.WorkerServerName = row.WorkerSPIFFEID, row.WorkerServerName
+			worker.LastHealthAt, worker.ReadyAt = &observedAt, &observedAt
+		}
+		workers = append(workers, worker)
+	}
+	result := AdminWorkerPage{Workers: workers}
+	if len(workers) > limit {
+		result.Workers = workers[:limit]
+		result.NextWorkerID = result.Workers[len(result.Workers)-1].WorkerID
+	}
+	return result, nil
+}
+
+func adminWorkerState(observedPhase, cleanupPhase string) (string, bool) {
+	switch observedPhase {
+	case "provisioning":
+		return "starting", true
+	case "ready":
+		return "ready", true
+	case "terminating":
+		return "stopping", true
+	case "failed":
+		return "failed", true
+	case "terminated":
+		return "cleanup-pending", cleanupPhase != "complete"
+	default:
+		return "", false
+	}
 }
 
 func (service *DurableCoordinationService) CompleteManagedHostEnvironmentLeaseDeployment(

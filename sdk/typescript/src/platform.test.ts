@@ -35,6 +35,7 @@ import {
   decodeRoleBinding,
   decodeRoleBindingPage,
   decodeWatchCursor,
+  decodeWorkerPage,
   encodeResponse,
   parseProblem,
   parseDeploymentTargetCleanupPreview,
@@ -54,6 +55,7 @@ import {
   parseManagedAgentExecution,
   parseManagedAgentExecutionPage,
   parseWatchCursor,
+  parseWorkerPage,
   validateProjectResolvedOrganization,
   type FixtureResponse,
   type FixtureRequest,
@@ -205,6 +207,65 @@ describe("generated platform JSON models", () => {
     expect(seen[1]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
     );
+  });
+  it("lists lease-backed Workers only through the Admin API", async () => {
+    const page = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "WorkerPage",
+      workers: [
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "Worker",
+          metadata: {
+            uid: "lease-alpha",
+            name: "worker-alpha",
+            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            resourceVersion: "4",
+            createdAt: "2026-09-04T08:00:00Z",
+            updatedAt: "2026-09-04T08:01:00Z",
+          },
+          spec: {
+            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            leaseId: "lease-alpha",
+            targetId: "docker-alpha",
+            targetKind: "docker",
+            targetGeneration: 2,
+            generation: 3,
+            releaseDigest: `sha256:${"a".repeat(64)}`,
+            state: "ready",
+            cleanupPhase: "none",
+            cpuLimitMillis: 1000,
+            memoryLimitBytes: 536870912,
+            workerSpiffeId: "spiffe://cloud-agents.test/worker/lease-alpha",
+            workerServerName: "worker-alpha.test",
+            lastHealthAt: "2026-09-04T08:01:00Z",
+            readyAt: "2026-09-04T08:01:00Z",
+            stableErrorCode: "",
+          },
+        },
+      ],
+      nextPageToken: "worker-page-token-2",
+    });
+    expect(decodeWorkerPage(JSON.parse(page)).workers[0]?.spec.state).toBe("ready");
+    expect(parseWorkerPage(page).value.nextPageToken).toBe("worker-page-token-2");
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: {}, body: page };
+    });
+    await client.listAdminWorkers(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "worker-page-token-1",
+    );
+    expect(seen[0]?.path).toBe(
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/workers?pageSize=1&pageToken=worker-page-token-1",
+    );
+    const withEndpoint = JSON.parse(page) as { workers: Array<{ spec: Record<string, unknown> }> };
+    withEndpoint.workers[0]!.spec.workerEndpoint = "https://worker.test";
+    expect(() => decodeWorkerPage(withEndpoint)).toThrow();
   });
   it("drives the Admin environment profile lifecycle", async () => {
     const profile = JSON.stringify({

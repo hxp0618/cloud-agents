@@ -31,7 +31,7 @@ docker-maintenance:target.register:succeeded:complete
 The database contained exactly two Targets and two activity rows for this project:
 
 ```json
-{"targets": 2, "activity": 2}
+{ "targets": 2, "activity": 2 }
 ```
 
 With `pageSize=1`, the project route returned both records across one opaque 211-byte cursor without duplication:

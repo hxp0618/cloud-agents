@@ -244,8 +244,8 @@ const issueToken = (tokenId, scopes) => {
 const adminToken = issueToken("compose-smoke-admin-token", [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
-  "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "projects.get", "targets.act", "targets.create", "targets.get", "targets.list",
+  "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
+  "projects.get", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
   "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
@@ -828,6 +828,51 @@ if [ "$target_container_count" -ne 1 ]; then
   exit 1
 fi
 
+admin_workers_file="$smoke_directory/admin-workers.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/workers?pageSize=200" \
+  compose-smoke-admin-workers >"$admin_workers_file"
+CLOUD_AGENTS_COMPOSE_WORKERS_FILE="$admin_workers_file" \
+  CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID="$profile_environment_id" \
+  CLOUD_AGENTS_COMPOSE_WORKER_RELEASE="$worker_release_digest" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_WORKERS_FILE, "utf8"));
+const worker = value.workers?.find((item) => item.metadata?.uid === process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID);
+const forbidden = new Set(["endpoint", "workerendpoint", "credentialref", "providercredentialref", "prompt", "workspace", "artifact"]);
+const visit = (item) => {
+  if (Array.isArray(item)) return item.forEach(visit);
+  if (!item || typeof item !== "object") return;
+  for (const [key, nested] of Object.entries(item)) {
+    if (forbidden.has(key.toLowerCase())) throw new Error(`Worker Admin API exposed forbidden field ${key}`);
+    visit(nested);
+  }
+};
+visit(value);
+if (value.kind !== "WorkerPage" || value.workers?.length !== 1 || !worker ||
+    worker.spec?.leaseId !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID ||
+    worker.spec?.targetId !== "docker-compose-target" || worker.spec?.targetKind !== "docker" ||
+    worker.spec?.releaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_WORKER_RELEASE ||
+    worker.spec?.state !== "ready" || worker.spec?.cleanupPhase !== "none" ||
+    worker.spec?.cpuLimitMillis !== 1000 || worker.spec?.memoryLimitBytes !== 536870912 ||
+    typeof worker.spec?.lastHealthAt !== "string" || worker.spec.lastHealthAt !== worker.metadata?.updatedAt ||
+    typeof worker.spec?.readyAt !== "string" || typeof worker.spec?.workerSpiffeId !== "string" ||
+    typeof worker.spec?.workerServerName !== "string") {
+  throw new Error("Admin API did not project the ready Docker Worker");
+}
+NODE
+
+user_admin_workers_file="$smoke_directory/user-admin-workers-denied.json"
+user_admin_workers_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-workers-denied" \
+  --output "$user_admin_workers_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/workers?pageSize=200")
+if [ "$user_admin_workers_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_workers_file"; then
+  echo "Compose ordinary User token was not denied by the Worker Admin API" >&2
+  exit 1
+fi
+
 codex_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
   --session session-compose-smoke \
   --request-id compose-smoke-session-create --idempotency-key compose-smoke-session-create \
@@ -1014,6 +1059,17 @@ if [ "$target_container_count" -ne 0 ]; then
   echo "Compose Docker target Worker was not cleaned up" >&2
   exit 1
 fi
+admin_workers_after_cleanup_file="$smoke_directory/admin-workers-after-cleanup.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/workers?pageSize=200" \
+  compose-smoke-admin-workers-after-cleanup >"$admin_workers_after_cleanup_file"
+CLOUD_AGENTS_COMPOSE_WORKERS_FILE="$admin_workers_after_cleanup_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_WORKERS_FILE, "utf8"));
+if (value.kind !== "WorkerPage" || !Array.isArray(value.workers) || value.workers.length !== 0) {
+  throw new Error("Admin API retained a Worker after Lease termination and cleanup");
+}
+NODE
 
 backup="$smoke_directory/cloud-agents.dump"
 compose --profile backup run --rm -T backup >"$backup"

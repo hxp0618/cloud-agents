@@ -9,6 +9,7 @@ import {
   type EnvironmentLease,
   type EnvironmentProfile,
   type MaintenanceOperation,
+  type Worker,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import type { MessageKey } from "./i18n";
@@ -25,6 +26,7 @@ export type AdminClient = Pick<
   | "previewAdminDeploymentTargetCleanup"
   | "cleanupAdminDeploymentTarget"
   | "listAdminEnvironmentLeases"
+  | "listAdminWorkers"
   | "getAdminEnvironmentLease"
   | "listAdminEnvironmentProfiles"
   | "createAdminEnvironmentProfile"
@@ -174,6 +176,36 @@ export async function listAdminLeases(
   } while (pageToken !== undefined);
   return Object.freeze(
     leases.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export async function listAdminWorkers(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly Worker[]> {
+  const workers: Worker[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminWorkers(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    workers.push(...page.value.workers);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.workerPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    workers.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
   );
 }
 

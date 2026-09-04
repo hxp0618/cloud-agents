@@ -32,6 +32,7 @@ type managedHostEnvironmentLeaseStore interface {
 	CreateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CreateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	ListManagedHostEnvironmentLeases(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedHostEnvironmentLeasePage, error)
+	ListAdminWorkers(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminWorkerPage, error)
 	BeginManagedHostEnvironmentLeaseUpgrade(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.UpgradeEnvironmentLeaseInput) (internalmanagedhost.UpgradeStart, error)
 	TerminateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
 	CompleteManagedHostEnvironmentLeaseTermination(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput) (internalmanagedhost.Snapshot, error)
@@ -113,6 +114,8 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		return
 	}
 	switch {
+	case action == "worker-collection" && request.Method == http.MethodGet:
+		server.listWorkers(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "collection" && request.Method == http.MethodGet:
 		server.list(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "collection" && request.Method == http.MethodPost:
@@ -127,6 +130,38 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 	}
+}
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) listWorkers(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateListAdminWorkersServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterWorkerID := ""
+	if validated.PageToken != "" {
+		if afterWorkerID, ok = decodeAdminWorkerPageToken(validated.TenantID, validated.ProjectID, validated.PageToken); !ok {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.store.ListAdminWorkers(request.Context(), validated.TenantID, principal, validated.ProjectID, afterWorkerID, validated.PageSize)
+	if err != nil {
+		status, code := managedHostEnvironmentLeaseErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	writeAdminWorkerPage(writer, requestID, tenantID, projectID, page)
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.ResponseWriter, request *http.Request, tenantID, projectID, leaseID, requestID, bearer string) {
@@ -631,11 +666,62 @@ func writeManagedHostEnvironmentLeasePage(writer http.ResponseWriter, requestID,
 	_, _ = writer.Write(body)
 }
 
+func writeAdminWorkerPage(writer http.ResponseWriter, requestID, tenantID, projectID string, page postgres.AdminWorkerPage) {
+	workers := make([]platformv1alpha1.Worker, 0, len(page.Workers))
+	for _, snapshot := range page.Workers {
+		spec := platformv1alpha1.WorkerSpec{
+			ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
+			LeaseID:    snapshot.LeaseID, TargetID: snapshot.TargetID, TargetKind: snapshot.TargetKind,
+			TargetGeneration: snapshot.TargetGeneration, Generation: snapshot.Generation,
+			ReleaseDigest: snapshot.ReleaseDigest, State: snapshot.State, CleanupPhase: snapshot.CleanupPhase,
+			CPULimitMillis: snapshot.CPULimitMillis, MemoryLimitBytes: snapshot.MemoryLimitBytes,
+			WorkerSPIFFEID: snapshot.WorkerSPIFFEID, WorkerServerName: snapshot.WorkerServerName,
+			StableErrorCode: snapshot.StableErrorCode,
+		}
+		if snapshot.LastHealthAt != nil {
+			spec.LastHealthAt = snapshot.LastHealthAt.UTC().Format(time.RFC3339Nano)
+		}
+		if snapshot.ReadyAt != nil {
+			spec.ReadyAt = snapshot.ReadyAt.UTC().Format(time.RFC3339Nano)
+		}
+		workers = append(workers, platformv1alpha1.Worker{ResourceBase: platformv1alpha1.ResourceBase{
+			APIVersion: platformv1alpha1.APIVersion, Kind: "Worker",
+			Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.WorkerID, Name: snapshot.WorkerName,
+				TenantRef:       commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID},
+				ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)},
+		}, Spec: spec})
+	}
+	nextPageToken := ""
+	if page.NextWorkerID != "" {
+		var ok bool
+		nextPageToken, ok = encodeAdminWorkerPageToken(tenantID, projectID, page.NextWorkerID)
+		if !ok {
+			writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeWorkerPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.WorkerPage]{Value: platformv1alpha1.WorkerPage{APIVersion: platformv1alpha1.APIVersion, Kind: "WorkerPage", Workers: workers, NextPageToken: nextPageToken}})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func managedHostEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, action string, ok bool) {
 	return environmentLeasePathWithPrefix(path, ManagedHostEnvironmentLeaseRoutePrefix)
 }
 
 func adminEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, action string, ok bool) {
+	if strings.HasPrefix(path, AdminEnvironmentLeaseRoutePrefix) {
+		parts := strings.Split(strings.TrimPrefix(path, AdminEnvironmentLeaseRoutePrefix), "/")
+		if len(parts) == 4 && parts[1] == "projects" && parts[3] == "workers" && parts[0] != "" && parts[2] != "" {
+			return parts[0], parts[2], "", "worker-collection", true
+		}
+	}
 	return environmentLeasePathWithPrefix(path, AdminEnvironmentLeaseRoutePrefix)
 }
 
@@ -666,14 +752,30 @@ func environmentLeasePathWithPrefix(path, prefix string) (tenantID, projectID, l
 }
 
 func encodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, leaseID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(leaseID, "/leaseId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("environment-lease/v1\x00" + tenantID + "\x00" + projectID + "\x00" + leaseID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodeProjectResourcePageToken("environment-lease/v1", tenantID, projectID, leaseID)
 }
 
 func decodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, token string) (string, bool) {
+	return decodeProjectResourcePageToken("environment-lease/v1", tenantID, projectID, token)
+}
+
+func encodeAdminWorkerPageToken(tenantID, projectID, workerID string) (string, bool) {
+	return encodeProjectResourcePageToken("worker/v1", tenantID, projectID, workerID)
+}
+
+func decodeAdminWorkerPageToken(tenantID, projectID, token string) (string, bool) {
+	return decodeProjectResourcePageToken("worker/v1", tenantID, projectID, token)
+}
+
+func encodeProjectResourcePageToken(kind, tenantID, projectID, resourceID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(resourceID, "/resourceId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte(kind + "\x00" + tenantID + "\x00" + projectID + "\x00" + resourceID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeProjectResourcePageToken(kind, tenantID, projectID, token string) (string, bool) {
 	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
 		return "", false
 	}
@@ -682,8 +784,8 @@ func decodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, token strin
 		return "", false
 	}
 	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "environment-lease/v1" || parts[1] != tenantID || parts[2] != projectID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/leaseId") != nil {
+	if len(parts) != 4 || parts[0] != kind || parts[1] != tenantID || parts[2] != projectID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/resourceId") != nil {
 		return "", false
 	}
 	return parts[3], true
@@ -701,6 +803,8 @@ func HandlesAdminEnvironmentLeasePath(path string) bool {
 
 func environmentLeasePermission(action, method string, admin bool) (string, bool) {
 	switch {
+	case admin && action == "worker-collection" && method == http.MethodGet:
+		return "workers.list", true
 	case action == "collection" && method == http.MethodGet:
 		return "leases.list", true
 	case action == "get" && method == http.MethodGet:

@@ -172,6 +172,22 @@ func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testin
 	}
 }
 
+func TestGeneratedWorkerContractKeepsOperationalBoundary(t *testing.T) {
+	worker := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"Worker","metadata":{"uid":"lease-alpha","name":"worker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"4","createdAt":"2026-09-04T08:00:00Z","updatedAt":"2026-09-04T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"leaseId":"lease-alpha","targetId":"docker-alpha","targetKind":"docker","targetGeneration":2,"generation":3,"releaseDigest":"sha256:` + strings.Repeat("a", 64) + `","state":"ready","cleanupPhase":"none","cpuLimitMillis":1000,"memoryLimitBytes":536870912,"workerSpiffeId":"spiffe://cloud-agents.test/worker/lease-alpha","workerServerName":"worker-alpha.test","lastHealthAt":"2026-09-04T08:01:00Z","readyAt":"2026-09-04T08:01:00Z","stableErrorCode":""}}`)
+	page, err := DecodeWorkerPageResponseJSON([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"WorkerPage","workers":[` + string(worker) + `],"nextPageToken":"worker-page-token-1"}`))
+	if err != nil || len(page.Value.Workers) != 1 || page.Value.Workers[0].Spec.State != "ready" {
+		t.Fatalf("worker page=%#v error=%v", page, err)
+	}
+	withEndpoint := bytes.Replace(worker, []byte(`"stableErrorCode":""`), []byte(`"workerEndpoint":"https://worker.test","stableErrorCode":""`), 1)
+	if _, err := DecodeWorkerJSON(withEndpoint); err == nil {
+		t.Fatal("Worker accepted an infrastructure endpoint")
+	}
+	missingHealth := bytes.Replace(worker, []byte(`,"lastHealthAt":"2026-09-04T08:01:00Z"`), nil, 1)
+	if _, err := DecodeWorkerJSON(missingHealth); err == nil {
+		t.Fatal("ready Worker accepted a partial health observation")
+	}
+}
+
 func TestGeneratedDeploymentTargetCleanupPreviewContract(t *testing.T) {
 	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetCleanupPreview","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"7","createdAt":"2026-09-03T08:00:00Z","updatedAt":"2026-09-03T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"targetKind":"docker","expectedGeneration":2,"expectedResourceVersion":"7","impactDigest":"sha256:` + strings.Repeat("a", 64) + `","canCleanup":false,"workers":[{"workerName":"cloud-agents-worker-alpha","leaseId":"lease-alpha","leaseGeneration":3,"disposition":"blocked","resources":[{"resourceKind":"container","resourceName":"cloud-agents-worker-alpha"},{"resourceKind":"workspace-volume","resourceName":"workspace-alpha"}]}]}}`)
 	preview, err := DecodeDeploymentTargetCleanupPreviewResponseJSON(body)

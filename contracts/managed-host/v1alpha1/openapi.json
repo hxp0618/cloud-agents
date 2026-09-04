@@ -292,6 +292,34 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/workers": {
+      "get": {
+        "operationId": "adminListWorkers",
+        "x-cloud-agents-required-scope": "workers.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current logical Workers projected from authoritative Environment Leases and Deployment Targets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/worker-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "managedAgentListEnvironmentProfiles",
