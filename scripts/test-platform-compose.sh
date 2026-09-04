@@ -245,7 +245,7 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "projects.get", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
+  "projects.get", "releases.create", "releases.list", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
   "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
@@ -717,6 +717,78 @@ retry_container_count=$(docker ps -aq \
   --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
 if [ "$retry_container_count" -ne 0 ]; then
   echo "Compose recovered deployment left a target Worker after termination" >&2
+  exit 1
+fi
+
+release_id=compose-worker-release
+release_create_file="$smoke_directory/release-create.json"
+release_create_body=$(printf '{"releaseId":"%s","releaseName":"%s","imageRepository":"%s","releaseDigest":"%s","platformVersion":"platform-v1","runtimeVersion":"runtime-v1","codexVersion":"codex-v1","claudeCodeVersion":"claude-v1","architectures":["%s"],"verificationEvidenceDigest":"%s"}' \
+  "$release_id" "$release_id" "$worker_repository" "$worker_release_digest" "$image_platform" "$worker_release_digest")
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases" \
+  compose-smoke-release-create --header "Idempotency-Key: compose-smoke-release-create" \
+  --data "$release_create_body" >"$release_create_file"
+CLOUD_AGENTS_COMPOSE_RELEASE_FILE="$release_create_file" \
+CLOUD_AGENTS_COMPOSE_RELEASE_ID="$release_id" \
+CLOUD_AGENTS_COMPOSE_RELEASE_DIGEST="$worker_release_digest" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_RELEASE_FILE, "utf8"));
+if (value.kind !== "WorkerRelease" || value.metadata?.uid !== process.env.CLOUD_AGENTS_COMPOSE_RELEASE_ID ||
+    value.spec?.releaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_RELEASE_DIGEST ||
+    value.spec?.status !== "approved" || value.spec?.verificationState !== "attested" ||
+    value.metadata?.resourceVersion !== "1") {
+  throw new Error("Admin API did not persist the approved Worker release");
+}
+for (const forbidden of ["credentialRef", "providerCredentialRef", "endpoint", "secret", "prompt", "artifact"]) {
+  if (JSON.stringify(value).toLowerCase().includes(forbidden.toLowerCase())) {
+    throw new Error(`Worker release response exposed ${forbidden}`);
+  }
+}
+NODE
+release_replay_file="$smoke_directory/release-replay.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases" \
+  compose-smoke-release-create --header "Idempotency-Key: compose-smoke-release-create" \
+  --data "$release_create_body" >"$release_replay_file"
+if ! cmp -s "$release_create_file" "$release_replay_file"; then
+  echo "Compose Worker release idempotent replay drifted" >&2
+  exit 1
+fi
+release_list_file="$smoke_directory/release-list.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases?pageSize=200" \
+  compose-smoke-release-list >"$release_list_file"
+CLOUD_AGENTS_COMPOSE_RELEASE_FILE="$release_list_file" CLOUD_AGENTS_COMPOSE_RELEASE_ID="$release_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_RELEASE_FILE, "utf8"));
+if (value.kind !== "WorkerReleasePage" || value.workerReleases?.length !== 1 ||
+    value.workerReleases[0]?.metadata?.uid !== process.env.CLOUD_AGENTS_COMPOSE_RELEASE_ID) {
+  throw new Error("Admin API Worker release catalog drifted");
+}
+NODE
+user_admin_release_file="$smoke_directory/user-admin-release-denied.json"
+user_admin_release_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-release-denied" \
+  --output "$user_admin_release_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases?pageSize=200")
+if [ "$user_admin_release_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_release_file"; then
+  echo "Compose ordinary User token was not denied by the Worker Release Admin API" >&2
+  exit 1
+fi
+unapproved_profile_file="$smoke_directory/unapproved-profile.json"
+unapproved_profile_body='{"profileId":"unapproved-profile","profileName":"unapproved-profile","version":1,"description":"Unapproved release must be rejected","providerKinds":["codex"],"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","targetRefs":["docker-compose-target"],"providerCredentialRef":"provider-unapproved"}'
+unapproved_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/admin-curl.conf" --request POST \
+  --header "X-Request-ID: compose-smoke-unapproved-profile" \
+  --header "Idempotency-Key: compose-smoke-unapproved-profile" \
+  --header "Content-Type: application/json" --data "$unapproved_profile_body" \
+  --output "$unapproved_profile_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles")
+if [ "$unapproved_profile_status" -ne 409 ] || \
+  ! grep -q '"code":"PROFILE_VERSION_CONFLICT"' "$unapproved_profile_file"; then
+  echo "Compose Profile accepted an unapproved Worker release" >&2
   exit 1
 fi
 

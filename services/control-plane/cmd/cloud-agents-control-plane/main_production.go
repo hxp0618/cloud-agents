@@ -263,6 +263,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("admin environment profile HTTP server is unavailable")
 	}
+	adminWorkerReleaseServer, err := server.NewAdminWorkerReleaseHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("admin worker release HTTP server is unavailable")
+	}
 	publishedEnvironmentProfileServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifier, coordinationService)
 	if err != nil {
 		return errors.New("published environment profile HTTP server is unavailable")
@@ -309,6 +313,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesAdminWorkerReleasePath(request.URL.Path) {
+			adminWorkerReleaseServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesAdminEnvironmentProfilePath(request.URL.Path) {
 			adminEnvironmentProfileServer.ServeHTTP(writer, request)
 			return

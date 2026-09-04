@@ -1009,6 +1009,55 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
+  it("classifies the Worker release catalog migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000045_add_worker_release_catalog.sql"),
+      ),
+    );
+    expect(statements).toHaveLength(36);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000045").command),
+    ).toEqual([
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+      "GRANT",
+      "GRANT",
+    ]);
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

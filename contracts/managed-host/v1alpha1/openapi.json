@@ -320,6 +320,66 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/worker-releases": {
+      "get": {
+        "operationId": "adminListWorkerReleases",
+        "x-cloud-agents-required-scope": "releases.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved immutable Worker releases",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-release-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "post": {
+        "operationId": "adminRegisterWorkerRelease",
+        "x-cloud-agents-required-scope": "releases.create",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-release-register-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Worker release approved from operator-attested verification evidence",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-release.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "managedAgentListEnvironmentProfiles",

@@ -26,8 +26,8 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
-export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000044.tar";
-export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000044.tar";
+export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000045.tar";
+export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000045.tar";
 export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
 export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
 export const PLATFORM_RELEASE_TYPESCRIPT_SDK = "cloud-agents-typescript-sdk.tgz";
@@ -116,7 +116,7 @@ export function platformReleaseArtifact(
 }
 
 export function buildPlatformMigrationPackage(root: string): Uint8Array {
-  const manifestPath = "services/control-plane/migrations/product/000044/manifest.json";
+  const manifestPath = "services/control-plane/migrations/product/000045/manifest.json";
   const manifest = JSON.parse(readFileSync(resolve(root, manifestPath), "utf8")) as {
     readonly schema_bundle: {
       readonly migrations: ReadonlyArray<{
@@ -128,7 +128,7 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   const paths = new Set<string>([
     "LICENSE",
     manifestPath,
-    "services/control-plane/migrations/product/000044/schema-bundle.json",
+    "services/control-plane/migrations/product/000045/schema-bundle.json",
   ]);
   for (const migration of manifest.schema_bundle.migrations) {
     paths.add(migration.sql_artifact.path);
@@ -368,6 +368,9 @@ const PUBLIC_PLATFORM_CONTRACT_PATHS = [
   "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
   "contracts/platform/v1alpha1/schemas/role-page.schema.json",
   "contracts/platform/v1alpha1/schemas/role.schema.json",
+  "contracts/platform/v1alpha1/schemas/worker-release-page.schema.json",
+  "contracts/platform/v1alpha1/schemas/worker-release-register-request.schema.json",
+  "contracts/platform/v1alpha1/schemas/worker-release.schema.json",
 ] as const;
 
 function readTree(root: string, directory: string): string[] {

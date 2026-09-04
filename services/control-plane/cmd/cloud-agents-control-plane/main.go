@@ -463,12 +463,20 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local admin environment profile HTTP server is unavailable")
 	}
+	adminWorkerReleaseHTTPServer, err := server.NewAdminWorkerReleaseHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local admin worker release HTTP server is unavailable")
+	}
 	publishedEnvironmentProfileHTTPServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifierAdapter, coordinationService)
 	if err != nil {
 		return errors.New("local published environment profile HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesAdminWorkerReleasePath(request.URL.Path) {
+			adminWorkerReleaseHTTPServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesAdminEnvironmentProfilePath(request.URL.Path) {
 			adminEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
 			return

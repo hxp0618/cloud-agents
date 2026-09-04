@@ -93,6 +93,8 @@ type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type WorkerPageResult = common.ResponseEnvelope[platform.WorkerPage]
+type WorkerReleaseResult = common.ResponseEnvelope[platform.WorkerRelease]
+type WorkerReleasePageResult = common.ResponseEnvelope[platform.WorkerReleasePage]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -747,6 +749,77 @@ func (client *Client) GetAdminEnvironmentLease(ctx context.Context, tenantID, pr
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID {
 		return EnvironmentLeaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminWorkerReleases(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (WorkerReleasePageResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return WorkerReleasePageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return WorkerReleasePageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return WorkerReleasePageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/worker-releases"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return WorkerReleasePageResult{}, err
+	}
+	if response.Status != 200 {
+		return WorkerReleasePageResult{}, client.problemError("adminListWorkerReleases", response)
+	}
+	value, err := platform.DecodeWorkerReleasePageResponseJSON(response.Body)
+	if err != nil {
+		return WorkerReleasePageResult{}, &ClientError{Operation: "adminListWorkerReleases", Status: response.Status, Cause: err}
+	}
+	for _, release := range value.Value.WorkerReleases {
+		if release.Metadata.TenantRef.ID != tenantID || release.Spec.ProjectRef.ID != projectID {
+			return WorkerReleasePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/workerReleases")
+		}
+	}
+	return value, nil
+}
+func (client *Client) RegisterAdminWorkerRelease(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.WorkerReleaseRegisterRequest) (WorkerReleaseResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return WorkerReleaseResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return WorkerReleaseResult{}, err
+	}
+	bodyBytes, err := platform.EncodeWorkerReleaseRegisterRequestJSON(body)
+	if err != nil {
+		return WorkerReleaseResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/worker-releases", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return WorkerReleaseResult{}, err
+	}
+	if response.Status != 201 {
+		return WorkerReleaseResult{}, client.problemError("adminRegisterWorkerRelease", response)
+	}
+	value, err := platform.DecodeWorkerReleaseResponseJSON(response.Body)
+	if err != nil {
+		return WorkerReleaseResult{}, &ClientError{Operation: "adminRegisterWorkerRelease", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return WorkerReleaseResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.ReleaseID || value.Value.Metadata.Name != body.ReleaseName || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.ReleaseDigest != body.ReleaseDigest {
+		return WorkerReleaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
 }
@@ -3288,6 +3361,51 @@ func ValidateListAdminWorkersServerRequest(tenantID, projectID, requestID string
 		}
 	}
 	return ListAdminWorkersServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type ListAdminWorkerReleasesServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminWorkerReleasesServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminWorkerReleasesServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ListAdminWorkerReleasesServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminWorkerReleasesServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminWorkerReleasesServerInput{}, err
+		}
+	}
+	return ListAdminWorkerReleasesServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type RegisterAdminWorkerReleaseServerInput struct {
+	TenantID       string
+	ProjectID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.WorkerReleaseRegisterRequest
+}
+
+func ValidateRegisterAdminWorkerReleaseServerRequest(tenantID, projectID, requestID, idempotencyKey string, body []byte) (RegisterAdminWorkerReleaseServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return RegisterAdminWorkerReleaseServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return RegisterAdminWorkerReleaseServerInput{}, err
+	}
+	value, err := platform.DecodeWorkerReleaseRegisterRequestJSON(body)
+	if err != nil {
+		return RegisterAdminWorkerReleaseServerInput{}, err
+	}
+	return RegisterAdminWorkerReleaseServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type GetEnvironmentLeaseServerInput struct {

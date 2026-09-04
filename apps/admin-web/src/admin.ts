@@ -12,6 +12,7 @@ import {
   type EnvironmentProfile,
   type MaintenanceOperation,
   type Worker,
+  type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import type { MessageKey } from "./i18n";
@@ -31,6 +32,8 @@ export type AdminClient = Pick<
   | "transitionAdminDeploymentTargetScheduling"
   | "listAdminEnvironmentLeases"
   | "listAdminWorkers"
+  | "listAdminWorkerReleases"
+  | "registerAdminWorkerRelease"
   | "getAdminEnvironmentLease"
   | "listAdminEnvironmentProfiles"
   | "createAdminEnvironmentProfile"
@@ -228,6 +231,47 @@ export async function listAdminWorkers(
   } while (pageToken !== undefined);
   return Object.freeze(
     workers.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export async function listAdminReleases(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly WorkerRelease[]> {
+  const releases: WorkerRelease[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminWorkerReleases(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    releases.push(...page.value.workerReleases);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.releasePageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    releases.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export function replaceRelease(
+  releases: readonly WorkerRelease[],
+  release: WorkerRelease,
+): readonly WorkerRelease[] {
+  return Object.freeze(
+    [...releases.filter(({ metadata }) => metadata.uid !== release.metadata.uid), release].toSorted(
+      (left, right) => left.metadata.name.localeCompare(right.metadata.name),
+    ),
   );
 }
 

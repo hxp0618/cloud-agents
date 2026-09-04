@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/worker-release-page.schema.json",
+  "title": "WorkerReleasePage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "workerReleases"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "WorkerReleasePage" },
+    "workerReleases": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "worker-release.schema.json" }
+    },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

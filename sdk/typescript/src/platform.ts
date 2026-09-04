@@ -291,6 +291,43 @@ export type WorkerPage = Readonly<{
   workers: readonly Worker[];
   nextPageToken?: string;
 }>;
+export type WorkerReleaseRegisterRequest = Readonly<{
+  releaseId: string;
+  releaseName: string;
+  imageRepository: string;
+  releaseDigest: `sha256:${string}`;
+  platformVersion: string;
+  runtimeVersion: string;
+  codexVersion: string;
+  claudeCodeVersion: string;
+  architectures: readonly ("linux/amd64" | "linux/arm64")[];
+  verificationEvidenceDigest: `sha256:${string}`;
+}>;
+export type WorkerRelease = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "WorkerRelease";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    imageRepository: string;
+    releaseDigest: `sha256:${string}`;
+    platformVersion: string;
+    runtimeVersion: string;
+    codexVersion: string;
+    claudeCodeVersion: string;
+    architectures: readonly ("linux/amd64" | "linux/arm64")[];
+    status: "approved";
+    verificationState: "attested";
+    verificationEvidenceDigest: `sha256:${string}`;
+    approvedAt: string;
+  }>;
+}>;
+export type WorkerReleasePage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "WorkerReleasePage";
+  workerReleases: readonly WorkerRelease[];
+  nextPageToken?: string;
+}>;
 export type EnvironmentProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
@@ -838,6 +875,28 @@ const workerPageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const workerReleaseResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  imageRepository: scalarResponseShape,
+  releaseDigest: scalarResponseShape,
+  platformVersion: scalarResponseShape,
+  runtimeVersion: scalarResponseShape,
+  codexVersion: scalarResponseShape,
+  claudeCodeVersion: scalarResponseShape,
+  architectures: { item: scalarResponseShape },
+  status: scalarResponseShape,
+  verificationState: scalarResponseShape,
+  verificationEvidenceDigest: scalarResponseShape,
+  approvedAt: scalarResponseShape,
+});
+const workerReleasePageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    workerReleases: { item: workerReleaseResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
 const environmentProfileResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   profileId: scalarResponseShape,
@@ -1381,6 +1440,28 @@ function workerSPIFFEID(value: unknown, path: string): string {
     error("INVALID_WORKER_IDENTITY", path);
   }
   return text;
+}
+function workerImageRepository(value: unknown, path: string): string {
+  const text = boundedString(value, 3, 512, path);
+  if (
+    !/^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$/u.test(text)
+  )
+    error("INVALID_WORKER_IMAGE_REPOSITORY", path);
+  return text;
+}
+function workerReleaseArchitectures(
+  value: unknown,
+  path: string,
+): readonly ("linux/amd64" | "linux/arm64")[] {
+  const values: unknown[] = Array.isArray(value)
+    ? value
+    : error("INVALID_WORKER_RELEASE_ARCHITECTURES", path);
+  if (values.length < 1 || values.length > 2) error("INVALID_WORKER_RELEASE_ARCHITECTURES", path);
+  const result = values.map((entry, index) =>
+    enumValue(entry, ["linux/amd64", "linux/arm64"] as const, `${path}/${index}`),
+  );
+  if (new Set(result).size !== result.length) error("INVALID_WORKER_RELEASE_ARCHITECTURES", path);
+  return Object.freeze(result);
 }
 function assertScalar(value: string, path: string): void {
   for (let index = 0; index < value.length; index++) {
@@ -2548,6 +2629,137 @@ export function decodeWorkerPage(value: unknown): WorkerPage {
     apiVersion: platformApiVersion,
     kind: "WorkerPage" as const,
     workers: Object.freeze((source.workers as unknown[]).map(decodeWorker)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeWorkerReleaseRegisterRequest(value: unknown): WorkerReleaseRegisterRequest {
+  const source = strictRecord(
+    value,
+    [
+      "releaseId",
+      "releaseName",
+      "imageRepository",
+      "releaseDigest",
+      "platformVersion",
+      "runtimeVersion",
+      "codexVersion",
+      "claudeCodeVersion",
+      "architectures",
+      "verificationEvidenceDigest",
+    ],
+    [
+      "releaseId",
+      "releaseName",
+      "imageRepository",
+      "releaseDigest",
+      "platformVersion",
+      "runtimeVersion",
+      "codexVersion",
+      "claudeCodeVersion",
+      "architectures",
+      "verificationEvidenceDigest",
+    ],
+  );
+  return Object.freeze({
+    releaseId: identifier(source.releaseId, "/releaseId"),
+    releaseName: identifier(source.releaseName, "/releaseName"),
+    imageRepository: workerImageRepository(source.imageRepository, "/imageRepository"),
+    releaseDigest: digest(source.releaseDigest, "/releaseDigest") as `sha256:${string}`,
+    platformVersion: identifier(source.platformVersion, "/platformVersion"),
+    runtimeVersion: identifier(source.runtimeVersion, "/runtimeVersion"),
+    codexVersion: identifier(source.codexVersion, "/codexVersion"),
+    claudeCodeVersion: identifier(source.claudeCodeVersion, "/claudeCodeVersion"),
+    architectures: workerReleaseArchitectures(source.architectures, "/architectures"),
+    verificationEvidenceDigest: digest(
+      source.verificationEvidenceDigest,
+      "/verificationEvidenceDigest",
+    ) as `sha256:${string}`,
+  });
+}
+export function encodeWorkerReleaseRegisterRequest(value: WorkerReleaseRegisterRequest): string {
+  return JSON.stringify(decodeWorkerReleaseRegisterRequest(value));
+}
+export function decodeWorkerRelease(value: unknown): WorkerRelease {
+  const source = record(value);
+  const root = base(source, "WorkerRelease");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "imageRepository",
+      "releaseDigest",
+      "platformVersion",
+      "runtimeVersion",
+      "codexVersion",
+      "claudeCodeVersion",
+      "architectures",
+      "status",
+      "verificationState",
+      "verificationEvidenceDigest",
+      "approvedAt",
+    ],
+    [
+      "projectRef",
+      "imageRepository",
+      "releaseDigest",
+      "platformVersion",
+      "runtimeVersion",
+      "codexVersion",
+      "claudeCodeVersion",
+      "architectures",
+      "status",
+      "verificationState",
+      "verificationEvidenceDigest",
+      "approvedAt",
+    ],
+    "/spec",
+  );
+  if (spec.status !== "approved") error("INVALID_WORKER_RELEASE_STATUS", "/spec/status");
+  if (spec.verificationState !== "attested")
+    error("INVALID_WORKER_RELEASE_VERIFICATION", "/spec/verificationState");
+  return Object.freeze({
+    ...root,
+    kind: "WorkerRelease" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      imageRepository: workerImageRepository(spec.imageRepository, "/spec/imageRepository"),
+      releaseDigest: digest(spec.releaseDigest, "/spec/releaseDigest") as `sha256:${string}`,
+      platformVersion: identifier(spec.platformVersion, "/spec/platformVersion"),
+      runtimeVersion: identifier(spec.runtimeVersion, "/spec/runtimeVersion"),
+      codexVersion: identifier(spec.codexVersion, "/spec/codexVersion"),
+      claudeCodeVersion: identifier(spec.claudeCodeVersion, "/spec/claudeCodeVersion"),
+      architectures: workerReleaseArchitectures(spec.architectures, "/spec/architectures"),
+      status: "approved" as const,
+      verificationState: "attested" as const,
+      verificationEvidenceDigest: digest(
+        spec.verificationEvidenceDigest,
+        "/spec/verificationEvidenceDigest",
+      ) as `sha256:${string}`,
+      approvedAt: dateTime(spec.approvedAt, "/spec/approvedAt"),
+    }),
+  });
+}
+export function decodeWorkerReleasePage(value: unknown): WorkerReleasePage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "workerReleases", "nextPageToken"],
+    ["apiVersion", "kind", "workerReleases"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "WorkerReleasePage" ||
+    !Array.isArray(source.workerReleases) ||
+    source.workerReleases.length > 200
+  )
+    error("INVALID_WORKER_RELEASE_PAGE", "/workerReleases");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "WorkerReleasePage" as const,
+    workerReleases: Object.freeze((source.workerReleases as unknown[]).map(decodeWorkerRelease)),
   };
   return Object.freeze(
     source.nextPageToken === undefined
@@ -4055,6 +4267,12 @@ export function parseEnvironmentLeasePage(text: string): ResponseEnvelope<Enviro
 export function parseWorkerPage(text: string): ResponseEnvelope<WorkerPage> {
   return parseResponse(text, workerPageResponseShape, decodeWorkerPage);
 }
+export function parseWorkerRelease(text: string): ResponseEnvelope<WorkerRelease> {
+  return parseResponse(text, workerReleaseResponseShape, decodeWorkerRelease);
+}
+export function parseWorkerReleasePage(text: string): ResponseEnvelope<WorkerReleasePage> {
+  return parseResponse(text, workerReleasePageResponseShape, decodeWorkerReleasePage);
+}
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
 }
@@ -5551,6 +5769,74 @@ export class Client {
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/workers");
+    return result;
+  }
+  async listAdminWorkerReleases(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkerReleasePage>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/worker-releases${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListWorkerReleases", response);
+    const result = parseWorkerReleasePage(response.body);
+    if (
+      result.value.workerReleases.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/workerReleases");
+    return result;
+  }
+  async registerAdminWorkerRelease(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: WorkerReleaseRegisterRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkerRelease>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeWorkerReleaseRegisterRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/worker-releases`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeWorkerReleaseRegisterRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem("adminRegisterWorkerRelease", response);
+    const result = parseWorkerRelease(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== checked.releaseId ||
+      result.value.metadata.name !== checked.releaseName ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.releaseDigest !== checked.releaseDigest
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
   async getAdminEnvironmentLease(

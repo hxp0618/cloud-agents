@@ -4,12 +4,12 @@ FROM ${BASE_IMAGE}
 ARG TARGETOS
 ARG TARGETARCH
 COPY cloud-agents-product-migrate-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-product-migrate
-COPY cloud-agents-migrations-000044.tar /opt/cloud-agents/cloud-agents-migrations-000044.tar
+COPY cloud-agents-migrations-000045.tar /opt/cloud-agents/cloud-agents-migrations-000045.tar
 RUN mkdir -p /opt/cloud-agents/migrations \
-	&& tar -xf /opt/cloud-agents/cloud-agents-migrations-000044.tar -C /opt/cloud-agents/migrations \
-	&& rm /opt/cloud-agents/cloud-agents-migrations-000044.tar \
+	&& tar -xf /opt/cloud-agents/cloud-agents-migrations-000045.tar -C /opt/cloud-agents/migrations \
+	&& rm /opt/cloud-agents/cloud-agents-migrations-000045.tar \
     && chmod 0555 /usr/local/bin/cloud-agents-product-migrate
 
 USER 999:999
 ENTRYPOINT ["/usr/local/bin/cloud-agents-product-migrate"]
-CMD ["--repository-root", "/opt/cloud-agents/migrations", "--manifest", "services/control-plane/migrations/product/000044/manifest.json"]
+CMD ["--repository-root", "/opt/cloud-agents/migrations", "--manifest", "services/control-plane/migrations/product/000045/manifest.json"]

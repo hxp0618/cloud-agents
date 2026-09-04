@@ -37,6 +37,8 @@ import {
   decodeRoleBindingPage,
   decodeWatchCursor,
   decodeWorkerPage,
+  decodeWorkerRelease,
+  decodeWorkerReleasePage,
   encodeResponse,
   parseProblem,
   parseDeploymentTargetCleanupPreview,
@@ -58,6 +60,8 @@ import {
   parseManagedAgentExecutionPage,
   parseWatchCursor,
   parseWorkerPage,
+  parseWorkerRelease,
+  parseWorkerReleasePage,
   validateProjectResolvedOrganization,
   type FixtureResponse,
   type FixtureRequest,
@@ -269,6 +273,87 @@ describe("generated platform JSON models", () => {
     withEndpoint.workers[0]!.spec.workerEndpoint = "https://worker.test";
     expect(() => decodeWorkerPage(withEndpoint)).toThrow();
   });
+  it("registers and lists approved Worker releases", async () => {
+    const digest = `sha256:${"a".repeat(64)}` as const;
+    const release = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "WorkerRelease",
+      metadata: {
+        uid: "worker-v1",
+        name: "worker-v1",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-04T08:00:00Z",
+        updatedAt: "2026-09-04T08:00:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        imageRepository: "registry.example.test/cloud-agents/worker",
+        releaseDigest: digest,
+        platformVersion: "platform-v1",
+        runtimeVersion: "runtime-v1",
+        codexVersion: "codex-v1",
+        claudeCodeVersion: "claude-v1",
+        architectures: ["linux/amd64"],
+        status: "approved",
+        verificationState: "attested",
+        verificationEvidenceDigest: digest,
+        approvedAt: "2026-09-04T08:00:00Z",
+      },
+    });
+    const page = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "WorkerReleasePage",
+      workerReleases: [JSON.parse(release)],
+      nextPageToken: "release-page-token-2",
+    });
+    expect(decodeWorkerRelease(JSON.parse(release)).spec.status).toBe("approved");
+    expect(parseWorkerRelease(release).value.spec.verificationState).toBe("attested");
+    expect(decodeWorkerReleasePage(JSON.parse(page)).workerReleases).toHaveLength(1);
+    expect(parseWorkerReleasePage(page).value.nextPageToken).toBe("release-page-token-2");
+
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return request.method === "POST"
+        ? { status: 201, headers: { "X-Resource-Version": "1" }, body: release }
+        : { status: 200, headers: {}, body: page };
+    });
+    const body = {
+      releaseId: "worker-v1",
+      releaseName: "worker-v1",
+      imageRepository: "registry.example.test/cloud-agents/worker",
+      releaseDigest: digest,
+      platformVersion: "platform-v1",
+      runtimeVersion: "runtime-v1",
+      codexVersion: "codex-v1",
+      claudeCodeVersion: "claude-v1",
+      architectures: ["linux/amd64"] as const,
+      verificationEvidenceDigest: digest,
+    };
+    await client.registerAdminWorkerRelease(
+      "tenant-alpha",
+      "project-alpha",
+      "request-release-create",
+      "release-create-key",
+      body,
+    );
+    await client.listAdminWorkerReleases(
+      "tenant-alpha",
+      "project-alpha",
+      "request-release-list",
+      1,
+      "release-page-token-1",
+    );
+    expect(seen[0]?.body).toBe(JSON.stringify(body));
+    expect(seen[1]?.path).toBe(
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/worker-releases?pageSize=1&pageToken=release-page-token-1",
+    );
+    expect(() =>
+      decodeWorkerRelease({ ...JSON.parse(release), credentialRef: "secret" }),
+    ).toThrow();
+  });
+
   it("drives the Admin environment profile lifecycle", async () => {
     const profile = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",

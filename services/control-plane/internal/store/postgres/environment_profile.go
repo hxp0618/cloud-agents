@@ -89,9 +89,9 @@ const environmentProfileColumns = `profile_version_uid, profile_uid, profile_nam
 
 var (
 	createEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
-FROM cloud_agents.create_environment_profile_draft_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+FROM cloud_agents.create_environment_profile_draft_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
 	transitionEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
-FROM cloud_agents.transition_environment_profile_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.transition_environment_profile_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
 FROM cloud_agents.environment_profiles
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
@@ -118,6 +118,12 @@ WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_u
         WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
             AND target.target_uid = ANY(profile.target_refs) AND target.observed_phase = 'ready'
             AND target.scheduling_state = 'active'
+    )
+    AND EXISTS (
+        SELECT 1 FROM cloud_agents.worker_releases AS release
+        WHERE release.tenant_id = profile.tenant_id AND release.project_uid = profile.project_uid
+            AND release.release_digest = profile.release_digest
+            AND release.status = 'approved' AND release.verification_state = 'attested'
     )`
 	listPublishedEnvironmentProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
     ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
@@ -133,6 +139,12 @@ FROM (
             WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
                 AND target.target_uid = ANY(profile.target_refs) AND target.observed_phase = 'ready'
                 AND target.scheduling_state = 'active'
+        )
+        AND EXISTS (
+            SELECT 1 FROM cloud_agents.worker_releases AS release
+            WHERE release.tenant_id = profile.tenant_id AND release.project_uid = profile.project_uid
+                AND release.release_digest = profile.release_digest
+                AND release.status = 'approved' AND release.verification_state = 'attested'
         )
     ORDER BY profile.profile_version_uid
     LIMIT $3

@@ -4,6 +4,7 @@ import {
   cleanupRequestFromPreview,
   listAdminLeases,
   listAdminProfiles,
+  listAdminReleases,
   listAdminMaintenanceOperations,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
@@ -126,6 +127,32 @@ describe("Admin Web boundary", () => {
     } as unknown as AdminClient;
 
     await listAdminWorkers(client, "tenant-alpha", "project-alpha", new AbortController().signal);
+    expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("uses only Admin API release pagination", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminWorkerReleases: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        tokens.push(pageToken);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "WorkerReleasePage" as const,
+            workerReleases: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    await listAdminReleases(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
   });
 

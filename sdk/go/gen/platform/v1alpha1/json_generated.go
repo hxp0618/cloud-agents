@@ -17,9 +17,10 @@ import (
 const APIVersion = "platform.cloud-agents.dev/v1alpha1"
 
 var (
-	permissionPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
-	digestPattern     = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	roleNames         = map[string]struct{}{
+	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
+	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
+	roleNames                    = map[string]struct{}{
 		"platform.admin": {}, "tenant.admin": {}, "organization.admin": {}, "project.admin": {},
 		"project.operator": {}, "project.developer": {}, "project.viewer": {},
 	}
@@ -248,6 +249,42 @@ type WorkerPage struct {
 	Kind          string   `json:"kind"`
 	Workers       []Worker `json:"workers"`
 	NextPageToken string   `json:"nextPageToken,omitempty"`
+}
+type WorkerReleaseRegisterRequest struct {
+	ReleaseID                  string   `json:"releaseId"`
+	ReleaseName                string   `json:"releaseName"`
+	ImageRepository            string   `json:"imageRepository"`
+	ReleaseDigest              string   `json:"releaseDigest"`
+	PlatformVersion            string   `json:"platformVersion"`
+	RuntimeVersion             string   `json:"runtimeVersion"`
+	CodexVersion               string   `json:"codexVersion"`
+	ClaudeCodeVersion          string   `json:"claudeCodeVersion"`
+	Architectures              []string `json:"architectures"`
+	VerificationEvidenceDigest string   `json:"verificationEvidenceDigest"`
+}
+type WorkerReleaseSpec struct {
+	ProjectRef                 common.ProjectRef `json:"projectRef"`
+	ImageRepository            string            `json:"imageRepository"`
+	ReleaseDigest              string            `json:"releaseDigest"`
+	PlatformVersion            string            `json:"platformVersion"`
+	RuntimeVersion             string            `json:"runtimeVersion"`
+	CodexVersion               string            `json:"codexVersion"`
+	ClaudeCodeVersion          string            `json:"claudeCodeVersion"`
+	Architectures              []string          `json:"architectures"`
+	Status                     string            `json:"status"`
+	VerificationState          string            `json:"verificationState"`
+	VerificationEvidenceDigest string            `json:"verificationEvidenceDigest"`
+	ApprovedAt                 string            `json:"approvedAt"`
+}
+type WorkerRelease struct {
+	ResourceBase
+	Spec WorkerReleaseSpec `json:"spec"`
+}
+type WorkerReleasePage struct {
+	APIVersion     string          `json:"apiVersion"`
+	Kind           string          `json:"kind"`
+	WorkerReleases []WorkerRelease `json:"workerReleases"`
+	NextPageToken  string          `json:"nextPageToken,omitempty"`
 }
 type EnvironmentProfileCreateRequest struct {
 	ProfileID             string   `json:"profileId"`
@@ -503,6 +540,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "Worker":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "leaseId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "lastHealthAt": common.ScalarResponseShape(), "readyAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}
+	case "WorkerRelease":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "imageRepository": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "platformVersion": common.ScalarResponseShape(), "runtimeVersion": common.ScalarResponseShape(), "codexVersion": common.ScalarResponseShape(), "claudeCodeVersion": common.ScalarResponseShape(), "architectures": common.ArrayResponseShape(common.ScalarResponseShape()), "status": common.ScalarResponseShape(), "verificationState": common.ScalarResponseShape(), "verificationEvidenceDigest": common.ScalarResponseShape(), "approvedAt": common.ScalarResponseShape()}
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
@@ -547,6 +586,10 @@ var environmentLeasePageResponseShape = common.ObjectResponseShape(map[string]co
 var workerPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"workers": common.ArrayResponseShape(resourceResponseShape("Worker")), "nextPageToken": common.ScalarResponseShape(),
+})
+var workerReleasePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
+	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
+	"workerReleases": common.ArrayResponseShape(resourceResponseShape("WorkerRelease")), "nextPageToken": common.ScalarResponseShape(),
 })
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -1637,6 +1680,143 @@ func DecodeWorkerPageResponseJSON(data []byte) (common.ResponseEnvelope[WorkerPa
 	return common.ResponseEnvelope[WorkerPage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeWorkerPageResponseJSON(value common.ResponseEnvelope[WorkerPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
+func validWorkerReleaseValues(imageRepository, releaseDigest, platformVersion, runtimeVersion, codexVersion, claudeCodeVersion string, architectures []string, verificationEvidenceDigest, path string) bool {
+	if !workerImageRepositoryPattern.MatchString(imageRepository) || len(imageRepository) > 512 || !digestPattern.MatchString(releaseDigest) || !digestPattern.MatchString(verificationEvidenceDigest) {
+		return false
+	}
+	for _, value := range []string{platformVersion, runtimeVersion, codexVersion, claudeCodeVersion} {
+		if common.ValidateIdentifier(value, path) != nil {
+			return false
+		}
+	}
+	if len(architectures) < 1 || len(architectures) > 2 {
+		return false
+	}
+	seen := map[string]struct{}{}
+	for _, architecture := range architectures {
+		if architecture != "linux/amd64" && architecture != "linux/arm64" {
+			return false
+		}
+		if _, duplicate := seen[architecture]; duplicate {
+			return false
+		}
+		seen[architecture] = struct{}{}
+	}
+	return true
+}
+func DecodeWorkerReleaseRegisterRequestJSON(data []byte) (WorkerReleaseRegisterRequest, error) {
+	allowed := []string{"releaseId", "releaseName", "imageRepository", "releaseDigest", "platformVersion", "runtimeVersion", "codexVersion", "claudeCodeVersion", "architectures", "verificationEvidenceDigest"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return WorkerReleaseRegisterRequest{}, err
+	}
+	var value WorkerReleaseRegisterRequest
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.ReleaseID, "/releaseId") != nil || common.ValidateIdentifier(value.ReleaseName, "/releaseName") != nil || !validWorkerReleaseValues(value.ImageRepository, value.ReleaseDigest, value.PlatformVersion, value.RuntimeVersion, value.CodexVersion, value.ClaudeCodeVersion, value.Architectures, value.VerificationEvidenceDigest, "") {
+		return WorkerReleaseRegisterRequest{}, common.ContractError("INVALID_WORKER_RELEASE", "")
+	}
+	return value, nil
+}
+func EncodeWorkerReleaseRegisterRequestJSON(value WorkerReleaseRegisterRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeWorkerReleaseRegisterRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeWorkerReleaseJSON(data []byte) (WorkerRelease, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return WorkerRelease{}, err
+	}
+	base, err := checkResourceBase(fields, "WorkerRelease")
+	if err != nil {
+		return WorkerRelease{}, err
+	}
+	allowed := []string{"projectRef", "imageRepository", "releaseDigest", "platformVersion", "runtimeVersion", "codexVersion", "claudeCodeVersion", "architectures", "status", "verificationState", "verificationEvidenceDigest", "approvedAt"}
+	specFields, err := strictSpec(fields["spec"], allowed, allowed)
+	if err != nil {
+		return WorkerRelease{}, err
+	}
+	var spec WorkerReleaseSpec
+	if json.Unmarshal(fields["spec"], &spec) != nil {
+		return WorkerRelease{}, common.ContractError("INVALID_WORKER_RELEASE", "/spec")
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return WorkerRelease{}, err
+	}
+	spec.ProjectRef = project
+	if !validWorkerReleaseValues(spec.ImageRepository, spec.ReleaseDigest, spec.PlatformVersion, spec.RuntimeVersion, spec.CodexVersion, spec.ClaudeCodeVersion, spec.Architectures, spec.VerificationEvidenceDigest, "/spec") || spec.Status != "approved" || spec.VerificationState != "attested" || common.ValidateDateTime(spec.ApprovedAt, "/spec/approvedAt") != nil {
+		return WorkerRelease{}, common.ContractError("INVALID_WORKER_RELEASE", "/spec")
+	}
+	return WorkerRelease{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeWorkerReleaseResponseJSON(data []byte) (common.ResponseEnvelope[WorkerRelease], error) {
+	fields, sidecar, err := strictResource(data, "WorkerRelease")
+	if err != nil {
+		return common.ResponseEnvelope[WorkerRelease]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeWorkerReleaseJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[WorkerRelease]{}, err
+	}
+	return common.ResponseEnvelope[WorkerRelease]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeWorkerReleaseResponseJSON(value common.ResponseEnvelope[WorkerRelease]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeWorkerReleasePageJSON(data []byte) (WorkerReleasePage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "workerReleases", "nextPageToken"}, []string{"apiVersion", "kind", "workerReleases"})
+	if err != nil {
+		return WorkerReleasePage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return WorkerReleasePage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "WorkerReleasePage" {
+		return WorkerReleasePage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawValues []json.RawMessage
+	if json.Unmarshal(fields["workerReleases"], &rawValues) != nil || rawValues == nil || len(rawValues) > 200 {
+		return WorkerReleasePage{}, common.ContractError("INVALID_WORKER_RELEASE_PAGE", "/workerReleases")
+	}
+	values := make([]WorkerRelease, 0, len(rawValues))
+	for index, raw := range rawValues {
+		value, decodeErr := DecodeWorkerReleaseJSON(raw)
+		if decodeErr != nil {
+			return WorkerReleasePage{}, common.ContractError("INVALID_WORKER_RELEASE", "/workerReleases/"+itoa(index))
+		}
+		values = append(values, value)
+	}
+	page := WorkerReleasePage{APIVersion: apiVersion, Kind: kind, WorkerReleases: values}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return WorkerReleasePage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeWorkerReleasePageResponseJSON(data []byte) (common.ResponseEnvelope[WorkerReleasePage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, workerReleasePageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[WorkerReleasePage]{}, err
+	}
+	value, err := DecodeWorkerReleasePageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[WorkerReleasePage]{}, err
+	}
+	return common.ResponseEnvelope[WorkerReleasePage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeWorkerReleasePageResponseJSON(value common.ResponseEnvelope[WorkerReleasePage]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

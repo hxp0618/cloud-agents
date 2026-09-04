@@ -301,6 +301,15 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:method.Bind",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:package.VerifiedOperationBinder",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:method.Bind",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:package.VerifiedOperationBinder",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:package.WithVerifiedOperation",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.RegisterWorkerRelease:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.RegisterWorkerRelease:method.Actor",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.RegisterWorkerRelease:method.Bind",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.RegisterWorkerRelease:package.VerifiedOperationBinder",
+		"internal/store/postgres/worker_release.go:DurableCoordinationService.RegisterWorkerRelease:package.WithVerifiedOperation",
 	}
 	assertExactAuthorityEvents(t, events, want)
 }

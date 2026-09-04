@@ -11,6 +11,8 @@ import {
   type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
   type Worker,
+  type WorkerRelease,
+  type WorkerReleaseRegisterRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
@@ -20,6 +22,7 @@ import {
   listAdminMaintenanceOperations,
   listAdminProfileAuditEvents,
   listAdminProfiles,
+  listAdminReleases,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
   listAdminTargets,
@@ -29,6 +32,7 @@ import {
   readSavedAdminConnection,
   replaceLease,
   replaceProfile,
+  replaceRelease,
   replaceTarget,
   schedulingRequestFromPreview,
   summarizeClusterHosts,
@@ -46,7 +50,7 @@ import {
 } from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page = "overview" | "targets" | "workers" | "profiles" | "leases" | "maintenance";
+type Page = "overview" | "targets" | "workers" | "releases" | "profiles" | "leases" | "maintenance";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -293,7 +297,10 @@ async function loadProfileAuthority(
   preferredProfileVersionId: string,
   signal: AbortSignal,
 ): Promise<
-  Readonly<{ profiles: readonly EnvironmentProfile[]; selectedProfileVersionId: string }>
+  Readonly<{
+    profiles: readonly EnvironmentProfile[];
+    selectedProfileVersionId: string;
+  }>
 > {
   let profiles = await listAdminProfiles(client, connection.tenantId, connection.projectId, signal);
   const selectedProfileVersionId = profiles.some(
@@ -372,6 +379,7 @@ export function App() {
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [workers, setWorkers] = useState<readonly Worker[]>(Object.freeze([]));
   const [selectedWorkerId, setSelectedWorkerId] = useState("");
+  const [releases, setReleases] = useState<readonly WorkerRelease[]>(Object.freeze([]));
   const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
   const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
   const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
@@ -387,6 +395,7 @@ export function App() {
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [workerDetailOpen, setWorkerDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [registeringRelease, setRegisteringRelease] = useState(false);
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
   const [maintenanceDetailOpen, setMaintenanceDetailOpen] = useState(false);
   const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
@@ -415,6 +424,19 @@ export function App() {
     releaseDigest: "",
     targetRefs: "",
     providerCredentialRef: "",
+  });
+  const [releaseForm, setReleaseForm] = useState({
+    releaseId: "",
+    releaseName: "",
+    imageRepository: "",
+    releaseDigest: "",
+    platformVersion: "",
+    runtimeVersion: "",
+    codexVersion: "",
+    claudeCodeVersion: "",
+    amd64: true,
+    arm64: false,
+    verificationEvidenceDigest: "",
   });
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
@@ -490,6 +512,22 @@ export function App() {
             spec.targetKind,
             spec.state,
             spec.releaseDigest,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleReleases =
+    normalizedQuery === ""
+      ? releases
+      : releases.filter(({ metadata, spec }) =>
+          [
+            metadata.uid,
+            metadata.name,
+            spec.imageRepository,
+            spec.releaseDigest,
+            spec.platformVersion,
+            spec.runtimeVersion,
+            spec.codexVersion,
+            spec.claudeCodeVersion,
+            ...spec.architectures,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
         );
   const clusterHosts = summarizeClusterHosts(targets, workers);
@@ -637,6 +675,7 @@ export function App() {
     setProfileDetailOpen(false);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
+    setRegisteringRelease(false);
   }
 
   function disconnect() {
@@ -654,6 +693,7 @@ export function App() {
     setSelectedLeaseId("");
     setWorkers(Object.freeze([]));
     setSelectedWorkerId("");
+    setReleases(Object.freeze([]));
     setProfiles(Object.freeze([]));
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
@@ -664,6 +704,7 @@ export function App() {
     setSchedulingConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setWorkerDetailOpen(false);
+    setRegisteringRelease(false);
     setProfileDetailOpen(false);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
@@ -700,12 +741,14 @@ export function App() {
         loadedTargets,
         loadedLeases,
         loadedWorkers,
+        loadedReleases,
         loadedProfiles,
         loadedMaintenanceOperations,
       ] = await Promise.all([
         loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
         loadLeaseAuthority(nextClient, nextConnection, selectedLeaseId, signal),
         listAdminWorkers(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
+        listAdminReleases(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
         listAdminMaintenanceOperations(
           nextClient,
@@ -724,6 +767,7 @@ export function App() {
       setSelectedLeaseId(loadedLeases.selectedLeaseId);
       setWorkers(loadedWorkers);
       setSelectedWorkerId(loadedWorkers[0]?.metadata.uid ?? "");
+      setReleases(loadedReleases);
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
@@ -797,12 +841,14 @@ export function App() {
         loadedTargets,
         loadedLeases,
         loadedWorkers,
+        loadedReleases,
         loadedProfiles,
         loadedMaintenanceOperations,
       ] = await Promise.all([
         loadTargetAuthority(client, connection, selectedTargetId, signal),
         loadLeaseAuthority(client, connection, selectedLeaseId, signal),
         listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
+        listAdminReleases(client, connection.tenantId, connection.projectId, signal),
         loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
         listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
       ]);
@@ -816,6 +862,7 @@ export function App() {
           ? current
           : (loadedWorkers[0]?.metadata.uid ?? ""),
       );
+      setReleases(loadedReleases);
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setMaintenanceOperations(loadedMaintenanceOperations);
@@ -926,6 +973,57 @@ export function App() {
   function selectMaintenanceOperation(operationId: string) {
     setSelectedMaintenanceOperationId(operationId);
     setMaintenanceDetailOpen(true);
+  }
+
+  function registerRelease(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null) return;
+    const architectures: ("linux/amd64" | "linux/arm64")[] = [];
+    if (releaseForm.amd64) architectures.push("linux/amd64");
+    if (releaseForm.arm64) architectures.push("linux/arm64");
+    const body: WorkerReleaseRegisterRequest = {
+      releaseId: releaseForm.releaseId.trim(),
+      releaseName: releaseForm.releaseName.trim(),
+      imageRepository: releaseForm.imageRepository.trim(),
+      releaseDigest: releaseForm.releaseDigest.trim() as `sha256:${string}`,
+      platformVersion: releaseForm.platformVersion.trim(),
+      runtimeVersion: releaseForm.runtimeVersion.trim(),
+      codexVersion: releaseForm.codexVersion.trim(),
+      claudeCodeVersion: releaseForm.claudeCodeVersion.trim(),
+      architectures,
+      verificationEvidenceDigest:
+        releaseForm.verificationEvidenceDigest.trim() as `sha256:${string}`,
+    };
+    const key = `register-release:${body.releaseId}`;
+    void runOperation(
+      key,
+      { key: "operation.registerRelease", values: { name: body.releaseName } },
+      async (signal) => {
+        const result = await client.registerAdminWorkerRelease(
+          connection.tenantId,
+          connection.projectId,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        );
+        setReleases((current) => replaceRelease(current, result.value));
+        setReleaseForm({
+          releaseId: "",
+          releaseName: "",
+          imageRepository: "",
+          releaseDigest: "",
+          platformVersion: "",
+          runtimeVersion: "",
+          codexVersion: "",
+          claudeCodeVersion: "",
+          amd64: true,
+          arm64: false,
+          verificationEvidenceDigest: "",
+        });
+        setRegisteringRelease(false);
+      },
+    );
   }
 
   function createProfile(event: FormEvent<HTMLFormElement>) {
@@ -1101,7 +1199,10 @@ export function App() {
     const target = selectedTarget;
     void runOperation(
       `cleanup-preview:${target.metadata.uid}:${target.metadata.resourceVersion}`,
-      { key: "operation.previewCleanup", values: { name: target.metadata.name } },
+      {
+        key: "operation.previewCleanup",
+        values: { name: target.metadata.name },
+      },
       async (signal) => {
         const result = await client.previewAdminDeploymentTargetCleanup(
           connection.tenantId,
@@ -1121,7 +1222,10 @@ export function App() {
     const target = selectedTarget;
     void runOperation(
       `scheduling-preview:${target.metadata.uid}:${target.metadata.resourceVersion}`,
-      { key: "operation.previewScheduling", values: { name: target.metadata.name } },
+      {
+        key: "operation.previewScheduling",
+        values: { name: target.metadata.name },
+      },
       async (signal) => {
         const result = await client.previewAdminDeploymentTargetScheduling(
           connection.tenantId,
@@ -1194,7 +1298,10 @@ export function App() {
     setCleanupConfirmationOpen(false);
     void runOperation(
       key,
-      { key: "operation.cleanupTarget", values: { name: target.metadata.name } },
+      {
+        key: "operation.cleanupTarget",
+        values: { name: target.metadata.name },
+      },
       async (signal) => {
         await client.cleanupAdminDeploymentTarget(
           connection.tenantId,
@@ -1383,6 +1490,14 @@ export function App() {
             <b>{number(workers.length)}</b>
           </button>
           <button
+            className={page === "releases" ? "active" : ""}
+            onClick={() => navigate("releases")}
+            title={t("nav.releases")}
+          >
+            <span aria-hidden="true">⬡</span> <span className="nav-label">{t("nav.releases")}</span>
+            <b>{number(releases.length)}</b>
+          </button>
+          <button
             className={page === "profiles" ? "active" : ""}
             onClick={() => navigate("profiles")}
             title={t("nav.profiles")}
@@ -1471,11 +1586,13 @@ export function App() {
                     ? t("page.targets.title")
                     : page === "workers"
                       ? t("page.workers.title")
-                      : page === "profiles"
-                        ? t("page.profiles.title")
-                        : page === "leases"
-                          ? t("page.leases.title")
-                          : t("page.maintenance.title")}
+                      : page === "releases"
+                        ? t("page.releases.title")
+                        : page === "profiles"
+                          ? t("page.profiles.title")
+                          : page === "leases"
+                            ? t("page.leases.title")
+                            : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
@@ -1484,11 +1601,13 @@ export function App() {
                     ? t("page.targets.description")
                     : page === "workers"
                       ? t("page.workers.description")
-                      : page === "profiles"
-                        ? t("page.profiles.description")
-                        : page === "leases"
-                          ? t("page.leases.description")
-                          : t("page.maintenance.description")}
+                      : page === "releases"
+                        ? t("page.releases.description")
+                        : page === "profiles"
+                          ? t("page.profiles.description")
+                          : page === "leases"
+                            ? t("page.leases.description")
+                            : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -1500,12 +1619,21 @@ export function App() {
               >
                 {t("action.refresh")}
               </button>
-              {page === "profiles" ? (
+              {page === "releases" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setRegisteringRelease(true)}
+                  disabled={busy !== null}
+                >
+                  {t("action.registerRelease")}
+                </button>
+              ) : page === "profiles" ? (
                 <button
                   className="button primary"
                   type="button"
                   onClick={() => setCreatingProfile(true)}
-                  disabled={busy !== null}
+                  disabled={busy !== null || releases.length === 0}
                 >
                   {t("action.createProfile")}
                 </button>
@@ -1541,7 +1669,9 @@ export function App() {
           ) : null}
           {notice !== null ? (
             <div className="banner success" role="status">
-              {t("notice.completed", { operation: t(notice.key, notice.values) })}
+              {t("notice.completed", {
+                operation: t(notice.key, notice.values),
+              })}
             </div>
           ) : null}
 
@@ -1566,12 +1696,20 @@ export function App() {
                 <article className="metric-card success-accent">
                   <small>{t("overview.environmentLeases")}</small>
                   <strong>{number(leases.length)}</strong>
-                  <span>{t("overview.readyLeases", { count: number(readyLeaseCount) })}</span>
+                  <span>
+                    {t("overview.readyLeases", {
+                      count: number(readyLeaseCount),
+                    })}
+                  </span>
                 </article>
                 <article className="metric-card success-accent">
                   <small>{t("overview.workers")}</small>
                   <strong>{number(workers.length)}</strong>
-                  <span>{t("overview.readyWorkers", { count: number(readyWorkerCount) })}</span>
+                  <span>
+                    {t("overview.readyWorkers", {
+                      count: number(readyWorkerCount),
+                    })}
+                  </span>
                 </article>
                 <article className="metric-card warning-accent">
                   <small>{t("overview.leaseAttention")}</small>
@@ -1680,6 +1818,22 @@ export function App() {
                 />
               </div>
               <p className="cluster-boundary">{t("cluster.authorityBoundary")}</p>
+            </section>
+          ) : page === "releases" ? (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label={t("search.releases.label")}
+                  placeholder={t("search.releases.placeholder")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">releases.list · {number(visibleReleases.length)}</span>
+              </div>
+              <div className="panel target-list-panel">
+                <ReleaseTable releases={visibleReleases} />
+              </div>
             </section>
           ) : page === "profiles" ? (
             <section className="resource-list">
@@ -1886,7 +2040,9 @@ export function App() {
 
       {maintenanceDetailOpen && selectedMaintenanceOperation !== undefined ? (
         <AdminSheet
-          label={t("sheet.maintenance", { id: selectedMaintenanceOperation.operationId })}
+          label={t("sheet.maintenance", {
+            id: selectedMaintenanceOperation.operationId,
+          })}
           onClose={() => setMaintenanceDetailOpen(false)}
         >
           <aside className="detail-panel" aria-label={t("sheet.selectedMaintenance")}>
@@ -1925,6 +2081,232 @@ export function App() {
         </AdminSheet>
       ) : null}
 
+      {registeringRelease ? (
+        <AdminSheet
+          label={t("release.register.title")}
+          onClose={() => setRegisteringRelease(false)}
+        >
+          <section className="dialog" aria-labelledby="register-release-title">
+            <div className="panel-heading">
+              <div>
+                <div className="eyebrow">{t("release.register.eyebrow")}</div>
+                <h2 id="register-release-title">{t("release.register.title")}</h2>
+                <p>{t("release.register.description")}</p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={t("action.close")}
+                onClick={() => setRegisteringRelease(false)}
+              >
+                ×
+              </button>
+            </div>
+            <form className="resource-form" onSubmit={registerRelease}>
+              <div className="form-row">
+                <label>
+                  <span>{t("release.id")}</span>
+                  <input
+                    value={releaseForm.releaseId}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        releaseId: event.target.value,
+                      })
+                    }
+                    placeholder="worker-v1"
+                    maxLength={128}
+                    required
+                    autoFocus
+                    data-sheet-autofocus
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span>{t("release.name")}</span>
+                  <input
+                    value={releaseForm.releaseName}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        releaseName: event.target.value,
+                      })
+                    }
+                    placeholder="worker-v1"
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>{t("release.imageRepository")}</span>
+                <input
+                  value={releaseForm.imageRepository}
+                  onChange={(event) =>
+                    setReleaseForm({
+                      ...releaseForm,
+                      imageRepository: event.target.value,
+                    })
+                  }
+                  placeholder="registry.example.test/cloud-agents/worker"
+                  maxLength={512}
+                  required
+                  spellCheck={false}
+                />
+                <small>{t("release.imageRepositoryHelp")}</small>
+              </label>
+              <label>
+                <span>{t("release.digest")}</span>
+                <input
+                  value={releaseForm.releaseDigest}
+                  onChange={(event) =>
+                    setReleaseForm({
+                      ...releaseForm,
+                      releaseDigest: event.target.value,
+                    })
+                  }
+                  placeholder={`sha256:${"a".repeat(64)}`}
+                  minLength={71}
+                  maxLength={71}
+                  required
+                  spellCheck={false}
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  <span>{t("release.platformVersion")}</span>
+                  <input
+                    value={releaseForm.platformVersion}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        platformVersion: event.target.value,
+                      })
+                    }
+                    placeholder="platform-v1"
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span>{t("release.runtimeVersion")}</span>
+                  <input
+                    value={releaseForm.runtimeVersion}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        runtimeVersion: event.target.value,
+                      })
+                    }
+                    placeholder="runtime-v1"
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  <span>{t("release.codexVersion")}</span>
+                  <input
+                    value={releaseForm.codexVersion}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        codexVersion: event.target.value,
+                      })
+                    }
+                    placeholder="codex-v1"
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span>{t("release.claudeCodeVersion")}</span>
+                  <input
+                    value={releaseForm.claudeCodeVersion}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        claudeCodeVersion: event.target.value,
+                      })
+                    }
+                    placeholder="claude-v1"
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+              <fieldset className="provider-options">
+                <legend>{t("release.architectures")}</legend>
+                <label className="confirmation-check">
+                  <input
+                    type="checkbox"
+                    checked={releaseForm.amd64}
+                    required={!releaseForm.arm64}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        amd64: event.target.checked,
+                      })
+                    }
+                  />
+                  <span>linux/amd64</span>
+                </label>
+                <label className="confirmation-check">
+                  <input
+                    type="checkbox"
+                    checked={releaseForm.arm64}
+                    required={!releaseForm.amd64}
+                    onChange={(event) =>
+                      setReleaseForm({
+                        ...releaseForm,
+                        arm64: event.target.checked,
+                      })
+                    }
+                  />
+                  <span>linux/arm64</span>
+                </label>
+              </fieldset>
+              <label>
+                <span>{t("release.evidenceDigest")}</span>
+                <input
+                  value={releaseForm.verificationEvidenceDigest}
+                  onChange={(event) =>
+                    setReleaseForm({
+                      ...releaseForm,
+                      verificationEvidenceDigest: event.target.value,
+                    })
+                  }
+                  placeholder={`sha256:${"b".repeat(64)}`}
+                  minLength={71}
+                  maxLength={71}
+                  required
+                  spellCheck={false}
+                />
+                <small>{t("release.evidenceDigestHelp")}</small>
+              </label>
+              <div className="dialog-actions">
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => setRegisteringRelease(false)}
+                >
+                  {t("action.cancel")}
+                </button>
+                <button className="button primary" type="submit" disabled={busy !== null}>
+                  {t("action.registerRelease")}
+                </button>
+              </div>
+            </form>
+          </section>
+        </AdminSheet>
+      ) : null}
+
       {creatingProfile ? (
         <AdminSheet label={t("profile.create.title")} onClose={() => setCreatingProfile(false)}>
           <section className="dialog" aria-labelledby="create-profile-title">
@@ -1950,7 +2332,10 @@ export function App() {
                   <input
                     value={profileForm.profileId}
                     onChange={(event) =>
-                      setProfileForm({ ...profileForm, profileId: event.target.value })
+                      setProfileForm({
+                        ...profileForm,
+                        profileId: event.target.value,
+                      })
                     }
                     placeholder="development"
                     maxLength={128}
@@ -1965,7 +2350,10 @@ export function App() {
                   <input
                     value={profileForm.profileName}
                     onChange={(event) =>
-                      setProfileForm({ ...profileForm, profileName: event.target.value })
+                      setProfileForm({
+                        ...profileForm,
+                        profileName: event.target.value,
+                      })
                     }
                     placeholder="development"
                     maxLength={128}
@@ -1983,7 +2371,10 @@ export function App() {
                   step="1"
                   value={profileForm.version}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, version: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      version: event.target.value,
+                    })
                   }
                   required
                 />
@@ -1994,7 +2385,10 @@ export function App() {
                 <input
                   value={profileForm.description}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, description: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      description: event.target.value,
+                    })
                   }
                   placeholder={t("profile.descriptionPlaceholder")}
                   maxLength={1024}
@@ -2008,7 +2402,10 @@ export function App() {
                     type="checkbox"
                     checked={profileForm.codex}
                     onChange={(event) =>
-                      setProfileForm({ ...profileForm, codex: event.target.checked })
+                      setProfileForm({
+                        ...profileForm,
+                        codex: event.target.checked,
+                      })
                     }
                   />
                   <span>Codex</span>
@@ -2018,7 +2415,10 @@ export function App() {
                     type="checkbox"
                     checked={profileForm.claudeAgent}
                     onChange={(event) =>
-                      setProfileForm({ ...profileForm, claudeAgent: event.target.checked })
+                      setProfileForm({
+                        ...profileForm,
+                        claudeAgent: event.target.checked,
+                      })
                     }
                   />
                   <span>Claude Code</span>
@@ -2034,7 +2434,10 @@ export function App() {
                     step="100"
                     value={profileForm.cpuLimitMillis}
                     onChange={(event) =>
-                      setProfileForm({ ...profileForm, cpuLimitMillis: event.target.value })
+                      setProfileForm({
+                        ...profileForm,
+                        cpuLimitMillis: event.target.value,
+                      })
                     }
                     required
                   />
@@ -2048,7 +2451,10 @@ export function App() {
                     step="128"
                     value={profileForm.memoryLimitMiB}
                     onChange={(event) =>
-                      setProfileForm({ ...profileForm, memoryLimitMiB: event.target.value })
+                      setProfileForm({
+                        ...profileForm,
+                        memoryLimitMiB: event.target.value,
+                      })
                     }
                     required
                   />
@@ -2059,7 +2465,10 @@ export function App() {
                 <input
                   value={profileForm.storagePolicyRef}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, storagePolicyRef: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      storagePolicyRef: event.target.value,
+                    })
                   }
                   placeholder="storage-standard"
                   maxLength={128}
@@ -2072,7 +2481,10 @@ export function App() {
                 <input
                   value={profileForm.networkPolicyRef}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, networkPolicyRef: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      networkPolicyRef: event.target.value,
+                    })
                   }
                   placeholder="network-egress"
                   maxLength={128}
@@ -2082,24 +2494,38 @@ export function App() {
               </label>
               <label>
                 <span>{t("profile.releaseDigest")}</span>
-                <input
+                <select
                   value={profileForm.releaseDigest}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, releaseDigest: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      releaseDigest: event.target.value,
+                    })
                   }
-                  placeholder={`sha256:${"a".repeat(64)}`}
-                  minLength={71}
-                  maxLength={71}
                   required
-                  spellCheck={false}
-                />
+                >
+                  <option value="" disabled>
+                    {releases.length === 0
+                      ? t("profile.noApprovedReleases")
+                      : t("profile.selectRelease")}
+                  </option>
+                  {releases.map((release) => (
+                    <option key={release.metadata.uid} value={release.spec.releaseDigest}>
+                      {release.metadata.name} · {shortDigest(release.spec.releaseDigest)}
+                    </option>
+                  ))}
+                </select>
+                <small>{t("profile.releaseDigestHelp")}</small>
               </label>
               <label>
                 <span>{t("profile.targetRefs")}</span>
                 <input
                   value={profileForm.targetRefs}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, targetRefs: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      targetRefs: event.target.value,
+                    })
                   }
                   placeholder="docker-primary, ssh-overflow"
                   required
@@ -2112,7 +2538,10 @@ export function App() {
                 <input
                   value={profileForm.providerCredentialRef}
                   onChange={(event) =>
-                    setProfileForm({ ...profileForm, providerCredentialRef: event.target.value })
+                    setProfileForm({
+                      ...profileForm,
+                      providerCredentialRef: event.target.value,
+                    })
                   }
                   placeholder="provider-default"
                   maxLength={128}
@@ -2163,7 +2592,10 @@ export function App() {
                   <input
                     value={targetForm.targetId}
                     onChange={(event) =>
-                      setTargetForm({ ...targetForm, targetId: event.target.value })
+                      setTargetForm({
+                        ...targetForm,
+                        targetId: event.target.value,
+                      })
                     }
                     placeholder="docker-primary"
                     maxLength={128}
@@ -2178,7 +2610,10 @@ export function App() {
                   <input
                     value={targetForm.targetName}
                     onChange={(event) =>
-                      setTargetForm({ ...targetForm, targetName: event.target.value })
+                      setTargetForm({
+                        ...targetForm,
+                        targetName: event.target.value,
+                      })
                     }
                     placeholder="docker-primary"
                     maxLength={128}
@@ -2191,7 +2626,10 @@ export function App() {
                 <select
                   value={targetForm.targetKind}
                   onChange={(event) =>
-                    setTargetForm({ ...targetForm, targetKind: event.target.value as TargetKind })
+                    setTargetForm({
+                      ...targetForm,
+                      targetKind: event.target.value as TargetKind,
+                    })
                   }
                 >
                   <option value="docker">{t("target.kind.docker")}</option>
@@ -2205,7 +2643,10 @@ export function App() {
                   type="url"
                   value={targetForm.endpoint}
                   onChange={(event) =>
-                    setTargetForm({ ...targetForm, endpoint: event.target.value })
+                    setTargetForm({
+                      ...targetForm,
+                      endpoint: event.target.value,
+                    })
                   }
                   placeholder={targetEndpointPlaceholder[targetForm.targetKind]}
                   maxLength={2048}
@@ -2219,7 +2660,10 @@ export function App() {
                 <input
                   value={targetForm.credentialRef}
                   onChange={(event) =>
-                    setTargetForm({ ...targetForm, credentialRef: event.target.value })
+                    setTargetForm({
+                      ...targetForm,
+                      credentialRef: event.target.value,
+                    })
                   }
                   placeholder={`${targetForm.targetKind}-primary`}
                   maxLength={128}
@@ -2435,7 +2879,9 @@ function ClusterHostTable({
                 <strong>{target.spec.engineVersion || t("common.notObserved")}</strong>
                 <small className="table-subline">
                   {target.spec.apiVersion
-                    ? t("cluster.apiVersion", { version: target.spec.apiVersion })
+                    ? t("cluster.apiVersion", {
+                        version: target.spec.apiVersion,
+                      })
                     : t("common.notObserved")}
                 </small>
               </td>
@@ -2557,6 +3003,57 @@ function WorkerTable({
                   ···
                 </button>
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReleaseTable({ releases }: Readonly<{ releases: readonly WorkerRelease[] }>) {
+  const { t, dateTime } = useI18n();
+  if (releases.length === 0) return <div className="table-empty">{t("table.empty.releases")}</div>;
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("table.name")}</th>
+            <th>{t("table.imageRepository")}</th>
+            <th>{t("table.release")}</th>
+            <th>{t("table.platform")}</th>
+            <th>{t("table.runtime")}</th>
+            <th>{t("table.providers")}</th>
+            <th>{t("table.architectures")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.approved")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {releases.map((release) => (
+            <tr key={release.metadata.uid}>
+              <td>
+                <strong>{release.metadata.name}</strong>
+                <small className="table-subline">{release.metadata.uid}</small>
+              </td>
+              <td className="mono">{release.spec.imageRepository}</td>
+              <td className="mono" title={release.spec.releaseDigest}>
+                {shortDigest(release.spec.releaseDigest)}
+              </td>
+              <td>{release.spec.platformVersion}</td>
+              <td>{release.spec.runtimeVersion}</td>
+              <td>
+                Codex {release.spec.codexVersion}
+                <small className="table-subline">Claude {release.spec.claudeCodeVersion}</small>
+              </td>
+              <td>{release.spec.architectures.join(" · ")}</td>
+              <td>
+                <span className="phase success">
+                  <i /> {t("release.approvedAttested")}
+                </span>
+              </td>
+              <td>{dateTime(release.spec.approvedAt)}</td>
             </tr>
           ))}
         </tbody>
@@ -2808,7 +3305,9 @@ function TargetDetail({
         </div>
         <div>
           <div className="eyebrow">
-            {t("detail.targetEyebrow", { kind: targetKindLabel(target.spec.targetKind, t) })}
+            {t("detail.targetEyebrow", {
+              kind: targetKindLabel(target.spec.targetKind, t),
+            })}
           </div>
           <h2>{target.metadata.name}</h2>
           <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
@@ -2889,7 +3388,11 @@ function TargetDetail({
       <section className="action-block">
         <div>
           <h3>{t("detail.probeTitle")}</h3>
-          <p>{t("detail.probeDescription", { generation: number(target.spec.generation) })}</p>
+          <p>
+            {t("detail.probeDescription", {
+              generation: number(target.spec.generation),
+            })}
+          </p>
         </div>
         <button
           className="button primary"
