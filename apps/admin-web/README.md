@@ -1,6 +1,6 @@
 # Cloud Agents Admin Web
 
-Independent Vite + React console for Control Plane Admin API operations. It uses the generated Admin SDK for Deployment Targets, Environment Leases, Lease-backed Workers, immutable Environment Profiles, and project Maintenance Operations, and keeps the bearer token in memory.
+Independent Vite + React console for Control Plane Admin API operations. It uses the generated Admin SDK for Deployment Targets, a combined Cluster/Host and Lease-backed Worker view, Environment Leases, immutable Environment Profiles, and project Maintenance Operations, and keeps the bearer token in memory.
 
 The interface supports `zh-CN` and `en-US` through its local typed message catalog and browser-native `Intl`. First visit follows the leading browser language (`zh*` selects `zh-CN`; everything else selects `en-US`), the account menu changes language immediately, and the selected locale survives refresh in `cloud-agents-admin-locale`. Invalid locale values fall back to `en-US`.
 

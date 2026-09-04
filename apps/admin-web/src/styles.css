@@ -883,6 +883,10 @@ label > small {
 }
 
 .list-toolbar .scope-chip {
+  margin-left: 0;
+}
+
+.list-toolbar input + .scope-chip {
   margin-left: auto;
 }
 
@@ -921,6 +925,10 @@ table {
 
 .worker-table {
   min-width: 1280px;
+}
+
+.cluster-host-table {
+  min-width: 1120px;
 }
 
 .worker-table td:nth-child(2) strong,
@@ -992,6 +1000,13 @@ td > button small {
   margin-top: 2px;
   color: var(--muted-foreground);
   font-size: 11px;
+}
+
+.cluster-boundary {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .row-action-cell {
@@ -1522,6 +1537,10 @@ td > button small {
 
   .list-toolbar .scope-chip {
     align-self: flex-start;
+    margin-left: 0;
+  }
+
+  .list-toolbar input + .scope-chip {
     margin-left: 0;
   }
 

@@ -29,8 +29,10 @@ import {
   replaceLease,
   replaceProfile,
   replaceTarget,
+  summarizeClusterHosts,
   writeSavedAdminConnection,
   type AdminClient,
+  type ClusterHostSummary,
   type SavedAdminConnection,
 } from "./admin";
 import {
@@ -468,6 +470,24 @@ export function App() {
             spec.state,
             spec.releaseDigest,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const clusterHosts = summarizeClusterHosts(targets, workers);
+  const visibleClusterHosts =
+    normalizedQuery === ""
+      ? clusterHosts
+      : clusterHosts.filter(
+          ({ target }) =>
+            [
+              target.metadata.uid,
+              target.metadata.name,
+              target.spec.targetKind,
+              target.spec.observedPhase,
+              target.spec.apiVersion,
+              target.spec.engineVersion,
+              target.spec.os,
+              target.spec.architecture,
+            ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)) ||
+            visibleWorkers.some(({ spec }) => spec.targetId === target.metadata.uid),
         );
   const visibleProfiles =
     normalizedQuery === ""
@@ -1534,15 +1554,38 @@ export function App() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
+                <span className="scope-chip">
+                  targets.list · {number(visibleClusterHosts.length)}
+                </span>
                 <span className="scope-chip">workers.list · {number(visibleWorkers.length)}</span>
               </div>
               <div className="panel target-list-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>{t("cluster.overviewTitle")}</h2>
+                    <p>{t("cluster.overviewDescription")}</p>
+                  </div>
+                </div>
+                <ClusterHostTable
+                  summaries={visibleClusterHosts}
+                  selectedTargetId={selectedTargetId}
+                  onSelect={selectTarget}
+                />
+              </div>
+              <div className="panel target-list-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>{t("cluster.workersTitle")}</h2>
+                    <p>{t("cluster.workersDescription")}</p>
+                  </div>
+                </div>
                 <WorkerTable
                   workers={visibleWorkers}
                   selectedWorkerId={selectedWorkerId}
                   onSelect={selectWorker}
                 />
               </div>
+              <p className="cluster-boundary">{t("cluster.authorityBoundary")}</p>
             </section>
           ) : page === "profiles" ? (
             <section className="resource-list">
@@ -2213,6 +2256,96 @@ function LeaseTable({
                   type="button"
                   aria-label={t("table.view", { name: lease.metadata.name })}
                   onClick={() => onSelect(lease.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ClusterHostTable({
+  summaries,
+  selectedTargetId,
+  onSelect,
+}: Readonly<{
+  summaries: readonly ClusterHostSummary[];
+  selectedTargetId: string;
+  onSelect: (targetId: string) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  if (summaries.length === 0)
+    return <div className="table-empty">{t("table.empty.clusterHosts")}</div>;
+  return (
+    <div className="table-scroll">
+      <table className="cluster-host-table">
+        <thead>
+          <tr>
+            <th>{t("table.name")}</th>
+            <th>{t("table.kind")}</th>
+            <th>{t("table.runtime")}</th>
+            <th>{t("table.platform")}</th>
+            <th>{t("table.workers")}</th>
+            <th>{t("table.lastHealth")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.lastProbe")}</th>
+            <th aria-label={t("table.actions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {summaries.map(({ target, workerCount, readyWorkerCount, latestHealthAt }) => (
+            <tr
+              key={target.metadata.uid}
+              className={target.metadata.uid === selectedTargetId ? "selected" : ""}
+              onClick={() => onSelect(target.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(target.metadata.uid)}>
+                  <strong>{target.metadata.name}</strong>
+                  <small>{target.metadata.uid}</small>
+                </button>
+              </td>
+              <td>
+                <span className="kind-badge">{targetKindLabel(target.spec.targetKind, t)}</span>
+              </td>
+              <td>
+                <strong>{target.spec.engineVersion || t("common.notObserved")}</strong>
+                <small className="table-subline">
+                  {target.spec.apiVersion
+                    ? t("cluster.apiVersion", { version: target.spec.apiVersion })
+                    : t("common.notObserved")}
+                </small>
+              </td>
+              <td>
+                {[target.spec.os, target.spec.architecture].filter(Boolean).join(" / ") ||
+                  t("common.notObserved")}
+              </td>
+              <td>
+                {workerCount === 0
+                  ? t("cluster.noWorkers")
+                  : t("cluster.workerSummary", {
+                      ready: number(readyWorkerCount),
+                      total: number(workerCount),
+                    })}
+              </td>
+              <td>{dateTime(latestHealthAt)}</td>
+              <td>
+                <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
+                  <i />
+                  {phaseLabel(target.spec.observedPhase, t)}
+                </span>
+              </td>
+              <td>{dateTime(target.spec.lastProbeAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={t("table.view", { name: target.metadata.name })}
+                  onClick={() => onSelect(target.metadata.uid)}
                 >
                   ···
                 </button>

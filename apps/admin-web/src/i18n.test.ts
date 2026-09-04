@@ -38,5 +38,7 @@ describe("Admin Web locale", () => {
     for (const locale of supportedLocales) expect(missingMessageKeys(locale)).toEqual([]);
     expect(translate("invalid", "action.refresh")).toBe("Refresh");
     expect(translate("zh-CN", "overview.readyLeases", { count: 2 })).toBe("当前 2 个就绪");
+    expect(translate("en-US", "nav.workers")).toBe("Clusters & Workers");
+    expect(translate("zh-CN", "nav.workers")).toBe("集群与工作节点");
   });
 });

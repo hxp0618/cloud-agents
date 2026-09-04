@@ -42,6 +42,13 @@ export type SavedAdminConnection = Readonly<{
   projectId: string;
 }>;
 
+export type ClusterHostSummary = Readonly<{
+  target: DeploymentTarget;
+  workerCount: number;
+  readyWorkerCount: number;
+  latestHealthAt: string | undefined;
+}>;
+
 type ConnectionStorage = Pick<Storage, "getItem" | "setItem">;
 
 const storageKey = "cloud-agents.admin-web.connection.v1";
@@ -207,6 +214,36 @@ export async function listAdminWorkers(
   return Object.freeze(
     workers.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
   );
+}
+
+export function summarizeClusterHosts(
+  targets: readonly DeploymentTarget[],
+  workers: readonly Worker[],
+): readonly ClusterHostSummary[] {
+  const summaries = new Map(
+    targets.map((target) => [
+      target.metadata.uid,
+      {
+        target,
+        workerCount: 0,
+        readyWorkerCount: 0,
+        latestHealthAt: undefined as string | undefined,
+      },
+    ]),
+  );
+  for (const worker of workers) {
+    const summary = summaries.get(worker.spec.targetId);
+    if (summary === undefined) continue;
+    summary.workerCount += 1;
+    if (worker.spec.state === "ready") summary.readyWorkerCount += 1;
+    if (
+      worker.spec.lastHealthAt !== undefined &&
+      (summary.latestHealthAt === undefined ||
+        Date.parse(worker.spec.lastHealthAt) > Date.parse(summary.latestHealthAt))
+    )
+      summary.latestHealthAt = worker.spec.lastHealthAt;
+  }
+  return Object.freeze([...summaries.values()].map((summary) => Object.freeze(summary)));
 }
 
 export async function listAdminProfiles(

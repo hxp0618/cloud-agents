@@ -10,6 +10,7 @@ import {
   listAdminTargets,
   listAdminWorkers,
   readSavedAdminConnection,
+  summarizeClusterHosts,
   writeSavedAdminConnection,
   type AdminClient,
 } from "./admin";
@@ -107,6 +108,54 @@ describe("Admin Web boundary", () => {
 
     await listAdminWorkers(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("groups current Worker authority by its Deployment Target", () => {
+    const targets = [
+      { metadata: { uid: "docker-alpha" } },
+      { metadata: { uid: "kubernetes-alpha" } },
+    ] as unknown as Parameters<typeof summarizeClusterHosts>[0];
+    const workers = [
+      {
+        spec: {
+          targetId: "docker-alpha",
+          state: "ready",
+          lastHealthAt: "2026-09-04T01:00:00Z",
+        },
+      },
+      {
+        spec: {
+          targetId: "docker-alpha",
+          state: "failed",
+          lastHealthAt: "2026-09-04T02:00:00Z",
+        },
+      },
+      { spec: { targetId: "removed-target", state: "ready" } },
+    ] as unknown as Parameters<typeof summarizeClusterHosts>[1];
+
+    expect(
+      summarizeClusterHosts(targets, workers).map(
+        ({ target, workerCount, readyWorkerCount, latestHealthAt }) => ({
+          targetId: target.metadata.uid,
+          workerCount,
+          readyWorkerCount,
+          latestHealthAt,
+        }),
+      ),
+    ).toEqual([
+      {
+        targetId: "docker-alpha",
+        workerCount: 2,
+        readyWorkerCount: 1,
+        latestHealthAt: "2026-09-04T02:00:00Z",
+      },
+      {
+        targetId: "kubernetes-alpha",
+        workerCount: 0,
+        readyWorkerCount: 0,
+        latestHealthAt: undefined,
+      },
+    ]);
   });
 
   it("uses only Admin API profile pagination", async () => {
