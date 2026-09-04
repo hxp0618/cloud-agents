@@ -90,6 +90,7 @@ type Summary struct {
 	ProviderKinds     []string
 	CPULimitMillis    int64
 	MemoryLimitBytes  int64
+	StorageSummary    string
 }
 
 type AuditEvent struct {
@@ -204,7 +205,8 @@ func (summary Summary) Validate() error {
 		invalidIdentifier(summary.ProfileName) || summary.Version < 1 || summary.Version > 2147483647 ||
 		invalidDescription(summary.Description) || !validProviderKinds(summary.ProviderKinds) ||
 		summary.CPULimitMillis < 100 || summary.CPULimitMillis > 64000 ||
-		summary.MemoryLimitBytes < 134217728 || summary.MemoryLimitBytes > 1099511627776 {
+		summary.MemoryLimitBytes < 134217728 || summary.MemoryLimitBytes > 1099511627776 ||
+		invalidSummary(summary.StorageSummary) {
 		return ErrInvalidInput
 	}
 	return nil
@@ -265,6 +267,13 @@ func validIdentifiers(values []string, maximum int) bool {
 
 func invalidDescription(value string) bool {
 	if !utf8.ValidString(value) || utf8.RuneCountInString(value) < 1 || utf8.RuneCountInString(value) > 1024 {
+		return true
+	}
+	return strings.ContainsFunc(value, func(character rune) bool { return character < 32 || character == 127 })
+}
+
+func invalidSummary(value string) bool {
+	if !utf8.ValidString(value) || utf8.RuneCountInString(value) < 1 || utf8.RuneCountInString(value) > 256 {
 		return true
 	}
 	return strings.ContainsFunc(value, func(character rune) bool { return character < 32 || character == 127 })

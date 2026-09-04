@@ -27,7 +27,7 @@ func (fake *publishedEnvironmentProfileStoreFake) ListPublishedEnvironmentProfil
 			Scope:             internalenvironmentprofile.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
 			ProfileVersionUID: "ep-alpha-v1", ProfileID: "profile-alpha", ProfileName: "profile-alpha",
 			Version: 1, Description: "Codex and Claude development", ProviderKinds: []string{"codex", "claudeAgent"},
-			CPULimitMillis: 2000, MemoryLimitBytes: 4294967296,
+			CPULimitMillis: 2000, MemoryLimitBytes: 4294967296, StorageSummary: "20 GiB managed workspace",
 		}},
 		NextProfileVersionID: "ep-alpha-v1",
 	}, nil
@@ -50,7 +50,7 @@ func TestPublishedEnvironmentProfileHTTPReturnsOnlySafeSummaries(t *testing.T) {
 		t.Fatalf("status=%d decodeErr=%v body=%s store=%#v", response.Code, decodeErr, response.Body.String(), store)
 	}
 	profile := page.Value.EnvironmentProfiles[0]
-	if profile.Status != "published" || profile.Availability != "available" || profile.ProjectRef.ID != "project-alpha" || page.Value.NextPageToken == "" {
+	if profile.Status != "published" || profile.Availability != "available" || profile.ProjectRef.ID != "project-alpha" || profile.StorageSummary != "20 GiB managed workspace" || page.Value.NextPageToken == "" {
 		t.Fatalf("profile=%#v page=%#v", profile, page.Value)
 	}
 	for _, forbidden := range []string{"targetRef", "credentialRef", "releaseDigest", "storagePolicyRef", "networkPolicyRef", "endpoint"} {

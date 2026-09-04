@@ -46,6 +46,7 @@ func TestPublishedEnvironmentProfileRowsAreSchedulableAndRedacted(t *testing.T) 
 			TenantID: "tenant-alpha", ProjectID: "project-alpha", ProfileVersionUID: uid,
 			ProfileID: profileID, ProfileName: profileID, Version: 1, Description: "Standard workspace",
 			ProviderKinds: []string{"codex", "claudeAgent"}, CPULimitMillis: 2000, MemoryLimitBytes: 4294967296,
+			StorageSummary: "20 GiB managed workspace",
 		}
 	}
 	raw, err := json.Marshal([]publishedEnvironmentProfilePageRow{
@@ -66,11 +67,12 @@ func TestPublishedEnvironmentProfileRowsAreSchedulableAndRedacted(t *testing.T) 
 		if !strings.Contains(query, "cloud_agents.require_tenant_id()") ||
 			!strings.Contains(query, "profile.status = 'published'") ||
 			!strings.Contains(query, "target.observed_phase = 'ready'") ||
-			!strings.Contains(query, "cloud_agents.worker_releases") {
+			!strings.Contains(query, "cloud_agents.worker_releases") ||
+			!strings.Contains(query, "cloud_agents.storage_policies") {
 			t.Fatalf("published profile query lacks authority or schedulability predicate: %s", query)
 		}
 	}
-	for _, forbidden := range []string{"credential_ref", "storage_policy_ref", "network_policy_ref", "endpoint"} {
+	for _, forbidden := range []string{"credential_ref", "network_policy_ref", "endpoint"} {
 		if strings.Contains(listPublishedEnvironmentProfilesSQL, forbidden) {
 			t.Fatalf("published profile query projects %q", forbidden)
 		}
@@ -102,8 +104,11 @@ func TestEnvironmentProfileProjectionAndConflictMapping(t *testing.T) {
 	if err := mapEnvironmentProfileError(&pgconn.PgError{Code: "23503", Message: "environment profile was not found"}); !errors.Is(err, ErrEnvironmentProfileNotFound) {
 		t.Fatalf("missing profile mapped to %v", err)
 	}
-	if !strings.Contains(createEnvironmentProfileSQL, "create_environment_profile_draft_v2") ||
-		!strings.Contains(transitionEnvironmentProfileSQL, "transition_environment_profile_v2") ||
+	if err := mapEnvironmentProfileError(&pgconn.PgError{Code: "23503", Message: "storage policy is not available"}); !errors.Is(err, ErrEnvironmentProfileStoragePolicyUnavailable) {
+		t.Fatalf("missing storage policy mapped to %v", err)
+	}
+	if !strings.Contains(createEnvironmentProfileSQL, "create_environment_profile_draft_v3") ||
+		!strings.Contains(transitionEnvironmentProfileSQL, "transition_environment_profile_v3") ||
 		!strings.Contains(listEnvironmentProfilesSQL, "cloud_agents.require_tenant_id()") {
 		t.Fatal("environment profile store is not bound to migration and tenant authority")
 	}

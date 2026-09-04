@@ -28,6 +28,8 @@ import {
   decodeProjectCreateRequest,
   decodeProjectLeaseQuota,
   decodeProjectLeaseQuotaSummary,
+  decodeStoragePolicy,
+  decodeStoragePolicyPage,
   decodeUserEnvironment,
   decodeManagedAgentSession,
   decodeManagedAgentSessionPage,
@@ -58,6 +60,8 @@ import {
   parseProjectCreateRequest,
   parseProjectLeaseQuota,
   parseProjectLeaseQuotaSummary,
+  parseStoragePolicy,
+  parseStoragePolicyPage,
   parseUserEnvironment,
   parseManagedAgentSession,
   parseManagedAgentSessionPage,
@@ -712,6 +716,7 @@ describe("generated platform JSON models", () => {
       providerKinds: ["codex", "claudeAgent"],
       cpuLimitMillis: 2000,
       memoryLimitBytes: 4294967296,
+      storageSummary: "20 GiB managed workspace",
     };
     const page = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
@@ -743,6 +748,103 @@ describe("generated platform JSON models", () => {
     expect(seen[0]?.path).toBe(
       "/v1/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1",
     );
+  });
+  it("manages only the supported Storage Policy lifecycle", async () => {
+    const policy = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "StoragePolicy",
+      metadata: {
+        uid: "storage-standard",
+        name: "storage-standard",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-05T03:00:00Z",
+        updatedAt: "2026-09-05T03:00:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        userSummary: "20 GiB managed workspace",
+        workspaceType: "managed-volume",
+        workspaceCapacityBytes: 21474836480,
+        retentionSeconds: 0,
+        cleanupOnLeaseTermination: true,
+        allowWorkspaceReuse: true,
+      },
+    };
+    const page = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "StoragePolicyPage",
+      storagePolicies: [policy],
+    };
+    expect(decodeStoragePolicy(policy).spec.workspaceCapacityBytes).toBe(21474836480);
+    expect(decodeStoragePolicyPage(page).storagePolicies).toHaveLength(1);
+    expect(parseStoragePolicy(JSON.stringify(policy)).value.metadata.uid).toBe("storage-standard");
+    expect(parseStoragePolicyPage(JSON.stringify(page)).value.storagePolicies).toHaveLength(1);
+    expect(() =>
+      decodeStoragePolicy({ ...policy, spec: { ...policy.spec, retentionSeconds: 1 } }),
+    ).toThrow();
+
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      if (request.path.endsWith("/audit-events?pageSize=1")) {
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            apiVersion: policy.apiVersion,
+            kind: "AdminAuditEventPage",
+            events: [],
+          }),
+        };
+      }
+      if (request.path.endsWith("/storage-policies?pageSize=1")) {
+        return { status: 200, headers: {}, body: JSON.stringify(page) };
+      }
+      return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(policy) };
+    });
+    await client.listAdminStoragePolicies(
+      "tenant-alpha",
+      "project-alpha",
+      "request-storage-list",
+      1,
+    );
+    await client.getAdminStoragePolicy(
+      "tenant-alpha",
+      "project-alpha",
+      "storage-standard",
+      "request-storage-get",
+    );
+    await client.setAdminStoragePolicy(
+      "tenant-alpha",
+      "project-alpha",
+      "storage-standard",
+      "request-storage-set",
+      "storage-set-key-0001",
+      {
+        expectedResourceVersion: "0",
+        policyName: "storage-standard",
+        userSummary: "20 GiB managed workspace",
+        workspaceType: "managed-volume",
+        workspaceCapacityBytes: 21474836480,
+        retentionSeconds: 0,
+        cleanupOnLeaseTermination: true,
+        allowWorkspaceReuse: true,
+      },
+    );
+    await client.listAdminStoragePolicyAuditEvents(
+      "tenant-alpha",
+      "project-alpha",
+      "storage-standard",
+      "request-storage-audit",
+      1,
+    );
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies?pageSize=1",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard",
+      "PUT /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard/audit-events?pageSize=1",
+    ]);
   });
   it("creates and reads an environment using only immutable Profile identity", async () => {
     const value = {

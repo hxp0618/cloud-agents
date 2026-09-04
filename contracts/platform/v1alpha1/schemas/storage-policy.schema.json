@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/storage-policy.schema.json",
+  "title": "StoragePolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "StoragePolicy" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "userSummary", "workspaceType", "workspaceCapacityBytes", "retentionSeconds", "cleanupOnLeaseTermination", "allowWorkspaceReuse"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "userSummary": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "workspaceType": { "const": "managed-volume" },
+        "workspaceCapacityBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+        "retentionSeconds": { "const": 0 },
+        "cleanupOnLeaseTermination": { "const": true },
+        "snapshotBackendRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "artifactBackendRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "allowWorkspaceReuse": { "const": true }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the Admin API exposes opaque backend references but never resolves them to endpoint, credential, or secret bytes",
+    "the User API receives userSummary through its published Environment Profile projection and never receives the policy id or backend references"
+  ]
+}

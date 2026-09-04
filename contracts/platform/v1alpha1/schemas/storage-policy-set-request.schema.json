@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/storage-policy-set-request.schema.json",
+  "title": "StoragePolicySetRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion", "policyName", "userSummary", "workspaceType", "workspaceCapacityBytes", "retentionSeconds", "cleanupOnLeaseTermination", "allowWorkspaceReuse"],
+  "properties": {
+    "expectedResourceVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
+    "policyName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "userSummary": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "workspaceType": { "const": "managed-volume" },
+    "workspaceCapacityBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+    "retentionSeconds": { "const": 0 },
+    "cleanupOnLeaseTermination": { "const": true },
+    "snapshotBackendRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "artifactBackendRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "allowWorkspaceReuse": { "const": true }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "expectedResourceVersion 0 creates a policy and a positive value updates that exact version",
+    "a policy referenced by any Environment Profile is immutable and changes require a new policy id",
+    "P0 supports the existing managed volume lifecycle only: immediate cleanup, zero retention, and reuse during Worker generation replacement",
+    "backend references are opaque identifiers and never contain endpoint or secret bytes"
+  ]
+}

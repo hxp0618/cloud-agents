@@ -123,6 +123,7 @@ func publishedEnvironmentProfileResource(summary internalenvironmentprofile.Summ
 		ProfileID:  summary.ProfileID, Name: summary.ProfileName, Version: summary.Version,
 		Description: summary.Description, Status: "published", Availability: "available",
 		ProviderKinds: summary.ProviderKinds, CPULimitMillis: summary.CPULimitMillis, MemoryLimitBytes: summary.MemoryLimitBytes,
+		StorageSummary: summary.StorageSummary,
 	}
 }
 

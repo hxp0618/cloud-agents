@@ -387,6 +387,40 @@ export type ProjectLeaseQuotaSummary = Readonly<{
   usedMemoryBytes: number;
   maxLeaseTtlSeconds: number;
 }>;
+export type StoragePolicySetRequest = Readonly<{
+  expectedResourceVersion: string;
+  policyName: string;
+  userSummary: string;
+  workspaceType: "managed-volume";
+  workspaceCapacityBytes: number;
+  retentionSeconds: 0;
+  cleanupOnLeaseTermination: true;
+  snapshotBackendRef?: string;
+  artifactBackendRef?: string;
+  allowWorkspaceReuse: true;
+}>;
+export type StoragePolicy = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "StoragePolicy";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    userSummary: string;
+    workspaceType: "managed-volume";
+    workspaceCapacityBytes: number;
+    retentionSeconds: 0;
+    cleanupOnLeaseTermination: true;
+    snapshotBackendRef?: string;
+    artifactBackendRef?: string;
+    allowWorkspaceReuse: true;
+  }>;
+}>;
+export type StoragePolicyPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "StoragePolicyPage";
+  storagePolicies: readonly StoragePolicy[];
+  nextPageToken?: string;
+}>;
 export type EnvironmentProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
@@ -443,6 +477,7 @@ export type EnvironmentProfileSummary = Readonly<{
   providerKinds: readonly ("codex" | "claudeAgent")[];
   cpuLimitMillis: number;
   memoryLimitBytes: number;
+  storageSummary: string;
 }>;
 export type EnvironmentProfileSummaryPage = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -555,8 +590,9 @@ export type AdminAuditEvent = Readonly<{
     | "profile.create"
     | "profile.publish"
     | "profile.disable"
-    | "quota.set";
-  resourceKind: "DeploymentTarget" | "EnvironmentProfile" | "ProjectLeaseQuota";
+    | "quota.set"
+    | "storage-policy.set";
+  resourceKind: "DeploymentTarget" | "EnvironmentProfile" | "ProjectLeaseQuota" | "StoragePolicy";
   resourceId: string;
   resourceGeneration: number;
   result: "requested" | "succeeded" | "failed";
@@ -1019,6 +1055,25 @@ const projectLeaseQuotaSummaryResponseShape: ResponseShape = {
     maxLeaseTtlSeconds: scalarResponseShape,
   },
 };
+const storagePolicyResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  userSummary: scalarResponseShape,
+  workspaceType: scalarResponseShape,
+  workspaceCapacityBytes: scalarResponseShape,
+  retentionSeconds: scalarResponseShape,
+  cleanupOnLeaseTermination: scalarResponseShape,
+  snapshotBackendRef: scalarResponseShape,
+  artifactBackendRef: scalarResponseShape,
+  allowWorkspaceReuse: scalarResponseShape,
+});
+const storagePolicyPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    storagePolicies: { item: storagePolicyResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
 const environmentProfileResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   profileId: scalarResponseShape,
@@ -1058,6 +1113,7 @@ const environmentProfileSummaryResponseShape: ResponseShape = {
     providerKinds: { item: scalarResponseShape },
     cpuLimitMillis: scalarResponseShape,
     memoryLimitBytes: scalarResponseShape,
+    storageSummary: scalarResponseShape,
   },
 };
 const environmentProfileSummaryPageResponseShape: ResponseShape = {
@@ -1452,6 +1508,14 @@ function profileDescription(value: unknown, path: string): string {
   for (const character of text) {
     const code = character.codePointAt(0)!;
     if (code < 32 || code === 127) error("INVALID_PROFILE_DESCRIPTION", path);
+  }
+  return text;
+}
+function policySummary(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 256, path);
+  for (const character of text) {
+    const code = character.codePointAt(0)!;
+    if (code < 32 || code === 127) error("INVALID_POLICY_SUMMARY", path);
   }
   return text;
 }
@@ -3153,6 +3217,139 @@ export function decodeProjectLeaseQuotaSummary(value: unknown): ProjectLeaseQuot
     usedMemoryBytes: integer(source.usedMemoryBytes, 0, 8796093022208000, "/usedMemoryBytes"),
   });
 }
+function storagePolicySpec(source: Record<string, unknown>, path: string) {
+  if (
+    source.workspaceType !== "managed-volume" ||
+    source.cleanupOnLeaseTermination !== true ||
+    source.allowWorkspaceReuse !== true
+  )
+    error("INVALID_STORAGE_POLICY", path);
+  const retentionSeconds = integer(source.retentionSeconds, 0, 0, `${path}/retentionSeconds`);
+  const value = {
+    userSummary: policySummary(source.userSummary, `${path}/userSummary`),
+    workspaceType: "managed-volume" as const,
+    workspaceCapacityBytes: integer(
+      source.workspaceCapacityBytes,
+      134217728,
+      1099511627776,
+      `${path}/workspaceCapacityBytes`,
+    ),
+    retentionSeconds: retentionSeconds as 0,
+    cleanupOnLeaseTermination: true as const,
+    ...(source.snapshotBackendRef === undefined
+      ? {}
+      : {
+          snapshotBackendRef: identifier(source.snapshotBackendRef, `${path}/snapshotBackendRef`),
+        }),
+    ...(source.artifactBackendRef === undefined
+      ? {}
+      : {
+          artifactBackendRef: identifier(source.artifactBackendRef, `${path}/artifactBackendRef`),
+        }),
+    allowWorkspaceReuse: true as const,
+  };
+  return Object.freeze(value);
+}
+export function decodeStoragePolicySetRequest(value: unknown): StoragePolicySetRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedResourceVersion",
+      "policyName",
+      "userSummary",
+      "workspaceType",
+      "workspaceCapacityBytes",
+      "retentionSeconds",
+      "cleanupOnLeaseTermination",
+      "snapshotBackendRef",
+      "artifactBackendRef",
+      "allowWorkspaceReuse",
+    ],
+    [
+      "expectedResourceVersion",
+      "policyName",
+      "userSummary",
+      "workspaceType",
+      "workspaceCapacityBytes",
+      "retentionSeconds",
+      "cleanupOnLeaseTermination",
+      "allowWorkspaceReuse",
+    ],
+  );
+  if (
+    typeof source.expectedResourceVersion !== "string" ||
+    !/^(?:0|[1-9][0-9]{0,18})$/u.test(source.expectedResourceVersion)
+  )
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion: source.expectedResourceVersion as string,
+    policyName: identifier(source.policyName, "/policyName"),
+    ...storagePolicySpec(source, ""),
+  });
+}
+export function encodeStoragePolicySetRequest(value: StoragePolicySetRequest): string {
+  return JSON.stringify(decodeStoragePolicySetRequest(value));
+}
+export function decodeStoragePolicy(value: unknown): StoragePolicy {
+  const source = record(value);
+  const root = base(source, "StoragePolicy");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "userSummary",
+      "workspaceType",
+      "workspaceCapacityBytes",
+      "retentionSeconds",
+      "cleanupOnLeaseTermination",
+      "snapshotBackendRef",
+      "artifactBackendRef",
+      "allowWorkspaceReuse",
+    ],
+    [
+      "projectRef",
+      "userSummary",
+      "workspaceType",
+      "workspaceCapacityBytes",
+      "retentionSeconds",
+      "cleanupOnLeaseTermination",
+      "allowWorkspaceReuse",
+    ],
+    "/spec",
+  );
+  return Object.freeze({
+    ...root,
+    kind: "StoragePolicy" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      ...storagePolicySpec(spec, "/spec"),
+    }),
+  });
+}
+export function decodeStoragePolicyPage(value: unknown): StoragePolicyPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "storagePolicies", "nextPageToken"],
+    ["apiVersion", "kind", "storagePolicies"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "StoragePolicyPage" ||
+    !Array.isArray(source.storagePolicies) ||
+    source.storagePolicies.length > 200
+  )
+    error("INVALID_STORAGE_POLICY_PAGE", "/storagePolicies");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "StoragePolicyPage" as const,
+    storagePolicies: Object.freeze((source.storagePolicies as unknown[]).map(decodeStoragePolicy)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
 export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
   const source = record(value);
   const root = base(source, "EnvironmentProfile");
@@ -3274,6 +3471,7 @@ export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProf
       "providerKinds",
       "cpuLimitMillis",
       "memoryLimitBytes",
+      "storageSummary",
     ],
     [
       "apiVersion",
@@ -3288,6 +3486,7 @@ export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProf
       "providerKinds",
       "cpuLimitMillis",
       "memoryLimitBytes",
+      "storageSummary",
     ],
   );
   if (source.apiVersion !== platformApiVersion || source.kind !== "EnvironmentProfileSummary")
@@ -3312,6 +3511,7 @@ export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProf
       1099511627776,
       "/memoryLimitBytes",
     ),
+    storageSummary: policySummary(source.storageSummary, "/storageSummary"),
   });
 }
 export function decodeEnvironmentProfileSummaryPage(value: unknown): EnvironmentProfileSummaryPage {
@@ -3704,12 +3904,13 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "profile.publish",
         "profile.disable",
         "quota.set",
+        "storage-policy.set",
       ] as const,
       "/action",
     ),
     resourceKind: enumValue(
       source.resourceKind,
-      ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota"] as const,
+      ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota", "StoragePolicy"] as const,
       "/resourceKind",
     ),
     resourceId: identifier(source.resourceId, "/resourceId"),
@@ -4680,6 +4881,12 @@ export function parseProjectLeaseQuotaSummary(
   text: string,
 ): ResponseEnvelope<ProjectLeaseQuotaSummary> {
   return parseResponse(text, projectLeaseQuotaSummaryResponseShape, decodeProjectLeaseQuotaSummary);
+}
+export function parseStoragePolicy(text: string): ResponseEnvelope<StoragePolicy> {
+  return parseResponse(text, storagePolicyResponseShape, decodeStoragePolicy);
+}
+export function parseStoragePolicyPage(text: string): ResponseEnvelope<StoragePolicyPage> {
+  return parseResponse(text, storagePolicyPageResponseShape, decodeStoragePolicyPage);
 }
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
@@ -6333,6 +6540,135 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
     return result;
   }
+  async listAdminStoragePolicies(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<StoragePolicyPage>> {
+    validateStoragePolicyPath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/storage-policies${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListStoragePolicies", response);
+    const result = parseStoragePolicyPage(response.body);
+    if (
+      result.value.storagePolicies.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/storagePolicies");
+    return result;
+  }
+  async getAdminStoragePolicy(
+    tenantId: string,
+    projectId: string,
+    storagePolicyId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<StoragePolicy>> {
+    validateStoragePolicyPath(tenantId, projectId, storagePolicyId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/storage-policies/${storagePolicyId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetStoragePolicy", response);
+    const result = parseStoragePolicy(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== storagePolicyId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async setAdminStoragePolicy(
+    tenantId: string,
+    projectId: string,
+    storagePolicyId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: StoragePolicySetRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<StoragePolicy>> {
+    validateStoragePolicyPath(tenantId, projectId, storagePolicyId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeStoragePolicySetRequest(body);
+    const response = await this.call(
+      {
+        method: "PUT",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/storage-policies/${storagePolicyId}`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeStoragePolicySetRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminSetStoragePolicy", response);
+    const result = parseStoragePolicy(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== storagePolicyId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminStoragePolicyAuditEvents(
+    tenantId: string,
+    projectId: string,
+    storagePolicyId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminAuditEventPage>> {
+    validateStoragePolicyPath(tenantId, projectId, storagePolicyId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/storage-policies/${storagePolicyId}/audit-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListStoragePolicyAuditEvents", response);
+    const result = parseAdminAuditEventPage(response.body);
+    if (
+      result.value.events.some(
+        (event) => event.resourceKind !== "StoragePolicy" || event.resourceId !== storagePolicyId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
+  }
   async getAdminEnvironmentLease(
     tenantId: string,
     projectId: string,
@@ -7449,6 +7785,16 @@ function validateLeasePath(
   validatePath(tenantId, requestId);
   identifier(projectId, "/projectId");
   if (leaseId !== undefined) identifier(leaseId, "/leaseId");
+}
+function validateStoragePolicyPath(
+  tenantId: string,
+  projectId: string,
+  storagePolicyId: string | undefined,
+  requestId: string,
+): void {
+  validatePath(tenantId, requestId);
+  identifier(projectId, "/projectId");
+  if (storagePolicyId !== undefined) identifier(storagePolicyId, "/storagePolicyId");
 }
 function validateEnvironmentProfilePath(
   tenantId: string,

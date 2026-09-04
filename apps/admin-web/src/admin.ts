@@ -14,6 +14,7 @@ import {
   type EnvironmentProfile,
   type MaintenanceOperation,
   type ProjectLeaseQuota,
+  type StoragePolicy,
   type Worker,
   type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -51,6 +52,10 @@ export type AdminClient = Pick<
   | "getAdminProjectLeaseQuota"
   | "setAdminProjectLeaseQuota"
   | "listAdminProjectLeaseQuotaAuditEvents"
+  | "listAdminStoragePolicies"
+  | "getAdminStoragePolicy"
+  | "setAdminStoragePolicy"
+  | "listAdminStoragePolicyAuditEvents"
 >;
 
 export type SavedAdminConnection = Readonly<{
@@ -356,6 +361,77 @@ export async function listAdminProfiles(
       (left, right) =>
         left.metadata.name.localeCompare(right.metadata.name) ||
         right.spec.version - left.spec.version,
+    ),
+  );
+}
+
+export async function listAdminStoragePolicies(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly StoragePolicy[]> {
+  const policies: StoragePolicy[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminStoragePolicies(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    policies.push(...page.value.storagePolicies);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.storagePolicyPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    policies.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export async function listAdminStoragePolicyAuditEvents(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  policyId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  const events: AdminAuditEvent[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminStoragePolicyAuditEvents(
+      tenantId,
+      projectId,
+      policyId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    events.push(...page.value.events);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.auditPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(events);
+}
+
+export function replaceStoragePolicy(
+  policies: readonly StoragePolicy[],
+  policy: StoragePolicy,
+): readonly StoragePolicy[] {
+  return Object.freeze(
+    [...policies.filter(({ metadata }) => metadata.uid !== policy.metadata.uid), policy].toSorted(
+      (left, right) => left.metadata.name.localeCompare(right.metadata.name),
     ),
   );
 }

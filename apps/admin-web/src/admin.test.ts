@@ -7,6 +7,8 @@ import {
   listAdminProjectLeaseQuotaAuditEvents,
   listAdminLeases,
   listAdminProfiles,
+  listAdminStoragePolicies,
+  listAdminStoragePolicyAuditEvents,
   listAdminReleases,
   listAdminMaintenanceOperations,
   listAdminTargetAuditEvents,
@@ -250,6 +252,58 @@ describe("Admin Web boundary", () => {
 
     await listAdminProfiles(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("uses only Admin API storage policy and audit pagination", async () => {
+    const calls: string[] = [];
+    const client = {
+      listAdminStoragePolicies: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        calls.push(`policies:${pageToken ?? "first"}`);
+        return {
+          value: {
+            storagePolicies: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-policy-page" } : {}),
+          },
+        };
+      },
+      listAdminStoragePolicyAuditEvents: async (
+        _tenantId: string,
+        _projectId: string,
+        policyId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        calls.push(`audit:${policyId}:${pageToken ?? "first"}`);
+        return {
+          value: {
+            events: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-audit-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+    const signal = new AbortController().signal;
+    await listAdminStoragePolicies(client, "tenant-alpha", "project-alpha", signal);
+    await listAdminStoragePolicyAuditEvents(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      "storage-standard",
+      signal,
+    );
+    expect(calls).toEqual([
+      "policies:first",
+      "policies:next-policy-page",
+      "audit:storage-standard:first",
+      "audit:storage-standard:next-audit-page",
+    ]);
   });
 
   it("loads project Lease quota from Admin API and treats no policy as optional", async () => {

@@ -271,7 +271,7 @@ func TestGeneratedOpenAPIClientListsAdminWorkers(t *testing.T) {
 }
 
 func TestGeneratedOpenAPIClientListsPublishedEnvironmentProfiles(t *testing.T) {
-	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummaryPage","environmentProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296}]}`)
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummaryPage","environmentProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296,"storageSummary":"20 GiB managed workspace"}]}`)
 	var seen Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = request
@@ -325,6 +325,46 @@ func TestGeneratedOpenAPIClientSplitsProjectLeaseQuotaAuthority(t *testing.T) {
 	}
 	if string(seen[1].Body) != `{"expectedResourceVersion":"0","maxConcurrentLeases":2,"maxCpuMillis":4000,"maxMemoryBytes":8589934592,"maxLeaseTtlSeconds":3600}` {
 		t.Fatalf("set body=%s", seen[1].Body)
+	}
+}
+
+func TestGeneratedOpenAPIClientManagesStoragePolicies(t *testing.T) {
+	policyBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"StoragePolicy","metadata":{"uid":"storage-standard","name":"storage-standard","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"20 GiB managed workspace","workspaceType":"managed-volume","workspaceCapacityBytes":21474836480,"retentionSeconds":0,"cleanupOnLeaseTermination":true,"allowWorkspaceReuse":true}}`)
+	pageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"StoragePolicyPage","storagePolicies":[` + string(policyBody) + `]}`)
+	auditBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"AdminAuditEventPage","events":[]}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		if strings.Contains(request.Path, "/audit-events") {
+			return Response{Status: 200, Body: auditBody}, nil
+		}
+		if strings.HasSuffix(request.Path, "/storage-policies?pageSize=1") {
+			return Response{Status: 200, Body: pageBody}, nil
+		}
+		return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "1"}, Body: policyBody}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.ListAdminStoragePolicies(ctx, "tenant-alpha", "project-alpha", "request-storage-list", 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetAdminStoragePolicy(ctx, "tenant-alpha", "project-alpha", "storage-standard", "request-storage-get"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SetAdminStoragePolicy(ctx, "tenant-alpha", "project-alpha", "storage-standard", "request-storage-set", "storage-set-key-0001", platform.StoragePolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "storage-standard", UserSummary: "20 GiB managed workspace",
+		WorkspaceType: "managed-volume", WorkspaceCapacityBytes: 21474836480,
+		RetentionSeconds: 0, CleanupOnLeaseTermination: true, AllowWorkspaceReuse: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListAdminStoragePolicyAuditEvents(ctx, "tenant-alpha", "project-alpha", "storage-standard", "request-storage-audit", 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 4 || seen[2].Method != "PUT" || seen[3].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard/audit-events?pageSize=1" {
+		t.Fatalf("requests=%#v", seen)
 	}
 }
 

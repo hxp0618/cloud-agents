@@ -471,12 +471,20 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local project lease quota HTTP server is unavailable")
 	}
+	storagePolicyHTTPServer, err := server.NewStoragePolicyHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local storage policy HTTP server is unavailable")
+	}
 	publishedEnvironmentProfileHTTPServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifierAdapter, coordinationService)
 	if err != nil {
 		return errors.New("local published environment profile HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesStoragePolicyPath(request.URL.Path) {
+			storagePolicyHTTPServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesProjectLeaseQuotaPath(request.URL.Path) {
 			projectLeaseQuotaHTTPServer.ServeHTTP(writer, request)
 			return

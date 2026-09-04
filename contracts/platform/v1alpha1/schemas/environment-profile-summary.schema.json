@@ -4,7 +4,7 @@
   "title": "EnvironmentProfileSummary",
   "type": "object",
   "additionalProperties": false,
-  "required": ["apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes"],
+  "required": ["apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storageSummary"],
   "properties": {
     "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
     "kind": { "const": "EnvironmentProfileSummary" },
@@ -23,10 +23,12 @@
       "items": { "enum": ["codex", "claudeAgent"] }
     },
     "cpuLimitMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
-    "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 }
+    "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+    "storageSummary": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
   },
   "x-cloud-agents-semantic-constraints": [
     "the User API emits only published profiles with at least one ready project Target",
-    "target references, credential references, release digests, endpoints, and policy references are absent"
+    "target references, credential references, release digests, endpoints, policy references, and storage backend references are absent",
+    "storageSummary is administrator-authored user-safe text from the bound Storage Policy"
   ]
 }

@@ -250,7 +250,7 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
+  "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
   "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
@@ -817,6 +817,57 @@ if (value.metadata?.uid !== process.env.CLOUD_AGENTS_COMPOSE_RELEASE_ID ||
   throw new Error("Admin API did not persist the approved upgrade Worker release");
 }
 NODE
+storage_policy_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/storage-policies/storage-compose"
+storage_policy_file="$smoke_directory/storage-policy.json"
+storage_policy_body='{"expectedResourceVersion":"0","policyName":"storage-compose","userSummary":"20 GiB managed workspace","workspaceType":"managed-volume","workspaceCapacityBytes":21474836480,"retentionSeconds":0,"cleanupOnLeaseTermination":true,"snapshotBackendRef":"snapshot-compose","artifactBackendRef":"artifact-compose","allowWorkspaceReuse":true}'
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$storage_policy_path" \
+  compose-smoke-storage-policy --header "Idempotency-Key: compose-smoke-storage-policy" \
+  --data "$storage_policy_body" >"$storage_policy_file"
+CLOUD_AGENTS_COMPOSE_STORAGE_FILE="$storage_policy_file" CLOUD_AGENTS_COMPOSE_PROJECT_ID="$project_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_STORAGE_FILE, "utf8"));
+if (value.kind !== "StoragePolicy" || value.metadata?.uid !== "storage-compose" ||
+    value.metadata?.resourceVersion !== "1" || value.spec?.projectRef?.id !== process.env.CLOUD_AGENTS_COMPOSE_PROJECT_ID ||
+    value.spec?.workspaceType !== "managed-volume" || value.spec?.workspaceCapacityBytes !== 21474836480 ||
+    value.spec?.retentionSeconds !== 0 || value.spec?.cleanupOnLeaseTermination !== true ||
+    value.spec?.allowWorkspaceReuse !== true || value.spec?.userSummary !== "20 GiB managed workspace") {
+  throw new Error("Admin API did not persist the Storage Policy authority");
+}
+NODE
+storage_policy_list_file="$smoke_directory/storage-policy-list.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/storage-policies?pageSize=200" \
+  compose-smoke-storage-policy-list >"$storage_policy_list_file"
+CLOUD_AGENTS_COMPOSE_STORAGE_FILE="$storage_policy_list_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_STORAGE_FILE, "utf8"));
+if (value.kind !== "StoragePolicyPage" || value.storagePolicies?.length !== 1 ||
+    value.storagePolicies[0]?.metadata?.uid !== "storage-compose") {
+  throw new Error("Admin API Storage Policy catalog drifted");
+}
+NODE
+storage_policy_audit_file="$smoke_directory/storage-policy-audit.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET "$storage_policy_path/audit-events?pageSize=200" \
+  compose-smoke-storage-policy-audit >"$storage_policy_audit_file"
+CLOUD_AGENTS_COMPOSE_STORAGE_FILE="$storage_policy_audit_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_STORAGE_FILE, "utf8"));
+if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 1 ||
+    value.events[0]?.action !== "storage-policy.set" || value.events[0]?.resourceKind !== "StoragePolicy") {
+  throw new Error("Admin API Storage Policy audit drifted");
+}
+NODE
+user_admin_storage_file="$smoke_directory/user-admin-storage-denied.json"
+user_admin_storage_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-storage-denied" \
+  --output "$user_admin_storage_file" --write-out '%{http_code}' \
+  "https://$endpoint$storage_policy_path")
+if [ "$user_admin_storage_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_storage_file"; then
+  echo "Compose ordinary User token was not denied by the Storage Policy Admin API" >&2
+  exit 1
+fi
 unapproved_profile_file="$smoke_directory/unapproved-profile.json"
 unapproved_profile_body='{"profileId":"unapproved-profile","profileName":"unapproved-profile","version":1,"description":"Unapproved release must be rejected","providerKinds":["codex"],"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","targetRefs":["docker-compose-target"],"providerCredentialRef":"provider-unapproved"}'
 unapproved_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
@@ -887,9 +938,10 @@ const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
 const profile = value.environmentProfiles?.find((item) => item.profileId === process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID);
 const expectedKeys = ["apiVersion", "availability", "cpuLimitMillis", "description", "kind", "memoryLimitBytes",
-  "name", "profileId", "projectRef", "providerKinds", "status", "version"].sort();
+  "name", "profileId", "projectRef", "providerKinds", "status", "storageSummary", "version"].sort();
 if (!profile || profile.kind !== "EnvironmentProfileSummary" || profile.version !== 1 ||
-    profile.status !== "published" || profile.availability !== "available") {
+    profile.status !== "published" || profile.availability !== "available" ||
+    profile.storageSummary !== "20 GiB managed workspace") {
   throw new Error("User API did not return the published Profile summary");
 }
 const actualKeys = Object.keys(profile).sort();
@@ -897,6 +949,21 @@ if (actualKeys.join("\n") !== expectedKeys.join("\n")) {
   throw new Error(`User Profile summary field boundary changed: ${actualKeys.join(",")}`);
 }
 NODE
+
+storage_policy_referenced_file="$smoke_directory/storage-policy-referenced.json"
+storage_policy_referenced_body='{"expectedResourceVersion":"1","policyName":"storage-compose","userSummary":"40 GiB managed workspace","workspaceType":"managed-volume","workspaceCapacityBytes":42949672960,"retentionSeconds":0,"cleanupOnLeaseTermination":true,"allowWorkspaceReuse":true}'
+storage_policy_referenced_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/admin-curl.conf" --request PUT \
+  --header "X-Request-ID: compose-smoke-storage-policy-referenced" \
+  --header "Idempotency-Key: compose-smoke-storage-policy-referenced" \
+  --header "Content-Type: application/json" --data "$storage_policy_referenced_body" \
+  --output "$storage_policy_referenced_file" --write-out '%{http_code}' \
+  "https://$endpoint$storage_policy_path")
+if [ "$storage_policy_referenced_status" -ne 409 ] || \
+  ! grep -q '"code":"STORAGE_POLICY_REFERENCED"' "$storage_policy_referenced_file"; then
+  echo "Compose mutated a Storage Policy already referenced by a Profile" >&2
+  exit 1
+fi
 
 quota_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/lease-quota"
 quota_create_file="$smoke_directory/quota-create.json"

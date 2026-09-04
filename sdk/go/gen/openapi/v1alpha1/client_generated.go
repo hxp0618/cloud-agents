@@ -97,6 +97,8 @@ type WorkerReleaseResult = common.ResponseEnvelope[platform.WorkerRelease]
 type WorkerReleasePageResult = common.ResponseEnvelope[platform.WorkerReleasePage]
 type ProjectLeaseQuotaResult = common.ResponseEnvelope[platform.ProjectLeaseQuota]
 type ProjectLeaseQuotaSummaryResult = common.ResponseEnvelope[platform.ProjectLeaseQuotaSummary]
+type StoragePolicyResult = common.ResponseEnvelope[platform.StoragePolicy]
+type StoragePolicyPageResult = common.ResponseEnvelope[platform.StoragePolicyPage]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -1021,6 +1023,141 @@ func (client *Client) ListAdminProjectLeaseQuotaAuditEvents(ctx context.Context,
 	}
 	for _, event := range value.Value.Events {
 		if event.ResourceKind != "ProjectLeaseQuota" {
+			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminStoragePolicies(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (StoragePolicyPageResult, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, "", requestID); err != nil {
+		return StoragePolicyPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return StoragePolicyPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return StoragePolicyPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/storage-policies"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return StoragePolicyPageResult{}, err
+	}
+	if response.Status != 200 {
+		return StoragePolicyPageResult{}, client.problemError("adminListStoragePolicies", response)
+	}
+	value, err := platform.DecodeStoragePolicyPageResponseJSON(response.Body)
+	if err != nil {
+		return StoragePolicyPageResult{}, &ClientError{Operation: "adminListStoragePolicies", Status: response.Status, Cause: err}
+	}
+	for _, policy := range value.Value.StoragePolicies {
+		if policy.Metadata.TenantRef.ID != tenantID || policy.Spec.ProjectRef.ID != projectID {
+			return StoragePolicyPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/storagePolicies")
+		}
+	}
+	return value, nil
+}
+func (client *Client) GetAdminStoragePolicy(ctx context.Context, tenantID, projectID, storagePolicyID, requestID string) (StoragePolicyResult, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID); err != nil {
+		return StoragePolicyResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/storage-policies/" + storagePolicyID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return StoragePolicyResult{}, err
+	}
+	if response.Status != 200 {
+		return StoragePolicyResult{}, client.problemError("adminGetStoragePolicy", response)
+	}
+	value, err := platform.DecodeStoragePolicyResponseJSON(response.Body)
+	if err != nil {
+		return StoragePolicyResult{}, &ClientError{Operation: "adminGetStoragePolicy", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return StoragePolicyResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != storagePolicyID || value.Value.Spec.ProjectRef.ID != projectID {
+		return StoragePolicyResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) SetAdminStoragePolicy(ctx context.Context, tenantID, projectID, storagePolicyID, requestID, idempotencyKey string, body platform.StoragePolicySetRequest) (StoragePolicyResult, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID); err != nil {
+		return StoragePolicyResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return StoragePolicyResult{}, err
+	}
+	bodyBytes, err := platform.EncodeStoragePolicySetRequestJSON(body)
+	if err != nil {
+		return StoragePolicyResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "PUT", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/storage-policies/" + storagePolicyID, Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return StoragePolicyResult{}, err
+	}
+	if response.Status != 200 {
+		return StoragePolicyResult{}, client.problemError("adminSetStoragePolicy", response)
+	}
+	value, err := platform.DecodeStoragePolicyResponseJSON(response.Body)
+	if err != nil {
+		return StoragePolicyResult{}, &ClientError{Operation: "adminSetStoragePolicy", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return StoragePolicyResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != storagePolicyID || value.Value.Metadata.Name != body.PolicyName || value.Value.Spec.ProjectRef.ID != projectID {
+		return StoragePolicyResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminStoragePolicyAuditEvents(ctx context.Context, tenantID, projectID, storagePolicyID, requestID string, pageSize int, pageToken string) (AdminAuditEventPageResult, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID); err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return AdminAuditEventPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return AdminAuditEventPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/storage-policies/" + storagePolicyID + "/audit-events"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminAuditEventPageResult{}, client.problemError("adminListStoragePolicyAuditEvents", response)
+	}
+	value, err := platform.DecodeAdminAuditEventPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminAuditEventPageResult{}, &ClientError{Operation: "adminListStoragePolicyAuditEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range value.Value.Events {
+		if event.ResourceKind != "StoragePolicy" || event.ResourceID != storagePolicyID {
 			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
 		}
 	}
@@ -3670,6 +3807,99 @@ func ValidateListAdminProjectLeaseQuotaAuditEventsServerRequest(tenantID, projec
 		}
 	}
 	return ListAdminProjectLeaseQuotaAuditEventsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type ListAdminStoragePoliciesServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminStoragePoliciesServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminStoragePoliciesServerInput, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, "", requestID); err != nil {
+		return ListAdminStoragePoliciesServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminStoragePoliciesServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminStoragePoliciesServerInput{}, err
+		}
+	}
+	return ListAdminStoragePoliciesServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type GetAdminStoragePolicyServerInput struct {
+	TenantID        string
+	ProjectID       string
+	StoragePolicyID string
+	RequestID       string
+}
+
+func ValidateGetAdminStoragePolicyServerRequest(tenantID, projectID, storagePolicyID, requestID string) (GetAdminStoragePolicyServerInput, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID); err != nil {
+		return GetAdminStoragePolicyServerInput{}, err
+	}
+	return GetAdminStoragePolicyServerInput{TenantID: tenantID, ProjectID: projectID, StoragePolicyID: storagePolicyID, RequestID: requestID}, nil
+}
+
+type SetAdminStoragePolicyServerInput struct {
+	TenantID        string
+	ProjectID       string
+	StoragePolicyID string
+	RequestID       string
+	IdempotencyKey  string
+	Body            platform.StoragePolicySetRequest
+}
+
+func ValidateSetAdminStoragePolicyServerRequest(tenantID, projectID, storagePolicyID, requestID, idempotencyKey string, body []byte) (SetAdminStoragePolicyServerInput, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID); err != nil {
+		return SetAdminStoragePolicyServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return SetAdminStoragePolicyServerInput{}, err
+	}
+	value, err := platform.DecodeStoragePolicySetRequestJSON(body)
+	if err != nil {
+		return SetAdminStoragePolicyServerInput{}, err
+	}
+	return SetAdminStoragePolicyServerInput{TenantID: tenantID, ProjectID: projectID, StoragePolicyID: storagePolicyID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type ListAdminStoragePolicyAuditEventsServerInput struct {
+	TenantID        string
+	ProjectID       string
+	StoragePolicyID string
+	RequestID       string
+	PageSize        int
+	PageToken       string
+}
+
+func ValidateListAdminStoragePolicyAuditEventsServerRequest(tenantID, projectID, storagePolicyID, requestID string, pageSize int, pageToken string) (ListAdminStoragePolicyAuditEventsServerInput, error) {
+	if err := validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID); err != nil {
+		return ListAdminStoragePolicyAuditEventsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminStoragePolicyAuditEventsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminStoragePolicyAuditEventsServerInput{}, err
+		}
+	}
+	return ListAdminStoragePolicyAuditEventsServerInput{TenantID: tenantID, ProjectID: projectID, StoragePolicyID: storagePolicyID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+func validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID string) error {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return err
+	}
+	if storagePolicyID != "" {
+		return common.ValidateIdentifier(storagePolicyID, "/storagePolicyId")
+	}
+	return nil
 }
 
 type GetEnvironmentLeaseServerInput struct {

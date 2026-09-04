@@ -13,6 +13,8 @@ import {
   type MaintenanceOperation,
   type ProjectLeaseQuota,
   type ProjectLeaseQuotaSetRequest,
+  type StoragePolicy,
+  type StoragePolicySetRequest,
   type Worker,
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
@@ -25,6 +27,8 @@ import {
   listAdminLeases,
   listAdminMaintenanceOperations,
   listAdminProjectLeaseQuotaAuditEvents,
+  listAdminStoragePolicies,
+  listAdminStoragePolicyAuditEvents,
   listAdminProfileAuditEvents,
   listAdminProfiles,
   listAdminReleases,
@@ -39,6 +43,7 @@ import {
   replaceLease,
   replaceProfile,
   replaceRelease,
+  replaceStoragePolicy,
   replaceTarget,
   schedulingRequestFromPreview,
   summarizeClusterHosts,
@@ -62,6 +67,7 @@ type Page =
   | "workers"
   | "releases"
   | "profiles"
+  | "storage"
   | "quotas"
   | "leases"
   | "maintenance";
@@ -99,6 +105,19 @@ function quotaFormFrom(quota?: ProjectLeaseQuota) {
     maxCpuMillis: String(quota?.spec.maxCpuMillis ?? 16_000),
     maxMemoryMiB: String((quota?.spec.maxMemoryBytes ?? 34_359_738_368) / 1_048_576),
     maxLeaseTtlSeconds: String(quota?.spec.maxLeaseTtlSeconds ?? 3_600),
+  };
+}
+
+function storagePolicyFormFrom(policy?: StoragePolicy) {
+  return {
+    policyId: policy?.metadata.uid ?? "",
+    policyName: policy?.metadata.name ?? "",
+    userSummary: policy?.spec.userSummary ?? "",
+    workspaceCapacityGiB: String(
+      (policy?.spec.workspaceCapacityBytes ?? 21_474_836_480) / 1_073_741_824,
+    ),
+    snapshotBackendRef: policy?.spec.snapshotBackendRef ?? "",
+    artifactBackendRef: policy?.spec.artifactBackendRef ?? "",
   };
 }
 
@@ -183,6 +202,7 @@ const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "profile.publish": "audit.profilePublish",
   "profile.disable": "audit.profileDisable",
   "quota.set": "audit.quotaSet",
+  "storage-policy.set": "audit.storagePolicySet",
 });
 
 const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -416,6 +436,13 @@ export function App() {
   const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
   const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
   const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
+  const [storagePolicies, setStoragePolicies] = useState<readonly StoragePolicy[]>(
+    Object.freeze([]),
+  );
+  const [selectedStoragePolicyId, setSelectedStoragePolicyId] = useState("");
+  const [storagePolicyAudit, setStoragePolicyAudit] = useState<readonly AdminAuditEvent[]>(
+    Object.freeze([]),
+  );
   const [leaseQuota, setLeaseQuota] = useState<ProjectLeaseQuota>();
   const [leaseQuotaAudit, setLeaseQuotaAudit] = useState<readonly AdminAuditEvent[]>(
     Object.freeze([]),
@@ -476,6 +503,7 @@ export function App() {
     verificationEvidenceDigest: "",
   });
   const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
+  const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pendingKeysRef = useRef(new Map<string, string>());
@@ -517,6 +545,12 @@ export function App() {
   const selectedWorker = workers.find(({ metadata }) => metadata.uid === selectedWorkerId);
   const selectedProfile = profiles.find(
     ({ metadata }) => metadata.uid === selectedProfileVersionId,
+  );
+  const selectedStoragePolicy = storagePolicies.find(
+    ({ metadata }) => metadata.uid === selectedStoragePolicyId,
+  );
+  const selectedStoragePolicyReferenced = profiles.some(
+    ({ spec }) => spec.storagePolicyRef === selectedStoragePolicyId,
   );
   const selectedMaintenanceOperation = maintenanceOperations.find(
     ({ operationId }) => operationId === selectedMaintenanceOperationId,
@@ -617,6 +651,14 @@ export function App() {
             spec.status,
             ...spec.providerKinds,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleStoragePolicies =
+    normalizedQuery === ""
+      ? storagePolicies
+      : storagePolicies.filter(({ metadata, spec }) =>
+          [metadata.uid, metadata.name, spec.userSummary, spec.workspaceType].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          ),
         );
   const visibleMaintenanceOperations =
     normalizedQuery === ""
@@ -757,6 +799,10 @@ export function App() {
     setProfiles(Object.freeze([]));
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
+    setStoragePolicies(Object.freeze([]));
+    setSelectedStoragePolicyId("");
+    setStoragePolicyAudit(Object.freeze([]));
+    setStoragePolicyForm(storagePolicyFormFrom());
     setLeaseQuota(undefined);
     setLeaseQuotaAudit(Object.freeze([]));
     setQuotaForm(quotaFormFrom());
@@ -806,6 +852,7 @@ export function App() {
         loadedWorkers,
         loadedReleases,
         loadedProfiles,
+        loadedStoragePolicies,
         loadedQuota,
         loadedQuotaAudit,
         loadedMaintenanceOperations,
@@ -815,6 +862,12 @@ export function App() {
         listAdminWorkers(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         listAdminReleases(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
+        listAdminStoragePolicies(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
         loadAdminProjectLeaseQuota(
           nextClient,
           nextConnection.tenantId,
@@ -848,6 +901,10 @@ export function App() {
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
+      setStoragePolicies(loadedStoragePolicies);
+      setSelectedStoragePolicyId(loadedStoragePolicies[0]?.metadata.uid ?? "");
+      setStoragePolicyAudit(Object.freeze([]));
+      setStoragePolicyForm(storagePolicyFormFrom(loadedStoragePolicies[0]));
       setLeaseQuota(loadedQuota);
       setLeaseQuotaAudit(loadedQuotaAudit);
       setQuotaForm(quotaFormFrom(loadedQuota));
@@ -923,6 +980,7 @@ export function App() {
         loadedWorkers,
         loadedReleases,
         loadedProfiles,
+        loadedStoragePolicies,
         loadedQuota,
         loadedQuotaAudit,
         loadedMaintenanceOperations,
@@ -932,6 +990,7 @@ export function App() {
         listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
         listAdminReleases(client, connection.tenantId, connection.projectId, signal),
         loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
+        listAdminStoragePolicies(client, connection.tenantId, connection.projectId, signal),
         loadAdminProjectLeaseQuota(client, connection.tenantId, connection.projectId, signal),
         listAdminProjectLeaseQuotaAuditEvents(
           client,
@@ -954,6 +1013,12 @@ export function App() {
       setReleases(loadedReleases);
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
+      setStoragePolicies(loadedStoragePolicies);
+      setSelectedStoragePolicyId((current) =>
+        loadedStoragePolicies.some(({ metadata }) => metadata.uid === current)
+          ? current
+          : (loadedStoragePolicies[0]?.metadata.uid ?? ""),
+      );
       setLeaseQuota(loadedQuota);
       setLeaseQuotaAudit(loadedQuotaAudit);
       setQuotaForm(quotaFormFrom(loadedQuota));
@@ -979,6 +1044,21 @@ export function App() {
       if (profileDetailOpen && profile !== undefined) {
         setProfileAudit(await loadProfileAudit(client, connection, profile, signal));
       }
+      const storagePolicy =
+        loadedStoragePolicies.find(({ metadata }) => metadata.uid === selectedStoragePolicyId) ??
+        loadedStoragePolicies[0];
+      setStoragePolicyForm(storagePolicyFormFrom(storagePolicy));
+      setStoragePolicyAudit(
+        storagePolicy === undefined
+          ? Object.freeze([])
+          : await listAdminStoragePolicyAuditEvents(
+              client,
+              connection.tenantId,
+              connection.projectId,
+              storagePolicy.metadata.uid,
+              signal,
+            ),
+      );
     });
   }
 
@@ -1194,6 +1274,90 @@ export function App() {
           client,
           connection.tenantId,
           connection.projectId,
+          signal,
+        ),
+      );
+    });
+  }
+
+  function selectStoragePolicy(policyId: string) {
+    if (client === null) return;
+    setSelectedStoragePolicyId(policyId);
+    setStoragePolicyAudit(Object.freeze([]));
+    void runOperation(
+      `get-storage-policy:${policyId}`,
+      { key: "operation.storagePolicyDetail" },
+      async (signal) => {
+        const [result, audit] = await Promise.all([
+          client.getAdminStoragePolicy(
+            connection.tenantId,
+            connection.projectId,
+            policyId,
+            newRequestId(),
+            signal,
+          ),
+          listAdminStoragePolicyAuditEvents(
+            client,
+            connection.tenantId,
+            connection.projectId,
+            policyId,
+            signal,
+          ),
+        ]);
+        setStoragePolicies((current) => replaceStoragePolicy(current, result.value));
+        setStoragePolicyForm(storagePolicyFormFrom(result.value));
+        setStoragePolicyAudit(audit);
+      },
+    );
+  }
+
+  function newStoragePolicy() {
+    setSelectedStoragePolicyId("");
+    setStoragePolicyAudit(Object.freeze([]));
+    setStoragePolicyForm(storagePolicyFormFrom());
+  }
+
+  function saveStoragePolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null || selectedStoragePolicyReferenced) return;
+    const policyId = storagePolicyForm.policyId.trim();
+    const existing = storagePolicies.find(({ metadata }) => metadata.uid === policyId);
+    const body: StoragePolicySetRequest = {
+      expectedResourceVersion: existing?.metadata.resourceVersion ?? "0",
+      policyName: storagePolicyForm.policyName.trim(),
+      userSummary: storagePolicyForm.userSummary.trim(),
+      workspaceType: "managed-volume",
+      workspaceCapacityBytes: Number(storagePolicyForm.workspaceCapacityGiB) * 1_073_741_824,
+      retentionSeconds: 0,
+      cleanupOnLeaseTermination: true,
+      ...(storagePolicyForm.snapshotBackendRef.trim() === ""
+        ? {}
+        : { snapshotBackendRef: storagePolicyForm.snapshotBackendRef.trim() }),
+      ...(storagePolicyForm.artifactBackendRef.trim() === ""
+        ? {}
+        : { artifactBackendRef: storagePolicyForm.artifactBackendRef.trim() }),
+      allowWorkspaceReuse: true,
+    };
+    const key = `set-storage-policy:${policyId}:${body.expectedResourceVersion}`;
+    void runOperation(key, { key: "operation.setStoragePolicy" }, async (signal) => {
+      const result = await client.setAdminStoragePolicy(
+        connection.tenantId,
+        connection.projectId,
+        policyId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      setStoragePolicies((current) => replaceStoragePolicy(current, result.value));
+      setSelectedStoragePolicyId(result.value.metadata.uid);
+      setStoragePolicyForm(storagePolicyFormFrom(result.value));
+      setStoragePolicyAudit(
+        await listAdminStoragePolicyAuditEvents(
+          client,
+          connection.tenantId,
+          connection.projectId,
+          result.value.metadata.uid,
           signal,
         ),
       );
@@ -1731,6 +1895,15 @@ export function App() {
             <b>{number(profiles.length)}</b>
           </button>
           <button
+            className={page === "storage" ? "active" : ""}
+            onClick={() => navigate("storage")}
+            title={t("nav.storagePolicies")}
+          >
+            <span aria-hidden="true">▤</span>{" "}
+            <span className="nav-label">{t("nav.storagePolicies")}</span>
+            <b>{number(storagePolicies.length)}</b>
+          </button>
+          <button
             className={page === "quotas" ? "active" : ""}
             onClick={() => navigate("quotas")}
             title={t("nav.quotas")}
@@ -1823,11 +1996,13 @@ export function App() {
                         ? t("page.releases.title")
                         : page === "profiles"
                           ? t("page.profiles.title")
-                          : page === "quotas"
-                            ? t("page.quotas.title")
-                            : page === "leases"
-                              ? t("page.leases.title")
-                              : t("page.maintenance.title")}
+                          : page === "storage"
+                            ? t("page.storagePolicies.title")
+                            : page === "quotas"
+                              ? t("page.quotas.title")
+                              : page === "leases"
+                                ? t("page.leases.title")
+                                : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
@@ -1840,11 +2015,13 @@ export function App() {
                         ? t("page.releases.description")
                         : page === "profiles"
                           ? t("page.profiles.description")
-                          : page === "quotas"
-                            ? t("page.quotas.description")
-                            : page === "leases"
-                              ? t("page.leases.description")
-                              : t("page.maintenance.description")}
+                          : page === "storage"
+                            ? t("page.storagePolicies.description")
+                            : page === "quotas"
+                              ? t("page.quotas.description")
+                              : page === "leases"
+                                ? t("page.leases.description")
+                                : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -1869,10 +2046,26 @@ export function App() {
                 <button
                   className="button primary"
                   type="button"
-                  onClick={() => setCreatingProfile(true)}
-                  disabled={busy !== null || releases.length === 0}
+                  onClick={() => {
+                    setProfileForm((current) => ({
+                      ...current,
+                      storagePolicyRef:
+                        current.storagePolicyRef || storagePolicies[0]?.metadata.uid || "",
+                    }));
+                    setCreatingProfile(true);
+                  }}
+                  disabled={busy !== null || releases.length === 0 || storagePolicies.length === 0}
                 >
                   {t("action.createProfile")}
+                </button>
+              ) : page === "storage" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={newStoragePolicy}
+                  disabled={busy !== null}
+                >
+                  {t("action.newStoragePolicy")}
                 </button>
               ) : page === "overview" || page === "targets" ? (
                 <button
@@ -2091,6 +2284,188 @@ export function App() {
                   onSelect={selectProfile}
                 />
               </div>
+            </section>
+          ) : page === "storage" ? (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label={t("search.storagePolicies.label")}
+                  placeholder={t("search.storagePolicies.placeholder")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">
+                  storage-policies.list · {number(visibleStoragePolicies.length)}
+                </span>
+              </div>
+              <div className="panel target-list-panel">
+                <StoragePolicyTable
+                  policies={visibleStoragePolicies}
+                  selectedPolicyId={selectedStoragePolicyId}
+                  onSelect={selectStoragePolicy}
+                />
+              </div>
+
+              <section className="panel overview-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>{t("storagePolicy.formTitle")}</h2>
+                    <p>{t("storagePolicy.formDescription")}</p>
+                  </div>
+                  <span className="scope-chip">storage-policies.get · storage-policies.update</span>
+                </div>
+                <form className="resource-form" onSubmit={saveStoragePolicy}>
+                  <div className="form-row">
+                    <label>
+                      <span>{t("storagePolicy.id")}</span>
+                      <input
+                        required
+                        maxLength={128}
+                        spellCheck={false}
+                        value={storagePolicyForm.policyId}
+                        disabled={selectedStoragePolicy !== undefined}
+                        onChange={(event) =>
+                          setStoragePolicyForm((current) => ({
+                            ...current,
+                            policyId: event.target.value,
+                          }))
+                        }
+                        placeholder="storage-standard"
+                      />
+                    </label>
+                    <label>
+                      <span>{t("storagePolicy.name")}</span>
+                      <input
+                        required
+                        maxLength={128}
+                        spellCheck={false}
+                        value={storagePolicyForm.policyName}
+                        disabled={selectedStoragePolicyReferenced}
+                        onChange={(event) =>
+                          setStoragePolicyForm((current) => ({
+                            ...current,
+                            policyName: event.target.value,
+                          }))
+                        }
+                        placeholder="storage-standard"
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span>{t("storagePolicy.userSummary")}</span>
+                    <input
+                      required
+                      maxLength={256}
+                      value={storagePolicyForm.userSummary}
+                      disabled={selectedStoragePolicyReferenced}
+                      onChange={(event) =>
+                        setStoragePolicyForm((current) => ({
+                          ...current,
+                          userSummary: event.target.value,
+                        }))
+                      }
+                      placeholder={t("storagePolicy.userSummaryPlaceholder")}
+                    />
+                    <small>{t("storagePolicy.userSummaryHelp")}</small>
+                  </label>
+                  <label>
+                    <span>{t("storagePolicy.capacityGiB")}</span>
+                    <input
+                      required
+                      type="number"
+                      min="0.125"
+                      max="1024"
+                      step="0.125"
+                      value={storagePolicyForm.workspaceCapacityGiB}
+                      disabled={selectedStoragePolicyReferenced}
+                      onChange={(event) =>
+                        setStoragePolicyForm((current) => ({
+                          ...current,
+                          workspaceCapacityGiB: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <div className="form-row">
+                    <label>
+                      <span>{t("storagePolicy.snapshotBackendRef")}</span>
+                      <input
+                        maxLength={128}
+                        spellCheck={false}
+                        value={storagePolicyForm.snapshotBackendRef}
+                        disabled={selectedStoragePolicyReferenced}
+                        onChange={(event) =>
+                          setStoragePolicyForm((current) => ({
+                            ...current,
+                            snapshotBackendRef: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>{t("storagePolicy.artifactBackendRef")}</span>
+                      <input
+                        maxLength={128}
+                        spellCheck={false}
+                        value={storagePolicyForm.artifactBackendRef}
+                        disabled={selectedStoragePolicyReferenced}
+                        onChange={(event) =>
+                          setStoragePolicyForm((current) => ({
+                            ...current,
+                            artifactBackendRef: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="cluster-boundary">
+                    {t(
+                      selectedStoragePolicyReferenced
+                        ? "storagePolicy.referencedBoundary"
+                        : "storagePolicy.lifecycleBoundary",
+                    )}
+                  </p>
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={busy !== null || selectedStoragePolicyReferenced}
+                  >
+                    {t("storagePolicy.save")}
+                  </button>
+                </form>
+              </section>
+
+              <section className="activity-block" aria-labelledby="storage-policy-audit-title">
+                <div className="activity-heading">
+                  <h2 id="storage-policy-audit-title">{t("storagePolicy.audit")}</h2>
+                  <span className="scope-chip">
+                    audit.list · {number(storagePolicyAudit.length)}
+                  </span>
+                </div>
+                {storagePolicyAudit.length === 0 ? (
+                  <p className="activity-empty">{t("storagePolicy.noAudit")}</p>
+                ) : (
+                  <ol className="activity-list compact">
+                    {storagePolicyAudit.map((event) => (
+                      <li key={event.eventId}>
+                        <div>
+                          <strong>{auditLabel(event.action, t)}</strong>
+                          <span className={`phase ${phaseTone(event.result)}`}>
+                            <i /> {phaseLabel(event.result, t)}
+                          </span>
+                        </div>
+                        <small className="mono break">
+                          {t("common.actor", { actor: event.actor })}
+                        </small>
+                        <small className="mono">
+                          {event.requestId} · {dateTime(event.occurredAt)}
+                        </small>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
             </section>
           ) : page === "quotas" ? (
             <section className="resource-list">
@@ -2893,7 +3268,7 @@ export function App() {
               </div>
               <label>
                 <span>{t("profile.storagePolicyRef")}</span>
-                <input
+                <select
                   value={profileForm.storagePolicyRef}
                   onChange={(event) =>
                     setProfileForm({
@@ -2901,11 +3276,18 @@ export function App() {
                       storagePolicyRef: event.target.value,
                     })
                   }
-                  placeholder="storage-standard"
-                  maxLength={128}
                   required
-                  spellCheck={false}
-                />
+                >
+                  <option value="" disabled>
+                    {t("profile.selectStoragePolicy")}
+                  </option>
+                  {storagePolicies.map((policy) => (
+                    <option key={policy.metadata.uid} value={policy.metadata.uid}>
+                      {policy.metadata.name} · {policy.spec.userSummary}
+                    </option>
+                  ))}
+                </select>
+                <small>{t("profile.storagePolicyHelp")}</small>
               </label>
               <label>
                 <span>{t("profile.networkPolicyRef")}</span>
@@ -3485,6 +3867,68 @@ function ReleaseTable({ releases }: Readonly<{ releases: readonly WorkerRelease[
                 </span>
               </td>
               <td>{dateTime(release.spec.approvedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StoragePolicyTable({
+  policies,
+  selectedPolicyId,
+  onSelect,
+}: Readonly<{
+  policies: readonly StoragePolicy[];
+  selectedPolicyId: string;
+  onSelect: (policyId: string) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  if (policies.length === 0)
+    return <div className="table-empty">{t("table.empty.storagePolicies")}</div>;
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("table.name")}</th>
+            <th>{t("storagePolicy.userSummary")}</th>
+            <th>{t("table.capacity")}</th>
+            <th>{t("storagePolicy.lifecycle")}</th>
+            <th>{t("table.version")}</th>
+            <th>{t("table.updated")}</th>
+            <th aria-label={t("table.actions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {policies.map((policy) => (
+            <tr
+              key={policy.metadata.uid}
+              className={policy.metadata.uid === selectedPolicyId ? "selected" : ""}
+              onClick={() => onSelect(policy.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(policy.metadata.uid)}>
+                  <strong>{policy.metadata.name}</strong>
+                  <small>{policy.metadata.uid}</small>
+                </button>
+              </td>
+              <td>{policy.spec.userSummary}</td>
+              <td>{number(policy.spec.workspaceCapacityBytes / 1_073_741_824)} GiB</td>
+              <td>{t("storagePolicy.lifecycleImmediate")}</td>
+              <td className="mono">rv{policy.metadata.resourceVersion}</td>
+              <td>{dateTime(policy.metadata.updatedAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={t("table.view", { name: policy.metadata.name })}
+                  onClick={() => onSelect(policy.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

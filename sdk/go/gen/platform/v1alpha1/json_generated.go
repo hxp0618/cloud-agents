@@ -348,6 +348,39 @@ type ProjectLeaseQuotaSummary struct {
 	UsedMemoryBytes     int64             `json:"usedMemoryBytes"`
 	MaxLeaseTTLSeconds  int64             `json:"maxLeaseTtlSeconds"`
 }
+type StoragePolicySetRequest struct {
+	ExpectedResourceVersion   string `json:"expectedResourceVersion"`
+	PolicyName                string `json:"policyName"`
+	UserSummary               string `json:"userSummary"`
+	WorkspaceType             string `json:"workspaceType"`
+	WorkspaceCapacityBytes    int64  `json:"workspaceCapacityBytes"`
+	RetentionSeconds          int64  `json:"retentionSeconds"`
+	CleanupOnLeaseTermination bool   `json:"cleanupOnLeaseTermination"`
+	SnapshotBackendRef        string `json:"snapshotBackendRef,omitempty"`
+	ArtifactBackendRef        string `json:"artifactBackendRef,omitempty"`
+	AllowWorkspaceReuse       bool   `json:"allowWorkspaceReuse"`
+}
+type StoragePolicySpec struct {
+	ProjectRef                common.ProjectRef `json:"projectRef"`
+	UserSummary               string            `json:"userSummary"`
+	WorkspaceType             string            `json:"workspaceType"`
+	WorkspaceCapacityBytes    int64             `json:"workspaceCapacityBytes"`
+	RetentionSeconds          int64             `json:"retentionSeconds"`
+	CleanupOnLeaseTermination bool              `json:"cleanupOnLeaseTermination"`
+	SnapshotBackendRef        string            `json:"snapshotBackendRef,omitempty"`
+	ArtifactBackendRef        string            `json:"artifactBackendRef,omitempty"`
+	AllowWorkspaceReuse       bool              `json:"allowWorkspaceReuse"`
+}
+type StoragePolicy struct {
+	ResourceBase
+	Spec StoragePolicySpec `json:"spec"`
+}
+type StoragePolicyPage struct {
+	APIVersion      string          `json:"apiVersion"`
+	Kind            string          `json:"kind"`
+	StoragePolicies []StoragePolicy `json:"storagePolicies"`
+	NextPageToken   string          `json:"nextPageToken,omitempty"`
+}
 type EnvironmentProfileCreateRequest struct {
 	ProfileID             string   `json:"profileId"`
 	ProfileName           string   `json:"profileName"`
@@ -405,6 +438,7 @@ type EnvironmentProfileSummary struct {
 	ProviderKinds    []string          `json:"providerKinds"`
 	CPULimitMillis   int64             `json:"cpuLimitMillis"`
 	MemoryLimitBytes int64             `json:"memoryLimitBytes"`
+	StorageSummary   string            `json:"storageSummary"`
 }
 type EnvironmentProfileSummaryPage struct {
 	APIVersion          string                      `json:"apiVersion"`
@@ -608,6 +642,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "imageRepository": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "platformVersion": common.ScalarResponseShape(), "runtimeVersion": common.ScalarResponseShape(), "codexVersion": common.ScalarResponseShape(), "claudeCodeVersion": common.ScalarResponseShape(), "architectures": common.ArrayResponseShape(common.ScalarResponseShape()), "status": common.ScalarResponseShape(), "verificationState": common.ScalarResponseShape(), "verificationEvidenceDigest": common.ScalarResponseShape(), "approvedAt": common.ScalarResponseShape()}
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
+	case "StoragePolicy":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "schedulingState": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
@@ -661,11 +697,12 @@ var projectLeaseQuotaResponseShape = common.ObjectResponseShape(map[string]commo
 	"status": common.ObjectResponseShape(map[string]common.ResponseShape{"activeLeases": common.ScalarResponseShape(), "usedCpuMillis": common.ScalarResponseShape(), "usedMemoryBytes": common.ScalarResponseShape()}),
 })
 var projectLeaseQuotaSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "maxConcurrentLeases": common.ScalarResponseShape(), "activeLeases": common.ScalarResponseShape(), "maxCpuMillis": common.ScalarResponseShape(), "usedCpuMillis": common.ScalarResponseShape(), "maxMemoryBytes": common.ScalarResponseShape(), "usedMemoryBytes": common.ScalarResponseShape(), "maxLeaseTtlSeconds": common.ScalarResponseShape()})
+var storagePolicyPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "storagePolicies": common.ArrayResponseShape(resourceResponseShape("StoragePolicy")), "nextPageToken": common.ScalarResponseShape()})
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
 })
-var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape()})
+var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storageSummary": common.ScalarResponseShape()})
 var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "environmentProfiles": common.ArrayResponseShape(environmentProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var userEnvironmentResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "environmentId": common.ScalarResponseShape(), "profileId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
@@ -2119,6 +2156,161 @@ func EncodeProjectLeaseQuotaSummaryResponseJSON(value common.ResponseEnvelope[Pr
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
+func validateStoragePolicyValues(userSummary, workspaceType string, workspaceCapacityBytes, retentionSeconds int64, cleanupOnLeaseTermination bool, snapshotBackendRef, artifactBackendRef string, allowWorkspaceReuse bool, path string) error {
+	if common.ValidateString(userSummary, 1, 256, path+"/userSummary") != nil || strings.IndexFunc(userSummary, func(value rune) bool { return value < 32 || value == 127 }) >= 0 {
+		return common.ContractError("INVALID_POLICY_SUMMARY", path+"/userSummary")
+	}
+	if workspaceType != "managed-volume" || workspaceCapacityBytes < 134217728 || workspaceCapacityBytes > 1099511627776 || retentionSeconds != 0 || !cleanupOnLeaseTermination || !allowWorkspaceReuse {
+		return common.ContractError("INVALID_STORAGE_POLICY", path)
+	}
+	for field, value := range map[string]string{"snapshotBackendRef": snapshotBackendRef, "artifactBackendRef": artifactBackendRef} {
+		if value != "" {
+			if err := common.ValidateIdentifier(value, path+"/"+field); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func validateStoragePolicyBackendFields(fields map[string]json.RawMessage, snapshotBackendRef, artifactBackendRef, path string) error {
+	for field, value := range map[string]string{"snapshotBackendRef": snapshotBackendRef, "artifactBackendRef": artifactBackendRef} {
+		if _, exists := fields[field]; exists {
+			if err := common.ValidateIdentifier(value, path+"/"+field); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func DecodeStoragePolicySetRequestJSON(data []byte) (StoragePolicySetRequest, error) {
+	allowed := []string{"expectedResourceVersion", "policyName", "userSummary", "workspaceType", "workspaceCapacityBytes", "retentionSeconds", "cleanupOnLeaseTermination", "snapshotBackendRef", "artifactBackendRef", "allowWorkspaceReuse"}
+	required := []string{"expectedResourceVersion", "policyName", "userSummary", "workspaceType", "workspaceCapacityBytes", "retentionSeconds", "cleanupOnLeaseTermination", "allowWorkspaceReuse"}
+	fields, err := common.DecodeStrictObject(data, allowed, required)
+	if err != nil {
+		return StoragePolicySetRequest{}, err
+	}
+	var value StoragePolicySetRequest
+	if json.Unmarshal(data, &value) != nil {
+		return StoragePolicySetRequest{}, common.ContractError("INVALID_STORAGE_POLICY", "")
+	}
+	resourceVersion, err := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	if err != nil || resourceVersion < 0 || common.ValidateIdentifier(value.PolicyName, "/policyName") != nil {
+		return StoragePolicySetRequest{}, common.ContractError("INVALID_STORAGE_POLICY", "")
+	}
+	if err := validateStoragePolicyValues(value.UserSummary, value.WorkspaceType, value.WorkspaceCapacityBytes, value.RetentionSeconds, value.CleanupOnLeaseTermination, value.SnapshotBackendRef, value.ArtifactBackendRef, value.AllowWorkspaceReuse, ""); err != nil {
+		return StoragePolicySetRequest{}, err
+	}
+	if err := validateStoragePolicyBackendFields(fields, value.SnapshotBackendRef, value.ArtifactBackendRef, ""); err != nil {
+		return StoragePolicySetRequest{}, err
+	}
+	return value, nil
+}
+func EncodeStoragePolicySetRequestJSON(value StoragePolicySetRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeStoragePolicySetRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeStoragePolicyJSON(data []byte) (StoragePolicy, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return StoragePolicy{}, err
+	}
+	base, err := checkResourceBase(fields, "StoragePolicy")
+	if err != nil {
+		return StoragePolicy{}, err
+	}
+	allowed := []string{"projectRef", "userSummary", "workspaceType", "workspaceCapacityBytes", "retentionSeconds", "cleanupOnLeaseTermination", "snapshotBackendRef", "artifactBackendRef", "allowWorkspaceReuse"}
+	required := []string{"projectRef", "userSummary", "workspaceType", "workspaceCapacityBytes", "retentionSeconds", "cleanupOnLeaseTermination", "allowWorkspaceReuse"}
+	specFields, err := strictSpec(fields["spec"], allowed, required)
+	if err != nil {
+		return StoragePolicy{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return StoragePolicy{}, err
+	}
+	var spec StoragePolicySpec
+	if json.Unmarshal(fields["spec"], &spec) != nil {
+		return StoragePolicy{}, common.ContractError("INVALID_STORAGE_POLICY", "/spec")
+	}
+	spec.ProjectRef = project
+	if err := validateStoragePolicyValues(spec.UserSummary, spec.WorkspaceType, spec.WorkspaceCapacityBytes, spec.RetentionSeconds, spec.CleanupOnLeaseTermination, spec.SnapshotBackendRef, spec.ArtifactBackendRef, spec.AllowWorkspaceReuse, "/spec"); err != nil {
+		return StoragePolicy{}, err
+	}
+	if err := validateStoragePolicyBackendFields(specFields, spec.SnapshotBackendRef, spec.ArtifactBackendRef, "/spec"); err != nil {
+		return StoragePolicy{}, err
+	}
+	return StoragePolicy{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeStoragePolicyResponseJSON(data []byte) (common.ResponseEnvelope[StoragePolicy], error) {
+	fields, sidecar, err := strictResource(data, "StoragePolicy")
+	if err != nil {
+		return common.ResponseEnvelope[StoragePolicy]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeStoragePolicyJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[StoragePolicy]{}, err
+	}
+	return common.ResponseEnvelope[StoragePolicy]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeStoragePolicyResponseJSON(value common.ResponseEnvelope[StoragePolicy]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeStoragePolicyPageJSON(data []byte) (StoragePolicyPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "storagePolicies", "nextPageToken"}, []string{"apiVersion", "kind", "storagePolicies"})
+	if err != nil {
+		return StoragePolicyPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return StoragePolicyPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "StoragePolicyPage" {
+		return StoragePolicyPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawValues []json.RawMessage
+	if json.Unmarshal(fields["storagePolicies"], &rawValues) != nil || rawValues == nil || len(rawValues) > 200 {
+		return StoragePolicyPage{}, common.ContractError("INVALID_STORAGE_POLICY_PAGE", "/storagePolicies")
+	}
+	values := make([]StoragePolicy, 0, len(rawValues))
+	for index, raw := range rawValues {
+		value, decodeErr := DecodeStoragePolicyJSON(raw)
+		if decodeErr != nil {
+			return StoragePolicyPage{}, common.ContractError("INVALID_STORAGE_POLICY", "/storagePolicies/"+itoa(index))
+		}
+		values = append(values, value)
+	}
+	page := StoragePolicyPage{APIVersion: apiVersion, Kind: kind, StoragePolicies: values}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return StoragePolicyPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeStoragePolicyPageResponseJSON(data []byte) (common.ResponseEnvelope[StoragePolicyPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, storagePolicyPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[StoragePolicyPage]{}, err
+	}
+	value, err := DecodeStoragePolicyPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[StoragePolicyPage]{}, err
+	}
+	return common.ResponseEnvelope[StoragePolicyPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeStoragePolicyPageResponseJSON(value common.ResponseEnvelope[StoragePolicyPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
 func validateEnvironmentProfileSummaryValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, path string) error {
 	if err := common.ValidateIdentifier(profileID, path+"/profileId"); err != nil {
 		return err
@@ -2337,7 +2529,7 @@ func EncodeEnvironmentProfilePageResponseJSON(value common.ResponseEnvelope[Envi
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func DecodeEnvironmentProfileSummaryJSON(data []byte) (EnvironmentProfileSummary, error) {
-	allowed := []string{"apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes"}
+	allowed := []string{"apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storageSummary"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed)
 	if err != nil {
 		return EnvironmentProfileSummary{}, err
@@ -2362,6 +2554,9 @@ func DecodeEnvironmentProfileSummaryJSON(data []byte) (EnvironmentProfileSummary
 	}
 	if err := validateEnvironmentProfileSummaryValues(value.ProfileID, value.Version, value.Description, value.ProviderKinds, value.CPULimitMillis, value.MemoryLimitBytes, ""); err != nil {
 		return EnvironmentProfileSummary{}, err
+	}
+	if common.ValidateString(value.StorageSummary, 1, 256, "/storageSummary") != nil || strings.IndexFunc(value.StorageSummary, func(character rune) bool { return character < 32 || character == 127 }) >= 0 {
+		return EnvironmentProfileSummary{}, common.ContractError("INVALID_POLICY_SUMMARY", "/storageSummary")
 	}
 	return value, nil
 }
@@ -2872,7 +3067,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

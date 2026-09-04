@@ -327,6 +327,7 @@ export function EnvironmentWorkspace({
                   {selectedProfile.name} · v{selectedProfile.version}
                 </strong>
                 <p>{selectedProfile.description}</p>
+                <small>{selectedProfile.storageSummary}</small>
               </div>
               {environment ? (
                 <div className="environment-state" aria-live="polite">

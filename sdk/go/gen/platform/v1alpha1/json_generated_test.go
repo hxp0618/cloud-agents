@@ -161,7 +161,7 @@ func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
 }
 
 func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testing.T) {
-	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296}`)
+	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296,"storageSummary":"20 GiB managed workspace"}`)
 	decoded, err := DecodeEnvironmentProfileSummaryJSON(summary)
 	if err != nil || decoded.Status != "published" || decoded.Availability != "available" {
 		t.Fatalf("summary=%#v error=%v", decoded, err)
@@ -169,6 +169,18 @@ func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testin
 	withTarget := append(append([]byte(nil), summary[:len(summary)-1]...), []byte(`,"targetRefs":["docker-primary"]}`)...)
 	if _, err := DecodeEnvironmentProfileSummaryJSON(withTarget); err == nil {
 		t.Fatal("User API summary accepted target references")
+	}
+}
+
+func TestGeneratedStoragePolicyContractKeepsSupportedLifecycle(t *testing.T) {
+	policy := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"StoragePolicy","metadata":{"uid":"storage-standard","name":"storage-standard","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"20 GiB managed workspace","workspaceType":"managed-volume","workspaceCapacityBytes":21474836480,"retentionSeconds":0,"cleanupOnLeaseTermination":true,"allowWorkspaceReuse":true}}`)
+	decoded, err := DecodeStoragePolicyResponseJSON(policy)
+	if err != nil || decoded.Value.Spec.WorkspaceCapacityBytes != 21474836480 {
+		t.Fatalf("policy=%#v error=%v", decoded, err)
+	}
+	unsupported := bytes.Replace(policy, []byte(`"retentionSeconds":0`), []byte(`"retentionSeconds":3600`), 1)
+	if _, err := DecodeStoragePolicyResponseJSON(unsupported); err == nil {
+		t.Fatal("unsupported delayed retention accepted")
 	}
 }
 

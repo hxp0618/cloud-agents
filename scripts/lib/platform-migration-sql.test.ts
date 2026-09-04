@@ -1096,7 +1096,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
-  it("classifies the project Lease quota migration", () => {
+	it("classifies the project Lease quota migration", () => {
     const statements = splitPostgresStatements(
       readFileSync(
         resolve(root, "services/control-plane/migrations/000047_add_project_lease_quotas.sql"),
@@ -1139,7 +1139,25 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(() => classifyMigrationStatement(statements[19]!, "000046")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/u,
     );
-  });
+	});
+
+	it("classifies the Storage Policy migration", () => {
+		const statements = splitPostgresStatements(
+			readFileSync(resolve(root, "services/control-plane/migrations/000048_add_storage_policies.sql")),
+		);
+		expect(statements).toHaveLength(39);
+		expect(
+			statements.map((statement) => classifyMigrationStatement(statement, "000048").command),
+		).toEqual([
+			"CREATE", "INSERT", "ALTER", "CREATE", "CREATE", "CREATE", "ALTER", "ALTER", "ALTER", "ALTER",
+			"ALTER", "ALTER", "CREATE", "CREATE", "CREATE", "CREATE", "REVOKE", "REVOKE", "GRANT", "GRANT",
+			"CREATE", "CREATE", "CREATE", "CREATE", "ALTER", "ALTER", "ALTER", "ALTER", "REVOKE", "REVOKE",
+			"REVOKE", "REVOKE", "REVOKE", "REVOKE", "REVOKE", "GRANT", "GRANT", "GRANT", "GRANT",
+		]);
+		expect(() => classifyMigrationStatement(statements[1]!, "000047")).toThrow(
+			/SQL_STATEMENT_PROFILE_REJECTED/u,
+		);
+	});
 
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(

@@ -506,6 +506,107 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/storage-policies": {
+      "get": {
+        "operationId": "adminListStoragePolicies",
+        "x-cloud-agents-required-scope": "storage-policies.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project Storage Policies",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/storage-policies/{storagePolicyId}": {
+      "get": {
+        "operationId": "adminGetStoragePolicy",
+        "x-cloud-agents-required-scope": "storage-policies.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/StoragePolicyId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/StoragePolicy" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "put": {
+        "operationId": "adminSetStoragePolicy",
+        "x-cloud-agents-required-scope": "storage-policies.update",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/StoragePolicyId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy-set-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/StoragePolicy" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/storage-policies/{storagePolicyId}/audit-events": {
+      "get": {
+        "operationId": "adminListStoragePolicyAuditEvents",
+        "x-cloud-agents-required-scope": "audit.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/StoragePolicyId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted Storage Policy audit events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/lease-quota": {
       "get": {
         "operationId": "adminGetProjectLeaseQuota",
@@ -1386,6 +1487,12 @@
         "required": true,
         "schema": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
       },
+      "StoragePolicyId": {
+        "name": "storagePolicyId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
       "TargetId": {
         "name": "targetId",
         "in": "path",
@@ -1475,6 +1582,18 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "../../platform/v1alpha1/schemas/project-lease-quota.schema.json" }
+          }
+        }
+      },
+      "StoragePolicy": {
+        "description": "Project Storage Policy",
+        "headers": {
+          "X-Request-ID": { "$ref": "#/components/headers/RequestId" },
+          "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy.schema.json" }
           }
         }
       },
