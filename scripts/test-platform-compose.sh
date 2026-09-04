@@ -69,22 +69,24 @@ worker_release_digest=
 target_worker_credentials_volume="${project}-target-worker-credentials"
 target_provider_credentials_volume="${project}-target-provider-credentials"
 retry_provider_credentials_volume="${project}-retry-provider-credentials"
+project_id=
+profile_environment_id=
 compose() {
   docker compose --env-file "$environment_file" -f "$compose_file" -f "$compose_override_file" "$@"
 }
 cleanup() {
   status=$?
   trap - 0 HUP INT TERM
-  for target_lease in lease-compose-target lease-compose-target-retry; do
+  if [ -n "$project_id" ]; then
     for container in $(docker ps -aq \
       --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-      --filter label=cloud-agents.dev/lease="$target_lease"); do
+      --filter label=cloud-agents.dev/project="$project_id"); do
       if [ "$status" -ne 0 ]; then
         docker logs "$container" >&2 || true
       fi
       docker rm -f "$container" >/dev/null 2>&1 || true
     done
-  done
+  fi
   if [ -f "$environment_file" ]; then
     if [ "$status" -ne 0 ]; then
       compose logs --no-color --tail=200 control-plane worker migrate postgres >&2 || true
@@ -224,21 +226,36 @@ const auth = {
   keys: [{ jwk, enabled: true, notBefore: now - 60, notAfter: now + 3600 }],
 };
 writeFileSync(`${state}/auth.json`, `${JSON.stringify(auth)}\n`);
-const claims = {
+const baseClaims = {
   iss: issuer, sub: "user-compose-smoke", aud: audience, exp: now + 1800, iat: now - 10,
-  jti: "compose-smoke-token", client_id: "compose-smoke-client",
-  scope: ["organizations.list", "projects.act", "projects.create", "projects.get"].sort().join(" "),
+  client_id: "compose-smoke-client",
   "https://schemas.cloud-agents.dev/claims/security-epoch": 1,
   "https://schemas.cloud-agents.dev/claims/subject-kind": "user",
   "https://schemas.cloud-agents.dev/claims/tenant-id": "tenant-compose-smoke",
   "https://schemas.cloud-agents.dev/claims/token-profile": "cloud-agents-access-token/v1",
 };
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
-const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
+const issueToken = (tokenId, scopes) => {
+  const claims = { ...baseClaims, jti: tokenId, scope: [...scopes].sort().join(" ") };
+  const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
+  const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
+  return `${signingInput}.${signature}`;
+};
+const adminToken = issueToken("compose-smoke-admin-token", [
+  "audit.list", "environments.create", "environments.get", "environment-profiles.list",
+  "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
+  "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
+  "projects.get", "targets.act", "targets.create", "targets.get", "targets.list",
+]);
+const userToken = issueToken("compose-smoke-user-token", [
+  "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
+]);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
-writeFileSync(`${state}/token`, `${signingInput}.${signature}\n`);
+writeFileSync(`${state}/token`, `${adminToken}\n`);
+writeFileSync(`${state}/user-token`, `${userToken}\n`);
+writeFileSync(`${state}/admin-curl.conf`, `header = "Authorization: Bearer ${adminToken}"\n`);
+writeFileSync(`${state}/user-curl.conf`, `header = "Authorization: Bearer ${userToken}"\n`);
 writeFileSync(`${state}/runtime.env`, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent\nCLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1\n");
 writeFileSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 writeFileSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
@@ -340,6 +357,9 @@ chmodSync(`${state}/kubernetes-target-credentials/kubernetes-compose-target.toke
 chmodSync(`${state}/docker-proxy.mjs`, 0o400);
 chmodSync(`${state}/kubernetes-api.mjs`, 0o400);
 chmodSync(`${state}/token`, 0o600);
+chmodSync(`${state}/user-token`, 0o600);
+chmodSync(`${state}/admin-curl.conf`, 0o600);
+chmodSync(`${state}/user-curl.conf`, 0o600);
 chmodSync(`${state}/compose.env`, 0o600);
 NODE
 
@@ -418,6 +438,20 @@ wait_ready
 cloud_agentsctl() {
   "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
     --token-file "$smoke_directory/token" --tenant tenant-compose-smoke "$@"
+}
+cloud_agentsctl_user() {
+  "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
+    --token-file "$smoke_directory/user-token" --tenant tenant-compose-smoke "$@"
+}
+control_plane_api() {
+  auth_config=$1
+  method=$2
+  path=$3
+  request_id=$4
+  shift 4
+  curl --silent --show-error --fail-with-body --cacert "$smoke_directory/ca.crt" \
+    --config "$auth_config" --request "$method" --header "X-Request-ID: $request_id" \
+    --header "Content-Type: application/json" "$@" "https://$endpoint$path"
 }
 
 docker run -d --name "$registry_container" -p 127.0.0.1::5000 registry:2 >/dev/null
@@ -686,42 +720,146 @@ if [ "$retry_container_count" -ne 0 ]; then
   exit 1
 fi
 
-lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
-  --lease lease-compose-target --request-id compose-smoke-lease-create \
-  --idempotency-key compose-smoke-lease-create environment-lease create \
-  --name lease-compose-target --release-digest "$worker_release_digest" \
-  --expected-target-generation 1 --provider-credential-ref "$target_provider_credentials_volume" \
-  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
-case "$lease_output" in
-  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"workerEndpoint":"https://host.docker.internal:'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
-  *) echo "Compose Docker target Worker did not become ready: $lease_output" >&2; exit 1 ;;
-esac
-replayed_lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
-  --lease lease-compose-target --request-id compose-smoke-lease-create \
-  --idempotency-key compose-smoke-lease-create environment-lease create \
-  --name lease-compose-target --release-digest "$worker_release_digest" \
-  --expected-target-generation 1 --provider-credential-ref "$target_provider_credentials_volume" \
-  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
-case "$replayed_lease_output" in
-  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
-  *) echo "Compose Docker target deployment replay changed identity or state: $replayed_lease_output" >&2; exit 1 ;;
-esac
-target_container_count=$(docker ps -q \
-  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-  --filter label=cloud-agents.dev/lease=lease-compose-target | wc -l | tr -d ' ')
-if [ "$target_container_count" -ne 1 ]; then
-  echo "Compose Docker target created $target_container_count Workers, expected 1" >&2
+profile_id=compose-docker-profile
+profile_create_file="$smoke_directory/profile-create.json"
+profile_create_body=$(printf '{"profileId":"%s","profileName":"%s","version":1,"description":"Packaged Docker worker profile","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"%s","targetRefs":["%s"],"providerCredentialRef":"%s"}' \
+  "$profile_id" "$profile_id" "$worker_release_digest" docker-compose-target "$target_provider_credentials_volume")
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles" \
+  compose-smoke-profile-create --header "Idempotency-Key: compose-smoke-profile-create" \
+  --data "$profile_create_body" >"$profile_create_file"
+profile_resource_version=$(
+  CLOUD_AGENTS_COMPOSE_PROFILE_FILE="$profile_create_file" CLOUD_AGENTS_COMPOSE_PROFILE_ID="$profile_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
+if (value.kind !== "EnvironmentProfile" || value.spec?.profileId !== process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID ||
+    value.spec?.version !== 1 || value.spec?.status !== "draft" || value.metadata?.resourceVersion !== "1") {
+  throw new Error("Admin API did not persist the expected draft Profile");
+}
+process.stdout.write(value.metadata.resourceVersion);
+NODE
+)
+profile_publish_file="$smoke_directory/profile-publish.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles/$profile_id/versions/1:publish" \
+  compose-smoke-profile-publish --header "Idempotency-Key: compose-smoke-profile-publish" \
+  --data "{\"expectedResourceVersion\":\"$profile_resource_version\"}" >"$profile_publish_file"
+CLOUD_AGENTS_COMPOSE_PROFILE_FILE="$profile_publish_file" CLOUD_AGENTS_COMPOSE_PROFILE_ID="$profile_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
+if (value.kind !== "EnvironmentProfile" || value.spec?.profileId !== process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID ||
+    value.spec?.version !== 1 || value.spec?.status !== "published" || value.metadata?.resourceVersion !== "2" ||
+    typeof value.spec?.publishedAt !== "string") {
+  throw new Error("Admin API did not publish the Profile");
+}
+NODE
+
+user_admin_profile_file="$smoke_directory/user-admin-profile-denied.json"
+user_admin_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-profile-denied" \
+  --output "$user_admin_profile_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=200")
+if [ "$user_admin_profile_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_profile_file"; then
+  echo "Compose ordinary User token was not denied by the Profile Admin API" >&2
   exit 1
 fi
 
-cloud_agentsctl --project "$project_id" --lease lease-compose-target --session session-compose-smoke \
+published_profiles_file="$smoke_directory/published-profiles.json"
+control_plane_api "$smoke_directory/user-curl.conf" GET \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=200" \
+  compose-smoke-published-profiles >"$published_profiles_file"
+CLOUD_AGENTS_COMPOSE_PROFILE_FILE="$published_profiles_file" CLOUD_AGENTS_COMPOSE_PROFILE_ID="$profile_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
+const profile = value.environmentProfiles?.find((item) => item.profileId === process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID);
+const expectedKeys = ["apiVersion", "availability", "cpuLimitMillis", "description", "kind", "memoryLimitBytes",
+  "name", "profileId", "projectRef", "providerKinds", "status", "version"].sort();
+if (!profile || profile.kind !== "EnvironmentProfileSummary" || profile.version !== 1 ||
+    profile.status !== "published" || profile.availability !== "available") {
+  throw new Error("User API did not return the published Profile summary");
+}
+const actualKeys = Object.keys(profile).sort();
+if (actualKeys.join("\n") !== expectedKeys.join("\n")) {
+  throw new Error(`User Profile summary field boundary changed: ${actualKeys.join(",")}`);
+}
+NODE
+
+user_environment_body=$(printf '{"profileId":"%s","profileVersion":1}' "$profile_id")
+user_environment_file="$smoke_directory/user-environment.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments" \
+  compose-smoke-user-environment-create --header "Idempotency-Key: compose-smoke-user-environment-create" \
+  --data "$user_environment_body" >"$user_environment_file"
+profile_environment_id=$(CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$user_environment_file" node -e \
+  'const {readFileSync}=require("node:fs");process.stdout.write(JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE,"utf8")).environmentId)')
+CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$user_environment_file" CLOUD_AGENTS_COMPOSE_PROFILE_ID="$profile_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE, "utf8"));
+const expectedKeys = ["apiVersion", "environmentId", "expiresAt", "kind", "observedPhase", "profileId", "profileVersion", "projectRef"].sort();
+const actualKeys = Object.keys(value).sort();
+if (value.kind !== "UserEnvironment" || value.profileId !== process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID ||
+    value.profileVersion !== 1 || value.observedPhase !== "ready" || actualKeys.join("\n") !== expectedKeys.join("\n")) {
+  throw new Error(`Profile did not create a safe ready User Environment: ${actualKeys.join(",")}`);
+}
+NODE
+replayed_user_environment_file="$smoke_directory/user-environment-replayed.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments" \
+  compose-smoke-user-environment-create --header "Idempotency-Key: compose-smoke-user-environment-create" \
+  --data "$user_environment_body" >"$replayed_user_environment_file"
+if ! cmp -s "$user_environment_file" "$replayed_user_environment_file"; then
+  echo "Compose Profile environment creation was not idempotent" >&2
+  exit 1
+fi
+
+lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+  --request-id compose-smoke-profile-lease environment-lease get)
+case "$lease_output" in
+  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"releaseDigest":"'"$worker_release_digest"'"'*'"targetId":"docker-compose-target"'*'"providerCredentialRef":"'"$target_provider_credentials_volume"'"'*'"workerEndpoint":"https://host.docker.internal:'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
+  *) echo "Compose Profile did not resolve to the expected ready Docker Worker: $lease_output" >&2; exit 1 ;;
+esac
+target_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$profile_environment_id" | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 1 ]; then
+  echo "Compose Profile created $target_container_count Docker Workers, expected 1" >&2
+  exit 1
+fi
+
+codex_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
+  --session session-compose-smoke \
   --request-id compose-smoke-session-create --idempotency-key compose-smoke-session-create \
-  session create --provider unavailable-provider >/dev/null
-cloud_agentsctl --project "$project_id" --session session-compose-smoke --turn turn-compose-smoke \
+  session create --provider codex)
+case "$codex_session_output" in
+  *'"providerKind":"codex"'*'"environmentLeaseId":"'"$profile_environment_id"'"'*'"environmentProfileId":"'"$profile_id"'"'*'"environmentProfileVersion":1'*) ;;
+  *) echo "Compose User token did not create the Profile-bound Codex Session" >&2; exit 1 ;;
+esac
+codex_turn_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+  --turn turn-compose-smoke \
   --request-id compose-smoke-turn-create --idempotency-key compose-smoke-turn-create \
-  turn create --input "verify packaged Compose Runtime" >/dev/null
+  turn create --input "verify packaged Compose Runtime")
+case "$codex_turn_output" in
+  *'"state":"queued"'*) ;;
+  *) echo "Compose User token did not persist the Codex Turn" >&2; exit 1 ;;
+esac
+claude_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
+  --session session-compose-smoke-claude --request-id compose-smoke-claude-session-create \
+  --idempotency-key compose-smoke-claude-session-create session create --provider claudeAgent)
+case "$claude_session_output" in
+  *'"providerKind":"claudeAgent"'*'"environmentLeaseId":"'"$profile_environment_id"'"'*'"environmentProfileId":"'"$profile_id"'"'*'"environmentProfileVersion":1'*) ;;
+  *) echo "Compose User token did not create the Profile-bound Claude Code Session" >&2; exit 1 ;;
+esac
+claude_turn_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke-claude \
+  --turn turn-compose-smoke-claude --request-id compose-smoke-claude-turn-create \
+  --idempotency-key compose-smoke-claude-turn-create turn create --input "verify packaged Compose Runtime")
+case "$claude_turn_output" in
+  *'"state":"queued"'*) ;;
+  *) echo "Compose User token did not persist the Claude Code Turn" >&2; exit 1 ;;
+esac
 set +e
-execute_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+execute_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
   --request-id compose-smoke-execution --idempotency-key compose-smoke-execution \
   execution execute --runtime-mode approval-required --interaction-mode default \
@@ -732,14 +870,14 @@ if [ "$execute_status" -ne 2 ] || [ "$execute_output" != "cloud-agentsctl: manag
   echo "Compose Runtime failure boundary changed: exit=$execute_status output=$execute_output" >&2
   exit 1
 fi
-execution_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+execution_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
   --request-id compose-smoke-execution-get execution get)
 case "$execution_output" in
-  *'"state":"failed","errorCode":"provider_not_installed"'*'"messageType":"Error"'*) ;;
+  *'"state":"failed","errorCode":"runtime_open_failed"'*) ;;
   *) echo "Compose Runtime terminal failure was not persisted: $execution_output" >&2; exit 1 ;;
 esac
-events_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+events_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --execution execution-compose-smoke --request-id compose-smoke-events \
   events watch --limit 1 --until-terminal)
 case "$events_output" in
@@ -749,17 +887,33 @@ esac
 
 compose restart control-plane >/dev/null
 wait_ready
-restarted_lease_output=$(cloud_agentsctl --project "$project_id" --lease lease-compose-target \
+restarted_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
   --request-id compose-smoke-restarted-lease environment-lease get)
 case "$restarted_lease_output" in
   *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
-  *) echo "Compose Control Plane restart lost the active target Lease: $restarted_lease_output" >&2; exit 1 ;;
+  *) echo "Compose Control Plane restart lost the Profile environment Lease: $restarted_lease_output" >&2; exit 1 ;;
 esac
-restarted_execution_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+restarted_user_environment_file="$smoke_directory/restarted-user-environment.json"
+control_plane_api "$smoke_directory/user-curl.conf" GET \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments/$profile_environment_id" \
+  compose-smoke-restarted-user-environment >"$restarted_user_environment_file"
+CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$restarted_user_environment_file" \
+  CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID="$profile_environment_id" \
+  CLOUD_AGENTS_COMPOSE_PROFILE_ID="$profile_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE, "utf8"));
+const expectedKeys = ["apiVersion", "environmentId", "expiresAt", "kind", "observedPhase", "profileId", "profileVersion", "projectRef"].sort();
+if (value.environmentId !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID ||
+    value.profileId !== process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID || value.profileVersion !== 1 ||
+    value.observedPhase !== "ready" || Object.keys(value).sort().join("\n") !== expectedKeys.join("\n")) {
+  throw new Error("Control Plane restart changed the safe User Environment projection");
+}
+NODE
+restarted_execution_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
   --request-id compose-smoke-restarted-execution execution get)
 case "$restarted_execution_output" in
-  *'"state":"failed","errorCode":"provider_not_installed"'*'"messageType":"Error"'*) ;;
+  *'"state":"failed","errorCode":"runtime_open_failed"'*) ;;
   *) echo "Compose Control Plane restart lost the durable execution" >&2; exit 1 ;;
 esac
 
@@ -777,14 +931,14 @@ run_real_provider_turn() {
   esac
   prompt="$file_tool exactly one file at $artifact_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline. Do not modify any other file. Then reply done."
 
-  cloud_agentsctl --project "$project_id" --lease lease-compose-target --session "$session_id" \
+  cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" --session "$session_id" \
     --request-id "compose-real-$provider_slug-session" --idempotency-key "compose-real-$provider_slug-session" \
     session create --provider "$provider_kind" >/dev/null
-  cloud_agentsctl --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
     --request-id "compose-real-$provider_slug-turn" --idempotency-key "compose-real-$provider_slug-turn" \
     turn create --input "$prompt" >/dev/null
   execution_file="$smoke_directory/$execution_id.json"
-  cloud_agentsctl --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "compose-real-$provider_slug-execution" \
     --idempotency-key "compose-real-$provider_slug-execution" execution execute \
     --runtime-mode full-access --interaction-mode default --input "$prompt" >"$execution_file"
@@ -808,7 +962,7 @@ process.stdout.write(String(indexes[0]));
 NODE
   )
   artifact_file="$smoke_directory/$provider_slug-artifact.txt"
-  cloud_agentsctl --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "compose-real-$provider_slug-artifact" \
     execution download-artifact --message-index "$artifact_index" >"$artifact_file"
   CLOUD_AGENTS_COMPOSE_ARTIFACT_FILE="$artifact_file" \
@@ -818,7 +972,7 @@ const actual = readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ARTIFACT_FILE);
 const expected = Buffer.from(`${process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_CONTENT}\n`);
 if (!actual.equals(expected)) throw new Error("real Provider generated-file Artifact content changed");
 NODE
-  real_events_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --session "$session_id" \
+  real_events_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" \
     --execution "$execution_id" --request-id "compose-real-$provider_slug-events" \
     events watch --limit 64 --until-terminal)
   case "$real_events_output" in
@@ -832,14 +986,14 @@ if [ -n "$real_provider_credentials_directory" ]; then
   run_real_provider_turn claudeAgent claude
 fi
 
-terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target \
+terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$profile_environment_id" \
   --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
   environment-lease terminate --generation 1)
 case "$terminate_output" in
   *'"generation":2'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
   *) echo "Compose Docker target Lease did not terminate cleanly: $terminate_output" >&2; exit 1 ;;
 esac
-replayed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target \
+replayed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$profile_environment_id" \
   --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
   environment-lease terminate --generation 1)
 if [ "$replayed_terminate_output" != "$terminate_output" ]; then
@@ -855,7 +1009,7 @@ case "$docker_cleanup_output" in
 esac
 target_container_count=$(docker ps -aq \
   --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-  --filter label=cloud-agents.dev/lease=lease-compose-target | wc -l | tr -d ' ')
+  --filter label=cloud-agents.dev/lease="$profile_environment_id" | wc -l | tr -d ' ')
 if [ "$target_container_count" -ne 0 ]; then
   echo "Compose Docker target Worker was not cleaned up" >&2
   exit 1
@@ -883,12 +1037,12 @@ fi
 
 compose up -d >/dev/null
 wait_ready
-restored_output=$(cloud_agentsctl --project "$project_id" --session session-compose-smoke \
+restored_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
   --request-id compose-smoke-restored-execution execution get)
 case "$restored_output" in
-  *'"state":"failed","errorCode":"provider_not_installed"'*) ;;
+  *'"state":"failed","errorCode":"runtime_open_failed"'*) ;;
   *) echo "Compose restore omitted the durable execution" >&2; exit 1 ;;
 esac
 
-echo "platform Compose smoke passed ($image_platform, $cli_target)"
+echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, docker-workers=0)"

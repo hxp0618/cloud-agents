@@ -115,4 +115,3 @@ The full `bun run fmt:check` still reports only `apps/admin-web/visual-baseline/
 - Ports `4174`, `18082`, `18083`, and `18092` had no listeners, the label-filtered development container count was zero, and the owned state directory was removed.
 - This proves the real Profile publish/disable authority, optimistic concurrency, idempotency behavior, durable Audit, generated SDK, Admin Web confirmation interaction, ordinary-user denial, and browser-to-Control-Plane boundary.
 - Published-only redacted User API summaries, the User Web selector, server-side Profile resolution during environment creation, and removal of legacy User Web infrastructure inputs remain unimplemented and unproven.
-

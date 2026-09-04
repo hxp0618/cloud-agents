@@ -434,7 +434,9 @@ describe("generated platform JSON models", () => {
     const body = JSON.stringify(value);
     expect(decodeUserEnvironment(value).profileId).toBe("development");
     expect(parseUserEnvironment(body).value.environmentId).toBe("environment-alpha");
-    expect(() => decodeUserEnvironment({ ...value, providerCredentialRef: "provider-secret" })).toThrow();
+    expect(() =>
+      decodeUserEnvironment({ ...value, providerCredentialRef: "provider-secret" }),
+    ).toThrow();
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);

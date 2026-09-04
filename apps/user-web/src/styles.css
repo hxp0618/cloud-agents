@@ -1792,7 +1792,6 @@ textarea:focus {
   .phase-line span + span {
     border-left: 0;
   }
-
 }
 
 @media (prefers-reduced-motion: reduce) {

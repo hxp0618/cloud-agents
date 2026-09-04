@@ -4,6 +4,8 @@ Date: 2026-09-04
 
 Status: passed for the Profile-to-environment User API, User Web boundary, and Session projection slice. This does not complete M2 or the Section 15 acceptance matrix.
 
+Follow-up: `M2-PROFILE-DOCKER-E2E.md` subsequently verifies this Profile path against a real packaged Docker Worker. Real Provider Turns remain outside both slices.
+
 ## Build under test
 
 - Branch: `codex/cloud-agents-platform-p0`, starting HEAD `0b87152`.
