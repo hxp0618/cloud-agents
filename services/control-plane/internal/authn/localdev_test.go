@@ -84,6 +84,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		permission, level, resourceID string
 	}{
 		{"environment-profiles.list", "project", "project-1"},
+		{"environment-quotas.get", "project", "project-1"},
 		{"environments.create", "project", "project-1"},
 		{"environments.get", "project", "project-1"},
 		{"memberships.create", "tenant", "tenant-1"},
@@ -133,7 +134,7 @@ func TestLocalVerifierSeparatesAdminScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, permission := range []string{"audit.list", "leases.act", "leases.get", "leases.list", "operations.list", "profiles.act", "profiles.create", "profiles.get", "profiles.list", "releases.create", "releases.list", "targets.list", "workers.list"} {
+	for _, permission := range []string{"audit.list", "leases.act", "leases.get", "leases.list", "operations.list", "profiles.act", "profiles.create", "profiles.get", "profiles.list", "quotas.get", "quotas.update", "releases.create", "releases.list", "targets.list", "workers.list"} {
 		request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: permission}
 		if _, err := verifier.Verify(userToken, request); errorCategory(err) != errorScopeMismatch {
 			t.Fatalf("user token %s error=%v", permission, err)

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project-lease-quota.schema.json",
+  "title": "ProjectLeaseQuota",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec", "status"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "ProjectLeaseQuota" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "maxConcurrentLeases": { "type": "integer", "minimum": 1, "maximum": 8000 },
+        "maxCpuMillis": { "type": "integer", "minimum": 100, "maximum": 512000000 },
+        "maxMemoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 },
+        "maxLeaseTtlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activeLeases", "usedCpuMillis", "usedMemoryBytes"],
+      "properties": {
+        "activeLeases": { "type": "integer", "minimum": 0, "maximum": 8000 },
+        "usedCpuMillis": { "type": "integer", "minimum": 0, "maximum": 512000000 },
+        "usedMemoryBytes": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "one project has at most one Project Lease quota resource",
+    "active usage includes every Lease until termination and cleanup are both complete",
+    "quota responses contain no Target, endpoint, credential reference, user content, or secret bytes"
+  ]
+}

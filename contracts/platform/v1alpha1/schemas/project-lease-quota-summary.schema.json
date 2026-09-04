@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project-lease-quota-summary.schema.json",
+  "title": "ProjectLeaseQuotaSummary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "maxConcurrentLeases", "activeLeases", "maxCpuMillis", "usedCpuMillis", "maxMemoryBytes", "usedMemoryBytes", "maxLeaseTtlSeconds"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "ProjectLeaseQuotaSummary" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "maxConcurrentLeases": { "type": "integer", "minimum": 1, "maximum": 8000 },
+    "activeLeases": { "type": "integer", "minimum": 0, "maximum": 8000 },
+    "maxCpuMillis": { "type": "integer", "minimum": 100, "maximum": 512000000 },
+    "usedCpuMillis": { "type": "integer", "minimum": 0, "maximum": 512000000 },
+    "maxMemoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 },
+    "usedMemoryBytes": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 },
+    "maxLeaseTtlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the User API returns only understandable project limits and current aggregate usage",
+    "Target selectors, release digests, policy references, credentials, endpoints, and secret bytes are absent"
+  ]
+}

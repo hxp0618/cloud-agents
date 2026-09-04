@@ -172,6 +172,18 @@ func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testin
 	}
 }
 
+func TestGeneratedProjectLeaseQuotaSummaryRejectsAdminFields(t *testing.T) {
+	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"ProjectLeaseQuotaSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"maxConcurrentLeases":2,"activeLeases":1,"maxCpuMillis":4000,"usedCpuMillis":2000,"maxMemoryBytes":8589934592,"usedMemoryBytes":4294967296,"maxLeaseTtlSeconds":3600}`)
+	decoded, err := DecodeProjectLeaseQuotaSummaryJSON(summary)
+	if err != nil || decoded.ActiveLeases != 1 || decoded.MaxLeaseTTLSeconds != 3600 {
+		t.Fatalf("summary=%#v error=%v", decoded, err)
+	}
+	withCredential := append(append([]byte(nil), summary[:len(summary)-1]...), []byte(`,"credentialRef":"secret"}`)...)
+	if _, err := DecodeProjectLeaseQuotaSummaryJSON(withCredential); err == nil {
+		t.Fatal("User quota summary accepted an Admin-only credential reference")
+	}
+}
+
 func TestGeneratedWorkerContractKeepsOperationalBoundary(t *testing.T) {
 	worker := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"Worker","metadata":{"uid":"lease-alpha","name":"worker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"4","createdAt":"2026-09-04T08:00:00Z","updatedAt":"2026-09-04T08:01:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"leaseId":"lease-alpha","targetId":"docker-alpha","targetKind":"docker","targetGeneration":2,"generation":3,"releaseDigest":"sha256:` + strings.Repeat("a", 64) + `","state":"ready","cleanupPhase":"none","cpuLimitMillis":1000,"memoryLimitBytes":536870912,"workerSpiffeId":"spiffe://cloud-agents.test/worker/lease-alpha","workerServerName":"worker-alpha.test","lastHealthAt":"2026-09-04T08:01:00Z","readyAt":"2026-09-04T08:01:00Z","stableErrorCode":""}}`)
 	page, err := DecodeWorkerPageResponseJSON([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"WorkerPage","workers":[` + string(worker) + `],"nextPageToken":"worker-page-token-1"}`))

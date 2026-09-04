@@ -26,6 +26,8 @@ import {
   decodeProject,
   decodeProjectPage,
   decodeProjectCreateRequest,
+  decodeProjectLeaseQuota,
+  decodeProjectLeaseQuotaSummary,
   decodeUserEnvironment,
   decodeManagedAgentSession,
   decodeManagedAgentSessionPage,
@@ -54,6 +56,8 @@ import {
   parseMaintenanceOperationPage,
   parseProject,
   parseProjectCreateRequest,
+  parseProjectLeaseQuota,
+  parseProjectLeaseQuotaSummary,
   parseUserEnvironment,
   parseManagedAgentSession,
   parseManagedAgentSessionPage,
@@ -296,6 +300,115 @@ describe("generated platform JSON models", () => {
     };
     withEndpoint.workers[0]!.spec.workerEndpoint = "https://worker.test";
     expect(() => decodeWorkerPage(withEndpoint)).toThrow();
+  });
+  it("keeps project Lease quota authority split between Admin and User APIs", async () => {
+    const quota = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "ProjectLeaseQuota",
+      metadata: {
+        uid: "quota-project-alpha",
+        name: "project-lease-quota",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-05T01:00:00Z",
+        updatedAt: "2026-09-05T01:00:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        maxConcurrentLeases: 2,
+        maxCpuMillis: 4000,
+        maxMemoryBytes: 8589934592,
+        maxLeaseTtlSeconds: 3600,
+      },
+      status: { activeLeases: 1, usedCpuMillis: 2000, usedMemoryBytes: 4294967296 },
+    });
+    const summary = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "ProjectLeaseQuotaSummary",
+      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      maxConcurrentLeases: 2,
+      activeLeases: 1,
+      maxCpuMillis: 4000,
+      usedCpuMillis: 2000,
+      maxMemoryBytes: 8589934592,
+      usedMemoryBytes: 4294967296,
+      maxLeaseTtlSeconds: 3600,
+    });
+    expect(decodeProjectLeaseQuota(JSON.parse(quota)).status.activeLeases).toBe(1);
+    expect(parseProjectLeaseQuota(quota).value.metadata.resourceVersion).toBe("1");
+    expect(decodeProjectLeaseQuotaSummary(JSON.parse(summary)).maxConcurrentLeases).toBe(2);
+    expect(parseProjectLeaseQuotaSummary(summary).value.maxLeaseTtlSeconds).toBe(3600);
+    expect(() =>
+      decodeProjectLeaseQuotaSummary({ ...JSON.parse(summary), credentialRef: "secret" }),
+    ).toThrow();
+
+    const audit = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "AdminAuditEventPage",
+      events: [
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "AdminAuditEvent",
+          eventId: "event-quota-set",
+          actor: `sha256:${"a".repeat(64)}`,
+          action: "quota.set",
+          resourceKind: "ProjectLeaseQuota",
+          resourceId: "quota-project-alpha",
+          resourceGeneration: 1,
+          result: "succeeded",
+          occurredAt: "2026-09-05T01:00:00Z",
+          requestId: "request-quota-set",
+          operationId: "operation-quota-set",
+        },
+      ],
+    });
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return {
+        status: 200,
+        headers:
+          request.path.includes("/admin/") && !request.path.includes("/audit-events")
+            ? { "X-Resource-Version": "1" }
+            : {},
+        body: request.path.includes("/audit-events")
+          ? audit
+          : request.path.includes("/admin/")
+            ? quota
+            : summary,
+      };
+    });
+    await client.getAdminProjectLeaseQuota("tenant-alpha", "project-alpha", "request-quota-get");
+    await client.setAdminProjectLeaseQuota(
+      "tenant-alpha",
+      "project-alpha",
+      "request-quota-set",
+      "quota-set-key-0001",
+      {
+        expectedResourceVersion: "0",
+        maxConcurrentLeases: 2,
+        maxCpuMillis: 4000,
+        maxMemoryBytes: 8589934592,
+        maxLeaseTtlSeconds: 3600,
+      },
+    );
+    const auditResult = await client.listAdminProjectLeaseQuotaAuditEvents(
+      "tenant-alpha",
+      "project-alpha",
+      "request-quota-audit",
+      50,
+    );
+    expect(auditResult.value.events[0]?.action).toBe("quota.set");
+    await client.getProjectLeaseQuota("tenant-alpha", "project-alpha", "request-user-quota");
+    expect(seen.map(({ path }) => path)).toEqual([
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/lease-quota",
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/lease-quota",
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/lease-quota/audit-events?pageSize=50",
+      "/v1/tenants/tenant-alpha/projects/project-alpha/lease-quota",
+    ]);
+    expect(seen[1]?.body).toBe(
+      '{"expectedResourceVersion":"0","maxConcurrentLeases":2,"maxCpuMillis":4000,"maxMemoryBytes":8589934592,"maxLeaseTtlSeconds":3600}',
+    );
   });
   it("registers and lists approved Worker releases", async () => {
     const digest = `sha256:${"a".repeat(64)}` as const;

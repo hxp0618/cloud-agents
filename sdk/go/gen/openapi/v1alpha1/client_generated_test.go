@@ -289,6 +289,45 @@ func TestGeneratedOpenAPIClientListsPublishedEnvironmentProfiles(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientSplitsProjectLeaseQuotaAuthority(t *testing.T) {
+	quotaBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"ProjectLeaseQuota","metadata":{"uid":"quota-project-alpha","name":"project-lease-quota","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T01:00:00Z","updatedAt":"2026-09-05T01:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"maxConcurrentLeases":2,"maxCpuMillis":4000,"maxMemoryBytes":8589934592,"maxLeaseTtlSeconds":3600},"status":{"activeLeases":1,"usedCpuMillis":2000,"usedMemoryBytes":4294967296}}`)
+	summaryBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"ProjectLeaseQuotaSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"maxConcurrentLeases":2,"activeLeases":1,"maxCpuMillis":4000,"usedCpuMillis":2000,"maxMemoryBytes":8589934592,"usedMemoryBytes":4294967296,"maxLeaseTtlSeconds":3600}`)
+	auditBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"AdminAuditEventPage","events":[]}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		if strings.Contains(request.Path, "/audit-events") {
+			return Response{Status: 200, Body: auditBody}, nil
+		}
+		if strings.Contains(request.Path, "/admin/") {
+			return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "1"}, Body: quotaBody}, nil
+		}
+		return Response{Status: 200, Body: summaryBody}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.GetAdminProjectLeaseQuota(ctx, "tenant-alpha", "project-alpha", "request-quota-get"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SetAdminProjectLeaseQuota(ctx, "tenant-alpha", "project-alpha", "request-quota-set", "quota-set-key-0001", platform.ProjectLeaseQuotaSetRequest{ExpectedResourceVersion: "0", MaxConcurrentLeases: 2, MaxCPUMillis: 4000, MaxMemoryBytes: 8589934592, MaxLeaseTTLSeconds: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListAdminProjectLeaseQuotaAuditEvents(ctx, "tenant-alpha", "project-alpha", "request-quota-audit", 50, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetProjectLeaseQuota(ctx, "tenant-alpha", "project-alpha", "request-user-quota"); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 4 || seen[0].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/lease-quota" || seen[2].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/lease-quota/audit-events?pageSize=50" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/lease-quota" {
+		t.Fatalf("requests=%#v", seen)
+	}
+	if string(seen[1].Body) != `{"expectedResourceVersion":"0","maxConcurrentLeases":2,"maxCpuMillis":4000,"maxMemoryBytes":8589934592,"maxLeaseTtlSeconds":3600}` {
+		t.Fatalf("set body=%s", seen[1].Body)
+	}
+}
+
 func TestGeneratedOpenAPIClientCreatesAndGetsUserEnvironment(t *testing.T) {
 	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"UserEnvironment","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"environmentId":"environment-alpha","profileId":"development","profileVersion":1,"observedPhase":"provisioning","expiresAt":"2026-09-04T12:00:00Z"}`)
 	var seen []Request

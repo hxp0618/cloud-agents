@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project-lease-quota-set-request.schema.json",
+  "title": "ProjectLeaseQuotaSetRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"],
+  "properties": {
+    "expectedResourceVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
+    "maxConcurrentLeases": { "type": "integer", "minimum": 1, "maximum": 8000 },
+    "maxCpuMillis": { "type": "integer", "minimum": 100, "maximum": 512000000 },
+    "maxMemoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 },
+    "maxLeaseTtlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "expectedResourceVersion 0 creates the singleton quota and a positive value updates that exact version",
+    "the Idempotency-Key and expected resource version fence every mutation"
+  ]
+}

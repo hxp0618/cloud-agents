@@ -1009,6 +1009,14 @@ func managedHostEnvironmentLeaseErrorStatus(err error) (int, string) {
 		return http.StatusForbidden, "authorization_denied"
 	case errors.Is(err, postgres.ErrCoordinationRejected):
 		return http.StatusConflict, "lease_conflict"
+	case errors.Is(err, postgres.ErrProjectConcurrentLeaseQuotaExceeded):
+		return http.StatusConflict, "project_lease_count_quota_exceeded"
+	case errors.Is(err, postgres.ErrProjectLeaseCPUQuotaExceeded):
+		return http.StatusConflict, "project_lease_cpu_quota_exceeded"
+	case errors.Is(err, postgres.ErrProjectLeaseMemoryQuotaExceeded):
+		return http.StatusConflict, "project_lease_memory_quota_exceeded"
+	case errors.Is(err, postgres.ErrProjectLeaseTTLQuotaExceeded):
+		return http.StatusConflict, "project_lease_ttl_quota_exceeded"
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
 		return http.StatusBadRequest, "invalid_request"
 	default:

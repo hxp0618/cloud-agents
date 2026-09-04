@@ -695,6 +695,25 @@ textarea:focus {
   background: rgba(0, 0, 0, 0.08);
 }
 
+.quota-summary {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.quota-summary div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.quota-summary p,
+.quota-summary small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .profile-details > div:first-child {
   display: grid;
   gap: 5px;

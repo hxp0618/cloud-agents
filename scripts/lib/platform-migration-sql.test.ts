@@ -1061,7 +1061,10 @@ describe("postgresql-lex-v1 bootstrap", () => {
   it("classifies the Admin environment lease upgrade migration", () => {
     const statements = splitPostgresStatements(
       readFileSync(
-        resolve(root, "services/control-plane/migrations/000046_upgrade_admin_environment_leases.sql"),
+        resolve(
+          root,
+          "services/control-plane/migrations/000046_upgrade_admin_environment_leases.sql",
+        ),
       ),
     );
     expect(statements).toHaveLength(19);
@@ -1089,6 +1092,51 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
     expect(() => classifyMigrationStatement(statements[8]!, "000045")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
+  it("classifies the project Lease quota migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000047_add_project_lease_quotas.sql"),
+      ),
+    );
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000047").command),
+    ).toEqual([
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+    ]);
+    expect(() => classifyMigrationStatement(statements[19]!, "000046")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/u,
     );
   });

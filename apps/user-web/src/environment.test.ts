@@ -7,6 +7,7 @@ import {
 import {
   environmentErrorMessage,
   loadEnvironmentProfiles,
+  loadProjectLeaseQuota,
   readEnvironmentSelection,
   writeEnvironmentSelection,
   type EnvironmentClient,
@@ -73,6 +74,38 @@ describe("published Environment Profiles", () => {
   });
 });
 
+describe("project Lease quota summary", () => {
+  it("loads only the User API summary and treats an absent policy as optional", async () => {
+    const summary = {
+      maxConcurrentLeases: 2,
+      activeLeases: 1,
+      maxCpuMillis: 4000,
+      usedCpuMillis: 2000,
+      maxMemoryBytes: 8589934592,
+      usedMemoryBytes: 4294967296,
+      maxLeaseTtlSeconds: 3600,
+    };
+    const getProjectLeaseQuota = vi.fn().mockResolvedValue({ value: summary });
+    await expect(
+      loadProjectLeaseQuota(
+        { getProjectLeaseQuota } as unknown as EnvironmentClient,
+        "tenant-local",
+        "project-alpha",
+        new AbortController().signal,
+      ),
+    ).resolves.toBe(summary);
+    getProjectLeaseQuota.mockRejectedValueOnce(new ClientError("quota", 404));
+    await expect(
+      loadProjectLeaseQuota(
+        { getProjectLeaseQuota } as unknown as EnvironmentClient,
+        "tenant-local",
+        "project-alpha",
+        new AbortController().signal,
+      ),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("User Web environment recovery", () => {
   it("stores only project, Profile, and opaque environment identity", () => {
     const target = storage();
@@ -101,6 +134,21 @@ describe("User Web environment recovery", () => {
     expect(environmentErrorMessage(new ClientError("environment", 403))).toContain("cannot use");
     expect(environmentErrorMessage(new ClientError("environment", 409))).toContain(
       "no longer available",
+    );
+  });
+
+  it("explains each stable Lease quota conflict without exposing infrastructure", () => {
+    const problem = (code: string) =>
+      new ClientError("environment", 409, { error: { code, retryable: false } });
+    expect(environmentErrorMessage(problem("PROJECT_LEASE_COUNT_QUOTA_EXCEEDED"))).toContain(
+      "maximum number",
+    );
+    expect(environmentErrorMessage(problem("PROJECT_LEASE_CPU_QUOTA_EXCEEDED"))).toContain("CPU");
+    expect(environmentErrorMessage(problem("PROJECT_LEASE_MEMORY_QUOTA_EXCEEDED"))).toContain(
+      "memory",
+    );
+    expect(environmentErrorMessage(problem("PROJECT_LEASE_TTL_QUOTA_EXCEEDED"))).toContain(
+      "duration",
     );
   });
 });

@@ -267,6 +267,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("admin worker release HTTP server is unavailable")
 	}
+	projectLeaseQuotaServer, err := server.NewProjectLeaseQuotaHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("project lease quota HTTP server is unavailable")
+	}
 	publishedEnvironmentProfileServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifier, coordinationService)
 	if err != nil {
 		return errors.New("published environment profile HTTP server is unavailable")
@@ -313,6 +317,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesProjectLeaseQuotaPath(request.URL.Path) {
+			projectLeaseQuotaServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesAdminWorkerReleasePath(request.URL.Path) {
 			adminWorkerReleaseServer.ServeHTTP(writer, request)
 			return
@@ -340,6 +348,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesProjectLeaseQuotaPath(request.URL.Path) {
+			projectLeaseQuotaServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesUserEnvironmentPath(request.URL.Path) {
 			userEnvironmentServer.ServeHTTP(writer, request)
 			return

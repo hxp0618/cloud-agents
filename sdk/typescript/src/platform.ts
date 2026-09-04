@@ -355,6 +355,38 @@ export type WorkerReleasePage = Readonly<{
   workerReleases: readonly WorkerRelease[];
   nextPageToken?: string;
 }>;
+export type ProjectLeaseQuotaSetRequest = Readonly<{
+  expectedResourceVersion: string;
+  maxConcurrentLeases: number;
+  maxCpuMillis: number;
+  maxMemoryBytes: number;
+  maxLeaseTtlSeconds: number;
+}>;
+export type ProjectLeaseQuota = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "ProjectLeaseQuota";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    maxConcurrentLeases: number;
+    maxCpuMillis: number;
+    maxMemoryBytes: number;
+    maxLeaseTtlSeconds: number;
+  }>;
+  status: Readonly<{ activeLeases: number; usedCpuMillis: number; usedMemoryBytes: number }>;
+}>;
+export type ProjectLeaseQuotaSummary = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "ProjectLeaseQuotaSummary";
+  projectRef: NamespaceRef;
+  maxConcurrentLeases: number;
+  activeLeases: number;
+  maxCpuMillis: number;
+  usedCpuMillis: number;
+  maxMemoryBytes: number;
+  usedMemoryBytes: number;
+  maxLeaseTtlSeconds: number;
+}>;
 export type EnvironmentProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
@@ -522,8 +554,9 @@ export type AdminAuditEvent = Readonly<{
     | "target.rollback"
     | "profile.create"
     | "profile.publish"
-    | "profile.disable";
-  resourceKind: "DeploymentTarget" | "EnvironmentProfile";
+    | "profile.disable"
+    | "quota.set";
+  resourceKind: "DeploymentTarget" | "EnvironmentProfile" | "ProjectLeaseQuota";
   resourceId: string;
   resourceGeneration: number;
   result: "requested" | "succeeded" | "failed";
@@ -947,6 +980,43 @@ const workerReleasePageResponseShape: ResponseShape = {
     kind: scalarResponseShape,
     workerReleases: { item: workerReleaseResponseShape },
     nextPageToken: scalarResponseShape,
+  },
+};
+const projectLeaseQuotaResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    metadata: metadataResponseShape,
+    spec: {
+      fields: {
+        projectRef: referenceResponseShape,
+        maxConcurrentLeases: scalarResponseShape,
+        maxCpuMillis: scalarResponseShape,
+        maxMemoryBytes: scalarResponseShape,
+        maxLeaseTtlSeconds: scalarResponseShape,
+      },
+    },
+    status: {
+      fields: {
+        activeLeases: scalarResponseShape,
+        usedCpuMillis: scalarResponseShape,
+        usedMemoryBytes: scalarResponseShape,
+      },
+    },
+  },
+};
+const projectLeaseQuotaSummaryResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    maxConcurrentLeases: scalarResponseShape,
+    activeLeases: scalarResponseShape,
+    maxCpuMillis: scalarResponseShape,
+    usedCpuMillis: scalarResponseShape,
+    maxMemoryBytes: scalarResponseShape,
+    usedMemoryBytes: scalarResponseShape,
+    maxLeaseTtlSeconds: scalarResponseShape,
   },
 };
 const environmentProfileResponseShape = resourceResponseShape({
@@ -1591,10 +1661,11 @@ function metadata(value: unknown, path = "/metadata"): ResourceMetadata {
 function base(
   value: unknown,
   kind: string,
+  extraFields: readonly string[] = [],
 ): { apiVersion: typeof platformApiVersion; kind: string; metadata: ResourceMetadata } {
   const source = strictRecord(
     value,
-    ["apiVersion", "kind", "metadata", "spec"],
+    ["apiVersion", "kind", "metadata", "spec", ...extraFields],
     ["apiVersion", "kind", "metadata", "spec"],
   );
   if (source.apiVersion !== platformApiVersion || source.kind !== kind)
@@ -2958,6 +3029,130 @@ export function decodeWorkerReleasePage(value: unknown): WorkerReleasePage {
       : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
   );
 }
+
+function projectLeaseQuotaLimits(source: Record<string, unknown>, path: string) {
+  return Object.freeze({
+    maxConcurrentLeases: integer(
+      source.maxConcurrentLeases,
+      1,
+      8000,
+      `${path}/maxConcurrentLeases`,
+    ),
+    maxCpuMillis: integer(source.maxCpuMillis, 100, 512000000, `${path}/maxCpuMillis`),
+    maxMemoryBytes: integer(
+      source.maxMemoryBytes,
+      134217728,
+      8796093022208000,
+      `${path}/maxMemoryBytes`,
+    ),
+    maxLeaseTtlSeconds: integer(source.maxLeaseTtlSeconds, 60, 86400, `${path}/maxLeaseTtlSeconds`),
+  });
+}
+export function decodeProjectLeaseQuotaSetRequest(value: unknown): ProjectLeaseQuotaSetRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedResourceVersion",
+      "maxConcurrentLeases",
+      "maxCpuMillis",
+      "maxMemoryBytes",
+      "maxLeaseTtlSeconds",
+    ],
+    [
+      "expectedResourceVersion",
+      "maxConcurrentLeases",
+      "maxCpuMillis",
+      "maxMemoryBytes",
+      "maxLeaseTtlSeconds",
+    ],
+  );
+  if (
+    typeof source.expectedResourceVersion !== "string" ||
+    !/^(?:0|[1-9][0-9]{0,18})$/u.test(source.expectedResourceVersion)
+  )
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion: source.expectedResourceVersion as string,
+    ...projectLeaseQuotaLimits(source, ""),
+  });
+}
+export function encodeProjectLeaseQuotaSetRequest(value: ProjectLeaseQuotaSetRequest): string {
+  return JSON.stringify(decodeProjectLeaseQuotaSetRequest(value));
+}
+export function decodeProjectLeaseQuota(value: unknown): ProjectLeaseQuota {
+  const source = record(value);
+  const root = base(source, "ProjectLeaseQuota", ["status"]);
+  const spec = strictRecord(
+    source.spec,
+    ["projectRef", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"],
+    ["projectRef", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"],
+    "/spec",
+  );
+  const status = strictRecord(
+    source.status,
+    ["activeLeases", "usedCpuMillis", "usedMemoryBytes"],
+    ["activeLeases", "usedCpuMillis", "usedMemoryBytes"],
+    "/status",
+  );
+  return Object.freeze({
+    ...root,
+    kind: "ProjectLeaseQuota" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      ...projectLeaseQuotaLimits(spec, "/spec"),
+    }),
+    status: Object.freeze({
+      activeLeases: integer(status.activeLeases, 0, 8000, "/status/activeLeases"),
+      usedCpuMillis: integer(status.usedCpuMillis, 0, 512000000, "/status/usedCpuMillis"),
+      usedMemoryBytes: integer(
+        status.usedMemoryBytes,
+        0,
+        8796093022208000,
+        "/status/usedMemoryBytes",
+      ),
+    }),
+  });
+}
+export function decodeProjectLeaseQuotaSummary(value: unknown): ProjectLeaseQuotaSummary {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "maxConcurrentLeases",
+      "activeLeases",
+      "maxCpuMillis",
+      "usedCpuMillis",
+      "maxMemoryBytes",
+      "usedMemoryBytes",
+      "maxLeaseTtlSeconds",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "maxConcurrentLeases",
+      "activeLeases",
+      "maxCpuMillis",
+      "usedCpuMillis",
+      "maxMemoryBytes",
+      "usedMemoryBytes",
+      "maxLeaseTtlSeconds",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "ProjectLeaseQuotaSummary")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "ProjectLeaseQuotaSummary" as const,
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    ...projectLeaseQuotaLimits(source, ""),
+    activeLeases: integer(source.activeLeases, 0, 8000, "/activeLeases"),
+    usedCpuMillis: integer(source.usedCpuMillis, 0, 512000000, "/usedCpuMillis"),
+    usedMemoryBytes: integer(source.usedMemoryBytes, 0, 8796093022208000, "/usedMemoryBytes"),
+  });
+}
 export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
   const source = record(value);
   const root = base(source, "EnvironmentProfile");
@@ -3508,12 +3703,13 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "profile.create",
         "profile.publish",
         "profile.disable",
+        "quota.set",
       ] as const,
       "/action",
     ),
     resourceKind: enumValue(
       source.resourceKind,
-      ["DeploymentTarget", "EnvironmentProfile"] as const,
+      ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota"] as const,
       "/resourceKind",
     ),
     resourceId: identifier(source.resourceId, "/resourceId"),
@@ -4477,6 +4673,14 @@ export function parseWorkerRelease(text: string): ResponseEnvelope<WorkerRelease
 export function parseWorkerReleasePage(text: string): ResponseEnvelope<WorkerReleasePage> {
   return parseResponse(text, workerReleasePageResponseShape, decodeWorkerReleasePage);
 }
+export function parseProjectLeaseQuota(text: string): ResponseEnvelope<ProjectLeaseQuota> {
+  return parseResponse(text, projectLeaseQuotaResponseShape, decodeProjectLeaseQuota);
+}
+export function parseProjectLeaseQuotaSummary(
+  text: string,
+): ResponseEnvelope<ProjectLeaseQuotaSummary> {
+  return parseResponse(text, projectLeaseQuotaSummaryResponseShape, decodeProjectLeaseQuotaSummary);
+}
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
 }
@@ -4680,7 +4884,7 @@ function interactionAnswer(value: unknown, path: string): string {
 }
 
 export type FixtureRequest = Readonly<{
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PUT";
   path: string;
   headers: Readonly<Record<string, string>>;
   body?: string;
@@ -6043,6 +6247,92 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  async getAdminProjectLeaseQuota(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ProjectLeaseQuota>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/lease-quota`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetProjectLeaseQuota", response);
+    const result = parseProjectLeaseQuota(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async setAdminProjectLeaseQuota(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: ProjectLeaseQuotaSetRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ProjectLeaseQuota>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeProjectLeaseQuotaSetRequest(body);
+    const response = await this.call(
+      {
+        method: "PUT",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/lease-quota`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeProjectLeaseQuotaSetRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminSetProjectLeaseQuota", response);
+    const result = parseProjectLeaseQuota(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminProjectLeaseQuotaAuditEvents(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminAuditEventPage>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/lease-quota/audit-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListProjectLeaseQuotaAuditEvents", response);
+    const result = parseAdminAuditEventPage(response.body);
+    if (result.value.events.some((event) => event.resourceKind !== "ProjectLeaseQuota"))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
+  }
   async getAdminEnvironmentLease(
     tenantId: string,
     projectId: string,
@@ -6231,6 +6521,28 @@ export class Client {
     const result = parseEnvironmentProfileSummaryPage(response.body);
     if (result.value.environmentProfiles.some(({ projectRef }) => projectRef.id !== projectId))
       error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentProfiles");
+    return result;
+  }
+  async getProjectLeaseQuota(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ProjectLeaseQuotaSummary>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/lease-quota`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedAgentGetProjectLeaseQuota", response);
+    const result = parseProjectLeaseQuotaSummary(response.body);
+    if (result.value.projectRef.id !== projectId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/projectRef");
     return result;
   }
   async createEnvironment(

@@ -95,6 +95,8 @@ type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLe
 type WorkerPageResult = common.ResponseEnvelope[platform.WorkerPage]
 type WorkerReleaseResult = common.ResponseEnvelope[platform.WorkerRelease]
 type WorkerReleasePageResult = common.ResponseEnvelope[platform.WorkerReleasePage]
+type ProjectLeaseQuotaResult = common.ResponseEnvelope[platform.ProjectLeaseQuota]
+type ProjectLeaseQuotaSummaryResult = common.ResponseEnvelope[platform.ProjectLeaseQuotaSummary]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -907,6 +909,120 @@ func (client *Client) RegisterAdminWorkerRelease(ctx context.Context, tenantID, 
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.ReleaseID || value.Value.Metadata.Name != body.ReleaseName || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.ReleaseDigest != body.ReleaseDigest {
 		return WorkerReleaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetAdminProjectLeaseQuota(ctx context.Context, tenantID, projectID, requestID string) (ProjectLeaseQuotaResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/lease-quota", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	if response.Status != 200 {
+		return ProjectLeaseQuotaResult{}, client.problemError("adminGetProjectLeaseQuota", response)
+	}
+	value, err := platform.DecodeProjectLeaseQuotaResponseJSON(response.Body)
+	if err != nil {
+		return ProjectLeaseQuotaResult{}, &ClientError{Operation: "adminGetProjectLeaseQuota", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID {
+		return ProjectLeaseQuotaResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) SetAdminProjectLeaseQuota(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.ProjectLeaseQuotaSetRequest) (ProjectLeaseQuotaResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	bodyBytes, err := platform.EncodeProjectLeaseQuotaSetRequestJSON(body)
+	if err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "PUT", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/lease-quota", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	if response.Status != 200 {
+		return ProjectLeaseQuotaResult{}, client.problemError("adminSetProjectLeaseQuota", response)
+	}
+	value, err := platform.DecodeProjectLeaseQuotaResponseJSON(response.Body)
+	if err != nil {
+		return ProjectLeaseQuotaResult{}, &ClientError{Operation: "adminSetProjectLeaseQuota", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return ProjectLeaseQuotaResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID {
+		return ProjectLeaseQuotaResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetProjectLeaseQuota(ctx context.Context, tenantID, projectID, requestID string) (ProjectLeaseQuotaSummaryResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ProjectLeaseQuotaSummaryResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/lease-quota", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ProjectLeaseQuotaSummaryResult{}, err
+	}
+	if response.Status != 200 {
+		return ProjectLeaseQuotaSummaryResult{}, client.problemError("managedAgentGetProjectLeaseQuota", response)
+	}
+	value, err := platform.DecodeProjectLeaseQuotaSummaryResponseJSON(response.Body)
+	if err != nil {
+		return ProjectLeaseQuotaSummaryResult{}, &ClientError{Operation: "managedAgentGetProjectLeaseQuota", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID {
+		return ProjectLeaseQuotaSummaryResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/projectRef")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminProjectLeaseQuotaAuditEvents(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (AdminAuditEventPageResult, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return AdminAuditEventPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return AdminAuditEventPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/lease-quota/audit-events"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminAuditEventPageResult{}, client.problemError("adminListProjectLeaseQuotaAuditEvents", response)
+	}
+	value, err := platform.DecodeAdminAuditEventPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminAuditEventPageResult{}, &ClientError{Operation: "adminListProjectLeaseQuotaAuditEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range value.Value.Events {
+		if event.ResourceKind != "ProjectLeaseQuota" {
+			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
 	}
 	return value, nil
 }
@@ -3493,6 +3609,67 @@ func ValidateRegisterAdminWorkerReleaseServerRequest(tenantID, projectID, reques
 		return RegisterAdminWorkerReleaseServerInput{}, err
 	}
 	return RegisterAdminWorkerReleaseServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type ProjectLeaseQuotaServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+}
+
+func ValidateGetAdminProjectLeaseQuotaServerRequest(tenantID, projectID, requestID string) (ProjectLeaseQuotaServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ProjectLeaseQuotaServerInput{}, err
+	}
+	return ProjectLeaseQuotaServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID}, nil
+}
+func ValidateGetProjectLeaseQuotaServerRequest(tenantID, projectID, requestID string) (ProjectLeaseQuotaServerInput, error) {
+	return ValidateGetAdminProjectLeaseQuotaServerRequest(tenantID, projectID, requestID)
+}
+
+type SetAdminProjectLeaseQuotaServerInput struct {
+	TenantID       string
+	ProjectID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.ProjectLeaseQuotaSetRequest
+}
+
+func ValidateSetAdminProjectLeaseQuotaServerRequest(tenantID, projectID, requestID, idempotencyKey string, body []byte) (SetAdminProjectLeaseQuotaServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return SetAdminProjectLeaseQuotaServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return SetAdminProjectLeaseQuotaServerInput{}, err
+	}
+	value, err := platform.DecodeProjectLeaseQuotaSetRequestJSON(body)
+	if err != nil {
+		return SetAdminProjectLeaseQuotaServerInput{}, err
+	}
+	return SetAdminProjectLeaseQuotaServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type ListAdminProjectLeaseQuotaAuditEventsServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminProjectLeaseQuotaAuditEventsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminProjectLeaseQuotaAuditEventsServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return ListAdminProjectLeaseQuotaAuditEventsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminProjectLeaseQuotaAuditEventsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminProjectLeaseQuotaAuditEventsServerInput{}, err
+		}
+	}
+	return ListAdminProjectLeaseQuotaAuditEventsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 
 type GetEnvironmentLeaseServerInput struct {

@@ -13,6 +13,7 @@ import {
   type EnvironmentLeaseUpgradePreview,
   type EnvironmentProfile,
   type MaintenanceOperation,
+  type ProjectLeaseQuota,
   type Worker,
   type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -47,6 +48,9 @@ export type AdminClient = Pick<
   | "disableAdminEnvironmentProfile"
   | "getAdminEnvironmentProfile"
   | "listAdminEnvironmentProfileAuditEvents"
+  | "getAdminProjectLeaseQuota"
+  | "setAdminProjectLeaseQuota"
+  | "listAdminProjectLeaseQuotaAuditEvents"
 >;
 
 export type SavedAdminConnection = Readonly<{
@@ -354,6 +358,55 @@ export async function listAdminProfiles(
         right.spec.version - left.spec.version,
     ),
   );
+}
+
+export async function loadAdminProjectLeaseQuota(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<ProjectLeaseQuota | undefined> {
+  try {
+    return (await client.getAdminProjectLeaseQuota(tenantId, projectId, newRequestId(), signal))
+      .value;
+  } catch (error) {
+    if (error instanceof ClientError && error.status === 404) return undefined;
+    throw error;
+  }
+}
+
+export async function listAdminProjectLeaseQuotaAuditEvents(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  const events: AdminAuditEvent[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  try {
+    do {
+      const page = await client.listAdminProjectLeaseQuotaAuditEvents(
+        tenantId,
+        projectId,
+        newRequestId(),
+        200,
+        pageToken,
+        signal,
+      );
+      events.push(...page.value.events);
+      pageToken = page.value.nextPageToken;
+      if (pageToken !== undefined) {
+        if (seenTokens.has(pageToken)) throw new AdminUIError("error.auditPageToken");
+        seenTokens.add(pageToken);
+      }
+    } while (pageToken !== undefined);
+  } catch (error) {
+    if (events.length === 0 && error instanceof ClientError && error.status === 404)
+      return Object.freeze([]);
+    throw error;
+  }
+  return Object.freeze(events);
 }
 
 export async function listAdminProfileAuditEvents(

@@ -312,6 +312,42 @@ type WorkerReleasePage struct {
 	WorkerReleases []WorkerRelease `json:"workerReleases"`
 	NextPageToken  string          `json:"nextPageToken,omitempty"`
 }
+type ProjectLeaseQuotaSetRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	MaxConcurrentLeases     int64  `json:"maxConcurrentLeases"`
+	MaxCPUMillis            int64  `json:"maxCpuMillis"`
+	MaxMemoryBytes          int64  `json:"maxMemoryBytes"`
+	MaxLeaseTTLSeconds      int64  `json:"maxLeaseTtlSeconds"`
+}
+type ProjectLeaseQuotaSpec struct {
+	ProjectRef          common.ProjectRef `json:"projectRef"`
+	MaxConcurrentLeases int64             `json:"maxConcurrentLeases"`
+	MaxCPUMillis        int64             `json:"maxCpuMillis"`
+	MaxMemoryBytes      int64             `json:"maxMemoryBytes"`
+	MaxLeaseTTLSeconds  int64             `json:"maxLeaseTtlSeconds"`
+}
+type ProjectLeaseQuotaStatus struct {
+	ActiveLeases    int64 `json:"activeLeases"`
+	UsedCPUMillis   int64 `json:"usedCpuMillis"`
+	UsedMemoryBytes int64 `json:"usedMemoryBytes"`
+}
+type ProjectLeaseQuota struct {
+	ResourceBase
+	Spec   ProjectLeaseQuotaSpec   `json:"spec"`
+	Status ProjectLeaseQuotaStatus `json:"status"`
+}
+type ProjectLeaseQuotaSummary struct {
+	APIVersion          string            `json:"apiVersion"`
+	Kind                string            `json:"kind"`
+	ProjectRef          common.ProjectRef `json:"projectRef"`
+	MaxConcurrentLeases int64             `json:"maxConcurrentLeases"`
+	ActiveLeases        int64             `json:"activeLeases"`
+	MaxCPUMillis        int64             `json:"maxCpuMillis"`
+	UsedCPUMillis       int64             `json:"usedCpuMillis"`
+	MaxMemoryBytes      int64             `json:"maxMemoryBytes"`
+	UsedMemoryBytes     int64             `json:"usedMemoryBytes"`
+	MaxLeaseTTLSeconds  int64             `json:"maxLeaseTtlSeconds"`
+}
 type EnvironmentProfileCreateRequest struct {
 	ProfileID             string   `json:"profileId"`
 	ProfileName           string   `json:"profileName"`
@@ -619,6 +655,12 @@ var workerReleasePageResponseShape = common.ObjectResponseShape(map[string]commo
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"workerReleases": common.ArrayResponseShape(resourceResponseShape("WorkerRelease")), "nextPageToken": common.ScalarResponseShape(),
 })
+var projectLeaseQuotaResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
+	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": resourceMetadataResponseShape,
+	"spec":   common.ObjectResponseShape(map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "maxConcurrentLeases": common.ScalarResponseShape(), "maxCpuMillis": common.ScalarResponseShape(), "maxMemoryBytes": common.ScalarResponseShape(), "maxLeaseTtlSeconds": common.ScalarResponseShape()}),
+	"status": common.ObjectResponseShape(map[string]common.ResponseShape{"activeLeases": common.ScalarResponseShape(), "usedCpuMillis": common.ScalarResponseShape(), "usedMemoryBytes": common.ScalarResponseShape()}),
+})
+var projectLeaseQuotaSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "maxConcurrentLeases": common.ScalarResponseShape(), "activeLeases": common.ScalarResponseShape(), "maxCpuMillis": common.ScalarResponseShape(), "usedCpuMillis": common.ScalarResponseShape(), "maxMemoryBytes": common.ScalarResponseShape(), "usedMemoryBytes": common.ScalarResponseShape(), "maxLeaseTtlSeconds": common.ScalarResponseShape()})
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
@@ -1969,6 +2011,114 @@ func EncodeWorkerReleasePageResponseJSON(value common.ResponseEnvelope[WorkerRel
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
+func validProjectLeaseQuotaLimits(maxConcurrentLeases, maxCPUMillis, maxMemoryBytes, maxLeaseTTLSeconds int64) bool {
+	return maxConcurrentLeases >= 1 && maxConcurrentLeases <= 8000 && maxCPUMillis >= 100 && maxCPUMillis <= 512000000 && maxMemoryBytes >= 134217728 && maxMemoryBytes <= 8796093022208000 && maxLeaseTTLSeconds >= 60 && maxLeaseTTLSeconds <= 86400
+}
+func validProjectLeaseQuotaUsage(activeLeases, usedCPUMillis, usedMemoryBytes int64) bool {
+	return activeLeases >= 0 && activeLeases <= 8000 && usedCPUMillis >= 0 && usedCPUMillis <= 512000000 && usedMemoryBytes >= 0 && usedMemoryBytes <= 8796093022208000
+}
+func DecodeProjectLeaseQuotaSetRequestJSON(data []byte) (ProjectLeaseQuotaSetRequest, error) {
+	allowed := []string{"expectedResourceVersion", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return ProjectLeaseQuotaSetRequest{}, err
+	}
+	var value ProjectLeaseQuotaSetRequest
+	if json.Unmarshal(data, &value) != nil {
+		return ProjectLeaseQuotaSetRequest{}, common.ContractError("INVALID_PROJECT_LEASE_QUOTA", "")
+	}
+	resourceVersion, err := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	if err != nil || resourceVersion < 0 || !validProjectLeaseQuotaLimits(value.MaxConcurrentLeases, value.MaxCPUMillis, value.MaxMemoryBytes, value.MaxLeaseTTLSeconds) {
+		return ProjectLeaseQuotaSetRequest{}, common.ContractError("INVALID_PROJECT_LEASE_QUOTA", "")
+	}
+	return value, nil
+}
+func EncodeProjectLeaseQuotaSetRequestJSON(value ProjectLeaseQuotaSetRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeProjectLeaseQuotaSetRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeProjectLeaseQuotaJSON(data []byte) (ProjectLeaseQuota, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "metadata", "spec", "status"}, []string{"apiVersion", "kind", "metadata", "spec", "status"})
+	if err != nil {
+		return ProjectLeaseQuota{}, err
+	}
+	base, err := checkResourceBase(fields, "ProjectLeaseQuota")
+	if err != nil {
+		return ProjectLeaseQuota{}, err
+	}
+	specFields, err := strictSpec(fields["spec"], []string{"projectRef", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"}, []string{"projectRef", "maxConcurrentLeases", "maxCpuMillis", "maxMemoryBytes", "maxLeaseTtlSeconds"})
+	if err != nil {
+		return ProjectLeaseQuota{}, err
+	}
+	if _, err = strictSpec(fields["status"], []string{"activeLeases", "usedCpuMillis", "usedMemoryBytes"}, []string{"activeLeases", "usedCpuMillis", "usedMemoryBytes"}); err != nil {
+		return ProjectLeaseQuota{}, err
+	}
+	var spec ProjectLeaseQuotaSpec
+	var status ProjectLeaseQuotaStatus
+	if json.Unmarshal(fields["spec"], &spec) != nil || json.Unmarshal(fields["status"], &status) != nil {
+		return ProjectLeaseQuota{}, common.ContractError("INVALID_PROJECT_LEASE_QUOTA", "")
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return ProjectLeaseQuota{}, err
+	}
+	spec.ProjectRef = project
+	if !validProjectLeaseQuotaLimits(spec.MaxConcurrentLeases, spec.MaxCPUMillis, spec.MaxMemoryBytes, spec.MaxLeaseTTLSeconds) || !validProjectLeaseQuotaUsage(status.ActiveLeases, status.UsedCPUMillis, status.UsedMemoryBytes) {
+		return ProjectLeaseQuota{}, common.ContractError("INVALID_PROJECT_LEASE_QUOTA", "")
+	}
+	return ProjectLeaseQuota{ResourceBase: base, Spec: spec, Status: status}, nil
+}
+func DecodeProjectLeaseQuotaResponseJSON(data []byte) (common.ResponseEnvelope[ProjectLeaseQuota], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, projectLeaseQuotaResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[ProjectLeaseQuota]{}, err
+	}
+	value, err := DecodeProjectLeaseQuotaJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[ProjectLeaseQuota]{}, err
+	}
+	return common.ResponseEnvelope[ProjectLeaseQuota]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeProjectLeaseQuotaResponseJSON(value common.ResponseEnvelope[ProjectLeaseQuota]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeProjectLeaseQuotaSummaryJSON(data []byte) (ProjectLeaseQuotaSummary, error) {
+	allowed := []string{"apiVersion", "kind", "projectRef", "maxConcurrentLeases", "activeLeases", "maxCpuMillis", "usedCpuMillis", "maxMemoryBytes", "usedMemoryBytes", "maxLeaseTtlSeconds"}
+	fields, err := common.DecodeStrictObject(data, allowed, allowed)
+	if err != nil {
+		return ProjectLeaseQuotaSummary{}, err
+	}
+	var value ProjectLeaseQuotaSummary
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "ProjectLeaseQuotaSummary" || !validProjectLeaseQuotaLimits(value.MaxConcurrentLeases, value.MaxCPUMillis, value.MaxMemoryBytes, value.MaxLeaseTTLSeconds) || !validProjectLeaseQuotaUsage(value.ActiveLeases, value.UsedCPUMillis, value.UsedMemoryBytes) {
+		return ProjectLeaseQuotaSummary{}, common.ContractError("INVALID_PROJECT_LEASE_QUOTA_SUMMARY", "")
+	}
+	project, err := common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return ProjectLeaseQuotaSummary{}, err
+	}
+	value.ProjectRef = project
+	return value, nil
+}
+func DecodeProjectLeaseQuotaSummaryResponseJSON(data []byte) (common.ResponseEnvelope[ProjectLeaseQuotaSummary], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, projectLeaseQuotaSummaryResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[ProjectLeaseQuotaSummary]{}, err
+	}
+	value, err := DecodeProjectLeaseQuotaSummaryJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[ProjectLeaseQuotaSummary]{}, err
+	}
+	return common.ResponseEnvelope[ProjectLeaseQuotaSummary]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeProjectLeaseQuotaSummaryResponseJSON(value common.ResponseEnvelope[ProjectLeaseQuotaSummary]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
 func validateEnvironmentProfileSummaryValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, path string) error {
 	if err := common.ValidateIdentifier(profileID, path+"/profileId"); err != nil {
 		return err
@@ -2722,7 +2872,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

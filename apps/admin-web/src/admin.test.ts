@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
+  listAdminProjectLeaseQuotaAuditEvents,
   listAdminLeases,
   listAdminProfiles,
   listAdminReleases,
@@ -11,6 +13,7 @@ import {
   listAdminTargetOperations,
   listAdminTargets,
   listAdminWorkers,
+  loadAdminProjectLeaseQuota,
   readSavedAdminConnection,
   schedulingRequestFromPreview,
   summarizeClusterHosts,
@@ -247,6 +250,74 @@ describe("Admin Web boundary", () => {
 
     await listAdminProfiles(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("loads project Lease quota from Admin API and treats no policy as optional", async () => {
+    const quota = { kind: "ProjectLeaseQuota" };
+    const getAdminProjectLeaseQuota = async () => ({ value: quota });
+    await expect(
+      loadAdminProjectLeaseQuota(
+        { getAdminProjectLeaseQuota } as unknown as AdminClient,
+        "tenant-alpha",
+        "project-alpha",
+        new AbortController().signal,
+      ),
+    ).resolves.toBe(quota);
+
+    await expect(
+      loadAdminProjectLeaseQuota(
+        {
+          getAdminProjectLeaseQuota: async () => {
+            throw new ClientError("quota", 404);
+          },
+        } as unknown as AdminClient,
+        "tenant-alpha",
+        "project-alpha",
+        new AbortController().signal,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("uses only Admin API quota audit pagination", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminProjectLeaseQuotaAuditEvents: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        tokens.push(pageToken);
+        return {
+          value: {
+            events: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    await listAdminProjectLeaseQuotaAuditEvents(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      new AbortController().signal,
+    );
+    expect(tokens).toEqual([undefined, "next-page"]);
+
+    await expect(
+      listAdminProjectLeaseQuotaAuditEvents(
+        {
+          listAdminProjectLeaseQuotaAuditEvents: async () => {
+            throw new ClientError("quota", 404);
+          },
+        } as unknown as AdminClient,
+        "tenant-alpha",
+        "project-alpha",
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual([]);
   });
 
   it("reads target activity only through scoped Admin API pagination", async () => {

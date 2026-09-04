@@ -3,13 +3,14 @@ import {
   JSONContractError,
   type Client,
   type EnvironmentProfileSummary,
+  type ProjectLeaseQuotaSummary,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import { recordPageToken } from "./pagination";
 
 export type EnvironmentClient = Pick<
   Client,
-  "listEnvironmentProfiles" | "createEnvironment" | "getEnvironment"
+  "listEnvironmentProfiles" | "getProjectLeaseQuota" | "createEnvironment" | "getEnvironment"
 >;
 
 export type EnvironmentSelection = Readonly<{
@@ -61,6 +62,20 @@ export async function loadEnvironmentProfiles(
         right.version - left.version,
     ),
   );
+}
+
+export async function loadProjectLeaseQuota(
+  client: EnvironmentClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<ProjectLeaseQuotaSummary | undefined> {
+  try {
+    return (await client.getProjectLeaseQuota(tenantId, projectId, newRequestId(), signal)).value;
+  } catch (error) {
+    if (error instanceof ClientError && error.status === 404) return undefined;
+    throw error;
+  }
 }
 
 export function readEnvironmentSelection(
@@ -124,6 +139,18 @@ export function environmentErrorMessage(error: unknown): string {
     return "This token cannot use environments in the selected project.";
   if (error instanceof ClientError && error.status === 404)
     return "The selected Profile or environment no longer exists. Refresh available Profiles.";
+  const code =
+    error instanceof ClientError && typeof error.problem === "object" && error.problem !== null
+      ? (error.problem as { error?: { code?: unknown } }).error?.code
+      : undefined;
+  if (code === "PROJECT_LEASE_COUNT_QUOTA_EXCEEDED")
+    return "This project already has the maximum number of active environments. Stop one before preparing another.";
+  if (code === "PROJECT_LEASE_CPU_QUOTA_EXCEEDED")
+    return "This environment needs more CPU than the project currently has available.";
+  if (code === "PROJECT_LEASE_MEMORY_QUOTA_EXCEEDED")
+    return "This environment needs more memory than the project currently has available.";
+  if (code === "PROJECT_LEASE_TTL_QUOTA_EXCEEDED")
+    return "The requested environment duration exceeds this project's maximum.";
   if (error instanceof ClientError && error.status === 409)
     return "The Profile is no longer available or the environment conflicts with current state. Refresh and retry.";
   if (error instanceof JSONContractError)

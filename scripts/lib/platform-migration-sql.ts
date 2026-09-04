@@ -217,13 +217,67 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     if (tokens[1] === "TRIGGER") {
-      const expected = [
-        "CREATE", "TRIGGER", "MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_GUARD", "BEFORE", "UPDATE", "OF", "RELEASE_DIGEST", "ON",
-        "CLOUD_AGENTS", ".", "MANAGED_HOST_ENVIRONMENT_LEASES", "FOR", "EACH", "ROW", "EXECUTE", "FUNCTION",
-        "CLOUD_AGENTS", ".", "TRACK_MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_V1", "(", ")", ";",
-      ];
-      if (migrationId !== "000046" || tokens.length !== expected.length || tokens.some((token, index) => token !== expected[index])) reject(tokens);
-      return classification("CREATE", "TRIGGER", qualifiedDerivedIdentity("trigger", tokens, 8, tokens[2]!), null);
+      const expected =
+        migrationId === "000046"
+          ? [
+              "CREATE",
+              "TRIGGER",
+              "MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_GUARD",
+              "BEFORE",
+              "UPDATE",
+              "OF",
+              "RELEASE_DIGEST",
+              "ON",
+              "CLOUD_AGENTS",
+              ".",
+              "MANAGED_HOST_ENVIRONMENT_LEASES",
+              "FOR",
+              "EACH",
+              "ROW",
+              "EXECUTE",
+              "FUNCTION",
+              "CLOUD_AGENTS",
+              ".",
+              "TRACK_MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_V1",
+              "(",
+              ")",
+              ";",
+            ]
+          : migrationId === "000047"
+            ? [
+                "CREATE",
+                "TRIGGER",
+                "MANAGED_HOST_ENVIRONMENT_LEASES_PROJECT_QUOTA",
+                "BEFORE",
+                "INSERT",
+                "ON",
+                "CLOUD_AGENTS",
+                ".",
+                "MANAGED_HOST_ENVIRONMENT_LEASES",
+                "FOR",
+                "EACH",
+                "ROW",
+                "EXECUTE",
+                "FUNCTION",
+                "CLOUD_AGENTS",
+                ".",
+                "ENFORCE_PROJECT_LEASE_QUOTA_V1",
+                "(",
+                ")",
+                ";",
+              ]
+            : [];
+      if (
+        tokens.length !== expected.length ||
+        tokens.some((token, index) => token !== expected[index])
+      )
+        reject(tokens);
+      return classification(
+        "CREATE",
+        "TRIGGER",
+        qualifiedDerivedIdentity("trigger", tokens, migrationId === "000046" ? 8 : 6, tokens[2]!),
+        null,
+      );
     }
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
       if (

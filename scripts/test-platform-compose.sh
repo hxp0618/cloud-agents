@@ -250,10 +250,10 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "projects.get", "releases.create", "releases.list", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
+  "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
-  "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
+  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
 ]);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
@@ -898,6 +898,66 @@ if (actualKeys.join("\n") !== expectedKeys.join("\n")) {
 }
 NODE
 
+quota_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/lease-quota"
+quota_create_file="$smoke_directory/quota-create.json"
+quota_create_body='{"expectedResourceVersion":"0","maxConcurrentLeases":1,"maxCpuMillis":1000,"maxMemoryBytes":536870912,"maxLeaseTtlSeconds":3600}'
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$quota_path" \
+  compose-smoke-quota-create --header "Idempotency-Key: compose-smoke-quota-create" \
+  --data "$quota_create_body" >"$quota_create_file"
+CLOUD_AGENTS_COMPOSE_QUOTA_FILE="$quota_create_file" CLOUD_AGENTS_COMPOSE_PROJECT_ID="$project_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_QUOTA_FILE, "utf8"));
+if (value.kind !== "ProjectLeaseQuota" || value.metadata?.resourceVersion !== "1" ||
+    value.spec?.projectRef?.id !== process.env.CLOUD_AGENTS_COMPOSE_PROJECT_ID ||
+    value.spec?.maxConcurrentLeases !== 1 || value.spec?.maxCpuMillis !== 1000 ||
+    value.spec?.maxMemoryBytes !== 536870912 || value.spec?.maxLeaseTtlSeconds !== 3600 ||
+    value.status?.activeLeases !== 0 || value.status?.usedCpuMillis !== 0 ||
+    value.status?.usedMemoryBytes !== 0) {
+  throw new Error("Admin API did not persist the initial project Lease quota");
+}
+NODE
+quota_replay_file="$smoke_directory/quota-replay.json"
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$quota_path" \
+  compose-smoke-quota-create --header "Idempotency-Key: compose-smoke-quota-create" \
+  --data "$quota_create_body" >"$quota_replay_file"
+if ! cmp -s "$quota_create_file" "$quota_replay_file"; then
+  echo "Compose project Lease quota idempotent replay drifted" >&2
+  exit 1
+fi
+user_admin_quota_file="$smoke_directory/user-admin-quota-denied.json"
+user_admin_quota_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-quota-denied" \
+  --output "$user_admin_quota_file" --write-out '%{http_code}' \
+  "https://$endpoint$quota_path")
+if [ "$user_admin_quota_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_quota_file"; then
+  echo "Compose ordinary User token was not denied by the project Lease quota Admin API" >&2
+  exit 1
+fi
+user_quota_file="$smoke_directory/user-quota.json"
+control_plane_api "$smoke_directory/user-curl.conf" GET \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/lease-quota" \
+  compose-smoke-user-quota >"$user_quota_file"
+CLOUD_AGENTS_COMPOSE_QUOTA_FILE="$user_quota_file" CLOUD_AGENTS_COMPOSE_PROJECT_ID="$project_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_QUOTA_FILE, "utf8"));
+const expectedKeys = ["activeLeases", "apiVersion", "kind", "maxConcurrentLeases", "maxCpuMillis",
+  "maxLeaseTtlSeconds", "maxMemoryBytes", "projectRef", "usedCpuMillis", "usedMemoryBytes"].sort();
+const actualKeys = Object.keys(value).sort();
+if (value.kind !== "ProjectLeaseQuotaSummary" ||
+    value.projectRef?.id !== process.env.CLOUD_AGENTS_COMPOSE_PROJECT_ID ||
+    value.maxConcurrentLeases !== 1 || value.activeLeases !== 0 ||
+    actualKeys.join("\n") !== expectedKeys.join("\n")) {
+  throw new Error(`User project Lease quota boundary changed: ${actualKeys.join(",")}`);
+}
+for (const forbidden of ["endpoint", "credentialref", "providercredentialref", "releasedigest", "secret"]) {
+  if (JSON.stringify(value).toLowerCase().includes(forbidden)) {
+    throw new Error(`User project Lease quota exposed ${forbidden}`);
+  }
+}
+NODE
+
 user_environment_body=$(printf '{"profileId":"%s","profileVersion":1}' "$profile_id")
 user_environment_file="$smoke_directory/user-environment.json"
 control_plane_api "$smoke_directory/user-curl.conf" POST \
@@ -939,6 +999,66 @@ if [ "$target_container_count" -ne 1 ]; then
   echo "Compose Profile created $target_container_count Docker Workers, expected 1" >&2
   exit 1
 fi
+
+active_user_quota_file="$smoke_directory/active-user-quota.json"
+control_plane_api "$smoke_directory/user-curl.conf" GET \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/lease-quota" \
+  compose-smoke-active-user-quota >"$active_user_quota_file"
+CLOUD_AGENTS_COMPOSE_QUOTA_FILE="$active_user_quota_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_QUOTA_FILE, "utf8"));
+if (value.activeLeases !== 1 || value.usedCpuMillis !== 1000 ||
+    value.usedMemoryBytes !== 536870912 || value.maxConcurrentLeases !== 1) {
+  throw new Error("User quota summary did not report the active Profile environment");
+}
+NODE
+quota_denied_environment_file="$smoke_directory/quota-denied-environment.json"
+quota_denied_environment_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request POST \
+  --header "X-Request-ID: compose-smoke-quota-denied-environment" \
+  --header "Idempotency-Key: compose-smoke-quota-denied-environment" \
+  --header "Content-Type: application/json" --data "$user_environment_body" \
+  --output "$quota_denied_environment_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/environments")
+if [ "$quota_denied_environment_status" -ne 409 ] || \
+  ! grep -q '"code":"PROJECT_LEASE_COUNT_QUOTA_EXCEEDED"' "$quota_denied_environment_file"; then
+  echo "Compose project Lease count quota did not reject a second environment" >&2
+  exit 1
+fi
+target_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/project="$project_id" | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 1 ]; then
+  echo "Compose quota rejection changed the active Docker Worker count to $target_container_count" >&2
+  exit 1
+fi
+quota_update_file="$smoke_directory/quota-update.json"
+quota_update_body='{"expectedResourceVersion":"1","maxConcurrentLeases":2,"maxCpuMillis":2000,"maxMemoryBytes":1073741824,"maxLeaseTtlSeconds":3600}'
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$quota_path" \
+  compose-smoke-quota-update --header "Idempotency-Key: compose-smoke-quota-update" \
+  --data "$quota_update_body" >"$quota_update_file"
+CLOUD_AGENTS_COMPOSE_QUOTA_FILE="$quota_update_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_QUOTA_FILE, "utf8"));
+if (value.metadata?.resourceVersion !== "2" || value.spec?.maxConcurrentLeases !== 2 ||
+    value.spec?.maxCpuMillis !== 2000 || value.spec?.maxMemoryBytes !== 1073741824 ||
+    value.status?.activeLeases !== 1 || value.status?.usedCpuMillis !== 1000 ||
+    value.status?.usedMemoryBytes !== 536870912) {
+  throw new Error("Admin API did not update project Lease quota with the resource-version fence");
+}
+NODE
+quota_audit_file="$smoke_directory/quota-audit.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$quota_path/audit-events?pageSize=200" compose-smoke-quota-audit >"$quota_audit_file"
+CLOUD_AGENTS_COMPOSE_QUOTA_FILE="$quota_audit_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_QUOTA_FILE, "utf8"));
+if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 2 ||
+    !value.events.every((event) => event.action === "quota.set" &&
+      event.resourceKind === "ProjectLeaseQuota" && event.result === "succeeded")) {
+  throw new Error("Project Lease quota did not close two Admin Audit events");
+}
+NODE
 
 admin_workers_file="$smoke_directory/admin-workers.json"
 control_plane_api "$smoke_directory/admin-curl.conf" GET \

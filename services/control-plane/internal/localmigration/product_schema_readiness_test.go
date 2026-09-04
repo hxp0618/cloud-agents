@@ -36,18 +36,18 @@ func (row readinessRow) Scan(dest ...any) error {
 }
 
 func TestCheckProductSchemaReadiness(t *testing.T) {
-	current := productRunnerBindingSelector("000046")
+	current := productRunnerBindingSelector("000047")
 	tests := []struct {
 		name    string
 		row     readinessRow
 		wantErr bool
 	}{
-		{name: "current", row: readinessRow{count: 46, first: "000001", last: "000046", bundleDigest: current.schemaBundleDigest}},
+		{name: "current", row: readinessRow{count: 47, first: "000001", last: "000047", bundleDigest: current.schemaBundleDigest}},
 		{name: "missing", row: readinessRow{}, wantErr: true},
 		{name: "stale", row: readinessRow{count: 31, first: "000001", last: "000031", bundleDigest: productRunnerBindingSelector("000031").schemaBundleDigest}, wantErr: true},
 		{name: "stale current", row: readinessRow{count: 41, first: "000001", last: "000041", bundleDigest: productRunnerBindingSelector("000041").schemaBundleDigest}, wantErr: true},
-		{name: "ahead", row: readinessRow{count: 47, first: "000001", last: "000047", bundleDigest: current.schemaBundleDigest}, wantErr: true},
-		{name: "wrong bundle", row: readinessRow{count: 46, first: "000001", last: "000046", bundleDigest: productRunnerBindingSelector("000045").schemaBundleDigest}, wantErr: true},
+		{name: "ahead", row: readinessRow{count: 48, first: "000001", last: "000048", bundleDigest: current.schemaBundleDigest}, wantErr: true},
+		{name: "wrong bundle", row: readinessRow{count: 47, first: "000001", last: "000047", bundleDigest: productRunnerBindingSelector("000046").schemaBundleDigest}, wantErr: true},
 		{name: "query failure", row: readinessRow{err: errors.New("query failed")}, wantErr: true},
 	}
 	for _, test := range tests {

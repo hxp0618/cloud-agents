@@ -3,6 +3,7 @@ import {
   ClientError,
   type Client,
   type EnvironmentProfileSummary,
+  type ProjectLeaseQuotaSummary,
   type UserEnvironment,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
@@ -10,6 +11,7 @@ import { AgentWorkspace } from "./AgentWorkspace";
 import {
   environmentErrorMessage,
   loadEnvironmentProfiles,
+  loadProjectLeaseQuota,
   newIdempotencyKey,
   newRequestId,
   readEnvironmentSelection,
@@ -45,6 +47,7 @@ export function EnvironmentWorkspace({
 }: EnvironmentWorkspaceProps) {
   const saved = useRef(readEnvironmentSelection(window.sessionStorage, tenantId, projectId));
   const [profiles, setProfiles] = useState<readonly EnvironmentProfileSummary[]>([]);
+  const [leaseQuota, setLeaseQuota] = useState<ProjectLeaseQuotaSummary>();
   const [selectedProfileKey, setSelectedProfileKey] = useState("");
   const [environment, setEnvironment] = useState<UserEnvironment>();
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
@@ -74,7 +77,10 @@ export function EnvironmentWorkspace({
     setError("");
     void (async () => {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-      const loadedProfiles = await loadEnvironmentProfiles(client, tenantId, projectId, signal);
+      const [loadedProfiles, loadedLeaseQuota] = await Promise.all([
+        loadEnvironmentProfiles(client, tenantId, projectId, signal),
+        loadProjectLeaseQuota(client, tenantId, projectId, signal),
+      ]);
       let loadedEnvironment: UserEnvironment | undefined;
       if (saved.current.environmentId !== "") {
         try {
@@ -107,6 +113,7 @@ export function EnvironmentWorkspace({
         ) ??
         loadedProfiles[0];
       setProfiles(loadedProfiles);
+      setLeaseQuota(loadedLeaseQuota);
       setSelectedProfileKey(selected === undefined ? "" : profileKey(selected));
       setEnvironment(loadedEnvironment);
       persist(selected, loadedEnvironment?.environmentId ?? "");
@@ -189,7 +196,10 @@ export function EnvironmentWorkspace({
 
   function refreshProfiles() {
     void runOperation("Refreshing Profiles", async (signal) => {
-      const loaded = await loadEnvironmentProfiles(client, tenantId, projectId, signal);
+      const [loaded, loadedLeaseQuota] = await Promise.all([
+        loadEnvironmentProfiles(client, tenantId, projectId, signal),
+        loadProjectLeaseQuota(client, tenantId, projectId, signal),
+      ]);
       const selected =
         loaded.find((profile) => profileKey(profile) === selectedProfileKey) ?? loaded[0];
       const selectedEnvironment =
@@ -200,6 +210,7 @@ export function EnvironmentWorkspace({
           ? environment
           : undefined;
       setProfiles(loaded);
+      setLeaseQuota(loadedLeaseQuota);
       setSelectedProfileKey(selected === undefined ? "" : profileKey(selected));
       setEnvironment(selectedEnvironment);
       persist(selected, selectedEnvironment?.environmentId ?? "");
@@ -328,6 +339,32 @@ export function EnvironmentWorkspace({
                   </span>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {leaseQuota ? (
+            <div className="quota-summary" aria-label="Project environment limits">
+              <div>
+                <small>Project capacity</small>
+                <strong>
+                  {leaseQuota.activeLeases} of {leaseQuota.maxConcurrentLeases} environments active
+                </strong>
+              </div>
+              <p>
+                {leaseQuota.usedCpuMillis.toLocaleString()} /{" "}
+                {leaseQuota.maxCpuMillis.toLocaleString()} mCPU
+                {" · "}
+                {(leaseQuota.usedMemoryBytes / 1073741824).toLocaleString(undefined, {
+                  maximumFractionDigits: 1,
+                })}{" "}
+                /{" "}
+                {(leaseQuota.maxMemoryBytes / 1073741824).toLocaleString(undefined, {
+                  maximumFractionDigits: 1,
+                })}{" "}
+                GiB
+                {" · max "}
+                {Math.floor(leaseQuota.maxLeaseTtlSeconds / 60).toLocaleString()} min
+              </p>
             </div>
           ) : null}
 

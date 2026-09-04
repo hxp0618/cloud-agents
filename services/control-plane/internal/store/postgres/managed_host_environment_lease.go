@@ -124,7 +124,7 @@ FROM cloud_agents.create_managed_host_environment_lease_v4($1, $2, $3, $4, $5, $
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
 	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at, environment_profile_uid, environment_profile_version
-FROM cloud_agents.create_user_environment_v3($1, $2, $3, $4, $5, $6, $7, $8)`
+FROM cloud_agents.create_user_environment_v4($1, $2, $3, $4, $5, $6, $7, $8)`
 	getUserEnvironmentSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
 	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
@@ -1050,6 +1050,19 @@ func mapAdminEnvironmentLeaseUpgradeError(err error) error {
 }
 
 func mapManagedHostEnvironmentLeaseError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) {
+		switch postgresError.Message {
+		case "project concurrent lease quota exceeded":
+			return ErrProjectConcurrentLeaseQuotaExceeded
+		case "project lease cpu quota exceeded":
+			return ErrProjectLeaseCPUQuotaExceeded
+		case "project lease memory quota exceeded":
+			return ErrProjectLeaseMemoryQuotaExceeded
+		case "project lease ttl quota exceeded":
+			return ErrProjectLeaseTTLQuotaExceeded
+		}
+	}
 	switch {
 	case errors.Is(err, internalmanagedhost.ErrNotFound):
 		return ErrManagedHostEnvironmentLeaseNotFound
@@ -1067,6 +1080,13 @@ func mapManagedHostEnvironmentLeaseError(err error) error {
 }
 
 var ErrManagedHostEnvironmentLeaseNotFound = errors.New("managed host environment lease was not found")
+
+var (
+	ErrProjectConcurrentLeaseQuotaExceeded = errors.New("project concurrent lease quota exceeded")
+	ErrProjectLeaseCPUQuotaExceeded        = errors.New("project lease CPU quota exceeded")
+	ErrProjectLeaseMemoryQuotaExceeded     = errors.New("project lease memory quota exceeded")
+	ErrProjectLeaseTTLQuotaExceeded        = errors.New("project lease TTL quota exceeded")
+)
 
 var (
 	ErrAdminEnvironmentLeaseUpgradeIdempotencyConflict = errors.New("Admin environment lease upgrade idempotency key conflicts")

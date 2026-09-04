@@ -11,6 +11,8 @@ import {
   type EnvironmentProfile,
   type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
+  type ProjectLeaseQuota,
+  type ProjectLeaseQuotaSetRequest,
   type Worker,
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
@@ -22,6 +24,7 @@ import {
   leaseReleaseRequestFromPreview,
   listAdminLeases,
   listAdminMaintenanceOperations,
+  listAdminProjectLeaseQuotaAuditEvents,
   listAdminProfileAuditEvents,
   listAdminProfiles,
   listAdminReleases,
@@ -29,6 +32,7 @@ import {
   listAdminTargetOperations,
   listAdminTargets,
   listAdminWorkers,
+  loadAdminProjectLeaseQuota,
   newIdempotencyKey,
   newRequestId,
   readSavedAdminConnection,
@@ -52,7 +56,15 @@ import {
 } from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page = "overview" | "targets" | "workers" | "releases" | "profiles" | "leases" | "maintenance";
+type Page =
+  | "overview"
+  | "targets"
+  | "workers"
+  | "releases"
+  | "profiles"
+  | "quotas"
+  | "leases"
+  | "maintenance";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LeaseReleaseTransition = "upgrade" | "rollback";
@@ -79,6 +91,15 @@ function initialTheme(): Theme {
   const saved = window.localStorage.getItem("cloud-agents-admin-theme");
   if (saved === "light" || saved === "dark") return saved;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function quotaFormFrom(quota?: ProjectLeaseQuota) {
+  return {
+    maxConcurrentLeases: String(quota?.spec.maxConcurrentLeases ?? 8),
+    maxCpuMillis: String(quota?.spec.maxCpuMillis ?? 16_000),
+    maxMemoryMiB: String((quota?.spec.maxMemoryBytes ?? 34_359_738_368) / 1_048_576),
+    maxLeaseTtlSeconds: String(quota?.spec.maxLeaseTtlSeconds ?? 3_600),
+  };
 }
 
 function statusLabel(status: ConnectionStatus, t: Translate): string {
@@ -161,6 +182,7 @@ const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "profile.create": "audit.profileCreate",
   "profile.publish": "audit.profilePublish",
   "profile.disable": "audit.profileDisable",
+  "quota.set": "audit.quotaSet",
 });
 
 const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -365,7 +387,7 @@ async function loadProfileAudit(
 }
 
 export function App() {
-  const { locale, setLocale, t, number } = useI18n();
+  const { locale, setLocale, t, number, dateTime } = useI18n();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -394,6 +416,10 @@ export function App() {
   const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
   const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
   const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
+  const [leaseQuota, setLeaseQuota] = useState<ProjectLeaseQuota>();
+  const [leaseQuotaAudit, setLeaseQuotaAudit] = useState<readonly AdminAuditEvent[]>(
+    Object.freeze([]),
+  );
   const [maintenanceOperations, setMaintenanceOperations] = useState<
     readonly MaintenanceOperation[]
   >(Object.freeze([]));
@@ -449,6 +475,7 @@ export function App() {
     arm64: false,
     verificationEvidenceDigest: "",
   });
+  const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pendingKeysRef = useRef(new Map<string, string>());
@@ -730,6 +757,9 @@ export function App() {
     setProfiles(Object.freeze([]));
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
+    setLeaseQuota(undefined);
+    setLeaseQuotaAudit(Object.freeze([]));
+    setQuotaForm(quotaFormFrom());
     setMaintenanceOperations(Object.freeze([]));
     setSelectedMaintenanceOperationId("");
     setTargetDetailOpen(false);
@@ -776,6 +806,8 @@ export function App() {
         loadedWorkers,
         loadedReleases,
         loadedProfiles,
+        loadedQuota,
+        loadedQuotaAudit,
         loadedMaintenanceOperations,
       ] = await Promise.all([
         loadTargetAuthority(nextClient, nextConnection, selectedTargetId, signal),
@@ -783,6 +815,18 @@ export function App() {
         listAdminWorkers(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         listAdminReleases(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
+        loadAdminProjectLeaseQuota(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
+        listAdminProjectLeaseQuotaAuditEvents(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
         listAdminMaintenanceOperations(
           nextClient,
           nextConnection.tenantId,
@@ -804,6 +848,9 @@ export function App() {
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
+      setLeaseQuota(loadedQuota);
+      setLeaseQuotaAudit(loadedQuotaAudit);
+      setQuotaForm(quotaFormFrom(loadedQuota));
       setMaintenanceOperations(loadedMaintenanceOperations);
       setSelectedMaintenanceOperationId(loadedMaintenanceOperations[0]?.operationId ?? "");
       writeSavedAdminConnection(window.sessionStorage, nextConnection);
@@ -876,6 +923,8 @@ export function App() {
         loadedWorkers,
         loadedReleases,
         loadedProfiles,
+        loadedQuota,
+        loadedQuotaAudit,
         loadedMaintenanceOperations,
       ] = await Promise.all([
         loadTargetAuthority(client, connection, selectedTargetId, signal),
@@ -883,6 +932,13 @@ export function App() {
         listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
         listAdminReleases(client, connection.tenantId, connection.projectId, signal),
         loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
+        loadAdminProjectLeaseQuota(client, connection.tenantId, connection.projectId, signal),
+        listAdminProjectLeaseQuotaAuditEvents(
+          client,
+          connection.tenantId,
+          connection.projectId,
+          signal,
+        ),
         listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
       ]);
       setTargets(loadedTargets.targets);
@@ -898,6 +954,9 @@ export function App() {
       setReleases(loadedReleases);
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
+      setLeaseQuota(loadedQuota);
+      setLeaseQuotaAudit(loadedQuotaAudit);
+      setQuotaForm(quotaFormFrom(loadedQuota));
       setMaintenanceOperations(loadedMaintenanceOperations);
       setSelectedMaintenanceOperationId((current) =>
         loadedMaintenanceOperations.some(({ operationId }) => operationId === current)
@@ -1106,6 +1165,39 @@ export function App() {
   function selectMaintenanceOperation(operationId: string) {
     setSelectedMaintenanceOperationId(operationId);
     setMaintenanceDetailOpen(true);
+  }
+
+  function updateLeaseQuota(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null) return;
+    const body: ProjectLeaseQuotaSetRequest = {
+      expectedResourceVersion: leaseQuota?.metadata.resourceVersion ?? "0",
+      maxConcurrentLeases: Number(quotaForm.maxConcurrentLeases),
+      maxCpuMillis: Number(quotaForm.maxCpuMillis),
+      maxMemoryBytes: Number(quotaForm.maxMemoryMiB) * 1_048_576,
+      maxLeaseTtlSeconds: Number(quotaForm.maxLeaseTtlSeconds),
+    };
+    const key = `set-lease-quota:${Object.values(body).join(":")}`;
+    void runOperation(key, { key: "operation.setQuota" }, async (signal) => {
+      const result = await client.setAdminProjectLeaseQuota(
+        connection.tenantId,
+        connection.projectId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      setLeaseQuota(result.value);
+      setQuotaForm(quotaFormFrom(result.value));
+      setLeaseQuotaAudit(
+        await listAdminProjectLeaseQuotaAuditEvents(
+          client,
+          connection.tenantId,
+          connection.projectId,
+          signal,
+        ),
+      );
+    });
   }
 
   function registerRelease(event: FormEvent<HTMLFormElement>) {
@@ -1639,6 +1731,14 @@ export function App() {
             <b>{number(profiles.length)}</b>
           </button>
           <button
+            className={page === "quotas" ? "active" : ""}
+            onClick={() => navigate("quotas")}
+            title={t("nav.quotas")}
+          >
+            <span aria-hidden="true">⊟</span> <span className="nav-label">{t("nav.quotas")}</span>
+            <b>{number(leaseQuota === undefined ? 0 : 1)}</b>
+          </button>
+          <button
             className={page === "maintenance" ? "active" : ""}
             onClick={() => navigate("maintenance")}
             title={t("nav.maintenance")}
@@ -1723,9 +1823,11 @@ export function App() {
                         ? t("page.releases.title")
                         : page === "profiles"
                           ? t("page.profiles.title")
-                          : page === "leases"
-                            ? t("page.leases.title")
-                            : t("page.maintenance.title")}
+                          : page === "quotas"
+                            ? t("page.quotas.title")
+                            : page === "leases"
+                              ? t("page.leases.title")
+                              : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
@@ -1738,9 +1840,11 @@ export function App() {
                         ? t("page.releases.description")
                         : page === "profiles"
                           ? t("page.profiles.description")
-                          : page === "leases"
-                            ? t("page.leases.description")
-                            : t("page.maintenance.description")}
+                          : page === "quotas"
+                            ? t("page.quotas.description")
+                            : page === "leases"
+                              ? t("page.leases.description")
+                              : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -1987,6 +2091,168 @@ export function App() {
                   onSelect={selectProfile}
                 />
               </div>
+            </section>
+          ) : page === "quotas" ? (
+            <section className="resource-list">
+              <section className="metric-grid" aria-label={t("quota.summary")}>
+                <article className="metric-card">
+                  <small>{t("quota.concurrent")}</small>
+                  <strong>
+                    {leaseQuota === undefined
+                      ? "—"
+                      : `${number(leaseQuota.status.activeLeases)} / ${number(leaseQuota.spec.maxConcurrentLeases)}`}
+                  </strong>
+                  <span>{t("quota.activeLeases")}</span>
+                </article>
+                <article className="metric-card">
+                  <small>{t("quota.cpu")}</small>
+                  <strong>
+                    {leaseQuota === undefined
+                      ? "—"
+                      : `${number(leaseQuota.status.usedCpuMillis)} / ${number(leaseQuota.spec.maxCpuMillis)}`}
+                  </strong>
+                  <span>mCPU</span>
+                </article>
+                <article className="metric-card">
+                  <small>{t("quota.memory")}</small>
+                  <strong>
+                    {leaseQuota === undefined
+                      ? "—"
+                      : `${number(Math.round(leaseQuota.status.usedMemoryBytes / 1_048_576))} / ${number(Math.round(leaseQuota.spec.maxMemoryBytes / 1_048_576))}`}
+                  </strong>
+                  <span>MiB</span>
+                </article>
+                <article className="metric-card">
+                  <small>{t("quota.maxTtl")}</small>
+                  <strong>
+                    {leaseQuota === undefined
+                      ? "—"
+                      : number(Math.floor(leaseQuota.spec.maxLeaseTtlSeconds / 60))}
+                  </strong>
+                  <span>{t("quota.minutes")}</span>
+                </article>
+                <article className="metric-card">
+                  <small>{t("detail.resourceVersion")}</small>
+                  <strong>{leaseQuota?.metadata.resourceVersion ?? "—"}</strong>
+                  <span>
+                    {leaseQuota === undefined ? t("quota.notConfigured") : t("quota.configured")}
+                  </span>
+                </article>
+              </section>
+
+              <section className="panel overview-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>{t("quota.formTitle")}</h2>
+                    <p>{t("quota.formDescription")}</p>
+                  </div>
+                  <span className="scope-chip">quotas.get · quotas.update</span>
+                </div>
+                <form className="resource-form" onSubmit={updateLeaseQuota}>
+                  <div className="form-row">
+                    <label>
+                      <span>{t("quota.concurrent")}</span>
+                      <input
+                        required
+                        type="number"
+                        min="1"
+                        max="8000"
+                        value={quotaForm.maxConcurrentLeases}
+                        onChange={(event) =>
+                          setQuotaForm((current) => ({
+                            ...current,
+                            maxConcurrentLeases: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>{t("quota.cpuMillis")}</span>
+                      <input
+                        required
+                        type="number"
+                        min="100"
+                        max="512000000"
+                        step="100"
+                        value={quotaForm.maxCpuMillis}
+                        onChange={(event) =>
+                          setQuotaForm((current) => ({
+                            ...current,
+                            maxCpuMillis: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="form-row">
+                    <label>
+                      <span>{t("quota.memoryMiB")}</span>
+                      <input
+                        required
+                        type="number"
+                        min="128"
+                        max="8388608000"
+                        value={quotaForm.maxMemoryMiB}
+                        onChange={(event) =>
+                          setQuotaForm((current) => ({
+                            ...current,
+                            maxMemoryMiB: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>{t("quota.ttlSeconds")}</span>
+                      <input
+                        required
+                        type="number"
+                        min="60"
+                        max="86400"
+                        value={quotaForm.maxLeaseTtlSeconds}
+                        onChange={(event) =>
+                          setQuotaForm((current) => ({
+                            ...current,
+                            maxLeaseTtlSeconds: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="cluster-boundary">{t("quota.boundary")}</p>
+                  <button className="button primary" type="submit" disabled={busy !== null}>
+                    {t("quota.save")}
+                  </button>
+                </form>
+              </section>
+
+              <section className="activity-block" aria-labelledby="quota-audit-title">
+                <div className="activity-heading">
+                  <h2 id="quota-audit-title">{t("quota.audit")}</h2>
+                  <span className="scope-chip">audit.list · {number(leaseQuotaAudit.length)}</span>
+                </div>
+                {leaseQuotaAudit.length === 0 ? (
+                  <p className="activity-empty">{t("quota.noAudit")}</p>
+                ) : (
+                  <ol className="activity-list compact">
+                    {leaseQuotaAudit.map((event) => (
+                      <li key={event.eventId}>
+                        <div>
+                          <strong>{auditLabel(event.action, t)}</strong>
+                          <span className={`phase ${phaseTone(event.result)}`}>
+                            <i /> {phaseLabel(event.result, t)}
+                          </span>
+                        </div>
+                        <small className="mono break">
+                          {t("common.actor", { actor: event.actor })}
+                        </small>
+                        <small className="mono">
+                          {event.requestId} · {dateTime(event.occurredAt)}
+                        </small>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
             </section>
           ) : page === "leases" ? (
             <section className="resource-list">
