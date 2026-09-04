@@ -873,6 +873,179 @@ if [ "$user_admin_workers_status" -ne 403 ] || \
   exit 1
 fi
 
+scheduling_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/deployment-targets/docker-compose-target"
+drain_preview_file="$smoke_directory/target-drain-preview.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$scheduling_path:scheduling-preview" compose-smoke-target-drain-preview >"$drain_preview_file"
+drain_request_body=$(CLOUD_AGENTS_COMPOSE_SCHEDULING_FILE="$drain_preview_file" \
+  CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID="$profile_environment_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SCHEDULING_FILE, "utf8"));
+const lease = value.spec?.activeLeases?.[0];
+if (value.kind !== "DeploymentTargetSchedulingPreview" || value.metadata?.uid !== "docker-compose-target" ||
+    value.spec?.currentState !== "active" || value.spec?.desiredState !== "drained" ||
+    value.spec?.expectedGeneration !== 1 || value.spec?.expectedResourceVersion !== value.metadata?.resourceVersion ||
+    !/^sha256:[0-9a-f]{64}$/.test(value.spec?.impactDigest) || value.spec?.activeLeases?.length !== 1 ||
+    lease?.leaseId !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID || lease?.observedPhase !== "ready") {
+  throw new Error("Admin scheduling preview did not bind the active Docker Lease impact");
+}
+process.stdout.write(JSON.stringify({
+  expectedGeneration: value.spec.expectedGeneration,
+  expectedResourceVersion: value.spec.expectedResourceVersion,
+  desiredState: value.spec.desiredState,
+  impactDigest: value.spec.impactDigest,
+}));
+NODE
+)
+user_admin_scheduling_file="$smoke_directory/user-admin-scheduling-denied.json"
+user_admin_scheduling_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-scheduling-denied" \
+  --output "$user_admin_scheduling_file" --write-out '%{http_code}' \
+  "https://$endpoint$scheduling_path:scheduling-preview")
+if [ "$user_admin_scheduling_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_scheduling_file"; then
+  echo "Compose ordinary User token was not denied by the Target scheduling Admin API" >&2
+  exit 1
+fi
+drain_operation_file="$smoke_directory/target-drain-operation.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$scheduling_path:scheduling" \
+  compose-smoke-target-drain --header "Idempotency-Key: compose-smoke-target-drain" \
+  --data "$drain_request_body" >"$drain_operation_file"
+CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$drain_operation_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION_FILE, "utf8"));
+if (value.kind !== "MaintenanceOperation" || value.action !== "target.drain" ||
+    value.resourceId !== "docker-compose-target" || value.resourceGeneration !== 1 ||
+    value.state !== "succeeded" || value.currentStep !== "complete") {
+  throw new Error("Admin API did not persist a succeeded Target drain operation");
+}
+NODE
+replayed_drain_operation_file="$smoke_directory/target-drain-operation-replayed.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$scheduling_path:scheduling" \
+  compose-smoke-target-drain --header "Idempotency-Key: compose-smoke-target-drain" \
+  --data "$drain_request_body" >"$replayed_drain_operation_file"
+if ! cmp -s "$drain_operation_file" "$replayed_drain_operation_file"; then
+  echo "Compose Target drain was not idempotent" >&2
+  exit 1
+fi
+drained_target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+  --request-id compose-smoke-drained-target-get target get)
+case "$drained_target_output" in
+  *'"schedulingState":"drained"'*'"observedPhase":"ready"'*) ;;
+  *) echo "Compose Target drain did not preserve ready runtime state: $drained_target_output" >&2; exit 1 ;;
+esac
+drained_profiles_file="$smoke_directory/drained-published-profiles.json"
+control_plane_api "$smoke_directory/user-curl.conf" GET \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=200" \
+  compose-smoke-drained-published-profiles >"$drained_profiles_file"
+CLOUD_AGENTS_COMPOSE_PROFILE_FILE="$drained_profiles_file" CLOUD_AGENTS_COMPOSE_PROFILE_ID="$profile_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
+const profile = value.environmentProfiles?.find((item) => item.profileId === process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID);
+if (profile !== undefined) throw new Error("Drained Target remained visible to User Profile selection");
+NODE
+drained_environment_file="$smoke_directory/drained-environment-denied.json"
+drained_environment_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request POST \
+  --header "X-Request-ID: compose-smoke-drained-environment" \
+  --header "Idempotency-Key: compose-smoke-drained-environment" \
+  --header "Content-Type: application/json" --data "$user_environment_body" \
+  --output "$drained_environment_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/environments")
+if [ "$drained_environment_status" -ne 409 ] || ! grep -q '"code":"LEASE_CONFLICT"' "$drained_environment_file"; then
+  echo "Compose drained Target accepted a new User Environment" >&2
+  exit 1
+fi
+drained_replay_file="$smoke_directory/drained-existing-environment-replay.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments" \
+  compose-smoke-user-environment-create --header "Idempotency-Key: compose-smoke-user-environment-create" \
+  --data "$user_environment_body" >"$drained_replay_file"
+if ! cmp -s "$user_environment_file" "$drained_replay_file"; then
+  echo "Compose Target drain broke an existing idempotent User Environment replay" >&2
+  exit 1
+fi
+target_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$profile_environment_id" | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 1 ]; then
+  echo "Compose Target drain changed the existing Docker Worker count" >&2
+  exit 1
+fi
+
+resume_preview_file="$smoke_directory/target-resume-preview.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$scheduling_path:scheduling-preview" compose-smoke-target-resume-preview >"$resume_preview_file"
+resume_request_body=$(CLOUD_AGENTS_COMPOSE_SCHEDULING_FILE="$resume_preview_file" \
+  CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID="$profile_environment_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SCHEDULING_FILE, "utf8"));
+if (value.spec?.currentState !== "drained" || value.spec?.desiredState !== "active" ||
+    value.spec?.activeLeases?.length !== 1 ||
+    value.spec.activeLeases[0]?.leaseId !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID) {
+  throw new Error("Admin scheduling preview did not bind the Target resume impact");
+}
+process.stdout.write(JSON.stringify({
+  expectedGeneration: value.spec.expectedGeneration,
+  expectedResourceVersion: value.spec.expectedResourceVersion,
+  desiredState: value.spec.desiredState,
+  impactDigest: value.spec.impactDigest,
+}));
+NODE
+)
+resume_operation_file="$smoke_directory/target-resume-operation.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$scheduling_path:scheduling" \
+  compose-smoke-target-resume --header "Idempotency-Key: compose-smoke-target-resume" \
+  --data "$resume_request_body" >"$resume_operation_file"
+CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$resume_operation_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION_FILE, "utf8"));
+if (value.action !== "target.resume" || value.resourceId !== "docker-compose-target" ||
+    value.state !== "succeeded" || value.currentStep !== "complete") {
+  throw new Error("Admin API did not persist a succeeded Target resume operation");
+}
+NODE
+resumed_target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+  --request-id compose-smoke-resumed-target-get target get)
+case "$resumed_target_output" in
+  *'"schedulingState":"active"'*'"observedPhase":"ready"'*) ;;
+  *) echo "Compose Target resume did not restore scheduling: $resumed_target_output" >&2; exit 1 ;;
+esac
+resumed_environment_file="$smoke_directory/resumed-user-environment.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments" \
+  compose-smoke-resumed-environment --header "Idempotency-Key: compose-smoke-resumed-environment" \
+  --data "$user_environment_body" >"$resumed_environment_file"
+resumed_environment_id=$(CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$resumed_environment_file" node -e \
+  'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE,"utf8"));if(value.observedPhase!=="ready")process.exit(1);process.stdout.write(value.environmentId)')
+resumed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$resumed_environment_id" \
+  --request-id compose-smoke-resumed-environment-terminate \
+  --idempotency-key compose-smoke-resumed-environment-terminate environment-lease terminate --generation 1)
+case "$resumed_terminate_output" in
+  *'"generation":2'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *) echo "Compose resumed Target environment did not terminate cleanly: $resumed_terminate_output" >&2; exit 1 ;;
+esac
+
+scheduling_operations_file="$smoke_directory/target-scheduling-operations.json"
+scheduling_audit_file="$smoke_directory/target-scheduling-audit.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$scheduling_path/operations?pageSize=200" compose-smoke-target-scheduling-operations >"$scheduling_operations_file"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$scheduling_path/audit-events?pageSize=200" compose-smoke-target-scheduling-audit >"$scheduling_audit_file"
+CLOUD_AGENTS_COMPOSE_OPERATIONS_FILE="$scheduling_operations_file" \
+  CLOUD_AGENTS_COMPOSE_AUDIT_FILE="$scheduling_audit_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const operations = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATIONS_FILE, "utf8"));
+const audit = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_AUDIT_FILE, "utf8"));
+for (const action of ["target.drain", "target.resume"]) {
+  if (!operations.operations?.some((item) => item.action === action && item.state === "succeeded") ||
+      !audit.events?.some((item) => item.action === action && item.result === "succeeded")) {
+    throw new Error(`Target ${action} did not close Operation and Audit authority`);
+  }
+}
+NODE
+
 codex_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
   --session session-compose-smoke \
   --request-id compose-smoke-session-create --idempotency-key compose-smoke-session-create \

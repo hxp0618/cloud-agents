@@ -45,6 +45,8 @@ type deploymentTargetStore interface {
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	BeginDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeInput) (internaldeploymenttarget.ProbeStart, error)
 	CompleteDeploymentTargetProbe(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.ProbeCompletion) (internaldeploymenttarget.Snapshot, error)
+	PreviewDeploymentTargetScheduling(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.SchedulingPreview, error)
+	TransitionDeploymentTargetScheduling(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.SchedulingInput) (internaldeploymenttarget.Operation, error)
 	BeginDeploymentTargetCleanup(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.CleanupInput) (internaldeploymenttarget.CleanupStart, error)
 	CompleteDeploymentTargetCleanup(context.Context, string, *authn.VerifiedPrincipal, internaldeploymenttarget.CleanupCompletion) (internaldeploymenttarget.Operation, error)
 }
@@ -150,6 +152,10 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		server.listAuditEvents(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "probe" && request.Method == http.MethodPost:
 		server.probe(writer, request, tenantID, projectID, targetID, requestID, bearer)
+	case action == "scheduling-preview" && request.Method == http.MethodGet:
+		server.schedulingPreview(writer, request, tenantID, projectID, targetID, requestID, bearer)
+	case action == "scheduling" && request.Method == http.MethodPost:
+		server.transitionScheduling(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "cleanup-preview" && request.Method == http.MethodGet:
 		server.cleanupPreview(writer, request, tenantID, projectID, targetID, requestID, bearer)
 	case action == "cleanup" && request.Method == http.MethodPost:
@@ -646,6 +652,100 @@ func (server *DeploymentTargetHTTPServer) cleanupPreview(writer http.ResponseWri
 	_, _ = writer.Write(body)
 }
 
+func (server *DeploymentTargetHTTPServer) schedulingPreview(writer http.ResponseWriter, request *http.Request, tenantID, projectID, targetID, requestID, bearer string) {
+	validated, err := openapiv1alpha1.ValidatePreviewAdminDeploymentTargetSchedulingServerRequest(tenantID, projectID, targetID, requestID)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	preview, err := server.store.PreviewDeploymentTargetScheduling(request.Context(), validated.TenantID, principal, validated.ProjectID, validated.TargetID)
+	if err != nil {
+		writeDeploymentTargetError(writer, err)
+		return
+	}
+	resourceVersion := strconv.FormatInt(preview.Target.ResourceVersion, 10)
+	activeLeases := make([]platformv1alpha1.DeploymentTargetSchedulingLease, 0, len(preview.ActiveLeases))
+	for _, lease := range preview.ActiveLeases {
+		activeLeases = append(activeLeases, platformv1alpha1.DeploymentTargetSchedulingLease{LeaseID: lease.LeaseID, LeaseName: lease.LeaseName, Generation: lease.Generation, ObservedPhase: lease.ObservedPhase})
+	}
+	value := platformv1alpha1.DeploymentTargetSchedulingPreview{
+		ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "DeploymentTargetSchedulingPreview", Metadata: commonv1alpha1.ResourceMetadata{UID: preview.Target.TargetID, Name: preview.Target.TargetName, TenantRef: commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: preview.Target.Scope.TenantID}, ResourceVersion: resourceVersion, CreatedAt: preview.Target.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: preview.Target.UpdatedAt.UTC().Format(time.RFC3339Nano)}},
+		Spec:         platformv1alpha1.DeploymentTargetSchedulingPreviewSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: preview.Target.Scope.ProjectID}, CurrentState: preview.Target.SchedulingState, DesiredState: preview.DesiredState, ExpectedGeneration: preview.Target.Generation, ExpectedResourceVersion: resourceVersion, ImpactDigest: preview.ImpactDigest, ActiveLeases: activeLeases},
+	}
+	body, err := platformv1alpha1.EncodeDeploymentTargetSchedulingPreviewResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.DeploymentTargetSchedulingPreview]{Value: value})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("X-Resource-Version", resourceVersion)
+	writer.Header().Set("ETag", `"`+resourceVersion+`"`)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
+func (server *DeploymentTargetHTTPServer) transitionScheduling(writer http.ResponseWriter, request *http.Request, tenantID, projectID, targetID, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateTransitionAdminDeploymentTargetSchedulingServerRequest(tenantID, projectID, targetID, requestID, idempotencyKey, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	resourceVersion, err := strconv.ParseInt(validated.Body.ExpectedResourceVersion, 10, 64)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	operation, err := server.store.TransitionDeploymentTargetScheduling(request.Context(), tenantID, principal, internaldeploymenttarget.SchedulingInput{
+		Scope: internaldeploymenttarget.Scope{TenantID: tenantID, ProjectID: projectID}, TargetID: targetID,
+		ExpectedGeneration: validated.Body.ExpectedGeneration, ExpectedResourceVersion: resourceVersion,
+		DesiredState: validated.Body.DesiredState, ImpactDigest: validated.Body.ImpactDigest,
+		Mutation: internaldeploymenttarget.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
+	})
+	if err != nil {
+		writeDeploymentTargetSchedulingError(writer, err)
+		return
+	}
+	writeMaintenanceOperation(writer, http.StatusOK, requestID, operation)
+}
+
+func writeDeploymentTargetSchedulingError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrDeploymentTargetSchedulingIdempotencyConflict):
+		writePublicProblem(writer, http.StatusConflict, "idempotency_conflict")
+	case errors.Is(err, postgres.ErrDeploymentTargetSchedulingGenerationConflict):
+		writePublicProblem(writer, http.StatusConflict, "target_generation_conflict")
+	case errors.Is(err, postgres.ErrDeploymentTargetSchedulingResourceVersionConflict):
+		writePublicProblem(writer, http.StatusConflict, "target_resource_version_conflict")
+	case errors.Is(err, postgres.ErrDeploymentTargetSchedulingStateConflict):
+		writePublicProblem(writer, http.StatusConflict, "target_scheduling_state_conflict")
+	case errors.Is(err, postgres.ErrDeploymentTargetSchedulingImpactConflict):
+		writePublicProblem(writer, http.StatusConflict, "scheduling_impact_conflict")
+	default:
+		writeDeploymentTargetError(writer, err)
+	}
+}
+
 func managedDeploymentTargetWorkerActive(targetGeneration int64, worker managedDeploymentTargetWorker, lease internalmanagedhost.Snapshot) bool {
 	return worker.targetGeneration == targetGeneration && lease.Scope.TenantID == worker.tenantID && lease.Scope.ProjectID == worker.projectID &&
 		lease.LeaseID == worker.leaseID && lease.TargetID == worker.targetID && lease.TargetGeneration == worker.targetGeneration &&
@@ -905,7 +1005,7 @@ func deploymentTargetResource(snapshot internaldeploymenttarget.Snapshot) platfo
 		Spec: platformv1alpha1.DeploymentTargetSpec{
 			ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
 			Generation: snapshot.Generation, TargetKind: snapshot.Kind, Endpoint: snapshot.Endpoint, CredentialRef: snapshot.CredentialRef,
-			ObservedPhase: snapshot.ObservedPhase, APIVersion: snapshot.APIVersion, EngineVersion: snapshot.EngineVersion,
+			SchedulingState: snapshot.SchedulingState, ObservedPhase: snapshot.ObservedPhase, APIVersion: snapshot.APIVersion, EngineVersion: snapshot.EngineVersion,
 			OS: snapshot.OS, Architecture: snapshot.Arch, StableErrorCode: snapshot.StableErrorCode, LastProbeAt: lastProbeAt,
 		},
 	}
@@ -951,7 +1051,17 @@ func deploymentTargetPathWithPrefix(path, prefix string, admin bool) (tenantID, 
 		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "deployment-targets" && parts[0] != "" && parts[2] != "" {
-		if admin && strings.HasSuffix(parts[4], ":cleanup-preview") {
+		if admin && strings.HasSuffix(parts[4], ":scheduling-preview") {
+			targetID = strings.TrimSuffix(parts[4], ":scheduling-preview")
+			if targetID != "" {
+				return parts[0], parts[2], targetID, "scheduling-preview", true
+			}
+		} else if admin && strings.HasSuffix(parts[4], ":scheduling") {
+			targetID = strings.TrimSuffix(parts[4], ":scheduling")
+			if targetID != "" {
+				return parts[0], parts[2], targetID, "scheduling", true
+			}
+		} else if admin && strings.HasSuffix(parts[4], ":cleanup-preview") {
 			targetID = strings.TrimSuffix(parts[4], ":cleanup-preview")
 			if targetID != "" {
 				return parts[0], parts[2], targetID, "cleanup-preview", true
@@ -988,6 +1098,8 @@ func deploymentTargetAdminPermission(action, method string) (string, bool) {
 		return "targets.get", true
 	case action == "cleanup-preview" && method == http.MethodGet:
 		return "targets.get", true
+	case action == "scheduling-preview" && method == http.MethodGet:
+		return "targets.get", true
 	case action == "operations" && method == http.MethodGet:
 		return "operations.list", true
 	case action == "maintenance-operations" && method == http.MethodGet:
@@ -997,6 +1109,8 @@ func deploymentTargetAdminPermission(action, method string) (string, bool) {
 	case action == "probe" && method == http.MethodPost:
 		return "targets.act", true
 	case action == "cleanup" && method == http.MethodPost:
+		return "targets.act", true
+	case action == "scheduling" && method == http.MethodPost:
 		return "targets.act", true
 	default:
 		return "", false

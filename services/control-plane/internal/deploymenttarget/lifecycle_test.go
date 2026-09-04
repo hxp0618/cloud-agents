@@ -48,7 +48,7 @@ func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {
 	snapshot := Snapshot{
 		Scope: Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "target-alpha", TargetName: "docker-alpha",
 		Kind: "docker", Endpoint: "https://docker.example.test:2376", CredentialRef: "docker-alpha", Generation: 1,
-		ObservedPhase: "ready", APIVersion: "1.54", EngineVersion: "29.4.0", OS: "linux", Arch: "arm64",
+		SchedulingState: "active", ObservedPhase: "ready", APIVersion: "1.54", EngineVersion: "29.4.0", OS: "linux", Arch: "arm64",
 		LastProbeAt: &now, ResourceVersion: 2, CreatedAt: now.Add(-time.Minute), UpdatedAt: now,
 	}
 	if err := snapshot.Validate(); err != nil {
@@ -57,6 +57,29 @@ func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {
 	snapshot.StableErrorCode = "must-not-coexist"
 	if err := snapshot.Validate(); err == nil {
 		t.Fatal("ready target accepted a failure code")
+	}
+}
+
+func TestDeploymentTargetSchedulingPreviewBindsImpactWithoutStoppingLeases(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 8, 0, 0, 0, time.UTC)
+	target := Snapshot{
+		Scope: Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "target-alpha", TargetName: "docker-alpha",
+		Kind: "docker", Endpoint: "https://docker.example.test:2376", CredentialRef: "docker-alpha", Generation: 2,
+		SchedulingState: "active", ObservedPhase: "ready", APIVersion: "1.54", EngineVersion: "29.4.0", OS: "linux", Arch: "arm64",
+		LastProbeAt: &now, ResourceVersion: 7, CreatedAt: now.Add(-time.Minute), UpdatedAt: now,
+	}
+	leases := []SchedulingLease{{LeaseID: "lease-alpha", LeaseName: "lease-alpha", Generation: 3, ObservedPhase: "ready"}}
+	preview, err := NewSchedulingPreview(target, leases)
+	if err != nil || preview.DesiredState != "drained" || len(preview.ActiveLeases) != 1 {
+		t.Fatalf("preview = %#v / %v", preview, err)
+	}
+	target.SchedulingState = "drained"
+	other, err := SchedulingImpactDigest(target, "active", leases)
+	if err != nil || other == preview.ImpactDigest {
+		t.Fatalf("scheduling digest did not bind state: %q %q / %v", preview.ImpactDigest, other, err)
+	}
+	if summary, err := SchedulingImpactSummary("drained", len(leases)); err != nil || !strings.Contains(summary, "1 active leases remain running") {
+		t.Fatalf("impact summary = %q / %v", summary, err)
 	}
 }
 

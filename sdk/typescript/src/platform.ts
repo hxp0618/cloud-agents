@@ -379,6 +379,12 @@ export type DeploymentTargetCleanupRequest = Readonly<{
   expectedResourceVersion: string;
   impactDigest: `sha256:${string}`;
 }>;
+export type DeploymentTargetSchedulingRequest = Readonly<{
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  desiredState: "active" | "drained";
+  impactDigest: `sha256:${string}`;
+}>;
 export type DeploymentTarget = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "DeploymentTarget";
@@ -389,6 +395,7 @@ export type DeploymentTarget = Readonly<{
     targetKind: "docker" | "kubernetes" | "ssh";
     endpoint: string;
     credentialRef: string;
+    schedulingState: "active" | "drained";
     observedPhase: "unprobed" | "probing" | "ready" | "unavailable";
     apiVersion: string;
     engineVersion: string;
@@ -409,7 +416,7 @@ export type MaintenanceOperation = Readonly<{
   kind: "MaintenanceOperation";
   operationId: string;
   idempotencyKey: string;
-  action: "target.register" | "target.probe" | "target.cleanup";
+  action: "target.register" | "target.probe" | "target.drain" | "target.resume" | "target.cleanup";
   resourceKind: "DeploymentTarget";
   resourceId: string;
   resourceGeneration: number;
@@ -437,6 +444,8 @@ export type AdminAuditEvent = Readonly<{
   action:
     | "target.register"
     | "target.probe"
+    | "target.drain"
+    | "target.resume"
     | "target.cleanup"
     | "profile.create"
     | "profile.publish"
@@ -479,6 +488,26 @@ export type DeploymentTargetCleanupPreview = Readonly<{
     impactDigest: `sha256:${string}`;
     canCleanup: boolean;
     workers: readonly DeploymentTargetCleanupWorker[];
+  }>;
+}>;
+export type DeploymentTargetSchedulingLease = Readonly<{
+  leaseId: string;
+  leaseName: string;
+  generation: number;
+  observedPhase: "provisioning" | "ready" | "terminating" | "terminated" | "failed";
+}>;
+export type DeploymentTargetSchedulingPreview = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "DeploymentTargetSchedulingPreview";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    currentState: "active" | "drained";
+    desiredState: "active" | "drained";
+    expectedGeneration: number;
+    expectedResourceVersion: string;
+    impactDigest: `sha256:${string}`;
+    activeLeases: readonly DeploymentTargetSchedulingLease[];
   }>;
 }>;
 export type ManagedAgentSessionCreateRequest = Readonly<{
@@ -877,6 +906,7 @@ const deploymentTargetResponseShape = resourceResponseShape({
   targetKind: scalarResponseShape,
   endpoint: scalarResponseShape,
   credentialRef: scalarResponseShape,
+  schedulingState: scalarResponseShape,
   observedPhase: scalarResponseShape,
   apiVersion: scalarResponseShape,
   engineVersion: scalarResponseShape,
@@ -967,6 +997,23 @@ const deploymentTargetCleanupPreviewResponseShape = resourceResponseShape({
   impactDigest: scalarResponseShape,
   canCleanup: scalarResponseShape,
   workers: { item: deploymentTargetCleanupWorkerResponseShape },
+});
+const deploymentTargetSchedulingLeaseResponseShape: ResponseShape = {
+  fields: {
+    leaseId: scalarResponseShape,
+    leaseName: scalarResponseShape,
+    generation: scalarResponseShape,
+    observedPhase: scalarResponseShape,
+  },
+};
+const deploymentTargetSchedulingPreviewResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  currentState: scalarResponseShape,
+  desiredState: scalarResponseShape,
+  expectedGeneration: scalarResponseShape,
+  expectedResourceVersion: scalarResponseShape,
+  impactDigest: scalarResponseShape,
+  activeLeases: { item: deploymentTargetSchedulingLeaseResponseShape },
 });
 const rbacMutationResultResponseShape: ResponseShape = {
   fields: {
@@ -1882,6 +1929,37 @@ export function encodeDeploymentTargetCleanupRequest(
 ): string {
   return JSON.stringify(decodeDeploymentTargetCleanupRequest(value));
 }
+export function decodeDeploymentTargetSchedulingRequest(
+  value: unknown,
+): DeploymentTargetSchedulingRequest {
+  const source = strictRecord(
+    value,
+    ["expectedGeneration", "expectedResourceVersion", "desiredState", "impactDigest"],
+    ["expectedGeneration", "expectedResourceVersion", "desiredState", "impactDigest"],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) || expectedResourceVersion.length > 20)
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    desiredState: enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState"),
+    impactDigest: digest(source.impactDigest, "/impactDigest") as `sha256:${string}`,
+  });
+}
+export function encodeDeploymentTargetSchedulingRequest(
+  value: DeploymentTargetSchedulingRequest,
+): string {
+  return JSON.stringify(decodeDeploymentTargetSchedulingRequest(value));
+}
 export function parseRBACMutationResult(text: string): ResponseEnvelope<RBACMutationResult> {
   return parseResponse(text, rbacMutationResultResponseShape, decodeRBACMutationResult);
 }
@@ -2722,6 +2800,7 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
       "targetKind",
       "endpoint",
       "credentialRef",
+      "schedulingState",
       "observedPhase",
       "apiVersion",
       "engineVersion",
@@ -2736,6 +2815,7 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
       "targetKind",
       "endpoint",
       "credentialRef",
+      "schedulingState",
       "observedPhase",
       "apiVersion",
       "engineVersion",
@@ -2795,6 +2875,11 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
       targetKind,
       endpoint: registeredTargetEndpoint(spec.endpoint, targetKind, "/spec/endpoint"),
       credentialRef: identifier(spec.credentialRef, "/spec/credentialRef"),
+      schedulingState: enumValue(
+        spec.schedulingState,
+        ["active", "drained"] as const,
+        "/spec/schedulingState",
+      ),
       observedPhase: phase,
       apiVersion,
       engineVersion,
@@ -2904,7 +2989,13 @@ export function decodeMaintenanceOperation(value: unknown): MaintenanceOperation
     idempotencyKey,
     action: enumValue(
       source.action,
-      ["target.register", "target.probe", "target.cleanup"] as const,
+      [
+        "target.register",
+        "target.probe",
+        "target.drain",
+        "target.resume",
+        "target.cleanup",
+      ] as const,
       "/action",
     ),
     resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
@@ -3004,6 +3095,8 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
       [
         "target.register",
         "target.probe",
+        "target.drain",
+        "target.resume",
         "target.cleanup",
         "profile.create",
         "profile.publish",
@@ -3175,6 +3268,99 @@ export function decodeDeploymentTargetCleanupPreview(
       impactDigest: digest(spec.impactDigest, "/spec/impactDigest") as `sha256:${string}`,
       canCleanup,
       workers: Object.freeze(workers),
+    }),
+  });
+}
+export function decodeDeploymentTargetSchedulingPreview(
+  value: unknown,
+): DeploymentTargetSchedulingPreview {
+  const source = record(value);
+  const root = base(source, "DeploymentTargetSchedulingPreview");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "currentState",
+      "desiredState",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "impactDigest",
+      "activeLeases",
+    ],
+    [
+      "projectRef",
+      "currentState",
+      "desiredState",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "impactDigest",
+      "activeLeases",
+    ],
+    "/spec",
+  );
+  const currentState = enumValue(
+    spec.currentState,
+    ["active", "drained"] as const,
+    "/spec/currentState",
+  );
+  const desiredState = enumValue(
+    spec.desiredState,
+    ["active", "drained"] as const,
+    "/spec/desiredState",
+  );
+  if (currentState === desiredState) error("INVALID_SCHEDULING_TRANSITION", "/spec/desiredState");
+  const expectedResourceVersion = string(
+    spec.expectedResourceVersion,
+    "/spec/expectedResourceVersion",
+  );
+  if (
+    !/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) ||
+    expectedResourceVersion.length > 20 ||
+    expectedResourceVersion !== root.metadata.resourceVersion
+  )
+    error("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion");
+  const values: unknown[] = Array.isArray(spec.activeLeases)
+    ? spec.activeLeases
+    : error("INVALID_SCHEDULING_IMPACT", "/spec/activeLeases");
+  let previous = "";
+  const activeLeases = values.map((entry, index) => {
+    const path = `/spec/activeLeases/${index}`;
+    const lease = strictRecord(
+      entry,
+      ["leaseId", "leaseName", "generation", "observedPhase"],
+      ["leaseId", "leaseName", "generation", "observedPhase"],
+      path,
+    );
+    const leaseId = identifier(lease.leaseId, `${path}/leaseId`);
+    if (leaseId <= previous) error("INVALID_SCHEDULING_IMPACT", `${path}/leaseId`);
+    previous = leaseId;
+    return Object.freeze({
+      leaseId,
+      leaseName: identifier(lease.leaseName, `${path}/leaseName`),
+      generation: integer(lease.generation, 1, Number.MAX_SAFE_INTEGER, `${path}/generation`),
+      observedPhase: enumValue(
+        lease.observedPhase,
+        ["provisioning", "ready", "terminating", "terminated", "failed"] as const,
+        `${path}/observedPhase`,
+      ),
+    });
+  });
+  return Object.freeze({
+    ...root,
+    kind: "DeploymentTargetSchedulingPreview",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      currentState,
+      desiredState,
+      expectedGeneration: integer(
+        spec.expectedGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/expectedGeneration",
+      ),
+      expectedResourceVersion,
+      impactDigest: digest(spec.impactDigest, "/spec/impactDigest") as `sha256:${string}`,
+      activeLeases: Object.freeze(activeLeases),
     }),
   });
 }
@@ -3913,6 +4099,15 @@ export function parseDeploymentTargetCleanupPreview(
     text,
     deploymentTargetCleanupPreviewResponseShape,
     decodeDeploymentTargetCleanupPreview,
+  );
+}
+export function parseDeploymentTargetSchedulingPreview(
+  text: string,
+): ResponseEnvelope<DeploymentTargetSchedulingPreview> {
+  return parseResponse(
+    text,
+    deploymentTargetSchedulingPreviewResponseShape,
+    decodeDeploymentTargetSchedulingPreview,
   );
 }
 export function parseManagedAgentSession(text: string): ResponseEnvelope<ManagedAgentSession> {
@@ -5866,6 +6061,66 @@ export class Client {
       result.value.spec.projectRef.id !== projectId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async previewAdminDeploymentTargetScheduling(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<DeploymentTargetSchedulingPreview>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:scheduling-preview`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminPreviewDeploymentTargetScheduling", response);
+    const result = parseDeploymentTargetSchedulingPreview(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== targetId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async transitionAdminDeploymentTargetScheduling(
+    tenantId: string,
+    projectId: string,
+    targetId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: DeploymentTargetSchedulingRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperation>> {
+    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:scheduling`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeDeploymentTargetSchedulingRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminTransitionDeploymentTargetScheduling", response);
+    const result = parseMaintenanceOperation(response.body);
+    if (
+      result.value.resourceId !== targetId ||
+      result.value.resourceGeneration !== body.expectedGeneration ||
+      result.value.action !== (body.desiredState === "drained" ? "target.drain" : "target.resume")
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/resourceId");
     return result;
   }
   async previewAdminDeploymentTargetCleanup(

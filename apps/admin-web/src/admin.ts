@@ -6,6 +6,8 @@ import {
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
   type DeploymentTargetCleanupRequest,
+  type DeploymentTargetSchedulingPreview,
+  type DeploymentTargetSchedulingRequest,
   type EnvironmentLease,
   type EnvironmentProfile,
   type MaintenanceOperation,
@@ -25,6 +27,8 @@ export type AdminClient = Pick<
   | "probeAdminDeploymentTarget"
   | "previewAdminDeploymentTargetCleanup"
   | "cleanupAdminDeploymentTarget"
+  | "previewAdminDeploymentTargetScheduling"
+  | "transitionAdminDeploymentTargetScheduling"
   | "listAdminEnvironmentLeases"
   | "listAdminWorkers"
   | "getAdminEnvironmentLease"
@@ -122,6 +126,17 @@ export function cleanupRequestFromPreview(
   return Object.freeze({
     expectedGeneration: preview.spec.expectedGeneration,
     expectedResourceVersion: preview.spec.expectedResourceVersion,
+    impactDigest: preview.spec.impactDigest,
+  });
+}
+
+export function schedulingRequestFromPreview(
+  preview: DeploymentTargetSchedulingPreview,
+): DeploymentTargetSchedulingRequest {
+  return Object.freeze({
+    expectedGeneration: preview.spec.expectedGeneration,
+    expectedResourceVersion: preview.spec.expectedResourceVersion,
+    desiredState: preview.spec.desiredState,
     impactDigest: preview.spec.impactDigest,
   });
 }

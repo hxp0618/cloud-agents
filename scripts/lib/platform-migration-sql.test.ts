@@ -971,6 +971,44 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
   });
 
+  it("classifies the deployment-target scheduling migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000044_drain_deployment_targets.sql"),
+      ),
+    );
+    expect(statements).toHaveLength(22);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000044").command),
+    ).toEqual([
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+      "GRANT",
+      "GRANT",
+    ]);
+    expect(() => classifyMigrationStatement(statements[2]!, "000043")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

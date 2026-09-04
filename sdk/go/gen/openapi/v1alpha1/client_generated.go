@@ -103,6 +103,7 @@ type MaintenanceOperationResult = common.ResponseEnvelope[platform.MaintenanceOp
 type MaintenanceOperationPageResult = common.ResponseEnvelope[platform.MaintenanceOperationPage]
 type AdminAuditEventPageResult = common.ResponseEnvelope[platform.AdminAuditEventPage]
 type DeploymentTargetCleanupPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetCleanupPreview]
+type DeploymentTargetSchedulingPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetSchedulingPreview]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
@@ -1280,6 +1281,60 @@ func (client *Client) GetAdminDeploymentTarget(ctx context.Context, tenantID, pr
 	}
 	return value, nil
 }
+func (client *Client) PreviewAdminDeploymentTargetScheduling(ctx context.Context, tenantID, projectID, targetID, requestID string) (DeploymentTargetSchedulingPreviewResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return DeploymentTargetSchedulingPreviewResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":scheduling-preview", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return DeploymentTargetSchedulingPreviewResult{}, err
+	}
+	if response.Status != 200 {
+		return DeploymentTargetSchedulingPreviewResult{}, client.problemError("adminPreviewDeploymentTargetScheduling", response)
+	}
+	value, err := platform.DecodeDeploymentTargetSchedulingPreviewResponseJSON(response.Body)
+	if err != nil {
+		return DeploymentTargetSchedulingPreviewResult{}, &ClientError{Operation: "adminPreviewDeploymentTargetScheduling", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return DeploymentTargetSchedulingPreviewResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != targetID || value.Value.Spec.ProjectRef.ID != projectID {
+		return DeploymentTargetSchedulingPreviewResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) TransitionAdminDeploymentTargetScheduling(ctx context.Context, tenantID, projectID, targetID, requestID, idempotencyKey string, body platform.DeploymentTargetSchedulingRequest) (MaintenanceOperationResult, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeDeploymentTargetSchedulingRequestJSON(body)
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/deployment-targets/" + targetID + ":scheduling", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationResult{}, client.problemError("adminTransitionDeploymentTargetScheduling", response)
+	}
+	value, err := platform.DecodeMaintenanceOperationResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationResult{}, &ClientError{Operation: "adminTransitionDeploymentTargetScheduling", Status: response.Status, Cause: err}
+	}
+	expectedAction := "target.resume"
+	if body.DesiredState == "drained" {
+		expectedAction = "target.drain"
+	}
+	if value.Value.ResourceID != targetID || value.Value.ResourceGeneration != body.ExpectedGeneration || value.Value.Action != expectedAction {
+		return MaintenanceOperationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/resourceId")
+	}
+	return value, nil
+}
 func (client *Client) PreviewAdminDeploymentTargetCleanup(ctx context.Context, tenantID, projectID, targetID, requestID string) (DeploymentTargetCleanupPreviewResult, error) {
 	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
 		return DeploymentTargetCleanupPreviewResult{}, err
@@ -2314,7 +2369,7 @@ func EncodeEnvironmentLeaseResponseJSON(value common.ResponseEnvelope[platform.E
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
-var deploymentTargetResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "tenantRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"projectRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()})})
+var deploymentTargetResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "tenantRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"projectRef": common.ObjectResponseShape(map[string]common.ResponseShape{"namespace": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "id": common.ScalarResponseShape()}), "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "schedulingState": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()})})
 
 func DecodeDeploymentTargetResponseJSON(data []byte) (common.ResponseEnvelope[platform.DeploymentTarget], error) {
 	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, deploymentTargetResponseShape)
@@ -3614,6 +3669,43 @@ func ValidateProbeDeploymentTargetServerRequest(tenantID, projectID, targetID, r
 		return ProbeDeploymentTargetServerInput{}, err
 	}
 	return ProbeDeploymentTargetServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type PreviewAdminDeploymentTargetSchedulingServerInput struct {
+	TenantID  string
+	ProjectID string
+	TargetID  string
+	RequestID string
+}
+
+func ValidatePreviewAdminDeploymentTargetSchedulingServerRequest(tenantID, projectID, targetID, requestID string) (PreviewAdminDeploymentTargetSchedulingServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return PreviewAdminDeploymentTargetSchedulingServerInput{}, err
+	}
+	return PreviewAdminDeploymentTargetSchedulingServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID}, nil
+}
+
+type TransitionAdminDeploymentTargetSchedulingServerInput struct {
+	TenantID       string
+	ProjectID      string
+	TargetID       string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.DeploymentTargetSchedulingRequest
+}
+
+func ValidateTransitionAdminDeploymentTargetSchedulingServerRequest(tenantID, projectID, targetID, requestID, idempotencyKey string, body []byte) (TransitionAdminDeploymentTargetSchedulingServerInput, error) {
+	if err := validateDeploymentTargetPath(tenantID, projectID, targetID, requestID); err != nil {
+		return TransitionAdminDeploymentTargetSchedulingServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return TransitionAdminDeploymentTargetSchedulingServerInput{}, err
+	}
+	value, err := platform.DecodeDeploymentTargetSchedulingRequestJSON(body)
+	if err != nil {
+		return TransitionAdminDeploymentTargetSchedulingServerInput{}, err
+	}
+	return TransitionAdminDeploymentTargetSchedulingServerInput{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type PreviewAdminDeploymentTargetCleanupServerInput struct {

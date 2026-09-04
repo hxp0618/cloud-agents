@@ -343,12 +343,19 @@ type DeploymentTargetCleanupRequest struct {
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
 	ImpactDigest            string `json:"impactDigest"`
 }
+type DeploymentTargetSchedulingRequest struct {
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	DesiredState            string `json:"desiredState"`
+	ImpactDigest            string `json:"impactDigest"`
+}
 type DeploymentTargetSpec struct {
 	ProjectRef      common.ProjectRef `json:"projectRef"`
 	Generation      int64             `json:"generation"`
 	TargetKind      string            `json:"targetKind"`
 	Endpoint        string            `json:"endpoint"`
 	CredentialRef   string            `json:"credentialRef"`
+	SchedulingState string            `json:"schedulingState"`
 	ObservedPhase   string            `json:"observedPhase"`
 	APIVersion      string            `json:"apiVersion"`
 	EngineVersion   string            `json:"engineVersion"`
@@ -437,6 +444,25 @@ type DeploymentTargetCleanupPreview struct {
 	ResourceBase
 	Spec DeploymentTargetCleanupPreviewSpec `json:"spec"`
 }
+type DeploymentTargetSchedulingLease struct {
+	LeaseID       string `json:"leaseId"`
+	LeaseName     string `json:"leaseName"`
+	Generation    int64  `json:"generation"`
+	ObservedPhase string `json:"observedPhase"`
+}
+type DeploymentTargetSchedulingPreviewSpec struct {
+	ProjectRef              common.ProjectRef                 `json:"projectRef"`
+	CurrentState            string                            `json:"currentState"`
+	DesiredState            string                            `json:"desiredState"`
+	ExpectedGeneration      int64                             `json:"expectedGeneration"`
+	ExpectedResourceVersion string                            `json:"expectedResourceVersion"`
+	ImpactDigest            string                            `json:"impactDigest"`
+	ActiveLeases            []DeploymentTargetSchedulingLease `json:"activeLeases"`
+}
+type DeploymentTargetSchedulingPreview struct {
+	ResourceBase
+	Spec DeploymentTargetSchedulingPreviewSpec `json:"spec"`
+}
 
 var (
 	resourceMetadataResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
@@ -480,9 +506,11 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "schedulingState": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetKind": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape(), "canCleanup": common.ScalarResponseShape(), "workers": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"workerName": common.ScalarResponseShape(), "leaseId": common.ScalarResponseShape(), "leaseGeneration": common.ScalarResponseShape(), "disposition": common.ScalarResponseShape(), "resources": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"resourceKind": common.ScalarResponseShape(), "resourceName": common.ScalarResponseShape()}))}))}
+	case "DeploymentTargetSchedulingPreview":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "currentState": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape(), "activeLeases": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"leaseId": common.ScalarResponseShape(), "leaseName": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape()}))}
 	default:
 		return common.ObjectResponseShape(nil)
 	}
@@ -2105,6 +2133,39 @@ func EncodeDeploymentTargetCleanupRequestJSON(value DeploymentTargetCleanupReque
 	}
 	return raw, nil
 }
+func DecodeDeploymentTargetSchedulingRequestJSON(data []byte) (DeploymentTargetSchedulingRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedGeneration", "expectedResourceVersion", "desiredState", "impactDigest"}, []string{"expectedGeneration", "expectedResourceVersion", "desiredState", "impactDigest"})
+	if err != nil {
+		return DeploymentTargetSchedulingRequest{}, err
+	}
+	generation, err := fieldInt64(fields, "expectedGeneration", "/expectedGeneration")
+	if err != nil || generation < 1 {
+		return DeploymentTargetSchedulingRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	resourceVersion, err := fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/expectedResourceVersion") != nil {
+		return DeploymentTargetSchedulingRequest{}, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	desiredState, err := fieldString(fields, "desiredState", "/desiredState")
+	if err != nil || desiredState != "active" && desiredState != "drained" {
+		return DeploymentTargetSchedulingRequest{}, common.ContractError("INVALID_SCHEDULING_STATE", "/desiredState")
+	}
+	impactDigest, err := fieldString(fields, "impactDigest", "/impactDigest")
+	if err != nil || !digestPattern.MatchString(impactDigest) {
+		return DeploymentTargetSchedulingRequest{}, common.ContractError("INVALID_DIGEST", "/impactDigest")
+	}
+	return DeploymentTargetSchedulingRequest{ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, DesiredState: desiredState, ImpactDigest: impactDigest}, nil
+}
+func EncodeDeploymentTargetSchedulingRequestJSON(value DeploymentTargetSchedulingRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeDeploymentTargetSchedulingRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 	fields, err := strictResourceExact(data)
 	if err != nil {
@@ -2114,8 +2175,8 @@ func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 	if err != nil {
 		return DeploymentTarget{}, err
 	}
-	allowed := []string{"projectRef", "generation", "targetKind", "endpoint", "credentialRef", "observedPhase", "apiVersion", "engineVersion", "os", "architecture", "stableErrorCode", "lastProbeAt"}
-	spec, err := strictSpec(fields["spec"], allowed, allowed[:11])
+	allowed := []string{"projectRef", "generation", "targetKind", "endpoint", "credentialRef", "schedulingState", "observedPhase", "apiVersion", "engineVersion", "os", "architecture", "stableErrorCode", "lastProbeAt"}
+	spec, err := strictSpec(fields["spec"], allowed, allowed[:12])
 	if err != nil {
 		return DeploymentTarget{}, err
 	}
@@ -2138,6 +2199,10 @@ func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 	credential, err := fieldString(spec, "credentialRef", "/spec/credentialRef")
 	if err != nil || common.ValidateIdentifier(credential, "/spec/credentialRef") != nil {
 		return DeploymentTarget{}, common.ContractError("INVALID_IDENTIFIER", "/spec/credentialRef")
+	}
+	schedulingState, err := fieldString(spec, "schedulingState", "/spec/schedulingState")
+	if err != nil || schedulingState != "active" && schedulingState != "drained" {
+		return DeploymentTarget{}, common.ContractError("INVALID_SCHEDULING_STATE", "/spec/schedulingState")
 	}
 	phase, err := fieldString(spec, "observedPhase", "/spec/observedPhase")
 	if err != nil || phase != "unprobed" && phase != "probing" && phase != "ready" && phase != "unavailable" {
@@ -2181,7 +2246,7 @@ func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 	if stable != "" && common.ValidateIdentifier(stable, "/spec/stableErrorCode") != nil {
 		return DeploymentTarget{}, common.ContractError("INVALID_IDENTIFIER", "/spec/stableErrorCode")
 	}
-	return DeploymentTarget{ResourceBase: base, Spec: DeploymentTargetSpec{ProjectRef: project, Generation: generation, TargetKind: kind, Endpoint: endpoint, CredentialRef: credential, ObservedPhase: phase, APIVersion: api, EngineVersion: engine, OS: targetOS, Architecture: arch, StableErrorCode: stable, LastProbeAt: last}}, nil
+	return DeploymentTarget{ResourceBase: base, Spec: DeploymentTargetSpec{ProjectRef: project, Generation: generation, TargetKind: kind, Endpoint: endpoint, CredentialRef: credential, SchedulingState: schedulingState, ObservedPhase: phase, APIVersion: api, EngineVersion: engine, OS: targetOS, Architecture: arch, StableErrorCode: stable, LastProbeAt: last}}, nil
 }
 func DecodeDeploymentTargetResponseJSON(data []byte) (common.ResponseEnvelope[DeploymentTarget], error) {
 	fields, sidecar, err := strictResource(data, "DeploymentTarget")
@@ -2256,7 +2321,7 @@ func DecodeMaintenanceOperationJSON(data []byte) (MaintenanceOperation, error) {
 	if value.APIVersion != APIVersion || value.Kind != "MaintenanceOperation" {
 		return MaintenanceOperation{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
+	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
 		return MaintenanceOperation{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "")
 	}
 	return value, nil
@@ -2328,7 +2393,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.cleanup" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil
@@ -2490,6 +2555,103 @@ func DecodeDeploymentTargetCleanupPreviewResponseJSON(data []byte) (common.Respo
 	return common.ResponseEnvelope[DeploymentTargetCleanupPreview]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeDeploymentTargetCleanupPreviewResponseJSON(value common.ResponseEnvelope[DeploymentTargetCleanupPreview]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func decodeDeploymentTargetSchedulingLease(raw json.RawMessage, path string) (DeploymentTargetSchedulingLease, error) {
+	fields, err := common.DecodeStrictObject(raw, []string{"leaseId", "leaseName", "generation", "observedPhase"}, []string{"leaseId", "leaseName", "generation", "observedPhase"})
+	if err != nil {
+		return DeploymentTargetSchedulingLease{}, err
+	}
+	leaseID, err := fieldString(fields, "leaseId", path+"/leaseId")
+	if err != nil || common.ValidateIdentifier(leaseID, path+"/leaseId") != nil {
+		return DeploymentTargetSchedulingLease{}, common.ContractError("INVALID_IDENTIFIER", path+"/leaseId")
+	}
+	leaseName, err := fieldString(fields, "leaseName", path+"/leaseName")
+	if err != nil || common.ValidateIdentifier(leaseName, path+"/leaseName") != nil {
+		return DeploymentTargetSchedulingLease{}, common.ContractError("INVALID_IDENTIFIER", path+"/leaseName")
+	}
+	generation, err := fieldInt64(fields, "generation", path+"/generation")
+	if err != nil || generation < 1 {
+		return DeploymentTargetSchedulingLease{}, common.ContractError("INVALID_GENERATION", path+"/generation")
+	}
+	phase, err := fieldString(fields, "observedPhase", path+"/observedPhase")
+	if err != nil || phase != "provisioning" && phase != "ready" && phase != "terminating" && phase != "terminated" && phase != "failed" {
+		return DeploymentTargetSchedulingLease{}, common.ContractError("INVALID_PHASE", path+"/observedPhase")
+	}
+	return DeploymentTargetSchedulingLease{LeaseID: leaseID, LeaseName: leaseName, Generation: generation, ObservedPhase: phase}, nil
+}
+func DecodeDeploymentTargetSchedulingPreviewJSON(data []byte) (DeploymentTargetSchedulingPreview, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return DeploymentTargetSchedulingPreview{}, err
+	}
+	base, err := checkResourceBase(fields, "DeploymentTargetSchedulingPreview")
+	if err != nil {
+		return DeploymentTargetSchedulingPreview{}, err
+	}
+	spec, err := strictSpec(fields["spec"], []string{"projectRef", "currentState", "desiredState", "expectedGeneration", "expectedResourceVersion", "impactDigest", "activeLeases"}, []string{"projectRef", "currentState", "desiredState", "expectedGeneration", "expectedResourceVersion", "impactDigest", "activeLeases"})
+	if err != nil {
+		return DeploymentTargetSchedulingPreview{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return DeploymentTargetSchedulingPreview{}, err
+	}
+	currentState, err := fieldString(spec, "currentState", "/spec/currentState")
+	if err != nil || currentState != "active" && currentState != "drained" {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_SCHEDULING_STATE", "/spec/currentState")
+	}
+	desiredState, err := fieldString(spec, "desiredState", "/spec/desiredState")
+	if err != nil || desiredState != "active" && desiredState != "drained" {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_SCHEDULING_STATE", "/spec/desiredState")
+	}
+	if desiredState == currentState {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_SCHEDULING_TRANSITION", "/spec/desiredState")
+	}
+	generation, err := fieldInt64(spec, "expectedGeneration", "/spec/expectedGeneration")
+	if err != nil || generation < 1 {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_GENERATION", "/spec/expectedGeneration")
+	}
+	resourceVersion, err := fieldString(spec, "expectedResourceVersion", "/spec/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/spec/expectedResourceVersion") != nil || resourceVersion != base.Metadata.ResourceVersion {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion")
+	}
+	impactDigest, err := fieldString(spec, "impactDigest", "/spec/impactDigest")
+	if err != nil || !digestPattern.MatchString(impactDigest) {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_DIGEST", "/spec/impactDigest")
+	}
+	var rawLeases []json.RawMessage
+	if err := json.Unmarshal(spec["activeLeases"], &rawLeases); err != nil || rawLeases == nil {
+		return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_SCHEDULING_IMPACT", "/spec/activeLeases")
+	}
+	leases := make([]DeploymentTargetSchedulingLease, 0, len(rawLeases))
+	previous := ""
+	for index, rawLease := range rawLeases {
+		lease, err := decodeDeploymentTargetSchedulingLease(rawLease, "/spec/activeLeases/"+itoa(index))
+		if err != nil {
+			return DeploymentTargetSchedulingPreview{}, err
+		}
+		if lease.LeaseID <= previous {
+			return DeploymentTargetSchedulingPreview{}, common.ContractError("INVALID_SCHEDULING_IMPACT", "/spec/activeLeases/"+itoa(index)+"/leaseId")
+		}
+		previous = lease.LeaseID
+		leases = append(leases, lease)
+	}
+	return DeploymentTargetSchedulingPreview{ResourceBase: base, Spec: DeploymentTargetSchedulingPreviewSpec{ProjectRef: project, CurrentState: currentState, DesiredState: desiredState, ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, ImpactDigest: impactDigest, ActiveLeases: leases}}, nil
+}
+func DecodeDeploymentTargetSchedulingPreviewResponseJSON(data []byte) (common.ResponseEnvelope[DeploymentTargetSchedulingPreview], error) {
+	fields, sidecar, err := strictResource(data, "DeploymentTargetSchedulingPreview")
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTargetSchedulingPreview]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeDeploymentTargetSchedulingPreviewJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[DeploymentTargetSchedulingPreview]{}, err
+	}
+	return common.ResponseEnvelope[DeploymentTargetSchedulingPreview]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeDeploymentTargetSchedulingPreviewResponseJSON(value common.ResponseEnvelope[DeploymentTargetSchedulingPreview]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

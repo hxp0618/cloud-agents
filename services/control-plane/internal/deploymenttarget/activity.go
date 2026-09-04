@@ -65,7 +65,7 @@ func (event AuditEvent) Validate() error {
 }
 
 func validActivityAction(value string) bool {
-	return value == "target.register" || value == "target.probe" || value == "target.cleanup"
+	return value == "target.register" || value == "target.probe" || value == "target.drain" || value == "target.resume" || value == "target.cleanup"
 }
 
 func validOperationState(value string) bool {

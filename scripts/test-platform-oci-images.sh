@@ -66,12 +66,12 @@ expect_startup_failure() {
 
 expect_startup_failure control-plane 2 "invalid control-plane configuration"
 expect_startup_failure worker 2 "startup or shutdown failed"
-expect_startup_failure migrate 1 "database URL, repository root, and product-000043 selector are required"
+expect_startup_failure migrate 1 "database URL, repository root, and product-000044 selector are required"
 
 test "$(docker run --rm --entrypoint /usr/local/bin/codex "$image_prefix:worker" --version)" = "codex-cli 0.150.1"
 test "$(docker run --rm --entrypoint /usr/local/bin/claude "$image_prefix:worker" --version)" = "2.1.207 (Claude Code)"
 docker run --rm --entrypoint /usr/bin/test "$image_prefix:migrate" \
-	-r /opt/cloud-agents/migrations/services/control-plane/migrations/product/000043/manifest.json
+	-r /opt/cloud-agents/migrations/services/control-plane/migrations/product/000044/manifest.json
 
 runtime_output=$(
   printf '%s\n' \

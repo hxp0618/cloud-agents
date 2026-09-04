@@ -10,6 +10,7 @@ import {
   listAdminTargets,
   listAdminWorkers,
   readSavedAdminConnection,
+  schedulingRequestFromPreview,
   summarizeClusterHosts,
   writeSavedAdminConnection,
   type AdminClient,
@@ -29,6 +30,24 @@ describe("Admin Web boundary", () => {
       expectedGeneration: 7,
       expectedResourceVersion: "42",
       impactDigest: `sha256:${"a".repeat(64)}`,
+    });
+  });
+
+  it("submits the exact scheduling transition returned by the preview", () => {
+    expect(
+      schedulingRequestFromPreview({
+        spec: {
+          expectedGeneration: 7,
+          expectedResourceVersion: "42",
+          desiredState: "drained",
+          impactDigest: `sha256:${"b".repeat(64)}`,
+        },
+      } as unknown as Parameters<typeof schedulingRequestFromPreview>[0]),
+    ).toEqual({
+      expectedGeneration: 7,
+      expectedResourceVersion: "42",
+      desiredState: "drained",
+      impactDigest: `sha256:${"b".repeat(64)}`,
     });
   });
 

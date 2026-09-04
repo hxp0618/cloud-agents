@@ -4,6 +4,7 @@ import {
   type AdminAuditEvent,
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
+  type DeploymentTargetSchedulingPreview,
   type DeploymentTargetRegisterRequest,
   type EnvironmentLease,
   type EnvironmentProfile,
@@ -29,6 +30,7 @@ import {
   replaceLease,
   replaceProfile,
   replaceTarget,
+  schedulingRequestFromPreview,
   summarizeClusterHosts,
   writeSavedAdminConnection,
   type AdminClient,
@@ -95,6 +97,7 @@ function phaseTone(phase: string): string {
       "queued",
       "starting",
       "stopping",
+      "drained",
     ].includes(phase)
   )
     return "running";
@@ -115,6 +118,7 @@ const phaseMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   ready: "phase.ready",
   unavailable: "phase.unavailable",
   active: "phase.active",
+  drained: "phase.drained",
   provisioning: "phase.provisioning",
   terminating: "phase.terminating",
   terminated: "phase.terminated",
@@ -142,6 +146,8 @@ const phaseMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
 const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "target.register": "audit.targetRegister",
   "target.probe": "audit.targetProbe",
+  "target.drain": "audit.targetDrain",
+  "target.resume": "audit.targetResume",
   "target.cleanup": "audit.targetCleanup",
   "profile.create": "audit.profileCreate",
   "profile.publish": "audit.profilePublish",
@@ -151,6 +157,8 @@ const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
 const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "target.register": "operation.impact.register",
   "target.probe": "operation.impact.probe",
+  "target.drain": "operation.impact.drain",
+  "target.resume": "operation.impact.resume",
   "target.cleanup": "operation.impact.cleanup",
 });
 
@@ -358,6 +366,8 @@ export function App() {
   );
   const [targetAudit, setTargetAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
   const [cleanupPreview, setCleanupPreview] = useState<DeploymentTargetCleanupPreview | null>(null);
+  const [schedulingPreview, setSchedulingPreview] =
+    useState<DeploymentTargetSchedulingPreview | null>(null);
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [workers, setWorkers] = useState<readonly Worker[]>(Object.freeze([]));
@@ -373,6 +383,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = useState(false);
+  const [schedulingConfirmationOpen, setSchedulingConfirmationOpen] = useState(false);
   const [leaseDetailOpen, setLeaseDetailOpen] = useState(false);
   const [workerDetailOpen, setWorkerDetailOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -418,6 +429,12 @@ export function App() {
     cleanupPreview.metadata.resourceVersion === selectedTarget.metadata.resourceVersion
       ? cleanupPreview
       : null;
+  const selectedSchedulingPreview =
+    selectedTarget !== undefined &&
+    schedulingPreview?.metadata.uid === selectedTarget.metadata.uid &&
+    schedulingPreview.metadata.resourceVersion === selectedTarget.metadata.resourceVersion
+      ? schedulingPreview
+      : null;
   const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
   const selectedWorker = workers.find(({ metadata }) => metadata.uid === selectedWorkerId);
   const selectedProfile = profiles.find(
@@ -441,9 +458,13 @@ export function App() {
     normalizedQuery === ""
       ? targets
       : targets.filter(({ metadata, spec }) =>
-          [metadata.uid, metadata.name, spec.targetKind, spec.observedPhase].some((value) =>
-            value.toLocaleLowerCase().includes(normalizedQuery),
-          ),
+          [
+            metadata.uid,
+            metadata.name,
+            spec.targetKind,
+            spec.observedPhase,
+            spec.schedulingState,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
         );
   const visibleLeases =
     normalizedQuery === ""
@@ -482,6 +503,7 @@ export function App() {
               target.metadata.name,
               target.spec.targetKind,
               target.spec.observedPhase,
+              target.spec.schedulingState,
               target.spec.apiVersion,
               target.spec.engineVersion,
               target.spec.os,
@@ -609,6 +631,7 @@ export function App() {
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
+    setSchedulingConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setWorkerDetailOpen(false);
     setProfileDetailOpen(false);
@@ -626,6 +649,7 @@ export function App() {
     setTargetOperations(Object.freeze([]));
     setTargetAudit(Object.freeze([]));
     setCleanupPreview(null);
+    setSchedulingPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
     setWorkers(Object.freeze([]));
@@ -637,6 +661,7 @@ export function App() {
     setSelectedMaintenanceOperationId("");
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
+    setSchedulingConfirmationOpen(false);
     setLeaseDetailOpen(false);
     setWorkerDetailOpen(false);
     setProfileDetailOpen(false);
@@ -821,8 +846,10 @@ export function App() {
   function selectTarget(targetId: string) {
     setTargetDetailOpen(true);
     setCleanupConfirmationOpen(false);
+    setSchedulingConfirmationOpen(false);
     if (client === null) return;
     setCleanupPreview(null);
+    setSchedulingPreview(null);
     setTargetOperations(Object.freeze([]));
     setTargetAudit(Object.freeze([]));
     setSelectedTargetId(targetId);
@@ -1022,6 +1049,7 @@ export function App() {
         setTargets((current) => replaceTarget(current, result.value));
         setSelectedTargetId(result.value.metadata.uid);
         setCleanupPreview(null);
+        setSchedulingPreview(null);
         setTargetForm({
           targetId: "",
           targetName: "",
@@ -1062,6 +1090,7 @@ export function App() {
         setTargetOperations(activity.operations);
         setTargetAudit(activity.audit);
         setCleanupPreview(null);
+        setSchedulingPreview(null);
         await reloadMaintenanceOperations(signal);
       },
     );
@@ -1083,6 +1112,70 @@ export function App() {
         );
         setCleanupPreview(result.value);
         setCleanupConfirmationOpen(true);
+      },
+    );
+  }
+
+  function previewTargetScheduling() {
+    if (client === null || selectedTarget === undefined) return;
+    const target = selectedTarget;
+    void runOperation(
+      `scheduling-preview:${target.metadata.uid}:${target.metadata.resourceVersion}`,
+      { key: "operation.previewScheduling", values: { name: target.metadata.name } },
+      async (signal) => {
+        const result = await client.previewAdminDeploymentTargetScheduling(
+          connection.tenantId,
+          connection.projectId,
+          target.metadata.uid,
+          newRequestId(),
+          signal,
+        );
+        setSchedulingPreview(result.value);
+        setSchedulingConfirmationOpen(true);
+      },
+    );
+  }
+
+  function transitionTargetScheduling() {
+    if (client === null || selectedTarget === undefined || selectedSchedulingPreview === null)
+      return;
+    const target = selectedTarget;
+    const preview = selectedSchedulingPreview;
+    const action = preview.spec.desiredState === "drained" ? "drain" : "resume";
+    const key = `scheduling:${target.metadata.uid}:${preview.spec.expectedGeneration}:${preview.spec.expectedResourceVersion}:${preview.spec.desiredState}:${preview.spec.impactDigest}`;
+    setSchedulingConfirmationOpen(false);
+    void runOperation(
+      key,
+      {
+        key: action === "drain" ? "operation.drainTarget" : "operation.resumeTarget",
+        values: { name: target.metadata.name },
+      },
+      async (signal) => {
+        await client.transitionAdminDeploymentTargetScheduling(
+          connection.tenantId,
+          connection.projectId,
+          target.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          schedulingRequestFromPreview(preview),
+          signal,
+        );
+        const [result, activity] = await Promise.all([
+          client.getAdminDeploymentTarget(
+            connection.tenantId,
+            connection.projectId,
+            target.metadata.uid,
+            newRequestId(),
+            signal,
+          ),
+          loadTargetActivity(client, connection, target.metadata.uid, signal),
+        ]);
+        setTargets((current) => replaceTarget(current, result.value));
+        setTargetOperations(activity.operations);
+        setTargetAudit(activity.audit);
+        setCleanupPreview(null);
+        setSchedulingPreview(null);
+        await reloadMaintenanceOperations(signal);
       },
     );
   }
@@ -1116,6 +1209,7 @@ export function App() {
         setTargetOperations(activity.operations);
         setTargetAudit(activity.audit);
         setCleanupPreview(null);
+        setSchedulingPreview(null);
         await reloadMaintenanceOperations(signal);
       },
     );
@@ -1659,6 +1753,7 @@ export function App() {
           onClose={() => {
             setTargetDetailOpen(false);
             setCleanupConfirmationOpen(false);
+            setSchedulingConfirmationOpen(false);
           }}
         >
           <aside className="detail-panel" aria-label={t("sheet.selectedTarget")}>
@@ -1666,7 +1761,11 @@ export function App() {
               className="sheet-close"
               type="button"
               aria-label={t("action.close")}
-              onClick={() => setTargetDetailOpen(false)}
+              onClick={() => {
+                setTargetDetailOpen(false);
+                setCleanupConfirmationOpen(false);
+                setSchedulingConfirmationOpen(false);
+              }}
             >
               ×
             </button>
@@ -1675,10 +1774,28 @@ export function App() {
               operations={targetOperations}
               audit={targetAudit}
               onProbe={probeTarget}
+              onPreviewScheduling={previewTargetScheduling}
               onPreviewCleanup={previewTargetCleanup}
               disabled={busy !== null}
             />
           </aside>
+        </AdminSheet>
+      ) : null}
+
+      {schedulingConfirmationOpen &&
+      selectedTarget !== undefined &&
+      selectedSchedulingPreview !== null ? (
+        <AdminSheet
+          label={t("sheet.scheduling", { name: selectedTarget.metadata.name })}
+          onClose={() => setSchedulingConfirmationOpen(false)}
+        >
+          <SchedulingConfirmation
+            target={selectedTarget}
+            preview={selectedSchedulingPreview}
+            disabled={busy !== null}
+            onClose={() => setSchedulingConfirmationOpen(false)}
+            onConfirm={transitionTargetScheduling}
+          />
         </AdminSheet>
       ) : null}
 
@@ -2175,9 +2292,11 @@ function TargetTable({
               </td>
               <td>
                 <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
-                  <i />
-                  {phaseLabel(target.spec.observedPhase, t)}
+                  <i /> {phaseLabel(target.spec.observedPhase, t)}
                 </span>
+                <small className="table-subline">
+                  {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
+                </small>
               </td>
               <td className="mono">g{number(target.spec.generation)}</td>
               <td>{dateTime(target.spec.lastProbeAt)}</td>
@@ -2335,9 +2454,11 @@ function ClusterHostTable({
               <td>{dateTime(latestHealthAt)}</td>
               <td>
                 <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
-                  <i />
-                  {phaseLabel(target.spec.observedPhase, t)}
+                  <i /> {phaseLabel(target.spec.observedPhase, t)}
                 </span>
+                <small className="table-subline">
+                  {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
+                </small>
               </td>
               <td>{dateTime(target.spec.lastProbeAt)}</td>
               <td className="row-action-cell">
@@ -2666,6 +2787,7 @@ function TargetDetail({
   operations,
   audit,
   onProbe,
+  onPreviewScheduling,
   onPreviewCleanup,
   disabled,
 }: Readonly<{
@@ -2673,6 +2795,7 @@ function TargetDetail({
   operations: readonly MaintenanceOperation[];
   audit: readonly AdminAuditEvent[];
   onProbe: () => void;
+  onPreviewScheduling: () => void;
   onPreviewCleanup: () => void;
   disabled: boolean;
 }>) {
@@ -2712,6 +2835,10 @@ function TargetDetail({
           <dd className="mono">{number(target.spec.generation)}</dd>
         </div>
         <div>
+          <dt>{t("detail.schedulingState")}</dt>
+          <dd>{phaseLabel(target.spec.schedulingState, t)}</dd>
+        </div>
+        <div>
           <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{target.metadata.resourceVersion}</dd>
         </div>
@@ -2741,6 +2868,24 @@ function TargetDetail({
           </div>
         ) : null}
       </dl>
+      <section className="action-block">
+        <div>
+          <h3>{t("detail.schedulingTitle")}</h3>
+          <p>{t("detail.schedulingDescription")}</p>
+        </div>
+        <button
+          className="button ghost"
+          type="button"
+          onClick={onPreviewScheduling}
+          disabled={disabled}
+        >
+          {t(
+            target.spec.schedulingState === "active"
+              ? "detail.previewDrain"
+              : "detail.previewResume",
+          )}
+        </button>
+      </section>
       <section className="action-block">
         <div>
           <h3>{t("detail.probeTitle")}</h3>
@@ -2829,6 +2974,111 @@ function TargetDetail({
         </button>
       </section>
     </>
+  );
+}
+
+function SchedulingConfirmation({
+  target,
+  preview,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  target: DeploymentTarget;
+  preview: DeploymentTargetSchedulingPreview;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const { t, number } = useI18n();
+  const [confirmed, setConfirmed] = useState(false);
+  const draining = preview.spec.desiredState === "drained";
+  return (
+    <section className="dialog" aria-labelledby="scheduling-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">targets.act · {t("common.destructive")}</div>
+          <h2 id="scheduling-title">{t("scheduling.confirmTitle")}</h2>
+          <p>{target.metadata.name}</p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className={`banner ${draining ? "danger" : "running"}`} role="status">
+          {t(draining ? "scheduling.drainSummary" : "scheduling.resumeSummary", {
+            leases: number(preview.spec.activeLeases.length),
+          })}
+        </div>
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>{t("lease.target")}</dt>
+            <dd className="mono">{target.metadata.uid}</dd>
+          </div>
+          <div>
+            <dt>{t("table.generation")}</dt>
+            <dd className="mono">{number(preview.spec.expectedGeneration)}</dd>
+          </div>
+          <div>
+            <dt>{t("detail.resourceVersion")}</dt>
+            <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
+          </div>
+        </dl>
+        <div className="cleanup-preview" aria-label={t("detail.schedulingTitle")}>
+          {preview.spec.activeLeases.length === 0 ? (
+            <p>{t("scheduling.none")}</p>
+          ) : (
+            preview.spec.activeLeases.map((lease) => (
+              <article className="cleanup-worker" key={lease.leaseId}>
+                <div>
+                  <strong className="mono">{lease.leaseName}</strong>
+                  <span className={`phase ${phaseTone(lease.observedPhase)}`}>
+                    <i /> {phaseLabel(lease.observedPhase, t)}
+                  </span>
+                </div>
+                <small className="mono">
+                  {lease.leaseId} · g{number(lease.generation)}
+                </small>
+              </article>
+            ))
+          )}
+        </div>
+        <label className="confirmation-check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+            disabled={disabled}
+            data-sheet-autofocus
+          />
+          <span>{t("scheduling.review")}</span>
+        </label>
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            {t("action.cancel")}
+          </button>
+          <button
+            className={`button ${draining ? "danger" : "primary"}`}
+            type="submit"
+            disabled={disabled || !confirmed}
+          >
+            {t(draining ? "scheduling.confirmDrain" : "scheduling.confirmResume")}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 

@@ -774,6 +774,67 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:scheduling-preview": {
+      "get": {
+        "operationId": "adminPreviewDeploymentTargetScheduling",
+        "x-cloud-agents-required-scope": "targets.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/TargetId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current server-authoritative Drain or Resume impact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/deployment-target-scheduling-preview.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:scheduling": {
+      "post": {
+        "operationId": "adminTransitionDeploymentTargetScheduling",
+        "x-cloud-agents-required-scope": "targets.act",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/TargetId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/deployment-target-scheduling-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MaintenanceOperation" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:cleanup-preview": {
       "get": {
         "operationId": "adminPreviewDeploymentTargetCleanup",

@@ -32,6 +32,13 @@ type DeploymentTargetAuditPage struct {
 	NextEventID    string
 }
 
+type deploymentTargetSchedulingLeaseRow struct {
+	LeaseID       string `json:"lease_id"`
+	LeaseName     string `json:"lease_name"`
+	Generation    int64  `json:"generation"`
+	ObservedPhase string `json:"observed_phase"`
+}
+
 type deploymentTargetPageRow struct {
 	TenantID        string     `json:"tenant_id"`
 	ProjectID       string     `json:"project_uid"`
@@ -41,6 +48,7 @@ type deploymentTargetPageRow struct {
 	Endpoint        string     `json:"endpoint"`
 	CredentialRef   string     `json:"credential_ref"`
 	Generation      int64      `json:"generation"`
+	SchedulingState string     `json:"scheduling_state"`
 	ObservedPhase   string     `json:"observed_phase"`
 	APIVersion      string     `json:"api_version"`
 	EngineVersion   string     `json:"engine_version"`
@@ -87,7 +95,7 @@ type deploymentTargetAuditPageRow struct {
 	OccurredAt       time.Time `json:"occurred_at"`
 }
 
-const deploymentTargetColumns = `target_uid, target_name, target_kind, endpoint, credential_ref, generation,
+const deploymentTargetColumns = `target_uid, target_name, target_kind, endpoint, credential_ref, generation, scheduling_state,
     observed_phase, api_version, engine_version, target_os, target_arch, stable_error_code,
     last_probe_at, resource_version, created_at, updated_at`
 
@@ -96,7 +104,7 @@ const deploymentTargetOperationColumns = `operation_uid, idempotency_key, action
     stable_error_code, impact_summary, retryable`
 
 var (
-	registerDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
+	registerDeploymentTargetSQL = `SELECT target_uid
 FROM cloud_agents.register_deployment_target_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	getDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.deployment_targets
@@ -115,14 +123,25 @@ FROM (
     ORDER BY target_uid
     LIMIT $3
 ) AS deployment_target`
-	beginDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `, execute_probe
+	beginDeploymentTargetProbeSQL = `SELECT target_uid, execute_probe
 FROM cloud_agents.begin_deployment_target_probe_v2($1, $2, $3, $4, $5, $6, $7, $8)`
-	completeDeploymentTargetProbeSQL = `SELECT ` + deploymentTargetColumns + `
+	completeDeploymentTargetProbeSQL = `SELECT target_uid
 FROM cloud_agents.complete_deployment_target_probe_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	beginDeploymentTargetCleanupSQL = `SELECT ` + deploymentTargetOperationColumns + `, execute_cleanup
 FROM cloud_agents.begin_deployment_target_cleanup_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	completeDeploymentTargetCleanupSQL = `SELECT ` + deploymentTargetOperationColumns + `
 FROM cloud_agents.complete_deployment_target_cleanup_v1($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	lockDeploymentTargetSchedulingSQL   = `SELECT cloud_agents.lock_deployment_target_scheduling_v1($1, $2, $3)`
+	deploymentTargetSchedulingLeasesSQL = `WITH active_leases AS MATERIALIZED (
+    SELECT lease_uid AS lease_id, lease_name, generation, observed_phase
+    FROM cloud_agents.managed_host_environment_leases
+    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND deployment_target_uid = $2 AND desired_phase = 'active'
+    ORDER BY lease_uid
+)
+SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(active_lease) ORDER BY active_lease.lease_id), '[]'::jsonb)
+FROM active_leases AS active_lease`
+	transitionDeploymentTargetSchedulingSQL = `SELECT ` + deploymentTargetOperationColumns + `
+FROM cloud_agents.transition_deployment_target_scheduling_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 	deploymentTargetOperationCursorIdentitySQL = `SELECT 1
 FROM cloud_agents.deployment_target_activity
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2
@@ -212,10 +231,21 @@ func (service *DurableCoordinationService) RegisterDeploymentTarget(
 		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
-				return scanDeploymentTarget(handle.transaction.queryRow(ctx, registerDeploymentTargetSQL,
+				var targetID string
+				if err := handle.transaction.queryRow(ctx, registerDeploymentTargetSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.TargetName, input.Kind,
 					input.Endpoint, input.CredentialRef, input.Mutation.IdempotencyKey, digest,
-					input.Mutation.RequestID, subjectDigest), input.Scope, &result)
+					input.Mutation.RequestID, subjectDigest).Scan(&targetID); err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return internaldeploymenttarget.ErrNotFound
+					}
+					return err
+				}
+				if targetID != input.TargetID {
+					return ErrCoordinationResultDrift
+				}
+				return scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL,
+					input.Scope.ProjectID, input.TargetID), input.Scope, &result)
 			})
 		})
 	})
@@ -254,6 +284,115 @@ func (service *DurableCoordinationService) GetDeploymentTarget(
 		})
 	})
 	return result, mapDeploymentTargetError(err)
+}
+
+func (service *DurableCoordinationService) PreviewDeploymentTargetScheduling(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, targetID string,
+) (internaldeploymenttarget.SchedulingPreview, error) {
+	if service == nil || service.runner == nil {
+		return internaldeploymenttarget.SchedulingPreview{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(targetID) {
+		return internaldeploymenttarget.SchedulingPreview{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result internaldeploymenttarget.SchedulingPreview
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				var target internaldeploymenttarget.Snapshot
+				if err := scanDeploymentTarget(handle.transaction.queryRow(readContext, getDeploymentTargetSQL, projectID, targetID), internaldeploymenttarget.Scope{TenantID: tenantID, ProjectID: projectID}, &target); err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return internaldeploymenttarget.ErrNotFound
+					}
+					return err
+				}
+				leases, err := scanDeploymentTargetSchedulingLeases(handle.transaction.queryRow(readContext, deploymentTargetSchedulingLeasesSQL, projectID, targetID))
+				if err != nil {
+					return err
+				}
+				result, err = internaldeploymenttarget.NewSchedulingPreview(target, leases)
+				return err
+			})
+		})
+	})
+	return result, mapDeploymentTargetError(err)
+}
+
+func (service *DurableCoordinationService) TransitionDeploymentTargetScheduling(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internaldeploymenttarget.SchedulingInput,
+) (internaldeploymenttarget.Operation, error) {
+	if service == nil || service.runner == nil {
+		return internaldeploymenttarget.Operation{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return internaldeploymenttarget.Operation{}, ErrCoordinationInvalidInput
+	}
+	mutationDigest, err := internaldeploymenttarget.SchedulingMutationDigest(input)
+	if err != nil {
+		return internaldeploymenttarget.Operation{}, ErrCoordinationInvalidInput
+	}
+	var result internaldeploymenttarget.Operation
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
+		subjectDigest, digestErr := actor.Digest()
+		if digestErr != nil {
+			return authz.ErrOperationDenied
+		}
+		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				var found bool
+				if scanErr := handle.transaction.queryRow(ctx, lockDeploymentTargetSchedulingSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.TargetID).Scan(&found); scanErr != nil {
+					return scanErr
+				}
+				if !found {
+					return internaldeploymenttarget.ErrNotFound
+				}
+				var target internaldeploymenttarget.Snapshot
+				if scanErr := scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL, input.Scope.ProjectID, input.TargetID), input.Scope, &target); scanErr != nil {
+					if errors.Is(scanErr, pgx.ErrNoRows) {
+						return internaldeploymenttarget.ErrNotFound
+					}
+					return scanErr
+				}
+				leases, scanErr := scanDeploymentTargetSchedulingLeases(handle.transaction.queryRow(ctx, deploymentTargetSchedulingLeasesSQL, input.Scope.ProjectID, input.TargetID))
+				if scanErr != nil {
+					return scanErr
+				}
+				currentImpactDigest, digestErr := internaldeploymenttarget.SchedulingImpactDigest(target, input.DesiredState, leases)
+				if digestErr != nil {
+					return digestErr
+				}
+				impactSummary, summaryErr := internaldeploymenttarget.SchedulingImpactSummary(input.DesiredState, len(leases))
+				if summaryErr != nil {
+					return summaryErr
+				}
+				row := handle.transaction.queryRow(ctx, transitionDeploymentTargetSchedulingSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.ExpectedGeneration,
+					input.ExpectedResourceVersion, input.DesiredState, input.ImpactDigest, currentImpactDigest,
+					input.Mutation.IdempotencyKey, mutationDigest, input.Mutation.RequestID, subjectDigest, impactSummary)
+				return scanDeploymentTargetOperation(row, input.Scope, &result)
+			})
+		})
+	})
+	return result, mapDeploymentTargetSchedulingError(err)
 }
 
 func (service *DurableCoordinationService) ListDeploymentTargets(
@@ -311,7 +450,7 @@ func decodeDeploymentTargetPageRows(raw []byte, tenantID, projectID string, limi
 		snapshot := internaldeploymenttarget.Snapshot{
 			Scope:    internaldeploymenttarget.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 			TargetID: row.TargetID, TargetName: row.TargetName, Kind: row.Kind, Endpoint: row.Endpoint,
-			CredentialRef: row.CredentialRef, Generation: row.Generation, ObservedPhase: row.ObservedPhase,
+			CredentialRef: row.CredentialRef, Generation: row.Generation, SchedulingState: row.SchedulingState, ObservedPhase: row.ObservedPhase,
 			APIVersion: row.APIVersion, EngineVersion: row.EngineVersion, OS: row.OS, Arch: row.Arch,
 			StableErrorCode: row.StableErrorCode, LastProbeAt: row.LastProbeAt, ResourceVersion: row.ResourceVersion,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -563,14 +702,20 @@ func (service *DurableCoordinationService) BeginDeploymentTargetProbe(
 		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
-				row := handle.transaction.queryRow(ctx, beginDeploymentTargetProbeSQL, input.Scope.TenantID, input.Scope.ProjectID,
+				var targetID string
+				if err := handle.transaction.queryRow(ctx, beginDeploymentTargetProbeSQL, input.Scope.TenantID, input.Scope.ProjectID,
 					input.TargetID, input.ExpectedGeneration, input.Mutation.IdempotencyKey, digest,
-					input.Mutation.RequestID, subjectDigest)
-				if err := scanDeploymentTargetWithExecute(row, input.Scope, &result); errors.Is(err, pgx.ErrNoRows) {
-					return internaldeploymenttarget.ErrNotFound
-				} else {
+					input.Mutation.RequestID, subjectDigest).Scan(&targetID, &result.Execute); err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return internaldeploymenttarget.ErrNotFound
+					}
 					return err
 				}
+				if targetID != input.TargetID {
+					return ErrCoordinationResultDrift
+				}
+				return scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL,
+					input.Scope.ProjectID, input.TargetID), input.Scope, &result.Target)
 			})
 		})
 	})
@@ -599,15 +744,22 @@ func (service *DurableCoordinationService) CompleteDeploymentTargetProbe(
 		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
-				err := scanDeploymentTarget(handle.transaction.queryRow(ctx, completeDeploymentTargetProbeSQL,
+				var targetID string
+				err := handle.transaction.queryRow(ctx, completeDeploymentTargetProbeSQL,
 					completion.Input.Scope.TenantID, completion.Input.Scope.ProjectID, completion.Input.TargetID,
 					completion.Input.ExpectedGeneration, completion.Input.Mutation.IdempotencyKey, digest, completion.Succeeded,
-					completion.APIVersion, completion.EngineVersion, completion.OS, completion.Arch, completion.StableErrorCode),
-					completion.Input.Scope, &result)
+					completion.APIVersion, completion.EngineVersion, completion.OS, completion.Arch, completion.StableErrorCode).Scan(&targetID)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return internaldeploymenttarget.ErrNotFound
 				}
-				return err
+				if err != nil {
+					return err
+				}
+				if targetID != completion.Input.TargetID {
+					return ErrCoordinationResultDrift
+				}
+				return scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL,
+					completion.Input.Scope.ProjectID, completion.Input.TargetID), completion.Input.Scope, &result)
 			})
 		})
 	})
@@ -701,7 +853,7 @@ func scanDeploymentTarget(row rowScanner, scope internaldeploymenttarget.Scope, 
 		return ErrCoordinationResultDrift
 	}
 	if err := row.Scan(&result.TargetID, &result.TargetName, &result.Kind, &result.Endpoint, &result.CredentialRef,
-		&result.Generation, &result.ObservedPhase, &result.APIVersion, &result.EngineVersion, &result.OS, &result.Arch,
+		&result.Generation, &result.SchedulingState, &result.ObservedPhase, &result.APIVersion, &result.EngineVersion, &result.OS, &result.Arch,
 		&result.StableErrorCode, &result.LastProbeAt, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt); err != nil {
 		return err
 	}
@@ -712,22 +864,23 @@ func scanDeploymentTarget(row rowScanner, scope internaldeploymenttarget.Scope, 
 	return nil
 }
 
-func scanDeploymentTargetWithExecute(row rowScanner, scope internaldeploymenttarget.Scope, result *internaldeploymenttarget.ProbeStart) error {
-	if row == nil || result == nil {
-		return ErrCoordinationResultDrift
+func scanDeploymentTargetSchedulingLeases(row rowScanner) ([]internaldeploymenttarget.SchedulingLease, error) {
+	if row == nil {
+		return nil, ErrCoordinationResultDrift
 	}
-	if err := row.Scan(&result.Target.TargetID, &result.Target.TargetName, &result.Target.Kind, &result.Target.Endpoint,
-		&result.Target.CredentialRef, &result.Target.Generation, &result.Target.ObservedPhase, &result.Target.APIVersion,
-		&result.Target.EngineVersion, &result.Target.OS, &result.Target.Arch, &result.Target.StableErrorCode,
-		&result.Target.LastProbeAt, &result.Target.ResourceVersion, &result.Target.CreatedAt, &result.Target.UpdatedAt,
-		&result.Execute); err != nil {
-		return err
+	var raw []byte
+	if err := row.Scan(&raw); err != nil {
+		return nil, err
 	}
-	result.Target.Scope = scope
-	if result.Target.Validate() != nil {
-		return ErrCoordinationResultDrift
+	var rows []deploymentTargetSchedulingLeaseRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil {
+		return nil, ErrCoordinationResultDrift
 	}
-	return nil
+	leases := make([]internaldeploymenttarget.SchedulingLease, 0, len(rows))
+	for _, item := range rows {
+		leases = append(leases, internaldeploymenttarget.SchedulingLease{LeaseID: item.LeaseID, LeaseName: item.LeaseName, Generation: item.Generation, ObservedPhase: item.ObservedPhase})
+	}
+	return leases, nil
 }
 
 func scanDeploymentTargetOperation(row rowScanner, scope internaldeploymenttarget.Scope, result *internaldeploymenttarget.Operation) error {
@@ -783,6 +936,25 @@ func mapDeploymentTargetCleanupError(err error) error {
 	return mapDeploymentTargetError(err)
 }
 
+func mapDeploymentTargetSchedulingError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" {
+		switch postgresError.Message {
+		case "deployment target scheduling idempotency conflict":
+			return ErrDeploymentTargetSchedulingIdempotencyConflict
+		case "deployment target generation conflict":
+			return ErrDeploymentTargetSchedulingGenerationConflict
+		case "deployment target resource version conflict":
+			return ErrDeploymentTargetSchedulingResourceVersionConflict
+		case "deployment target scheduling state conflict":
+			return ErrDeploymentTargetSchedulingStateConflict
+		case "deployment target scheduling impact conflict":
+			return ErrDeploymentTargetSchedulingImpactConflict
+		}
+	}
+	return mapDeploymentTargetError(err)
+}
+
 func mapDeploymentTargetError(err error) error {
 	switch {
 	case errors.Is(err, internaldeploymenttarget.ErrNotFound), errors.Is(err, pgx.ErrNoRows):
@@ -797,6 +969,11 @@ func mapDeploymentTargetError(err error) error {
 }
 
 var ErrDeploymentTargetNotFound = errors.New("deployment target was not found")
+var ErrDeploymentTargetSchedulingIdempotencyConflict = errors.New("deployment target scheduling idempotency key conflicts")
+var ErrDeploymentTargetSchedulingGenerationConflict = errors.New("deployment target scheduling generation conflicts")
+var ErrDeploymentTargetSchedulingResourceVersionConflict = errors.New("deployment target scheduling resource version conflicts")
+var ErrDeploymentTargetSchedulingStateConflict = errors.New("deployment target scheduling state conflicts")
+var ErrDeploymentTargetSchedulingImpactConflict = errors.New("deployment target scheduling impact conflicts")
 var ErrDeploymentTargetCleanupIdempotencyConflict = errors.New("deployment target cleanup idempotency key conflicts")
 var ErrDeploymentTargetCleanupBusy = errors.New("deployment target cleanup is already running")
 var ErrDeploymentTargetCleanupGenerationConflict = errors.New("deployment target cleanup generation conflicts")

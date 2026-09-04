@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/deployment-target-scheduling-preview.schema.json",
+  "title": "DeploymentTargetSchedulingPreview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "DeploymentTargetSchedulingPreview" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "currentState", "desiredState", "expectedGeneration", "expectedResourceVersion", "impactDigest", "activeLeases"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "currentState": { "enum": ["active", "drained"] },
+        "desiredState": { "enum": ["active", "drained"] },
+        "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "activeLeases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["leaseId", "leaseName", "generation", "observedPhase"],
+            "properties": {
+              "leaseId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "leaseName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+              "observedPhase": { "enum": ["provisioning", "ready", "terminating", "terminated", "failed"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata identifies the Deployment Target and carries its current resourceVersion",
+    "desiredState is the opposite of currentState",
+    "activeLeases contains the complete server-authoritative desired-active Lease impact in stable leaseId order",
+    "expectedGeneration, expectedResourceVersion and impactDigest are the confirmation fences for the transition"
+  ]
+}

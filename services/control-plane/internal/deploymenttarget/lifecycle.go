@@ -62,10 +62,33 @@ type CleanupCompletion struct {
 	ImpactSummary   string
 }
 
+type SchedulingLease struct {
+	LeaseID, LeaseName, ObservedPhase string
+	Generation                        int64
+}
+
+type SchedulingPreview struct {
+	Target       Snapshot
+	DesiredState string
+	ImpactDigest string
+	ActiveLeases []SchedulingLease
+}
+
+type SchedulingInput struct {
+	Scope                   Scope
+	TargetID                string
+	ExpectedGeneration      int64
+	ExpectedResourceVersion int64
+	DesiredState            string
+	ImpactDigest            string
+	Mutation                Mutation
+}
+
 type Snapshot struct {
 	Scope                                                Scope
 	TargetID, TargetName, Kind, Endpoint, CredentialRef  string
 	Generation                                           int64
+	SchedulingState                                      string
 	ObservedPhase                                        string
 	APIVersion, EngineVersion, OS, Arch, StableErrorCode string
 	LastProbeAt                                          *time.Time
@@ -108,6 +131,15 @@ func (input CleanupInput) Validate(tenantID string) error {
 	return validateMutation(input.Mutation)
 }
 
+func (input SchedulingInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) || invalidIdentifier(input.TargetID) ||
+		input.ExpectedGeneration < 1 || input.ExpectedResourceVersion < 1 || !validSchedulingState(input.DesiredState) ||
+		!digestPattern.MatchString(input.ImpactDigest) {
+		return ErrInvalidInput
+	}
+	return validateMutation(input.Mutation)
+}
+
 func RegisterMutationDigest(input RegisterInput) (string, error) {
 	if err := input.Validate(input.Scope.TenantID); err != nil {
 		return "", err
@@ -135,6 +167,53 @@ func CleanupMutationDigest(input CleanupInput) (string, error) {
 		Operation, TenantID, ProjectID, TargetID, ImpactDigest string
 		ExpectedGeneration, ExpectedResourceVersion            int64
 	}{"deployment-target.cleanup", input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.ImpactDigest, input.ExpectedGeneration, input.ExpectedResourceVersion}), nil
+}
+
+func SchedulingMutationDigest(input SchedulingInput) (string, error) {
+	if err := input.Validate(input.Scope.TenantID); err != nil {
+		return "", err
+	}
+	return digest(struct {
+		Operation, TenantID, ProjectID, TargetID, DesiredState, ImpactDigest string
+		ExpectedGeneration, ExpectedResourceVersion                          int64
+	}{"deployment-target.scheduling", input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.DesiredState, input.ImpactDigest, input.ExpectedGeneration, input.ExpectedResourceVersion}), nil
+}
+
+func NewSchedulingPreview(target Snapshot, leases []SchedulingLease) (SchedulingPreview, error) {
+	if target.Validate() != nil || validateSchedulingLeases(leases) != nil {
+		return SchedulingPreview{}, ErrInvalidInput
+	}
+	desiredState := "active"
+	if target.SchedulingState == "active" {
+		desiredState = "drained"
+	}
+	impactDigest, err := SchedulingImpactDigest(target, desiredState, leases)
+	if err != nil {
+		return SchedulingPreview{}, err
+	}
+	return SchedulingPreview{Target: target, DesiredState: desiredState, ImpactDigest: impactDigest, ActiveLeases: leases}, nil
+}
+
+func SchedulingImpactDigest(target Snapshot, desiredState string, leases []SchedulingLease) (string, error) {
+	if target.Validate() != nil || !validSchedulingState(desiredState) || validateSchedulingLeases(leases) != nil {
+		return "", ErrInvalidInput
+	}
+	return digest(struct {
+		TargetID                    string
+		Generation, ResourceVersion int64
+		CurrentState, DesiredState  string
+		ActiveLeases                []SchedulingLease
+	}{target.TargetID, target.Generation, target.ResourceVersion, target.SchedulingState, desiredState, leases}), nil
+}
+
+func SchedulingImpactSummary(desiredState string, activeLeaseCount int) (string, error) {
+	if !validSchedulingState(desiredState) || activeLeaseCount < 0 {
+		return "", ErrInvalidInput
+	}
+	if desiredState == "active" {
+		return "Resumed target; new lease scheduling is enabled", nil
+	}
+	return "Drained target; " + strconv.Itoa(activeLeaseCount) + " active leases remain running", nil
 }
 
 func (completion ProbeCompletion) Validate(tenantID string) error {
@@ -170,7 +249,7 @@ func (snapshot Snapshot) Validate() error {
 	if invalidIdentifier(snapshot.Scope.TenantID) || invalidIdentifier(snapshot.Scope.ProjectID) ||
 		invalidIdentifier(snapshot.TargetID) || invalidIdentifier(snapshot.TargetName) || !validKind(snapshot.Kind) ||
 		!validEndpoint(snapshot.Kind, snapshot.Endpoint) || invalidIdentifier(snapshot.CredentialRef) || snapshot.Generation < 1 ||
-		snapshot.ResourceVersion < 1 || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
+		!validSchedulingState(snapshot.SchedulingState) || snapshot.ResourceVersion < 1 || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
 		return ErrInvalidInput
 	}
 	switch snapshot.ObservedPhase {
@@ -211,6 +290,22 @@ func validEndpoint(kind, value string) bool {
 
 func validKind(value string) bool {
 	return value == "docker" || value == "kubernetes" || value == "ssh"
+}
+
+func validSchedulingState(value string) bool {
+	return value == "active" || value == "drained"
+}
+
+func validateSchedulingLeases(leases []SchedulingLease) error {
+	previous := ""
+	for _, lease := range leases {
+		if invalidIdentifier(lease.LeaseID) || lease.LeaseID <= previous || invalidIdentifier(lease.LeaseName) || lease.Generation < 1 ||
+			(lease.ObservedPhase != "provisioning" && lease.ObservedPhase != "ready" && lease.ObservedPhase != "terminating" && lease.ObservedPhase != "terminated" && lease.ObservedPhase != "failed") {
+			return ErrInvalidInput
+		}
+		previous = lease.LeaseID
+	}
+	return nil
 }
 
 func invalidIdentifier(value string) bool {

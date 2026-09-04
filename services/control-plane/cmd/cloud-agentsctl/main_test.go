@@ -93,7 +93,7 @@ func TestRunRegistersDeploymentTargetThroughControlPlane(t *testing.T) {
 		writer.Header().Set("X-Resource-Version", "1")
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusCreated)
-		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTarget","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-01T12:00:00Z","updatedAt":"2026-09-01T12:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"targetKind":"docker","endpoint":"https://docker.example.test:2376","credentialRef":"docker-alpha-mtls","observedPhase":"unprobed","apiVersion":"","engineVersion":"","os":"","architecture":"","stableErrorCode":""}}`))
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTarget","metadata":{"uid":"docker-alpha","name":"docker-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-01T12:00:00Z","updatedAt":"2026-09-01T12:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"targetKind":"docker","endpoint":"https://docker.example.test:2376","credentialRef":"docker-alpha-mtls","schedulingState":"active","observedPhase":"unprobed","apiVersion":"","engineVersion":"","os":"","architecture":"","stableErrorCode":""}}`))
 	}))
 	defer server.Close()
 

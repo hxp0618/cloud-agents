@@ -117,6 +117,7 @@ WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_u
         SELECT 1 FROM cloud_agents.deployment_targets AS target
         WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
             AND target.target_uid = ANY(profile.target_refs) AND target.observed_phase = 'ready'
+            AND target.scheduling_state = 'active'
     )`
 	listPublishedEnvironmentProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
     ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
@@ -131,6 +132,7 @@ FROM (
             SELECT 1 FROM cloud_agents.deployment_targets AS target
             WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
                 AND target.target_uid = ANY(profile.target_refs) AND target.observed_phase = 'ready'
+                AND target.scheduling_state = 'active'
         )
     ORDER BY profile.profile_version_uid
     LIMIT $3

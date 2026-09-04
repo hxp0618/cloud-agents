@@ -9,6 +9,7 @@ import {
   decodeAdminAuditEventPage,
   decodeDeploymentTargetCleanupPreview,
   decodeDeploymentTargetPage,
+  decodeDeploymentTargetSchedulingPreview,
   decodeEnvironmentLeasePage,
   decodeEnvironmentProfile,
   decodeEnvironmentProfilePage,
@@ -40,6 +41,7 @@ import {
   parseProblem,
   parseDeploymentTargetCleanupPreview,
   parseDeploymentTargetPage,
+  parseDeploymentTargetSchedulingPreview,
   parseEnvironmentLeasePage,
   parseEnvironmentProfile,
   parseEnvironmentProfilePage,
@@ -545,6 +547,7 @@ describe("generated platform JSON models", () => {
             targetKind: "docker",
             endpoint: "https://docker.example.test:2376",
             credentialRef: "docker-alpha",
+            schedulingState: "active",
             observedPhase: "unprobed",
             apiVersion: "",
             engineVersion: "",
@@ -570,6 +573,7 @@ describe("generated platform JSON models", () => {
             targetKind: "ssh",
             endpoint: "ssh://ssh.example.test:22",
             credentialRef: "ssh-alpha",
+            schedulingState: "active",
             observedPhase: "unprobed",
             apiVersion: "",
             engineVersion: "",
@@ -797,6 +801,91 @@ describe("generated platform JSON models", () => {
       path: "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup",
       headers: { "Idempotency-Key": "cleanup-key-1234~" },
     });
+  });
+  it("previews and transitions Admin target scheduling through the generated contract", async () => {
+    const impactDigest = `sha256:${"c".repeat(64)}` as const;
+    const preview = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "DeploymentTargetSchedulingPreview",
+      metadata: {
+        uid: "docker-alpha",
+        name: "docker-alpha",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "7",
+        createdAt: "2026-09-04T08:00:00Z",
+        updatedAt: "2026-09-04T08:01:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        currentState: "active",
+        desiredState: "drained",
+        expectedGeneration: 2,
+        expectedResourceVersion: "7",
+        impactDigest,
+        activeLeases: [
+          {
+            leaseId: "lease-alpha",
+            leaseName: "lease-alpha",
+            generation: 3,
+            observedPhase: "ready",
+          },
+        ],
+      },
+    });
+    const operation = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "MaintenanceOperation",
+      operationId: "operation-drain-alpha",
+      idempotencyKey: "scheduling-key-1234~",
+      action: "target.drain",
+      resourceKind: "DeploymentTarget",
+      resourceId: "docker-alpha",
+      resourceGeneration: 2,
+      requestedBy: `sha256:${"b".repeat(64)}`,
+      requestId: "request-alpha",
+      requestedAt: "2026-09-04T08:00:00Z",
+      updatedAt: "2026-09-04T08:01:00Z",
+      state: "succeeded",
+      currentStep: "complete",
+      impactSummary: "Drained target with 1 active lease",
+      retryable: false,
+    });
+    expect(
+      decodeDeploymentTargetSchedulingPreview(JSON.parse(preview)).spec.activeLeases,
+    ).toHaveLength(1);
+    expect(parseDeploymentTargetSchedulingPreview(preview).value.spec.desiredState).toBe("drained");
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return request.method === "GET"
+        ? { status: 200, headers: { "X-Resource-Version": "7" }, body: preview }
+        : { status: 200, headers: {}, body: operation };
+    });
+    await client.previewAdminDeploymentTargetScheduling(
+      "tenant-alpha",
+      "project-alpha",
+      "docker-alpha",
+      "request-alpha",
+    );
+    const result = await client.transitionAdminDeploymentTargetScheduling(
+      "tenant-alpha",
+      "project-alpha",
+      "docker-alpha",
+      "request-alpha",
+      "scheduling-key-1234~",
+      {
+        expectedGeneration: 2,
+        expectedResourceVersion: "7",
+        desiredState: "drained",
+        impactDigest,
+      },
+    );
+    expect(result.value.action).toBe("target.drain");
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:scheduling-preview",
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:scheduling",
+    ]);
+    expect(seen[1]?.body).toContain('"desiredState":"drained"');
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {
     const turn = JSON.stringify({

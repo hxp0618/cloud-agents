@@ -26,25 +26,29 @@ import (
 )
 
 type deploymentTargetStoreFake struct {
-	snapshot           internaldeploymenttarget.Snapshot
-	register           int
-	list               int
-	get                int
-	begin              int
-	complete           int
-	completion         internaldeploymenttarget.ProbeCompletion
-	cleanupBegin       int
-	cleanupComplete    int
-	cleanupExecute     bool
-	cleanupInput       internaldeploymenttarget.CleanupInput
-	cleanupCompletion  internaldeploymenttarget.CleanupCompletion
-	cleanupOperation   internaldeploymenttarget.Operation
-	cleanupBeginErr    error
-	cleanupCompleteErr error
-	operations         []internaldeploymenttarget.Operation
-	audit              []internaldeploymenttarget.AuditEvent
-	lease              internalmanagedhost.Snapshot
-	leaseErr           error
+	snapshot            internaldeploymenttarget.Snapshot
+	register            int
+	list                int
+	get                 int
+	begin               int
+	complete            int
+	completion          internaldeploymenttarget.ProbeCompletion
+	cleanupBegin        int
+	cleanupComplete     int
+	cleanupExecute      bool
+	cleanupInput        internaldeploymenttarget.CleanupInput
+	cleanupCompletion   internaldeploymenttarget.CleanupCompletion
+	cleanupOperation    internaldeploymenttarget.Operation
+	cleanupBeginErr     error
+	cleanupCompleteErr  error
+	schedulingLeases    []internaldeploymenttarget.SchedulingLease
+	schedulingInput     internaldeploymenttarget.SchedulingInput
+	schedulingOperation internaldeploymenttarget.Operation
+	schedulingErr       error
+	operations          []internaldeploymenttarget.Operation
+	audit               []internaldeploymenttarget.AuditEvent
+	lease               internalmanagedhost.Snapshot
+	leaseErr            error
 }
 
 type deploymentTargetVerifierFake struct {
@@ -83,7 +87,7 @@ func TestDeploymentTargetHTTPProbesKubernetesTarget(t *testing.T) {
 	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{
 		Scope:    internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
 		TargetID: "kubernetes-alpha", TargetName: "kubernetes-alpha", Kind: "kubernetes", Endpoint: cluster.URL, CredentialRef: "cluster-alpha",
-		Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
+		Generation: 1, SchedulingState: "active", ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}}
 	verifier := &projectHTTPVerifierFake{}
 	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, credentials, nil)
@@ -109,6 +113,9 @@ func (fake *deploymentTargetStoreFake) RegisterDeploymentTarget(_ context.Contex
 	fake.snapshot.Kind = input.Kind
 	fake.snapshot.Endpoint = input.Endpoint
 	fake.snapshot.CredentialRef = input.CredentialRef
+	if fake.snapshot.SchedulingState == "" {
+		fake.snapshot.SchedulingState = "active"
+	}
 	return fake.snapshot, nil
 }
 
@@ -165,6 +172,28 @@ func (fake *deploymentTargetStoreFake) CompleteDeploymentTargetProbe(_ context.C
 	return fake.snapshot, nil
 }
 
+func (fake *deploymentTargetStoreFake) PreviewDeploymentTargetScheduling(context.Context, string, *authn.VerifiedPrincipal, string, string) (internaldeploymenttarget.SchedulingPreview, error) {
+	return internaldeploymenttarget.NewSchedulingPreview(fake.snapshot, fake.schedulingLeases)
+}
+
+func (fake *deploymentTargetStoreFake) TransitionDeploymentTargetScheduling(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internaldeploymenttarget.SchedulingInput) (internaldeploymenttarget.Operation, error) {
+	fake.schedulingInput = input
+	if fake.schedulingErr != nil {
+		return internaldeploymenttarget.Operation{}, fake.schedulingErr
+	}
+	if fake.schedulingOperation.OperationID != "" {
+		return fake.schedulingOperation, nil
+	}
+	fake.snapshot.SchedulingState = input.DesiredState
+	fake.snapshot.ResourceVersion++
+	action := "target.resume"
+	if input.DesiredState == "drained" {
+		action = "target.drain"
+	}
+	now := fake.snapshot.UpdatedAt
+	return internaldeploymenttarget.Operation{Scope: input.Scope, OperationID: "scheduling-operation-alpha", IdempotencyKey: input.Mutation.IdempotencyKey, Action: action, TargetID: input.TargetID, TargetGeneration: input.ExpectedGeneration, RequestedBy: "sha256:" + strings.Repeat("a", 64), RequestID: input.Mutation.RequestID, RequestedAt: now, UpdatedAt: now, State: "succeeded", CurrentStep: "complete", ImpactSummary: "Drained target; 1 active leases remain running"}, nil
+}
+
 func (fake *deploymentTargetStoreFake) BeginDeploymentTargetCleanup(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internaldeploymenttarget.CleanupInput) (internaldeploymenttarget.CleanupStart, error) {
 	fake.cleanupBegin++
 	fake.cleanupInput = input
@@ -210,7 +239,7 @@ func (fake *deploymentTargetStoreFake) CompleteDeploymentTargetCleanup(_ context
 func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC)
 	verifier := &projectHTTPVerifierFake{}
-	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now}}
+	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{Generation: 1, SchedulingState: "active", ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now}}
 	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +300,7 @@ func TestDeploymentTargetPathDoesNotCaptureProjectRoutes(t *testing.T) {
 	if HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe") || !HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/kubernetes-alpha:cleanup") {
 		t.Fatal("deployment target route ownership drifted")
 	}
-	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations") {
+	if HandlesDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets") || HandlesDeploymentTargetPath("/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:scheduling-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:scheduling") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup-preview") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:cleanup") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/operations") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha/audit-events") || !HandlesAdminDeploymentTargetPath("/v1/admin/tenants/tenant-alpha/projects/project-alpha/maintenance-operations") {
 		t.Fatal("admin deployment target route ownership drifted")
 	}
 }
@@ -318,7 +347,7 @@ func TestAdminDeploymentTargetHTTPChecksProjectAndAdminAuthority(t *testing.T) {
 	verifier := &deploymentTargetVerifierFake{}
 	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{
 		Scope: internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "docker-alpha", TargetName: "Docker Alpha", Kind: "docker",
-		Endpoint: "unix:///var/run/docker.sock", CredentialRef: "docker-alpha", Generation: 1, ObservedPhase: "ready", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
+		Endpoint: "unix:///var/run/docker.sock", CredentialRef: "docker-alpha", Generation: 1, SchedulingState: "active", ObservedPhase: "ready", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}}
 	handler, err := NewAdminDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
 	if err != nil {
@@ -393,11 +422,13 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 		{"collection", http.MethodGet, "targets.list"},
 		{"collection", http.MethodPost, "targets.create"},
 		{"get", http.MethodGet, "targets.get"},
+		{"scheduling-preview", http.MethodGet, "targets.get"},
 		{"cleanup-preview", http.MethodGet, "targets.get"},
 		{"operations", http.MethodGet, "operations.list"},
 		{"maintenance-operations", http.MethodGet, "operations.list"},
 		{"audit-events", http.MethodGet, "audit.list"},
 		{"probe", http.MethodPost, "targets.act"},
+		{"scheduling", http.MethodPost, "targets.act"},
 		{"cleanup", http.MethodPost, "targets.act"},
 	}
 	for _, test := range tests {
@@ -408,6 +439,50 @@ func TestDeploymentTargetAdminPermissions(t *testing.T) {
 	}
 	if _, ok := deploymentTargetAdminPermission("cleanup", http.MethodGet); ok {
 		t.Fatal("admin cleanup accepted the wrong method")
+	}
+}
+
+func TestAdminDeploymentTargetSchedulingUsesPreviewFences(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 10, 0, 0, 0, time.UTC)
+	store := &deploymentTargetStoreFake{
+		snapshot: internaldeploymenttarget.Snapshot{
+			Scope: internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "docker-alpha", TargetName: "docker-alpha",
+			Kind: "docker", Endpoint: "https://docker.example.test:2376", CredentialRef: "secret-ref-alpha", Generation: 2,
+			SchedulingState: "active", ObservedPhase: "unprobed", ResourceVersion: 7, CreatedAt: now, UpdatedAt: now,
+		},
+		schedulingLeases: []internaldeploymenttarget.SchedulingLease{{LeaseID: "lease-alpha", LeaseName: "lease-alpha", Generation: 3, ObservedPhase: "ready"}},
+	}
+	verifier := &deploymentTargetVerifierFake{}
+	handler, err := NewAdminDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, suffix, body, key string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha"+suffix, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer admin-token")
+		request.Header.Set("X-Request-ID", "request-scheduling")
+		if key != "" {
+			request.Header.Set("Idempotency-Key", key)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	response := call(http.MethodGet, ":scheduling-preview", "", "")
+	preview, decodeErr := platformv1alpha1.DecodeDeploymentTargetSchedulingPreviewResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || preview.Value.Spec.CurrentState != "active" || preview.Value.Spec.DesiredState != "drained" || len(preview.Value.Spec.ActiveLeases) != 1 || response.Header().Get("X-Resource-Version") != "7" {
+		t.Fatalf("status=%d preview=%#v error=%v body=%s", response.Code, preview, decodeErr, response.Body.String())
+	}
+	body := `{"expectedGeneration":2,"expectedResourceVersion":"7","desiredState":"drained","impactDigest":"` + preview.Value.Spec.ImpactDigest + `"}`
+	response = call(http.MethodPost, ":scheduling", body, "drain-target-key")
+	operation, decodeErr := platformv1alpha1.DecodeMaintenanceOperationResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || operation.Value.Action != "target.drain" || operation.Value.State != "succeeded" || store.schedulingInput.ImpactDigest != preview.Value.Spec.ImpactDigest || store.snapshot.SchedulingState != "drained" {
+		t.Fatalf("status=%d operation=%#v error=%v input=%#v body=%s", response.Code, operation, decodeErr, store.schedulingInput, response.Body.String())
+	}
+	for _, body := range []string{preview.Value.Spec.ImpactDigest, response.Body.String()} {
+		if strings.Contains(body, store.snapshot.Endpoint) || strings.Contains(body, store.snapshot.CredentialRef) {
+			t.Fatalf("scheduling response leaked target authority: %s", body)
+		}
 	}
 }
 
@@ -478,7 +553,7 @@ func TestAdminDeploymentTargetCleanupPreviewUsesLiveDockerAuthorityAndBlocksActi
 	}
 	now := time.Date(2026, time.September, 3, 8, 0, 0, 0, time.UTC)
 	store := &deploymentTargetStoreFake{
-		snapshot: internaldeploymenttarget.Snapshot{Scope: internaldeploymenttarget.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, TargetID: deployRequest.TargetID, TargetName: deployRequest.TargetID, Kind: "docker", Endpoint: docker.URL, CredentialRef: "credential-alpha", Generation: 1, ObservedPhase: "ready", ResourceVersion: 7, CreatedAt: now, UpdatedAt: now},
+		snapshot: internaldeploymenttarget.Snapshot{Scope: internaldeploymenttarget.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, TargetID: deployRequest.TargetID, TargetName: deployRequest.TargetID, Kind: "docker", Endpoint: docker.URL, CredentialRef: "credential-alpha", Generation: 1, SchedulingState: "active", ObservedPhase: "ready", ResourceVersion: 7, CreatedAt: now, UpdatedAt: now},
 		lease:    internalmanagedhost.Snapshot{Scope: internalmanagedhost.Scope{TenantID: deployRequest.TenantID, ProjectID: deployRequest.ProjectID}, LeaseID: deployRequest.LeaseID, TargetID: deployRequest.TargetID, TargetGeneration: deployRequest.TargetGeneration, Generation: deployRequest.LeaseGeneration, DesiredPhase: "active"},
 	}
 	verifier := &deploymentTargetVerifierFake{}

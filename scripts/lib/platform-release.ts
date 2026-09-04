@@ -26,8 +26,8 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
-export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000043.tar";
-export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000043.tar";
+export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000044.tar";
+export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000044.tar";
 export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
 export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
 export const PLATFORM_RELEASE_TYPESCRIPT_SDK = "cloud-agents-typescript-sdk.tgz";
@@ -116,7 +116,7 @@ export function platformReleaseArtifact(
 }
 
 export function buildPlatformMigrationPackage(root: string): Uint8Array {
-  const manifestPath = "services/control-plane/migrations/product/000043/manifest.json";
+  const manifestPath = "services/control-plane/migrations/product/000044/manifest.json";
   const manifest = JSON.parse(readFileSync(resolve(root, manifestPath), "utf8")) as {
     readonly schema_bundle: {
       readonly migrations: ReadonlyArray<{
@@ -128,7 +128,7 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   const paths = new Set<string>([
     "LICENSE",
     manifestPath,
-    "services/control-plane/migrations/product/000043/schema-bundle.json",
+    "services/control-plane/migrations/product/000044/schema-bundle.json",
   ]);
   for (const migration of manifest.schema_bundle.migrations) {
     paths.add(migration.sql_artifact.path);
@@ -341,6 +341,8 @@ const PUBLIC_PLATFORM_CONTRACT_PATHS = [
   "contracts/platform/v1alpha1/fixtures/negative/role-wildcard-permission.json",
   "contracts/platform/v1alpha1/schemas/deployment-target-probe-request.schema.json",
   "contracts/platform/v1alpha1/schemas/deployment-target-register-request.schema.json",
+  "contracts/platform/v1alpha1/schemas/deployment-target-scheduling-preview.schema.json",
+  "contracts/platform/v1alpha1/schemas/deployment-target-scheduling-request.schema.json",
   "contracts/platform/v1alpha1/schemas/deployment-target.schema.json",
   "contracts/platform/v1alpha1/schemas/environment-lease-create-request.schema.json",
   "contracts/platform/v1alpha1/schemas/environment-lease-terminate-request.schema.json",

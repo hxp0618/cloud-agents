@@ -17,7 +17,7 @@ func TestDecodeDeploymentTargetPageRowsBindsProjectAndCursor(t *testing.T) {
 		return deploymentTargetPageRow{
 			TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: targetID, TargetName: targetID,
 			Kind: "docker", Endpoint: "https://docker.example.test:2376", CredentialRef: "docker-alpha",
-			Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
+			Generation: 1, SchedulingState: "active", ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
 		}
 	}
 	raw, err := json.Marshal([]deploymentTargetPageRow{row("target-alpha"), row("target-beta")})
@@ -84,11 +84,38 @@ func TestDecodeDeploymentTargetActivityRowsBindsTargetAndCursor(t *testing.T) {
 func TestDeploymentTargetProjectionRejectsPhaseFactDrift(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 8, 0, 0, 0, time.UTC)
 	row := rowValues("target-alpha", "docker-alpha", "docker", "https://docker.example.test:2376", "docker-alpha",
-		int64(1), "ready", "1.54", "29.4.0", "linux", "arm64", "unexpected-error", &now, int64(2), now, now)
+		int64(1), "active", "ready", "1.54", "29.4.0", "linux", "arm64", "unexpected-error", &now, int64(2), now, now)
 	var snapshot internaldeploymenttarget.Snapshot
 	err := scanDeploymentTarget(row, internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
 	if !errors.Is(err, ErrCoordinationResultDrift) {
 		t.Fatalf("projection error = %v", err)
+	}
+}
+
+func TestDeploymentTargetSchedulingProjectionAndConflicts(t *testing.T) {
+	raw, err := json.Marshal([]deploymentTargetSchedulingLeaseRow{{LeaseID: "lease-alpha", LeaseName: "lease-alpha", Generation: 2, ObservedPhase: "ready"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := scanDeploymentTargetSchedulingLeases(rowValues(raw))
+	if err != nil || len(leases) != 1 || leases[0].LeaseID != "lease-alpha" {
+		t.Fatalf("leases = %#v / %v", leases, err)
+	}
+	for message, expected := range map[string]error{
+		"deployment target scheduling idempotency conflict": ErrDeploymentTargetSchedulingIdempotencyConflict,
+		"deployment target generation conflict":             ErrDeploymentTargetSchedulingGenerationConflict,
+		"deployment target resource version conflict":       ErrDeploymentTargetSchedulingResourceVersionConflict,
+		"deployment target scheduling state conflict":       ErrDeploymentTargetSchedulingStateConflict,
+		"deployment target scheduling impact conflict":      ErrDeploymentTargetSchedulingImpactConflict,
+	} {
+		if err := mapDeploymentTargetSchedulingError(&pgconn.PgError{Code: "23505", Message: message}); !errors.Is(err, expected) {
+			t.Fatalf("%s mapped to %v", message, err)
+		}
+	}
+	if !strings.Contains(transitionDeploymentTargetSchedulingSQL, "transition_deployment_target_scheduling_v1") ||
+		!strings.Contains(lockDeploymentTargetSchedulingSQL, "lock_deployment_target_scheduling_v1") ||
+		!strings.Contains(deploymentTargetSchedulingLeasesSQL, "deployment_target_uid = $2") {
+		t.Fatal("scheduling store SQL is not bound to the migration authority and Lease lock")
 	}
 }
 
