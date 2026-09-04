@@ -97,3 +97,33 @@ func TestSnapshotTargetBindingIsOptionalOnlyAsAPair(t *testing.T) {
 		t.Fatalf("target-bound snapshot: %v", err)
 	}
 }
+
+func TestAdminUpgradePreviewBindsFencesAndRollbackTarget(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 8, 0, 0, 0, time.UTC)
+	current := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	target := "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	lease := Snapshot{
+		Scope: Scope{TenantID: "tenant-a", ProjectID: "project-a"}, LeaseID: "lease-a", LeaseName: "lease-a",
+		ReleaseDigest: current, TargetID: "docker-a", TargetGeneration: 3, ProviderCredentialRef: "provider-a",
+		CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20, Generation: 7, DesiredPhase: "active", ObservedPhase: "ready",
+		CleanupPhase: "none", EnvironmentID: "lease-a", WorkerEndpoint: "https://docker.example.test:32768",
+		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-a", WorkerServerName: "worker.example.test",
+		ExpiresAt: now.Add(time.Hour), ResourceVersion: 9, CreatedAt: now, UpdatedAt: now,
+	}
+	authority := AdminUpgradeAuthority{Lease: lease, TargetKind: "docker", TargetSchedulingState: "drained", TargetObservedPhase: "ready", TargetReleaseApproved: true}
+	preview, err := NewAdminEnvironmentLeaseUpgradePreview(authority, "upgrade", target)
+	if err != nil || preview.TargetReleaseDigest != target || preview.RollbackReleaseDigest != current || preview.RollbackGeneration != 7 {
+		t.Fatalf("upgrade preview=%#v err=%v", preview, err)
+	}
+	authority.RollbackReleaseDigest, authority.RollbackGeneration = current, 7
+	lease.ReleaseDigest, lease.Generation, lease.ResourceVersion = target, 8, 10
+	authority.Lease = lease
+	rollback, err := NewAdminEnvironmentLeaseUpgradePreview(authority, "rollback", "")
+	if err != nil || rollback.TargetReleaseDigest != current || rollback.ImpactDigest == preview.ImpactDigest {
+		t.Fatalf("rollback preview=%#v err=%v", rollback, err)
+	}
+	authority.TargetSchedulingState = "active"
+	if _, err := NewAdminEnvironmentLeaseUpgradePreview(authority, "rollback", ""); err == nil {
+		t.Fatal("upgrade preview accepted an undrained Target")
+	}
+}

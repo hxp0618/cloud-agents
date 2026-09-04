@@ -292,6 +292,132 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:upgrade-preview": {
+      "get": {
+        "operationId": "adminPreviewEnvironmentLeaseUpgrade",
+        "x-cloud-agents-required-scope": "leases.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          {
+            "name": "releaseDigest",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current server-authoritative single Worker and Lease upgrade impact",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:rollback-preview": {
+      "get": {
+        "operationId": "adminPreviewEnvironmentLeaseRollback",
+        "x-cloud-agents-required-scope": "leases.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current server-authoritative rollback target and impact",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:upgrade": {
+      "post": {
+        "operationId": "adminUpgradeEnvironmentLease",
+        "x-cloud-agents-required-scope": "leases.act",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MaintenanceOperation" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "502": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:rollback": {
+      "post": {
+        "operationId": "adminRollbackEnvironmentLease",
+        "x-cloud-agents-required-scope": "leases.act",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MaintenanceOperation" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "502": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/workers": {
       "get": {
         "operationId": "adminListWorkers",

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json",
+  "title": "EnvironmentLeaseUpgradePreview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "EnvironmentLeaseUpgradePreview" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "action", "targetId", "targetKind", "currentReleaseDigest", "targetReleaseDigest", "rollbackReleaseDigest", "rollbackGeneration", "expectedGeneration", "expectedResourceVersion", "affectedTargets", "affectedWorkers", "affectedLeases", "impactDigest"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "action": { "enum": ["upgrade", "rollback"] },
+        "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
+        "currentReleaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "targetReleaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "rollbackReleaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "rollbackGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "affectedTargets": { "const": 1 },
+        "affectedWorkers": { "const": 1 },
+        "affectedLeases": { "const": 1 },
+        "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata identifies the selected Environment Lease and carries its current resourceVersion",
+    "the selected Deployment Target is ready and drained before either action is offered",
+    "targetReleaseDigest identifies an approved attested WorkerRelease and differs from currentReleaseDigest",
+    "rollbackReleaseDigest and rollbackGeneration keep the prior deployable state recognizable",
+    "all confirmation fences and impact counts are server-authoritative"
+  ]
+}

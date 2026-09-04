@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -62,6 +63,38 @@ type UpgradeEnvironmentLeaseInput struct {
 	ReleaseDigest      string
 	ExpectedGeneration int64
 	Mutation           Mutation
+}
+
+type AdminUpgradeAuthority struct {
+	Lease                                                  Snapshot
+	TargetKind, TargetSchedulingState, TargetObservedPhase string
+	RollbackReleaseDigest                                  string
+	RollbackGeneration                                     int64
+	TargetReleaseApproved                                  bool
+}
+
+type AdminEnvironmentLeaseUpgradePreview struct {
+	Lease                                                          Snapshot
+	Action, TargetKind, TargetReleaseDigest, RollbackReleaseDigest string
+	RollbackGeneration                                             int64
+	ImpactDigest                                                   string
+}
+
+type AdminEnvironmentLeaseUpgradeInput struct {
+	Scope                   Scope
+	LeaseID                 string
+	Action                  string
+	ReleaseDigest           string
+	ExpectedGeneration      int64
+	ExpectedResourceVersion int64
+	ImpactDigest            string
+	Mutation                Mutation
+}
+
+type CompleteAdminEnvironmentLeaseUpgradeInput struct {
+	Upgrade       AdminEnvironmentLeaseUpgradeInput
+	Deployment    CompleteEnvironmentLeaseDeploymentInput
+	ImpactSummary string
 }
 
 type CompleteEnvironmentLeaseTerminationInput struct {
@@ -140,6 +173,25 @@ func (input UpgradeEnvironmentLeaseInput) Validate(tenantID string) error {
 	return validateMutation(input.Mutation)
 }
 
+func (input AdminEnvironmentLeaseUpgradeInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
+		!validIdentifier(input.LeaseID) || !validAdminUpgradeAction(input.Action) || !validDigest(input.ReleaseDigest) ||
+		input.ExpectedGeneration < 1 || input.ExpectedResourceVersion < 1 || !validDigest(input.ImpactDigest) {
+		return ErrInvalidInput
+	}
+	return validateMutation(input.Mutation)
+}
+
+func (input CompleteAdminEnvironmentLeaseUpgradeInput) Validate(tenantID string) error {
+	if input.Upgrade.Validate(tenantID) != nil || input.Deployment.Validate(tenantID) != nil ||
+		input.Deployment.Scope != input.Upgrade.Scope || input.Deployment.LeaseID != input.Upgrade.LeaseID ||
+		input.Deployment.ExpectedGeneration != input.Upgrade.ExpectedGeneration+1 ||
+		len(input.ImpactSummary) < 1 || len(input.ImpactSummary) > 256 || strings.ContainsAny(input.ImpactSummary, "\r\n\x00") {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
 func (input CompleteEnvironmentLeaseTerminationInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
 		!validIdentifier(input.LeaseID) || input.ExpectedGeneration < 1 {
@@ -208,6 +260,64 @@ func UpgradeMutationDigest(input UpgradeEnvironmentLeaseInput) (string, error) {
 		Operation, TenantID, ProjectID, LeaseID, ReleaseDigest string
 		ExpectedGeneration                                     int64
 	}{"environment-lease.upgrade", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.ReleaseDigest, input.ExpectedGeneration}), nil
+}
+
+func NewAdminEnvironmentLeaseUpgradePreview(authority AdminUpgradeAuthority, action, releaseDigest string) (AdminEnvironmentLeaseUpgradePreview, error) {
+	lease := authority.Lease
+	if lease.Validate() != nil || !validAdminUpgradeAction(action) ||
+		!validPhase(authority.TargetKind, "docker", "kubernetes", "ssh") || authority.TargetSchedulingState != "drained" || authority.TargetObservedPhase != "ready" ||
+		lease.DesiredPhase != "active" || !validPhase(lease.ObservedPhase, "ready", "failed") || lease.CleanupPhase != "none" || !authority.TargetReleaseApproved {
+		return AdminEnvironmentLeaseUpgradePreview{}, ErrConflict
+	}
+	targetDigest, rollbackDigest, rollbackGeneration := releaseDigest, lease.ReleaseDigest, lease.Generation
+	if action == "rollback" {
+		targetDigest, rollbackDigest, rollbackGeneration = authority.RollbackReleaseDigest, authority.RollbackReleaseDigest, authority.RollbackGeneration
+	}
+	if !validDigest(targetDigest) || !validDigest(rollbackDigest) || rollbackGeneration < 1 || targetDigest == lease.ReleaseDigest {
+		return AdminEnvironmentLeaseUpgradePreview{}, ErrConflict
+	}
+	impactDigest, err := AdminUpgradeImpactDigest(lease, authority.TargetKind, action, targetDigest, rollbackDigest, rollbackGeneration)
+	if err != nil {
+		return AdminEnvironmentLeaseUpgradePreview{}, err
+	}
+	return AdminEnvironmentLeaseUpgradePreview{Lease: lease, Action: action, TargetKind: authority.TargetKind, TargetReleaseDigest: targetDigest, RollbackReleaseDigest: rollbackDigest, RollbackGeneration: rollbackGeneration, ImpactDigest: impactDigest}, nil
+}
+
+func AdminUpgradeImpactDigest(lease Snapshot, targetKind, action, targetReleaseDigest, rollbackReleaseDigest string, rollbackGeneration int64) (string, error) {
+	if lease.Validate() != nil || !validPhase(targetKind, "docker", "kubernetes", "ssh") || !validAdminUpgradeAction(action) ||
+		!validDigest(targetReleaseDigest) || !validDigest(rollbackReleaseDigest) || rollbackGeneration < 1 {
+		return "", ErrInvalidInput
+	}
+	return digest(struct {
+		Operation, TenantID, ProjectID, LeaseID, TargetID, TargetKind            string
+		Action, CurrentReleaseDigest, TargetReleaseDigest, RollbackReleaseDigest string
+		Generation, ResourceVersion, TargetGeneration, RollbackGeneration        int64
+	}{"admin.environment-lease.release-transition", lease.Scope.TenantID, lease.Scope.ProjectID, lease.LeaseID, lease.TargetID, targetKind, action, lease.ReleaseDigest, targetReleaseDigest, rollbackReleaseDigest, lease.Generation, lease.ResourceVersion, lease.TargetGeneration, rollbackGeneration}), nil
+}
+
+func AdminUpgradeMutationDigest(input AdminEnvironmentLeaseUpgradeInput) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidInput
+	}
+	return digest(struct {
+		Operation, TenantID, ProjectID, LeaseID, Action, ReleaseDigest, ImpactDigest string
+		ExpectedGeneration, ExpectedResourceVersion                                  int64
+	}{"admin.environment-lease.release-transition", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.Action, input.ReleaseDigest, input.ImpactDigest, input.ExpectedGeneration, input.ExpectedResourceVersion}), nil
+}
+
+func AdminUpgradeImpactSummary(action string, generation int64) (string, error) {
+	if !validAdminUpgradeAction(action) || generation < 1 {
+		return "", ErrInvalidInput
+	}
+	verb := "Upgrade"
+	if action == "rollback" {
+		verb = "Rollback"
+	}
+	return verb + " 1 Worker and 1 Lease from generation " + strconv.FormatInt(generation, 10), nil
+}
+
+func validAdminUpgradeAction(value string) bool {
+	return value == "upgrade" || value == "rollback"
 }
 
 func validIdentifier(value string) bool {

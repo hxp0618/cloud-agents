@@ -216,6 +216,15 @@ export function classifyMigrationStatement(
     };
   }
   if (first === "CREATE") {
+    if (tokens[1] === "TRIGGER") {
+      const expected = [
+        "CREATE", "TRIGGER", "MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_GUARD", "BEFORE", "UPDATE", "OF", "RELEASE_DIGEST", "ON",
+        "CLOUD_AGENTS", ".", "MANAGED_HOST_ENVIRONMENT_LEASES", "FOR", "EACH", "ROW", "EXECUTE", "FUNCTION",
+        "CLOUD_AGENTS", ".", "TRACK_MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_V1", "(", ")", ";",
+      ];
+      if (migrationId !== "000046" || tokens.length !== expected.length || tokens.some((token, index) => token !== expected[index])) reject(tokens);
+      return classification("CREATE", "TRIGGER", qualifiedDerivedIdentity("trigger", tokens, 8, tokens[2]!), null);
+    }
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
       if (
         migrationId === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.migrationId &&
@@ -500,7 +509,7 @@ export function classifyMigrationStatement(
             subcommand.join("\0") ===
               ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_ENDPOINT"].join("\0")));
       const dropDeploymentTargetActivityConstraint =
-        (migrationId === "000040" || migrationId === "000044") &&
+        new Set(["000040", "000044", "000046"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_target_activity" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGET_ACTIVITY_ACTION"].join("\0");

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json",
+  "title": "AdminEnvironmentLeaseUpgradeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["releaseDigest", "expectedGeneration", "expectedResourceVersion", "impactDigest"],
+  "properties": {
+    "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "all fields must exactly match one current server-authoritative upgrade or rollback preview",
+    "releaseDigest must identify an approved attested WorkerRelease",
+    "expectedGeneration, expectedResourceVersion and impactDigest fence the selected Worker and Lease authority"
+  ]
+}

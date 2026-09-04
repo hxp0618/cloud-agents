@@ -320,6 +320,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 	}
 
 	requireCallerClosure(t, tree, "WithVerifiedOperation",
+		"*DurableCoordinationService.BeginAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.BeginDeploymentTargetCleanup",
 		"*DurableCoordinationService.BeginDeploymentTargetProbe",
 		"*DurableCoordinationService.BeginManagedHostEnvironmentLeaseUpgrade",
@@ -327,6 +328,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CloseManagedAgentSession",
 		"*DurableCoordinationService.CompleteDeploymentTargetProbe",
 		"*DurableCoordinationService.CompleteDeploymentTargetCleanup",
+		"*DurableCoordinationService.CompleteAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseDeployment",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseTermination",
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
@@ -357,6 +359,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ListEnvironmentProfiles",
 		"*DurableCoordinationService.ListPublishedEnvironmentProfiles",
 		"*DurableCoordinationService.ListWorkerReleases",
+		"*DurableCoordinationService.PreviewAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.PreviewDeploymentTargetScheduling",
 		"*DurableCoordinationService.GetOrganization",
 		"*DurableCoordinationService.GetPlatformTenant",
@@ -384,6 +387,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"withManagedAgentProjectMutation",
 	)
 	requireCallerClosure(t, tree, "executeVerifiedRBACOperation",
+		"*DurableCoordinationService.BeginAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.BeginDeploymentTargetCleanup",
 		"*DurableCoordinationService.BeginDeploymentTargetProbe",
 		"*DurableCoordinationService.BeginManagedHostEnvironmentLeaseUpgrade",
@@ -391,6 +395,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CloseManagedAgentSession",
 		"*DurableCoordinationService.CompleteDeploymentTargetProbe",
 		"*DurableCoordinationService.CompleteDeploymentTargetCleanup",
+		"*DurableCoordinationService.CompleteAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseDeployment",
 		"*DurableCoordinationService.CompleteManagedHostEnvironmentLeaseTermination",
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
@@ -421,6 +426,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ListEnvironmentProfiles",
 		"*DurableCoordinationService.ListPublishedEnvironmentProfiles",
 		"*DurableCoordinationService.ListWorkerReleases",
+		"*DurableCoordinationService.PreviewAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.PreviewDeploymentTargetScheduling",
 		"*DurableCoordinationService.GetOrganization",
 		"*DurableCoordinationService.GetPlatformTenant",

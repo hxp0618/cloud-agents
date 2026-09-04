@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
@@ -20,17 +21,24 @@ import (
 )
 
 type managedHostEnvironmentLeaseStoreFake struct {
-	snapshot  internalmanagedhost.Snapshot
-	target    internaldeploymenttarget.Snapshot
-	create    int
-	get       int
-	list      int
-	workers   int
-	after     string
-	limit     int
-	terminate int
-	finalize  int
-	upgrade   int
+	snapshot                                internalmanagedhost.Snapshot
+	target                                  internaldeploymenttarget.Snapshot
+	create                                  int
+	get                                     int
+	list                                    int
+	workers                                 int
+	after                                   string
+	limit                                   int
+	terminate                               int
+	finalize                                int
+	upgrade                                 int
+	adminPreview                            internalmanagedhost.AdminEnvironmentLeaseUpgradePreview
+	adminStart                              postgres.AdminEnvironmentLeaseUpgradeStart
+	adminResult                             postgres.AdminEnvironmentLeaseUpgradeResult
+	adminInput                              internalmanagedhost.AdminEnvironmentLeaseUpgradeInput
+	adminCompletion                         internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput
+	previewAction, previewRelease           string
+	previewCalls, adminBegin, adminComplete int
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) CreateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CreateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
@@ -99,6 +107,25 @@ func (fake *managedHostEnvironmentLeaseStoreFake) ListAdminWorkers(_ context.Con
 		WorkerServerName: "worker-alpha", LastHealthAt: &fake.snapshot.UpdatedAt, ReadyAt: &fake.snapshot.UpdatedAt,
 		ResourceVersion: fake.snapshot.ResourceVersion, CreatedAt: fake.snapshot.CreatedAt, UpdatedAt: fake.snapshot.UpdatedAt,
 	}}, NextWorkerID: fake.snapshot.LeaseID}, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) PreviewAdminEnvironmentLeaseUpgrade(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _, _, action, releaseDigest string) (internalmanagedhost.AdminEnvironmentLeaseUpgradePreview, error) {
+	fake.previewCalls++
+	fake.previewAction, fake.previewRelease = action, releaseDigest
+	return fake.adminPreview, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) BeginAdminEnvironmentLeaseUpgrade(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.AdminEnvironmentLeaseUpgradeInput) (postgres.AdminEnvironmentLeaseUpgradeStart, error) {
+	fake.adminBegin++
+	fake.adminInput = input
+	return fake.adminStart, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) CompleteAdminEnvironmentLeaseUpgrade(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CompleteAdminEnvironmentLeaseUpgradeInput) (postgres.AdminEnvironmentLeaseUpgradeResult, error) {
+	fake.adminComplete++
+	fake.adminInput = input.Upgrade
+	fake.adminCompletion = input.Deployment
+	return fake.adminResult, nil
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) TerminateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
@@ -187,7 +214,7 @@ func (fake *managedHostEnvironmentLeaseVerifierFake) Verify(_ string, request au
 	return &authn.VerifiedPrincipal{}, nil
 }
 
-func TestAdminEnvironmentLeaseHTTPIsReadOnlyAndChecksAdminScope(t *testing.T) {
+func TestAdminEnvironmentLeaseHTTPListsResourcesAndChecksAdminScope(t *testing.T) {
 	now := time.Date(2026, time.September, 3, 9, 0, 0, 0, time.UTC)
 	verifier := &managedHostEnvironmentLeaseVerifierFake{}
 	store := &managedHostEnvironmentLeaseStoreFake{snapshot: internalmanagedhost.Snapshot{
@@ -197,7 +224,7 @@ func TestAdminEnvironmentLeaseHTTPIsReadOnlyAndChecksAdminScope(t *testing.T) {
 		Generation:    2, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", ResourceVersion: 3,
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
 	}}
-	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, store)
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,9 +254,114 @@ func TestAdminEnvironmentLeaseHTTPIsReadOnlyAndChecksAdminScope(t *testing.T) {
 	}
 }
 
+func TestAdminEnvironmentLeaseUpgradePreviewIsServerAuthoritative(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 8, 0, 0, 0, time.UTC)
+	current := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	target := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	impact := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	lease := internalmanagedhost.Snapshot{
+		Scope: internalmanagedhost.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, LeaseID: "lease-alpha", LeaseName: "lease-alpha",
+		TargetID: "docker-alpha", TargetGeneration: 7, ReleaseDigest: current, Generation: 2, ResourceVersion: 3,
+		DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none", CreatedAt: now, UpdatedAt: now,
+	}
+	store := &managedHostEnvironmentLeaseStoreFake{adminPreview: internalmanagedhost.AdminEnvironmentLeaseUpgradePreview{
+		Lease: lease, Action: "upgrade", TargetKind: "docker", TargetReleaseDigest: target,
+		RollbackReleaseDigest: current, RollbackGeneration: 2, ImpactDigest: impact,
+	}}
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(&managedHostEnvironmentLeaseVerifierFake{}, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade-preview?releaseDigest="+target, nil)
+	request.Header.Set("Authorization", "Bearer admin-token")
+	request.Header.Set("X-Request-ID", "request-upgrade-preview")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	decoded, decodeErr := platformv1alpha1.DecodeEnvironmentLeaseUpgradePreviewResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || store.previewCalls != 1 || store.previewAction != "upgrade" || store.previewRelease != target ||
+		decoded.Value.Spec.ExpectedGeneration != 2 || decoded.Value.Spec.ExpectedResourceVersion != "3" || decoded.Value.Spec.AffectedTargets != 1 || decoded.Value.Spec.AffectedWorkers != 1 || decoded.Value.Spec.AffectedLeases != 1 || decoded.Value.Spec.ImpactDigest != impact ||
+		strings.Contains(response.Body.String(), "providerCredentialRef") || strings.Contains(response.Body.String(), "workerEndpoint") {
+		t.Fatalf("status=%d calls=%d action=%q release=%q preview=%#v decode=%v body=%s", response.Code, store.previewCalls, store.previewAction, store.previewRelease, decoded.Value, decodeErr, response.Body.String())
+	}
+	invalid := httptest.NewRequest(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade-preview?releaseDigest="+target+"&extra=true", nil)
+	invalid.Header.Set("Authorization", "Bearer admin-token")
+	invalid.Header.Set("X-Request-ID", "request-invalid-preview")
+	invalidResponse := httptest.NewRecorder()
+	handler.ServeHTTP(invalidResponse, invalid)
+	if invalidResponse.Code != http.StatusBadRequest || store.previewCalls != 1 {
+		t.Fatalf("invalid status=%d calls=%d body=%s", invalidResponse.Code, store.previewCalls, invalidResponse.Body.String())
+	}
+}
+
+func TestAdminEnvironmentLeaseUpgradeConfirmsExactFencesAndReturnsOperation(t *testing.T) {
+	now := time.Date(2026, time.September, 4, 9, 0, 0, 0, time.UTC)
+	targetDigest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	impactDigest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	requestedBy := "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	startedOperation := internaldeploymenttarget.Operation{
+		Scope: internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, OperationID: "operation-upgrade", IdempotencyKey: "upgrade-key-123456", Action: "target.upgrade", TargetID: "docker-alpha",
+		TargetGeneration: 7, RequestedBy: requestedBy, RequestID: "request-admin-upgrade", State: "running", CurrentStep: "deploy-worker", ImpactSummary: "Upgrade 1 Worker and 1 Lease from generation 2", RequestedAt: now, UpdatedAt: now,
+	}
+	failedOperation := startedOperation
+	failedOperation.State, failedOperation.CurrentStep, failedOperation.StableErrorCode, failedOperation.Retryable = "failed", "complete", "docker-actuator-unconfigured", true
+	lease := internalmanagedhost.Snapshot{
+		Scope: internalmanagedhost.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, LeaseID: "lease-alpha", LeaseName: "Lease Alpha", EnvironmentID: "environment-alpha",
+		TargetID: "docker-alpha", TargetGeneration: 7, ProviderCredentialRef: "provider-alpha", CPULimitMillis: 1000, MemoryLimitBytes: 512 << 20,
+		ReleaseDigest: targetDigest, Generation: 3, ResourceVersion: 4, DesiredPhase: "active", ObservedPhase: "provisioning", CleanupPhase: "none", ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+	}
+	store := &managedHostEnvironmentLeaseStoreFake{
+		target:      internaldeploymenttarget.Snapshot{Scope: internaldeploymenttarget.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, TargetID: "docker-alpha", Kind: "docker", Generation: 7, SchedulingState: "drained", ObservedPhase: "ready"},
+		adminStart:  postgres.AdminEnvironmentLeaseUpgradeStart{Snapshot: lease, Operation: startedOperation, Execute: true},
+		adminResult: postgres.AdminEnvironmentLeaseUpgradeResult{Snapshot: lease, Operation: failedOperation},
+	}
+	verifier := &managedHostEnvironmentLeaseVerifierFake{}
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade", strings.NewReader(`{"releaseDigest":"`+targetDigest+`","expectedGeneration":2,"expectedResourceVersion":"3","impactDigest":"`+impactDigest+`"}`))
+	request.Header.Set("Authorization", "Bearer admin-token")
+	request.Header.Set("X-Request-ID", "request-admin-upgrade")
+	request.Header.Set("Idempotency-Key", "upgrade-key-123456")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	operation, decodeErr := platformv1alpha1.DecodeMaintenanceOperationResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || operation.Value.Action != "target.upgrade" || operation.Value.State != "failed" || store.adminBegin != 1 || store.adminComplete != 1 ||
+		store.adminInput.Action != "upgrade" || store.adminInput.ReleaseDigest != targetDigest || store.adminInput.ExpectedGeneration != 2 || store.adminInput.ExpectedResourceVersion != 3 || store.adminInput.ImpactDigest != impactDigest ||
+		store.adminCompletion.ExpectedGeneration != 3 || store.adminCompletion.StableErrorCode != "docker-actuator-unconfigured" {
+		t.Fatalf("status=%d begin=%d complete=%d input=%#v completion=%#v operation=%#v decode=%v body=%s", response.Code, store.adminBegin, store.adminComplete, store.adminInput, store.adminCompletion, operation.Value, decodeErr, response.Body.String())
+	}
+	wantPermissions := []string{"projects.act", "leases.act", "projects.get", "projects.act", "projects.act"}
+	if len(verifier.requests) != len(wantPermissions) {
+		t.Fatalf("verifications=%#v", verifier.requests)
+	}
+	for index, permission := range wantPermissions {
+		if verifier.requests[index].RequiredPermission != permission {
+			t.Fatalf("verification %d permission=%q, want %q", index, verifier.requests[index].RequiredPermission, permission)
+		}
+	}
+}
+
+func TestAdminEnvironmentLeaseUpgradeReturnsForbiddenWithoutLeaseActScope(t *testing.T) {
+	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
+	store := &managedHostEnvironmentLeaseStoreFake{}
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade", nil)
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-admin-upgrade")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || store.adminBegin != 0 || len(verifier.requests) != 2 || verifier.requests[1].RequiredPermission != "leases.act" {
+		t.Fatalf("status=%d begin=%d requests=%#v body=%s", response.Code, store.adminBegin, verifier.requests, response.Body.String())
+	}
+}
+
 func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T) {
 	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
-	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{})
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{}, nil, nil, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +377,7 @@ func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T
 
 func TestAdminWorkerHTTPReturnsForbiddenWithoutWorkerScope(t *testing.T) {
 	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
-	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{})
+	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{}, nil, nil, nil, dockertarget.WorkerTrust{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
+	internaldeploymenttarget "github.com/hxp0618/cloud-agents/services/control-plane/internal/deploymenttarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type ManagedHostEnvironmentLeasePage struct {
@@ -45,6 +48,17 @@ type AdminWorkerSnapshot struct {
 type AdminWorkerPage struct {
 	Workers      []AdminWorkerSnapshot
 	NextWorkerID string
+}
+
+type AdminEnvironmentLeaseUpgradeStart struct {
+	Snapshot  internalmanagedhost.Snapshot
+	Operation internaldeploymenttarget.Operation
+	Execute   bool
+}
+
+type AdminEnvironmentLeaseUpgradeResult struct {
+	Snapshot  internalmanagedhost.Snapshot
+	Operation internaldeploymenttarget.Operation
 }
 
 type managedHostEnvironmentLeasePageRow struct {
@@ -212,6 +226,29 @@ FROM cloud_agents.complete_managed_host_environment_lease_deployment_v2($1, $2, 
 	    worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at, execute_upgrade
 FROM cloud_agents.begin_managed_host_environment_lease_upgrade_v1($1, $2, $3, $4, $5, $6, $7)`
+	adminEnvironmentLeaseUpgradeAuthoritySQL = `SELECT target.target_kind, target.scheduling_state, target.observed_phase,
+    lease.rollback_release_digest, lease.rollback_generation,
+    EXISTS (
+        SELECT 1 FROM cloud_agents.worker_releases AS release
+        WHERE release.tenant_id = lease.tenant_id AND release.project_uid = lease.project_uid
+            AND release.release_digest = COALESCE(NULLIF($3, ''), lease.rollback_release_digest)
+            AND release.status = 'approved' AND release.verification_state = 'attested'
+    )
+FROM cloud_agents.managed_host_environment_leases AS lease
+JOIN cloud_agents.deployment_targets AS target
+    ON target.tenant_id = lease.tenant_id
+    AND target.project_uid = lease.project_uid
+    AND target.target_uid = lease.deployment_target_uid
+WHERE lease.tenant_id = cloud_agents.require_tenant_id()
+    AND lease.project_uid = $1 AND lease.lease_uid = $2`
+	beginAdminEnvironmentLeaseUpgradeSQL = `SELECT ` + deploymentTargetOperationColumns + `, execute_upgrade
+FROM cloud_agents.begin_admin_environment_lease_upgrade_v1(
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+)`
+	completeAdminEnvironmentLeaseUpgradeSQL = `SELECT ` + deploymentTargetOperationColumns + `
+FROM cloud_agents.complete_admin_environment_lease_upgrade_v1(
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)`
 )
 
 func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
@@ -364,6 +401,159 @@ func (service *DurableCoordinationService) BeginManagedHostEnvironmentLeaseUpgra
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, mapManagedHostEnvironmentLeaseError(err)
+}
+
+func (service *DurableCoordinationService) PreviewAdminEnvironmentLeaseUpgrade(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, leaseID, action, releaseDigest string,
+) (internalmanagedhost.AdminEnvironmentLeaseUpgradePreview, error) {
+	if service == nil || service.runner == nil {
+		return internalmanagedhost.AdminEnvironmentLeaseUpgradePreview{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(leaseID) ||
+		(action != "upgrade" && action != "rollback") || (action == "upgrade" && !validAdminEnvironmentLeaseReleaseDigest(releaseDigest)) || (action == "rollback" && releaseDigest != "") {
+		return internalmanagedhost.AdminEnvironmentLeaseUpgradePreview{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result internalmanagedhost.AdminEnvironmentLeaseUpgradePreview
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				authority, authorityErr := readAdminEnvironmentLeaseUpgradeAuthority(readContext, handle.transaction, tenantID, projectID, leaseID, releaseDigest)
+				if authorityErr != nil {
+					return authorityErr
+				}
+				if action == "rollback" && authority.RollbackReleaseDigest == "" {
+					return ErrAdminEnvironmentLeaseRollbackUnavailable
+				}
+				if !authority.TargetReleaseApproved {
+					return ErrAdminEnvironmentLeaseReleaseNotApproved
+				}
+				if authority.TargetSchedulingState != "drained" || authority.TargetObservedPhase != "ready" {
+					return ErrAdminEnvironmentLeaseTargetNotDrained
+				}
+				var previewErr error
+				result, previewErr = internalmanagedhost.NewAdminEnvironmentLeaseUpgradePreview(authority, action, releaseDigest)
+				if errors.Is(previewErr, internalmanagedhost.ErrConflict) {
+					return ErrAdminEnvironmentLeaseStateConflict
+				}
+				return previewErr
+			})
+		})
+	})
+	return result, mapAdminEnvironmentLeaseUpgradeError(err)
+}
+
+func (service *DurableCoordinationService) BeginAdminEnvironmentLeaseUpgrade(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalmanagedhost.AdminEnvironmentLeaseUpgradeInput,
+) (AdminEnvironmentLeaseUpgradeStart, error) {
+	if service == nil || service.runner == nil {
+		return AdminEnvironmentLeaseUpgradeStart{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return AdminEnvironmentLeaseUpgradeStart{}, ErrCoordinationInvalidInput
+	}
+	requestDigest, err := internalmanagedhost.AdminUpgradeMutationDigest(input)
+	if err != nil {
+		return AdminEnvironmentLeaseUpgradeStart{}, ErrCoordinationInvalidInput
+	}
+	impactSummary, err := internalmanagedhost.AdminUpgradeImpactSummary(input.Action, input.ExpectedGeneration)
+	if err != nil {
+		return AdminEnvironmentLeaseUpgradeStart{}, ErrCoordinationInvalidInput
+	}
+	var result AdminEnvironmentLeaseUpgradeStart
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
+		subjectDigest, digestErr := actor.Digest()
+		if digestErr != nil {
+			return authz.ErrOperationDenied
+		}
+		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				authority, authorityErr := readAdminEnvironmentLeaseUpgradeAuthority(ctx, handle.transaction, tenantID, input.Scope.ProjectID, input.LeaseID, input.ReleaseDigest)
+				if authorityErr != nil {
+					return authorityErr
+				}
+				rollbackDigest, rollbackGeneration := authority.Lease.ReleaseDigest, authority.Lease.Generation
+				if input.Action == "rollback" {
+					rollbackDigest, rollbackGeneration = input.ReleaseDigest, authority.RollbackGeneration
+					if rollbackGeneration < 1 {
+						rollbackGeneration = 1
+					}
+				}
+				currentImpactDigest, impactErr := internalmanagedhost.AdminUpgradeImpactDigest(authority.Lease, authority.TargetKind, input.Action, input.ReleaseDigest, rollbackDigest, rollbackGeneration)
+				if impactErr != nil {
+					return impactErr
+				}
+				row := handle.transaction.queryRow(ctx, beginAdminEnvironmentLeaseUpgradeSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.Action, input.ReleaseDigest,
+					input.ExpectedGeneration, input.ExpectedResourceVersion, input.ImpactDigest, currentImpactDigest,
+					input.Mutation.IdempotencyKey, requestDigest, input.Mutation.RequestID, subjectDigest, impactSummary)
+				if scanErr := scanDeploymentTargetOperationWithExecute(row, input.Scope, &result.Operation, &result.Execute); scanErr != nil {
+					if errors.Is(scanErr, pgx.ErrNoRows) {
+						return internalmanagedhost.ErrNotFound
+					}
+					return scanErr
+				}
+				return scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, getManagedHostEnvironmentLeaseSQL, input.Scope.ProjectID, input.LeaseID), input.Scope, &result.Snapshot)
+			})
+		})
+	})
+	return result, mapAdminEnvironmentLeaseUpgradeError(err)
+}
+
+func (service *DurableCoordinationService) CompleteAdminEnvironmentLeaseUpgrade(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalmanagedhost.CompleteAdminEnvironmentLeaseUpgradeInput,
+) (AdminEnvironmentLeaseUpgradeResult, error) {
+	if service == nil || service.runner == nil {
+		return AdminEnvironmentLeaseUpgradeResult{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return AdminEnvironmentLeaseUpgradeResult{}, ErrCoordinationInvalidInput
+	}
+	requestDigest, err := internalmanagedhost.AdminUpgradeMutationDigest(input.Upgrade)
+	if err != nil {
+		return AdminEnvironmentLeaseUpgradeResult{}, ErrCoordinationInvalidInput
+	}
+	var result AdminEnvironmentLeaseUpgradeResult
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: input.Upgrade.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				deployment := input.Deployment
+				if scanErr := scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, completeManagedHostEnvironmentLeaseDeploymentSQL,
+					deployment.Scope.TenantID, deployment.Scope.ProjectID, deployment.LeaseID, deployment.ExpectedGeneration,
+					deployment.TargetID, deployment.ExpectedTargetGeneration, deployment.Succeeded, deployment.WorkerEndpoint,
+					deployment.WorkerSPIFFEID, deployment.WorkerServerName, deployment.StableErrorCode), deployment.Scope, &result.Snapshot); scanErr != nil {
+					return scanErr
+				}
+				return scanDeploymentTargetOperation(handle.transaction.queryRow(ctx, completeAdminEnvironmentLeaseUpgradeSQL,
+					input.Upgrade.Scope.TenantID, input.Upgrade.Scope.ProjectID, deployment.TargetID, input.Upgrade.Action,
+					deployment.ExpectedTargetGeneration, input.Upgrade.Mutation.IdempotencyKey, requestDigest,
+					deployment.Succeeded, deployment.StableErrorCode, input.ImpactSummary), internaldeploymenttarget.Scope{TenantID: input.Upgrade.Scope.TenantID, ProjectID: input.Upgrade.Scope.ProjectID}, &result.Operation)
+			})
+		})
+	})
+	return result, mapAdminEnvironmentLeaseUpgradeError(err)
 }
 
 func (service *DurableCoordinationService) GetManagedHostEnvironmentLease(
@@ -767,6 +957,98 @@ func scanManagedHostEnvironmentLeaseWithExecute(row rowScanner, scope internalma
 	return nil
 }
 
+func readAdminEnvironmentLeaseUpgradeAuthority(
+	ctx context.Context, transaction tenantTransaction, tenantID, projectID, leaseID, releaseDigest string,
+) (internalmanagedhost.AdminUpgradeAuthority, error) {
+	if transaction == nil {
+		return internalmanagedhost.AdminUpgradeAuthority{}, ErrCoordinationInvalidInput
+	}
+	authority := internalmanagedhost.AdminUpgradeAuthority{}
+	if err := scanManagedHostEnvironmentLease(transaction.queryRow(ctx, getManagedHostEnvironmentLeaseSQL, projectID, leaseID), internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, &authority.Lease); err != nil {
+		return authority, err
+	}
+	var rollbackDigest *string
+	var rollbackGeneration *int64
+	if err := transaction.queryRow(ctx, adminEnvironmentLeaseUpgradeAuthoritySQL, projectID, leaseID, releaseDigest).Scan(
+		&authority.TargetKind, &authority.TargetSchedulingState, &authority.TargetObservedPhase,
+		&rollbackDigest, &rollbackGeneration, &authority.TargetReleaseApproved,
+	); err != nil {
+		return authority, err
+	}
+	if (rollbackDigest == nil) != (rollbackGeneration == nil) {
+		return authority, ErrCoordinationResultDrift
+	}
+	if rollbackDigest != nil {
+		authority.RollbackReleaseDigest, authority.RollbackGeneration = *rollbackDigest, *rollbackGeneration
+	}
+	return authority, nil
+}
+
+func scanDeploymentTargetOperationWithExecute(row rowScanner, scope internalmanagedhost.Scope, result *internaldeploymenttarget.Operation, execute *bool) error {
+	if row == nil || result == nil || execute == nil {
+		return ErrCoordinationResultDrift
+	}
+	if err := row.Scan(&result.OperationID, &result.IdempotencyKey, &result.Action, &result.TargetID,
+		&result.TargetGeneration, &result.RequestedBy, &result.RequestID, &result.RequestedAt, &result.UpdatedAt,
+		&result.State, &result.CurrentStep, &result.StableErrorCode, &result.ImpactSummary, &result.Retryable, execute); err != nil {
+		return err
+	}
+	result.Scope = internaldeploymenttarget.Scope{TenantID: scope.TenantID, ProjectID: scope.ProjectID}
+	if result.Validate() != nil {
+		return ErrCoordinationResultDrift
+	}
+	return nil
+}
+
+func validAdminEnvironmentLeaseReleaseDigest(value string) bool {
+	if len(value) != 71 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[7:] {
+		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func mapAdminEnvironmentLeaseUpgradeError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) {
+		switch postgresError.Message {
+		case "environment lease upgrade idempotency conflict":
+			return ErrAdminEnvironmentLeaseUpgradeIdempotencyConflict
+		case "environment lease generation conflict":
+			return ErrAdminEnvironmentLeaseGenerationConflict
+		case "environment lease resource version conflict":
+			return ErrAdminEnvironmentLeaseResourceVersionConflict
+		case "environment lease upgrade state conflict", "environment lease release is unchanged":
+			return ErrAdminEnvironmentLeaseStateConflict
+		case "deployment target is not ready and drained":
+			return ErrAdminEnvironmentLeaseTargetNotDrained
+		case "environment lease rollback target conflict":
+			return ErrAdminEnvironmentLeaseRollbackUnavailable
+		case "environment lease upgrade impact conflict":
+			return ErrAdminEnvironmentLeaseImpactConflict
+		case "Worker release is not approved":
+			return ErrAdminEnvironmentLeaseReleaseNotApproved
+		}
+	}
+	switch {
+	case errors.Is(err, ErrAdminEnvironmentLeaseUpgradeIdempotencyConflict),
+		errors.Is(err, ErrAdminEnvironmentLeaseGenerationConflict),
+		errors.Is(err, ErrAdminEnvironmentLeaseResourceVersionConflict),
+		errors.Is(err, ErrAdminEnvironmentLeaseStateConflict),
+		errors.Is(err, ErrAdminEnvironmentLeaseTargetNotDrained),
+		errors.Is(err, ErrAdminEnvironmentLeaseRollbackUnavailable),
+		errors.Is(err, ErrAdminEnvironmentLeaseImpactConflict),
+		errors.Is(err, ErrAdminEnvironmentLeaseReleaseNotApproved):
+		return err
+	default:
+		return mapManagedHostEnvironmentLeaseError(err)
+	}
+}
+
 func mapManagedHostEnvironmentLeaseError(err error) error {
 	switch {
 	case errors.Is(err, internalmanagedhost.ErrNotFound):
@@ -785,3 +1067,14 @@ func mapManagedHostEnvironmentLeaseError(err error) error {
 }
 
 var ErrManagedHostEnvironmentLeaseNotFound = errors.New("managed host environment lease was not found")
+
+var (
+	ErrAdminEnvironmentLeaseUpgradeIdempotencyConflict = errors.New("Admin environment lease upgrade idempotency key conflicts")
+	ErrAdminEnvironmentLeaseGenerationConflict         = errors.New("Admin environment lease generation conflicts")
+	ErrAdminEnvironmentLeaseResourceVersionConflict    = errors.New("Admin environment lease resource version conflicts")
+	ErrAdminEnvironmentLeaseStateConflict              = errors.New("Admin environment lease state conflicts")
+	ErrAdminEnvironmentLeaseTargetNotDrained           = errors.New("Admin environment lease Target is not ready and drained")
+	ErrAdminEnvironmentLeaseRollbackUnavailable        = errors.New("Admin environment lease rollback target is unavailable")
+	ErrAdminEnvironmentLeaseImpactConflict             = errors.New("Admin environment lease upgrade impact conflicts")
+	ErrAdminEnvironmentLeaseReleaseNotApproved         = errors.New("Admin environment lease Worker release is not approved")
+)

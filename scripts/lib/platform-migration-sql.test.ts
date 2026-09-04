@@ -1058,6 +1058,41 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
   });
 
+  it("classifies the Admin environment lease upgrade migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000046_upgrade_admin_environment_leases.sql"),
+      ),
+    );
+    expect(statements).toHaveLength(19);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000046").command),
+    ).toEqual([
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+    ]);
+    expect(() => classifyMigrationStatement(statements[8]!, "000045")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

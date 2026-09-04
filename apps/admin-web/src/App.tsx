@@ -7,6 +7,7 @@ import {
   type DeploymentTargetSchedulingPreview,
   type DeploymentTargetRegisterRequest,
   type EnvironmentLease,
+  type EnvironmentLeaseUpgradePreview,
   type EnvironmentProfile,
   type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
@@ -18,6 +19,7 @@ import {
 import {
   adminErrorKey,
   cleanupRequestFromPreview,
+  leaseReleaseRequestFromPreview,
   listAdminLeases,
   listAdminMaintenanceOperations,
   listAdminProfileAuditEvents,
@@ -53,6 +55,7 @@ type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 type Page = "overview" | "targets" | "workers" | "releases" | "profiles" | "leases" | "maintenance";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
+type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
@@ -153,6 +156,8 @@ const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "target.drain": "audit.targetDrain",
   "target.resume": "audit.targetResume",
   "target.cleanup": "audit.targetCleanup",
+  "target.upgrade": "audit.targetUpgrade",
+  "target.rollback": "audit.targetRollback",
   "profile.create": "audit.profileCreate",
   "profile.publish": "audit.profilePublish",
   "profile.disable": "audit.profileDisable",
@@ -164,6 +169,8 @@ const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.
   "target.drain": "operation.impact.drain",
   "target.resume": "operation.impact.resume",
   "target.cleanup": "operation.impact.cleanup",
+  "target.upgrade": "operation.impact.upgrade",
+  "target.rollback": "operation.impact.rollback",
 });
 
 const resourceMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -377,6 +384,10 @@ export function App() {
     useState<DeploymentTargetSchedulingPreview | null>(null);
   const [leases, setLeases] = useState<readonly EnvironmentLease[]>(Object.freeze([]));
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
+  const [leaseReleasePreview, setLeaseReleasePreview] =
+    useState<EnvironmentLeaseUpgradePreview | null>(null);
+  const [leaseReleaseConfirmationOpen, setLeaseReleaseConfirmationOpen] = useState(false);
+  const [selectedUpgradeReleaseDigest, setSelectedUpgradeReleaseDigest] = useState("");
   const [workers, setWorkers] = useState<readonly Worker[]>(Object.freeze([]));
   const [selectedWorkerId, setSelectedWorkerId] = useState("");
   const [releases, setReleases] = useState<readonly WorkerRelease[]>(Object.freeze([]));
@@ -458,6 +469,24 @@ export function App() {
       ? schedulingPreview
       : null;
   const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
+  const selectedLeaseTarget = targets.find(
+    ({ metadata }) => metadata.uid === selectedLease?.spec.targetId,
+  );
+  const upgradeReleaseDigest =
+    releases.find(
+      ({ spec }) =>
+        spec.releaseDigest === selectedUpgradeReleaseDigest &&
+        spec.releaseDigest !== selectedLease?.spec.releaseDigest,
+    )?.spec.releaseDigest ??
+    releases.find(({ spec }) => spec.releaseDigest !== selectedLease?.spec.releaseDigest)?.spec
+      .releaseDigest ??
+    "";
+  const selectedLeaseReleasePreview =
+    selectedLease !== undefined &&
+    leaseReleasePreview?.metadata.uid === selectedLease.metadata.uid &&
+    leaseReleasePreview.metadata.resourceVersion === selectedLease.metadata.resourceVersion
+      ? leaseReleasePreview
+      : null;
   const selectedWorker = workers.find(({ metadata }) => metadata.uid === selectedWorkerId);
   const selectedProfile = profiles.find(
     ({ metadata }) => metadata.uid === selectedProfileVersionId,
@@ -671,6 +700,7 @@ export function App() {
     setCleanupConfirmationOpen(false);
     setSchedulingConfirmationOpen(false);
     setLeaseDetailOpen(false);
+    setLeaseReleaseConfirmationOpen(false);
     setWorkerDetailOpen(false);
     setProfileDetailOpen(false);
     setMaintenanceDetailOpen(false);
@@ -691,6 +721,9 @@ export function App() {
     setSchedulingPreview(null);
     setLeases(Object.freeze([]));
     setSelectedLeaseId("");
+    setLeaseReleasePreview(null);
+    setLeaseReleaseConfirmationOpen(false);
+    setSelectedUpgradeReleaseDigest("");
     setWorkers(Object.freeze([]));
     setSelectedWorkerId("");
     setReleases(Object.freeze([]));
@@ -919,6 +952,8 @@ export function App() {
 
   function selectLease(leaseId: string) {
     setLeaseDetailOpen(true);
+    setLeaseReleasePreview(null);
+    setLeaseReleaseConfirmationOpen(false);
     if (client === null || leaseId === selectedLeaseId) {
       setSelectedLeaseId(leaseId);
       return;
@@ -939,6 +974,104 @@ export function App() {
   function selectWorker(workerId: string) {
     setSelectedWorkerId(workerId);
     setWorkerDetailOpen(true);
+  }
+
+  function previewLeaseRelease(action: LeaseReleaseTransition) {
+    if (
+      client === null ||
+      selectedLease === undefined ||
+      (action === "upgrade" && upgradeReleaseDigest === "")
+    )
+      return;
+    const lease = selectedLease;
+    void runOperation(
+      `lease-release-preview:${action}:${lease.metadata.uid}:${lease.metadata.resourceVersion}:${upgradeReleaseDigest}`,
+      {
+        key: action === "upgrade" ? "operation.previewUpgrade" : "operation.previewRollback",
+        values: { name: lease.metadata.name },
+      },
+      async (signal) => {
+        const result =
+          action === "upgrade"
+            ? await client.previewAdminEnvironmentLeaseUpgrade(
+                connection.tenantId,
+                connection.projectId,
+                lease.metadata.uid,
+                upgradeReleaseDigest,
+                newRequestId(),
+                signal,
+              )
+            : await client.previewAdminEnvironmentLeaseRollback(
+                connection.tenantId,
+                connection.projectId,
+                lease.metadata.uid,
+                newRequestId(),
+                signal,
+              );
+        setLeaseReleasePreview(result.value);
+        setLeaseReleaseConfirmationOpen(true);
+      },
+    );
+  }
+
+  function transitionLeaseRelease() {
+    if (client === null || selectedLease === undefined || selectedLeaseReleasePreview === null)
+      return;
+    const lease = selectedLease;
+    const preview = selectedLeaseReleasePreview;
+    const action = preview.spec.action;
+    const key = `lease-release:${action}:${lease.metadata.uid}:${preview.spec.expectedGeneration}:${preview.spec.expectedResourceVersion}:${preview.spec.impactDigest}`;
+    setLeaseReleaseConfirmationOpen(false);
+    void runOperation(
+      key,
+      {
+        key: action === "upgrade" ? "operation.upgradeLease" : "operation.rollbackLease",
+        values: { name: lease.metadata.name },
+      },
+      async (signal) => {
+        const args = [
+          connection.tenantId,
+          connection.projectId,
+          lease.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          leaseReleaseRequestFromPreview(preview),
+          signal,
+        ] as const;
+        const result =
+          action === "upgrade"
+            ? await client.upgradeAdminEnvironmentLease(...args)
+            : await client.rollbackAdminEnvironmentLease(...args);
+        const [leaseResult, loadedWorkers, loadedOperations] = await Promise.all([
+          client.getAdminEnvironmentLease(
+            connection.tenantId,
+            connection.projectId,
+            lease.metadata.uid,
+            newRequestId(),
+            signal,
+          ),
+          listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
+          listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
+        ]);
+        setLeases((current) => replaceLease(current, leaseResult.value));
+        setWorkers(loadedWorkers);
+        setSelectedWorkerId((current) =>
+          loadedWorkers.some(({ metadata }) => metadata.uid === current)
+            ? current
+            : (loadedWorkers[0]?.metadata.uid ?? ""),
+        );
+        setMaintenanceOperations(loadedOperations);
+        setSelectedMaintenanceOperationId(result.value.operationId);
+        setLeaseReleasePreview(null);
+        setSelectedUpgradeReleaseDigest("");
+        if (result.value.state !== "succeeded") {
+          pendingKeysRef.current.delete(key);
+          throw new Error(
+            result.value.stableErrorCode || "environment lease release transition failed",
+          );
+        }
+      },
+    );
   }
 
   function selectProfile(profileVersionId: string) {
@@ -1973,19 +2106,51 @@ export function App() {
       {leaseDetailOpen && selectedLease !== undefined ? (
         <AdminSheet
           label={t("sheet.lease", { name: selectedLease.metadata.name })}
-          onClose={() => setLeaseDetailOpen(false)}
+          onClose={() => {
+            setLeaseDetailOpen(false);
+            setLeaseReleaseConfirmationOpen(false);
+          }}
         >
           <aside className="detail-panel" aria-label={t("sheet.selectedLease")}>
             <button
               className="sheet-close"
               type="button"
               aria-label={t("action.close")}
-              onClick={() => setLeaseDetailOpen(false)}
+              onClick={() => {
+                setLeaseDetailOpen(false);
+                setLeaseReleaseConfirmationOpen(false);
+              }}
             >
               ×
             </button>
-            <LeaseDetail lease={selectedLease} />
+            <LeaseDetail
+              lease={selectedLease}
+              target={selectedLeaseTarget}
+              releases={releases}
+              upgradeReleaseDigest={upgradeReleaseDigest}
+              onUpgradeReleaseDigestChange={setSelectedUpgradeReleaseDigest}
+              onPreviewUpgrade={() => previewLeaseRelease("upgrade")}
+              onPreviewRollback={() => previewLeaseRelease("rollback")}
+              disabled={busy !== null}
+            />
           </aside>
+        </AdminSheet>
+      ) : null}
+
+      {leaseReleaseConfirmationOpen &&
+      selectedLease !== undefined &&
+      selectedLeaseReleasePreview !== null ? (
+        <AdminSheet
+          label={t("sheet.leaseRelease", { name: selectedLease.metadata.name })}
+          onClose={() => setLeaseReleaseConfirmationOpen(false)}
+        >
+          <LeaseReleaseConfirmation
+            lease={selectedLease}
+            preview={selectedLeaseReleasePreview}
+            disabled={busy !== null}
+            onClose={() => setLeaseReleaseConfirmationOpen(false)}
+            onConfirm={transitionLeaseRelease}
+          />
         </AdminSheet>
       ) : null}
 
@@ -3811,8 +3976,35 @@ function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
   );
 }
 
-function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
+function LeaseDetail({
+  lease,
+  target,
+  releases,
+  upgradeReleaseDigest,
+  onUpgradeReleaseDigestChange,
+  onPreviewUpgrade,
+  onPreviewRollback,
+  disabled,
+}: Readonly<{
+  lease: EnvironmentLease;
+  target: DeploymentTarget | undefined;
+  releases: readonly WorkerRelease[];
+  upgradeReleaseDigest: string;
+  onUpgradeReleaseDigestChange: (digest: string) => void;
+  onPreviewUpgrade: () => void;
+  onPreviewRollback: () => void;
+  disabled: boolean;
+}>) {
   const { t, number, dateTime } = useI18n();
+  const eligibleReleases = releases.filter(
+    ({ spec }) => spec.releaseDigest !== lease.spec.releaseDigest,
+  );
+  const canPreview =
+    target?.spec.observedPhase === "ready" &&
+    target.spec.schedulingState === "drained" &&
+    lease.spec.desiredPhase === "active" &&
+    ["ready", "failed"].includes(lease.spec.observedPhase) &&
+    lease.spec.cleanupPhase === "none";
   return (
     <>
       <div className="detail-heading">
@@ -3894,7 +4086,169 @@ function LeaseDetail({ lease }: Readonly<{ lease: EnvironmentLease }>) {
           </div>
         ) : null}
       </dl>
+      <section className="action-block">
+        <div>
+          <h3>{t("lease.releaseLifecycle")}</h3>
+          <p>
+            {canPreview
+              ? t("lease.releaseReady")
+              : t("lease.releaseRequiresDrain", {
+                  observed: phaseLabel(target?.spec.observedPhase ?? "unprobed", t),
+                  scheduling: phaseLabel(target?.spec.schedulingState ?? "active", t),
+                })}
+          </p>
+        </div>
+        <label>
+          <span>{t("lease.upgradeRelease")}</span>
+          <select
+            value={upgradeReleaseDigest}
+            onChange={(event) => onUpgradeReleaseDigestChange(event.target.value)}
+            disabled={disabled || !canPreview || eligibleReleases.length === 0}
+          >
+            {eligibleReleases.length === 0 ? (
+              <option value="">{t("lease.noUpgradeRelease")}</option>
+            ) : (
+              eligibleReleases.map((release) => (
+                <option key={release.metadata.uid} value={release.spec.releaseDigest}>
+                  {release.metadata.name} · {shortDigest(release.spec.releaseDigest)}
+                </option>
+              ))
+            )}
+          </select>
+          <small>{t("lease.releaseAuthority")}</small>
+        </label>
+        <div className="heading-actions">
+          <button
+            className="button ghost"
+            type="button"
+            onClick={onPreviewRollback}
+            disabled={disabled || !canPreview}
+          >
+            {t("lease.previewRollback")}
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            onClick={onPreviewUpgrade}
+            disabled={disabled || !canPreview || upgradeReleaseDigest === ""}
+          >
+            {t("lease.previewUpgrade")}
+          </button>
+        </div>
+      </section>
+      <p className="boundary-note">{t("lease.releaseBoundary")}</p>
     </>
+  );
+}
+
+function LeaseReleaseConfirmation({
+  lease,
+  preview,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  lease: EnvironmentLease;
+  preview: EnvironmentLeaseUpgradePreview;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const { t, number } = useI18n();
+  const [confirmed, setConfirmed] = useState(false);
+  const actionLabel = t(
+    preview.spec.action === "upgrade" ? "lease.actionUpgrade" : "lease.actionRollback",
+  );
+  return (
+    <section className="dialog" aria-labelledby="lease-release-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">leases.act · {t("common.destructive")}</div>
+          <h2 id="lease-release-title">
+            {t("lease.releaseConfirmTitle", { action: actionLabel })}
+          </h2>
+          <p>{lease.metadata.name}</p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className="banner danger" role="status">
+          {t("lease.releaseImpact", {
+            action: actionLabel,
+            workers: number(preview.spec.affectedWorkers),
+            leases: number(preview.spec.affectedLeases),
+            targets: number(preview.spec.affectedTargets),
+          })}
+        </div>
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>{t("lease.id")}</dt>
+            <dd className="mono">{lease.metadata.uid}</dd>
+          </div>
+          <div>
+            <dt>{t("lease.target")}</dt>
+            <dd className="mono">{preview.spec.targetId}</dd>
+          </div>
+          <div>
+            <dt>{t("lease.currentRelease")}</dt>
+            <dd className="mono break">{preview.spec.currentReleaseDigest}</dd>
+          </div>
+          <div>
+            <dt>{t("lease.targetRelease")}</dt>
+            <dd className="mono break">{preview.spec.targetReleaseDigest}</dd>
+          </div>
+          <div>
+            <dt>{t("lease.rollbackRelease")}</dt>
+            <dd className="mono break">
+              {preview.spec.rollbackReleaseDigest} · g{number(preview.spec.rollbackGeneration)}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("table.generation")}</dt>
+            <dd className="mono">{number(preview.spec.expectedGeneration)}</dd>
+          </div>
+          <div>
+            <dt>{t("detail.resourceVersion")}</dt>
+            <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
+          </div>
+          <div>
+            <dt>{t("lease.impactDigest")}</dt>
+            <dd className="mono break">{preview.spec.impactDigest}</dd>
+          </div>
+        </dl>
+        <label className="confirmation-check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+            disabled={disabled}
+            data-sheet-autofocus
+          />
+          <span>{t("lease.releaseReview", { action: actionLabel })}</span>
+        </label>
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            {t("action.cancel")}
+          </button>
+          <button className="button danger" type="submit" disabled={disabled || !confirmed}>
+            {t("lease.releaseConfirm", { action: actionLabel })}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 

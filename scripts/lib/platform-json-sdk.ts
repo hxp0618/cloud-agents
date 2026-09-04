@@ -58,6 +58,7 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+  "admin-environment-lease-upgrade-request.schema.json",
   "admin-audit-event-page.schema.json",
   "admin-audit-event.schema.json",
   "deployment-target-cleanup-request.schema.json",
@@ -71,6 +72,7 @@ const PLATFORM_SCHEMAS = [
   "environment-lease-create-request.schema.json",
   "environment-lease-page.schema.json",
   "environment-lease-terminate-request.schema.json",
+  "environment-lease-upgrade-preview.schema.json",
   "environment-lease-upgrade-request.schema.json",
   "environment-lease.schema.json",
   "environment-profile-create-request.schema.json",
@@ -253,11 +255,15 @@ function validateJSONSDKAuthority(root: string): void {
     "adminListWorkers",
     "adminPreviewDeploymentTargetCleanup",
     "adminPreviewDeploymentTargetScheduling",
+    "adminPreviewEnvironmentLeaseRollback",
+    "adminPreviewEnvironmentLeaseUpgrade",
     "adminProbeDeploymentTarget",
     "adminPublishEnvironmentProfile",
     "adminRegisterDeploymentTarget",
     "adminRegisterWorkerRelease",
+    "adminRollbackEnvironmentLease",
     "adminTransitionDeploymentTargetScheduling",
+    "adminUpgradeEnvironmentLease",
     "managedAgentBindRole",
     "managedAgentCancelExecution",
     "managedAgentCloseSession",

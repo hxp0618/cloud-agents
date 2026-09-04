@@ -255,7 +255,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("admin deployment target HTTP server is unavailable")
 	}
-	adminEnvironmentLeaseServer, err := server.NewAdminEnvironmentLeaseHTTPServer(verifier, coordinationService)
+	adminEnvironmentLeaseServer, err := server.NewAdminEnvironmentLeaseHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
 	if err != nil {
 		return errors.New("admin environment lease HTTP server is unavailable")
 	}

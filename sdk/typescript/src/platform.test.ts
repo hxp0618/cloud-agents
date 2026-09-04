@@ -11,6 +11,7 @@ import {
   decodeDeploymentTargetPage,
   decodeDeploymentTargetSchedulingPreview,
   decodeEnvironmentLeasePage,
+  decodeEnvironmentLeaseUpgradePreview,
   decodeEnvironmentProfile,
   decodeEnvironmentProfilePage,
   decodeEnvironmentProfileSummary,
@@ -45,6 +46,7 @@ import {
   parseDeploymentTargetPage,
   parseDeploymentTargetSchedulingPreview,
   parseEnvironmentLeasePage,
+  parseEnvironmentLeaseUpgradePreview,
   parseEnvironmentProfile,
   parseEnvironmentProfilePage,
   parseEnvironmentProfileSummaryPage,
@@ -122,7 +124,11 @@ describe("generated platform JSON models", () => {
       "project-alpha",
       "request-alpha",
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
-      { sessionId: "session-alpha", providerKind: "codex", environmentLeaseId: "lease-alpha" },
+      {
+        sessionId: "session-alpha",
+        providerKind: "codex",
+        environmentLeaseId: "lease-alpha",
+      },
     );
     await client.getManagedAgentSession(
       "tenant-alpha",
@@ -164,13 +170,21 @@ describe("generated platform JSON models", () => {
           metadata: {
             uid: "lease-alpha",
             name: "lease-alpha",
-            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            tenantRef: {
+              namespace: "cloud-agents",
+              kind: "tenant",
+              id: "tenant-alpha",
+            },
             resourceVersion: "1",
             createdAt: "2026-08-31T08:00:00Z",
             updatedAt: "2026-08-31T08:00:00Z",
           },
           spec: {
-            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            projectRef: {
+              namespace: "cloud-agents",
+              kind: "project",
+              id: "project-alpha",
+            },
             generation: 1,
             desiredPhase: "active",
             observedPhase: "provisioning",
@@ -225,13 +239,21 @@ describe("generated platform JSON models", () => {
           metadata: {
             uid: "lease-alpha",
             name: "worker-alpha",
-            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            tenantRef: {
+              namespace: "cloud-agents",
+              kind: "tenant",
+              id: "tenant-alpha",
+            },
             resourceVersion: "4",
             createdAt: "2026-09-04T08:00:00Z",
             updatedAt: "2026-09-04T08:01:00Z",
           },
           spec: {
-            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            projectRef: {
+              namespace: "cloud-agents",
+              kind: "project",
+              id: "project-alpha",
+            },
             leaseId: "lease-alpha",
             targetId: "docker-alpha",
             targetKind: "docker",
@@ -269,7 +291,9 @@ describe("generated platform JSON models", () => {
     expect(seen[0]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/workers?pageSize=1&pageToken=worker-page-token-1",
     );
-    const withEndpoint = JSON.parse(page) as { workers: Array<{ spec: Record<string, unknown> }> };
+    const withEndpoint = JSON.parse(page) as {
+      workers: Array<{ spec: Record<string, unknown> }>;
+    };
     withEndpoint.workers[0]!.spec.workerEndpoint = "https://worker.test";
     expect(() => decodeWorkerPage(withEndpoint)).toThrow();
   });
@@ -281,13 +305,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "worker-v1",
         name: "worker-v1",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-04T08:00:00Z",
         updatedAt: "2026-09-04T08:00:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         imageRepository: "registry.example.test/cloud-agents/worker",
         releaseDigest: digest,
         platformVersion: "platform-v1",
@@ -361,13 +393,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "ep-0123456789abcdef0123456789abcdef",
         name: "development",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-03T08:00:00Z",
         updatedAt: "2026-09-03T08:00:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         profileId: "development",
         version: 1,
         description: "Daily coding workspace",
@@ -391,7 +431,11 @@ describe("generated platform JSON models", () => {
     const publishedProfile = JSON.stringify({
       ...profileValue,
       metadata: { ...profileValue.metadata, resourceVersion: "2" },
-      spec: { ...profileValue.spec, status: "published", publishedAt: "2026-09-03T08:01:00Z" },
+      spec: {
+        ...profileValue.spec,
+        status: "published",
+        publishedAt: "2026-09-03T08:01:00Z",
+      },
     });
     const disabledProfile = JSON.stringify({
       ...profileValue,
@@ -436,10 +480,22 @@ describe("generated platform JSON models", () => {
         return { status: 200, headers: {}, body: page };
       if (request.path.endsWith(":publish"))
         return seen.some(({ path }) => path.endsWith(":disable"))
-          ? { status: 200, headers: { "X-Resource-Version": "3" }, body: disabledProfile }
-          : { status: 200, headers: { "X-Resource-Version": "2" }, body: publishedProfile };
+          ? {
+              status: 200,
+              headers: { "X-Resource-Version": "3" },
+              body: disabledProfile,
+            }
+          : {
+              status: 200,
+              headers: { "X-Resource-Version": "2" },
+              body: publishedProfile,
+            };
       if (request.path.endsWith(":disable"))
-        return { status: 200, headers: { "X-Resource-Version": "3" }, body: disabledProfile };
+        return {
+          status: 200,
+          headers: { "X-Resource-Version": "3" },
+          body: disabledProfile,
+        };
       return {
         status: request.method === "POST" ? 201 : 200,
         headers: { "X-Resource-Version": "1" },
@@ -529,7 +585,11 @@ describe("generated platform JSON models", () => {
     const summary = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "EnvironmentProfileSummary",
-      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      projectRef: {
+        namespace: "cloud-agents",
+        kind: "project",
+        id: "project-alpha",
+      },
       profileId: "development",
       name: "development",
       version: 1,
@@ -551,7 +611,10 @@ describe("generated platform JSON models", () => {
     );
     expect(parseEnvironmentProfileSummaryPage(page).value.environmentProfiles).toHaveLength(1);
     expect(() =>
-      decodeEnvironmentProfileSummary({ ...summary, targetRefs: ["docker-primary"] }),
+      decodeEnvironmentProfileSummary({
+        ...summary,
+        targetRefs: ["docker-primary"],
+      }),
     ).toThrow();
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
@@ -572,7 +635,11 @@ describe("generated platform JSON models", () => {
     const value = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "UserEnvironment",
-      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      projectRef: {
+        namespace: "cloud-agents",
+        kind: "project",
+        id: "project-alpha",
+      },
       environmentId: "environment-alpha",
       profileId: "development",
       profileVersion: 1,
@@ -583,12 +650,19 @@ describe("generated platform JSON models", () => {
     expect(decodeUserEnvironment(value).profileId).toBe("development");
     expect(parseUserEnvironment(body).value.environmentId).toBe("environment-alpha");
     expect(() =>
-      decodeUserEnvironment({ ...value, providerCredentialRef: "provider-secret" }),
+      decodeUserEnvironment({
+        ...value,
+        providerCredentialRef: "provider-secret",
+      }),
     ).toThrow();
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
-      return { status: request.method === "POST" ? 201 : 200, headers: {}, body };
+      return {
+        status: request.method === "POST" ? 201 : 200,
+        headers: {},
+        body,
+      };
     });
     await client.createEnvironment(
       "tenant-alpha",
@@ -621,13 +695,21 @@ describe("generated platform JSON models", () => {
           metadata: {
             uid: "docker-alpha",
             name: "docker-alpha",
-            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            tenantRef: {
+              namespace: "cloud-agents",
+              kind: "tenant",
+              id: "tenant-alpha",
+            },
             resourceVersion: "1",
             createdAt: "2026-09-02T08:00:00Z",
             updatedAt: "2026-09-02T08:00:00Z",
           },
           spec: {
-            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            projectRef: {
+              namespace: "cloud-agents",
+              kind: "project",
+              id: "project-alpha",
+            },
             generation: 1,
             targetKind: "docker",
             endpoint: "https://docker.example.test:2376",
@@ -647,13 +729,21 @@ describe("generated platform JSON models", () => {
           metadata: {
             uid: "ssh-alpha",
             name: "ssh-alpha",
-            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            tenantRef: {
+              namespace: "cloud-agents",
+              kind: "tenant",
+              id: "tenant-alpha",
+            },
             resourceVersion: "1",
             createdAt: "2026-09-02T08:00:00Z",
             updatedAt: "2026-09-02T08:00:00Z",
           },
           spec: {
-            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            projectRef: {
+              namespace: "cloud-agents",
+              kind: "project",
+              id: "project-alpha",
+            },
             generation: 1,
             targetKind: "ssh",
             endpoint: "ssh://ssh.example.test:22",
@@ -803,13 +893,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "docker-alpha",
         name: "docker-alpha",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "7",
         createdAt: "2026-09-03T08:00:00Z",
         updatedAt: "2026-09-03T08:01:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         targetKind: "docker",
         expectedGeneration: 2,
         expectedResourceVersion: "7",
@@ -822,8 +920,14 @@ describe("generated platform JSON models", () => {
             leaseGeneration: 3,
             disposition: "blocked",
             resources: [
-              { resourceKind: "container", resourceName: "cloud-agents-worker-alpha" },
-              { resourceKind: "workspace-volume", resourceName: "workspace-alpha" },
+              {
+                resourceKind: "container",
+                resourceName: "cloud-agents-worker-alpha",
+              },
+              {
+                resourceKind: "workspace-volume",
+                resourceName: "workspace-alpha",
+              },
             ],
           },
         ],
@@ -895,13 +999,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "docker-alpha",
         name: "docker-alpha",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "7",
         createdAt: "2026-09-04T08:00:00Z",
         updatedAt: "2026-09-04T08:01:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         currentState: "active",
         desiredState: "drained",
         expectedGeneration: 2,
@@ -971,6 +1083,128 @@ describe("generated platform JSON models", () => {
       "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:scheduling",
     ]);
     expect(seen[1]?.body).toContain('"desiredState":"drained"');
+  });
+  it("previews and executes Admin lease upgrade and rollback through the generated contract", async () => {
+    const upgradeDigest = `sha256:${"d".repeat(64)}` as const;
+    const rollbackDigest = `sha256:${"e".repeat(64)}` as const;
+    const impactDigest = `sha256:${"f".repeat(64)}` as const;
+    const preview = (action: "upgrade" | "rollback") =>
+      JSON.stringify({
+        apiVersion: "platform.cloud-agents.dev/v1alpha1",
+        kind: "EnvironmentLeaseUpgradePreview",
+        metadata: {
+          uid: "lease-alpha",
+          name: "lease-alpha",
+          tenantRef: {
+            namespace: "cloud-agents",
+            kind: "tenant",
+            id: "tenant-alpha",
+          },
+          resourceVersion: "9",
+          createdAt: "2026-09-04T08:00:00Z",
+          updatedAt: "2026-09-04T08:01:00Z",
+        },
+        spec: {
+          projectRef: {
+            namespace: "cloud-agents",
+            kind: "project",
+            id: "project-alpha",
+          },
+          action,
+          targetId: "docker-alpha",
+          targetKind: "docker",
+          currentReleaseDigest: action === "upgrade" ? rollbackDigest : upgradeDigest,
+          targetReleaseDigest: action === "upgrade" ? upgradeDigest : rollbackDigest,
+          rollbackReleaseDigest: rollbackDigest,
+          rollbackGeneration: 3,
+          expectedGeneration: 4,
+          expectedResourceVersion: "9",
+          affectedTargets: 1,
+          affectedWorkers: 1,
+          affectedLeases: 1,
+          impactDigest,
+        },
+      });
+    const operation = (action: "upgrade" | "rollback") =>
+      JSON.stringify({
+        apiVersion: "platform.cloud-agents.dev/v1alpha1",
+        kind: "MaintenanceOperation",
+        operationId: `operation-${action}-alpha`,
+        idempotencyKey: `${action}-key-1234~`,
+        action: `target.${action}`,
+        resourceKind: "DeploymentTarget",
+        resourceId: "docker-alpha",
+        resourceGeneration: 2,
+        requestedBy: `sha256:${"a".repeat(64)}`,
+        requestId: `request-${action}`,
+        requestedAt: "2026-09-04T08:00:00Z",
+        updatedAt: "2026-09-04T08:01:00Z",
+        state: "succeeded",
+        currentStep: "complete",
+        impactSummary: `${action} environment lease generation 4`,
+        retryable: false,
+      });
+    expect(decodeEnvironmentLeaseUpgradePreview(JSON.parse(preview("upgrade"))).spec.action).toBe(
+      "upgrade",
+    );
+    expect(parseEnvironmentLeaseUpgradePreview(preview("rollback")).value.spec.action).toBe(
+      "rollback",
+    );
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      const action = request.path.includes("rollback") ? "rollback" : "upgrade";
+      return request.method === "GET"
+        ? {
+            status: 200,
+            headers: { "X-Resource-Version": "9" },
+            body: preview(action),
+          }
+        : { status: 200, headers: {}, body: operation(action) };
+    });
+    await client.previewAdminEnvironmentLeaseUpgrade(
+      "tenant-alpha",
+      "project-alpha",
+      "lease-alpha",
+      upgradeDigest,
+      "request-upgrade-preview",
+    );
+    await client.previewAdminEnvironmentLeaseRollback(
+      "tenant-alpha",
+      "project-alpha",
+      "lease-alpha",
+      "request-rollback-preview",
+    );
+    const request = {
+      releaseDigest: upgradeDigest,
+      expectedGeneration: 4,
+      expectedResourceVersion: "9",
+      impactDigest,
+    };
+    await client.upgradeAdminEnvironmentLease(
+      "tenant-alpha",
+      "project-alpha",
+      "lease-alpha",
+      "request-upgrade",
+      "upgrade-key-1234~",
+      request,
+    );
+    await client.rollbackAdminEnvironmentLease(
+      "tenant-alpha",
+      "project-alpha",
+      "lease-alpha",
+      "request-rollback",
+      "rollback-key-1234~",
+      { ...request, releaseDigest: rollbackDigest },
+    );
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      `GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade-preview?releaseDigest=${encodeURIComponent(upgradeDigest)}`,
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:rollback-preview",
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade",
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:rollback",
+    ]);
+    expect(seen[2]?.body).toContain(`"releaseDigest":"${upgradeDigest}"`);
+    expect(seen[3]?.body).toContain(`"releaseDigest":"${rollbackDigest}"`);
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {
     const turn = JSON.stringify({
@@ -1044,7 +1278,11 @@ describe("generated platform JSON models", () => {
         createdAt: "2026-08-29T08:00:00Z",
         updatedAt: "2026-08-29T08:01:00Z",
       },
-      spec: { generation: 1, state: "succeeded", resultDigest: `sha256:${"a".repeat(64)}` },
+      spec: {
+        generation: 1,
+        state: "succeeded",
+        resultDigest: `sha256:${"a".repeat(64)}`,
+      },
       messages: [
         {
           requestId: "request-alpha",
@@ -1145,7 +1383,11 @@ describe("generated platform JSON models", () => {
       "turn-alpha",
       "execution-alpha",
       "request-approval",
-      { generation: 1, requestId: "codex:generation-1:approval:1", decision: "accept" },
+      {
+        generation: 1,
+        requestId: "codex:generation-1:approval:1",
+        decision: "accept",
+      },
     );
     await client.resolveManagedAgentUserInput(
       "tenant-alpha",
@@ -1317,7 +1559,9 @@ describe("generated platform JSON models", () => {
 
     const watch = readFixture(commonFixtureRoot, "negative/watch-cursor-extra-field.json");
     const watchEnvelope = parseWatchCursor(watch);
-    expect(watchEnvelope.unknown).toEqual({ "/tenantId": '"cross-tenant-leak"' });
+    expect(watchEnvelope.unknown).toEqual({
+      "/tenantId": '"cross-tenant-leak"',
+    });
     expect(JSON.parse(encodeResponse(watchEnvelope))).toEqual(JSON.parse(watch));
     expect(() => decodeWatchCursor(JSON.parse(watch))).toThrow(
       expect.objectContaining({ code: "UNKNOWN_FIELD" }),
@@ -1666,14 +1910,22 @@ describe("generated platform client", () => {
 
   it("keeps problem status and abort semantics stable", async () => {
     const problem = readFixture(commonFixtureRoot, "golden/problem.json");
-    const errorClient = new Client(async () => ({ status: 404, headers: {}, body: problem }));
+    const errorClient = new Client(async () => ({
+      status: 404,
+      headers: {},
+      body: problem,
+    }));
     await expect(
       errorClient.getProject("tenant-alpha", "project-alpha", "req-alpha"),
     ).rejects.toMatchObject({
       operation: "managedAgentGetProject",
       status: 404,
     });
-    const mismatchClient = new Client(async () => ({ status: 500, headers: {}, body: problem }));
+    const mismatchClient = new Client(async () => ({
+      status: 500,
+      headers: {},
+      body: problem,
+    }));
     await expect(
       mismatchClient.getProject("tenant-alpha", "project-alpha", "req-alpha"),
     ).rejects.toMatchObject({
@@ -1717,7 +1969,10 @@ describe("generated platform client", () => {
     }));
     await expect(
       authorityClient.getProject("tenant-alpha", "project-alpha", "req-alpha"),
-    ).rejects.toMatchObject({ code: "PATH_BODY_AUTHORITY_MISMATCH", path: "/metadata/uid" });
+    ).rejects.toMatchObject({
+      code: "PATH_BODY_AUTHORITY_MISMATCH",
+      path: "/metadata/uid",
+    });
   });
 });
 
@@ -1732,5 +1987,9 @@ function readJSON(root: string, name: string): unknown {
 function fixtureResponse(root: string, name: string, status: number): FixtureResponse {
   const body = readFixture(root, `golden/${name}.json`);
   const value = JSON.parse(body) as { metadata?: { resourceVersion?: string } };
-  return { status, headers: { "X-Resource-Version": value.metadata?.resourceVersion ?? "" }, body };
+  return {
+    status,
+    headers: { "X-Resource-Version": value.metadata?.resourceVersion ?? "" },
+    body,
+  };
 }

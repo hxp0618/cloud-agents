@@ -455,7 +455,7 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local admin deployment target HTTP server is unavailable")
 	}
-	adminEnvironmentLeaseHTTPServer, err := server.NewAdminEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService)
+	adminEnvironmentLeaseHTTPServer, err := server.NewAdminEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{})
 	if err != nil {
 		return errors.New("local admin environment lease HTTP server is unavailable")
 	}

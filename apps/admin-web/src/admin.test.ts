@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   cleanupRequestFromPreview,
+  leaseReleaseRequestFromPreview,
   listAdminLeases,
   listAdminProfiles,
   listAdminReleases,
@@ -49,6 +50,24 @@ describe("Admin Web boundary", () => {
       expectedResourceVersion: "42",
       desiredState: "drained",
       impactDigest: `sha256:${"b".repeat(64)}`,
+    });
+  });
+
+  it("submits the exact release transition fences returned by the preview", () => {
+    expect(
+      leaseReleaseRequestFromPreview({
+        spec: {
+          targetReleaseDigest: `sha256:${"c".repeat(64)}`,
+          expectedGeneration: 8,
+          expectedResourceVersion: "43",
+          impactDigest: `sha256:${"d".repeat(64)}`,
+        },
+      } as unknown as Parameters<typeof leaseReleaseRequestFromPreview>[0]),
+    ).toEqual({
+      releaseDigest: `sha256:${"c".repeat(64)}`,
+      expectedGeneration: 8,
+      expectedResourceVersion: "43",
+      impactDigest: `sha256:${"d".repeat(64)}`,
     });
   });
 

@@ -2,6 +2,7 @@ import {
   ClientError,
   JSONContractError,
   type Client,
+  type AdminEnvironmentLeaseUpgradeRequest,
   type AdminAuditEvent,
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
@@ -9,6 +10,7 @@ import {
   type DeploymentTargetSchedulingPreview,
   type DeploymentTargetSchedulingRequest,
   type EnvironmentLease,
+  type EnvironmentLeaseUpgradePreview,
   type EnvironmentProfile,
   type MaintenanceOperation,
   type Worker,
@@ -35,6 +37,10 @@ export type AdminClient = Pick<
   | "listAdminWorkerReleases"
   | "registerAdminWorkerRelease"
   | "getAdminEnvironmentLease"
+  | "previewAdminEnvironmentLeaseUpgrade"
+  | "previewAdminEnvironmentLeaseRollback"
+  | "upgradeAdminEnvironmentLease"
+  | "rollbackAdminEnvironmentLease"
   | "listAdminEnvironmentProfiles"
   | "createAdminEnvironmentProfile"
   | "publishAdminEnvironmentProfile"
@@ -140,6 +146,17 @@ export function schedulingRequestFromPreview(
     expectedGeneration: preview.spec.expectedGeneration,
     expectedResourceVersion: preview.spec.expectedResourceVersion,
     desiredState: preview.spec.desiredState,
+    impactDigest: preview.spec.impactDigest,
+  });
+}
+
+export function leaseReleaseRequestFromPreview(
+  preview: EnvironmentLeaseUpgradePreview,
+): AdminEnvironmentLeaseUpgradeRequest {
+  return Object.freeze({
+    releaseDigest: preview.spec.targetReleaseDigest,
+    expectedGeneration: preview.spec.expectedGeneration,
+    expectedResourceVersion: preview.spec.expectedResourceVersion,
     impactDigest: preview.spec.impactDigest,
   });
 }

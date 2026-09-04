@@ -24,7 +24,7 @@
     "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "actor": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "action": {
-      "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "profile.create", "profile.publish", "profile.disable"]
+      "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "target.upgrade", "target.rollback", "profile.create", "profile.publish", "profile.disable"]
     },
     "resourceKind": { "enum": ["DeploymentTarget", "EnvironmentProfile"] },
     "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },

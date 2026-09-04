@@ -232,6 +232,12 @@ export type EnvironmentLeaseUpgradeRequest = Readonly<{
   releaseDigest: `sha256:${string}`;
   expectedGeneration: number;
 }>;
+export type AdminEnvironmentLeaseUpgradeRequest = Readonly<{
+  releaseDigest: `sha256:${string}`;
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  impactDigest: `sha256:${string}`;
+}>;
 export type EnvironmentLease = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "CloudEnvironmentLease";
@@ -261,6 +267,27 @@ export type EnvironmentLeasePage = Readonly<{
   kind: "EnvironmentLeasePage";
   environmentLeases: readonly EnvironmentLease[];
   nextPageToken?: string;
+}>;
+export type EnvironmentLeaseUpgradePreview = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "EnvironmentLeaseUpgradePreview";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    action: "upgrade" | "rollback";
+    targetId: string;
+    targetKind: "docker" | "kubernetes" | "ssh";
+    currentReleaseDigest: `sha256:${string}`;
+    targetReleaseDigest: `sha256:${string}`;
+    rollbackReleaseDigest: `sha256:${string}`;
+    rollbackGeneration: number;
+    expectedGeneration: number;
+    expectedResourceVersion: string;
+    affectedTargets: 1;
+    affectedWorkers: 1;
+    affectedLeases: 1;
+    impactDigest: `sha256:${string}`;
+  }>;
 }>;
 export type Worker = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -453,7 +480,14 @@ export type MaintenanceOperation = Readonly<{
   kind: "MaintenanceOperation";
   operationId: string;
   idempotencyKey: string;
-  action: "target.register" | "target.probe" | "target.drain" | "target.resume" | "target.cleanup";
+  action:
+    | "target.register"
+    | "target.probe"
+    | "target.drain"
+    | "target.resume"
+    | "target.cleanup"
+    | "target.upgrade"
+    | "target.rollback";
   resourceKind: "DeploymentTarget";
   resourceId: string;
   resourceGeneration: number;
@@ -484,6 +518,8 @@ export type AdminAuditEvent = Readonly<{
     | "target.drain"
     | "target.resume"
     | "target.cleanup"
+    | "target.upgrade"
+    | "target.rollback"
     | "profile.create"
     | "profile.publish"
     | "profile.disable";
@@ -849,6 +885,22 @@ const environmentLeasePageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const environmentLeaseUpgradePreviewResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  action: scalarResponseShape,
+  targetId: scalarResponseShape,
+  targetKind: scalarResponseShape,
+  currentReleaseDigest: scalarResponseShape,
+  targetReleaseDigest: scalarResponseShape,
+  rollbackReleaseDigest: scalarResponseShape,
+  rollbackGeneration: scalarResponseShape,
+  expectedGeneration: scalarResponseShape,
+  expectedResourceVersion: scalarResponseShape,
+  affectedTargets: scalarResponseShape,
+  affectedWorkers: scalarResponseShape,
+  affectedLeases: scalarResponseShape,
+  impactDigest: scalarResponseShape,
+});
 const workerResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   leaseId: scalarResponseShape,
@@ -1940,6 +1992,37 @@ export function encodeEnvironmentLeaseUpgradeRequest(
 ): string {
   return JSON.stringify(decodeEnvironmentLeaseUpgradeRequest(value));
 }
+export function decodeAdminEnvironmentLeaseUpgradeRequest(
+  value: unknown,
+): AdminEnvironmentLeaseUpgradeRequest {
+  const source = strictRecord(
+    value,
+    ["releaseDigest", "expectedGeneration", "expectedResourceVersion", "impactDigest"],
+    ["releaseDigest", "expectedGeneration", "expectedResourceVersion", "impactDigest"],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) || expectedResourceVersion.length > 20)
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    releaseDigest: digest(source.releaseDigest, "/releaseDigest") as `sha256:${string}`,
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    impactDigest: digest(source.impactDigest, "/impactDigest") as `sha256:${string}`,
+  });
+}
+export function encodeAdminEnvironmentLeaseUpgradeRequest(
+  value: AdminEnvironmentLeaseUpgradeRequest,
+): string {
+  return JSON.stringify(decodeAdminEnvironmentLeaseUpgradeRequest(value));
+}
 export function decodeDeploymentTargetRegisterRequest(
   value: unknown,
 ): DeploymentTargetRegisterRequest {
@@ -2491,6 +2574,114 @@ export function decodeEnvironmentLeasePage(value: unknown): EnvironmentLeasePage
   };
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
+}
+export function decodeEnvironmentLeaseUpgradePreview(
+  value: unknown,
+): EnvironmentLeaseUpgradePreview {
+  const source = record(value);
+  const root = base(source, "EnvironmentLeaseUpgradePreview");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "action",
+      "targetId",
+      "targetKind",
+      "currentReleaseDigest",
+      "targetReleaseDigest",
+      "rollbackReleaseDigest",
+      "rollbackGeneration",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "affectedTargets",
+      "affectedWorkers",
+      "affectedLeases",
+      "impactDigest",
+    ],
+    [
+      "projectRef",
+      "action",
+      "targetId",
+      "targetKind",
+      "currentReleaseDigest",
+      "targetReleaseDigest",
+      "rollbackReleaseDigest",
+      "rollbackGeneration",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "affectedTargets",
+      "affectedWorkers",
+      "affectedLeases",
+      "impactDigest",
+    ],
+    "/spec",
+  );
+  const action = enumValue(spec.action, ["upgrade", "rollback"] as const, "/spec/action");
+  const currentReleaseDigest = digest(
+    spec.currentReleaseDigest,
+    "/spec/currentReleaseDigest",
+  ) as `sha256:${string}`;
+  const targetReleaseDigest = digest(
+    spec.targetReleaseDigest,
+    "/spec/targetReleaseDigest",
+  ) as `sha256:${string}`;
+  const rollbackReleaseDigest = digest(
+    spec.rollbackReleaseDigest,
+    "/spec/rollbackReleaseDigest",
+  ) as `sha256:${string}`;
+  if (
+    targetReleaseDigest === currentReleaseDigest ||
+    (action === "upgrade" && rollbackReleaseDigest !== currentReleaseDigest) ||
+    (action === "rollback" && rollbackReleaseDigest !== targetReleaseDigest)
+  )
+    error("INVALID_RELEASE_DIGEST", "/spec/rollbackReleaseDigest");
+  const expectedResourceVersion = string(
+    spec.expectedResourceVersion,
+    "/spec/expectedResourceVersion",
+  );
+  if (
+    !/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) ||
+    expectedResourceVersion.length > 20 ||
+    expectedResourceVersion !== root.metadata.resourceVersion
+  )
+    error("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion");
+  const affectedTargets = integer(spec.affectedTargets, 1, 1, "/spec/affectedTargets") as 1;
+  const affectedWorkers = integer(spec.affectedWorkers, 1, 1, "/spec/affectedWorkers") as 1;
+  const affectedLeases = integer(spec.affectedLeases, 1, 1, "/spec/affectedLeases") as 1;
+  return Object.freeze({
+    ...root,
+    kind: "EnvironmentLeaseUpgradePreview",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      action,
+      targetId: identifier(spec.targetId, "/spec/targetId"),
+      targetKind: enumValue(
+        spec.targetKind,
+        ["docker", "kubernetes", "ssh"] as const,
+        "/spec/targetKind",
+      ),
+      currentReleaseDigest,
+      targetReleaseDigest,
+      rollbackReleaseDigest,
+      rollbackGeneration: integer(
+        spec.rollbackGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/rollbackGeneration",
+      ),
+      expectedGeneration: integer(
+        spec.expectedGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/expectedGeneration",
+      ),
+      expectedResourceVersion,
+      affectedTargets,
+      affectedWorkers,
+      affectedLeases,
+      impactDigest: digest(spec.impactDigest, "/spec/impactDigest") as `sha256:${string}`,
+    }),
+  });
 }
 export function decodeWorker(value: unknown): Worker {
   const source = record(value);
@@ -3207,6 +3398,8 @@ export function decodeMaintenanceOperation(value: unknown): MaintenanceOperation
         "target.drain",
         "target.resume",
         "target.cleanup",
+        "target.upgrade",
+        "target.rollback",
       ] as const,
       "/action",
     ),
@@ -3310,6 +3503,8 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "target.drain",
         "target.resume",
         "target.cleanup",
+        "target.upgrade",
+        "target.rollback",
         "profile.create",
         "profile.publish",
         "profile.disable",
@@ -4263,6 +4458,15 @@ export function parseEnvironmentLease(text: string): ResponseEnvelope<Environmen
 }
 export function parseEnvironmentLeasePage(text: string): ResponseEnvelope<EnvironmentLeasePage> {
   return parseResponse(text, environmentLeasePageResponseShape, decodeEnvironmentLeasePage);
+}
+export function parseEnvironmentLeaseUpgradePreview(
+  text: string,
+): ResponseEnvelope<EnvironmentLeaseUpgradePreview> {
+  return parseResponse(
+    text,
+    environmentLeaseUpgradePreviewResponseShape,
+    decodeEnvironmentLeaseUpgradePreview,
+  );
 }
 export function parseWorkerPage(text: string): ResponseEnvelope<WorkerPage> {
   return parseResponse(text, workerPageResponseShape, decodeWorkerPage);
@@ -5864,6 +6068,139 @@ export class Client {
       result.value.spec.projectRef.id !== projectId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async previewAdminEnvironmentLeaseUpgrade(
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    releaseDigest: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentLeaseUpgradePreview>> {
+    validateLeasePath(tenantId, projectId, leaseId, requestId);
+    digest(releaseDigest, "/releaseDigest");
+    const query = new URLSearchParams({ releaseDigest });
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}:upgrade-preview?${query.toString()}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminPreviewEnvironmentLeaseUpgrade", response);
+    const result = parseEnvironmentLeaseUpgradePreview(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== leaseId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.action !== "upgrade" ||
+      result.value.spec.targetReleaseDigest !== releaseDigest
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async previewAdminEnvironmentLeaseRollback(
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<EnvironmentLeaseUpgradePreview>> {
+    validateLeasePath(tenantId, projectId, leaseId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}:rollback-preview`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminPreviewEnvironmentLeaseRollback", response);
+    const result = parseEnvironmentLeaseUpgradePreview(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== leaseId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.action !== "rollback"
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async upgradeAdminEnvironmentLease(
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: AdminEnvironmentLeaseUpgradeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperation>> {
+    return this.transitionAdminEnvironmentLeaseRelease(
+      "upgrade",
+      "adminUpgradeEnvironmentLease",
+      tenantId,
+      projectId,
+      leaseId,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  async rollbackAdminEnvironmentLease(
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: AdminEnvironmentLeaseUpgradeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperation>> {
+    return this.transitionAdminEnvironmentLeaseRelease(
+      "rollback",
+      "adminRollbackEnvironmentLease",
+      tenantId,
+      projectId,
+      leaseId,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  private async transitionAdminEnvironmentLeaseRelease(
+    action: "upgrade" | "rollback",
+    operation: string,
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: AdminEnvironmentLeaseUpgradeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperation>> {
+    validateLeasePath(tenantId, projectId, leaseId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}:${action}`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeAdminEnvironmentLeaseUpgradeRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem(operation, response);
+    const result = parseMaintenanceOperation(response.body);
+    if (result.value.action !== `target.${action}`)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/action");
     return result;
   }
   async listEnvironmentProfiles(

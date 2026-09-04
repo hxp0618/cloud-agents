@@ -66,6 +66,7 @@ kubernetes_api_pid=
 registry_container="${project}-registry"
 worker_repository=
 worker_release_digest=
+worker_upgrade_release_digest=
 target_worker_credentials_volume="${project}-target-worker-credentials"
 target_provider_credentials_volume="${project}-target-provider-credentials"
 retry_provider_credentials_volume="${project}-retry-provider-credentials"
@@ -94,13 +95,17 @@ cleanup() {
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   docker rm -f "$registry_container" >/dev/null 2>&1 || true
+  docker rm -f "${project}-worker-upgrade-seed" >/dev/null 2>&1 || true
   docker volume rm "$target_worker_credentials_volume" "$target_provider_credentials_volume" \
     "$retry_provider_credentials_volume" >/dev/null 2>&1 || true
   if [ -n "$worker_repository" ]; then
-    docker image rm "$worker_repository:smoke" >/dev/null 2>&1 || true
+    docker image rm "$worker_repository:smoke" "$worker_repository:upgrade" >/dev/null 2>&1 || true
   fi
   if [ -n "$worker_repository" ] && [ -n "$worker_release_digest" ]; then
     docker image rm "$worker_repository@$worker_release_digest" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$worker_repository" ] && [ -n "$worker_upgrade_release_digest" ]; then
+    docker image rm "$worker_repository@$worker_upgrade_release_digest" >/dev/null 2>&1 || true
   fi
   if [ -n "$docker_proxy_pid" ]; then
     kill "$docker_proxy_pid" >/dev/null 2>&1 || true
@@ -484,6 +489,22 @@ case "$worker_release_digest" in
   sha256:????????????????????????????????????????????????????????????????) ;;
   *) echo "pushed Worker image returned an invalid digest" >&2; exit 1 ;;
 esac
+docker create --name "${project}-worker-upgrade-seed" "$worker_image" >/dev/null
+docker commit --change 'LABEL cloud-agents.dev.compose-release=upgrade' \
+  "${project}-worker-upgrade-seed" "$worker_repository:upgrade" >/dev/null
+docker rm "${project}-worker-upgrade-seed" >/dev/null
+docker push "$worker_repository:upgrade" >/dev/null
+worker_upgrade_reference=$(docker image inspect "$worker_repository:upgrade" --format '{{json .RepoDigests}}' |
+  node -e 'const fs=require("node:fs");const values=JSON.parse(fs.readFileSync(0,"utf8"));if(values.length!==1)process.exit(1);process.stdout.write(values[0])')
+worker_upgrade_release_digest=${worker_upgrade_reference##*@}
+case "$worker_upgrade_release_digest" in
+  sha256:????????????????????????????????????????????????????????????????) ;;
+  *) echo "pushed upgrade Worker image returned an invalid digest" >&2; exit 1 ;;
+esac
+if [ "$worker_upgrade_release_digest" = "$worker_release_digest" ]; then
+  echo "Compose upgrade Worker image did not produce a distinct digest" >&2
+  exit 1
+fi
 
 CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" \
 CLOUD_AGENTS_COMPOSE_SMOKE_WORKER_REPOSITORY="$worker_repository" \
@@ -777,6 +798,25 @@ if [ "$user_admin_release_status" -ne 403 ] || \
   echo "Compose ordinary User token was not denied by the Worker Release Admin API" >&2
   exit 1
 fi
+upgrade_release_id=compose-worker-release-upgrade
+upgrade_release_create_file="$smoke_directory/upgrade-release-create.json"
+upgrade_release_create_body=$(printf '{"releaseId":"%s","releaseName":"%s","imageRepository":"%s","releaseDigest":"%s","platformVersion":"platform-v1","runtimeVersion":"runtime-v1","codexVersion":"codex-v1","claudeCodeVersion":"claude-v1","architectures":["%s"],"verificationEvidenceDigest":"%s"}' \
+  "$upgrade_release_id" "$upgrade_release_id" "$worker_repository" "$worker_upgrade_release_digest" "$image_platform" "$worker_upgrade_release_digest")
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases" \
+  compose-smoke-upgrade-release-create --header "Idempotency-Key: compose-smoke-upgrade-release-create" \
+  --data "$upgrade_release_create_body" >"$upgrade_release_create_file"
+CLOUD_AGENTS_COMPOSE_RELEASE_FILE="$upgrade_release_create_file" \
+  CLOUD_AGENTS_COMPOSE_RELEASE_ID="$upgrade_release_id" \
+  CLOUD_AGENTS_COMPOSE_RELEASE_DIGEST="$worker_upgrade_release_digest" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_RELEASE_FILE, "utf8"));
+if (value.metadata?.uid !== process.env.CLOUD_AGENTS_COMPOSE_RELEASE_ID ||
+    value.spec?.releaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_RELEASE_DIGEST ||
+    value.spec?.status !== "approved" || value.spec?.verificationState !== "attested") {
+  throw new Error("Admin API did not persist the approved upgrade Worker release");
+}
+NODE
 unapproved_profile_file="$smoke_directory/unapproved-profile.json"
 unapproved_profile_body='{"profileId":"unapproved-profile","profileName":"unapproved-profile","version":1,"description":"Unapproved release must be rejected","providerKinds":["codex"],"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","targetRefs":["docker-compose-target"],"providerCredentialRef":"provider-unapproved"}'
 unapproved_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
@@ -1046,6 +1086,154 @@ if [ "$target_container_count" -ne 1 ]; then
   exit 1
 fi
 
+lease_release_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-leases/$profile_environment_id"
+upgrade_preview_file="$smoke_directory/lease-upgrade-preview.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$lease_release_path:upgrade-preview?releaseDigest=sha256%3A${worker_upgrade_release_digest#sha256:}" \
+  compose-smoke-lease-upgrade-preview >"$upgrade_preview_file"
+upgrade_request_body=$(CLOUD_AGENTS_COMPOSE_PREVIEW_FILE="$upgrade_preview_file" \
+  CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID="$profile_environment_id" \
+  CLOUD_AGENTS_COMPOSE_CURRENT_RELEASE="$worker_release_digest" \
+  CLOUD_AGENTS_COMPOSE_TARGET_RELEASE="$worker_upgrade_release_digest" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_FILE, "utf8"));
+const spec = value.spec;
+if (value.kind !== "EnvironmentLeaseUpgradePreview" || value.metadata?.uid !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID ||
+    spec?.action !== "upgrade" || spec.currentReleaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_CURRENT_RELEASE ||
+    spec.targetReleaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_TARGET_RELEASE ||
+    spec.rollbackReleaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_CURRENT_RELEASE || spec.rollbackGeneration !== 1 ||
+    spec.expectedGeneration !== 1 || spec.expectedResourceVersion !== value.metadata.resourceVersion ||
+    spec.affectedTargets !== 1 || spec.affectedWorkers !== 1 || spec.affectedLeases !== 1 ||
+    !/^sha256:[0-9a-f]{64}$/.test(spec.impactDigest)) {
+  throw new Error("Admin upgrade preview did not bind the selected Worker and Lease");
+}
+process.stdout.write(JSON.stringify({
+  releaseDigest: spec.targetReleaseDigest,
+  expectedGeneration: spec.expectedGeneration,
+  expectedResourceVersion: spec.expectedResourceVersion,
+  impactDigest: spec.impactDigest,
+}));
+NODE
+)
+user_admin_upgrade_file="$smoke_directory/user-admin-upgrade-denied.json"
+user_admin_upgrade_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-upgrade-denied" \
+  --output "$user_admin_upgrade_file" --write-out '%{http_code}' \
+  "https://$endpoint$lease_release_path:upgrade-preview?releaseDigest=sha256%3A${worker_upgrade_release_digest#sha256:}")
+if [ "$user_admin_upgrade_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_upgrade_file"; then
+  echo "Compose ordinary User token was not denied by the Lease upgrade Admin API" >&2
+  exit 1
+fi
+upgrade_operation_file="$smoke_directory/lease-upgrade-operation.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:upgrade" \
+  compose-smoke-lease-upgrade --header "Idempotency-Key: compose-smoke-lease-upgrade" \
+  --data "$upgrade_request_body" >"$upgrade_operation_file"
+CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$upgrade_operation_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION_FILE, "utf8"));
+if (value.kind !== "MaintenanceOperation" || value.action !== "target.upgrade" ||
+    value.resourceId !== "docker-compose-target" || value.resourceGeneration !== 1 ||
+    value.state !== "succeeded" || value.currentStep !== "complete") {
+  throw new Error("Admin API did not close the Worker upgrade operation");
+}
+NODE
+upgrade_replay_file="$smoke_directory/lease-upgrade-operation-replayed.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:upgrade" \
+  compose-smoke-lease-upgrade --header "Idempotency-Key: compose-smoke-lease-upgrade" \
+  --data "$upgrade_request_body" >"$upgrade_replay_file"
+if ! cmp -s "$upgrade_operation_file" "$upgrade_replay_file"; then
+  echo "Compose Worker upgrade was not idempotent" >&2
+  exit 1
+fi
+upgraded_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+  --request-id compose-smoke-upgraded-lease environment-lease get)
+case "$upgraded_lease_output" in
+  *'"generation":2'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"releaseDigest":"'"$worker_upgrade_release_digest"'"'*) ;;
+  *) echo "Compose Worker upgrade did not persist the target release: $upgraded_lease_output" >&2; exit 1 ;;
+esac
+target_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$profile_environment_id" | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 1 ]; then
+  echo "Compose Worker upgrade left $target_container_count active Workers" >&2
+  exit 1
+fi
+target_container_id=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$profile_environment_id")
+if [ "$(docker inspect "$target_container_id" --format '{{.Config.Image}}')" != "$worker_repository@$worker_upgrade_release_digest" ]; then
+  echo "Compose Worker upgrade did not run the selected digest" >&2
+  exit 1
+fi
+
+rollback_preview_file="$smoke_directory/lease-rollback-preview.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "$lease_release_path:rollback-preview" compose-smoke-lease-rollback-preview >"$rollback_preview_file"
+rollback_request_body=$(CLOUD_AGENTS_COMPOSE_PREVIEW_FILE="$rollback_preview_file" \
+  CLOUD_AGENTS_COMPOSE_CURRENT_RELEASE="$worker_upgrade_release_digest" \
+  CLOUD_AGENTS_COMPOSE_TARGET_RELEASE="$worker_release_digest" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_FILE, "utf8"));
+const spec = value.spec;
+if (spec?.action !== "rollback" || spec.currentReleaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_CURRENT_RELEASE ||
+    spec.targetReleaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_TARGET_RELEASE ||
+    spec.rollbackReleaseDigest !== process.env.CLOUD_AGENTS_COMPOSE_TARGET_RELEASE || spec.rollbackGeneration !== 1 ||
+    spec.expectedGeneration !== 2 || spec.expectedResourceVersion !== value.metadata?.resourceVersion ||
+    spec.affectedTargets !== 1 || spec.affectedWorkers !== 1 || spec.affectedLeases !== 1 ||
+    !/^sha256:[0-9a-f]{64}$/.test(spec.impactDigest)) {
+  throw new Error("Admin rollback preview did not bind the persisted prior release");
+}
+process.stdout.write(JSON.stringify({
+  releaseDigest: spec.targetReleaseDigest,
+  expectedGeneration: spec.expectedGeneration,
+  expectedResourceVersion: spec.expectedResourceVersion,
+  impactDigest: spec.impactDigest,
+}));
+NODE
+)
+rollback_operation_file="$smoke_directory/lease-rollback-operation.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:rollback" \
+  compose-smoke-lease-rollback --header "Idempotency-Key: compose-smoke-lease-rollback" \
+  --data "$rollback_request_body" >"$rollback_operation_file"
+CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$rollback_operation_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION_FILE, "utf8"));
+if (value.action !== "target.rollback" || value.resourceId !== "docker-compose-target" ||
+    value.resourceGeneration !== 1 || value.state !== "succeeded" || value.currentStep !== "complete") {
+  throw new Error("Admin API did not close the Worker rollback operation");
+}
+NODE
+rollback_replay_file="$smoke_directory/lease-rollback-operation-replayed.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:rollback" \
+  compose-smoke-lease-rollback --header "Idempotency-Key: compose-smoke-lease-rollback" \
+  --data "$rollback_request_body" >"$rollback_replay_file"
+if ! cmp -s "$rollback_operation_file" "$rollback_replay_file"; then
+  echo "Compose Worker rollback was not idempotent" >&2
+  exit 1
+fi
+rolled_back_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+  --request-id compose-smoke-rolled-back-lease environment-lease get)
+case "$rolled_back_lease_output" in
+  *'"generation":3'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"releaseDigest":"'"$worker_release_digest"'"'*) ;;
+  *) echo "Compose Worker rollback did not restore the prior release: $rolled_back_lease_output" >&2; exit 1 ;;
+esac
+target_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$profile_environment_id" | wc -l | tr -d ' ')
+if [ "$target_container_count" -ne 1 ]; then
+  echo "Compose Worker rollback left $target_container_count active Workers" >&2
+  exit 1
+fi
+target_container_id=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$profile_environment_id")
+if [ "$(docker inspect "$target_container_id" --format '{{.Config.Image}}')" != "$worker_repository@$worker_release_digest" ]; then
+  echo "Compose Worker rollback did not run the prior digest" >&2
+  exit 1
+fi
+
 resume_preview_file="$smoke_directory/target-resume-preview.json"
 control_plane_api "$smoke_directory/admin-curl.conf" GET \
   "$scheduling_path:scheduling-preview" compose-smoke-target-resume-preview >"$resume_preview_file"
@@ -1110,7 +1298,7 @@ CLOUD_AGENTS_COMPOSE_OPERATIONS_FILE="$scheduling_operations_file" \
 const { readFileSync } = require("node:fs");
 const operations = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATIONS_FILE, "utf8"));
 const audit = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_AUDIT_FILE, "utf8"));
-for (const action of ["target.drain", "target.resume"]) {
+for (const action of ["target.drain", "target.upgrade", "target.rollback", "target.resume"]) {
   if (!operations.operations?.some((item) => item.action === action && item.state === "succeeded") ||
       !audit.events?.some((item) => item.action === action && item.result === "succeeded")) {
     throw new Error(`Target ${action} did not close Operation and Audit authority`);
@@ -1180,7 +1368,7 @@ wait_ready
 restarted_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
   --request-id compose-smoke-restarted-lease environment-lease get)
 case "$restarted_lease_output" in
-  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
+  *'"generation":3'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
   *) echo "Compose Control Plane restart lost the Profile environment Lease: $restarted_lease_output" >&2; exit 1 ;;
 esac
 restarted_user_environment_file="$smoke_directory/restarted-user-environment.json"
@@ -1278,14 +1466,14 @@ fi
 
 terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$profile_environment_id" \
   --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
-  environment-lease terminate --generation 1)
+  environment-lease terminate --generation 3)
 case "$terminate_output" in
-  *'"generation":2'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *'"generation":4'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
   *) echo "Compose Docker target Lease did not terminate cleanly: $terminate_output" >&2; exit 1 ;;
 esac
 replayed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$profile_environment_id" \
   --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
-  environment-lease terminate --generation 1)
+  environment-lease terminate --generation 3)
 if [ "$replayed_terminate_output" != "$terminate_output" ]; then
   echo "Compose Docker target termination was not idempotent" >&2
   exit 1

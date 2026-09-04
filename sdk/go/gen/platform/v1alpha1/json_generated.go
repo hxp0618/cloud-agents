@@ -193,6 +193,12 @@ type EnvironmentLeaseUpgradeRequest struct {
 	ReleaseDigest      string `json:"releaseDigest"`
 	ExpectedGeneration int64  `json:"expectedGeneration"`
 }
+type AdminEnvironmentLeaseUpgradeRequest struct {
+	ReleaseDigest           string `json:"releaseDigest"`
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ImpactDigest            string `json:"impactDigest"`
+}
 type EnvironmentLeaseSpec struct {
 	ProjectRef            common.ProjectRef `json:"projectRef"`
 	Generation            int64             `json:"generation"`
@@ -221,6 +227,26 @@ type EnvironmentLeasePage struct {
 	Kind              string             `json:"kind"`
 	EnvironmentLeases []EnvironmentLease `json:"environmentLeases"`
 	NextPageToken     string             `json:"nextPageToken,omitempty"`
+}
+type EnvironmentLeaseUpgradePreviewSpec struct {
+	ProjectRef              common.ProjectRef `json:"projectRef"`
+	Action                  string            `json:"action"`
+	TargetID                string            `json:"targetId"`
+	TargetKind              string            `json:"targetKind"`
+	CurrentReleaseDigest    string            `json:"currentReleaseDigest"`
+	TargetReleaseDigest     string            `json:"targetReleaseDigest"`
+	RollbackReleaseDigest   string            `json:"rollbackReleaseDigest"`
+	RollbackGeneration      int64             `json:"rollbackGeneration"`
+	ExpectedGeneration      int64             `json:"expectedGeneration"`
+	ExpectedResourceVersion string            `json:"expectedResourceVersion"`
+	AffectedTargets         int64             `json:"affectedTargets"`
+	AffectedWorkers         int64             `json:"affectedWorkers"`
+	AffectedLeases          int64             `json:"affectedLeases"`
+	ImpactDigest            string            `json:"impactDigest"`
+}
+type EnvironmentLeaseUpgradePreview struct {
+	ResourceBase
+	Spec EnvironmentLeaseUpgradePreviewSpec `json:"spec"`
 }
 type WorkerSpec struct {
 	ProjectRef       common.ProjectRef `json:"projectRef"`
@@ -538,6 +564,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"tenantRef": resourceTenantRefResponseShape, "subject": resourceSubjectResponseShape, "roleName": common.ScalarResponseShape(), "roleVersion": common.ScalarResponseShape(), "scope": resourceScopeResponseShape, "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "CloudEnvironmentLease":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "providerCredentialRef": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerEndpoint": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
+	case "EnvironmentLeaseUpgradePreview":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "action": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "currentReleaseDigest": common.ScalarResponseShape(), "targetReleaseDigest": common.ScalarResponseShape(), "rollbackReleaseDigest": common.ScalarResponseShape(), "rollbackGeneration": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "affectedTargets": common.ScalarResponseShape(), "affectedWorkers": common.ScalarResponseShape(), "affectedLeases": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape()}
 	case "Worker":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "leaseId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "lastHealthAt": common.ScalarResponseShape(), "readyAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}
 	case "WorkerRelease":
@@ -1334,6 +1362,39 @@ func EncodeEnvironmentLeaseUpgradeRequestJSON(value EnvironmentLeaseUpgradeReque
 	}
 	return raw, nil
 }
+func DecodeAdminEnvironmentLeaseUpgradeRequestJSON(data []byte) (AdminEnvironmentLeaseUpgradeRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"releaseDigest", "expectedGeneration", "expectedResourceVersion", "impactDigest"}, []string{"releaseDigest", "expectedGeneration", "expectedResourceVersion", "impactDigest"})
+	if err != nil {
+		return AdminEnvironmentLeaseUpgradeRequest{}, err
+	}
+	release, err := fieldString(fields, "releaseDigest", "/releaseDigest")
+	if err != nil || !digestPattern.MatchString(release) {
+		return AdminEnvironmentLeaseUpgradeRequest{}, common.ContractError("INVALID_RELEASE_DIGEST", "/releaseDigest")
+	}
+	generation, err := fieldInt64(fields, "expectedGeneration", "/expectedGeneration")
+	if err != nil || generation < 1 {
+		return AdminEnvironmentLeaseUpgradeRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	resourceVersion, err := fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/expectedResourceVersion") != nil {
+		return AdminEnvironmentLeaseUpgradeRequest{}, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	impactDigest, err := fieldString(fields, "impactDigest", "/impactDigest")
+	if err != nil || !digestPattern.MatchString(impactDigest) {
+		return AdminEnvironmentLeaseUpgradeRequest{}, common.ContractError("INVALID_DIGEST", "/impactDigest")
+	}
+	return AdminEnvironmentLeaseUpgradeRequest{ReleaseDigest: release, ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, ImpactDigest: impactDigest}, nil
+}
+func EncodeAdminEnvironmentLeaseUpgradeRequestJSON(value AdminEnvironmentLeaseUpgradeRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeAdminEnvironmentLeaseUpgradeRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 	fields, err := strictResourceExact(data)
 	if err != nil {
@@ -1515,6 +1576,94 @@ func DecodeEnvironmentLeasePageResponseJSON(data []byte) (common.ResponseEnvelop
 	return common.ResponseEnvelope[EnvironmentLeasePage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeEnvironmentLeasePageResponseJSON(value common.ResponseEnvelope[EnvironmentLeasePage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
+func DecodeEnvironmentLeaseUpgradePreviewJSON(data []byte) (EnvironmentLeaseUpgradePreview, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return EnvironmentLeaseUpgradePreview{}, err
+	}
+	base, err := checkResourceBase(fields, "EnvironmentLeaseUpgradePreview")
+	if err != nil {
+		return EnvironmentLeaseUpgradePreview{}, err
+	}
+	allowed := []string{"projectRef", "action", "targetId", "targetKind", "currentReleaseDigest", "targetReleaseDigest", "rollbackReleaseDigest", "rollbackGeneration", "expectedGeneration", "expectedResourceVersion", "affectedTargets", "affectedWorkers", "affectedLeases", "impactDigest"}
+	spec, err := strictSpec(fields["spec"], allowed, allowed)
+	if err != nil {
+		return EnvironmentLeaseUpgradePreview{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return EnvironmentLeaseUpgradePreview{}, err
+	}
+	action, err := fieldString(spec, "action", "/spec/action")
+	if err != nil || action != "upgrade" && action != "rollback" {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_ACTION", "/spec/action")
+	}
+	targetID, err := fieldString(spec, "targetId", "/spec/targetId")
+	if err != nil || common.ValidateIdentifier(targetID, "/spec/targetId") != nil {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_IDENTIFIER", "/spec/targetId")
+	}
+	targetKind, err := fieldString(spec, "targetKind", "/spec/targetKind")
+	if err != nil || targetKind != "docker" && targetKind != "kubernetes" && targetKind != "ssh" {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
+	}
+	currentRelease, err := fieldString(spec, "currentReleaseDigest", "/spec/currentReleaseDigest")
+	if err != nil || !digestPattern.MatchString(currentRelease) {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_RELEASE_DIGEST", "/spec/currentReleaseDigest")
+	}
+	targetRelease, err := fieldString(spec, "targetReleaseDigest", "/spec/targetReleaseDigest")
+	if err != nil || !digestPattern.MatchString(targetRelease) || targetRelease == currentRelease {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_RELEASE_DIGEST", "/spec/targetReleaseDigest")
+	}
+	rollbackRelease, err := fieldString(spec, "rollbackReleaseDigest", "/spec/rollbackReleaseDigest")
+	if err != nil || !digestPattern.MatchString(rollbackRelease) || action == "upgrade" && rollbackRelease != currentRelease || action == "rollback" && rollbackRelease != targetRelease {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_RELEASE_DIGEST", "/spec/rollbackReleaseDigest")
+	}
+	rollbackGeneration, err := fieldInt64(spec, "rollbackGeneration", "/spec/rollbackGeneration")
+	if err != nil || rollbackGeneration < 1 {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_GENERATION", "/spec/rollbackGeneration")
+	}
+	generation, err := fieldInt64(spec, "expectedGeneration", "/spec/expectedGeneration")
+	if err != nil || generation < 1 {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_GENERATION", "/spec/expectedGeneration")
+	}
+	resourceVersion, err := fieldString(spec, "expectedResourceVersion", "/spec/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(resourceVersion, "/spec/expectedResourceVersion") != nil || resourceVersion != base.Metadata.ResourceVersion {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion")
+	}
+	affectedTargets, err := fieldInt64(spec, "affectedTargets", "/spec/affectedTargets")
+	if err != nil || affectedTargets != 1 {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_UPGRADE_IMPACT", "/spec/affectedTargets")
+	}
+	affectedWorkers, err := fieldInt64(spec, "affectedWorkers", "/spec/affectedWorkers")
+	if err != nil || affectedWorkers != 1 {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_UPGRADE_IMPACT", "/spec/affectedWorkers")
+	}
+	affectedLeases, err := fieldInt64(spec, "affectedLeases", "/spec/affectedLeases")
+	if err != nil || affectedLeases != 1 {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_UPGRADE_IMPACT", "/spec/affectedLeases")
+	}
+	impactDigest, err := fieldString(spec, "impactDigest", "/spec/impactDigest")
+	if err != nil || !digestPattern.MatchString(impactDigest) {
+		return EnvironmentLeaseUpgradePreview{}, common.ContractError("INVALID_DIGEST", "/spec/impactDigest")
+	}
+	return EnvironmentLeaseUpgradePreview{ResourceBase: base, Spec: EnvironmentLeaseUpgradePreviewSpec{ProjectRef: project, Action: action, TargetID: targetID, TargetKind: targetKind, CurrentReleaseDigest: currentRelease, TargetReleaseDigest: targetRelease, RollbackReleaseDigest: rollbackRelease, RollbackGeneration: rollbackGeneration, ExpectedGeneration: generation, ExpectedResourceVersion: resourceVersion, AffectedTargets: affectedTargets, AffectedWorkers: affectedWorkers, AffectedLeases: affectedLeases, ImpactDigest: impactDigest}}, nil
+}
+func DecodeEnvironmentLeaseUpgradePreviewResponseJSON(data []byte) (common.ResponseEnvelope[EnvironmentLeaseUpgradePreview], error) {
+	fields, sidecar, err := strictResource(data, "EnvironmentLeaseUpgradePreview")
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentLeaseUpgradePreview]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeEnvironmentLeaseUpgradePreviewJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[EnvironmentLeaseUpgradePreview]{}, err
+	}
+	return common.ResponseEnvelope[EnvironmentLeaseUpgradePreview]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeEnvironmentLeaseUpgradePreviewResponseJSON(value common.ResponseEnvelope[EnvironmentLeaseUpgradePreview]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
@@ -2501,7 +2650,7 @@ func DecodeMaintenanceOperationJSON(data []byte) (MaintenanceOperation, error) {
 	if value.APIVersion != APIVersion || value.Kind != "MaintenanceOperation" {
 		return MaintenanceOperation{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
+	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
 		return MaintenanceOperation{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "")
 	}
 	return value, nil
@@ -2573,7 +2722,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

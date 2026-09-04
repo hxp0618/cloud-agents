@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,9 @@ type managedHostEnvironmentLeaseStore interface {
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
 	ListManagedHostEnvironmentLeases(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedHostEnvironmentLeasePage, error)
 	ListAdminWorkers(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminWorkerPage, error)
+	PreviewAdminEnvironmentLeaseUpgrade(context.Context, string, *authn.VerifiedPrincipal, string, string, string, string) (internalmanagedhost.AdminEnvironmentLeaseUpgradePreview, error)
+	BeginAdminEnvironmentLeaseUpgrade(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.AdminEnvironmentLeaseUpgradeInput) (postgres.AdminEnvironmentLeaseUpgradeStart, error)
+	CompleteAdminEnvironmentLeaseUpgrade(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CompleteAdminEnvironmentLeaseUpgradeInput) (postgres.AdminEnvironmentLeaseUpgradeResult, error)
 	BeginManagedHostEnvironmentLeaseUpgrade(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.UpgradeEnvironmentLeaseInput) (internalmanagedhost.UpgradeStart, error)
 	TerminateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
 	CompleteManagedHostEnvironmentLeaseTermination(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput) (internalmanagedhost.Snapshot, error)
@@ -58,8 +62,8 @@ func NewManagedHostEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, stor
 	return &ManagedHostEnvironmentLeaseHTTPServer{verifier: verifier, store: store, dockerCredentials: dockerCredentials, kubernetesCredentials: kubernetesCredentials, sshCredentials: sshCredentials, workerTrust: workerTrust, kubernetesWorkerTrust: kubernetestarget.WorkerTrust{ClientCertificate: workerTrust.ClientCertificate, RootCAs: workerTrust.RootCAs}}, nil
 }
 
-func NewAdminEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
-	server, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
+func NewAdminEnvironmentLeaseHTTPServer(verifier AccessTokenVerifier, store managedHostEnvironmentLeaseStore, dockerCredentials *dockertarget.CredentialDirectory, kubernetesCredentials *kubernetestarget.CredentialDirectory, sshCredentials *sshtarget.CredentialDirectory, workerTrust dockertarget.WorkerTrust) (*ManagedHostEnvironmentLeaseHTTPServer, error) {
+	server, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, dockerCredentials, kubernetesCredentials, sshCredentials, workerTrust)
 	if err != nil {
 		return nil, err
 	}
@@ -122,10 +126,12 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		server.create(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "get" && request.Method == http.MethodGet:
 		server.get(writer, request, tenantID, projectID, leaseID, requestID, bearer)
+	case (action == "upgrade-preview" || action == "rollback-preview") && request.Method == http.MethodGet:
+		server.previewAdminUpgrade(writer, request, tenantID, projectID, leaseID, action, requestID, bearer)
 	case action == "terminate" && request.Method == http.MethodPost:
 		server.terminate(writer, request, tenantID, projectID, leaseID, requestID, bearer)
-	case action == "upgrade" && request.Method == http.MethodPost:
-		server.upgrade(writer, request, tenantID, projectID, leaseID, requestID, bearer)
+	case (action == "upgrade" || action == "rollback") && request.Method == http.MethodPost:
+		server.upgrade(writer, request, tenantID, projectID, leaseID, action, requestID, bearer)
 	default:
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
@@ -164,7 +170,141 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) listWorkers(writer http.Res
 	writeAdminWorkerPage(writer, requestID, tenantID, projectID, page)
 }
 
-func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.ResponseWriter, request *http.Request, tenantID, projectID, leaseID, requestID, bearer string) {
+func (server *ManagedHostEnvironmentLeaseHTTPServer) previewAdminUpgrade(writer http.ResponseWriter, request *http.Request, tenantID, projectID, leaseID, routeAction, requestID, bearer string) {
+	action, releaseDigest := "upgrade", ""
+	query, err := url.ParseQuery(request.URL.RawQuery)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if routeAction == "rollback-preview" {
+		action = "rollback"
+		if len(query) != 0 {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		if _, err = openapiv1alpha1.ValidateGetEnvironmentLeaseServerRequest(tenantID, projectID, leaseID, requestID); err != nil {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	} else {
+		values, found := query["releaseDigest"]
+		if len(query) != 1 || !found || len(values) != 1 {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		releaseDigest = values[0]
+		if _, err = openapiv1alpha1.ValidatePreviewAdminEnvironmentLeaseUpgradeServerRequest(tenantID, projectID, leaseID, releaseDigest, requestID); err != nil {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	preview, err := server.store.PreviewAdminEnvironmentLeaseUpgrade(request.Context(), tenantID, principal, projectID, leaseID, action, releaseDigest)
+	if err != nil {
+		status, code := adminEnvironmentLeaseUpgradeErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	writeAdminEnvironmentLeaseUpgradePreview(writer, requestID, preview)
+}
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) adminUpgrade(writer http.ResponseWriter, request *http.Request, tenantID, projectID, leaseID, action, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateAdminEnvironmentLeaseUpgradeServerRequest(tenantID, projectID, leaseID, requestID, idempotencyKey, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	readPrincipal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	actPrincipal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	resourceVersion, err := strconv.ParseInt(validated.Body.ExpectedResourceVersion, 10, 64)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	input := internalmanagedhost.AdminEnvironmentLeaseUpgradeInput{
+		Scope: internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, LeaseID: leaseID, Action: action,
+		ReleaseDigest: validated.Body.ReleaseDigest, ExpectedGeneration: validated.Body.ExpectedGeneration,
+		ExpectedResourceVersion: resourceVersion, ImpactDigest: validated.Body.ImpactDigest,
+		Mutation: internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
+	}
+	started, err := server.store.BeginAdminEnvironmentLeaseUpgrade(request.Context(), tenantID, actPrincipal, input)
+	if err != nil {
+		status, code := adminEnvironmentLeaseUpgradeErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	if !started.Execute {
+		writeMaintenanceOperation(writer, http.StatusOK, requestID, started.Operation)
+		return
+	}
+	completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{
+		Scope: started.Snapshot.Scope, LeaseID: started.Snapshot.LeaseID, TargetID: started.Snapshot.TargetID,
+		ExpectedGeneration: started.Snapshot.Generation, ExpectedTargetGeneration: started.Snapshot.TargetGeneration,
+	}
+	target, targetErr := server.store.GetDeploymentTarget(request.Context(), tenantID, readPrincipal, projectID, started.Snapshot.TargetID)
+	if targetErr != nil {
+		completion.StableErrorCode = "deployment-target-unavailable"
+	} else if target.SchedulingState != "drained" {
+		completion.StableErrorCode = "deployment-target-not-drained"
+	} else {
+		completion = server.environmentUpgradeCompletion(request.Context(), tenantID, projectID, started.Snapshot, target)
+		if completion.Succeeded && (target.Kind == "docker" || target.Kind == "ssh") {
+			cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
+			cleanupErr := server.cleanupOlderEnvironmentWorkers(cleanupContext, tenantID, projectID, target, started.Snapshot)
+			cancelCleanup()
+			if cleanupErr != nil {
+				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = false, "", "", ""
+				completion.StableErrorCode = "environment-upgrade-cleanup-failed"
+				if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, sshtarget.ErrDeploymentConflict) {
+					completion.StableErrorCode = "environment-upgrade-cleanup-conflict"
+				}
+			}
+		}
+	}
+	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
+	defer cancel()
+	actPrincipal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	result, err := server.store.CompleteAdminEnvironmentLeaseUpgrade(completionContext, tenantID, actPrincipal, internalmanagedhost.CompleteAdminEnvironmentLeaseUpgradeInput{Upgrade: input, Deployment: completion, ImpactSummary: started.Operation.ImpactSummary})
+	if err != nil {
+		status, code := adminEnvironmentLeaseUpgradeErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	writeMaintenanceOperation(writer, http.StatusOK, requestID, result.Operation)
+}
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.ResponseWriter, request *http.Request, tenantID, projectID, leaseID, action, requestID, bearer string) {
+	if server.admin {
+		server.adminUpgrade(writer, request, tenantID, projectID, leaseID, action, requestID, bearer)
+		return
+	}
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
 	if !ok {
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
@@ -206,56 +346,12 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.Respons
 		return
 	}
 	target, targetErr := server.store.GetDeploymentTarget(request.Context(), tenantID, principal, projectID, started.Snapshot.TargetID)
-	completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{
-		Scope: started.Snapshot.Scope, LeaseID: started.Snapshot.LeaseID, TargetID: started.Snapshot.TargetID,
-		ExpectedGeneration: started.Snapshot.Generation, ExpectedTargetGeneration: started.Snapshot.TargetGeneration,
-	}
 	if targetErr != nil {
 		status, code := managedHostEnvironmentLeaseErrorStatus(targetErr)
 		writePublicProblem(writer, status, code)
 		return
 	}
-	if target.Generation != started.Snapshot.TargetGeneration || target.ObservedPhase != "ready" {
-		switch target.Kind {
-		case "docker":
-			completion.StableErrorCode = "docker-target-not-ready"
-		case "kubernetes":
-			completion.StableErrorCode = "kubernetes-target-not-ready"
-		case "ssh":
-			completion.StableErrorCode = "ssh-target-not-ready"
-		default:
-			completion.StableErrorCode = "target-kind-unsupported"
-		}
-	} else {
-		switch target.Kind {
-		case "docker":
-			if server.dockerCredentials == nil {
-				completion.StableErrorCode = "docker-actuator-unconfigured"
-			} else if deployed, deployErr := server.dockerCredentials.DeployWorkerUpgrade(request.Context(), target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, started.Snapshot, started.Snapshot.Generation), server.workerTrust); deployErr != nil {
-				completion.StableErrorCode = dockerDeploymentErrorCode(deployErr)
-			} else {
-				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
-			}
-		case "kubernetes":
-			if server.kubernetesCredentials == nil {
-				completion.StableErrorCode = "kubernetes-actuator-unconfigured"
-			} else if deployed, deployErr := server.kubernetesCredentials.DeployWorkerUpgrade(request.Context(), target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, started.Snapshot, started.Snapshot.Generation), server.kubernetesWorkerTrust); deployErr != nil {
-				completion.StableErrorCode = kubernetesDeploymentErrorCode(deployErr)
-			} else {
-				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
-			}
-		case "ssh":
-			if server.sshCredentials == nil {
-				completion.StableErrorCode = "ssh-actuator-unconfigured"
-			} else if deployed, deployErr := server.sshCredentials.DeployWorkerUpgrade(request.Context(), target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, started.Snapshot, started.Snapshot.Generation), server.workerTrust); deployErr != nil {
-				completion.StableErrorCode = sshDeploymentErrorCode(deployErr)
-			} else {
-				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
-			}
-		default:
-			completion.StableErrorCode = "target-kind-unsupported"
-		}
-	}
+	completion := server.environmentUpgradeCompletion(request.Context(), tenantID, projectID, started.Snapshot, target)
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
 	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
@@ -271,13 +367,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.Respons
 	}
 	if completion.Succeeded && (target.Kind == "docker" || target.Kind == "ssh") {
 		cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
-		var cleanupErr error
-		switch target.Kind {
-		case "docker":
-			cleanupErr = server.dockerCredentials.CleanupOlderWorkers(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation))
-		case "ssh":
-			cleanupErr = server.sshCredentials.CleanupOlderWorkers(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation))
-		}
+		cleanupErr := server.cleanupOlderEnvironmentWorkers(cleanupContext, tenantID, projectID, target, result)
 		cancelCleanup()
 		if cleanupErr != nil {
 			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, sshtarget.ErrDeploymentConflict) {
@@ -289,6 +379,60 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.Respons
 		}
 	}
 	writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, result)
+}
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) environmentUpgradeCompletion(ctx context.Context, tenantID, projectID string, snapshot internalmanagedhost.Snapshot, target internaldeploymenttarget.Snapshot) internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput {
+	completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{
+		Scope: snapshot.Scope, LeaseID: snapshot.LeaseID, TargetID: snapshot.TargetID,
+		ExpectedGeneration: snapshot.Generation, ExpectedTargetGeneration: snapshot.TargetGeneration,
+	}
+	if target.Generation != snapshot.TargetGeneration || target.ObservedPhase != "ready" {
+		completion.StableErrorCode = target.Kind + "-target-not-ready"
+		if target.Kind != "docker" && target.Kind != "kubernetes" && target.Kind != "ssh" {
+			completion.StableErrorCode = "target-kind-unsupported"
+		}
+		return completion
+	}
+	switch target.Kind {
+	case "docker":
+		if server.dockerCredentials == nil {
+			completion.StableErrorCode = "docker-actuator-unconfigured"
+		} else if deployed, err := server.dockerCredentials.DeployWorkerUpgrade(ctx, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, snapshot, snapshot.Generation), server.workerTrust); err != nil {
+			completion.StableErrorCode = dockerDeploymentErrorCode(err)
+		} else {
+			completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+		}
+	case "kubernetes":
+		if server.kubernetesCredentials == nil {
+			completion.StableErrorCode = "kubernetes-actuator-unconfigured"
+		} else if deployed, err := server.kubernetesCredentials.DeployWorkerUpgrade(ctx, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, snapshot, snapshot.Generation), server.kubernetesWorkerTrust); err != nil {
+			completion.StableErrorCode = kubernetesDeploymentErrorCode(err)
+		} else {
+			completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+		}
+	case "ssh":
+		if server.sshCredentials == nil {
+			completion.StableErrorCode = "ssh-actuator-unconfigured"
+		} else if deployed, err := server.sshCredentials.DeployWorkerUpgrade(ctx, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, snapshot, snapshot.Generation), server.workerTrust); err != nil {
+			completion.StableErrorCode = sshDeploymentErrorCode(err)
+		} else {
+			completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+		}
+	default:
+		completion.StableErrorCode = "target-kind-unsupported"
+	}
+	return completion
+}
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) cleanupOlderEnvironmentWorkers(ctx context.Context, tenantID, projectID string, target internaldeploymenttarget.Snapshot, snapshot internalmanagedhost.Snapshot) error {
+	switch target.Kind {
+	case "docker":
+		return server.dockerCredentials.CleanupOlderWorkers(ctx, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, snapshot, snapshot.Generation))
+	case "ssh":
+		return server.sshCredentials.CleanupOlderWorkers(ctx, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, snapshot, snapshot.Generation))
+	default:
+		return nil
+	}
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
@@ -567,6 +711,33 @@ func writeManagedHostEnvironmentLease(writer http.ResponseWriter, status int, re
 	_, _ = writer.Write(body)
 }
 
+func writeAdminEnvironmentLeaseUpgradePreview(writer http.ResponseWriter, requestID string, preview internalmanagedhost.AdminEnvironmentLeaseUpgradePreview) {
+	snapshot := preview.Lease
+	value := platformv1alpha1.EnvironmentLeaseUpgradePreview{ResourceBase: platformv1alpha1.ResourceBase{
+		APIVersion: platformv1alpha1.APIVersion, Kind: "EnvironmentLeaseUpgradePreview",
+		Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName,
+			TenantRef:       commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID},
+			ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)},
+	}, Spec: platformv1alpha1.EnvironmentLeaseUpgradePreviewSpec{
+		ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
+		Action:     preview.Action, TargetID: snapshot.TargetID, TargetKind: preview.TargetKind,
+		CurrentReleaseDigest: snapshot.ReleaseDigest, TargetReleaseDigest: preview.TargetReleaseDigest,
+		RollbackReleaseDigest: preview.RollbackReleaseDigest, RollbackGeneration: preview.RollbackGeneration,
+		ExpectedGeneration: snapshot.Generation, ExpectedResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10),
+		AffectedTargets: 1, AffectedWorkers: 1, AffectedLeases: 1, ImpactDigest: preview.ImpactDigest,
+	}}
+	body, err := platformv1alpha1.EncodeEnvironmentLeaseUpgradePreviewResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.EnvironmentLeaseUpgradePreview]{Value: value})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("X-Resource-Version", strconv.FormatInt(snapshot.ResourceVersion, 10))
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func managedHostEnvironmentLeaseResource(snapshot internalmanagedhost.Snapshot) platformv1alpha1.EnvironmentLease {
 	tenant := commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID}
 	return platformv1alpha1.EnvironmentLease{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "CloudEnvironmentLease", Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName, TenantRef: tenant, ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, Spec: platformv1alpha1.EnvironmentLeaseSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID}, Generation: snapshot.Generation, DesiredPhase: snapshot.DesiredPhase, ObservedPhase: snapshot.ObservedPhase, CleanupPhase: snapshot.CleanupPhase, EnvironmentID: snapshot.EnvironmentID, ReleaseDigest: snapshot.ReleaseDigest, TargetID: snapshot.TargetID, TargetGeneration: snapshot.TargetGeneration, ProviderCredentialRef: snapshot.ProviderCredentialRef, CPULimitMillis: snapshot.CPULimitMillis, MemoryLimitBytes: snapshot.MemoryLimitBytes, WorkerEndpoint: snapshot.WorkerEndpoint, WorkerSPIFFEID: snapshot.WorkerSPIFFEID, WorkerServerName: snapshot.WorkerServerName, StableErrorCode: snapshot.StableErrorCode, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)}}
@@ -721,6 +892,16 @@ func adminEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, actio
 		if len(parts) == 4 && parts[1] == "projects" && parts[3] == "workers" && parts[0] != "" && parts[2] != "" {
 			return parts[0], parts[2], "", "worker-collection", true
 		}
+		if len(parts) == 5 && parts[1] == "projects" && parts[3] == "environment-leases" && parts[0] != "" && parts[2] != "" {
+			for _, suffix := range []string{":upgrade-preview", ":rollback-preview", ":rollback"} {
+				if strings.HasSuffix(parts[4], suffix) {
+					leaseID = strings.TrimSuffix(parts[4], suffix)
+					if leaseID != "" {
+						return parts[0], parts[2], leaseID, strings.TrimPrefix(suffix, ":"), true
+					}
+				}
+			}
+		}
 	}
 	return environmentLeasePathWithPrefix(path, AdminEnvironmentLeaseRoutePrefix)
 }
@@ -809,6 +990,10 @@ func environmentLeasePermission(action, method string, admin bool) (string, bool
 		return "leases.list", true
 	case action == "get" && method == http.MethodGet:
 		return "leases.get", true
+	case admin && (action == "upgrade-preview" || action == "rollback-preview") && method == http.MethodGet:
+		return "leases.get", true
+	case admin && (action == "upgrade" || action == "rollback") && method == http.MethodPost:
+		return "leases.act", true
 	case !admin && (action == "collection" || action == "terminate" || action == "upgrade") && method == http.MethodPost:
 		return "leases.act", true
 	default:
@@ -826,6 +1011,35 @@ func managedHostEnvironmentLeaseErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "lease_conflict"
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
 		return http.StatusBadRequest, "invalid_request"
+	default:
+		return http.StatusInternalServerError, "internal_error"
+	}
+}
+
+func adminEnvironmentLeaseUpgradeErrorStatus(err error) (int, string) {
+	switch {
+	case errors.Is(err, postgres.ErrManagedHostEnvironmentLeaseNotFound):
+		return http.StatusNotFound, "not_found"
+	case errors.Is(err, postgres.ErrMutationDenied):
+		return http.StatusForbidden, "authorization_denied"
+	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
+		return http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseUpgradeIdempotencyConflict):
+		return http.StatusConflict, "idempotency_conflict"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseGenerationConflict):
+		return http.StatusConflict, "lease_generation_conflict"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseResourceVersionConflict):
+		return http.StatusConflict, "lease_resource_version_conflict"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseStateConflict):
+		return http.StatusConflict, "lease_state_conflict"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseTargetNotDrained):
+		return http.StatusConflict, "target_not_drained"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseRollbackUnavailable):
+		return http.StatusConflict, "rollback_unavailable"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseImpactConflict):
+		return http.StatusConflict, "upgrade_impact_conflict"
+	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseReleaseNotApproved):
+		return http.StatusConflict, "worker_release_not_approved"
 	default:
 		return http.StatusInternalServerError, "internal_error"
 	}

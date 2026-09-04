@@ -106,6 +106,7 @@ type MaintenanceOperationPageResult = common.ResponseEnvelope[platform.Maintenan
 type AdminAuditEventPageResult = common.ResponseEnvelope[platform.AdminAuditEventPage]
 type DeploymentTargetCleanupPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetCleanupPreview]
 type DeploymentTargetSchedulingPreviewResult = common.ResponseEnvelope[platform.DeploymentTargetSchedulingPreview]
+type EnvironmentLeaseUpgradePreviewResult = common.ResponseEnvelope[platform.EnvironmentLeaseUpgradePreview]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
@@ -749,6 +750,92 @@ func (client *Client) GetAdminEnvironmentLease(ctx context.Context, tenantID, pr
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID {
 		return EnvironmentLeaseResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) PreviewAdminEnvironmentLeaseUpgrade(ctx context.Context, tenantID, projectID, leaseID, releaseDigest, requestID string) (EnvironmentLeaseUpgradePreviewResult, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, err
+	}
+	if !strings.HasPrefix(releaseDigest, "sha256:") || len(releaseDigest) != 71 {
+		return EnvironmentLeaseUpgradePreviewResult{}, common.ContractError("INVALID_RELEASE_DIGEST", "/releaseDigest")
+	}
+	query := url.Values{}
+	query.Set("releaseDigest", releaseDigest)
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-leases/" + leaseID + ":upgrade-preview?" + query.Encode()
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, err
+	}
+	if response.Status != 200 {
+		return EnvironmentLeaseUpgradePreviewResult{}, client.problemError("adminPreviewEnvironmentLeaseUpgrade", response)
+	}
+	value, err := platform.DecodeEnvironmentLeaseUpgradePreviewResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, &ClientError{Operation: "adminPreviewEnvironmentLeaseUpgrade", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.Action != "upgrade" || value.Value.Spec.TargetReleaseDigest != releaseDigest {
+		return EnvironmentLeaseUpgradePreviewResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) PreviewAdminEnvironmentLeaseRollback(ctx context.Context, tenantID, projectID, leaseID, requestID string) (EnvironmentLeaseUpgradePreviewResult, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-leases/" + leaseID + ":rollback-preview", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, err
+	}
+	if response.Status != 200 {
+		return EnvironmentLeaseUpgradePreviewResult{}, client.problemError("adminPreviewEnvironmentLeaseRollback", response)
+	}
+	value, err := platform.DecodeEnvironmentLeaseUpgradePreviewResponseJSON(response.Body)
+	if err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, &ClientError{Operation: "adminPreviewEnvironmentLeaseRollback", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return EnvironmentLeaseUpgradePreviewResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != leaseID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.Action != "rollback" {
+		return EnvironmentLeaseUpgradePreviewResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) UpgradeAdminEnvironmentLease(ctx context.Context, tenantID, projectID, leaseID, requestID, idempotencyKey string, body platform.AdminEnvironmentLeaseUpgradeRequest) (MaintenanceOperationResult, error) {
+	return client.transitionAdminEnvironmentLeaseRelease(ctx, "upgrade", "adminUpgradeEnvironmentLease", tenantID, projectID, leaseID, requestID, idempotencyKey, body)
+}
+func (client *Client) RollbackAdminEnvironmentLease(ctx context.Context, tenantID, projectID, leaseID, requestID, idempotencyKey string, body platform.AdminEnvironmentLeaseUpgradeRequest) (MaintenanceOperationResult, error) {
+	return client.transitionAdminEnvironmentLeaseRelease(ctx, "rollback", "adminRollbackEnvironmentLease", tenantID, projectID, leaseID, requestID, idempotencyKey, body)
+}
+func (client *Client) transitionAdminEnvironmentLeaseRelease(ctx context.Context, action, operation, tenantID, projectID, leaseID, requestID, idempotencyKey string, body platform.AdminEnvironmentLeaseUpgradeRequest) (MaintenanceOperationResult, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeAdminEnvironmentLeaseUpgradeRequestJSON(body)
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/environment-leases/" + leaseID + ":" + action, Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeMaintenanceOperationResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	expectedAction := "target." + action
+	if value.Value.Action != expectedAction {
+		return MaintenanceOperationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/action")
 	}
 	return value, nil
 }
@@ -3466,6 +3553,47 @@ func ValidateUpgradeEnvironmentLeaseServerRequest(tenantID, projectID, leaseID, 
 		return UpgradeEnvironmentLeaseServerInput{}, err
 	}
 	return UpgradeEnvironmentLeaseServerInput{TenantID: tenantID, ProjectID: projectID, LeaseID: leaseID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type PreviewAdminEnvironmentLeaseUpgradeServerInput struct {
+	TenantID      string
+	ProjectID     string
+	LeaseID       string
+	ReleaseDigest string
+	RequestID     string
+}
+
+func ValidatePreviewAdminEnvironmentLeaseUpgradeServerRequest(tenantID, projectID, leaseID, releaseDigest, requestID string) (PreviewAdminEnvironmentLeaseUpgradeServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return PreviewAdminEnvironmentLeaseUpgradeServerInput{}, err
+	}
+	if !strings.HasPrefix(releaseDigest, "sha256:") || len(releaseDigest) != 71 {
+		return PreviewAdminEnvironmentLeaseUpgradeServerInput{}, common.ContractError("INVALID_RELEASE_DIGEST", "/releaseDigest")
+	}
+	return PreviewAdminEnvironmentLeaseUpgradeServerInput{TenantID: tenantID, ProjectID: projectID, LeaseID: leaseID, ReleaseDigest: releaseDigest, RequestID: requestID}, nil
+}
+
+type AdminEnvironmentLeaseUpgradeServerInput struct {
+	TenantID       string
+	ProjectID      string
+	LeaseID        string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.AdminEnvironmentLeaseUpgradeRequest
+}
+
+func ValidateAdminEnvironmentLeaseUpgradeServerRequest(tenantID, projectID, leaseID, requestID, idempotencyKey string, body []byte) (AdminEnvironmentLeaseUpgradeServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil {
+		return AdminEnvironmentLeaseUpgradeServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return AdminEnvironmentLeaseUpgradeServerInput{}, err
+	}
+	value, err := platform.DecodeAdminEnvironmentLeaseUpgradeRequestJSON(body)
+	if err != nil {
+		return AdminEnvironmentLeaseUpgradeServerInput{}, err
+	}
+	return AdminEnvironmentLeaseUpgradeServerInput{TenantID: tenantID, ProjectID: projectID, LeaseID: leaseID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 func validateLeasePath(tenantID, projectID, leaseID, requestID string) error {
 	if err := validatePath(tenantID, requestID); err != nil {

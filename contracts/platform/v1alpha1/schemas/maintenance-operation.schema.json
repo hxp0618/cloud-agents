@@ -27,7 +27,7 @@
     "kind": { "const": "MaintenanceOperation" },
     "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "idempotencyKey": { "$ref": "../../../common/v1alpha1/schemas/idempotency-key.schema.json" },
-    "action": { "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup"] },
+    "action": { "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "target.upgrade", "target.rollback"] },
     "resourceKind": { "const": "DeploymentTarget" },
     "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "resourceGeneration": { "type": "integer", "minimum": 1 },
