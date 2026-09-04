@@ -14,7 +14,7 @@ import (
 func TestScanManagedAgentSessionBuildsDetachedSnapshot(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
 	var snapshot internalmanagedagent.SessionSnapshot
-	err := scanManagedAgentSession(rowValues("session-alpha", "codex", nil, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
+	err := scanManagedAgentSession(rowValues("session-alpha", "codex", nil, nil, nil, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,12 +22,19 @@ func TestScanManagedAgentSessionBuildsDetachedSnapshot(t *testing.T) {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 	leaseID, generation := "lease-alpha", int64(7)
-	err = scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, &generation, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
+	profileID, profileVersion := "profile-alpha", int64(3)
+	err = scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, &generation, &profileID, &profileVersion, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
 	if err != nil || snapshot.EnvironmentLeaseID != leaseID || snapshot.EnvironmentGeneration != 7 {
 		t.Fatalf("bound snapshot = %#v / %v", snapshot, err)
 	}
-	if err := scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); !errors.Is(err, ErrCoordinationResultDrift) {
+	if snapshot.EnvironmentProfileID != profileID || snapshot.EnvironmentProfileVersion != 3 {
+		t.Fatalf("profile binding = %#v", snapshot)
+	}
+	if err := scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, nil, nil, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); !errors.Is(err, ErrCoordinationResultDrift) {
 		t.Fatalf("partial environment binding error = %v", err)
+	}
+	if err := scanManagedAgentSession(rowValues("session-alpha", "codex", &leaseID, &generation, &profileID, nil, "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("partial profile binding error = %v", err)
 	}
 }
 

@@ -95,6 +95,7 @@ type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLe
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
+type UserEnvironmentResult = common.ResponseEnvelope[platform.UserEnvironment]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
 type MaintenanceOperationResult = common.ResponseEnvelope[platform.MaintenanceOperation]
@@ -136,10 +137,12 @@ type ManagedAgentSessionMetadata struct {
 	UpdatedAt       string `json:"updatedAt"`
 }
 type ManagedAgentSessionSpec struct {
-	ProviderKind          string `json:"providerKind"`
-	EnvironmentLeaseID    string `json:"environmentLeaseId,omitempty"`
-	EnvironmentGeneration int64  `json:"environmentGeneration,omitempty"`
-	State                 string `json:"state"`
+	ProviderKind              string `json:"providerKind"`
+	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
+	EnvironmentGeneration     int64  `json:"environmentGeneration,omitempty"`
+	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
+	EnvironmentProfileVersion int64  `json:"environmentProfileVersion,omitempty"`
+	State                     string `json:"state"`
 }
 type ManagedAgentSessionCreateRequest struct {
 	SessionID          string `json:"sessionId"`
@@ -742,6 +745,53 @@ func (client *Client) ListEnvironmentProfiles(ctx context.Context, tenantID, pro
 		if profile.ProjectRef.ID != projectID {
 			return EnvironmentProfileSummaryPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/environmentProfiles")
 		}
+	}
+	return value, nil
+}
+func (client *Client) CreateEnvironment(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.UserEnvironmentCreateRequest) (UserEnvironmentResult, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return UserEnvironmentResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return UserEnvironmentResult{}, err
+	}
+	bodyBytes, err := platform.EncodeUserEnvironmentCreateRequestJSON(body)
+	if err != nil {
+		return UserEnvironmentResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/environments", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return UserEnvironmentResult{}, err
+	}
+	if response.Status != 201 {
+		return UserEnvironmentResult{}, client.problemError("managedAgentCreateEnvironment", response)
+	}
+	value, err := platform.DecodeUserEnvironmentResponseJSON(response.Body)
+	if err != nil {
+		return UserEnvironmentResult{}, &ClientError{Operation: "managedAgentCreateEnvironment", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.ProfileID != body.ProfileID || value.Value.ProfileVersion != body.ProfileVersion {
+		return UserEnvironmentResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId")
+	}
+	return value, nil
+}
+func (client *Client) GetEnvironment(ctx context.Context, tenantID, projectID, environmentID, requestID string) (UserEnvironmentResult, error) {
+	if err := validateLeasePath(tenantID, projectID, environmentID, requestID); err != nil {
+		return UserEnvironmentResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/environments/" + environmentID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return UserEnvironmentResult{}, err
+	}
+	if response.Status != 200 {
+		return UserEnvironmentResult{}, client.problemError("managedAgentGetEnvironment", response)
+	}
+	value, err := platform.DecodeUserEnvironmentResponseJSON(response.Body)
+	if err != nil {
+		return UserEnvironmentResult{}, &ClientError{Operation: "managedAgentGetEnvironment", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.EnvironmentID != environmentID {
+		return UserEnvironmentResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId")
 	}
 	return value, nil
 }
@@ -1966,7 +2016,7 @@ func (client *Client) ResolveManagedAgentUserInput(ctx context.Context, tenantID
 var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
-	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
+	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "environmentProfileId": common.ScalarResponseShape(), "environmentProfileVersion": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
 })
 
 func DecodeManagedAgentSessionResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentSession], error) {
@@ -2480,7 +2530,7 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
-	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "state"}, []string{"providerKind", "state"})
+	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "environmentProfileId", "environmentProfileVersion", "state"}, []string{"providerKind", "state"})
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
@@ -2519,6 +2569,16 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	if hasEnvironmentLeaseID {
 		if err := common.ValidateIdentifier(value.Spec.EnvironmentLeaseID, "/spec/environmentLeaseId"); err != nil || value.Spec.EnvironmentGeneration < 1 {
 			return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId")
+		}
+	}
+	_, hasEnvironmentProfileID := spec["environmentProfileId"]
+	_, hasEnvironmentProfileVersion := spec["environmentProfileVersion"]
+	if hasEnvironmentProfileID != hasEnvironmentProfileVersion {
+		return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE_BINDING", "/spec/environmentProfileId")
+	}
+	if hasEnvironmentProfileID {
+		if err := common.ValidateIdentifier(value.Spec.EnvironmentProfileID, "/spec/environmentProfileId"); err != nil || value.Spec.EnvironmentProfileVersion < 1 || value.Spec.EnvironmentProfileVersion > 2147483647 {
+			return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE_BINDING", "/spec/environmentProfileId")
 		}
 	}
 	return value, nil
@@ -3242,6 +3302,42 @@ func ValidateListEnvironmentProfilesServerRequest(tenantID, projectID, requestID
 		}
 	}
 	return ListEnvironmentProfilesServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type CreateUserEnvironmentServerInput struct {
+	TenantID       string
+	ProjectID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.UserEnvironmentCreateRequest
+}
+
+func ValidateCreateUserEnvironmentServerRequest(tenantID, projectID, requestID, idempotencyKey string, body []byte) (CreateUserEnvironmentServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return CreateUserEnvironmentServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CreateUserEnvironmentServerInput{}, err
+	}
+	value, err := platform.DecodeUserEnvironmentCreateRequestJSON(body)
+	if err != nil {
+		return CreateUserEnvironmentServerInput{}, err
+	}
+	return CreateUserEnvironmentServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type GetUserEnvironmentServerInput struct {
+	TenantID      string
+	ProjectID     string
+	EnvironmentID string
+	RequestID     string
+}
+
+func ValidateGetUserEnvironmentServerRequest(tenantID, projectID, environmentID, requestID string) (GetUserEnvironmentServerInput, error) {
+	if err := validateLeasePath(tenantID, projectID, environmentID, requestID); err != nil {
+		return GetUserEnvironmentServerInput{}, err
+	}
+	return GetUserEnvironmentServerInput{TenantID: tenantID, ProjectID: projectID, EnvironmentID: environmentID, RequestID: requestID}, nil
 }
 
 type GetAdminEnvironmentProfileServerInput struct {

@@ -941,6 +941,36 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
+  it("classifies the user-environment profile resolution migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000043_create_user_environments_from_profiles.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(14);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000043").command),
+    ).toEqual([
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+      "GRANT",
+    ]);
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

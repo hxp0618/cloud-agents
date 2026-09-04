@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ClientError,
-  type EnvironmentLease,
+  type EnvironmentProfileSummary,
   type ManagedAgentEvent,
   type ManagedAgentExecution,
   type ManagedAgentSession,
+  type UserEnvironment,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
@@ -25,7 +26,7 @@ import {
   type AgentInteraction,
   type AgentResources,
 } from "./agent";
-import { newIdempotencyKey, newRequestId } from "./infrastructure";
+import { newIdempotencyKey, newRequestId } from "./environment";
 import { InteractionCard } from "./InteractionCard";
 
 type AgentWorkspaceProps = Readonly<{
@@ -33,11 +34,11 @@ type AgentWorkspaceProps = Readonly<{
   tenantId: string;
   projectId: string;
   projectName: string;
-  targetPhase?: string | undefined;
-  lease?: EnvironmentLease | undefined;
+  profile?: EnvironmentProfileSummary | undefined;
+  environment?: UserEnvironment | undefined;
 }>;
 
-type ProviderKind = "codex" | "claudeAgent";
+type ProviderKind = EnvironmentProfileSummary["providerKinds"][number];
 type BusyOperation = Readonly<{ key: string; label: string }>;
 type PendingSubmission = Readonly<{
   sessionId: string;
@@ -62,6 +63,10 @@ function newResourceId(prefix: string): string {
 
 function providerKind(value: string | undefined): ProviderKind {
   return value === "claudeAgent" ? "claudeAgent" : "codex";
+}
+
+function providerLabel(value: ProviderKind): string {
+  return value === "claudeAgent" ? "Claude Code" : "Codex";
 }
 
 function replaceSession(
@@ -90,8 +95,8 @@ export function AgentWorkspace({
   tenantId,
   projectId,
   projectName,
-  targetPhase,
-  lease,
+  profile,
+  environment,
 }: AgentWorkspaceProps) {
   const savedSelection = useRef(readAgentSelection(window.sessionStorage, tenantId, projectId));
   const [resources, setResources] = useState<AgentResources>(emptyResources);
@@ -131,12 +136,17 @@ export function AgentWorkspace({
       : resources.executions.find(({ metadata }) => metadata.uid === selectedExecutionId);
   const pendingExecution =
     pendingSubmission?.sessionId === selectedSessionId ? pendingSubmission : undefined;
-  const readyLease = lease?.spec.observedPhase === "ready" ? lease : undefined;
+  const readyEnvironment = environment?.observedPhase === "ready" ? environment : undefined;
+  const availableProviders = profile?.providerKinds ?? (["codex", "claudeAgent"] as const);
   const pollingNeeded =
     selectedSession !== undefined &&
     (pendingExecution !== undefined || !initialEventsRead || isExecutionActive(selectedExecution));
   const interactions = agentInteractions(selectedExecution);
   const artifacts = agentArtifacts(selectedExecution);
+
+  useEffect(() => {
+    if (!availableProviders.includes(provider)) setProvider(availableProviders[0] ?? "codex");
+  }, [profile?.profileId, profile?.version]);
 
   function persistSelection(
     nextSessionId: string,
@@ -439,40 +449,36 @@ export function AgentWorkspace({
 
   function createSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (readyLease === undefined) return;
+    if (readyEnvironment === undefined || !availableProviders.includes(provider)) return;
     const body = {
       sessionId: sessionId.trim(),
       providerKind: provider,
-      environmentLeaseId: readyLease.metadata.uid,
+      environmentLeaseId: readyEnvironment.environmentId,
     };
     const key = `create-session:${JSON.stringify(body)}`;
-    void runOperation(
-      key,
-      `Creating ${provider === "codex" ? "Codex" : "Claude Code"} Session`,
-      async (signal) => {
-        const result = await client.createManagedAgentSession(
-          tenantId,
-          projectId,
-          newRequestId(),
-          idempotencyKey(key),
-          body,
-          signal,
-        );
-        eventCursorRef.current = "";
-        setEvents([]);
-        setInitialEventsRead(false);
-        setResources((current) => ({
-          sessions: replaceSession(current.sessions, result.value),
-          session: result.value,
-          executions: Object.freeze([]),
-        }));
-        setSelectedSessionId(result.value.metadata.uid);
-        setSelectedExecutionId("");
-        setSessionId("");
-        setSessionFormOpen(false);
-        persistSelection(result.value.metadata.uid, "", "", "");
-      },
-    );
+    void runOperation(key, `Creating ${providerLabel(provider)} Session`, async (signal) => {
+      const result = await client.createManagedAgentSession(
+        tenantId,
+        projectId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      eventCursorRef.current = "";
+      setEvents([]);
+      setInitialEventsRead(false);
+      setResources((current) => ({
+        sessions: replaceSession(current.sessions, result.value),
+        session: result.value,
+        executions: Object.freeze([]),
+      }));
+      setSelectedSessionId(result.value.metadata.uid);
+      setSelectedExecutionId("");
+      setSessionId("");
+      setSessionFormOpen(false);
+      persistSelection(result.value.metadata.uid, "", "", "");
+    });
   }
 
   function closeSession() {
@@ -807,15 +813,18 @@ export function AgentWorkspace({
                   onChange={(event) => setProvider(event.target.value as ProviderKind)}
                   disabled={busy !== null || pendingSubmission !== undefined}
                 >
-                  <option value="codex">Codex</option>
-                  <option value="claudeAgent">Claude Code</option>
+                  {availableProviders.map((availableProvider) => (
+                    <option key={availableProvider} value={availableProvider}>
+                      {providerLabel(availableProvider)}
+                    </option>
+                  ))}
                 </select>
               </label>
               <button
                 className="button secondary compact"
                 type="button"
                 disabled={
-                  busy !== null || readyLease === undefined || pendingSubmission !== undefined
+                  busy !== null || readyEnvironment === undefined || pendingSubmission !== undefined
                 }
                 onClick={() => {
                   setSessionId((current) => current || newResourceId("session"));
@@ -827,7 +836,7 @@ export function AgentWorkspace({
             </div>
           </div>
 
-          {sessionFormOpen && readyLease ? (
+          {sessionFormOpen && readyEnvironment ? (
             <form
               className="agent-create-form"
               aria-label="Create Agent session"
@@ -845,8 +854,8 @@ export function AgentWorkspace({
                 />
               </label>
               <span>
-                {provider === "codex" ? "Codex" : "Claude Code"} · Lease {readyLease.metadata.name}{" "}
-                · generation {readyLease.spec.generation}
+                {providerLabel(provider)} · {profile?.name ?? readyEnvironment.profileId} · v
+                {readyEnvironment.profileVersion}
               </span>
               <button className="button primary compact" type="submit" disabled={busy !== null}>
                 Create
@@ -925,12 +934,18 @@ export function AgentWorkspace({
                 <span>CA</span>
               </div>
               <strong>
-                {readyLease ? "Create the first Agent Session" : "Ready a Lease first"}
+                {readyEnvironment
+                  ? "Create the first Agent Session"
+                  : environment?.observedPhase === "provisioning"
+                    ? "Preparing your environment"
+                    : "Choose an Environment Profile"}
               </strong>
               <p>
-                {readyLease
-                  ? "Choose Codex or Claude Code. The Session binds to the selected Lease generation."
-                  : "Select and deploy an Environment Lease before starting an Agent."}
+                {readyEnvironment
+                  ? "Choose an available Agent provider and start a Session."
+                  : environment?.observedPhase === "provisioning"
+                    ? "Control Plane is preparing the selected Profile. This page will update automatically."
+                    : "Select a published Profile and prepare an environment before starting an Agent."}
               </p>
             </div>
           ) : (
@@ -939,9 +954,9 @@ export function AgentWorkspace({
                 <span>
                   <strong>{selectedSession.metadata.uid}</strong>
                   <small>
-                    {selectedSession.spec.providerKind} · Lease{" "}
-                    {selectedSession.spec.environmentLeaseId ?? "legacy"} · generation{" "}
-                    {selectedSession.spec.environmentGeneration ?? "—"}
+                    {providerLabel(providerKind(selectedSession.spec.providerKind))} · Profile{" "}
+                    {selectedSession.spec.environmentProfileId ?? profile?.profileId ?? "legacy"} ·
+                    v{selectedSession.spec.environmentProfileVersion ?? profile?.version ?? "—"}
                   </small>
                 </span>
                 <label>
@@ -978,7 +993,7 @@ export function AgentWorkspace({
                   <p>
                     {selectedSession.spec.state === "active"
                       ? "Send a prompt to create a durable Turn and Execution."
-                      : "Select an active Session or create a new one on the Ready Lease."}
+                      : "Select an active Session or create a new one in a ready environment."}
                   </p>
                 </div>
               ) : (
@@ -1035,7 +1050,7 @@ export function AgentWorkspace({
             onChange={(event) => setPrompt(event.target.value)}
             placeholder={
               selectedSession?.spec.state === "active"
-                ? "Ask the Agent to work in this Lease workspace"
+                ? "Ask the Agent to work in this environment"
                 : "Create or select an active Session"
             }
             rows={2}
@@ -1118,16 +1133,12 @@ export function AgentWorkspace({
         </div>
         <dl className="status-table">
           <div>
-            <dt>Target</dt>
-            <dd>{targetPhase ?? "Not selected"}</dd>
+            <dt>Profile</dt>
+            <dd>{profile ? `${profile.name} · v${profile.version}` : "Not selected"}</dd>
           </div>
           <div>
-            <dt>Lease</dt>
-            <dd>{lease?.spec.observedPhase ?? "Not created"}</dd>
-          </div>
-          <div>
-            <dt>Worker</dt>
-            <dd>{lease?.spec.workerEndpoint ? "Online" : "Offline"}</dd>
+            <dt>Environment</dt>
+            <dd>{environment?.observedPhase ?? "Not prepared"}</dd>
           </div>
           <div>
             <dt>Execution</dt>

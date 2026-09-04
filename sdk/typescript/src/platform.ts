@@ -325,6 +325,18 @@ export type EnvironmentProfileSummaryPage = Readonly<{
   environmentProfiles: readonly EnvironmentProfileSummary[];
   nextPageToken?: string;
 }>;
+export type UserEnvironmentCreateRequest = Readonly<{ profileId: string; profileVersion: number }>;
+export type UserEnvironment = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "UserEnvironment";
+  projectRef: NamespaceRef;
+  environmentId: string;
+  profileId: string;
+  profileVersion: number;
+  observedPhase: "provisioning" | "ready" | "failed" | "terminating" | "terminated";
+  stableErrorCode?: string;
+  expiresAt: string;
+}>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
@@ -459,6 +471,8 @@ export type ManagedAgentSession = Readonly<{
     providerKind: string;
     environmentLeaseId?: string;
     environmentGeneration?: number;
+    environmentProfileId?: string;
+    environmentProfileVersion?: number;
     state: "active" | "closed";
   }>;
 }>;
@@ -789,6 +803,19 @@ const environmentProfileSummaryPageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const userEnvironmentResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    environmentId: scalarResponseShape,
+    profileId: scalarResponseShape,
+    profileVersion: scalarResponseShape,
+    observedPhase: scalarResponseShape,
+    stableErrorCode: scalarResponseShape,
+    expiresAt: scalarResponseShape,
+  },
+};
 const deploymentTargetResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   generation: scalarResponseShape,
@@ -911,6 +938,8 @@ const managedAgentSessionResponseShape: ResponseShape = {
         providerKind: scalarResponseShape,
         environmentLeaseId: scalarResponseShape,
         environmentGeneration: scalarResponseShape,
+        environmentProfileId: scalarResponseShape,
+        environmentProfileVersion: scalarResponseShape,
         state: scalarResponseShape,
       },
     },
@@ -1655,6 +1684,20 @@ export function encodeEnvironmentProfileCreateRequest(
   value: EnvironmentProfileCreateRequest,
 ): string {
   return JSON.stringify(decodeEnvironmentProfileCreateRequest(value));
+}
+export function decodeUserEnvironmentCreateRequest(value: unknown): UserEnvironmentCreateRequest {
+  const source = strictRecord(
+    value,
+    ["profileId", "profileVersion"],
+    ["profileId", "profileVersion"],
+  );
+  return Object.freeze({
+    profileId: identifier(source.profileId, "/profileId"),
+    profileVersion: integer(source.profileVersion, 1, 2147483647, "/profileVersion"),
+  });
+}
+export function encodeUserEnvironmentCreateRequest(value: UserEnvironmentCreateRequest): string {
+  return JSON.stringify(decodeUserEnvironmentCreateRequest(value));
 }
 export function decodeEnvironmentProfileTransitionRequest(
   value: unknown,
@@ -2417,6 +2460,58 @@ export function decodeEnvironmentProfileSummaryPage(value: unknown): Environment
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+export function decodeUserEnvironment(value: unknown): UserEnvironment {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "environmentId",
+      "profileId",
+      "profileVersion",
+      "observedPhase",
+      "stableErrorCode",
+      "expiresAt",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "environmentId",
+      "profileId",
+      "profileVersion",
+      "observedPhase",
+      "expiresAt",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "UserEnvironment")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const observedPhase = enumValue(
+    source.observedPhase,
+    ["provisioning", "ready", "failed", "terminating", "terminated"] as const,
+    "/observedPhase",
+  );
+  const stableErrorCode =
+    source.stableErrorCode === undefined
+      ? undefined
+      : identifier(source.stableErrorCode, "/stableErrorCode");
+  if ((observedPhase === "failed") !== (stableErrorCode !== undefined))
+    error("INVALID_USER_ENVIRONMENT_PHASE", "/observedPhase");
+  const environment = {
+    apiVersion: platformApiVersion,
+    kind: "UserEnvironment" as const,
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    environmentId: identifier(source.environmentId, "/environmentId"),
+    profileId: identifier(source.profileId, "/profileId"),
+    profileVersion: integer(source.profileVersion, 1, 2147483647, "/profileVersion"),
+    observedPhase,
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  };
+  return Object.freeze(
+    stableErrorCode === undefined ? environment : { ...environment, stableErrorCode },
+  );
+}
 export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
   const source = record(value);
   const root = base(source, "DeploymentTarget");
@@ -2900,13 +2995,23 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
   );
   const spec = strictRecord(
     source.spec,
-    ["providerKind", "environmentLeaseId", "environmentGeneration", "state"],
+    [
+      "providerKind",
+      "environmentLeaseId",
+      "environmentGeneration",
+      "environmentProfileId",
+      "environmentProfileVersion",
+      "state",
+    ],
     ["providerKind", "state"],
     "/spec",
   );
   const hasEnvironmentLease = spec.environmentLeaseId !== undefined;
   if (hasEnvironmentLease !== (spec.environmentGeneration !== undefined))
     error("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId");
+  const hasEnvironmentProfile = spec.environmentProfileId !== undefined;
+  if (hasEnvironmentProfile !== (spec.environmentProfileVersion !== undefined))
+    error("INVALID_ENVIRONMENT_PROFILE_BINDING", "/spec/environmentProfileId");
   const resourceVersion = string(stable.resourceVersion, "/metadata/resourceVersion");
   if (!/^(?:0|[1-9][0-9]*)$/u.test(resourceVersion) || resourceVersion.length > 20)
     error("INVALID_RESOURCE_VERSION", "/metadata/resourceVersion");
@@ -2930,6 +3035,20 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
               1,
               Number.MAX_SAFE_INTEGER,
               "/spec/environmentGeneration",
+            ),
+          }
+        : {}),
+      ...(hasEnvironmentProfile
+        ? {
+            environmentProfileId: identifier(
+              spec.environmentProfileId,
+              "/spec/environmentProfileId",
+            ),
+            environmentProfileVersion: integer(
+              spec.environmentProfileVersion,
+              1,
+              2147483647,
+              "/spec/environmentProfileVersion",
             ),
           }
         : {}),
@@ -3564,6 +3683,9 @@ export function parseEnvironmentProfileSummaryPage(
     environmentProfileSummaryPageResponseShape,
     decodeEnvironmentProfileSummaryPage,
   );
+}
+export function parseUserEnvironment(text: string): ResponseEnvelope<UserEnvironment> {
+  return parseResponse(text, userEnvironmentResponseShape, decodeUserEnvironment);
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
@@ -5053,6 +5175,60 @@ export class Client {
     const result = parseEnvironmentProfileSummaryPage(response.body);
     if (result.value.environmentProfiles.some(({ projectRef }) => projectRef.id !== projectId))
       error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentProfiles");
+    return result;
+  }
+  async createEnvironment(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: UserEnvironmentCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<UserEnvironment>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeUserEnvironmentCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/environments`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeUserEnvironmentCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201)
+      throw await this.problem("managedAgentCreateEnvironment", response);
+    const result = parseUserEnvironment(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.profileId !== checked.profileId ||
+      result.value.profileVersion !== checked.profileVersion
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId");
+    return result;
+  }
+  async getEnvironment(
+    tenantId: string,
+    projectId: string,
+    environmentId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<UserEnvironment>> {
+    validateLeasePath(tenantId, projectId, environmentId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/environments/${environmentId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("managedAgentGetEnvironment", response);
+    const result = parseUserEnvironment(response.body);
+    if (result.value.projectRef.id !== projectId || result.value.environmentId !== environmentId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId");
     return result;
   }
   async listAdminEnvironmentProfiles(

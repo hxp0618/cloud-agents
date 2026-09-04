@@ -24,6 +24,7 @@ import {
   decodeProject,
   decodeProjectPage,
   decodeProjectCreateRequest,
+  decodeUserEnvironment,
   decodeManagedAgentSession,
   decodeManagedAgentSessionPage,
   decodeManagedAgentTurnPage,
@@ -46,6 +47,7 @@ import {
   parseMaintenanceOperationPage,
   parseProject,
   parseProjectCreateRequest,
+  parseUserEnvironment,
   parseManagedAgentSession,
   parseManagedAgentSessionPage,
   parseManagedAgentTurnPage,
@@ -417,6 +419,46 @@ describe("generated platform JSON models", () => {
     expect(seen[0]?.path).toBe(
       "/v1/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1",
     );
+  });
+  it("creates and reads an environment using only immutable Profile identity", async () => {
+    const value = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "UserEnvironment",
+      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      environmentId: "environment-alpha",
+      profileId: "development",
+      profileVersion: 1,
+      observedPhase: "provisioning",
+      expiresAt: "2026-09-04T12:00:00Z",
+    };
+    const body = JSON.stringify(value);
+    expect(decodeUserEnvironment(value).profileId).toBe("development");
+    expect(parseUserEnvironment(body).value.environmentId).toBe("environment-alpha");
+    expect(() => decodeUserEnvironment({ ...value, providerCredentialRef: "provider-secret" })).toThrow();
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: request.method === "POST" ? 201 : 200, headers: {}, body };
+    });
+    await client.createEnvironment(
+      "tenant-alpha",
+      "project-alpha",
+      "request-environment-create",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R9",
+      { profileId: "development", profileVersion: 1 },
+    );
+    await client.getEnvironment(
+      "tenant-alpha",
+      "project-alpha",
+      "environment-alpha",
+      "request-environment-get",
+    );
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/environments",
+      "GET /v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha",
+    ]);
+    expect(seen[0]?.body).toBe('{"profileId":"development","profileVersion":1}');
+    expect(seen[0]?.body).not.toMatch(/target|credential|release|cpu|memory|storage|network/i);
   });
   it("lists deployment targets with project-bound pagination", async () => {
     const page = JSON.stringify({

@@ -242,7 +242,7 @@ func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
 	}
 	probed := request(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe", `{"expectedGeneration":1}`, "request-probe", "probe-key-12345678")
-	if probed.Code != http.StatusOK || store.begin != 1 || store.complete != 1 || verifier.calls != 5 || store.completion.Succeeded || store.completion.StableErrorCode != "ssh-probe-unconfigured" || !strings.Contains(probed.Body.String(), `"observedPhase":"unavailable"`) {
+	if probed.Code != http.StatusOK || store.begin != 1 || store.complete != 1 || verifier.calls != 13 || store.completion.Succeeded || store.completion.StableErrorCode != "ssh-probe-unconfigured" || !strings.Contains(probed.Body.String(), `"observedPhase":"unavailable"`) {
 		t.Fatalf("probe status=%d begin=%d complete=%d verifier=%d completion=%#v body=%s", probed.Code, store.begin, store.complete, verifier.calls, store.completion, probed.Body.String())
 	}
 	if strings.Contains(probed.Body.String(), "PRIVATE KEY") {
@@ -525,6 +525,22 @@ func TestAdminDeploymentTargetHTTPReturnsForbiddenWhenAdminScopeFails(t *testing
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"AUTHORIZATION_DENIED"`) || len(verifier.requests) != 2 {
+		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
+	}
+}
+
+func TestUserDeploymentTargetRouteRequiresTargetScope(t *testing.T) {
+	verifier := &deploymentTargetVerifierFake{failAt: 2}
+	handler, err := NewDeploymentTargetHTTPServer(verifier, &deploymentTargetStoreFake{}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-target-route")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || len(verifier.requests) != 2 || verifier.requests[1].RequiredPermission != "targets.list" {
 		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
 	}
 }

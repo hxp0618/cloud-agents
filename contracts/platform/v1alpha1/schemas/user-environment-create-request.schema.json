@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/user-environment-create-request.schema.json",
+  "title": "UserEnvironmentCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profileId", "profileVersion"],
+  "properties": {
+    "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "profileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the caller selects only an immutable published profile version",
+    "target, release, resource, policy, and credential bindings are resolved by Control Plane"
+  ]
+}

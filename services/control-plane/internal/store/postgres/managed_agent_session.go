@@ -21,34 +21,48 @@ type ManagedAgentSessionPage struct {
 }
 
 type managedAgentSessionPageRow struct {
-	TenantID              string    `json:"tenant_id"`
-	ProjectID             string    `json:"project_uid"`
-	SessionID             string    `json:"session_uid"`
-	ProviderKind          string    `json:"provider_kind"`
-	EnvironmentLeaseID    *string   `json:"environment_lease_uid"`
-	EnvironmentGeneration *int64    `json:"environment_generation"`
-	State                 string    `json:"state"`
-	ResourceVersion       int64     `json:"resource_version"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	TenantID                  string    `json:"tenant_id"`
+	ProjectID                 string    `json:"project_uid"`
+	SessionID                 string    `json:"session_uid"`
+	ProviderKind              string    `json:"provider_kind"`
+	EnvironmentLeaseID        *string   `json:"environment_lease_uid"`
+	EnvironmentGeneration     *int64    `json:"environment_generation"`
+	EnvironmentProfileID      *string   `json:"environment_profile_uid"`
+	EnvironmentProfileVersion *int64    `json:"environment_profile_version"`
+	State                     string    `json:"state"`
+	ResourceVersion           int64     `json:"resource_version"`
+	CreatedAt                 time.Time `json:"created_at"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }
 
 const (
-	createManagedAgentSessionSQL = `SELECT session_uid, provider_kind, environment_lease_uid, environment_generation, state, resource_version, created_at, updated_at
-FROM cloud_agents.create_managed_agent_session_v2($1, $2, $3, $4, $5, $6, $7)`
+	createManagedAgentSessionSQL = `SELECT session_uid, provider_kind, environment_lease_uid, environment_generation,
+    environment_profile_uid, environment_profile_version, state, resource_version, created_at, updated_at
+FROM cloud_agents.create_managed_agent_session_v3($1, $2, $3, $4, $5, $6, $7)`
 	closeManagedAgentSessionSQL = `SELECT transition.session_uid, transition.provider_kind,
     session.environment_lease_uid, session.environment_generation,
+    environment.environment_profile_uid, environment.environment_profile_version,
     transition.state, transition.resource_version, transition.created_at, transition.updated_at
 FROM cloud_agents.close_managed_agent_session_v1($1, $2, $3, $4, $5) AS transition
 JOIN cloud_agents.managed_agent_sessions AS session
     ON session.tenant_id = cloud_agents.require_tenant_id()
-    AND session.project_uid = $2 AND session.session_uid = transition.session_uid`
-	getManagedAgentSessionSQL = `SELECT session_uid, provider_kind, environment_lease_uid, environment_generation, state, resource_version, created_at, updated_at
-FROM cloud_agents.managed_agent_sessions
-WHERE tenant_id = cloud_agents.require_tenant_id()
-    AND project_uid = $1 AND session_uid = $2`
+    AND session.project_uid = $2 AND session.session_uid = transition.session_uid
+LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
+    ON environment.tenant_id = session.tenant_id AND environment.project_uid = session.project_uid
+    AND environment.lease_uid = session.environment_lease_uid`
+	getManagedAgentSessionSQL = `SELECT session.session_uid, session.provider_kind,
+    session.environment_lease_uid, session.environment_generation,
+    environment.environment_profile_uid, environment.environment_profile_version,
+    session.state, session.resource_version, session.created_at, session.updated_at
+FROM cloud_agents.managed_agent_sessions AS session
+LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
+    ON environment.tenant_id = session.tenant_id AND environment.project_uid = session.project_uid
+    AND environment.lease_uid = session.environment_lease_uid
+WHERE session.tenant_id = cloud_agents.require_tenant_id()
+    AND session.project_uid = $1 AND session.session_uid = $2`
 	getManagedAgentSessionForExecutionSQL = `SELECT session.session_uid, session.provider_kind,
     session.environment_lease_uid, session.environment_generation,
+    environment.environment_profile_uid, environment.environment_profile_version,
     session.state, session.resource_version, session.created_at, session.updated_at, session.provider_resume_cursor,
     COALESCE(environment.worker_endpoint, ''), COALESCE(environment.worker_spiffe_id, ''),
     COALESCE(environment.worker_server_name, ''),
@@ -68,13 +82,18 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
 	listManagedAgentSessionsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(managed_session)
     ORDER BY managed_session.session_uid), '[]'::jsonb)
 FROM (
-	SELECT tenant_id, project_uid, session_uid, provider_kind, environment_lease_uid, environment_generation, state,
-        resource_version, created_at, updated_at
-    FROM cloud_agents.managed_agent_sessions
-    WHERE tenant_id = cloud_agents.require_tenant_id()
-        AND project_uid = $1
-        AND session_uid > $2
-    ORDER BY session_uid
+	SELECT session.tenant_id, session.project_uid, session.session_uid, session.provider_kind,
+        session.environment_lease_uid, session.environment_generation,
+        environment.environment_profile_uid, environment.environment_profile_version,
+        session.state, session.resource_version, session.created_at, session.updated_at
+    FROM cloud_agents.managed_agent_sessions AS session
+    LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
+        ON environment.tenant_id = session.tenant_id AND environment.project_uid = session.project_uid
+        AND environment.lease_uid = session.environment_lease_uid
+    WHERE session.tenant_id = cloud_agents.require_tenant_id()
+        AND session.project_uid = $1
+        AND session.session_uid > $2
+    ORDER BY session.session_uid
     LIMIT $3
 ) AS managed_session`
 )
@@ -268,14 +287,16 @@ func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, l
 	for _, row := range rows {
 		state := internalmanagedagent.SessionState(row.State)
 		environmentLeaseID, environmentGeneration, validEnvironment := managedAgentSessionEnvironment(row.EnvironmentLeaseID, row.EnvironmentGeneration)
+		environmentProfileID, environmentProfileVersion, validProfile := managedAgentSessionProfile(row.EnvironmentProfileID, row.EnvironmentProfileVersion)
 		if row.TenantID != tenantID || row.ProjectID != projectID || !validMutationIdentifier(row.SessionID) ||
 			!validMutationIdentifier(row.ProviderKind) || state != internalmanagedagent.SessionActive && state != internalmanagedagent.SessionClosed ||
-			!validEnvironment || row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+			!validEnvironment || !validProfile || row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
 			return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
 		}
 		sessions = append(sessions, internalmanagedagent.SessionSnapshot{
 			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: row.SessionID,
 			ProviderKind: row.ProviderKind, EnvironmentLeaseID: environmentLeaseID, EnvironmentGeneration: environmentGeneration,
+			EnvironmentProfileID: environmentProfileID, EnvironmentProfileVersion: environmentProfileVersion,
 			State: state, Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
 	}
@@ -342,10 +363,13 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 				var cursor *string
 				var environmentLeaseID *string
 				var environmentGeneration *int64
+				var environmentProfileID *string
+				var environmentProfileVersion *int64
 				var state string
 				var version int64
 				err := handle.transaction.queryRow(readContext, getManagedAgentSessionForExecutionSQL, scope.ProjectID, sessionID).Scan(
 					&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration,
+					&environmentProfileID, &environmentProfileVersion,
 					&state, &version, &result.CreatedAt, &result.UpdatedAt, &cursor,
 					&result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.WorkerServerName, &result.EnvironmentReady,
 				)
@@ -358,8 +382,10 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 				result.Scope = scope
 				result.State = internalmanagedagent.SessionState(state)
 				var validEnvironment bool
+				var validProfile bool
 				result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
-				if !validEnvironment || !validManagedAgentSessionSnapshot(result.SessionSnapshot, version) || result.EnvironmentReady && (result.WorkerEndpoint == "" || result.WorkerSPIFFEID == "" || result.WorkerServerName == "") {
+				result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
+				if !validEnvironment || !validProfile || !validManagedAgentSessionSnapshot(result.SessionSnapshot, version) || result.EnvironmentReady && (result.WorkerEndpoint == "" || result.WorkerSPIFFEID == "" || result.WorkerServerName == "") {
 					return fmt.Errorf("%w: managed agent execution Session projection", ErrCoordinationResultDrift)
 				}
 				result.Version = uint64(version)
@@ -384,9 +410,11 @@ func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, r
 	}
 	var environmentLeaseID *string
 	var environmentGeneration *int64
+	var environmentProfileID *string
+	var environmentProfileVersion *int64
 	var state string
 	var version int64
-	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &state, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
+	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -395,8 +423,10 @@ func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, r
 	result.Scope = scope
 	result.State = internalmanagedagent.SessionState(state)
 	var validEnvironment bool
+	var validProfile bool
 	result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
-	if !validEnvironment || !validManagedAgentSessionSnapshot(*result, version) {
+	result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
+	if !validEnvironment || !validProfile || !validManagedAgentSessionSnapshot(*result, version) {
 		return fmt.Errorf("%w: managed agent session projection", ErrCoordinationResultDrift)
 	}
 	result.Version = uint64(version)
@@ -411,6 +441,16 @@ func managedAgentSessionEnvironment(leaseID *string, generation *int64) (string,
 		return "", 0, false
 	}
 	return *leaseID, uint64(*generation), true
+}
+
+func managedAgentSessionProfile(profileID *string, version *int64) (string, uint64, bool) {
+	if profileID == nil || version == nil {
+		return "", 0, profileID == nil && version == nil
+	}
+	if !validMutationIdentifier(*profileID) || *version < 1 || *version > 2147483647 {
+		return "", 0, false
+	}
+	return *profileID, uint64(*version), true
 }
 
 func validManagedAgentSessionSnapshot(result internalmanagedagent.SessionSnapshot, version int64) bool {

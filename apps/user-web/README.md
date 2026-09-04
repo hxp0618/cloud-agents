@@ -1,18 +1,15 @@
 # Cloud Agents User Console
 
 The console uses the generated TypeScript Platform SDK and keeps the bearer token in memory only.
-Endpoint, tenant, project, Target/Lease/Session/Turn/Execution IDs, and the opaque event cursor are the
-only values restored from `sessionStorage`; the page always reloads current generations, phases, and
-Execution transcript from Control Plane.
+The Control Plane URL, tenant, project, selected published Profile, opaque environment/Session/Turn/
+Execution IDs, and event cursor are the only values restored from `sessionStorage`; current state and
+the selected transcript are always reloaded from Control Plane.
 
-The infrastructure workspace supports Target list/register/get/probe/cleanup and Environment Lease
-list/create/get/upgrade/terminate. Forms send credential references only. Docker sockets, kubeconfig,
-SSH keys, and Provider JSON stay in deployment-owned Control Plane or target-side mounts.
+Users select a published Environment Profile and submit only its ID and immutable version. Control
+Plane resolves deployment placement, release, policies, and credentials. The browser has no
+infrastructure registration, probe, upgrade, cleanup, or secret-reference controls.
 
-Lease upgrade reuses the existing workspace. Docker and SSH keep the old Worker generation until the
-successor is recorded Ready; Kubernetes uses a zero-unavailable rolling update.
-
-The Agent workspace supports Codex and Claude Code Session create/list/get/close, durable Turn and
+The Agent workspace supports Profile-backed Codex and Claude Code Session create/list/get/close, durable Turn and
 Execution start/get/list, and generation-fenced Cancel/Interrupt. Bounded cursor polling stops while
 the page is hidden or after terminal state, rejects cursor stalls, de-duplicates events, and refreshes
 the authoritative Execution transcript without persisting prompt or message text in browser storage.

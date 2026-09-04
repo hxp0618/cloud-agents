@@ -18,8 +18,8 @@ const (
 	localAudience        = "https://local.invalid/cloud-agents/control-plane"
 	localKeyID           = "local-ephemeral-rs256"
 	localClientID        = "local-control-plane"
-	localPermission      = "environment-profiles.list memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list tenants.get"
-	localAdminPermission = "audit.list leases.get leases.list memberships.create memberships.delete memberships.get memberships.list memberships.update operations.list organizations.create organizations.get organizations.list profiles.act profiles.create profiles.get profiles.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list targets.act targets.create targets.get targets.list tenants.get"
+	localPermission      = "environment-profiles.list environments.create environments.get memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list tenants.get"
+	localAdminPermission = "audit.list environments.create environments.get leases.act leases.get leases.list memberships.create memberships.delete memberships.get memberships.list memberships.update operations.list organizations.create organizations.get organizations.list profiles.act profiles.create profiles.get profiles.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list targets.act targets.create targets.get targets.list tenants.get"
 	localTokenTTL        = 5 * time.Minute
 )
 

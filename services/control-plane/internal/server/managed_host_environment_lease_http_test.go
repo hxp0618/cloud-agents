@@ -224,6 +224,22 @@ func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T
 	}
 }
 
+func TestManagedHostEnvironmentLeaseRouteRequiresLeaseScope(t *testing.T) {
+	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{}, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=50", nil)
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-user-lease-route")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || len(verifier.requests) != 2 || verifier.requests[1].RequiredPermission != "leases.list" {
+		t.Fatalf("status=%d requests=%#v body=%s", response.Code, verifier.requests, response.Body.String())
+	}
+}
+
 func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testing.T) {
 	now := time.Date(2026, time.September, 2, 8, 0, 0, 0, time.UTC)
 	verifier := &managedHostEnvironmentLeaseVerifierFake{}
@@ -250,10 +266,10 @@ func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testi
 	request.Header.Set("Idempotency-Key", "create-alpha-key-1234")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || store.snapshot.ObservedPhase != "failed" || len(verifier.requests) != 3 {
+	if response.Code != http.StatusCreated || store.snapshot.ObservedPhase != "failed" || len(verifier.requests) != 5 {
 		t.Fatalf("status=%d phase=%q verifications=%#v body=%s", response.Code, store.snapshot.ObservedPhase, verifier.requests, response.Body.String())
 	}
-	for index, permission := range []string{"projects.act", "projects.get", "projects.act"} {
+	for index, permission := range []string{"projects.act", "leases.act", "projects.act", "projects.get", "projects.act"} {
 		if verifier.requests[index].RequiredPermission != permission {
 			t.Fatalf("verification %d permission=%q, want %q", index, verifier.requests[index].RequiredPermission, permission)
 		}
@@ -266,7 +282,7 @@ func TestEnvironmentLeaseActuatorReverifiesEachAuthorizedStoreOperation(t *testi
 	request.Header.Set("Idempotency-Key", "terminate-alpha-key-1234")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusBadGateway || len(verifier.requests) != 2 || verifier.requests[0].RequiredPermission != "projects.act" || verifier.requests[1].RequiredPermission != "projects.get" {
+	if response.Code != http.StatusBadGateway || len(verifier.requests) != 4 || verifier.requests[0].RequiredPermission != "projects.act" || verifier.requests[1].RequiredPermission != "leases.act" || verifier.requests[2].RequiredPermission != "projects.act" || verifier.requests[3].RequiredPermission != "projects.get" {
 		t.Fatalf("status=%d verifications=%#v body=%s", response.Code, verifier.requests, response.Body.String())
 	}
 }

@@ -35,11 +35,23 @@
           "maximum": 9223372036854775807,
           "description": "Server-selected Environment Lease generation. Absent only for pre-binding Sessions."
         },
+        "environmentProfileId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json",
+          "description": "Published Environment Profile selected for this Session. Absent only for legacy environments."
+        },
+        "environmentProfileVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Immutable Environment Profile version selected for this Session. Absent only for legacy environments."
+        },
         "state": { "enum": ["active", "closed"] }
       },
       "dependentRequired": {
         "environmentLeaseId": ["environmentGeneration"],
-        "environmentGeneration": ["environmentLeaseId"]
+        "environmentGeneration": ["environmentLeaseId"],
+        "environmentProfileId": ["environmentProfileVersion"],
+        "environmentProfileVersion": ["environmentProfileId"]
       }
     }
   }

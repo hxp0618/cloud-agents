@@ -268,6 +268,33 @@ func TestGeneratedOpenAPIClientListsPublishedEnvironmentProfiles(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientCreatesAndGetsUserEnvironment(t *testing.T) {
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"UserEnvironment","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"environmentId":"environment-alpha","profileId":"development","profileVersion":1,"observedPhase":"provisioning","expiresAt":"2026-09-04T12:00:00Z"}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		status := 200
+		if request.Method == "POST" {
+			status = 201
+		}
+		return Response{Status: status, Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := client.CreateEnvironment(context.Background(), "tenant-alpha", "project-alpha", "request-create", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R9", platform.UserEnvironmentCreateRequest{ProfileID: "development", ProfileVersion: 1})
+	if err != nil || created.Value.EnvironmentID != "environment-alpha" {
+		t.Fatalf("create = %#v / %v", created, err)
+	}
+	got, err := client.GetEnvironment(context.Background(), "tenant-alpha", "project-alpha", "environment-alpha", "request-get")
+	if err != nil || got.Value.ProfileID != "development" {
+		t.Fatalf("get = %#v / %v", got, err)
+	}
+	if len(seen) != 2 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments" || string(seen[0].Body) != `{"profileId":"development","profileVersion":1}` || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha" {
+		t.Fatalf("requests = %#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
 	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}],"nextPageToken":"session-page-token-1"}`)

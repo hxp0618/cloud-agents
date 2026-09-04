@@ -104,6 +104,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases": {
       "get": {
         "operationId": "managedHostListEnvironmentLeases",
+		"x-cloud-agents-required-scope": "leases.list",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -129,6 +130,7 @@
       },
       "post": {
         "operationId": "managedHostCreateEnvironmentLease",
+		"x-cloud-agents-required-scope": "leases.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -159,6 +161,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}": {
       "get": {
         "operationId": "managedHostGetEnvironmentLease",
+		"x-cloud-agents-required-scope": "leases.get",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -177,6 +180,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:terminate": {
       "post": {
         "operationId": "managedHostTerminateEnvironmentLease",
+		"x-cloud-agents-required-scope": "leases.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -209,6 +213,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:upgrade": {
       "post": {
         "operationId": "managedHostUpgradeEnvironmentLease",
+		"x-cloud-agents-required-scope": "leases.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -310,6 +315,71 @@
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
           "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/environments": {
+      "post": {
+        "operationId": "managedAgentCreateEnvironment",
+        "x-cloud-agents-required-scope": "environments.create",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/user-environment-create-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Environment created from a published Profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/user-environment.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "502": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/environments/{environmentId}": {
+      "get": {
+        "operationId": "managedAgentGetEnvironment",
+        "x-cloud-agents-required-scope": "environments.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/EnvironmentId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "User-safe environment state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/user-environment.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
         }
       }
     },
@@ -717,6 +787,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets": {
       "get": {
         "operationId": "managedHostListDeploymentTargets",
+		"x-cloud-agents-required-scope": "targets.list",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -742,6 +813,7 @@
       },
       "post": {
         "operationId": "managedHostRegisterDeploymentTarget",
+		"x-cloud-agents-required-scope": "targets.create",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -772,6 +844,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}": {
       "get": {
         "operationId": "managedHostGetDeploymentTarget",
+		"x-cloud-agents-required-scope": "targets.get",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -790,6 +863,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:probe": {
       "post": {
         "operationId": "managedHostProbeDeploymentTarget",
+		"x-cloud-agents-required-scope": "targets.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -822,6 +896,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:cleanup": {
       "post": {
         "operationId": "managedHostCleanupDeploymentTarget",
+		"x-cloud-agents-required-scope": "targets.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -889,6 +964,12 @@
       },
       "LeaseId": {
         "name": "leaseId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
+      "EnvironmentId": {
+        "name": "environmentId",
         "in": "path",
         "required": true,
         "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }

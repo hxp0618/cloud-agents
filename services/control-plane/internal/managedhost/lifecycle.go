@@ -18,6 +18,7 @@ const (
 	LifecycleProfileID = "cloud-agents/managed-host-environment-lease/v1alpha1"
 	MinTTLSeconds      = int64(60)
 	MaxTTLSeconds      = int64(86400)
+	DefaultTTLSeconds  = int64(3600)
 	maxIdentifierBytes = 128
 )
 
@@ -39,6 +40,13 @@ type CreateEnvironmentLeaseInput struct {
 	TTLSeconds, ExpectedTargetGeneration int64
 	CPULimitMillis, MemoryLimitBytes     int64
 	Mutation                             Mutation
+}
+
+type CreateEnvironmentFromProfileInput struct {
+	Scope          Scope
+	ProfileID      string
+	ProfileVersion int64
+	Mutation       Mutation
 }
 
 type TerminateEnvironmentLeaseInput struct {
@@ -85,6 +93,12 @@ type Snapshot struct {
 	ResourceVersion                                  int64
 }
 
+type ProfileEnvironmentSnapshot struct {
+	Lease          Snapshot
+	ProfileID      string
+	ProfileVersion int64
+}
+
 type UpgradeStart struct {
 	Snapshot Snapshot
 	Execute  bool
@@ -97,6 +111,14 @@ func (input CreateEnvironmentLeaseInput) Validate(tenantID string) error {
 		!validIdentifier(input.ProviderCredentialRef) || input.CPULimitMillis < 100 || input.CPULimitMillis > 64_000 ||
 		input.MemoryLimitBytes < 128<<20 || input.MemoryLimitBytes > 1<<40 ||
 		input.ExpectedTargetGeneration < 1 || input.TTLSeconds < MinTTLSeconds || input.TTLSeconds > MaxTTLSeconds {
+		return ErrInvalidInput
+	}
+	return validateMutation(input.Mutation)
+}
+
+func (input CreateEnvironmentFromProfileInput) Validate(tenantID string) error {
+	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
+		!validIdentifier(input.ProfileID) || input.ProfileVersion < 1 || input.ProfileVersion > 2147483647 {
 		return ErrInvalidInput
 	}
 	return validateMutation(input.Mutation)
@@ -148,6 +170,24 @@ func CreateMutationDigest(input CreateEnvironmentLeaseInput) (string, error) {
 		Operation, TenantID, ProjectID, LeaseID, LeaseName, ReleaseDigest, TargetID, ProviderCredentialRef string
 		TTLSeconds, ExpectedTargetGeneration, CPULimitMillis, MemoryLimitBytes                             int64
 	}{"environment-lease.create", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest, input.TargetID, input.ProviderCredentialRef, input.TTLSeconds, input.ExpectedTargetGeneration, input.CPULimitMillis, input.MemoryLimitBytes}), nil
+}
+
+func CreateFromProfileMutationDigest(input CreateEnvironmentFromProfileInput) (string, error) {
+	if err := input.Validate(input.Scope.TenantID); err != nil {
+		return "", err
+	}
+	return digest(struct {
+		Operation, TenantID, ProjectID, ProfileID string
+		ProfileVersion                            int64
+	}{"user-environment.create", input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID, input.ProfileVersion}), nil
+}
+
+func UserEnvironmentID(input CreateEnvironmentFromProfileInput) (string, error) {
+	if err := input.Validate(input.Scope.TenantID); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(input.Scope.TenantID + "\x00" + input.Scope.ProjectID + "\x00" + input.Mutation.IdempotencyKey))
+	return "environment-" + hex.EncodeToString(sum[:16]), nil
 }
 
 func TerminateMutationDigest(input TerminateEnvironmentLeaseInput) (string, error) {
@@ -220,6 +260,14 @@ func (snapshot Snapshot) Validate() error {
 		!validPhase(snapshot.DesiredPhase, "active", "terminated") ||
 		!validPhase(snapshot.ObservedPhase, "provisioning", "ready", "terminating", "terminated", "failed") ||
 		!validPhase(snapshot.CleanupPhase, "none", "pending", "revoking", "reaping", "complete", "blocked") {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+func (snapshot ProfileEnvironmentSnapshot) Validate() error {
+	if snapshot.Lease.Validate() != nil || !validIdentifier(snapshot.ProfileID) ||
+		snapshot.ProfileVersion < 1 || snapshot.ProfileVersion > 2147483647 {
 		return ErrInvalidInput
 	}
 	return nil

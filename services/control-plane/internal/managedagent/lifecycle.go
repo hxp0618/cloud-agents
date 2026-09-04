@@ -251,15 +251,17 @@ type CancelTurnInput struct {
 }
 
 type SessionSnapshot struct {
-	Scope                 Scope
-	SessionID             string
-	ProviderKind          string
-	EnvironmentLeaseID    string
-	EnvironmentGeneration uint64
-	State                 SessionState
-	Version               uint64
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	Scope                     Scope
+	SessionID                 string
+	ProviderKind              string
+	EnvironmentLeaseID        string
+	EnvironmentGeneration     uint64
+	EnvironmentProfileID      string
+	EnvironmentProfileVersion uint64
+	State                     SessionState
+	Version                   uint64
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
 }
 
 // RuntimeSessionSnapshot is the internal execution view of a Session.

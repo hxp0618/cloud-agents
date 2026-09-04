@@ -8,7 +8,7 @@ import {
   type ManagedAgentSession,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-import { newRequestId } from "./infrastructure";
+import { newRequestId } from "./environment";
 import { recordPageToken } from "./pagination";
 
 export type AgentClient = Pick<
@@ -524,7 +524,7 @@ export function agentErrorMessage(error: unknown): string {
   if (error instanceof ClientError && error.status === 409)
     return "The Session, Turn, or Execution changed concurrently. Refresh and retry the same operation.";
   if (error instanceof ClientError && (error.status === 502 || error.status === 503))
-    return "The Worker or Runtime is unavailable. The Execution state is retained for a safe retry.";
+    return "The Runtime is unavailable. The Execution state is retained for a safe retry.";
   if (error instanceof JSONContractError)
     return "Control Plane returned a response outside the Managed Agent API contract.";
   if (error instanceof AgentEventStreamError) return error.message;

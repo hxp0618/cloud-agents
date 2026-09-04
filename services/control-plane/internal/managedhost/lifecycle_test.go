@@ -32,6 +32,27 @@ func TestMutationDigestsAreStableAndBindTheOperation(t *testing.T) {
 	}
 }
 
+func TestUserEnvironmentIdentityBindsTheRetryKeyOnly(t *testing.T) {
+	input := CreateEnvironmentFromProfileInput{
+		Scope: Scope{TenantID: "tenant-a", ProjectID: "project-a"}, ProfileID: "standard", ProfileVersion: 2,
+		Mutation: Mutation{RequestID: "request-a", IdempotencyKey: "profile-key-123456"},
+	}
+	first, err := UserEnvironmentID(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Mutation.RequestID = "request-b"
+	second, err := UserEnvironmentID(input)
+	if err != nil || first != second {
+		t.Fatalf("retry identity changed: %q %q err=%v", first, second, err)
+	}
+	input.Mutation.IdempotencyKey = "profile-key-654321"
+	third, err := UserEnvironmentID(input)
+	if err != nil || first == third {
+		t.Fatalf("retry key was not bound: %q %q err=%v", first, third, err)
+	}
+}
+
 func TestSnapshotDeploymentFactsMatchObservedPhase(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
 	snapshot := Snapshot{

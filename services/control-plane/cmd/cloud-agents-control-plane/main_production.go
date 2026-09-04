@@ -303,6 +303,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed host environment lease HTTP server is unavailable")
 	}
+	userEnvironmentServer, err := server.NewUserEnvironmentHTTPServer(verifier, coordinationService, leaseServer)
+	if err != nil {
+		return errors.New("user environment HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesAdminEnvironmentProfilePath(request.URL.Path) {
@@ -328,6 +332,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesUserEnvironmentPath(request.URL.Path) {
+			userEnvironmentServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
 			publishedEnvironmentProfileServer.ServeHTTP(writer, request)
 			return

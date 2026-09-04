@@ -422,6 +422,10 @@ func run(ctx context.Context, args []string) error {
 	if leaseErr != nil {
 		return errors.New("local managed host environment lease HTTP server is unavailable")
 	}
+	userEnvironmentHTTPServer, userEnvironmentErr := server.NewUserEnvironmentHTTPServer(verifierAdapter, coordinationService, leaseHTTPServer)
+	if userEnvironmentErr != nil {
+		return errors.New("local user environment HTTP server is unavailable")
+	}
 	var dockerProber *dockertarget.CredentialDirectory
 	if config.dockerCredentials != "" {
 		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
@@ -490,6 +494,10 @@ func run(ctx context.Context, args []string) error {
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	if runtimeSupervisor == nil {
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesUserEnvironmentPath(request.URL.Path) {
+				userEnvironmentHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
 				publishedEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
 				return
@@ -530,6 +538,10 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local managed agent execution HTTP server is unavailable")
 		}
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesUserEnvironmentPath(request.URL.Path) {
+				userEnvironmentHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
 				publishedEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
 				return

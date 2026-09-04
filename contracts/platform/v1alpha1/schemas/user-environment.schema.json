@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/user-environment.schema.json",
+  "title": "UserEnvironment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "environmentId", "profileId", "profileVersion", "observedPhase", "expiresAt"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "UserEnvironment" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "environmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "profileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+	"observedPhase": { "enum": ["provisioning", "ready", "failed", "terminating", "terminated"] },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "environmentId is an opaque User API handle backed by an Environment Lease",
+    "stableErrorCode is present only when observedPhase is failed",
+    "target, release, resource, policy, credential, endpoint, and Worker identity fields are absent"
+  ]
+}

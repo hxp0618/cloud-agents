@@ -221,10 +221,12 @@ type managedAgentSessionResourceMetadata struct {
 }
 
 type managedAgentSessionResourceSpec struct {
-	ProviderKind          string `json:"providerKind"`
-	EnvironmentLeaseID    string `json:"environmentLeaseId,omitempty"`
-	EnvironmentGeneration uint64 `json:"environmentGeneration,omitempty"`
-	State                 string `json:"state"`
+	ProviderKind              string `json:"providerKind"`
+	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
+	EnvironmentGeneration     uint64 `json:"environmentGeneration,omitempty"`
+	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
+	EnvironmentProfileVersion uint64 `json:"environmentProfileVersion,omitempty"`
+	State                     string `json:"state"`
 }
 
 type managedAgentSessionPageResource struct {
@@ -243,7 +245,8 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 		Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
 		Spec: managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, EnvironmentLeaseID: snapshot.EnvironmentLeaseID,
-			EnvironmentGeneration: snapshot.EnvironmentGeneration, State: string(snapshot.State)},
+			EnvironmentGeneration: snapshot.EnvironmentGeneration, EnvironmentProfileID: snapshot.EnvironmentProfileID,
+			EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion, State: string(snapshot.State)},
 	})
 }
 
@@ -254,7 +257,8 @@ func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantI
 			APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 			Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
 			Spec: managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, EnvironmentLeaseID: snapshot.EnvironmentLeaseID,
-				EnvironmentGeneration: snapshot.EnvironmentGeneration, State: string(snapshot.State)},
+				EnvironmentGeneration: snapshot.EnvironmentGeneration, EnvironmentProfileID: snapshot.EnvironmentProfileID,
+				EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion, State: string(snapshot.State)},
 		})
 	}
 	nextPageToken := ""

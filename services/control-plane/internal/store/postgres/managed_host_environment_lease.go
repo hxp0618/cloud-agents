@@ -50,6 +50,18 @@ const (
 	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, ''::text, stable_error_code,
 	    expires_at, resource_version, created_at, updated_at
 FROM cloud_agents.create_managed_host_environment_lease_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
+	createUserEnvironmentSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
+	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
+	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
+	    expires_at, resource_version, created_at, updated_at, environment_profile_uid, environment_profile_version
+FROM cloud_agents.create_user_environment_v1($1, $2, $3, $4, $5, $6, $7, $8)`
+	getUserEnvironmentSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
+	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
+	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
+	    expires_at, resource_version, created_at, updated_at, environment_profile_uid, environment_profile_version
+FROM cloud_agents.managed_host_environment_leases
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND lease_uid = $2
+    AND environment_profile_uid IS NOT NULL`
 	getManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
 	    provider_credential_ref, cpu_limit_millis, memory_limit_bytes,
 	    desired_phase, observed_phase, cleanup_phase, environment_id, worker_endpoint, worker_spiffe_id, worker_server_name, stable_error_code,
@@ -138,6 +150,78 @@ func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
 					return scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, getManagedHostEnvironmentLeaseSQL, input.Scope.ProjectID, input.LeaseID), input.Scope, &result)
 				}
 				return nil
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, mapManagedHostEnvironmentLeaseError(err)
+}
+
+func (service *DurableCoordinationService) CreateUserEnvironment(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalmanagedhost.CreateEnvironmentFromProfileInput,
+) (internalmanagedhost.ProfileEnvironmentSnapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalmanagedhost.ProfileEnvironmentSnapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return internalmanagedhost.ProfileEnvironmentSnapshot{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalmanagedhost.CreateFromProfileMutationDigest(input)
+	if err != nil {
+		return internalmanagedhost.ProfileEnvironmentSnapshot{}, ErrCoordinationInvalidInput
+	}
+	environmentID, err := internalmanagedhost.UserEnvironmentID(input)
+	if err != nil {
+		return internalmanagedhost.ProfileEnvironmentSnapshot{}, ErrCoordinationInvalidInput
+	}
+	var result internalmanagedhost.ProfileEnvironmentSnapshot
+	err = authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope := authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				return scanProfileEnvironment(handle.transaction.queryRow(ctx, createUserEnvironmentSQL,
+					input.Scope.TenantID, input.Scope.ProjectID, environmentID, input.ProfileID,
+					input.ProfileVersion, internalmanagedhost.DefaultTTLSeconds,
+					input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, mapManagedHostEnvironmentLeaseError(err)
+}
+
+func (service *DurableCoordinationService) GetUserEnvironment(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, environmentID string,
+) (internalmanagedhost.ProfileEnvironmentSnapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalmanagedhost.ProfileEnvironmentSnapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(environmentID) {
+		return internalmanagedhost.ProfileEnvironmentSnapshot{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result internalmanagedhost.ProfileEnvironmentSnapshot
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				err := scanProfileEnvironment(handle.transaction.queryRow(readContext, getUserEnvironmentSQL,
+					projectID, environmentID), internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, &result)
+				if errors.Is(err, pgx.ErrNoRows) {
+					return internalmanagedhost.ErrNotFound
+				}
+				return err
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -408,6 +492,36 @@ func (service *DurableCoordinationService) CompleteManagedHostEnvironmentLeaseTe
 
 func scanManagedHostEnvironmentLease(row rowScanner, scope internalmanagedhost.Scope, result *internalmanagedhost.Snapshot) error {
 	return scanManagedHostEnvironmentLeaseWithExecute(row, scope, result, nil)
+}
+
+func scanProfileEnvironment(row rowScanner, scope internalmanagedhost.Scope, result *internalmanagedhost.ProfileEnvironmentSnapshot) error {
+	if row == nil || result == nil {
+		return ErrCoordinationResultDrift
+	}
+	var targetID *string
+	var targetGeneration *int64
+	var providerCredentialRef *string
+	var cpuLimitMillis *int64
+	var memoryLimitBytes *int64
+	lease := &result.Lease
+	if err := row.Scan(&lease.LeaseID, &lease.LeaseName, &lease.ReleaseDigest, &targetID, &targetGeneration,
+		&lease.Generation, &providerCredentialRef, &cpuLimitMillis, &memoryLimitBytes,
+		&lease.DesiredPhase, &lease.ObservedPhase, &lease.CleanupPhase, &lease.EnvironmentID,
+		&lease.WorkerEndpoint, &lease.WorkerSPIFFEID, &lease.WorkerServerName, &lease.StableErrorCode,
+		&lease.ExpiresAt, &lease.ResourceVersion, &lease.CreatedAt, &lease.UpdatedAt,
+		&result.ProfileID, &result.ProfileVersion); err != nil {
+		return err
+	}
+	if targetID == nil || targetGeneration == nil || providerCredentialRef == nil || cpuLimitMillis == nil || memoryLimitBytes == nil {
+		return ErrCoordinationResultDrift
+	}
+	lease.Scope = scope
+	lease.TargetID, lease.TargetGeneration = *targetID, *targetGeneration
+	lease.ProviderCredentialRef, lease.CPULimitMillis, lease.MemoryLimitBytes = *providerCredentialRef, *cpuLimitMillis, *memoryLimitBytes
+	if result.Validate() != nil {
+		return fmt.Errorf("%w: user environment projection", ErrCoordinationResultDrift)
+	}
+	return nil
 }
 
 func scanManagedHostEnvironmentLeaseWithExecute(row rowScanner, scope internalmanagedhost.Scope, result *internalmanagedhost.Snapshot, execute *bool) error {

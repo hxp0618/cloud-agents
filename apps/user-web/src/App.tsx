@@ -12,7 +12,7 @@ import {
   writeSavedConnection,
   type SavedConnection,
 } from "./connection";
-import { InfrastructureWorkspace } from "./InfrastructureWorkspace";
+import { EnvironmentWorkspace } from "./EnvironmentWorkspace";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -49,7 +49,10 @@ export function App() {
   const requestRef = useRef<AbortController | null>(null);
   const connectingRef = useRef(false);
 
-  useEffect(() => () => requestRef.current?.abort(), []);
+  useEffect(() => {
+    window.sessionStorage.removeItem("cloud-agents.user-web.infrastructure.v1");
+    return () => requestRef.current?.abort();
+  }, []);
 
   const selectedProject = projects.find(({ metadata }) => metadata.uid === connection.projectId);
   const connected = status === "connected" && client !== null;
@@ -183,7 +186,7 @@ export function App() {
 
       {connected ? (
         <div className="workspace">
-          <InfrastructureWorkspace
+          <EnvironmentWorkspace
             key={connection.projectId}
             client={client}
             tenantId={connection.tenantId}

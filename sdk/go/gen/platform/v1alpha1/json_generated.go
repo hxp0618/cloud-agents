@@ -285,6 +285,21 @@ type EnvironmentProfileSummaryPage struct {
 	EnvironmentProfiles []EnvironmentProfileSummary `json:"environmentProfiles"`
 	NextPageToken       string                      `json:"nextPageToken,omitempty"`
 }
+type UserEnvironmentCreateRequest struct {
+	ProfileID      string `json:"profileId"`
+	ProfileVersion int64  `json:"profileVersion"`
+}
+type UserEnvironment struct {
+	APIVersion      string            `json:"apiVersion"`
+	Kind            string            `json:"kind"`
+	ProjectRef      common.ProjectRef `json:"projectRef"`
+	EnvironmentID   string            `json:"environmentId"`
+	ProfileID       string            `json:"profileId"`
+	ProfileVersion  int64             `json:"profileVersion"`
+	ObservedPhase   string            `json:"observedPhase"`
+	StableErrorCode string            `json:"stableErrorCode,omitempty"`
+	ExpiresAt       string            `json:"expiresAt"`
+}
 type DeploymentTargetRegisterRequest struct {
 	TargetID      string `json:"targetId"`
 	TargetName    string `json:"targetName"`
@@ -477,6 +492,7 @@ var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]
 })
 var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape()})
 var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "environmentProfiles": common.ArrayResponseShape(environmentProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
+var userEnvironmentResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "environmentId": common.ScalarResponseShape(), "profileId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"deploymentTargets": common.ArrayResponseShape(resourceResponseShape("DeploymentTarget")), "nextPageToken": common.ScalarResponseShape(),
@@ -1689,6 +1705,83 @@ func DecodeEnvironmentProfileSummaryPageResponseJSON(data []byte) (common.Respon
 	return common.ResponseEnvelope[EnvironmentProfileSummaryPage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeEnvironmentProfileSummaryPageResponseJSON(value common.ResponseEnvelope[EnvironmentProfileSummaryPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeUserEnvironmentCreateRequestJSON(data []byte) (UserEnvironmentCreateRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"profileId", "profileVersion"}, []string{"profileId", "profileVersion"})
+	if err != nil {
+		return UserEnvironmentCreateRequest{}, err
+	}
+	profileID, err := fieldString(fields, "profileId", "/profileId")
+	if err != nil || common.ValidateIdentifier(profileID, "/profileId") != nil {
+		return UserEnvironmentCreateRequest{}, common.ContractError("INVALID_IDENTIFIER", "/profileId")
+	}
+	version, err := fieldInt64(fields, "profileVersion", "/profileVersion")
+	if err != nil || version < 1 || version > 2147483647 {
+		return UserEnvironmentCreateRequest{}, common.ContractError("INVALID_PROFILE_VERSION", "/profileVersion")
+	}
+	return UserEnvironmentCreateRequest{ProfileID: profileID, ProfileVersion: version}, nil
+}
+func EncodeUserEnvironmentCreateRequestJSON(value UserEnvironmentCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeUserEnvironmentCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeUserEnvironmentJSON(data []byte) (UserEnvironment, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "environmentId", "profileId", "profileVersion", "observedPhase", "stableErrorCode", "expiresAt"}, []string{"apiVersion", "kind", "projectRef", "environmentId", "profileId", "profileVersion", "observedPhase", "expiresAt"})
+	if err != nil {
+		return UserEnvironment{}, err
+	}
+	var value UserEnvironment
+	if json.Unmarshal(data, &value) != nil {
+		return UserEnvironment{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "UserEnvironment" {
+		return UserEnvironment{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	project, err := common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return UserEnvironment{}, err
+	}
+	value.ProjectRef = project
+	if common.ValidateIdentifier(value.EnvironmentID, "/environmentId") != nil || common.ValidateIdentifier(value.ProfileID, "/profileId") != nil || value.ProfileVersion < 1 || value.ProfileVersion > 2147483647 {
+		return UserEnvironment{}, common.ContractError("INVALID_USER_ENVIRONMENT", "")
+	}
+	if value.ObservedPhase != "provisioning" && value.ObservedPhase != "ready" && value.ObservedPhase != "failed" && value.ObservedPhase != "terminating" && value.ObservedPhase != "terminated" || (value.ObservedPhase == "failed") != (value.StableErrorCode != "") {
+		return UserEnvironment{}, common.ContractError("INVALID_USER_ENVIRONMENT_PHASE", "/observedPhase")
+	}
+	if value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil {
+		return UserEnvironment{}, common.ContractError("INVALID_IDENTIFIER", "/stableErrorCode")
+	}
+	if common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+		return UserEnvironment{}, common.ContractError("INVALID_DATE_TIME", "/expiresAt")
+	}
+	return value, nil
+}
+func DecodeUserEnvironmentResponseJSON(data []byte) (common.ResponseEnvelope[UserEnvironment], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, userEnvironmentResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[UserEnvironment]{}, err
+	}
+	value, err := DecodeUserEnvironmentJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[UserEnvironment]{}, err
+	}
+	return common.ResponseEnvelope[UserEnvironment]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeUserEnvironmentResponseJSON(value common.ResponseEnvelope[UserEnvironment]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeUserEnvironmentJSON(raw); err != nil {
+		return nil, err
+	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

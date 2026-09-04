@@ -117,24 +117,22 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if server.admin {
-		permission, allowed := deploymentTargetAdminPermission(action, request.Method)
-		if !allowed {
-			writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
-			return
-		}
-		projectPermission := "projects.get"
-		if request.Method != http.MethodGet {
-			projectPermission = "projects.act"
-		}
-		if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
-			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
-			return
-		}
-		if _, err := server.verify(bearer, tenantID, projectID, permission); err != nil {
-			writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
-			return
-		}
+	permission, allowed := deploymentTargetAdminPermission(action, request.Method)
+	if !allowed {
+		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	projectPermission := "projects.get"
+	if request.Method != http.MethodGet {
+		projectPermission = "projects.act"
+	}
+	if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	if _, err := server.verify(bearer, tenantID, projectID, permission); err != nil {
+		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
+		return
 	}
 	switch {
 	case action == "collection" && request.Method == http.MethodGet:

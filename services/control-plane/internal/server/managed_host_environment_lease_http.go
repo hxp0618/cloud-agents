@@ -95,20 +95,22 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if server.admin {
-		permission, allowed := environmentLeaseAdminPermission(action, request.Method)
-		if !allowed {
-			writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
-			return
-		}
-		if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"}); err != nil {
-			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
-			return
-		}
-		if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
-			writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
-			return
-		}
+	permission, allowed := environmentLeasePermission(action, request.Method, server.admin)
+	if !allowed {
+		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	projectPermission := "projects.get"
+	if request.Method != http.MethodGet {
+		projectPermission = "projects.act"
+	}
+	if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission}); err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
+		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
+		return
 	}
 	switch {
 	case action == "collection" && request.Method == http.MethodGet:
@@ -313,75 +315,76 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 		writePublicProblem(writer, status, code)
 		return
 	}
-	if (server.dockerCredentials != nil || server.kubernetesCredentials != nil || server.sshCredentials != nil) && (result.ObservedPhase == "provisioning" || result.ObservedPhase == "failed") {
-		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
-		if err != nil {
+	result, err = server.deployEnvironment(request.Context(), tenantID, projectID, bearer, result)
+	if err != nil {
+		if errors.Is(err, errEnvironmentActuationAuthentication) {
 			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 			return
 		}
-		target, targetErr := server.store.GetDeploymentTarget(request.Context(), tenantID, principal, projectID, result.TargetID)
-		completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{Scope: result.Scope, LeaseID: result.LeaseID, TargetID: result.TargetID, ExpectedGeneration: result.Generation, ExpectedTargetGeneration: result.TargetGeneration}
-		if targetErr != nil {
-			status, code := managedHostEnvironmentLeaseErrorStatus(targetErr)
-			writePublicProblem(writer, status, code)
-			return
-		}
-		if target.Generation != result.TargetGeneration || target.ObservedPhase != "ready" {
-			switch target.Kind {
-			case "docker":
-				completion.StableErrorCode = "docker-target-not-ready"
-			case "kubernetes":
-				completion.StableErrorCode = "kubernetes-target-not-ready"
-			case "ssh":
-				completion.StableErrorCode = "ssh-target-not-ready"
-			default:
-				completion.StableErrorCode = "target-kind-unsupported"
-			}
-		} else {
-			switch target.Kind {
-			case "docker":
-				if server.dockerCredentials == nil {
-					completion.StableErrorCode = "docker-actuator-unconfigured"
-				} else if deployed, deployErr := server.dockerCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation), server.workerTrust); deployErr != nil {
-					completion.StableErrorCode = dockerDeploymentErrorCode(deployErr)
-				} else {
-					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
-				}
-			case "kubernetes":
-				if server.kubernetesCredentials == nil {
-					completion.StableErrorCode = "kubernetes-actuator-unconfigured"
-				} else if deployed, deployErr := server.kubernetesCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, result.Generation), server.kubernetesWorkerTrust); deployErr != nil {
-					completion.StableErrorCode = kubernetesDeploymentErrorCode(deployErr)
-				} else {
-					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
-				}
-			case "ssh":
-				if server.sshCredentials == nil {
-					completion.StableErrorCode = "ssh-actuator-unconfigured"
-				} else if deployed, deployErr := server.sshCredentials.DeployWorker(request.Context(), target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation), server.workerTrust); deployErr != nil {
-					completion.StableErrorCode = sshDeploymentErrorCode(deployErr)
-				} else {
-					completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
-				}
-			default:
-				completion.StableErrorCode = "target-kind-unsupported"
-			}
-		}
-		completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
-		defer cancel()
-		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
-		if err != nil {
-			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
-			return
-		}
-		result, err = server.store.CompleteManagedHostEnvironmentLeaseDeployment(completionContext, tenantID, principal, completion)
-		if err != nil {
-			status, code := managedHostEnvironmentLeaseErrorStatus(err)
-			writePublicProblem(writer, status, code)
-			return
-		}
+		status, code := managedHostEnvironmentLeaseErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
 	}
 	writeManagedHostEnvironmentLease(writer, http.StatusCreated, requestID, result)
+}
+
+var errEnvironmentActuationAuthentication = errors.New("environment actuation authentication failed")
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) deployEnvironment(ctx context.Context, tenantID, projectID, bearer string, result internalmanagedhost.Snapshot) (internalmanagedhost.Snapshot, error) {
+	if server.dockerCredentials == nil && server.kubernetesCredentials == nil && server.sshCredentials == nil || result.ObservedPhase != "provisioning" && result.ObservedPhase != "failed" {
+		return result, nil
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
+	}
+	target, err := server.store.GetDeploymentTarget(ctx, tenantID, principal, projectID, result.TargetID)
+	if err != nil {
+		return internalmanagedhost.Snapshot{}, err
+	}
+	completion := internalmanagedhost.CompleteEnvironmentLeaseDeploymentInput{Scope: result.Scope, LeaseID: result.LeaseID, TargetID: result.TargetID, ExpectedGeneration: result.Generation, ExpectedTargetGeneration: result.TargetGeneration}
+	if target.Generation != result.TargetGeneration || target.ObservedPhase != "ready" {
+		completion.StableErrorCode = target.Kind + "-target-not-ready"
+		if target.Kind != "docker" && target.Kind != "kubernetes" && target.Kind != "ssh" {
+			completion.StableErrorCode = "target-kind-unsupported"
+		}
+	} else {
+		switch target.Kind {
+		case "docker":
+			if server.dockerCredentials == nil {
+				completion.StableErrorCode = "docker-actuator-unconfigured"
+			} else if deployed, deployErr := server.dockerCredentials.DeployWorker(ctx, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation), server.workerTrust); deployErr != nil {
+				completion.StableErrorCode = dockerDeploymentErrorCode(deployErr)
+			} else {
+				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+			}
+		case "kubernetes":
+			if server.kubernetesCredentials == nil {
+				completion.StableErrorCode = "kubernetes-actuator-unconfigured"
+			} else if deployed, deployErr := server.kubernetesCredentials.DeployWorker(ctx, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, result.Generation), server.kubernetesWorkerTrust); deployErr != nil {
+				completion.StableErrorCode = kubernetesDeploymentErrorCode(deployErr)
+			} else {
+				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+			}
+		case "ssh":
+			if server.sshCredentials == nil {
+				completion.StableErrorCode = "ssh-actuator-unconfigured"
+			} else if deployed, deployErr := server.sshCredentials.DeployWorker(ctx, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, result.Generation), server.workerTrust); deployErr != nil {
+				completion.StableErrorCode = sshDeploymentErrorCode(deployErr)
+			} else {
+				completion.Succeeded, completion.WorkerEndpoint, completion.WorkerSPIFFEID, completion.WorkerServerName = true, deployed.Endpoint, deployed.WorkerSPIFFEID, deployed.WorkerServerName
+			}
+		default:
+			completion.StableErrorCode = "target-kind-unsupported"
+		}
+	}
+	completionContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), deploymentTargetCompletionTimeout)
+	defer cancel()
+	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil {
+		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
+	}
+	return server.store.CompleteManagedHostEnvironmentLeaseDeployment(completionContext, tenantID, principal, completion)
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) get(writer http.ResponseWriter, request *http.Request, tenantID, projectID, leaseID, requestID, bearer string) {
@@ -696,12 +699,14 @@ func HandlesAdminEnvironmentLeasePath(path string) bool {
 	return ok
 }
 
-func environmentLeaseAdminPermission(action, method string) (string, bool) {
+func environmentLeasePermission(action, method string, admin bool) (string, bool) {
 	switch {
 	case action == "collection" && method == http.MethodGet:
 		return "leases.list", true
 	case action == "get" && method == http.MethodGet:
 		return "leases.get", true
+	case !admin && (action == "collection" || action == "terminate" || action == "upgrade") && method == http.MethodPost:
+		return "leases.act", true
 	default:
 		return "", false
 	}
