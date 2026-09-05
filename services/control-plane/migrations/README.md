@@ -5,7 +5,13 @@ Cloud Agents Control Plane. Synara migrations, ORM models, generated SDK types,
 and Go row structs are semantic inputs or consumers; none may generate or
 silently alter this schema.
 
-## Execution order
+## Current use and historical scope
+
+The [foundation-first plan](../../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md) requires new Workspace/Volume/Sandbox/RemoteWorker storage to use compatible forward migrations and preserve existing Lease retention until an explicitly authorized adoption/migration. Documentation changes never authorize applying SQL to production or an existing database.
+
+The sequence and matrix descriptions below document the original P1 bootstrap and its versioned `000013`/`000014` predecessor artifacts. They are not an instruction to stop a current deployment at schema head `000013`, nor a claim that later HTTP/runtime/coordination code is absent. Use the exact deployment candidate's versioned migration bundle, verified head and preflight through the [current Compose runbook](../../../deploy/compose/README.md); never substitute a different manifest or overwrite a frozen predecessor. Existing matrix scripts remain scoped to the heads each script declares.
+
+## Historical bootstrap execution order
 
 1. An isolated, unswitched superuser LOGIN runs `bootstrap/roles.sql`. The
    transactional DO block rejects any other caller before role creation, then
@@ -316,7 +322,7 @@ artifact sizes, SHA-256 values, source-closure inputs, deterministic runtime
 and bootstrap archives, ancestor/ledger projections, and the RFC 8785 bundle
 digests. A placeholder or manually maintained digest is forbidden.
 
-The checked-in bundle is currently `UNPUBLISHED_BOOTSTRAP_MUTABLE`: runtime
+The original bootstrap bundle's recorded status is `UNPUBLISHED_BOOTSTRAP_MUTABLE`: runtime
 catalog introspection and signing/publication are `NOT_IMPLEMENTED`, and this
 status is not a Gate-closure or release claim. Until the catalog adapter,
 security review, signing, and publication gates close, any regeneration may

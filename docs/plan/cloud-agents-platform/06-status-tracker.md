@@ -1,5 +1,32 @@
 # 06. 状态与决策追踪
 
+## 0. 当前主线（2026-09-05）
+
+- 产品边界与交付优先级：已接受 [ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md)。先交付长期 Workspace、通用 Sandbox、客户节点接入；Admin Web 随底座切片配套；用户侧 CloudAgents 后置。
+- 本次实施范围：整理当前仓文档，在独立 worktree 完成后合并当前分支。它不是底座代码实施、生产数据写入、部署发布或任何 Gate closure 的授权。
+- 顺序以 [04 §0](04-extraction-and-migration.md#0-当前实施顺序底座先行) 为准，验收以 [05 §0](05-gates-and-acceptance.md#0-底座就绪验收-base-ready) 为准，Admin 配套要求见 [07](07-admin-web-requirements-and-design.md)。
+
+| 当前阶段 | 状态 | 验收边界 |
+| --- | --- | --- |
+| BASE-M0：领域/API 映射与运行时验证 | NOT STARTED | 尚无固定版本 OpenSandbox Docker no-Agent PoC 验收记录；现有直连 actuator 不能替代这项验证 |
+| BASE-M1：长期 Workspace 与异步生命周期 | NOT STARTED | 尚未验收独立持久卷生命周期、durable Operation 与后台恢复 |
+| BASE-M2：通用执行与访问 | NOT STARTED | 尚未验收完整 Exec / PTY / Files / Preview / SSH 与数据面策略 |
+| BASE-M3：客户节点接入 | NOT STARTED | 尚未验收 outbound RemoteWorker 注册、重连、撤销与离线 fencing |
+| BASE-M4：多运行环境与隔离 | NOT STARTED | 旧 Docker / Kubernetes / SSH 能力可复用，不代表新底座能力矩阵、容量和强隔离已经验收 |
+| BASE-M5：运维、快照与独立交付 | NOT STARTED | 尚未验收 filesystem snapshot / restore、升级恢复、usage 和完整 Admin 配套 |
+| BASE-READY | NOT STARTED | 不使用既有 Agent E2E 或页面数量推定通过 |
+| APP-M1：用户侧 CloudAgents | PAUSED | 新功能排在 BASE-READY 后；现有 Agent 路径保留兼容并可作为回归负载 |
+
+这里的 `NOT STARTED` 指新 BASE 阶段尚无符合该阶段完成定义的实施/验收记录，不声称仓内没有可复用代码。每阶段启动后按实际进展更新为 `IN PROGRESS`，固定证据满足完成定义后才能标记 `VERIFIED`；不为日常开发增加一次重复批准。
+
+当前源码基线 `40812b8945c8b53a8d71b6bc7ef7c757527bcaea` 已有生产 HTTP/JWT/JWKS 路径、租户/配额、直接 Docker/Kubernetes/SSH actuator、Worker health observer 和 User/Admin Web。它仍以 Agent/Lease 为核心：同步部署、随 Lease 清理 volume、入站 mTLS Worker 不等价于目标的独立 Workspace、生命周期 reconciler、outbound RemoteWorker。已有 [Agent M5 实测](../../../apps/user-web/M5-ORBSTACK-E2E.md) 与 [Network Policy 配套记录](evidence/admin-web-network-policy-20260905.md) 仅证明各自固定范围；本次是文档与静态源码核对，未重跑运行时验收。
+
+后续报告按 `BASE-M*` / `APP-M*` 命名，记录 source/ref、scope、checks、结果、未覆盖项；历史 `ADMIN-M*`、`P0/P1`、`G-*` 标识不重编号。BASE 阶段证据不自动关闭旧 aggregate Gate，发布/生产授权仍独立存在。
+
+### 历史 P0/P1 状态快照（保留原记录）
+
+以下 2026-08 元数据、§2–§6 的阶段表、问题和 checklist 均属于对应 fixed ref 的历史范围。其中“HTTP/OIDC/JWKS absent”“M1/P2–P6 PAUSED”等不得覆盖上面的当前源码事实、用户后续授权或 BASE 顺序；历史未关闭的正式 Gate 也不会因文档改写变为关闭。
+
 - 最后更新：2026-08-27
 - Plan status：APPROVED
 - Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 仍作为 v2 predecessor 历史保留；ADR-0030/D-053 current-source successor 的 fixed candidate `e45ef4e` 已完成 Slice C projection 与 Slice D Darwin/Linux A/B native replay，scope-corrected review 返回 `APPROVE, P0=0/P1=0/P2=0`；formal Slice E lock assembly preflight hit a deterministic P1 writer/profile contract mismatch before any write，Slice F predeclared supply review remains pending，v3 仍为 `REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；D-053-MIG-000014.r1 `000014` successor source/profile/runner closure 已独立 `APPROVE (P0=0/P1=0/P2=0)`，但仅为 local/read-only non-Gate authority，canonical `000013` 与 D-053-EC-2.r3 不变；Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
@@ -27,7 +54,7 @@
 | D-011 | Go SDK/CP/Worker 三个 module；go.work 仅开发                                                                                | APPROVED | 标准子模块 tag 与无 workspace 依赖                                                                        |
 | D-012 | P3 用 reference host；P6 消费 T3 signed workload descriptor                                                                 | APPROVED | 避免 P3/P6 Gate 循环                                                                                      |
 | D-013 | pairing token/link/session 由 lease 内 T3 auth 写入                                                                         | APPROVED | CP 只写 lease admission 与 opaque ref                                                                     |
-| D-014 | Platform RC 必须 API+CLI；公共管理 Web UI deferred                                                                          | APPROVED | 直接部署不依赖 Synara/T3 UI                                                                               |
+| D-014 | Platform RC 必须 API+CLI；公共管理 Web UI deferred（UI 优先级部分由 D-054 supersede）                                                                          | APPROVED | 直接部署不依赖 Synara/T3 UI                                                                               |
 | D-015 | Contracts、TS SDK、Go SDK 各自使用 immutable release train                                                                  | APPROVED | consumer exact pin；发布 channel 独立批准                                                                 |
 | D-016 | Public CP 是 management PEP；T3 auth 是 lease data PEP                                                                      | APPROVED | membership/generation/scope 为上游约束                                                                    |
 | D-017 | Pairing secret response 与 durable receipt/outbox 完全分离                                                                  | APPROVED | 丢失后 revoke + remint，禁止 secret replay                                                                |
@@ -66,8 +93,10 @@
 | D-050 | JSON Schema official-suite criterion 表示固定 corpus/authority evidence completeness；不声称 Ajv generic conformance        | APPROVED | ADR-0026；v2 candidate only；Ajv 1241/1299、58 non-passing；所有 Gate OPEN                                |
 | D-051 | Versioned generated generator-supply profile binds native replay, exact isolation, and late-bound evidence assembly         | APPROVED | ADR-0028；standing P1 execution approval；local implementation/review only；所有 Gate OPEN                |
 | D-052 | Closure-v3 + generator-supply-v2 + detached review-binding registry use one acyclic successor replay and Slices A-H         | APPROVED | ADR-0029；continuing Platform goal authority；non-Gate implementation/review；所有 Gate OPEN              |
+| D-053 | Current-source phase successor repair | APPROVED within recorded scope | [ADR-0030](../adr/0030-p1-g-contract-current-source-phase-successor.md)；固定记录与 Gate effect 保持原范围 |
+| D-054 | 底座优先：长期 Workspace + 通用 Sandbox + 客户节点；Admin 随底座交付，用户 CloudAgents 后置 | APPROVED | [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md)；产品边界/顺序已接受，BASE 实施与验收尚未完成 |
 
-## 2. 阶段追踪
+## 2. 历史阶段追踪（固定范围）
 
 | Stage             | Status      | DRI                         | Entry                                 | Exit Gate                                                                                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------- | ----------- | --------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -196,7 +225,7 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 `APPROVE, P0=0/P1=0/P2=0` 固定。任何 P1-P6 candidate/record 中仍命名 Baseline R3 的 prerequisite 都是
 历史绑定，必须显式生成 R4 rebind；本次 P0 closure 不自动升级这些 downstream Gate。
 
-## 4. 当前 open questions
+## 4. 历史 open questions（P0/P1 固定范围）
 
 | ID    | 问题                                        | 推荐默认                                                                        | 必须在何时关闭     |
 | ----- | ------------------------------------------- | ------------------------------------------------------------------------------- | ------------------ |
@@ -205,7 +234,7 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 | Q-006 | Managed Agent checkpoint primitive          | public Worker 写物理 snapshot；public CP 写 metadata/ref；managed-host 由 T3 写 | P2 contract        |
 | Q-007 | Public Artifact store baseline              | filesystem + S3-compatible                                                      | P2 adapter freeze  |
 
-## 5. 暂停现场问题
+## 5. 历史暂停现场问题
 
 | ID    | 观察                                                                      | 状态                                        | 恢复后动作                                                                                                                                             |
 | ----- | ------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -215,7 +244,7 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 | R-004 | app.asar/完整 cross-host/soak                                             | OPEN                                        | M1 E2E closure                                                                                                                                         |
 | R-005 | pgx v5.10.0 default closure 的 x/text v0.29.0 命中 reachable GO-2026-5970 | IMPLEMENTATION CLOSURE APPROVED / Gate open | `99106e8` 已落实 x/text v0.39.0，`93f742f` 已集成 lock/SBOM/notice；接近 RC 时做 source-bound refresh、final binary same-bits scan 与独立 Gate closure |
 
-## 6. 恢复实施 checklist
+## 6. 历史恢复实施 checklist（不替代 BASE 顺序）
 
 - [x] 用户于 2026-08-10 批准 ADR-0006 与 D-001～D-021；
 - [x] P0 DRI 暂定为 hxp0618（owner），Codex 为 evidence executor；P1 前重新确认长期 DRI；

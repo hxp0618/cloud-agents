@@ -1,11 +1,21 @@
 # 03. 公共仓结构与发布
 
+## 0. 底座优先的交付边界
+
+当前产品边界由 [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md) 定义，实施顺序见 [04](04-extraction-and-migration.md)。底座必须能在不配置 Agent Provider、不创建 AgentSession 的情况下独立安装和验收；Admin Web 是配套管理入口，用户 CloudAgents 和 Synara/T3 是后续消费者。
+
+复用现有公共仓、Go modules、契约生成与发布治理。Controller、Access Gateway、Worker Gateway、RemoteWorker 是职责边界，不要求现在为每项创建服务、仓库或发布列车；先在现有 module 中按已验证的部署需要组合。OpenSandbox 是待固定版本验证的首选 SandboxRuntime 候选，不是已集成或已批准部署的制品。
+
+下文 module/tag/same-bits 规则保留；目录与制品表是目标结构，不是当前功能清单。旧完整 Platform/Agent/Synara/T3 组合候选的验收要求不因底座先行而降低，也不得反过来把用户侧 Agent 接入设为 BASE-READY 前置条件。
+
 ## 1. 目标目录
 
 ```text
 cloud-agents/
 ├── go.work                                # 仅本地开发；不进入 consumer 依赖
 ├── packages/                              # 现有七个 TS Runtime 包
+├── apps/admin-web/                        # 底座配套；随真实能力切片交付
+├── apps/user-web/                         # 既有 Agent 应用；新增应用功能后置
 ├── contracts/
 │   ├── runtime/v2/
 │   ├── common/v1alpha1/                   # JSON Schema primitives + fixtures
@@ -76,7 +86,7 @@ cloud-agents/
 | ---------------------- | ----------------------------------------------------------------------------------------------- |
 | Runtime release        | 七 tarball、standalone、schema、manifest、checksums、SBOM、provenance                           |
 | Contract release       | OpenAPI/JSON Schema bundle、Proto descriptor set、golden/negative fixtures、checksums/signature |
-| TS SDK release         | `@synara/cloud-agent-platform-sdk` packed ESM/CJS/types、validators/client                      |
+| TS SDK release         | `@cloud-agents/cloud-agent-platform-sdk` packed ESM/CJS/types、validators/client                      |
 | Go SDK release         | generated contracts/client module                                                               |
 | Control Plane release  | Go module、Linux amd64/arm64 binary/OCI image、signed migration bundle                          |
 | CLI assets (CP train)  | Linux/macOS/Windows amd64/arm64 binary、checksums/signature                                     |
@@ -88,6 +98,8 @@ cloud-agents/
 | T3 workload descriptor | 来自 T3 repo 的 signed descriptor，固定 public image/bundle digest                              |
 
 ## 4. Release train
+
+下表是独立 module / 组合候选的命名设计；不意味着对应自动发布流程均已实现。当前 workflow 的实际触发与产物以 `.github/workflows/` 为准；这次文档调整不改变 workflow、不创建 tag、不发布制品。
 
 | Train           | Tag 示例                                | 可独立发布              |
 | --------------- | --------------------------------------- | ----------------------- |
@@ -106,28 +118,32 @@ GitHub Release 名称不能替代 Go module 标准 tag；image label 不能替�
 `cloud-agent-cli` 随 `services/control-plane/vX.Y.Z` 同版本/tag 发布，是该 train 的跨平台 asset，不设第二个
 独立 CLI semver；Platform manifest 仍逐平台固定 CLI binary digest/signature。
 
-TypeScript SDK 的 npm identity 固定为 `@synara/cloud-agent-platform-sdk`。每个 consumer 必须按精确 semver
+TypeScript SDK 的 npm identity 固定为 `@cloud-agents/cloud-agent-platform-sdk`。每个 consumer 必须按精确 semver
 与 tarball integrity/digest pin；不得使用 `workspace:`、`file:`、Git branch 或浮动 dist-tag。源码公开不自动
 批准公开 npm：未关闭对应 `G-EXPOSURE` 时，SDK 只作为 immutable GitHub Release asset 或获批的内部 Registry
 制品分发。
 
 ## 5. 直接部署要求
 
-公共仓必须提供两条从零安装路径：
+BASE-M5 前，公共仓必须提供两条经过实测的底座从零安装路径：
 
-1. `docker compose`：一条命令启动 CP/Postgres/storage/Worker，完成 bootstrap、health 和真实 Turn；
-2. Helm：安装/升级/回滚、external Postgres/object storage/OIDC、network policy 与 readiness。
+1. `docker compose`：启动 CP/Postgres、持久存储与所需 Controller/Gateway/runtime 组件；通过明确的管理员 bootstrap 完成 no-Agent Workspace → Sandbox → Exec/Files/Preview → Stop/Restart 数据保留闭环；
+2. Helm：安装/升级/回滚、external Postgres/object storage/OIDC、network policy 与 readiness，并验证对应的 no-Agent 底座能力。
+
+目前 [Compose 文档](../../../deploy/compose/README.md) 描述既有 Agent/Lease 安装，不应将上述目标流程标为已交付。客户节点的 RemoteWorker 安装、一次性 enrollment 与撤销也须有独立的最小操作路径；管理页面不展示 enrollment 私密材料。默认安装不要求 Agent Credential。
 
 两条路径都不得依赖 Synara 源码、私有 package、内部 image、私有数据库 migration 或 ambient credential。
 
-Standalone Platform 默认运行 Managed Agent，并用公开 reference host 验证 Managed Host core。真实 T3 不内嵌进
+APP-M1 及旧完整 Platform 组合验收中，Managed Agent 与公开 reference host 分别验证应用及 Managed Host core。它们不再是底座默认安装的依赖。真实 T3 不内嵌进
 Platform repo：P6 从 `hxp0618/t3code` 产出公开可获取、签名且 allowlist 的 `HostWorkloadDescriptor` 和
 image/bundle digest；Platform manifest 固定它们。未提供有效 descriptor 时，T3 profile fail closed，但
 Standalone Managed Agent 仍可部署。
 
 ## 6. Same-bits
 
-Platform candidate manifest 至少固定：
+底座候选须固定其实际交付的 CP、Controller/Gateway、RemoteWorker、SandboxRuntime、存储/隔离依赖、公共契约、CLI、Admin Web、migration 与部署包的 source/version/digest，以及相应 SBOM/provenance/signature 和测试矩阵。不把未包含的 Agent Provider、Synara/T3 伪报为已验收组件；具体 manifest 扩展在实施时版本化落地，不能改写既有 immutable manifest。
+
+下面保留的是包含 Agent/Managed Host/Synara/T3 的完整 Platform candidate manifest 要求，不是每个底座开发切片的前置审批清单：
 
 - source commit、dirty state、toolchain；
 - contracts digest、TS/Go SDK digest 与 generator version；
