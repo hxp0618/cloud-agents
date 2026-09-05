@@ -4,6 +4,7 @@ import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import {
   adminFailure,
   filterAdminTargets,
+  filterAdminMaintenanceOperations,
   filterAdminLeases,
   leaseNeedsAttention,
   cleanupRequestFromPreview,
@@ -29,6 +30,44 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("filters exact failed state and sorts by actual update instant without mutating the snapshot", () => {
+    const operations = [
+      { operationId: "b", state: "failed", updatedAt: "2026-09-05T10:00:00+08:00" },
+      { operationId: "running", state: "running", updatedAt: "2026-09-05T04:00:00Z" },
+      { operationId: "a", state: "failed", updatedAt: "2026-09-05T02:00:00Z" },
+      { operationId: "new", state: "failed", updatedAt: "2026-09-05T03:00:00Z" },
+      {
+        operationId: "succeeded-failed-name",
+        state: "succeeded",
+        updatedAt: "2026-09-05T05:00:00Z",
+      },
+    ].map((operation) =>
+      Object.freeze({
+        ...operation,
+        action: "target.probe",
+        resourceKind: "DeploymentTarget",
+        resourceId: "target-1",
+        currentStep: "probe",
+        requestId: "request-1",
+        stableErrorCode: operation.state === "failed" ? "docker-probe-unconfigured" : undefined,
+        impactSummary: "do-not-search-this",
+        idempotencyKey: "do-not-search-this",
+      }),
+    ) as unknown as Parameters<typeof filterAdminMaintenanceOperations>[0];
+    const before = [...operations];
+    Object.freeze(operations);
+    expect(
+      filterAdminMaintenanceOperations(operations, "", true).map((x) => x.operationId),
+    ).toEqual(["new", "a", "b"]);
+    expect(filterAdminMaintenanceOperations(operations, " DOCKER-PROBE ", true)).toHaveLength(3);
+    expect(filterAdminMaintenanceOperations(operations, "succeeded", true)).toEqual([]);
+    expect(filterAdminMaintenanceOperations(operations, "request-1", false)).toHaveLength(5);
+    expect(filterAdminMaintenanceOperations(operations, "do-not-search-this", false)).toEqual([]);
+    expect(filterAdminMaintenanceOperations(operations, "", false)[0]?.operationId).toBe(
+      "succeeded-failed-name",
+    );
+    expect(operations).toEqual(before);
+  });
   it("uses the same failed-or-blocked lease predicate for overview counts and filtered search", () => {
     const leases = [
       ["ready", "pending"],

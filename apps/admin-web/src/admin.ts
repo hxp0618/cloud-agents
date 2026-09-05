@@ -173,6 +173,34 @@ export function leaseNeedsAttention({ spec }: EnvironmentLease): boolean {
   return spec.observedPhase === "failed" || spec.cleanupPhase === "blocked";
 }
 
+export function filterAdminMaintenanceOperations(
+  operations: readonly MaintenanceOperation[],
+  query: string,
+  failedOnly: boolean,
+): readonly MaintenanceOperation[] {
+  const search = query.trim().toLocaleLowerCase();
+  return operations
+    .filter(
+      (operation) =>
+        (!failedOnly || operation.state === "failed") &&
+        [
+          operation.operationId,
+          operation.action,
+          operation.resourceKind,
+          operation.resourceId,
+          operation.state,
+          operation.currentStep,
+          operation.requestId,
+          operation.stableErrorCode ?? "",
+        ].some((value) => value.toLocaleLowerCase().includes(search)),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
+        (left.operationId < right.operationId ? -1 : left.operationId > right.operationId ? 1 : 0),
+    );
+}
+
 export function filterAdminLeases(
   leases: readonly EnvironmentLease[],
   query: string,

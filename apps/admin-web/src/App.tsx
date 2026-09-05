@@ -31,6 +31,7 @@ import {
 import {
   adminFailure,
   filterAdminTargets,
+  filterAdminMaintenanceOperations,
   filterAdminLeases,
   leaseNeedsAttention,
   cleanupRequestFromPreview,
@@ -480,6 +481,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [targetKindFilter, setTargetKindFilter] = useState<readonly TargetKind[]>([]);
   const [leaseAttentionOnly, setLeaseAttentionOnly] = useState(false);
+  const [failedOperationsOnly, setFailedOperationsOnly] = useState(false);
   const [targetPhaseFilter, setTargetPhaseFilter] = useState<
     readonly DeploymentTarget["spec"]["observedPhase"][]
   >([]);
@@ -671,20 +673,16 @@ export function App() {
             value.toLocaleLowerCase().includes(normalizedQuery),
           ),
         );
-  const visibleMaintenanceOperations =
-    normalizedQuery === ""
-      ? maintenanceOperations
-      : maintenanceOperations.filter((operation) =>
-          [
-            operation.operationId,
-            operation.action,
-            operation.resourceKind,
-            operation.resourceId,
-            operation.state,
-            operation.currentStep,
-            operation.requestId,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
+  const visibleMaintenanceOperations = filterAdminMaintenanceOperations(
+    maintenanceOperations,
+    query,
+    failedOperationsOnly,
+  );
+  const failedMaintenanceOperations = filterAdminMaintenanceOperations(
+    maintenanceOperations,
+    "",
+    true,
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -800,6 +798,7 @@ export function App() {
     setTargetKindFilter([]);
     setTargetPhaseFilter([]);
     setLeaseAttentionOnly(false);
+    setFailedOperationsOnly(false);
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
@@ -2216,6 +2215,35 @@ export function App() {
                   <span>{t("overview.leaseAttentionDescription")}</span>
                 </button>
               </section>
+              <section
+                className="panel overview-panel recent-failed-operations"
+                aria-labelledby="recent-failed-operations-title"
+              >
+                <div className="panel-heading">
+                  <div>
+                    <h2 id="recent-failed-operations-title">{t("overview.failedOperations")}</h2>
+                    <p>{t("overview.failedOperationsDescription")}</p>
+                  </div>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => {
+                      navigate("maintenance");
+                      setFailedOperationsOnly(true);
+                    }}
+                  >
+                    {t("overview.viewFailedOperations", {
+                      count: number(failedMaintenanceOperations.length),
+                    })}
+                  </button>
+                </div>
+                <MaintenanceOperationTable
+                  operations={failedMaintenanceOperations.slice(0, 6)}
+                  emptyMessage="overview.noFailedOperations"
+                  selectedOperationId={selectedMaintenanceOperationId}
+                  onSelect={selectMaintenanceOperation}
+                />
+              </section>
               <section className="panel overview-panel">
                 <div className="panel-heading">
                   <div>
@@ -2744,7 +2772,7 @@ export function App() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
                 <button
-                  className="button outline lease-attention-filter"
+                  className="button outline state-filter lease-attention-filter"
                   type="button"
                   aria-pressed={leaseAttentionOnly}
                   onClick={() => setLeaseAttentionOnly((current) => !current)}
@@ -2775,13 +2803,26 @@ export function App() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">
+                <button
+                  className="button outline state-filter maintenance-failed-filter"
+                  type="button"
+                  aria-pressed={failedOperationsOnly}
+                  onClick={() => setFailedOperationsOnly((current) => !current)}
+                >
+                  {t("maintenance.failedOnly")}
+                </button>
+                <span className="scope-chip" role="status">
                   operations.list · {number(visibleMaintenanceOperations.length)}
                 </span>
               </div>
               <div className="panel target-list-panel">
                 <MaintenanceOperationTable
                   operations={visibleMaintenanceOperations}
+                  emptyMessage={
+                    failedOperationsOnly || query.trim() !== ""
+                      ? "maintenance.noMatches"
+                      : "table.empty.maintenance"
+                  }
                   selectedOperationId={selectedMaintenanceOperationId}
                   onSelect={selectMaintenanceOperation}
                 />
@@ -4184,18 +4225,24 @@ function ProfileTable({
 
 function MaintenanceOperationTable({
   operations,
+  emptyMessage = "table.empty.maintenance",
   selectedOperationId,
   onSelect,
 }: Readonly<{
   operations: readonly MaintenanceOperation[];
+  emptyMessage?: MessageKey;
   selectedOperationId: string;
   onSelect: (operationId: string) => void;
 }>) {
   const { t, dateTime } = useI18n();
-  if (operations.length === 0)
-    return <div className="table-empty">{t("table.empty.maintenance")}</div>;
+  if (operations.length === 0) return <div className="table-empty">{t(emptyMessage)}</div>;
   return (
-    <div className="table-scroll">
+    <div
+      className="table-scroll"
+      tabIndex={0}
+      role="region"
+      aria-label={t("page.maintenance.title")}
+    >
       <table>
         <thead>
           <tr>
@@ -4203,6 +4250,7 @@ function MaintenanceOperationTable({
             <th>{t("table.resource")}</th>
             <th>{t("table.status")}</th>
             <th>{t("table.currentStep")}</th>
+            <th>{t("maintenance.stableErrorCode")}</th>
             <th>{t("table.updated")}</th>
             <th aria-label={t("table.actions")} />
           </tr>
@@ -4230,6 +4278,7 @@ function MaintenanceOperationTable({
                 </span>
               </td>
               <td className="mono">{operation.currentStep}</td>
+              <td className="mono">{operation.stableErrorCode ?? "—"}</td>
               <td>{dateTime(operation.updatedAt)}</td>
               <td className="row-action-cell">
                 <button

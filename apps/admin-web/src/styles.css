@@ -1110,7 +1110,7 @@ button.metric-card:hover {
   background: var(--accent);
 }
 
-.lease-attention-filter[aria-pressed="true"] {
+.state-filter[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-foreground);
   border-color: var(--ring);
