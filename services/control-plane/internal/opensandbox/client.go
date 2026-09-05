@@ -88,6 +88,21 @@ type ExecResult struct {
 	ExecutionTimeMillis int64
 }
 
+type PTYInput struct {
+	Identity  Identity
+	RuntimeID string
+}
+
+type PTYObservation struct {
+	SessionID    string
+	Running      bool
+	OutputOffset int64
+}
+
+func (input PTYInput) valid() bool {
+	return input.Identity.valid() && identifier.MatchString(input.RuntimeID)
+}
+
 func (input ExecInput) valid() bool {
 	return input.Identity.valid() && identifier.MatchString(input.RuntimeID) && len(input.Command) >= 1 &&
 		len(input.Command) <= 8192 && utf8.ValidString(input.Command) && !strings.ContainsRune(input.Command, 0) &&
@@ -389,6 +404,146 @@ func (c *Client) execdEndpoint(ctx context.Context, runtimeID string) (*url.URL,
 		}
 		headers.Set(name, value)
 	}
+	return target, headers, nil
+}
+
+func (c *Client) verifyPTYTarget(ctx context.Context, input PTYInput) (*url.URL, http.Header, error) {
+	if c == nil || ctx == nil || !input.valid() {
+		return nil, nil, ErrInvalid
+	}
+	var current sandbox
+	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+input.RuntimeID, &current); err != nil {
+		return nil, nil, err
+	}
+	observation, err := current.observation(input.Identity)
+	if err != nil {
+		return nil, nil, err
+	}
+	if observation.RuntimeID != input.RuntimeID || observation.RuntimeState != "Running" {
+		return nil, nil, ErrRuntimeFailed
+	}
+	return c.execdEndpoint(ctx, input.RuntimeID)
+}
+
+func execdPath(target *url.URL, path string) {
+	target.Path = strings.TrimSuffix(target.Path, "/") + path
+}
+
+// CreatePTY creates only a fixed /workspace shell session after re-verifying the
+// physical Sandbox receipt. Authorization and grant lifetime remain Gateway concerns.
+func (c *Client) CreatePTY(ctx context.Context, input PTYInput) (PTYObservation, error) {
+	target, headers, err := c.verifyPTYTarget(ctx, input)
+	if err != nil {
+		return PTYObservation{}, err
+	}
+	body := bytes.NewBufferString(`{"cwd":"/workspace"}`)
+	execdPath(target, "/pty")
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), body)
+	if err != nil {
+		return PTYObservation{}, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return PTYObservation{}, ctx.Err()
+		}
+		return PTYObservation{}, ErrUnavailable
+	}
+	defer response.Body.Close()
+	var result PTYObservation
+	var raw struct {
+		SessionID string `json:"session_id"`
+	}
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
+	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusCreated ||
+		json.Unmarshal(data, &raw) != nil || !identifier.MatchString(raw.SessionID) {
+		return PTYObservation{}, ErrUnavailable
+	}
+	result.SessionID = raw.SessionID
+	return result, nil
+}
+
+func (c *Client) GetPTY(ctx context.Context, input PTYInput, sessionID string) (PTYObservation, error) {
+	target, headers, err := c.verifyPTYTarget(ctx, input)
+	if err != nil || !identifier.MatchString(sessionID) {
+		if err != nil {
+			return PTYObservation{}, err
+		}
+		return PTYObservation{}, ErrInvalid
+	}
+	execdPath(target, "/pty/"+sessionID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
+	if err != nil {
+		return PTYObservation{}, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return PTYObservation{}, ctx.Err()
+		}
+		return PTYObservation{}, ErrUnavailable
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return PTYObservation{}, ErrNotFound
+	}
+	var raw struct {
+		SessionID    string `json:"session_id"`
+		Running      bool   `json:"running"`
+		OutputOffset int64  `json:"output_offset"`
+	}
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
+	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK ||
+		json.Unmarshal(data, &raw) != nil || raw.SessionID != sessionID || raw.OutputOffset < 0 {
+		return PTYObservation{}, ErrUnavailable
+	}
+	return PTYObservation{SessionID: raw.SessionID, Running: raw.Running, OutputOffset: raw.OutputOffset}, nil
+}
+
+func (c *Client) DeletePTY(ctx context.Context, input PTYInput, sessionID string) error {
+	target, headers, err := c.verifyPTYTarget(ctx, input)
+	if err != nil || !identifier.MatchString(sessionID) {
+		if err != nil {
+			return err
+		}
+		return ErrInvalid
+	}
+	execdPath(target, "/pty/"+sessionID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, target.String(), http.NoBody)
+	if err != nil {
+		return ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrUnavailable
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+	if response.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		return ErrUnavailable
+	}
+	return nil
+}
+
+func (c *Client) PTYWebSocketTarget(ctx context.Context, input PTYInput, sessionID string) (*url.URL, http.Header, error) {
+	target, headers, err := c.verifyPTYTarget(ctx, input)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !identifier.MatchString(sessionID) {
+		return nil, nil, ErrInvalid
+	}
+	execdPath(target, "/pty/"+sessionID+"/ws")
 	return target, headers, nil
 }
 

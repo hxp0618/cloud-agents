@@ -224,10 +224,19 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		t.Fatalf("recovered workspace response = %s", output)
 	}
 
-	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
-		t.Fatalf("failure compensation = %v / %v", worked, err)
+	var failure liveSandboxRow
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			time.Sleep((time.Second << (attempt - 1)) + 100*time.Millisecond)
+		}
+		if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+			t.Fatalf("failure compensation attempt %d = %v / %v", attempt+1, worked, err)
+		}
+		failure = readLiveSandbox(t, ctx, environment.owner, "sandbox-terminal")
+		if failure.observedState == "failed" && failure.operationState == "failed" && failure.cleanupPhase == "complete" {
+			break
+		}
 	}
-	failure := readLiveSandbox(t, ctx, environment.owner, "sandbox-terminal")
 	if failure.observedState != "failed" || failure.operationState != "failed" || failure.cleanupPhase != "complete" ||
 		failure.stableError != "opensandbox_runtime_failed" || failure.runtimeID == "" {
 		t.Fatalf("compensated failure = %#v", failure)
@@ -289,7 +298,7 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 		expectedGeneration = 5
 	}
 	if current.observedState != "running" || current.writerReleased || current.runtimeID == "" ||
-		current.runtimeID == priorRuntime || current.generation != expectedGeneration || current.ttlSeconds != 60 ||
+		current.runtimeID == priorRuntime || current.generation != expectedGeneration || current.ttlSeconds != 120 ||
 		current.expiresAt.IsZero() || current.lifecycleTrigger != "manual" {
 		t.Fatalf("rebuild settlement = %#v", current)
 	}

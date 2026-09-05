@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-pty-session.schema.json",
+  "title": "SandboxPTYSession",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "sessionId", "state", "outputOffset", "webSocketPath", "createdAt"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxPTYSession" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "sessionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "state": { "enum": ["created", "running", "exited", "deleted"] },
+    "outputOffset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "webSocketPath": { "type": "string", "pattern": "^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$", "maxLength": 768 },
+    "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "webSocketPath is relative to the configured public Access Gateway and contains no credential",
+    "the Gateway fixes the upstream Sandbox, generation and /workspace working directory"
+  ]
+}

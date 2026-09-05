@@ -101,6 +101,8 @@ func EncodeWorkerHealthObservationResponseJSON(value common.ResponseEnvelope[Wor
 var (
 	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
 	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
+	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
 	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
 	roleNames                    = map[string]struct{}{
@@ -659,6 +661,59 @@ type SandboxExecResult struct {
 	Stderr              string            `json:"stderr"`
 	ExecutionTimeMillis int64             `json:"executionTimeMillis"`
 }
+type SandboxAccessGrantCreateRequest struct {
+	ExpectedGeneration int64 `json:"expectedGeneration"`
+	TTLSeconds         int64 `json:"ttlSeconds"`
+}
+type SandboxAccessGrantRevokeRequest struct {
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ConfirmedGrantID        string `json:"confirmedGrantId"`
+}
+type SandboxAccessGrant struct {
+	APIVersion  string            `json:"apiVersion"`
+	Kind        string            `json:"kind"`
+	ProjectRef  common.ProjectRef `json:"projectRef"`
+	GrantID     string            `json:"grantId"`
+	SandboxID   string            `json:"sandboxId"`
+	Generation  int64             `json:"generation"`
+	AccessKind  string            `json:"accessKind"`
+	AccessToken string            `json:"accessToken"`
+	ExpiresAt   string            `json:"expiresAt"`
+}
+type AdminSandboxAccessGrantSpec struct {
+	ProjectRef      common.ProjectRef `json:"projectRef"`
+	SandboxID       string            `json:"sandboxId"`
+	Generation      int64             `json:"generation"`
+	AccessKind      string            `json:"accessKind"`
+	Status          string            `json:"status"`
+	ExpiresAt       string            `json:"expiresAt"`
+	RevokedAt       string            `json:"revokedAt,omitempty"`
+	PTYSessionCount int64             `json:"ptySessionCount"`
+}
+type AdminSandboxAccessGrant struct {
+	ResourceBase
+	Spec AdminSandboxAccessGrantSpec `json:"spec"`
+}
+type AdminSandboxAccessGrantPage struct {
+	APIVersion    string                    `json:"apiVersion"`
+	Kind          string                    `json:"kind"`
+	AccessGrants  []AdminSandboxAccessGrant `json:"accessGrants"`
+	NextPageToken string                    `json:"nextPageToken,omitempty"`
+}
+type SandboxPTYSession struct {
+	APIVersion    string            `json:"apiVersion"`
+	Kind          string            `json:"kind"`
+	ProjectRef    common.ProjectRef `json:"projectRef"`
+	GrantID       string            `json:"grantId"`
+	SandboxID     string            `json:"sandboxId"`
+	Generation    int64             `json:"generation"`
+	SessionID     string            `json:"sessionId"`
+	State         string            `json:"state"`
+	OutputOffset  int64             `json:"outputOffset"`
+	WebSocketPath string            `json:"webSocketPath"`
+	CreatedAt     string            `json:"createdAt"`
+}
 type SandboxSession struct {
 	APIVersion            string            `json:"apiVersion"`
 	Kind                  string            `json:"kind"`
@@ -1089,6 +1144,9 @@ var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]c
 var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var sandboxExecResultResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "exitCode": common.ScalarResponseShape(), "stdout": common.ScalarResponseShape(), "stderr": common.ScalarResponseShape(), "executionTimeMillis": common.ScalarResponseShape()})
+var sandboxAccessGrantResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "accessToken": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
+var adminSandboxAccessGrantPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "accessGrants": common.ArrayResponseShape(resourceResponseShape("AdminSandboxAccessGrant")), "nextPageToken": common.ScalarResponseShape()})
+var sandboxPTYSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "outputOffset": common.ScalarResponseShape(), "webSocketPath": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape()})
 var sandboxSessionLifecycleOperationResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "idempotencyKey": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "requestedBy": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "requestedAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "currentStep": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "computeDisposition": common.ScalarResponseShape(), "workspaceDisposition": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -3603,6 +3661,205 @@ func EncodeSandboxExecResultResponseJSON(value common.ResponseEnvelope[SandboxEx
 		return nil, err
 	}
 	if _, err := DecodeSandboxExecResultJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxAccessGrantCreateRequestJSON(data []byte) (SandboxAccessGrantCreateRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedGeneration", "ttlSeconds"}, []string{"expectedGeneration", "ttlSeconds"})
+	if err != nil {
+		return SandboxAccessGrantCreateRequest{}, err
+	}
+	var value SandboxAccessGrantCreateRequest
+	if json.Unmarshal(data, &value) != nil || value.ExpectedGeneration < 1 || value.ExpectedGeneration > 9007199254740991 || value.TTLSeconds < 60 || value.TTLSeconds > 900 {
+		return SandboxAccessGrantCreateRequest{}, common.ContractError("INVALID_SANDBOX_ACCESS_GRANT_REQUEST", "")
+	}
+	_ = fields
+	return value, nil
+}
+func EncodeSandboxAccessGrantCreateRequestJSON(value SandboxAccessGrantCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxAccessGrantCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeSandboxAccessGrantRevokeRequestJSON(data []byte) (SandboxAccessGrantRevokeRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"expectedGeneration", "expectedResourceVersion", "confirmedGrantId"}, []string{"expectedGeneration", "expectedResourceVersion", "confirmedGrantId"})
+	if err != nil {
+		return SandboxAccessGrantRevokeRequest{}, err
+	}
+	var value SandboxAccessGrantRevokeRequest
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxAccessGrantRevokeRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	resourceVersion, parseErr := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	if value.ExpectedGeneration < 1 || value.ExpectedGeneration > 9007199254740991 || parseErr != nil || resourceVersion < 1 || common.ValidateIdentifier(value.ConfirmedGrantID, "/confirmedGrantId") != nil {
+		return SandboxAccessGrantRevokeRequest{}, common.ContractError("INVALID_SANDBOX_ACCESS_GRANT_REVOKE_REQUEST", "")
+	}
+	return value, nil
+}
+func EncodeSandboxAccessGrantRevokeRequestJSON(value SandboxAccessGrantRevokeRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxAccessGrantRevokeRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeSandboxAccessGrantJSON(data []byte) (SandboxAccessGrant, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "expiresAt"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "expiresAt"})
+	if err != nil {
+		return SandboxAccessGrant{}, err
+	}
+	var value SandboxAccessGrant
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxAccessGrant" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.AccessKind != "pty" || !accessTokenPattern.MatchString(value.AccessToken) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+		return SandboxAccessGrant{}, common.ContractError("INVALID_SANDBOX_ACCESS_GRANT", "")
+	}
+	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxAccessGrant{}, err
+	}
+	return value, nil
+}
+func DecodeSandboxAccessGrantResponseJSON(data []byte) (common.ResponseEnvelope[SandboxAccessGrant], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxAccessGrantResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxAccessGrant]{}, err
+	}
+	value, err := DecodeSandboxAccessGrantJSON(raw)
+	return common.ResponseEnvelope[SandboxAccessGrant]{Value: value, Unknown: sidecar}, err
+}
+func EncodeSandboxAccessGrantResponseJSON(value common.ResponseEnvelope[SandboxAccessGrant]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxAccessGrantJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeAdminSandboxAccessGrantJSON(data []byte) (AdminSandboxAccessGrant, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return AdminSandboxAccessGrant{}, err
+	}
+	base, err := checkResourceBase(fields, "AdminSandboxAccessGrant")
+	if err != nil {
+		return AdminSandboxAccessGrant{}, err
+	}
+	specFields, err := strictSpec(fields["spec"], []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "revokedAt", "ptySessionCount"}, []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount"})
+	if err != nil {
+		return AdminSandboxAccessGrant{}, err
+	}
+	var spec AdminSandboxAccessGrantSpec
+	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SandboxID, "/spec/sandboxId") != nil || spec.Generation < 1 || spec.Generation > 9007199254740991 || spec.AccessKind != "pty" || spec.Status != "active" && spec.Status != "expired" && spec.Status != "revoked" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil || spec.PTYSessionCount < 0 || spec.PTYSessionCount > 10000 {
+		return AdminSandboxAccessGrant{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec")
+	}
+	spec.ProjectRef, err = common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return AdminSandboxAccessGrant{}, err
+	}
+	_, hasRevokedAt := specFields["revokedAt"]
+	if (spec.Status == "revoked") != hasRevokedAt || hasRevokedAt && common.ValidateDateTime(spec.RevokedAt, "/spec/revokedAt") != nil {
+		return AdminSandboxAccessGrant{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/revokedAt")
+	}
+	return AdminSandboxAccessGrant{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeAdminSandboxAccessGrantResponseJSON(data []byte) (common.ResponseEnvelope[AdminSandboxAccessGrant], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, resourceResponseShape("AdminSandboxAccessGrant"))
+	if err != nil {
+		return common.ResponseEnvelope[AdminSandboxAccessGrant]{}, err
+	}
+	value, err := DecodeAdminSandboxAccessGrantJSON(raw)
+	return common.ResponseEnvelope[AdminSandboxAccessGrant]{Value: value, Unknown: sidecar}, err
+}
+func EncodeAdminSandboxAccessGrantResponseJSON(value common.ResponseEnvelope[AdminSandboxAccessGrant]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeAdminSandboxAccessGrantJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeAdminSandboxAccessGrantPageJSON(data []byte) (AdminSandboxAccessGrantPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "accessGrants", "nextPageToken"}, []string{"apiVersion", "kind", "accessGrants"})
+	if err != nil {
+		return AdminSandboxAccessGrantPage{}, err
+	}
+	var page AdminSandboxAccessGrantPage
+	var raw []json.RawMessage
+	if json.Unmarshal(data, &page) != nil || page.APIVersion != APIVersion || page.Kind != "AdminSandboxAccessGrantPage" || json.Unmarshal(fields["accessGrants"], &raw) != nil || raw == nil || len(raw) > 200 {
+		return AdminSandboxAccessGrantPage{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT_PAGE", "")
+	}
+	page.AccessGrants = make([]AdminSandboxAccessGrant, 0, len(raw))
+	for _, item := range raw {
+		value, err := DecodeAdminSandboxAccessGrantJSON(item)
+		if err != nil {
+			return AdminSandboxAccessGrantPage{}, err
+		}
+		page.AccessGrants = append(page.AccessGrants, value)
+	}
+	if _, ok := fields["nextPageToken"]; ok && common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+		return AdminSandboxAccessGrantPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return page, nil
+}
+func DecodeAdminSandboxAccessGrantPageResponseJSON(data []byte) (common.ResponseEnvelope[AdminSandboxAccessGrantPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, adminSandboxAccessGrantPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[AdminSandboxAccessGrantPage]{}, err
+	}
+	value, err := DecodeAdminSandboxAccessGrantPageJSON(raw)
+	return common.ResponseEnvelope[AdminSandboxAccessGrantPage]{Value: value, Unknown: sidecar}, err
+}
+func EncodeAdminSandboxAccessGrantPageResponseJSON(value common.ResponseEnvelope[AdminSandboxAccessGrantPage]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeAdminSandboxAccessGrantPageJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxPTYSessionJSON(data []byte) (SandboxPTYSession, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "sessionId", "state", "outputOffset", "webSocketPath", "createdAt"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "sessionId", "state", "outputOffset", "webSocketPath", "createdAt"})
+	if err != nil {
+		return SandboxPTYSession{}, err
+	}
+	var value SandboxPTYSession
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxPTYSession" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || common.ValidateIdentifier(value.SessionID, "/sessionId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.State != "created" && value.State != "running" && value.State != "exited" && value.State != "deleted" || value.OutputOffset < 0 || value.OutputOffset > 9007199254740991 || len(value.WebSocketPath) > 768 || !ptyWebSocketPathPattern.MatchString(value.WebSocketPath) || common.ValidateDateTime(value.CreatedAt, "/createdAt") != nil {
+		return SandboxPTYSession{}, common.ContractError("INVALID_SANDBOX_PTY_SESSION", "")
+	}
+	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxPTYSession{}, err
+	}
+	return value, nil
+}
+func DecodeSandboxPTYSessionResponseJSON(data []byte) (common.ResponseEnvelope[SandboxPTYSession], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxPTYSessionResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxPTYSession]{}, err
+	}
+	value, err := DecodeSandboxPTYSessionJSON(raw)
+	return common.ResponseEnvelope[SandboxPTYSession]{Value: value, Unknown: sidecar}, err
+}
+func EncodeSandboxPTYSessionResponseJSON(value common.ResponseEnvelope[SandboxPTYSession]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxPTYSessionJSON(raw); err != nil {
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

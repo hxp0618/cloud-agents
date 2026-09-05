@@ -70,7 +70,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewFoundationHTTPServer(verifier, store, nil)
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 
 	sandboxRequest := platform.SandboxSessionCreateRequest{
 		WorkspaceID: "workspace", WorkspaceName: "workspace", SandboxID: "sandbox",
-		RuntimeProfileID: "profile", RuntimeProfileVersion: 1, TTLSeconds: 60,
+		RuntimeProfileID: "profile", RuntimeProfileVersion: 1, TTLSeconds: 120,
 	}
 	sandbox, err := user.CreateSandbox(ctx, "tenant", "project", "request-sandbox", "sandbox-create-key", sandboxRequest)
 	if err != nil || sandbox.Value.ObservedState != "pending" || sandbox.Value.OperationID == "" || sandbox.Value.ExpiresAt == "" {
@@ -176,7 +176,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 		t.Fatalf("Admin sandbox list: value=%+v err=%v", adminSandboxes.Value, err)
 	}
 	for _, item := range adminSandboxes.Value.SandboxSessions {
-		if item.Spec.TTLSeconds != 60 || item.Spec.ExpiresAt == "" {
+		if item.Spec.TTLSeconds != 120 || item.Spec.ExpiresAt == "" {
 			t.Fatalf("Admin sandbox TTL projection=%+v", item.Spec)
 		}
 	}
@@ -269,7 +269,7 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewFoundationHTTPServer(verifier, store, nil)
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestFoundationSandboxExecPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewFoundationHTTPServer(verifier, store, credentials)
+	handler, err := NewFoundationHTTPServer(verifier, store, credentials, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
+	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
@@ -136,6 +138,49 @@ func TestRunExecutesSandboxThroughControlPlane(t *testing.T) {
 	}
 }
 
+func TestRunAttachesPTYWithCursor(t *testing.T) {
+	const path = "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/pty-sessions/session-alpha"
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer cag1_"+strings.Repeat("x", 43) || request.Header.Get("X-Request-ID") != "request-alpha" {
+			t.Fatalf("headers = %v", request.Header)
+		}
+		if request.URL.Path == path {
+			body, err := platform.EncodeSandboxPTYSessionResponseJSON(common.ResponseEnvelope[platform.SandboxPTYSession]{Value: platform.SandboxPTYSession{
+				APIVersion: platform.APIVersion, Kind: "SandboxPTYSession", GrantID: "grant-alpha",
+				ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: "project-alpha"},
+				SandboxID:  "sandbox-alpha", SessionID: "session-alpha", Generation: 3, State: "running",
+				OutputOffset: 7, WebSocketPath: path + "/ws", CreatedAt: "2026-09-06T00:00:00Z",
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = writer.Write(body)
+			return
+		}
+		if request.URL.Path != path+"/ws" || request.URL.Query().Get("since") != "7" || request.URL.Query().Get("takeover") != "1" {
+			t.Fatalf("PTY request = %s", request.URL.String())
+		}
+		connection, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.Close()
+		_ = connection.WriteMessage(websocket.BinaryMessage, append([]byte{1}, []byte("hello")...))
+		_ = connection.WriteJSON(map[string]string{"type": "exit"})
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "cag1_" + strings.Repeat("x", 43), "--tenant", "tenant-alpha",
+		"--project", "project-alpha", "--grant", "grant-alpha", "--pty-session", "session-alpha",
+		"--request-id", "request-alpha", "pty", "attach", "--since", "7", "--takeover",
+	}, &stdout)
+	if err != nil || stdout.String() != "hello" {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 	for _, test := range []struct {
 		args     []string
@@ -150,6 +195,8 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
 		{args: []string{"events", "watch", "help"}, expected: "-until-terminal"},
 		{args: []string{"sandbox", "exec", "help"}, expected: "-expected-generation int"},
+		{args: []string{"sandbox", "grant", "help"}, expected: "-ttl-seconds int"},
+		{args: []string{"pty", "attach", "help"}, expected: "-takeover"},
 	} {
 		var stdout bytes.Buffer
 		if err := run(test.args, &stdout); err != nil {

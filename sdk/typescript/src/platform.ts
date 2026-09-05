@@ -612,6 +612,61 @@ export type SandboxExecResult = Readonly<{
   stderr: string;
   executionTimeMillis: number;
 }>;
+export type SandboxAccessGrantCreateRequest = Readonly<{
+  expectedGeneration: number;
+  ttlSeconds: number;
+}>;
+export type SandboxAccessGrantRevokeRequest = Readonly<{
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  confirmedGrantId: string;
+}>;
+export type SandboxAccessGrant = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxAccessGrant";
+  projectRef: NamespaceRef;
+  grantId: string;
+  sandboxId: string;
+  generation: number;
+  accessKind: "pty";
+  accessToken: string;
+  expiresAt: string;
+}>;
+export type AdminSandboxAccessGrantSpec = Readonly<{
+  projectRef: NamespaceRef;
+  sandboxId: string;
+  generation: number;
+  accessKind: "pty";
+  status: "active" | "expired" | "revoked";
+  expiresAt: string;
+  revokedAt?: string;
+  ptySessionCount: number;
+}>;
+export type AdminSandboxAccessGrant = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminSandboxAccessGrant";
+  metadata: ResourceMetadata;
+  spec: AdminSandboxAccessGrantSpec;
+}>;
+export type AdminSandboxAccessGrantPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminSandboxAccessGrantPage";
+  accessGrants: readonly AdminSandboxAccessGrant[];
+  nextPageToken?: string;
+}>;
+export type SandboxPTYSession = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxPTYSession";
+  projectRef: NamespaceRef;
+  grantId: string;
+  sandboxId: string;
+  generation: number;
+  sessionId: string;
+  state: "created" | "running" | "exited" | "deleted";
+  outputOffset: number;
+  webSocketPath: string;
+  createdAt: string;
+}>;
 export type SandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "SandboxSession";
@@ -1597,6 +1652,52 @@ const sandboxExecResultResponseShape: ResponseShape = {
     stdout: scalarResponseShape,
     stderr: scalarResponseShape,
     executionTimeMillis: scalarResponseShape,
+  },
+};
+const sandboxAccessGrantResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    grantId: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    generation: scalarResponseShape,
+    accessKind: scalarResponseShape,
+    accessToken: scalarResponseShape,
+    expiresAt: scalarResponseShape,
+  },
+};
+const adminSandboxAccessGrantResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  sandboxId: scalarResponseShape,
+  generation: scalarResponseShape,
+  accessKind: scalarResponseShape,
+  status: scalarResponseShape,
+  expiresAt: scalarResponseShape,
+  revokedAt: scalarResponseShape,
+  ptySessionCount: scalarResponseShape,
+});
+const adminSandboxAccessGrantPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    accessGrants: { item: adminSandboxAccessGrantResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const sandboxPTYSessionResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    grantId: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    generation: scalarResponseShape,
+    sessionId: scalarResponseShape,
+    state: scalarResponseShape,
+    outputOffset: scalarResponseShape,
+    webSocketPath: scalarResponseShape,
+    createdAt: scalarResponseShape,
   },
 };
 const sandboxSessionLifecycleOperationResponseShape: ResponseShape = {
@@ -2861,6 +2962,226 @@ export function decodeSandboxExecResult(value: unknown): SandboxExecResult {
     stdout,
     stderr,
     executionTimeMillis: integer(source.executionTimeMillis, 0, 65000, "/executionTimeMillis"),
+  });
+}
+export function decodeSandboxAccessGrantCreateRequest(
+  value: unknown,
+): SandboxAccessGrantCreateRequest {
+  const source = strictRecord(
+    value,
+    ["expectedGeneration", "ttlSeconds"],
+    ["expectedGeneration", "ttlSeconds"],
+  );
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    ttlSeconds: integer(source.ttlSeconds, 60, 900, "/ttlSeconds"),
+  });
+}
+export function encodeSandboxAccessGrantCreateRequest(
+  value: SandboxAccessGrantCreateRequest,
+): string {
+  return JSON.stringify(decodeSandboxAccessGrantCreateRequest(value));
+}
+export function decodeSandboxAccessGrantRevokeRequest(
+  value: unknown,
+): SandboxAccessGrantRevokeRequest {
+  const source = strictRecord(
+    value,
+    ["expectedGeneration", "expectedResourceVersion", "confirmedGrantId"],
+    ["expectedGeneration", "expectedResourceVersion", "confirmedGrantId"],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    confirmedGrantId: identifier(source.confirmedGrantId, "/confirmedGrantId"),
+  });
+}
+export function encodeSandboxAccessGrantRevokeRequest(
+  value: SandboxAccessGrantRevokeRequest,
+): string {
+  return JSON.stringify(decodeSandboxAccessGrantRevokeRequest(value));
+}
+export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "accessKind",
+      "accessToken",
+      "expiresAt",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "accessKind",
+      "accessToken",
+      "expiresAt",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "SandboxAccessGrant")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const accessToken = string(source.accessToken, "/accessToken");
+  if (!/^cag1_[A-Za-z0-9_-]{43}$/u.test(accessToken)) error("INVALID_ACCESS_TOKEN", "/accessToken");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxAccessGrant",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    grantId: identifier(source.grantId, "/grantId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    accessKind: enumValue(source.accessKind, ["pty"] as const, "/accessKind"),
+    accessToken,
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAccessGrant {
+  const source = record(value);
+  const root = base(source, "AdminSandboxAccessGrant");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "sandboxId",
+      "generation",
+      "accessKind",
+      "status",
+      "expiresAt",
+      "revokedAt",
+      "ptySessionCount",
+    ],
+    [
+      "projectRef",
+      "sandboxId",
+      "generation",
+      "accessKind",
+      "status",
+      "expiresAt",
+      "ptySessionCount",
+    ],
+    "/spec",
+  );
+  const status = enumValue(spec.status, ["active", "expired", "revoked"] as const, "/spec/status");
+  const revokedAt =
+    spec.revokedAt === undefined ? undefined : dateTime(spec.revokedAt, "/spec/revokedAt");
+  if ((status === "revoked") !== (revokedAt !== undefined))
+    error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/revokedAt");
+  return Object.freeze({
+    ...root,
+    kind: "AdminSandboxAccessGrant",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      sandboxId: identifier(spec.sandboxId, "/spec/sandboxId"),
+      generation: integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation"),
+      accessKind: enumValue(spec.accessKind, ["pty"] as const, "/spec/accessKind"),
+      status,
+      expiresAt: dateTime(spec.expiresAt, "/spec/expiresAt"),
+      ...(revokedAt === undefined ? {} : { revokedAt }),
+      ptySessionCount: integer(spec.ptySessionCount, 0, 10000, "/spec/ptySessionCount"),
+    }),
+  });
+}
+export function decodeAdminSandboxAccessGrantPage(value: unknown): AdminSandboxAccessGrantPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "accessGrants", "nextPageToken"],
+    ["apiVersion", "kind", "accessGrants"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "AdminSandboxAccessGrantPage" ||
+    !Array.isArray(source.accessGrants) ||
+    source.accessGrants.length > 200
+  )
+    error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT_PAGE", "/accessGrants");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "AdminSandboxAccessGrantPage" as const,
+    accessGrants: Object.freeze(
+      (source.accessGrants as unknown[]).map(decodeAdminSandboxAccessGrant),
+    ),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeSandboxPTYSession(value: unknown): SandboxPTYSession {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "sessionId",
+      "state",
+      "outputOffset",
+      "webSocketPath",
+      "createdAt",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "sessionId",
+      "state",
+      "outputOffset",
+      "webSocketPath",
+      "createdAt",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "SandboxPTYSession")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const webSocketPath = boundedString(source.webSocketPath, 1, 768, "/webSocketPath");
+  if (
+    !/^\/v1\/tenants\/[A-Za-z0-9._~-]+\/projects\/[A-Za-z0-9._~-]+\/sandbox-access-grants\/[A-Za-z0-9._~-]+\/pty-sessions\/[A-Za-z0-9._~-]+\/ws$/u.test(
+      webSocketPath,
+    )
+  )
+    error("INVALID_PTY_WEBSOCKET_PATH", "/webSocketPath");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxPTYSession",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    grantId: identifier(source.grantId, "/grantId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    sessionId: identifier(source.sessionId, "/sessionId"),
+    state: enumValue(source.state, ["created", "running", "exited", "deleted"] as const, "/state"),
+    outputOffset: integer(source.outputOffset, 0, Number.MAX_SAFE_INTEGER, "/outputOffset"),
+    webSocketPath,
+    createdAt: dateTime(source.createdAt, "/createdAt"),
   });
 }
 export function decodeSandboxSessionLifecycleRequest(
@@ -6311,6 +6632,26 @@ export function parseSandboxSession(text: string): ResponseEnvelope<SandboxSessi
 export function parseSandboxExecResult(text: string): ResponseEnvelope<SandboxExecResult> {
   return parseResponse(text, sandboxExecResultResponseShape, decodeSandboxExecResult);
 }
+export function parseSandboxAccessGrant(text: string): ResponseEnvelope<SandboxAccessGrant> {
+  return parseResponse(text, sandboxAccessGrantResponseShape, decodeSandboxAccessGrant);
+}
+export function parseAdminSandboxAccessGrant(
+  text: string,
+): ResponseEnvelope<AdminSandboxAccessGrant> {
+  return parseResponse(text, adminSandboxAccessGrantResponseShape, decodeAdminSandboxAccessGrant);
+}
+export function parseAdminSandboxAccessGrantPage(
+  text: string,
+): ResponseEnvelope<AdminSandboxAccessGrantPage> {
+  return parseResponse(
+    text,
+    adminSandboxAccessGrantPageResponseShape,
+    decodeAdminSandboxAccessGrantPage,
+  );
+}
+export function parseSandboxPTYSession(text: string): ResponseEnvelope<SandboxPTYSession> {
+  return parseResponse(text, sandboxPTYSessionResponseShape, decodeSandboxPTYSession);
+}
 export function decodeSandboxSessionLifecycleOperation(
   value: unknown,
 ): SandboxSessionLifecycleOperation {
@@ -6631,7 +6972,7 @@ function interactionAnswer(value: unknown, path: string): string {
 }
 
 export type FixtureRequest = Readonly<{
-  method: "GET" | "POST" | "PUT";
+  method: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
   headers: Readonly<Record<string, string>>;
   body?: string;
@@ -8654,6 +8995,113 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
     return result;
   }
+  async createSandboxAccessGrant(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxAccessGrantCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxAccessGrant>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeSandboxAccessGrantCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}/access-grants`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSandboxAccessGrantCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201)
+      throw await this.problem("foundationCreateSandboxAccessGrant", response);
+    const result = parseSandboxAccessGrant(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.sandboxId !== sandboxId ||
+      result.value.generation !== checked.expectedGeneration
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
+    return result;
+  }
+  async createPTYSession(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxPTYSession>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/pty-sessions`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem("foundationCreatePTYSession", response);
+    const result = parseSandboxPTYSession(response.body);
+    if (result.value.projectRef.id !== projectId || result.value.grantId !== grantId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/grantId");
+    return result;
+  }
+  async getPTYSession(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    sessionId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxPTYSession>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    identifier(sessionId, "/ptySessionId");
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/pty-sessions/${sessionId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("foundationGetPTYSession", response);
+    const result = parseSandboxPTYSession(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.grantId !== grantId ||
+      result.value.sessionId !== sessionId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sessionId");
+    return result;
+  }
+  async deletePTYSession(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    sessionId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    identifier(sessionId, "/ptySessionId");
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/pty-sessions/${sessionId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw await this.problem("foundationDeletePTYSession", response);
+  }
   async listEnvironmentProfiles(
     tenantId: string,
     projectId: string,
@@ -8997,6 +9445,84 @@ export class Client {
       result.value.metadata.tenantRef.id !== tenantId ||
       result.value.spec.projectRef.id !== projectId ||
       result.value.metadata.uid !== sandboxId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminSandboxAccessGrants(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminSandboxAccessGrantPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}/access-grants${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListSandboxAccessGrants", response);
+    const result = parseAdminSandboxAccessGrantPage(response.body);
+    if (
+      result.value.accessGrants.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId ||
+          spec.projectRef.id !== projectId ||
+          spec.sandboxId !== sandboxId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/accessGrants");
+    return result;
+  }
+  async revokeAdminSandboxAccessGrant(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    grantId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxAccessGrantRevokeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminSandboxAccessGrant>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    identifier(grantId, "/grantId");
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeSandboxAccessGrantRevokeRequest(body);
+    if (checked.confirmedGrantId !== grantId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedGrantId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}/access-grants/${grantId}:revoke`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSandboxAccessGrantRevokeRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminRevokeSandboxAccessGrant", response);
+    const result = parseAdminSandboxAccessGrant(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.sandboxId !== sandboxId ||
+      result.value.metadata.uid !== grantId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;

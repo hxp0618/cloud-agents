@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-access-grant-create-request.schema.json",
+  "title": "SandboxAccessGrantCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedGeneration", "ttlSeconds"],
+  "properties": {
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 900 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the grant is fixed to PTY access for exactly one current Sandbox generation",
+    "the caller cannot submit an endpoint, runtime identity, credential reference or upstream session identity"
+  ]
+}

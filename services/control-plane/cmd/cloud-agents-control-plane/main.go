@@ -30,6 +30,7 @@ import (
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
@@ -52,6 +53,7 @@ const (
 	localDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
 	localKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
 	localSSHCredentialsEnvironment        = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
+	localAccessGrantKeyEnvironment        = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
 	localTokenRefreshInterval             = 4 * time.Minute
 )
 
@@ -249,6 +251,7 @@ type controlPlaneConfig struct {
 	dockerCredentials     string
 	kubernetesCredentials string
 	sshCredentials        string
+	accessGrantKey        string
 }
 
 type localRuntimeWorkerHealth struct {
@@ -429,6 +432,13 @@ func run(ctx context.Context, args []string) error {
 	}
 	var dockerProber *dockertarget.CredentialDirectory
 	var sandboxCredentials *opensandbox.CredentialDirectory
+	var grantCodec *accessgrant.Codec
+	if config.accessGrantKey != "" {
+		grantCodec, err = accessgrant.Load(config.accessGrantKey)
+		if err != nil {
+			return errors.New("local Sandbox access Grant key is invalid")
+		}
+	}
 	if config.dockerCredentials != "" {
 		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
 		if err != nil {
@@ -489,7 +499,7 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local published environment profile HTTP server is unavailable")
 	}
-	foundationHTTPServer, err := server.NewFoundationHTTPServer(verifierAdapter, coordinationService, sandboxCredentials)
+	foundationHTTPServer, err := server.NewFoundationHTTPServer(verifierAdapter, coordinationService, sandboxCredentials, grantCodec)
 	if err != nil {
 		return errors.New("local foundation HTTP server is unavailable")
 	}
@@ -704,6 +714,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
+	accessGrantKey := set.String("access-grant-key-file", "", "shared 32-64 byte Sandbox access Grant key file")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return controlPlaneConfig{}, errors.New("invalid control-plane configuration")
 	}
@@ -711,7 +722,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	if resolvedDatabaseURL == "" && getenv != nil {
 		resolvedDatabaseURL = getenv(databaseURLEnvironment)
 	}
-	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials, resolvedKubernetesCredentials, resolvedSSHCredentials := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials, *kubernetesCredentials, *sshCredentials
+	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials, resolvedKubernetesCredentials, resolvedSSHCredentials, resolvedAccessGrantKey := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials, *kubernetesCredentials, *sshCredentials, *accessGrantKey
 	if getenv != nil {
 		if resolvedWorkerEndpoint == "" {
 			resolvedWorkerEndpoint = getenv(localRuntimeWorkerEndpointEnvironment)
@@ -731,13 +742,16 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		if resolvedSSHCredentials == "" {
 			resolvedSSHCredentials = getenv(localSSHCredentialsEnvironment)
 		}
+		if resolvedAccessGrantKey == "" {
+			resolvedAccessGrantKey = getenv(localAccessGrantKeyEnvironment)
+		}
 	}
 	if (*localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator)))) ||
 		(*localAdminTokenFile != "" && (strings.TrimSpace(*localAdminTokenFile) != *localAdminTokenFile || strings.HasSuffix(*localAdminTokenFile, string(os.PathSeparator)))) ||
 		(*localTokenFile != "" && *localTokenFile == *localAdminTokenFile) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
-	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || strings.TrimSpace(resolvedSSHCredentials) != resolvedSSHCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
+	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || strings.TrimSpace(resolvedSSHCredentials) != resolvedSSHCredentials || strings.TrimSpace(resolvedAccessGrantKey) != resolvedAccessGrantKey || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
 		return controlPlaneConfig{}, errInvalidRuntimeConfig
 	}
 	return controlPlaneConfig{
@@ -753,6 +767,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		dockerCredentials:     resolvedDockerCredentials,
 		kubernetesCredentials: resolvedKubernetesCredentials,
 		sshCredentials:        resolvedSSHCredentials,
+		accessGrantKey:        resolvedAccessGrantKey,
 	}, nil
 }
 

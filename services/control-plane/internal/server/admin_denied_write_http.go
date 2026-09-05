@@ -88,9 +88,12 @@ func adminDeniedWriteRoute(r *http.Request) (postgres.AdminDeniedWrite, bool) {
 	} else if tenant, project, id, action, ok := adminEnvironmentLeasePath(r.URL.Path); ok && r.Method == http.MethodPost {
 		event.TenantID, event.ProjectID, event.ResourceID = tenant, project, id
 		event.Action = map[string]string{"upgrade": "adminUpgradeEnvironmentLease", "rollback": "adminRollbackEnvironmentLease"}[action]
-	} else if admin, tenant, project, id, version, action, ok := foundationPath(r.URL.Path); ok && admin && r.Method == http.MethodPost {
+	} else if admin, tenant, project, id, secondaryID, version, action, ok := foundationPath(r.URL.Path); ok && admin && r.Method == http.MethodPost {
 		event.TenantID, event.ProjectID, event.ResourceID, event.ProfileVersion = tenant, project, id, version
-		event.Action = map[string]string{"admin-collection": "adminCreateRuntimeProfile", "publish": "adminPublishRuntimeProfile", "disable": "adminDisableRuntimeProfile", "stop": "adminStopSandboxSession", "rebuild": "adminRebuildSandboxSession"}[action]
+		event.Action = map[string]string{"admin-collection": "adminCreateRuntimeProfile", "publish": "adminPublishRuntimeProfile", "disable": "adminDisableRuntimeProfile", "stop": "adminStopSandboxSession", "rebuild": "adminRebuildSandboxSession", "revoke-access-grant": "adminRevokeSandboxAccessGrant"}[action]
+		if action == "revoke-access-grant" {
+			event.ResourceID = secondaryID
+		}
 	} else if tenant, project, id, version, action, ok := adminEnvironmentProfilePath(r.URL.Path); ok && r.Method == http.MethodPost {
 		event.TenantID, event.ProjectID, event.ResourceID, event.ProfileVersion = tenant, project, id, version
 		event.Action = map[string]string{"collection": "adminCreateEnvironmentProfile", "publish": "adminPublishEnvironmentProfile", "disable": "adminDisableEnvironmentProfile"}[action]

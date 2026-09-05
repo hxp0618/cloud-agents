@@ -5,6 +5,7 @@ import {
   type Client,
   type AdminEnvironmentLeaseUpgradeRequest,
   type AdminAuditEvent,
+  type AdminSandboxAccessGrant,
   type AdminSandboxSession,
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
@@ -73,6 +74,8 @@ export type AdminClient = Pick<
   | "getAdminRuntimeProfile"
   | "listAdminSandboxSessions"
   | "getAdminSandboxSession"
+  | "listAdminSandboxAccessGrants"
+  | "revokeAdminSandboxAccessGrant"
   | "stopAdminSandboxSession"
   | "rebuildAdminSandboxSession"
 >;
@@ -623,6 +626,40 @@ export async function listAdminSandboxes(
       (right.metadata.updatedAt ?? right.metadata.createdAt).localeCompare(
         left.metadata.updatedAt ?? left.metadata.createdAt,
       ),
+    ),
+  );
+}
+
+export async function listAdminSandboxAccessGrants(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  sandboxId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminSandboxAccessGrant[]> {
+  const grants: AdminSandboxAccessGrant[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminSandboxAccessGrants(
+      tenantId,
+      projectId,
+      sandboxId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    grants.push(...page.value.accessGrants);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.sandboxGrantPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    grants.toSorted((left, right) =>
+      right.metadata.createdAt.localeCompare(left.metadata.createdAt),
     ),
   );
 }

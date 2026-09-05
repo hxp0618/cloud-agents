@@ -144,6 +144,136 @@ describe("generated platform JSON models", () => {
     ).toThrow("INVALID_SANDBOX_EXEC_RESULT");
   });
 
+  it("uses fixed Grant and PTY routes without exposing infrastructure authority", async () => {
+    const projectRef = { namespace: "cloud-agents", kind: "project", id: "project-alpha" } as const;
+    const tenantRef = { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" } as const;
+    const grant = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "SandboxAccessGrant",
+      projectRef,
+      grantId: "grant-alpha",
+      sandboxId: "sandbox-alpha",
+      generation: 3,
+      accessKind: "pty",
+      accessToken: `cag1_${"x".repeat(43)}`,
+      expiresAt: "2026-09-06T00:05:00Z",
+    } as const;
+    const session = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "SandboxPTYSession",
+      projectRef,
+      grantId: "grant-alpha",
+      sandboxId: "sandbox-alpha",
+      generation: 3,
+      sessionId: "session-alpha",
+      state: "running",
+      outputOffset: 7,
+      webSocketPath:
+        "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/pty-sessions/session-alpha/ws",
+      createdAt: "2026-09-06T00:00:00Z",
+    } as const;
+    const adminGrant = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "AdminSandboxAccessGrant",
+      metadata: {
+        uid: "grant-alpha",
+        name: "grant-alpha",
+        tenantRef,
+        resourceVersion: "2",
+        createdAt: "2026-09-06T00:00:00Z",
+        updatedAt: "2026-09-06T00:01:00Z",
+      },
+      spec: {
+        projectRef,
+        sandboxId: "sandbox-alpha",
+        generation: 3,
+        accessKind: "pty",
+        status: "revoked",
+        expiresAt: "2026-09-06T00:05:00Z",
+        revokedAt: "2026-09-06T00:01:00Z",
+        ptySessionCount: 1,
+      },
+    } as const;
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      if (request.method === "DELETE") return { status: 204, headers: {}, body: "" };
+      if (request.path.startsWith("/v1/admin/") && request.method === "GET") {
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            apiVersion: "platform.cloud-agents.dev/v1alpha1",
+            kind: "AdminSandboxAccessGrantPage",
+            accessGrants: [adminGrant],
+          }),
+        };
+      }
+      if (request.path.startsWith("/v1/admin/")) {
+        return {
+          status: 200,
+          headers: { "X-Resource-Version": "2" },
+          body: JSON.stringify(adminGrant),
+        };
+      }
+      if (request.path.endsWith("/access-grants")) {
+        return { status: 201, headers: {}, body: JSON.stringify(grant) };
+      }
+      return {
+        status: request.method === "GET" ? 200 : 201,
+        headers: {},
+        body: JSON.stringify(session),
+      };
+    });
+    await client.createSandboxAccessGrant(
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      "request-alpha",
+      "grant-idempotency-0001",
+      { expectedGeneration: 3, ttlSeconds: 300 },
+    );
+    await client.createPTYSession("tenant-alpha", "project-alpha", "grant-alpha", "request-alpha");
+    await client.getPTYSession(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "session-alpha",
+      "request-alpha",
+    );
+    await client.deletePTYSession(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "session-alpha",
+      "request-alpha",
+    );
+    await client.listAdminSandboxAccessGrants(
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      "request-alpha",
+    );
+    await client.revokeAdminSandboxAccessGrant(
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      "grant-alpha",
+      "request-alpha",
+      "revoke-idempotency-0001",
+      { expectedGeneration: 3, expectedResourceVersion: "1", confirmedGrantId: "grant-alpha" },
+    );
+    expect(seen.map(({ method }) => method)).toEqual([
+      "POST",
+      "POST",
+      "GET",
+      "DELETE",
+      "GET",
+      "POST",
+    ]);
+    expect(JSON.stringify(seen)).not.toMatch(/endpoint|credentialRef|providerCredentialRef/u);
+  });
+
   it("replays the managed-agent Session contract and client lifecycle", async () => {
     const session = JSON.stringify({
       apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",

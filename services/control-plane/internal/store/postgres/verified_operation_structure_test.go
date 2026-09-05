@@ -319,6 +319,22 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		requireCallerClosure(t, tree, contract.kernel, "*DurableCoordinationService."+name)
 	}
 
+	requireCallerClosure(t, tree, "withFoundationOperation",
+		"*DurableCoordinationService.CreateFoundationSandbox",
+		"*DurableCoordinationService.CreateRuntimeProfile",
+		"*DurableCoordinationService.GetAdminSandbox",
+		"*DurableCoordinationService.GetFoundationSandboxAccess",
+		"*DurableCoordinationService.GetRuntimeProfile",
+		"*DurableCoordinationService.IssueSandboxAccessGrant",
+		"*DurableCoordinationService.ListAdminSandboxes",
+		"*DurableCoordinationService.ListPublishedRuntimeProfiles",
+		"*DurableCoordinationService.ListRuntimeProfiles",
+		"*DurableCoordinationService.ListSandboxAccessGrants",
+		"*DurableCoordinationService.RevokeSandboxAccessGrant",
+		"*DurableCoordinationService.TransitionFoundationSandbox",
+		"*DurableCoordinationService.TransitionRuntimeProfile",
+	)
+
 	requireCallerClosure(t, tree, "WithVerifiedOperation",
 		"*DurableCoordinationService.BeginAdminEnvironmentLeaseUpgrade",
 		"*DurableCoordinationService.BeginDeploymentTargetCleanup",

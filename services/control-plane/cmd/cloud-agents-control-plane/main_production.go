@@ -25,6 +25,7 @@ import (
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/foundationcontroller"
@@ -52,6 +53,7 @@ const (
 	productionDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
 	productionKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
 	productionSSHCredentialsEnvironment        = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
+	productionAccessGrantKeyEnvironment        = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
 	productionAdmissionLeaseEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
 	productionAdmissionGenerationEnvironment   = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
 	productionAdmissionTokenEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
@@ -82,6 +84,7 @@ type productionConfig struct {
 	dockerCredentials     string
 	kubernetesCredentials string
 	sshCredentials        string
+	accessGrantKey        string
 	admissionLeaseID      string
 	admissionGeneration   uint64
 	admissionToken        []byte
@@ -238,6 +241,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	}
 	var dockerProber *dockertarget.CredentialDirectory
 	var sandboxCredentials *opensandbox.CredentialDirectory
+	grantCodec, err := accessgrant.Load(config.accessGrantKey)
+	if err != nil {
+		return errors.New("Sandbox access Grant key is invalid")
+	}
 	if config.dockerCredentials != "" {
 		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
 		if err != nil {
@@ -309,7 +316,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("published environment profile HTTP server is unavailable")
 	}
-	foundationServer, err := server.NewFoundationHTTPServer(verifier, coordinationService, sandboxCredentials)
+	foundationServer, err := server.NewFoundationHTTPServer(verifier, coordinationService, sandboxCredentials, grantCodec)
 	if err != nil {
 		return errors.New("foundation HTTP server is unavailable")
 	}
@@ -528,6 +535,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
+	accessGrantKey := set.String("access-grant-key-file", "", "shared 32-64 byte Sandbox access Grant key file")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
@@ -557,8 +565,9 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(dockerCredentials, productionDockerCredentialsEnvironment)
 	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
 	fill(sshCredentials, productionSSHCredentialsEnvironment)
+	fill(accessGrantKey, productionAccessGrantKeyEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials {
+	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -574,7 +583,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	if getenv != nil {
 		admissionToken = getenv(productionAdmissionTokenEnvironment)
 	}
-	required := []string{*database, *authPath, *tlsCert, *tlsKey, *workerClientCert, *workerClientKey, *workerCA, *workspaceDirectory, admissionToken}
+	required := []string{*database, *authPath, *tlsCert, *tlsKey, *workerClientCert, *workerClientKey, *workerCA, *workspaceDirectory, *accessGrantKey, admissionToken}
 	for _, value := range required {
 		if value == "" || strings.TrimSpace(value) != value {
 			return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
@@ -587,7 +596,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

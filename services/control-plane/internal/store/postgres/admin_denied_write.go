@@ -40,6 +40,8 @@ func validAdminDeniedWrite(event AdminDeniedWrite) bool {
 	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminSetStoragePolicy", "adminSetNetworkPolicy",
 		"adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget":
 		return event.ResourceID != "" && event.ProfileVersion == 0
+	case "adminRevokeSandboxAccessGrant":
+		return event.ResourceID != "" && event.ProfileVersion == 0
 	case "adminRegisterWorkerRelease", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminRegisterDeploymentTarget":
 		return event.ResourceID == "" && event.ProfileVersion == 0
 	}

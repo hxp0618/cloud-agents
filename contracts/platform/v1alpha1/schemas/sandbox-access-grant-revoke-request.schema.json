@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-access-grant-revoke-request.schema.json",
+  "title": "SandboxAccessGrantRevokeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedGeneration", "expectedResourceVersion", "confirmedGrantId"],
+  "properties": {
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "expectedResourceVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
+    "confirmedGrantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

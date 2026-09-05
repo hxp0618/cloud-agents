@@ -178,6 +178,10 @@ type RuntimeProfilePageResult = common.ResponseEnvelope[platform.RuntimeProfileP
 type RuntimeProfileSummaryPageResult = common.ResponseEnvelope[platform.RuntimeProfileSummaryPage]
 type SandboxSessionResult = common.ResponseEnvelope[platform.SandboxSession]
 type SandboxExecResult = common.ResponseEnvelope[platform.SandboxExecResult]
+type SandboxAccessGrantResult = common.ResponseEnvelope[platform.SandboxAccessGrant]
+type AdminSandboxAccessGrantResult = common.ResponseEnvelope[platform.AdminSandboxAccessGrant]
+type AdminSandboxAccessGrantPageResult = common.ResponseEnvelope[platform.AdminSandboxAccessGrantPage]
+type SandboxPTYSessionResult = common.ResponseEnvelope[platform.SandboxPTYSession]
 type SandboxSessionLifecycleOperationResult = common.ResponseEnvelope[platform.SandboxSessionLifecycleOperation]
 type AdminSandboxSessionResult = common.ResponseEnvelope[platform.AdminSandboxSession]
 type AdminSandboxSessionPageResult = common.ResponseEnvelope[platform.AdminSandboxSessionPage]
@@ -1458,6 +1462,84 @@ func (client *Client) ExecSandbox(ctx context.Context, tenantID, projectID, sand
 	}
 	return value, nil
 }
+func (client *Client) CreateSandboxAccessGrant(ctx context.Context, tenantID, projectID, sandboxID, requestID, idempotencyKey string, body platform.SandboxAccessGrantCreateRequest) (SandboxAccessGrantResult, error) {
+	bodyBytes, err := platform.EncodeSandboxAccessGrantCreateRequestJSON(body)
+	if err != nil {
+		return SandboxAccessGrantResult{}, err
+	}
+	input, err := ValidateCreateSandboxAccessGrantServerRequest(tenantID, projectID, sandboxID, requestID, idempotencyKey, bodyBytes)
+	if err != nil {
+		return SandboxAccessGrantResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID + "/access-grants", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return SandboxAccessGrantResult{}, err
+	}
+	if response.Status != 201 {
+		return SandboxAccessGrantResult{}, client.problemError("foundationCreateSandboxAccessGrant", response)
+	}
+	value, err := platform.DecodeSandboxAccessGrantResponseJSON(response.Body)
+	if err != nil {
+		return SandboxAccessGrantResult{}, &ClientError{Operation: "foundationCreateSandboxAccessGrant", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.SandboxID != sandboxID || value.Value.Generation != input.Body.ExpectedGeneration {
+		return SandboxAccessGrantResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId")
+	}
+	return value, nil
+}
+func (client *Client) CreatePTYSession(ctx context.Context, tenantID, projectID, grantID, requestID string) (SandboxPTYSessionResult, error) {
+	if _, err := ValidateCreatePTYSessionServerRequest(tenantID, projectID, grantID, requestID); err != nil {
+		return SandboxPTYSessionResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/pty-sessions", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SandboxPTYSessionResult{}, err
+	}
+	if response.Status != 201 {
+		return SandboxPTYSessionResult{}, client.problemError("foundationCreatePTYSession", response)
+	}
+	value, err := platform.DecodeSandboxPTYSessionResponseJSON(response.Body)
+	if err != nil {
+		return SandboxPTYSessionResult{}, err
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.GrantID != grantID {
+		return SandboxPTYSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/grantId")
+	}
+	return value, nil
+}
+func (client *Client) GetPTYSession(ctx context.Context, tenantID, projectID, grantID, sessionID, requestID string) (SandboxPTYSessionResult, error) {
+	if _, err := ValidateGetPTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID); err != nil {
+		return SandboxPTYSessionResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/pty-sessions/" + sessionID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SandboxPTYSessionResult{}, err
+	}
+	if response.Status != 200 {
+		return SandboxPTYSessionResult{}, client.problemError("foundationGetPTYSession", response)
+	}
+	value, err := platform.DecodeSandboxPTYSessionResponseJSON(response.Body)
+	if err != nil {
+		return SandboxPTYSessionResult{}, err
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.GrantID != grantID || value.Value.SessionID != sessionID {
+		return SandboxPTYSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sessionId")
+	}
+	return value, nil
+}
+func (client *Client) DeletePTYSession(ctx context.Context, tenantID, projectID, grantID, sessionID, requestID string) error {
+	if _, err := ValidateDeletePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID); err != nil {
+		return err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "DELETE", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/pty-sessions/" + sessionID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return client.problemError("foundationDeletePTYSession", response)
+	}
+	return nil
+}
 func (client *Client) ListAdminRuntimeProfiles(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (RuntimeProfilePageResult, error) {
 	if pageSize == 0 {
 		pageSize = 50
@@ -1626,6 +1708,61 @@ func (client *Client) GetAdminSandboxSession(ctx context.Context, tenantID, proj
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != sandboxID {
 		return AdminSandboxSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminSandboxAccessGrants(ctx context.Context, tenantID, projectID, sandboxID, requestID string, pageSize int, pageToken string) (AdminSandboxAccessGrantPageResult, error) {
+	if pageSize == 0 {
+		pageSize = 50
+	}
+	input, err := ValidateListAdminSandboxAccessGrantsServerRequest(tenantID, projectID, sandboxID, requestID, pageSize, pageToken)
+	if err != nil {
+		return AdminSandboxAccessGrantPageResult{}, err
+	}
+	query := url.Values{}
+	query.Set("pageSize", strconv.Itoa(input.PageSize))
+	if input.PageToken != "" {
+		query.Set("pageToken", input.PageToken)
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID + "/access-grants?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminSandboxAccessGrantPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminSandboxAccessGrantPageResult{}, client.problemError("adminListSandboxAccessGrants", response)
+	}
+	value, err := platform.DecodeAdminSandboxAccessGrantPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminSandboxAccessGrantPageResult{}, err
+	}
+	for _, grant := range value.Value.AccessGrants {
+		if grant.Metadata.TenantRef.ID != tenantID || grant.Spec.ProjectRef.ID != projectID || grant.Spec.SandboxID != sandboxID {
+			return AdminSandboxAccessGrantPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/accessGrants")
+		}
+	}
+	return value, nil
+}
+func (client *Client) RevokeAdminSandboxAccessGrant(ctx context.Context, tenantID, projectID, sandboxID, grantID, requestID, idempotencyKey string, body platform.SandboxAccessGrantRevokeRequest) (AdminSandboxAccessGrantResult, error) {
+	bodyBytes, err := platform.EncodeSandboxAccessGrantRevokeRequestJSON(body)
+	if err != nil {
+		return AdminSandboxAccessGrantResult{}, err
+	}
+	if _, err := ValidateRevokeAdminSandboxAccessGrantServerRequest(tenantID, projectID, sandboxID, grantID, requestID, idempotencyKey, bodyBytes); err != nil {
+		return AdminSandboxAccessGrantResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID + "/access-grants/" + grantID + ":revoke", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return AdminSandboxAccessGrantResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminSandboxAccessGrantResult{}, client.problemError("adminRevokeSandboxAccessGrant", response)
+	}
+	value, err := platform.DecodeAdminSandboxAccessGrantResponseJSON(response.Body)
+	if err != nil {
+		return AdminSandboxAccessGrantResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.SandboxID != sandboxID || value.Value.Metadata.UID != grantID {
+		return AdminSandboxAccessGrantResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
 }
@@ -4744,6 +4881,60 @@ func ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID,
 	return GetAdminSandboxSessionServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID}, nil
 }
 
+type ListAdminSandboxAccessGrantsServerInput struct {
+	TenantID  string
+	ProjectID string
+	SandboxID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminSandboxAccessGrantsServerRequest(tenantID, projectID, sandboxID, requestID string, pageSize int, pageToken string) (ListAdminSandboxAccessGrantsServerInput, error) {
+	if _, err := ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID); err != nil {
+		return ListAdminSandboxAccessGrantsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminSandboxAccessGrantsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminSandboxAccessGrantsServerInput{}, err
+		}
+	}
+	return ListAdminSandboxAccessGrantsServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type RevokeAdminSandboxAccessGrantServerInput struct {
+	TenantID       string
+	ProjectID      string
+	SandboxID      string
+	GrantID        string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.SandboxAccessGrantRevokeRequest
+}
+
+func ValidateRevokeAdminSandboxAccessGrantServerRequest(tenantID, projectID, sandboxID, grantID, requestID, idempotencyKey string, body []byte) (RevokeAdminSandboxAccessGrantServerInput, error) {
+	if _, err := ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID); err != nil {
+		return RevokeAdminSandboxAccessGrantServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(grantID, "/grantId"); err != nil {
+		return RevokeAdminSandboxAccessGrantServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return RevokeAdminSandboxAccessGrantServerInput{}, err
+	}
+	value, err := platform.DecodeSandboxAccessGrantRevokeRequestJSON(body)
+	if err != nil {
+		return RevokeAdminSandboxAccessGrantServerInput{}, err
+	}
+	if value.ConfirmedGrantID != grantID {
+		return RevokeAdminSandboxAccessGrantServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedGrantId")
+	}
+	return RevokeAdminSandboxAccessGrantServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, GrantID: grantID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
 type TransitionAdminSandboxSessionServerInput struct {
 	TenantID       string
 	ProjectID      string
@@ -4825,6 +5016,64 @@ func ValidateExecSandboxServerRequest(tenantID, projectID, sandboxID, requestID 
 		return ExecSandboxServerInput{}, err
 	}
 	return ExecSandboxServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID, Body: value}, nil
+}
+
+type CreateSandboxAccessGrantServerInput struct {
+	TenantID       string
+	ProjectID      string
+	SandboxID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.SandboxAccessGrantCreateRequest
+}
+
+func ValidateCreateSandboxAccessGrantServerRequest(tenantID, projectID, sandboxID, requestID, idempotencyKey string, body []byte) (CreateSandboxAccessGrantServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return CreateSandboxAccessGrantServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(sandboxID, "/sandboxId"); err != nil {
+		return CreateSandboxAccessGrantServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CreateSandboxAccessGrantServerInput{}, err
+	}
+	value, err := platform.DecodeSandboxAccessGrantCreateRequestJSON(body)
+	if err != nil {
+		return CreateSandboxAccessGrantServerInput{}, err
+	}
+	return CreateSandboxAccessGrantServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type PTYSessionServerInput struct {
+	TenantID  string
+	ProjectID string
+	GrantID   string
+	SessionID string
+	RequestID string
+}
+
+func validatePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID string) (PTYSessionServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return PTYSessionServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(grantID, "/grantId"); err != nil {
+		return PTYSessionServerInput{}, err
+	}
+	if sessionID != "" {
+		if err := common.ValidateIdentifier(sessionID, "/ptySessionId"); err != nil {
+			return PTYSessionServerInput{}, err
+		}
+	}
+	return PTYSessionServerInput{TenantID: tenantID, ProjectID: projectID, GrantID: grantID, SessionID: sessionID, RequestID: requestID}, nil
+}
+func ValidateCreatePTYSessionServerRequest(tenantID, projectID, grantID, requestID string) (PTYSessionServerInput, error) {
+	return validatePTYSessionServerRequest(tenantID, projectID, grantID, "", requestID)
+}
+func ValidateGetPTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID string) (PTYSessionServerInput, error) {
+	return validatePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID)
+}
+func ValidateDeletePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID string) (PTYSessionServerInput, error) {
+	return validatePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID)
 }
 
 type CreateAdminEnvironmentProfileServerInput struct {

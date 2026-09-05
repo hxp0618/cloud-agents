@@ -1,0 +1,71 @@
+{
+  "run": "foundation-controller-87c06174-77f9-4744-91a0-4f0c52f5f6ae",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "ff70a0d6d6f1563d7dc00e516c4444cdba08d97b",
+    "dirty": true
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "candidate": {
+    "sourceRef": "207d94c7dc7735c143856fe5c6538b743e478786",
+    "serverImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "pty": {
+    "generation": 3,
+    "grantId": "grant-3b96d194777a4daef9e13d85e977b7d4",
+    "sessionId": "7d3ddf08-91ed-4936-8479-c816af9956b1",
+    "wrongTokenStatus": 403,
+    "crossTenantStatus": 403,
+    "userAdminStatus": 403,
+    "adminStatus": 200,
+    "expiredStatus": 403,
+    "revokedStatus": 403,
+    "activeConnectionRevoked": true,
+    "adminContentRedacted": true,
+    "activityIssued": 2,
+    "activityRevoked": 1,
+    "restartOffset": 78,
+    "replayOffset": 0,
+    "boundedOutputOffset": 1100165,
+    "boundedReplayOffset": 51589,
+    "boundedReplayBytes": 1048576
+  },
+  "workspace": {
+    "proofDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "preservedAcrossGatewayAndControllerRestart": true,
+    "preservedAcrossStopAndRebuild": true
+  },
+  "migration": {
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "upgradeFrom": "000057",
+    "upgradeTo": "000058",
+    "freshApplied": 58,
+    "replayApplied": 0,
+    "schemaHead": "000058",
+    "bundleDigest": "sha256:5bfc89969d49c4d5a50c4c300b5ffff58476560a79ab5bd5be1fe82804dafbb7"
+  },
+  "cleanup": {
+    "testOwnedRuntimeContainers": 0,
+    "testOwnedWorkspaceVolumes": 0,
+    "harnessContainers": 0
+  },
+  "checks": [
+    "database-persisted generation-bound and expiring PTY Grant",
+    "standalone fixed-route Access Gateway",
+    "wrong-token and cross-tenant denial",
+    "Gateway restart and absolute-cursor reconnect",
+    "one MiB bounded candidate replay after more than 1.1 MiB output",
+    "durable revoke closes an active connection and rejects reconnect",
+    "Admin metadata and ordinary-user Admin 403",
+    "Admin response excludes token, terminal, Workspace, endpoint and credential content",
+    "exact product migration upgrade, fresh install and no-op replay",
+    "zero owned runtime and volume residue"
+  ],
+  "boundary": "Local OrbStack Docker and disposable PostgreSQL only; focused Go tests/race/vet and SDK/Admin/User tests/typecheck/build passed, but the full Go suite retained the pre-existing internal/migration 13-segment-versus-11-segment frozen-quota and sealed-session-spread failures before timing out; no browser visual run, deployment, publication, Kubernetes or customer node"
+}

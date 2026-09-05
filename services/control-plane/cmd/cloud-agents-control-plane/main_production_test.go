@@ -33,6 +33,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 		productionDockerCredentialsEnvironment:     "/etc/cloud-agents/docker-targets",
 		productionKubernetesCredentialsEnvironment: "/etc/cloud-agents/kubernetes-targets",
 		productionSSHCredentialsEnvironment:        "/etc/cloud-agents/ssh-targets",
+		productionAccessGrantKeyEnvironment:        "/etc/cloud-agents/access-grant.key",
 		productionAdmissionLeaseEnvironment:        "runtime-lease",
 		productionAdmissionGenerationEnvironment:   "7",
 		productionAdmissionTokenEnvironment:        "runtime-token",
@@ -43,7 +44,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
+	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.accessGrantKey != "/etc/cloud-agents/access-grant.key" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
 		t.Fatalf("config = %#v", config)
 	}
 	for _, invalid := range []string{"0", "10001"} {
@@ -77,6 +78,7 @@ func TestParseProductionConfigAllowsEnvironmentRoutedWorkers(t *testing.T) {
 		productionWorkerClientKeyEnvironment:  "/etc/cloud-agents/worker-client.key",
 		productionWorkerCAEnvironment:         "/etc/cloud-agents/worker-ca.crt",
 		productionWorkspaceEnvironment:        "/workspace",
+		productionAccessGrantKeyEnvironment:   "/etc/cloud-agents/access-grant.key",
 		productionAdmissionTokenEnvironment:   "runtime-token",
 	}
 	args := []string{"--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}

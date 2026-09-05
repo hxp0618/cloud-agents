@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   createHTTPClient,
+  type AdminSandboxAccessGrant,
   type AdminSandboxSession,
   type AdminAuditEvent,
   type DeploymentTarget,
@@ -24,6 +25,7 @@ import {
   type ProjectLeaseQuotaSetRequest,
   type RuntimeProfile,
   type RuntimeProfileCreateRequest,
+  type SandboxAccessGrantRevokeRequest,
   type SandboxSessionLifecycleRequest,
   type StoragePolicy,
   type StoragePolicySetRequest,
@@ -57,6 +59,7 @@ import {
   listAdminProfileAuditEvents,
   listAdminProfiles,
   listAdminRuntimeProfiles,
+  listAdminSandboxAccessGrants,
   listAdminSandboxes,
   listAdminReleases,
   listAdminTargetAuditEvents,
@@ -518,6 +521,12 @@ export function App() {
   const [selectedRuntimeProfileVersionId, setSelectedRuntimeProfileVersionId] = useState("");
   const [sandboxes, setSandboxes] = useState<readonly AdminSandboxSession[]>(Object.freeze([]));
   const [selectedSandboxId, setSelectedSandboxId] = useState("");
+  const [sandboxAccessGrants, setSandboxAccessGrants] = useState<
+    readonly AdminSandboxAccessGrant[]
+  >(Object.freeze([]));
+  const [sandboxGrantRevoke, setSandboxGrantRevoke] = useState<AdminSandboxAccessGrant | null>(
+    null,
+  );
   const [storagePolicies, setStoragePolicies] = useState<readonly StoragePolicy[]>(
     Object.freeze([]),
   );
@@ -956,6 +965,7 @@ export function App() {
     setRuntimeProfileDetailOpen(false);
     setSandboxDetailOpen(false);
     setSandboxLifecycleTransition(null);
+    setSandboxGrantRevoke(null);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
     setRuntimeProfileTransition(null);
@@ -989,6 +999,8 @@ export function App() {
     setSelectedRuntimeProfileVersionId("");
     setSandboxes(Object.freeze([]));
     setSelectedSandboxId("");
+    setSandboxAccessGrants(Object.freeze([]));
+    setSandboxGrantRevoke(null);
     setStoragePolicies(Object.freeze([]));
     setNetworkPolicies([]);
     setNetworkEditorEpoch((current) => current + 1);
@@ -1515,22 +1527,69 @@ export function App() {
   function selectSandbox(sandboxId: string) {
     setSandboxDetailOpen(true);
     setSandboxLifecycleTransition(null);
+    setSandboxGrantRevoke(null);
+    setSandboxAccessGrants(Object.freeze([]));
     setSelectedSandboxId(sandboxId);
     if (client === null) return;
     void runOperation(
       `get-sandbox:${sandboxId}`,
       { key: "operation.sandboxDetail" },
       async (signal) => {
-        const result = await client.getAdminSandboxSession(
-          connection.tenantId,
-          connection.projectId,
-          sandboxId,
-          newRequestId(),
-          signal,
-        );
+        const [result, grants] = await Promise.all([
+          client.getAdminSandboxSession(
+            connection.tenantId,
+            connection.projectId,
+            sandboxId,
+            newRequestId(),
+            signal,
+          ),
+          listAdminSandboxAccessGrants(
+            client,
+            connection.tenantId,
+            connection.projectId,
+            sandboxId,
+            signal,
+          ),
+        ]);
         setSandboxes((current) =>
           Object.freeze(
             current.map((sandbox) => (sandbox.metadata.uid === sandboxId ? result.value : sandbox)),
+          ),
+        );
+        setSandboxAccessGrants(grants);
+      },
+    );
+  }
+
+  function revokeSandboxAccessGrant() {
+    if (client === null || sandboxGrantRevoke === null) return;
+    const grant = sandboxGrantRevoke;
+    const body: SandboxAccessGrantRevokeRequest = {
+      expectedGeneration: grant.spec.generation,
+      expectedResourceVersion: grant.metadata.resourceVersion,
+      confirmedGrantId: grant.metadata.uid,
+    };
+    const operationKey = `sandbox-grant:revoke:${grant.metadata.uid}:${grant.metadata.resourceVersion}`;
+    setSandboxGrantRevoke(null);
+    void runOperation(
+      operationKey,
+      { key: "operation.revokeSandboxGrant", values: { name: grant.metadata.uid } },
+      async (signal) => {
+        const result = await client.revokeAdminSandboxAccessGrant(
+          connection.tenantId,
+          connection.projectId,
+          grant.spec.sandboxId,
+          grant.metadata.uid,
+          newRequestId(),
+          idempotencyKey(operationKey),
+          body,
+          signal,
+        );
+        setSandboxAccessGrants((current) =>
+          Object.freeze(
+            current.map((item) =>
+              item.metadata.uid === result.value.metadata.uid ? result.value : item,
+            ),
           ),
         );
       },
@@ -3496,6 +3555,7 @@ export function App() {
           onClose={() => {
             setSandboxDetailOpen(false);
             setSandboxLifecycleTransition(null);
+            setSandboxGrantRevoke(null);
           }}
         >
           <aside className="detail-panel" aria-label={t("sheet.selectedSandbox")}>
@@ -3506,14 +3566,17 @@ export function App() {
               onClick={() => {
                 setSandboxDetailOpen(false);
                 setSandboxLifecycleTransition(null);
+                setSandboxGrantRevoke(null);
               }}
             >
               ×
             </button>
             <SandboxDetail
               sandbox={selectedSandbox}
+              grants={sandboxAccessGrants}
               disabled={busy !== null}
               onTransition={setSandboxLifecycleTransition}
+              onRevokeGrant={setSandboxGrantRevoke}
             />
           </aside>
         </AdminSheet>
@@ -3540,6 +3603,23 @@ export function App() {
             disabled={busy !== null}
             onClose={() => setSandboxLifecycleTransition(null)}
             onConfirm={transitionSandbox}
+          />
+        </AdminSheet>
+      ) : null}
+
+      {sandboxGrantRevoke !== null ? (
+        <AdminSheet
+          confirmation
+          feedback={feedback}
+          returnFocus={operationTriggerRef.current}
+          label={t("sheet.sandboxGrantRevoke", { name: sandboxGrantRevoke.metadata.uid })}
+          onClose={() => setSandboxGrantRevoke(null)}
+        >
+          <SandboxGrantRevokeConfirmation
+            grant={sandboxGrantRevoke}
+            disabled={busy !== null}
+            onClose={() => setSandboxGrantRevoke(null)}
+            onConfirm={revokeSandboxAccessGrant}
           />
         </AdminSheet>
       ) : null}
@@ -6631,12 +6711,16 @@ function RuntimeProfileDetail({
 
 function SandboxDetail({
   sandbox,
+  grants,
   disabled,
   onTransition,
+  onRevokeGrant,
 }: Readonly<{
   sandbox: AdminSandboxSession;
+  grants: readonly AdminSandboxAccessGrant[];
   disabled: boolean;
   onTransition: (action: SandboxLifecycleAction) => void;
+  onRevokeGrant: (grant: AdminSandboxAccessGrant) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
   const action = availableSandboxLifecycleAction(sandbox);
@@ -6762,6 +6846,48 @@ function SandboxDetail({
           </div>
         )}
       </dl>
+      <section className="activity-block" aria-labelledby="sandbox-grants-title">
+        <div className="activity-heading">
+          <h3 id="sandbox-grants-title">{t("sandbox.grants.title")}</h3>
+          <span className="mono">{number(grants.length)}</span>
+        </div>
+        <p>{t("sandbox.grants.description")}</p>
+        {grants.length === 0 ? (
+          <p className="activity-empty">{t("sandbox.grants.empty")}</p>
+        ) : (
+          <ul className="activity-list">
+            {grants.map((grant) => (
+              <li key={grant.metadata.uid}>
+                <div>
+                  <strong className="mono break">{grant.metadata.uid}</strong>
+                  <span className={`phase ${phaseTone(grant.spec.status)}`}>
+                    <i /> {t(`sandbox.grants.status.${grant.spec.status}`)}
+                  </span>
+                </div>
+                <small>
+                  {t("sandbox.grants.generationExpiry", {
+                    generation: number(grant.spec.generation),
+                    expiresAt: dateTime(grant.spec.expiresAt),
+                  })}
+                </small>
+                <small>
+                  {t("sandbox.grants.sessions", { count: number(grant.spec.ptySessionCount) })}
+                </small>
+                {grant.spec.status === "active" ? (
+                  <button
+                    className="button danger"
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onRevokeGrant(grant)}
+                  >
+                    {t("sandbox.grants.revoke")}
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       {action === null ? null : (
         <section className="action-block">
           <h3>
@@ -6885,6 +7011,95 @@ function SandboxLifecycleConfirmation({
             disabled={disabled || !confirmed}
           >
             {t("sandbox.lifecycle.confirm", { action: actionLabel })}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function SandboxGrantRevokeConfirmation({
+  grant,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  grant: AdminSandboxAccessGrant;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  const [confirmed, setConfirmed] = useState(false);
+  return (
+    <section className="dialog" aria-labelledby="sandbox-grant-revoke-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">{t("sandbox.grants.eyebrow")}</div>
+          <h2 id="sandbox-grant-revoke-title">{t("sandbox.grants.revokeTitle")}</h2>
+          <p className="mono break">{grant.metadata.uid}</p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className="banner danger" role="status">
+          {t("sandbox.grants.revokeImpact")}
+        </div>
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>{t("sandbox.grants.id")}</dt>
+            <dd className="mono break">{grant.metadata.uid}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.id")}</dt>
+            <dd className="mono break">{grant.spec.sandboxId}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.lifecycle.expectedGeneration")}</dt>
+            <dd className="mono">{number(grant.spec.generation)}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.lifecycle.expectedResourceVersion")}</dt>
+            <dd className="mono">{grant.metadata.resourceVersion}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.grants.expiresAt")}</dt>
+            <dd>{dateTime(grant.spec.expiresAt)}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.grants.ptySessions")}</dt>
+            <dd>{number(grant.spec.ptySessionCount)}</dd>
+          </div>
+        </dl>
+        <label className="confirmation-check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+            disabled={disabled}
+            data-sheet-autofocus
+          />
+          <span>{t("sandbox.grants.revokeReview")}</span>
+        </label>
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            {t("action.cancel")}
+          </button>
+          <button className="button danger" type="submit" disabled={disabled || !confirmed}>
+            {t("sandbox.grants.confirmRevoke")}
           </button>
         </div>
       </form>

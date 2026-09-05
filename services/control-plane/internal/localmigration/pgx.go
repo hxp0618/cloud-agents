@@ -56,7 +56,7 @@ FROM cloud_agents.schema_migrations`
 func CheckProductSchemaReadiness(ctx context.Context, queryer interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }) error {
-	current := productRunnerBindingSelector("000057")
+	current := productRunnerBindingSelector("000058")
 	var count int64
 	var first, last, bundleDigest string
 	if err := queryer.QueryRow(ctx, productSchemaReadinessSQL, current.schemaHead).Scan(&count, &first, &last, &bundleDigest); err != nil {
@@ -182,11 +182,11 @@ func (session *pgxSession) Apply(ctx context.Context, entry migration.MigrationE
 
 	results, err := transaction.Conn().PgConn().Exec(ctx, string(sql)).ReadAll()
 	if err != nil {
-		return errors.New("PostgreSQL rejected migration SQL")
+		return fmt.Errorf("PostgreSQL rejected migration SQL: %w", err)
 	}
 	for _, result := range results {
 		if result.Err != nil {
-			return errors.New("PostgreSQL rejected migration SQL")
+			return fmt.Errorf("PostgreSQL rejected migration SQL: %w", result.Err)
 		}
 	}
 	if err := (migration.SQLLedgerStore{}).Insert(ctx, execAdapter{executor: transaction}, entry, bundle); err != nil {

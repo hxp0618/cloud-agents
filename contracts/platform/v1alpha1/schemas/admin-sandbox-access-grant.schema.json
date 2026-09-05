@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/admin-sandbox-access-grant.schema.json",
+  "title": "AdminSandboxAccessGrant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "AdminSandboxAccessGrant" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "accessKind": { "const": "pty" },
+        "status": { "enum": ["active", "expired", "revoked"] },
+        "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "revokedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "ptySessionCount": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "Admin sees operational metadata only; accessToken, token digest, endpoints, terminal input and terminal output are absent",
+    "expired is derived from authoritative database time and revoked is durable"
+  ]
+}

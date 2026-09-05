@@ -35,6 +35,8 @@ type globalOptions struct {
 	turn           string
 	execution      string
 	sandbox        string
+	grant          string
+	ptySession     string
 	lease          string
 	target         string
 	requestID      string
@@ -229,6 +231,45 @@ func run(args []string, stdout io.Writer) error {
 		} else if err == nil {
 			value, err = client.ExecSandbox(ctx, options.tenant, options.project, options.sandbox, options.requestID,
 				platform.SandboxExecRequest{ExpectedGeneration: generation, Command: command, TimeoutSeconds: timeoutSeconds})
+		}
+	case "sandbox grant":
+		var generation, ttlSeconds int64
+		if err = parseActionFlags("sandbox grant", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&generation, "expected-generation", 0, "Sandbox fencing generation")
+			set.Int64Var(&ttlSeconds, "ttl-seconds", 300, "Grant lifetime from 60 to 900 seconds")
+		}); err == nil && generation < 1 {
+			err = errors.New("--expected-generation must be greater than zero")
+		} else if err == nil && (ttlSeconds < 60 || ttlSeconds > 900) {
+			err = errors.New("--ttl-seconds must be between 60 and 900")
+		} else if err == nil {
+			value, err = client.CreateSandboxAccessGrant(ctx, options.tenant, options.project, options.sandbox,
+				options.requestID, options.idempotencyKey, platform.SandboxAccessGrantCreateRequest{
+					ExpectedGeneration: generation, TTLSeconds: ttlSeconds,
+				})
+		}
+	case "pty create":
+		if err = parseActionFlags("pty create", actionArgs, nil); err == nil {
+			value, err = client.CreatePTYSession(ctx, options.tenant, options.project, options.grant, options.requestID)
+		}
+	case "pty get":
+		if err = parseActionFlags("pty get", actionArgs, nil); err == nil {
+			value, err = client.GetPTYSession(ctx, options.tenant, options.project, options.grant, options.ptySession, options.requestID)
+		}
+	case "pty delete":
+		if err = parseActionFlags("pty delete", actionArgs, nil); err == nil {
+			err = client.DeletePTYSession(ctx, options.tenant, options.project, options.grant, options.ptySession, options.requestID)
+			value = map[string]string{"status": "deleted"}
+		}
+	case "pty attach":
+		var since int64
+		var takeover bool
+		if err = parseActionFlags("pty attach", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&since, "since", 0, "absolute replay byte offset")
+			set.BoolVar(&takeover, "takeover", false, "replace the current read/write holder")
+		}); err == nil && since < 0 {
+			err = errors.New("--since must not be negative")
+		} else if err == nil {
+			return attachPTY(ctx, options, client, since, takeover, os.Stdin, stdout)
 		}
 	case "session list":
 		var pageSize int
@@ -611,6 +652,8 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.turn, "turn", "", "turn identifier")
 	set.StringVar(&options.execution, "execution", "", "execution identifier")
 	set.StringVar(&options.sandbox, "sandbox", "", "Sandbox identifier")
+	set.StringVar(&options.grant, "grant", "", "Sandbox access Grant identifier")
+	set.StringVar(&options.ptySession, "pty-session", "", "PTY session identifier")
 	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
 	set.StringVar(&options.target, "target", "", "deployment target identifier")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
@@ -680,6 +723,12 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if requiresSandbox(command, action) && options.sandbox == "" {
 		return globalOptions{}, "", "", nil, errors.New("--sandbox is required")
+	}
+	if requiresGrant(command, action) && options.grant == "" {
+		return globalOptions{}, "", "", nil, errors.New("--grant is required")
+	}
+	if requiresPTYSession(command, action) && options.ptySession == "" {
+		return globalOptions{}, "", "", nil, errors.New("--pty-session is required")
 	}
 	if requiresLease(command, action) && options.lease == "" {
 		return globalOptions{}, "", "", nil, errors.New("--lease is required")
@@ -769,6 +818,10 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.SandboxExecResult:
 		return result.Value
+	case openapi.SandboxAccessGrantResult:
+		return result.Value
+	case openapi.SandboxPTYSessionResult:
+		return result.Value
 	case openapi.RBACMutationResult:
 		return result.Value
 	default:
@@ -819,7 +872,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
 		return true
 	default:
 		return false
@@ -827,7 +880,7 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "sandbox" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
+	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "sandbox" || command == "pty" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool {
 	return command == "organization" && action != "list" || command == "project" && action == "list"
@@ -849,6 +902,10 @@ func requiresExecution(command, action string) bool {
 	return command == "execution" && action != "list"
 }
 func requiresSandbox(command, action string) bool { return command == "sandbox" }
+func requiresGrant(command, action string) bool   { return command == "pty" }
+func requiresPTYSession(command, action string) bool {
+	return command == "pty" && action != "create"
+}
 func requiresLease(command, action string) bool {
 	return command == "environment-lease" && action != "list" || command == "session" && action == "create"
 }
@@ -856,7 +913,7 @@ func requiresTarget(command, action string) bool {
 	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"
 }
 func requiresIdempotency(command, action string) bool {
-	return (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate" || action == "upgrade"))
+	return (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate" || action == "upgrade"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
@@ -870,7 +927,9 @@ resources and actions:
   tenant get
   organization get|list|create
   project get|list|create
-  sandbox exec
+
+  sandbox exec|grant
+  pty create|get|attach|delete
   session get|list|create|close
   turn get|list|create
   execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input

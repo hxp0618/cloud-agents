@@ -20,6 +20,7 @@ import {
   listAdminLeases,
   listAdminProfiles,
   listAdminRuntimeProfiles,
+  listAdminSandboxAccessGrants,
   listAdminSandboxes,
   listAdminStoragePolicies,
   listAdminNetworkPolicies,
@@ -523,15 +524,40 @@ describe("Admin Web boundary", () => {
           },
         };
       },
+      listAdminSandboxAccessGrants: async (
+        _tenantId: string,
+        _projectId: string,
+        _sandboxId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        calls.push(`grants:${pageToken ?? "first"}`);
+        return {
+          value: {
+            accessGrants: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-grant-page" } : {}),
+          },
+        };
+      },
     } as unknown as AdminClient;
     const signal = new AbortController().signal;
     await listAdminRuntimeProfiles(client, "tenant-alpha", "project-alpha", signal);
     await listAdminSandboxes(client, "tenant-alpha", "project-alpha", signal);
+    await listAdminSandboxAccessGrants(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      signal,
+    );
     expect(calls).toEqual([
       "profiles:first",
       "profiles:next-profile-page",
       "sandboxes:first",
       "sandboxes:next-sandbox-page",
+      "grants:first",
+      "grants:next-grant-page",
     ]);
   });
 

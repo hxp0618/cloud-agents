@@ -201,9 +201,9 @@ try {
         "--repository-root",
         root,
         "--manifest",
-        "services/control-plane/migrations/product/000057/manifest.json",
+        "services/control-plane/migrations/product/000058/manifest.json",
         "--selector",
-        "product-000057",
+        "product-000058",
       ],
       {
         encoding: "utf8",
@@ -212,7 +212,7 @@ try {
       },
     ),
   );
-  assert.equal(migration.schema_head, "000057");
+  assert.equal(migration.schema_head, "000058");
 
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -410,7 +410,38 @@ try {
   assert.equal(execReceipt.staleGenerationStatus, 409);
   assert.equal(execReceipt.outputLimitStatus, 413);
   assert.equal(execReceipt.responseInfrastructureRedacted, true);
+  const ptyReceipt = parseMarker(
+    execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationSandboxAccessGrantPTYPostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY: credentialDirectory,
+        },
+        timeout: 180_000,
+      },
+    ),
+    "FOUNDATION_PTY_API",
+  );
+  assert.equal(ptyReceipt.generation, rebuildReceipt.generation);
+  assert.equal(ptyReceipt.wrongTokenStatus, 403);
+  assert.equal(ptyReceipt.crossTenantStatus, 403);
+  assert.equal(ptyReceipt.revokedStatus, 403);
+  assert.equal(ptyReceipt.expiredStatus, 403);
+  assert.equal(ptyReceipt.activeConnectionRevoked, true);
+  assert.equal(ptyReceipt.adminContentRedacted, true);
+  assert.ok(ptyReceipt.boundedOutputOffset >= 1_100_000);
+  assert.ok(ptyReceipt.boundedReplayOffset > 0);
+  assert.ok(ptyReceipt.boundedReplayBytes <= 1 << 20);
   assert.notEqual(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+  psql(
+    "SET ROLE cloud_agents_migration_owner; UPDATE cloud_agents.sandbox_sessions SET expires_at=clock_timestamp()+interval '2 seconds' WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox';",
+    "foundation_migration",
+  );
   let expired = false;
   for (let attempt = 0; attempt < 150; attempt++) {
     if (
@@ -475,6 +506,7 @@ try {
     stop: { api: stopAPIReceipt, controller: stopReceipt },
     rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
     exec: execReceipt,
+    pty: ptyReceipt,
     ttl: ttlReceipt,
     finalRebuild: { api: finalRebuildAPIReceipt, controller: finalRebuildReceipt },
     checks: [
@@ -494,6 +526,12 @@ try {
       "real bounded foreground command runs in /workspace and returns exit code, stdout, stderr, and duration",
       "Admin token, stale generation, and combined output above 1 MiB are denied with 403, 409, and 413",
       "Product Exec response omits endpoint, runtime identifier, and credential references",
+      "short-lived PTY Grant is idempotent, generation-bound, database persisted, expiring, and revocable",
+      "standalone Access Gateway allows only fixed PTY routes and denies wrong-token and cross-tenant requests",
+      "PTY survives Gateway restart and reconnects from an absolute cursor without output loss",
+      "fixed candidate replay buffer remains bounded to 1 MiB after more than 1.1 MiB output",
+      "revocation closes an active PTY connection and rejects reconnects; expired Grants reject new sessions",
+      "Admin Grant metadata includes status and PTY count but excludes tokens, terminal output, endpoints, and credential references",
       "database-clock TTL accepts the same durable Stop authority and records its trigger and Audit",
       "TTL stop deletes compute, releases its writer, and retains the physical Workspace volume",
       "rebuild after TTL expiry restores the same Workspace bytes",
@@ -501,7 +539,7 @@ try {
       "zero test-owned runtime containers and Workspace volumes",
     ],
     boundary:
-      "Local OrbStack Docker and disposable PostgreSQL only; no Admin Web browser, deployment, image publication, Kubernetes or customer node",
+      "Local OrbStack Docker and disposable PostgreSQL only; Admin Web is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes or customer node",
   };
   writeFileSync(
     resolve(evidenceDirectory, "evidence.json"),
