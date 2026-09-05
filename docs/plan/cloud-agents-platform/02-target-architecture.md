@@ -2,13 +2,13 @@
 
 ## 0. 当前目标：基础设施底座与应用分层
 
-产品边界与优先级依据 [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md)。本节是据此整理的
+产品边界与联合交付依据 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md)，Workspace/Sandbox 分层承接 ADR-0031。本节是据此整理的
 目标方案，不是当前实现声明；原有 Agent/Host 协议、安全和消费者兼容要求仍保留。
 
 ### 0.1 逻辑结构与最小部署
 
 ```text
-用户 CloudAgents（后续）       Workspace CLI/SDK/通用客户端       Admin Web（阶段配套）
+用户 CloudAgents（后续）       Workspace CLI/SDK/通用客户端       Admin Web（基础设施管理）
          └──────────────────────────┬─────────────────────────────┘
                          公共基础设施 API / 专用 Admin API
                                     │
@@ -26,7 +26,7 @@
 
 Control Plane 先复用当前 Go 模块做模块化单体；Controller 必须能脱离请求、独立恢复，不要求先拆独立仓库。
 高带宽 Access/Worker Gateway 按访问阶段交付可独立运行的进程；单 Region 可同机部署。
-图是职责和信任边界，不要求每个框一个微服务。底座部署不要求启动 Agent Runtime。
+图是职责和信任边界，不要求每个框一个微服务。第一阶段同时交付基础设施与完整 Admin Web；不要求启动 Agent Runtime 或完整用户对话界面，但 Admin 不能被省略。
 
 ### 0.2 聚合、归属与生命周期
 
@@ -332,7 +332,11 @@ session issuance 原子完成，并发 consume 只能一个成功。原始 secre
 - N/N-1 reader 与 unknown-field preservation；
 - quota/admission/backpressure 与 noisy-neighbor 隔离。
 
-## 10. 独立部署 profile
+## 10. 既有 Agent/Host 部署 profile（兼容保留）
+
+本节保留既有 Agent/Host 与 Embedded Runtime 的部署配置，不是新底座的默认安装清单。
+Provider 凭据注入规则仅在启用 Agent 时适用，原有安全要求不变；底座默认组件与 no-Agent 安装要求见
+[03 §5](03-public-repository-and-release.md#5-直接部署要求)，不依赖 Coding Agent Runtime、Provider 凭据或用户对话界面，但包含 Admin Web 与所需基础设施进程。
 
 ### Local / Docker Compose
 
@@ -363,4 +367,4 @@ session issuance 原子完成，并发 consume 只能一个成功。原始 secre
 底座提供完整 API、generated SDK、CLI bootstrap/admin/diagnostic 和可重放示例，不依赖用户 CloudAgents
 或 Synara/T3 才能操作。Admin Web 不再整体延后：按 [07](07-admin-web-requirements-and-design.md)
 随各 BASE 阶段提供真实资源、Operation、策略和审计视图。用户内容只能由有权用户通过数据接口访问。
-阶段后端开发不等待整套视觉页面，但底座配套交付必须完成对应 Admin 安全、操作和视觉验收。
+后端与页面可并行开发，但同一能力须同时通过后端与 Admin 操作、安全和视觉验收；不得只以 CLI/SDK 可用宣告该能力完成。

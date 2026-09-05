@@ -1,21 +1,14 @@
 # Cloud Agents
 
-Cloud Agents is building a standalone cloud-development foundation: **long-lived Workspaces, general-purpose Sandboxes, and outbound customer-node access**. User-facing CloudAgents is the application layer built on that foundation; Admin Web is delivered alongside each infrastructure capability.
+Cloud Agents first delivers **long-lived Workspaces, general-purpose Sandboxes, outbound customer-node access, and the complete Admin Web together**. User-facing CloudAgents conversation is the later application layer. Backend behavior and the corresponding Admin workflow form one accepted capability.
 
 The foundation owns physical workspace/volume lifetime, sandbox execution, authorized access, placement, policy and recovery. Agent Session/Turn/Execution, approvals, conversation history and provider checkpoints remain application concerns. Stopping a new-model Sandbox must retain its Workspace; deleting a Workspace is a separate authorized operation.
 
 ## Architecture and delivery order
 
-The [product decision](docs/plan/adr/0031-foundation-first-cloud-workspace-platform.md), [target architecture](docs/plan/cloud-agents-platform/02-target-architecture.md), [implementation sequence](docs/plan/cloud-agents-platform/04-extraction-and-migration.md) and [status tracker](docs/plan/cloud-agents-platform/06-status-tracker.md) are the current entry points. The HTML architecture reference is not a blanket approval or an implementation claim.
+Start with the [execution plan](docs/plan/cloud-agents-platform/04-extraction-and-migration.md) and [current status](docs/plan/cloud-agents-platform/06-status-tracker.md). The [product decision](docs/plan/adr/0032-infrastructure-admin-delivery-and-document-routing.md) defines joint infrastructure/Admin delivery; the [target architecture](docs/plan/cloud-agents-platform/02-target-architecture.md) defines the technical boundaries. The detailed sequence is maintained only in the execution plan, not copied here or inferred from historical records.
 
-1. BASE-M0/M1: validate the execution adapter, then persistent Workspace/Volume and recoverable lifecycle operations.
-2. BASE-M2/M3: general Exec/PTY/Files/Preview/SSH, then outbound customer-node enrollment and reconnection.
-3. BASE-M4/M5: Kubernetes and placement/isolation matrix, then filesystem snapshots, independent delivery, metering and recovery acceptance.
-4. APP-M1: complete user CloudAgents against the accepted foundation.
-
-Admin Web accompanies these stages with real resource, operation and audit views, not a separate page-first roadmap. Foundation acceptance must work without installing Codex/Claude or supplying provider credentials.
-
-**Current implementation is a reusable predecessor, not the completed foundation.** It includes Go Control Plane/Worker, PostgreSQL, APIs/SDKs, Agent execution, two web apps and direct target actuators. Existing Lease-owned volumes retain their existing cleanup semantics; documentation changes do not migrate or alter live data. See the status tracker for remaining gaps and evidence boundaries.
+No-Agent acceptance removes the Agent/Provider dependency, not the Admin Web requirement. Existing Lease-owned volumes retain their existing cleanup semantics; documentation changes do not migrate or alter live data.
 
 The portable Runtime keeps its host-neutral JavaScript/stdio ABI. Synara and T3 Code remain downstream consumers with their own logical workspace, VCS, checkpoint and application authority; they do not become dependencies of the foundation.
 

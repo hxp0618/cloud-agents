@@ -2,9 +2,7 @@
 
 ## 1. 决策
 
-按 [ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md)，当前优先完成
-**长期云工作区＋通用 Sandbox 基础设施＋客户节点接入平台**，底座就绪后继续用户侧 CloudAgents。
-Admin Web 是底座各阶段的配套运维入口，不是另一条替代底座验收的主线。
+按 [ADR-0032 / D-055](../adr/0032-infrastructure-admin-delivery-and-document-routing.md)，第一阶段完整交付 **长期云工作区＋通用 Sandbox＋客户节点接入＋Admin Web**，共同就绪后再继续用户侧 CloudAgents 对话。基础设施与管理界面按能力一起实现、一起验收，不分成纯后端先交付、Admin 后补的两条轨道。
 
 ### 1.1 两层产品边界
 
@@ -12,7 +10,7 @@ Admin Web 是底座各阶段的配套运维入口，不是另一条替代底座�
 | --- | --- | --- |
 | 基础设施底座 | Tenant/Org/Project/RBAC；Workspace/Volume/Snapshot；Sandbox 生命周期、Exec/PTY/Files/Ports；节点注册、调度、策略、访问、计量和恢复 | Agent Provider、Prompt、Turn、Synara/T3 私有服务 |
 | 用户 CloudAgents | AgentSession/Turn/Execution、Approval/User Input、会话历史、Provider cursor、Artifact 和 Agent Checkpoint | 底座私有 Go 包、Docker/Kubernetes API 或节点凭据 |
-| Admin Web 配套 | Workspace/Sandbox/节点/策略/Operation/Audit 运维元数据和授权操作 | 用户对话、源代码或 Secret bytes 的读取权限 |
+| 基础设施管理界面（Admin Web） | Workspace/Sandbox/节点/策略/Operation/Audit 运维元数据和授权操作 | 用户对话、源代码或 Secret bytes 的读取权限 |
 
 底座管理长期 Workspace 身份、Volume 绑定、文件系统快照及保留规则；应用在授权的数据通道内修改文件，
 自己管理对话与 Agent Checkpoint。物理快照不声称保存 Provider 会话状态。默认同一 Workspace 同时只允许
@@ -187,9 +185,11 @@ encoding、permission vocabulary 和 policy fixture 的正式冻结由 ADR-0007 
   不能成为 public wire/SDK ABI；
 - 真实 tenant、credential、pairing token、内部 endpoint 或生产数据库 dump。
 
-## 5. 旧 Go Control Plane 的最终去向
+## 5. Synara 旧 Go Control Plane 的最终去向（按需迁移）
 
-现有 `services/control-plane` 不会永久作为第二个 Cloud Agent 实现保留。先做逐 package inventory：
+本节仅指 Synara 仓库中的旧 `services/control-plane`，不是当前 Cloud Agents 仓库的同名目录。
+当前 Cloud Agents 的 `services/control-plane` 是公共实现，保留并演进；不得据本节将其整体迁出、重写或列为删除对象。
+只有在获授权的 Synara 消费者迁移任务中，才核验并复用已有逐 package inventory，补充实际差异，按下表处理旧实现；这不是 BASE 工作的前置步骤：
 
 | 分类           | 处理                                                            |
 | -------------- | --------------------------------------------------------------- |

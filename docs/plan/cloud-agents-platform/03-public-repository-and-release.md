@@ -2,7 +2,7 @@
 
 ## 0. 底座优先的交付边界
 
-当前产品边界由 [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md) 定义，实施顺序见 [04](04-extraction-and-migration.md)。底座必须能在不配置 Agent Provider、不创建 AgentSession 的情况下独立安装和验收；Admin Web 是配套管理入口，用户 CloudAgents 和 Synara/T3 是后续消费者。
+当前联合交付边界由 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md) 定义，实施顺序见 [04](04-extraction-and-migration.md)。底座必须能在不配置 Agent Provider、不创建 AgentSession 的情况下独立安装和验收；Admin Web 与基础设施属于同一个必须完整交付的产品，用户 CloudAgents 和 Synara/T3 是后续消费者。
 
 复用现有公共仓、Go modules、契约生成与发布治理。Controller、Access Gateway、Worker Gateway、RemoteWorker 是职责边界，不要求现在为每项创建服务、仓库或发布列车；先在现有 module 中按已验证的部署需要组合。OpenSandbox 是待固定版本验证的首选 SandboxRuntime 候选，不是已集成或已批准部署的制品。
 
@@ -14,7 +14,7 @@
 cloud-agents/
 ├── go.work                                # 仅本地开发；不进入 consumer 依赖
 ├── packages/                              # 现有七个 TS Runtime 包
-├── apps/admin-web/                        # 底座配套；随真实能力切片交付
+├── apps/admin-web/                        # 第一阶段必交付管理界面；与基础设施共同验收
 ├── apps/user-web/                         # 既有 Agent 应用；新增应用功能后置
 ├── contracts/
 │   ├── runtime/v2/
@@ -125,7 +125,7 @@ TypeScript SDK 的 npm identity 固定为 `@cloud-agents/cloud-agent-platform-sd
 
 ## 5. 直接部署要求
 
-BASE-M5 前，公共仓必须提供两条经过实测的底座从零安装路径：
+BASE-M5 完成并标记 VERIFIED 前，公共仓必须提供两条经过实测的底座从零安装路径；这是该阶段的退出条件，不是开始该阶段的前置条件：
 
 1. `docker compose`：启动 CP/Postgres、持久存储与所需 Controller/Gateway/runtime 组件；通过明确的管理员 bootstrap 完成 no-Agent Workspace → Sandbox → Exec/Files/Preview → Stop/Restart 数据保留闭环；
 2. Helm：安装/升级/回滚、external Postgres/object storage/OIDC、network policy 与 readiness，并验证对应的 no-Agent 底座能力。

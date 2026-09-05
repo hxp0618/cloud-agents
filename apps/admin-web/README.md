@@ -1,6 +1,6 @@
 # Cloud Agents Admin Web
 
-Delivery follows the [foundation-first plan](../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md). Admin Web accompanies Workspace/Sandbox/customer-node slices; it is neither a standalone page-completion track nor the place to expose user files, terminals, conversations, credentials, or enrollment secrets. Existing Lease-backed Workers are not the future outbound RemoteWorker node fleet. Reuse these operational views as real foundation APIs arrive; do not advertise planned capabilities as implemented.
+Delivery follows the [foundation-first plan](../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md). Admin Web and Workspace/Sandbox/customer-node infrastructure are one first-stage deliverable: a capability is incomplete if either its real backend or its corresponding Admin workflow is missing. User conversation features follow their joint acceptance. Admin Web must not expose user files, terminals, conversations, credentials, or enrollment secrets. Existing Lease-backed Workers are not the future outbound RemoteWorker node fleet. Reuse these operational views as real foundation APIs arrive; do not advertise planned capabilities as implemented.
 
 Independent Vite + React console for Control Plane Admin API operations. It uses the generated Admin SDK for Deployment Targets, a combined Cluster/Host and Lease-backed Worker view, Environment Leases, immutable Environment Profiles, and project Maintenance Operations, and keeps the bearer token in memory.
 

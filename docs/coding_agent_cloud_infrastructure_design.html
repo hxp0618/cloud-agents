@@ -199,7 +199,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   <div class="eyebrow">Infrastructure Architecture Design</div>
   <h1>Cloud Workspace / Sandbox 基础架构设计</h1>
   <p>
-    先交付长期云工作区、通用 Sandbox 基础设施和客户节点接入平台；Admin Web 随底座能力配套交付。
+    第一阶段共同交付长期云工作区、通用 Sandbox、客户节点接入与完整 Admin Web；基础设施与对应管理界面一起验收。
     用户侧 CloudAgents 在底座验收后消费这些能力。OpenSandbox 是待固定版本验证的首选执行基础候选，
     Workspace、访问授权、RemoteWorker 接入、调度、计量和多租户权威仍由平台掌握。
   </p>
@@ -212,7 +212,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   </div>
 </header>
 <div class="callout orange">
-  <b>当前权威与状态（2026-09-05）：</b>产品边界以 <a href="plan/adr/0031-foundation-first-cloud-workspace-platform.md">ADR-0031</a> 为准；
+  <b>当前权威与状态（2026-09-05）：</b>产品边界以 <a href="plan/adr/0032-infrastructure-admin-delivery-and-document-routing.md">ADR-0032</a> 为准；
   顺序、验收和当前状态分别见 <a href="plan/cloud-agents-platform/04-extraction-and-migration.md">04 实施计划</a>、
   <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md">05 BASE-READY</a>、<a href="plan/cloud-agents-platform/06-status-tracker.md">06 状态追踪</a>。
   本文保留完整目标架构和后续扩展，不是全部功能已实现、全部技术已选定或生产部署已获授权的声明。
@@ -235,7 +235,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <div class="callout green">
   <b>当前主线：</b>BASE-M0 验证候选与领域映射 → M1 长期 Workspace/异步生命周期 → M2 Exec/PTY/Files/Preview/SSH →
   M3 outbound 客户节点 → M4 Kubernetes/容量/强隔离矩阵 → M5 文件系统快照、独立交付与运维 → BASE-READY → APP-M1 用户 CloudAgents。
-  Admin Web 随各阶段交付；安全从首个入口落实。Direct MicroVM、内存快照、Warm Pool、跨 Region 调度和商业账单后置。
+  Admin Web 与对应基础设施能力共同完成；no-Agent 不等于无管理界面。安全从首个入口落实。Direct MicroVM、内存快照、Warm Pool、跨 Region 调度和商业账单后置。
 </div>
 </section>
 
@@ -288,7 +288,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
 <section id="decisions">
 <h2>3. 架构方案索引（非仓内 ADR 批准表）</h2>
-<p>以下 REF 编号仅索引本文方案，不与仓内不可变 ADR 共用编号。已接受的产品边界见 ADR-0031；具体协议、技术与部署按实施阶段验证，不从本表推导执行授权。</p>
+<p>以下 REF 编号仅索引本文方案，不与仓内不可变 ADR 共用编号。已接受的共同交付边界见 ADR-0032；具体协议、技术与部署按实施阶段验证，不从本表推导执行授权。</p>
 <div class="table-wrap"><table>
 <thead><tr><th>ID</th><th>决策</th><th>状态</th><th>原因与影响</th></tr></thead>
 <tbody>
@@ -368,7 +368,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <div class="diagram">
 <div class="arch">
   <div class="arch-layer">
-    <div class="arch-title"><span>用户体验平面</span><small>Admin 配套底座；完整 User Workspace/Agent UI 后置</small></div>
+    <div class="arch-title"><span>用户体验平面</span><small>基础设施＋完整 Admin 同阶段交付；用户对话 UI 后置</small></div>
     <div class="nodes">
       <div class="node user" style="grid-column:span 3"><b>User Console</b><span>Project / Workspace / Usage</span></div>
       <div class="node user" style="grid-column:span 3"><b>Workspace UI</b><span>Agent / Terminal / Files / Git</span></div>
@@ -1128,7 +1128,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 <h2>23. 实施路线与交付物</h2>
 <p>唯一详细实施顺序维护在 <a href="plan/cloud-agents-platform/04-extraction-and-migration.md">04 实施计划</a>；本文只保留映射，不再并行维护另一套 V1/V2/V3 交付承诺。</p>
 <div class="table-wrap"><table>
-<thead><tr><th>阶段</th><th>底座交付</th><th>Admin 配套</th></tr></thead>
+<thead><tr><th>阶段</th><th>底座交付</th><th>同阶段必交付 Admin Web</th></tr></thead>
 <tbody>
 <tr><td>BASE-M0</td><td>领域与契约映射；固定 OpenSandbox Docker no-Agent PoC</td><td>复用现有入口，界定真实/未支持能力</td></tr>
 <tr><td>BASE-M1</td><td>Workspace/Volume 独立生命周期；durable Operation + reconcile</td><td>资源元数据、保留状态、Operation 与审计</td></tr>
@@ -1173,7 +1173,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 
 <section id="acceptance">
 <h2>25. 架构落地验收清单</h2>
-<p>底座最终判定以 <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md">05 的 BASE-READY</a> 为准：无需 Provider Credential 或 AgentSession；以下应用/规模化项只在对应后续阶段验收，不凭本文清单宣告完成。</p>
+<p>基础设施＋Admin Web 的共同完成判定以 <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md">05 的 BASE-READY</a> 为准：无需 Provider Credential 或 AgentSession；以下应用/规模化项只在对应后续阶段验收，不凭本文清单宣告完成。</p>
 <div class="grid g2">
 <div class="card"><b class="head">功能</b><ul class="checklist">
 <li>创建/停止/暂停/恢复/删除 Session 幂等</li>

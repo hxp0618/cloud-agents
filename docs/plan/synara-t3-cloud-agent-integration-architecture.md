@@ -2,7 +2,7 @@
 
 ## 当前适用范围（2026-09-05）
 
-本文保留 Runtime 与 Synara/T3 的消费者集成设计及固定版本证据；它不再定义当前底座建设顺序。当前主线以 [ADR-0031](adr/0031-foundation-first-cloud-workspace-platform.md) 和 [04](cloud-agents-platform/04-extraction-and-migration.md) 为准：长期 Workspace + 通用 Sandbox + outbound 客户节点，Admin Web 随底座配套，BASE-READY 后再做用户 CloudAgents；Synara/T3 保留为后续消费者，不作为底座验收前置。
+本文保留 Runtime 与 Synara/T3 的消费者集成设计及固定版本证据；它不再定义当前底座建设顺序。当前主线以 [ADR-0032](adr/0032-infrastructure-admin-delivery-and-document-routing.md) 和 [04](cloud-agents-platform/04-extraction-and-migration.md) 为准：长期 Workspace + 通用 Sandbox + outbound 客户节点 + 完整 Admin Web 共同交付，BASE-READY 后再做用户 CloudAgents；Synara/T3 保留为后续消费者，不作为底座验收前置。
 
 本文原有“当前”“唯一近程交付”“PAUSED”、包名和源码清单均对应下面记录的历史 ref，不是今天的实现库存或全局暂停指令。旧 Gate、外部发布与数据迁移的批准条件保留；逻辑 Workspace/Checkpoint owner 仍由宿主维护，底座的物理 Volume 生命周期需按新模型显式衔接，不能双 writer。本文不授权跨仓实施或修改 Synara/T3。
 

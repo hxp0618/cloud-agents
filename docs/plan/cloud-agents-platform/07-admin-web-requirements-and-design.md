@@ -1,7 +1,7 @@
 # 07. Admin Web 需求与交互设计
 
-- 状态：DRAFT
-- 日期：2026-09-05（底座配套重排；原需求日期 2026-09-03）
+- 状态：产品边界与既有视觉/双语/安全要求有效；新增技术细节为实施设计，未宣称已实现或验收
+- 日期：2026-09-05（基础设施＋Admin 联合交付；原需求日期 2026-09-03）
 - 原实现参考：`codex/cloud-agents-platform-p0@a6dd495`；当前代码与验收须逐次核对，不能沿用此 ref 声称当前完成
 - Daytona 参考基线：[`daytonaio/daytona@v0.190.0`](https://github.com/daytonaio/daytona/tree/v0.190.0)
 - 前端技术栈：Vite + React + TypeScript
@@ -11,8 +11,7 @@
 本文定义 Cloud Agents 的 User Web 与 Admin Web 产品边界，并给出 Admin Web 的功能、信息架构、
 权限、安全、交互、接口和验收要求。
 
-按 [ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md)，Admin Web 是长期云工作区、
-通用 Sandbox 和客户节点底座的配套措施，与 BASE-M* 同步交付；完整用户 CloudAgents 后续接入。
+按 [ADR-0032 / D-055](../adr/0032-infrastructure-admin-delivery-and-document-routing.md)，长期云工作区、通用 Sandbox、客户节点与完整 Admin Web 共同组成第一阶段；完整用户 CloudAgents 对话在其后接入。
 本次更新产品对应关系和实施排序，不把所有 UI 细节、实现或部署标为已批准，也不改既有视觉和安全要求。
 
 Admin Web 的页面布局、视觉风格、组件外观、响应式行为和交互反馈以 Daytona `v0.190.0` Dashboard 为
@@ -20,6 +19,8 @@ Admin Web 的页面布局、视觉风格、组件外观、响应式行为和交�
 与基础设施管理合并到同一个 Dashboard。
 
 ## 2. 产品目标
+
+依据 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md)，基础设施与 Admin Web 是第一阶段的同一个完整交付对象；Admin 不是可后补附件。用户对话界面属于第二阶段。每个面向管理员的能力都需真实后端、对应页面流程和验收；两边缺任一闭环均未完成。
 
 平台提供两个独立入口：
 
@@ -444,7 +445,7 @@ Prompt、消息正文、代码或 Artifact 内容。
 - Sandbox 视图区分长期 Workspace、临时计算实例与旧 Lease，显示 desired/observed state、generation、placement、Operation、失败原因和重试结果。
 - Stop/TTL/Cleanup 的影响清单明确保留长期数据。Workspace/Volume 删除走独立权限、保留策略与明确影响确认；不能把 Admin 维护权限变为浏览用户 Files/PTY 的权限。
 
-### 8.12 资源池与快照配套（BASE-M4/M5）
+### 8.12 资源池与快照管理（BASE-M4/M5）
 
 - Region/Pool/Node 只展示真实后端能力、容量与调度结果；不支持的 Runtime/network/storage 组合明确禁用并说明原因。
 - Snapshot 仅展示归属、source Workspace、时间、容量、状态与恢复 Operation；不得读取快照内容。恢复须验证一致性和单写者 fencing。
@@ -652,7 +653,7 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 - Admin Web 对应页面使用相同 viewport、theme 和组件状态生成截图；
 - 以并排审查和自动截图 diff 验证，动态 ID、时间和业务文案区域可 mask；
 - Sidebar 宽度、Header/Toolbar 高度、内容边距、表格行高、字体、颜色、圆角、边框和交互状态出现明显偏差
-  时，ADMIN-M1/ADMIN-M4 不得通过；
+  时，对应 BASE 联合切片及 BASE-READY 不得标为通过；
 - Cloud Agents 品牌替换和业务字段数量差异是允许差异，布局和组件风格不是允许差异。
 - `zh-CN` 与 `en-US` 分别生成视觉基线；中文文案不得导致 Sidebar、Toolbar、Table、Sheet/Dialog、按钮和
   状态 Badge 溢出、遮挡或不可操作，也不得通过缩小字体破坏 Daytona 视觉比例。
@@ -673,11 +674,10 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 迁移期间可以短暂保留旧页面用于开发验证，但生产导航和普通用户权限必须先隐藏并拒绝基础设施写操作，
 不能长期维护两套入口。
 
-## 14. 配套实施顺序
+## 14. 联合实施顺序
 
 当前顺序以 [04 的 BASE-M0～M5](04-extraction-and-migration.md#0-当前实施顺序底座先行) 为准。
-每个基础能力都包含相关 Admin 元数据、必要操作和失败恢复反馈；契约/后端/API/SDK先形成真实行为，页面随之交付。
-视觉与双语要求不降低，但不等待整站截图完成才开发下一个安全的后端切片。
+每个面向管理员的基础能力必须同时具备真实契约/后端/API/SDK、Admin 管理操作、状态、错误和恢复反馈。后端与页面可在同一联合切片内并行推进，但未完成页面流程不得把该能力标为完成或整体推迟到用户对话阶段。视觉、双语和可访问性均计入对应页面验收。
 
 | 既有 Admin 工作 | 当前承接位置 |
 | --- | --- |
@@ -687,63 +687,25 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 | 独立鉴权/部署隔离、视觉和完整运维回归 | 从首条相关路径持续验证，BASE-M5 收口 |
 | Codex/Claude Turn E2E | 既有兼容回归可运行；新用户产品完整验收归 APP-M1，不阻塞无 Agent 底座开发 |
 
-### 14.1 历史 ADMIN-M1～ADMIN-M4 定义
-
-下列旧里程碑保留用于解释现有报告，不再是当前平台推进顺序，也不要求按它们先完成用户 Agent 才推进底座。
-
-本文使用 `ADMIN-M1`～`ADMIN-M4` 标识 Admin Web 里程碑；平台原有 `M1` 仍指 Portable Runtime。
-两者不共享状态或授权，名称区分不解除任何暂停，也不构成新的实施或部署授权。
-
-### ADMIN-M1：Admin Web 基础与 Target 运维
-
-- 新增 `apps/admin-web`；
-- 独立管理员鉴权和 Admin API；
-- 1:1 复刻 Daytona `v0.190.0` Dashboard shell、Sidebar、页面布局和基础组件状态；
-- 建立 `zh-CN` / `en-US` message catalog、语言选择、fallback 和持久化；
-- Target 列表、注册、详情、Probe、Cleanup；
-- Lease 运维列表；
-- 操作确认和 Audit 最小闭环。
-
-验收：Admin Web shell、Target 列表/详情和创建 Sheet 在 `zh-CN`、`en-US` 下通过 Daytona 视觉基线对比；
-语言选择在刷新后恢复且不存在缺失翻译；管理员可完成 Docker/Kubernetes/SSH Target 注册到 Probe ready，
-并能看到 operation/audit；普通用户 Token 调用相同 Admin API 返回 403。
-
-### ADMIN-M2：Environment Profile 与 User Web 边界
-
-- Profile 草稿、发布、禁用和不可变版本；
-- User Web Profile selector；
-- 按 Profile 服务端解析 Target、release、资源和凭据引用；
-- 从 User Web 移除 Target/Lease 配置。
-
-验收：用户请求和浏览器存储中均不存在 endpoint、`credentialRef`、`providerCredentialRef`；用户可以通过
-已发布 Profile 创建真实 Codex/Claude Code Session/Turn。
-
-### ADMIN-M3：Worker、升级和策略管理
-
-- Cluster/Worker 运维视图；
-- Drain/Resume、固定 digest Upgrade 和回滚；
-- Images/Releases；
-- Quota、Storage Policy、Network Policy；
-- Maintenance Operation 统一页面。
-
-验收：管理员能在至少一个 Docker、一个 Kubernetes 和一个 SSH 目标完成 Drain -> Upgrade -> Probe ->
-Resume，并保留 generation、operation 和 audit 证据。
-
-### ADMIN-M4：安全与真实 E2E
-
-- User/Admin 独立部署和 OIDC audience/scope；
-- 内容与 Secret 返回检查；
-- Docker/Kubernetes/SSH 各一条真实部署、会话、终止和零残留清理路径；
-- Codex 与 Claude Code 各至少一条真实 Turn；
-- 失败、重试、并发冲突和刷新恢复验证。
-- Daytona 基线页面在 `zh-CN` / `en-US`、light/dark 和桌面/移动 viewport 下完成视觉回归。
-
-验收：Admin Web 全程只能看到运维元数据；User Web 只选择 Profile；终止后平台拥有的 Worker、容器/Pod、
-Workspace volume 均按策略清理。
+旧 ADMIN-M1～M4 定义及固定验收在 [ADMIN-WEB-V1](history/07-legacy-admin-milestones.md#admin-web-v1) 查询；旧报告不改名、不改结论。它们不提供平台默认下一步，也不把 Agent Turn 设为 BASE 前置条件；仍以原 M1～M4 为范围的有效任务按该固定验收执行，不因归档失去原范围或被自动切换为 BASE。
 
 ## 15. 实现验收标准
 
-以下条件全部满足才可认为底座配套 Admin Web 实现完成。这些条件不作为设计文档完成或启动已授权实现的前置条件；
+本节按任务的明确范围选择验收，不能把两套标准合并成旧任务的完成条件：
+
+| 固定标识 | 适用任务 | 完成含义 |
+| --- | --- | --- |
+| `ADMIN-WEB-V1` | 原 User/Admin 拆分任务的 M1～M4，即 ADMIN-M1～M4 | 原 Target/Lease/Profile/执行 Worker 管理与真实 Agent E2E 完成；不代表新底座就绪 |
+| `BASE-ADMIN-V1` | 当前主计划的 BASE-M0～M5 | 新 Workspace/Sandbox/RemoteWorker 管理与基础设施联合验收；还须满足 05 的 BASE-READY |
+
+### ADMIN-WEB-V1
+
+完整固定条件见 [旧 Admin 任务验收基线](history/07-legacy-admin-milestones.md#admin-web-v1)。原提示词明确列出 User/Admin 拆分的 M1～M4，却只引用“第 15 节全部标准”时，该引用指向 ADMIN-WEB-V1，不追随本节后续新增的 BASE 条件。
+不得因此删去原任务要求的 Docker/Kubernetes/SSH 与真实 Codex/Claude Session/Turn 验收；也不得要求该旧任务补齐 outbound RemoteWorker 或独立 Workspace/Sandbox 才能完成。
+
+### BASE-ADMIN-V1
+
+以下条件全部满足才可认为基础设施管理 Admin Web 实现完成。这些条件不作为设计文档完成或启动已授权实现的前置条件；
 设计文档完成不代表实现已通过验收，也不自动授予实施权限。
 
 1. `apps/user-web` 与 `apps/admin-web` 可独立构建和部署。
@@ -763,13 +725,16 @@ Workspace volume 均按策略清理。
 13. Admin Web 支持 `zh-CN` 与 `en-US` 即时切换、刷新恢复和 locale fallback；两种语言没有缺失 key、未翻译
     的界面文案或布局溢出，并分别通过 light/dark、桌面/移动视觉回归。
 
-## 16. 已授权实现的 Goal 输入
+## 16. 执行入口（不单独维护 Goal 计划）
 
-收到实现任务后，在明确授权范围内从 04 最早未完成的 BASE 切片推进，并交付对应 Admin 配套；
-只有用户明确指定一个独立 UI 修复时，才按该 UI 范围单独处理，不把它当成底座阶段已完成。
+收到继续实施主计划的任务后，在明确授权范围内从 04 最早未完成的 BASE 切片推进，以基础设施＋对应 Admin 工作流为同一个能力交付单元。
+原 ADMIN-M1～M4 任务在收到明确范围迁移指令前仍采用 ADMIN-WEB-V1；“继续原任务”或读取新版文档本身不将它升级成 BASE 任务。需要承接新主线时使用 [04 的任务迁移提示词](04-extraction-and-migration.md#主执行任务迁移提示词)，只替换明确指出的范围、顺序与完成标准，保留仍有效的安全和操作授权边界。
+明确指定的后端、UI、契约、文档修复或审查/验证按该任务范围完成，并覆盖实际受影响的流程，不自动扩成整个阶段；单项任务完成不代表 BASE 阶段通过。阶段完成仍须满足后端＋Admin 联合验收。
 每次恢复核对当前 HEAD、dirty work、实际后端/API/SDK 和证据，复用已完成能力；
 不得仅创建空页面、Mock 数据或没有后端 authority 的按钮。本次计划重排不修改现有 Goal/任务/自动化，
 也不授予其他任务新权限；已有效的同范围授权无需重复确认。
+
+后续任务引用固定验收标识和所用文档版本，不再单独引用可变章节号。改变固定标识的资源范围或完成条件时须新增版本并显式迁移适用任务，不能原地把 ADMIN-WEB-V1 扩成 BASE，也不能把旧任务改称完成来掩盖未做的旧验收。
 
 ## 17. 参考
 
