@@ -4,7 +4,15 @@
 
 当前产品决定：[ADR-0032 / D-055](../adr/0032-infrastructure-admin-delivery-and-document-routing.md)。第一阶段完整交付基础设施＋Admin Web，之后才做用户 CloudAgents 对话。唯一工作顺序是 [04](04-extraction-and-migration.md)，完成定义是 [05](05-gates-and-acceptance.md)，Admin 功能/交互要求是 [07](07-admin-web-requirements-and-design.md)。
 
-### 本轮文档状态与下一项
+### 当前实施任务
+
+- 2026-09-05 用户已明确把本任务从原 ADMIN-M1～M4 迁移到 BASE-M0～M5，授权当前仓库实现、相关验证与本地提交；采用固定 BASE-READY / BASE-ADMIN-V1。文档基线 `cde5bdb07117526af4fc4595d94b43a6a8ab7880`；不修改其他任务，不把旧 ADMIN-WEB-V1 未完成项标为通过。
+- BASE-M0 已开始。固定 OpenSandbox server `v0.2.2` / source `207d94c7`、execd `v1.0.21` 和镜像 digest；真实 OrbStack Docker 29.4.0 linux/arm64 PoC 通过无 Provider 的 create/exec/Files、删除计算保留卷与重建读回摘要、缺失卷拒绝及精确清理。见 [候选核对与领域映射](evidence/base-m0-opensandbox-candidate-20260905.md)。
+- 候选缺口已实证：相同创建输入产生两个 Sandbox；不存在的入口程序初始被接受为 Running，随后变为 Failed/exit 127。不能用创建响应替代 CP 幂等、Workspace 单写和就绪判断。当前仅技术 PoC，不是产品后端或 BASE-M0 联合验收。
+- 下一项：在既有 Go CP/生成链上实现首条 Workspace/Sandbox 执行接缝，复用 durable coordination 和 Admin Target/Operation/Audit；补齐重复请求的发现/adopt、真实就绪判定、部分创建补偿以及对应 Admin 元数据闭环。未启动长期 Workspace 迁移、客户节点接入或生产部署；这些动作仍遵守各自授权边界。
+- 本次未改既有 Agent/Lease/Profile/User Web 行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
+
+### 已完成的文档整合状态（历史，不重复执行）
 
 - 当前文档位置：主项目 `/Users/huang/devel/project/huang/business/cloud-agents`，分支 `codex/cloud-agents-platform-p0`；整理来源为独立 worktree 的 `codex/foundation-first-docs-20260905` / `10541d6f`，执行时不再依赖临时 worktree。
 - DOC-1 / DOC-2：VERIFIED（文档范围）；联合交付边界已统一，入口已精简，三组旧执行清单已归档，一份重复整理报告已删除。
@@ -20,16 +28,16 @@
 
 下列状态仅针对新的联合切片，不表示仓内没有可复用实现。只有该阶段的真实基础设施行为、对应 Admin 闭环和检查均完成，才标记 VERIFIED；技术 PoC 不冒充产品完成。
 
-| 阶段 | 状态 | 尚需证明的完成范围 |
-| --- | --- | --- |
-| BASE-M0 | NOT STARTED | 固定版本执行候选、领域/契约映射、no-Agent Docker PoC；核对既有 Admin 可复用能力 |
-| BASE-M1 | NOT STARTED | 长期 Workspace/Volume、自动恢复的 Operation/reconcile，以及对应资源/保留/维护界面 |
-| BASE-M2 | NOT STARTED | Exec/PTY/Files/Preview/SSH 和真实策略执行；Admin grant/策略/诊断管理，不读取用户内容 |
-| BASE-M3 | NOT STARTED | outbound RemoteWorker 注册/证书/重连/fencing，以及节点归属、健康、Drain/Resume 管理 |
-| BASE-M4 | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面 |
-| BASE-M5 | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收 |
+| 阶段       | 状态        | 尚需证明的完成范围                                                                                          |
+| ---------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| BASE-M0    | IN PROGRESS | 固定候选和 no-Agent Docker PoC 已实测；尚需 CP 执行接缝、幂等/adopt、失败补偿和 Admin 联合闭环              |
+| BASE-M1    | NOT STARTED | 长期 Workspace/Volume、自动恢复的 Operation/reconcile，以及对应资源/保留/维护界面                           |
+| BASE-M2    | NOT STARTED | Exec/PTY/Files/Preview/SSH 和真实策略执行；Admin grant/策略/诊断管理，不读取用户内容                        |
+| BASE-M3    | NOT STARTED | outbound RemoteWorker 注册/证书/重连/fencing，以及节点归属、健康、Drain/Resume 管理                         |
+| BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |
+| BASE-M5    | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收                                    |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |
-| APP-M1 | PAUSED | 第一阶段完成后推进用户对话；现有 Agent 路径保留兼容并可作为回归负载 |
+| APP-M1     | PAUSED      | 第一阶段完成后推进用户对话；现有 Agent 路径保留兼容并可作为回归负载                                         |
 
 ## 1. 实现与证据边界
 
@@ -37,19 +45,19 @@
 
 合并只核对相对主分支集成前 `7bd3f4f3` 的变更均为文档，不代表已重新验收该基线及并行改动的运行行为。后续进入实现任务时须重新固定该任务的 HEAD/dirty/backend/工具版本，只复用仍适用的结论；不用历史未验收推断当前代码不存在。
 
-本轮只改变文档，不运行基础设施 PoC、生产服务、真实客户节点或 Provider E2E，不迁移旧卷、不部署发布、不关闭任何正式 Gate。
+上述文档整合阶段只改变文档，未运行基础设施 PoC、生产服务、真实客户节点或 Provider E2E，未迁移旧卷、部署发布或关闭正式 Gate。后续已授权实现结果以本页“当前实施任务”为准。
 
 ## 2. 文档收口问题与处置
 
-| 风险来源 | 可能影响 | 本轮处置 |
-| --- | --- | --- |
-| 0031 / 01–07 / HTML 的“Admin 配套” | 后端先交付，把管理 UI 推迟到用户阶段 | 0032 明确基础设施＋Admin 是一个交付对象；每项管理能力需两端闭环 |
-| 多个 README、旧 06 的 `PAUSED` / “HTTP absent” / 旧 checklist | 选错下一步、重复实现，或把历史范围当作全局停止指令 | 入口只导航，旧 06 归档；当前顺序在 04、状态在本页 |
-| 04 的旧 P0～P6 和 07 的旧 ADMIN-M1～M4 链 | 与 BASE 竞争；要求先完成用户 Agent 才做基础设施管理 | 归档旧链；固定历史报告不变，适用迁移/安全条件继续可查 |
-| 多处重复源码、工具版本和发布状态 | 局部过期时给出互相矛盾的操作建议 | CLAUDE 精简为入口与稳定约束；当前事实核对源码，工具版本依照可执行配置 |
-| 上轮文档仍写“完成后合并” | 在用户已撤销后再次自动集成 | 撤销历史保留；本次集成只依据用户复核后的新明确授权，不外推实现、发布或其他任务权限 |
-| 把旧评审文件当作无用文档删除 | 生成器的路径存在性或 review SHA-256 校验失败 | 保留冻结引用；仅删除不承担约束/证据/生成输入的重复报告，精确清单见 04 |
-| 旧 M1～M4 提示词动态引用新版 07 §15 | 原任务被追加新底座范围，或真实 Provider 验收被误删，导致无法完成/错误完成 | 使用独立的 ADMIN-WEB-V1、BASE-ADMIN-V1 标识；只在明确任务迁移时切换，不改旧证据结论 |
+| 风险来源                                                      | 可能影响                                                                  | 本轮处置                                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 0031 / 01–07 / HTML 的“Admin 配套”                            | 后端先交付，把管理 UI 推迟到用户阶段                                      | 0032 明确基础设施＋Admin 是一个交付对象；每项管理能力需两端闭环                     |
+| 多个 README、旧 06 的 `PAUSED` / “HTTP absent” / 旧 checklist | 选错下一步、重复实现，或把历史范围当作全局停止指令                        | 入口只导航，旧 06 归档；当前顺序在 04、状态在本页                                   |
+| 04 的旧 P0～P6 和 07 的旧 ADMIN-M1～M4 链                     | 与 BASE 竞争；要求先完成用户 Agent 才做基础设施管理                       | 归档旧链；固定历史报告不变，适用迁移/安全条件继续可查                               |
+| 多处重复源码、工具版本和发布状态                              | 局部过期时给出互相矛盾的操作建议                                          | CLAUDE 精简为入口与稳定约束；当前事实核对源码，工具版本依照可执行配置               |
+| 上轮文档仍写“完成后合并”                                      | 在用户已撤销后再次自动集成                                                | 撤销历史保留；本次集成只依据用户复核后的新明确授权，不外推实现、发布或其他任务权限  |
+| 把旧评审文件当作无用文档删除                                  | 生成器的路径存在性或 review SHA-256 校验失败                              | 保留冻结引用；仅删除不承担约束/证据/生成输入的重复报告，精确清单见 04               |
+| 旧 M1～M4 提示词动态引用新版 07 §15                           | 原任务被追加新底座范围，或真实 Provider 验收被误删，导致无法完成/错误完成 | 使用独立的 ADMIN-WEB-V1、BASE-ADMIN-V1 标识；只在明确任务迁移时切换，不改旧证据结论 |
 
 ### 本轮实际检查
 
