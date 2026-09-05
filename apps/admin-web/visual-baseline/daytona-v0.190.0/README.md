@@ -48,6 +48,15 @@ images and compare against matching **live** Admin Web states before claiming co
 
 ## Provenance
 
+The additional `reference-toast/` set captures the actual upstream success Toaster in both
+themes and viewports. Install `reference-toast.stories.tsx` in the external checkout's same
+`ui/stories` directory and open `reference-toast--success` in Storybook. Its ThemeProvider is
+required: the generic Storybook theme class alone does not change the Toaster context.
+`compare-toast.mjs REFERENCE ACTUAL PNG_MODULE` compares the single-line Toast exterior in
+fixed viewport coordinates, masking only the title/icon interior. It does not approve the
+whole page. The current strict result and remaining mismatch are recorded in
+[the Toast evidence](../../../../docs/plan/cloud-agents-platform/evidence/admin-web-success-toast-20260905.md).
+
 - Upstream repository: `https://github.com/daytonaio/daytona.git`
 - Tag: `v0.190.0`
 - Commit: `01c502bb1f1ff8f2885d0cd490e043736083dca8`

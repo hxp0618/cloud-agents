@@ -29,6 +29,7 @@ import {
   type WorkerReleaseRegisterRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import { ResourceRefresh } from "./ResourceRefresh";
+import { SuccessToast } from "./SuccessToast";
 
 import {
   adminFailure,
@@ -2190,11 +2191,14 @@ export function App() {
 
           {feedback}
           {notice !== null ? (
-            <div className="banner success" role="status">
-              {t("notice.completed", {
+            <SuccessToast
+              message={t("notice.completed", {
                 operation: t(notice.key, notice.values),
               })}
-            </div>
+              closeLabel={t("action.close")}
+              onDismiss={() => setNotice(null)}
+              returnFocus={operationTriggerRef.current}
+            />
           ) : null}
 
           {page === "overview" ? (

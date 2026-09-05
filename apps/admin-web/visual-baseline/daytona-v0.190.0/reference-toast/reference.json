@@ -1,0 +1,98 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "rect": {
+      "x": 1052,
+      "y": 814.5,
+      "width": 356,
+      "height": 53.5,
+      "top": 814.5,
+      "right": 1408,
+      "bottom": 868,
+      "left": 1052
+    },
+    "fontSize": "13px",
+    "lineHeight": "19.5px",
+    "padding": "16px",
+    "border": "1px solid rgb(237, 237, 237)",
+    "borderRadius": "8px",
+    "background": "rgb(255, 255, 255)",
+    "shadow": "rgba(0, 0, 0, 0.1) 0px 4px 12px 0px",
+    "title": "rgb(23, 23, 23)",
+    "icon": "rgb(23, 23, 23)",
+    "classes": "group toast pointer-events-auto !items-start group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:shadow-lg"
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "rect": {
+      "x": 1052,
+      "y": 814.5,
+      "width": 356,
+      "height": 53.5,
+      "top": 814.5,
+      "right": 1408,
+      "bottom": 868,
+      "left": 1052
+    },
+    "fontSize": "13px",
+    "lineHeight": "19.5px",
+    "padding": "16px",
+    "border": "1px solid rgb(51, 51, 51)",
+    "borderRadius": "8px",
+    "background": "rgb(0, 0, 0)",
+    "shadow": "rgba(0, 0, 0, 0.1) 0px 4px 12px 0px",
+    "title": "rgb(252, 252, 252)",
+    "icon": "rgb(252, 252, 252)",
+    "classes": "group toast pointer-events-auto !items-start group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:shadow-lg"
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "rect": {
+      "x": 16,
+      "y": 774.5,
+      "width": 358,
+      "height": 53.5,
+      "top": 774.5,
+      "right": 374,
+      "bottom": 828,
+      "left": 16
+    },
+    "fontSize": "13px",
+    "lineHeight": "19.5px",
+    "padding": "16px",
+    "border": "1px solid rgb(237, 237, 237)",
+    "borderRadius": "8px",
+    "background": "rgb(255, 255, 255)",
+    "shadow": "rgba(0, 0, 0, 0.1) 0px 4px 12px 0px",
+    "title": "rgb(23, 23, 23)",
+    "icon": "rgb(23, 23, 23)",
+    "classes": "group toast pointer-events-auto !items-start group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:shadow-lg"
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "rect": {
+      "x": 16,
+      "y": 774.5,
+      "width": 358,
+      "height": 53.5,
+      "top": 774.5,
+      "right": 374,
+      "bottom": 828,
+      "left": 16
+    },
+    "fontSize": "13px",
+    "lineHeight": "19.5px",
+    "padding": "16px",
+    "border": "1px solid rgb(51, 51, 51)",
+    "borderRadius": "8px",
+    "background": "rgb(0, 0, 0)",
+    "shadow": "rgba(0, 0, 0, 0.1) 0px 4px 12px 0px",
+    "title": "rgb(252, 252, 252)",
+    "icon": "rgb(252, 252, 252)",
+    "classes": "group toast pointer-events-auto !items-start group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:shadow-lg"
+  }
+]

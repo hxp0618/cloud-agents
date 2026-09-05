@@ -1,0 +1,90 @@
+[
+  {
+    "locale": "en-US",
+    "theme": "light",
+    "width": 1440,
+    "exitCode": 1,
+    "reference": "e51b2d536a346bd76046f3355ecc2bdd18e95297e92aca2ae1247da59b4d611f",
+    "actual": "4da8b70c67bfc9cda9a57e871a26ccfb46be1e28209d7c20ab1f8c5914c977b1",
+    "checked": 27666,
+    "changed": 1,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "en-US",
+    "theme": "light",
+    "width": 390,
+    "exitCode": 0,
+    "reference": "4b532cf147e63966d9f47a9f47c5eca30b6c3dc4ca04ddac68c1de5a94f89303",
+    "actual": "00a677df46c21157b51c42dce018a06562ecfab3ee0496f183220d5d4b0d3127",
+    "checked": 20032,
+    "changed": 0,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "en-US",
+    "theme": "dark",
+    "width": 1440,
+    "exitCode": 0,
+    "reference": "2094b9d5f94701e3bd79422cf14b59f7f35781ff3dc76baad31e7c1b511d97fa",
+    "actual": "4d4fe1dcc95f02f35505dcc3f1e653a92b276c3f0a1ab9a10a0a5bd1c994d877",
+    "checked": 27666,
+    "changed": 0,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "en-US",
+    "theme": "dark",
+    "width": 390,
+    "exitCode": 0,
+    "reference": "531181ebb7dc6f123892b5eebbd3c7444d4903c3ab8d3207e098752c18563d4a",
+    "actual": "7db0c23f4bc994f41140ed92d395d0828466e27352d7420c7c0c8348cf4917fa",
+    "checked": 20032,
+    "changed": 0,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "zh-CN",
+    "theme": "light",
+    "width": 1440,
+    "exitCode": 1,
+    "reference": "e51b2d536a346bd76046f3355ecc2bdd18e95297e92aca2ae1247da59b4d611f",
+    "actual": "7c9d91b7eae3dede3a31d4532bd23591f0b499f49bd1c4ff2d2bdee6a3519500",
+    "checked": 27666,
+    "changed": 1,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "zh-CN",
+    "theme": "light",
+    "width": 390,
+    "exitCode": 0,
+    "reference": "4b532cf147e63966d9f47a9f47c5eca30b6c3dc4ca04ddac68c1de5a94f89303",
+    "actual": "383157348f6469932f7329d1bc65f9b064e2eac845f3ccdc81aa40194dc8fe8b",
+    "checked": 20032,
+    "changed": 0,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "zh-CN",
+    "theme": "dark",
+    "width": 1440,
+    "exitCode": 0,
+    "reference": "2094b9d5f94701e3bd79422cf14b59f7f35781ff3dc76baad31e7c1b511d97fa",
+    "actual": "bbc19489cf5dccd3c1799ea4d5f57740f28a1c2b92cc64cd478a4cc052ea499c",
+    "checked": 27666,
+    "changed": 0,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  },
+  {
+    "locale": "zh-CN",
+    "theme": "dark",
+    "width": 390,
+    "exitCode": 0,
+    "reference": "531181ebb7dc6f123892b5eebbd3c7444d4903c3ab8d3207e098752c18563d4a",
+    "actual": "61b500b9d4612a9e7fe1847793f2361d24182dcd77f0f73bbd0f091343a90f89",
+    "checked": 20032,
+    "changed": 0,
+    "scope": "Single-line success Toast exterior; title and icon masked"
+  }
+]

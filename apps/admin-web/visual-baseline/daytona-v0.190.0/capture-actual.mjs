@@ -62,12 +62,23 @@ try {
 
   let nextId = 1;
   const pending = new Map();
+  socket.addEventListener("close", (event) => {
+    for (const callback of pending.values()) {
+      callback.reject(
+        new Error(
+          `Browser connection closed (${event.code}); process exit=${browser.exitCode}, signal=${browser.signalCode}`,
+        ),
+      );
+    }
+    pending.clear();
+  });
   const requestOrigins = new Set();
   const consoleErrors = [];
   const consoleWarnings = [];
   const httpFailures = [];
   const layoutChecks = [];
   const tableHeaderChecks = [];
+  const toastChecks = [];
   const formChecks = [];
   const commandChecks = [];
   const modalChecks = [];
@@ -154,6 +165,9 @@ try {
       key.toUpperCase().charCodeAt(0);
     const params = { key, code, modifiers, windowsVirtualKeyCode: virtualKeyCode };
     await command("Input.dispatchKeyEvent", { type: "rawKeyDown", ...params });
+    if (key === "Enter") {
+      await command("Input.dispatchKeyEvent", { type: "char", ...params, text: "\r" });
+    }
     await command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
   };
   const clickAt = async (selector) => {
@@ -453,6 +467,11 @@ try {
         `document.activeElement === document.querySelector(${JSON.stringify(trigger)})`,
       ),
       true,
+      JSON.stringify(
+        await evaluate(
+          "({ activeTag: document.activeElement?.tagName, activeClass: document.activeElement?.className, modalCount: document.querySelectorAll('dialog:modal').length, toastOpen: document.querySelector('.success-toast')?.matches(':popover-open') })",
+        ),
+      ),
     );
     assert.equal(await evaluate("document.querySelector('.admin-sheet').matches(':modal')"), true);
     modalChecks.push({
@@ -510,6 +529,71 @@ try {
     await pressKey("Escape");
     await waitFor("!document.querySelector('.admin-sheet')", "detail Escape close");
     assert.equal(await evaluate("document.activeElement.matches('tbody .row-action')"), true);
+  };
+
+  const verifyToast = async (name) => {
+    const before = await evaluate(
+      "document.querySelector('.target-list-panel').getBoundingClientRect().y",
+    );
+    await clickAt(".heading-actions button:first-child");
+    await waitFor(
+      "document.querySelector('.success-toast')?.matches(':popover-open')",
+      "successful refresh Toast",
+    );
+    const geometry = await evaluate(`(() => {
+      const toast = document.querySelector('.success-toast');
+      const rect = toast.getBoundingClientRect();
+      return { width: rect.width, right: innerWidth - rect.right, bottom: innerHeight - rect.bottom, fontSize: getComputedStyle(toast).fontSize, message: toast.innerText, tableY: document.querySelector('.target-list-panel').getBoundingClientRect().y, viewport: innerWidth };
+    })()`);
+    assert.equal(geometry.tableY, before, "Success feedback must not shift the resource list");
+    assert.equal(geometry.width, geometry.viewport <= 600 ? geometry.viewport - 32 : 356);
+    assert.equal(geometry.right, geometry.viewport <= 600 ? 16 : 32);
+    assert.equal(geometry.bottom, geometry.viewport <= 600 ? 16 : 32);
+    assert.equal(geometry.fontSize, "13px");
+    await screenshot(`toast-${name}.png`);
+    if (name === "en-US-light-desktop") {
+      const point = await evaluate(
+        "(() => { const r = document.querySelector('.success-toast').getBoundingClientRect(); return { x: r.x + 30, y: r.y + 30 }; })()",
+      );
+      await command("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+      await delay(4100);
+      assert.equal(
+        await evaluate("document.querySelector('.success-toast')?.matches(':popover-open')"),
+        true,
+        "Hovered Toast must not expire",
+      );
+      await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+    }
+    await evaluate("document.querySelector('.toast-close').focus()");
+    assert.equal(await evaluate("document.activeElement.matches('.toast-close')"), true);
+    await delay(4100);
+    assert.equal(
+      await evaluate("document.querySelector('.success-toast')?.matches(':popover-open')"),
+      true,
+      "Focused Toast must not expire",
+    );
+    await pressKey("Enter");
+    await waitFor("!document.querySelector('.success-toast')", "keyboard Toast dismissal");
+    assert.equal(
+      await evaluate(
+        "document.activeElement === document.querySelector('.heading-actions button:first-child')",
+      ),
+      true,
+      "Toast dismissal restores the trigger focus",
+    );
+    await clickAt(".heading-actions button:first-child");
+    await waitFor(
+      "document.querySelector('.success-toast')?.matches(':popover-open')",
+      "second refresh Toast",
+    );
+    await waitFor("!document.querySelector('.success-toast')", "automatic Toast expiry");
+    toastChecks.push({
+      name,
+      ...geometry,
+      focusPause: true,
+      keyboardDismiss: true,
+      automaticExpiry: true,
+    });
   };
 
   const verifyCommands = async (name) => {
@@ -598,6 +682,22 @@ try {
     const prefix = name.startsWith("zh-CN") ? "zh-CN-" : "";
     const dimensions = name.slice(6);
     await openTarget("visual-ssh");
+    await waitFor(
+      "document.querySelector('.success-toast')?.matches(':popover-open')",
+      "detail success Toast",
+    );
+    await clickAt(".toast-close");
+    await waitFor("!document.querySelector('.success-toast')", "detail Toast pointer dismissal");
+    assert.equal(
+      await evaluate("document.querySelector('.admin-sheet').contains(document.activeElement)"),
+      true,
+      "Toast dismissal must keep focus in the open modal",
+    );
+    assert.equal(
+      await evaluate("document.querySelector('.admin-sheet').matches(':modal')"),
+      true,
+      "Toast close must preserve the detail Sheet",
+    );
     await screenshot(`${prefix}detail-${dimensions}.png`);
     await closeSheet();
     await clickAt(".heading-actions .button.primary");
@@ -608,6 +708,7 @@ try {
     await screenshot(`${prefix}create-form-${dimensions}.png`);
     await pressKey("Escape");
     await waitFor("!document.querySelector('.admin-sheet')", "create Sheet Escape close");
+    await verifyToast(name);
   };
 
   const verifyOverview = async (name) => {
@@ -1087,6 +1188,7 @@ try {
       },
       layoutChecks,
       tableHeaderChecks,
+      toastChecks,
       formChecks,
       commandChecks,
       modalChecks,
