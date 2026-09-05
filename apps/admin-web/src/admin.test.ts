@@ -3,6 +3,7 @@ import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   adminFailure,
+  filterAdminTargets,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminProjectLeaseQuotaAuditEvents,
@@ -26,6 +27,31 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("combines target search, kind and phase without searching endpoint or credentials", () => {
+    const targets = (["docker", "kubernetes", "ssh"] as const).map((targetKind, index) => ({
+      metadata: { uid: `target-${index}`, name: `Host ${targetKind}` },
+      spec: {
+        targetKind,
+        observedPhase: index === 0 ? "ready" : "unprobed",
+        schedulingState: "active",
+        engineVersion: index === 0 ? "29.4.0" : "",
+        apiVersion: index === 0 ? "1.54" : "",
+        os: index === 0 ? "linux" : "",
+        architecture: index === 0 ? "arm64" : "",
+        endpoint: "https://private-endpoint.test",
+        credentialRef: "private-credential",
+      },
+    })) as unknown as Parameters<typeof filterAdminTargets>[0];
+    expect(filterAdminTargets(targets, "", "", "")).toEqual(targets);
+    expect(filterAdminTargets(targets, " HOST ", "docker", "ready")).toEqual([targets[0]]);
+    expect(filterAdminTargets(targets, "target-1", "", "unprobed")).toEqual([targets[1]]);
+    expect(filterAdminTargets(targets, "", "docker", "unprobed")).toEqual([]);
+    for (const fact of ["29.4.0", "1.54", "LINUX", "arm64"])
+      expect(filterAdminTargets(targets, fact, "", "")).toEqual([targets[0]]);
+    for (const secret of ["private-endpoint", "private-credential"])
+      expect(filterAdminTargets(targets, secret, "", "")).toEqual([]);
+    expect(targets).toHaveLength(3);
+  });
   it("shows only validated stable error codes and localized messages, never raw diagnostics", () => {
     const problem = {
       type: "https://problems.cloud-agents.dev/environment-cleanup-unavailable",

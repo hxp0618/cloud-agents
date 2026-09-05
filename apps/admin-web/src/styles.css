@@ -1178,6 +1178,38 @@ label > small {
   margin-left: auto;
 }
 
+.target-toolbar {
+  flex-wrap: wrap;
+}
+
+.target-toolbar input {
+  flex: 1 1 240px;
+}
+
+.target-toolbar select {
+  width: auto;
+  min-width: 140px;
+  max-width: 100%;
+}
+
+.target-toolbar .scope-chip {
+  margin-left: auto;
+}
+
+.target-table {
+  min-width: 1120px;
+}
+
+.table-scroll:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--ring) 50%, transparent);
+  outline-offset: -3px;
+}
+
+.target-probe-facts {
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+
 .scope-chip,
 .kind-badge {
   display: inline-flex;
@@ -1919,6 +1951,10 @@ td > button small {
   .list-toolbar input {
     max-width: none;
     font-size: 16px;
+  }
+
+  .target-toolbar input {
+    flex-basis: auto;
   }
 
   .list-toolbar .scope-chip {

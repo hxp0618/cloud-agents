@@ -30,6 +30,7 @@ import {
 
 import {
   adminFailure,
+  filterAdminTargets,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminLeases,
@@ -474,6 +475,10 @@ export function App() {
   const [selectedMaintenanceOperationId, setSelectedMaintenanceOperationId] = useState("");
   const [page, setPage] = useState<Page>("overview");
   const [query, setQuery] = useState("");
+  const [targetKindFilter, setTargetKindFilter] = useState<TargetKind | "">("");
+  const [targetPhaseFilter, setTargetPhaseFilter] = useState<
+    DeploymentTarget["spec"]["observedPhase"] | ""
+  >("");
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = useState(false);
   const [schedulingConfirmationOpen, setSchedulingConfirmationOpen] = useState(false);
@@ -588,18 +593,9 @@ export function App() {
   ).length;
   const readyWorkerCount = workers.filter(({ spec }) => spec.state === "ready").length;
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleTargets =
-    normalizedQuery === ""
-      ? targets
-      : targets.filter(({ metadata, spec }) =>
-          [
-            metadata.uid,
-            metadata.name,
-            spec.targetKind,
-            spec.observedPhase,
-            spec.schedulingState,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
+  const visibleTargets = filterAdminTargets(targets, query, targetKindFilter, targetPhaseFilter);
+  const targetsFiltered =
+    query.trim() !== "" || targetKindFilter !== "" || targetPhaseFilter !== "";
   const visibleLeases =
     normalizedQuery === ""
       ? leases
@@ -808,6 +804,8 @@ export function App() {
     setCommandsOpen(false);
     setPage(nextPage);
     setQuery("");
+    setTargetKindFilter("");
+    setTargetPhaseFilter("");
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
@@ -2232,7 +2230,7 @@ export function App() {
             </>
           ) : page === "targets" ? (
             <section className="resource-list">
-              <div className="list-toolbar">
+              <div className="list-toolbar target-toolbar">
                 <input
                   type="search"
                   aria-label={t("search.targets.label")}
@@ -2240,11 +2238,52 @@ export function App() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">targets.list · {number(visibleTargets.length)}</span>
+                <select
+                  aria-label={t("target.filter.kind")}
+                  value={targetKindFilter}
+                  onChange={(event) => setTargetKindFilter(event.target.value as TargetKind | "")}
+                >
+                  <option value="">{t("target.filter.allKinds")}</option>
+                  {(["docker", "kubernetes", "ssh"] as const).map((kind) => (
+                    <option key={kind} value={kind}>
+                      {targetKindLabel(kind, t)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label={t("target.filter.phase")}
+                  value={targetPhaseFilter}
+                  onChange={(event) =>
+                    setTargetPhaseFilter(event.target.value as typeof targetPhaseFilter)
+                  }
+                >
+                  <option value="">{t("target.filter.allPhases")}</option>
+                  {(["unprobed", "probing", "ready", "unavailable"] as const).map((phase) => (
+                    <option key={phase} value={phase}>
+                      {phaseLabel(phase, t)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="button outline"
+                  type="button"
+                  disabled={!targetsFiltered}
+                  onClick={() => {
+                    setQuery("");
+                    setTargetKindFilter("");
+                    setTargetPhaseFilter("");
+                  }}
+                >
+                  {t("target.filter.clear")}
+                </button>
+                <span className="scope-chip" role="status">
+                  targets.list · {number(visibleTargets.length)}
+                </span>
               </div>
               <div className="panel target-list-panel">
                 <TargetTable
                   targets={visibleTargets}
+                  filtered={targetsFiltered}
                   selectedTargetId={selectedTargetId}
                   onSelect={selectTarget}
                 />
@@ -3595,23 +3634,32 @@ export function App() {
 
 function TargetTable({
   targets,
+  filtered = false,
   selectedTargetId,
   onSelect,
 }: Readonly<{
   targets: readonly DeploymentTarget[];
+  filtered?: boolean;
   selectedTargetId: string;
   onSelect: (targetId: string) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
-  if (targets.length === 0) return <div className="table-empty">{t("table.empty.targets")}</div>;
+  if (targets.length === 0)
+    return (
+      <div className="table-empty">
+        {t(filtered ? "target.filter.noMatches" : "table.empty.targets")}
+      </div>
+    );
   return (
-    <div className="table-scroll">
-      <table>
+    <div className="table-scroll" tabIndex={0} role="region" aria-label={t("page.targets.title")}>
+      <table className="target-table">
         <thead>
           <tr>
             <th>{t("table.name")}</th>
             <th>{t("table.kind")}</th>
             <th>{t("table.status")}</th>
+            <th>{t("table.engineApi")}</th>
+            <th>{t("table.osArchitecture")}</th>
             <th>{t("table.generation")}</th>
             <th>{t("table.lastProbe")}</th>
             <th aria-label={t("table.actions")} />
@@ -3642,6 +3690,19 @@ function TargetTable({
                 <small className="table-subline">
                   {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
                 </small>
+              </td>
+              <td className="target-probe-facts">
+                <span>{target.spec.engineVersion || t("common.notAvailable")}</span>
+                <small className="table-subline">
+                  {t("cluster.apiVersion", {
+                    version: target.spec.apiVersion || t("common.notAvailable"),
+                  })}
+                </small>
+              </td>
+              <td className="target-probe-facts">
+                {target.spec.os && target.spec.architecture
+                  ? `${target.spec.os} / ${target.spec.architecture}`
+                  : t("common.notAvailable")}
               </td>
               <td className="mono">g{number(target.spec.generation)}</td>
               <td>{dateTime(target.spec.lastProbeAt)}</td>

@@ -144,6 +144,31 @@ export function newIdempotencyKey(): string {
   return `admin-${crypto.randomUUID()}`;
 }
 
+export function filterAdminTargets(
+  targets: readonly DeploymentTarget[],
+  query: string,
+  kind: DeploymentTarget["spec"]["targetKind"] | "",
+  phase: DeploymentTarget["spec"]["observedPhase"] | "",
+): readonly DeploymentTarget[] {
+  const search = query.trim().toLocaleLowerCase();
+  return targets.filter(
+    ({ metadata, spec }) =>
+      (kind === "" || spec.targetKind === kind) &&
+      (phase === "" || spec.observedPhase === phase) &&
+      [
+        metadata.uid,
+        metadata.name,
+        spec.targetKind,
+        spec.observedPhase,
+        spec.schedulingState,
+        spec.engineVersion,
+        spec.apiVersion,
+        spec.os,
+        spec.architecture,
+      ].some((value) => value.toLocaleLowerCase().includes(search)),
+  );
+}
+
 export function cleanupRequestFromPreview(
   preview: DeploymentTargetCleanupPreview,
 ): DeploymentTargetCleanupRequest {

@@ -70,6 +70,7 @@ try {
   const formChecks = [];
   const commandChecks = [];
   const modalChecks = [];
+  const targetFilterChecks = [];
   const mutationRequests = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
@@ -145,7 +146,7 @@ try {
     });
   const pressKey = async (key, code = key, modifiers = 0) => {
     const virtualKeyCode =
-      { Escape: 27, Tab: 9, Enter: 13, ArrowUp: 38, ArrowDown: 40 }[key] ??
+      { Escape: 27, Tab: 9, Enter: 13, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 }[key] ??
       key.toUpperCase().charCodeAt(0);
     const params = { key, code, modifiers, windowsVirtualKeyCode: virtualKeyCode };
     await command("Input.dispatchKeyEvent", { type: "rawKeyDown", ...params });
@@ -557,7 +558,72 @@ try {
       realRouteSelection: true,
     });
     await navigateTargets();
+    await verifyTargetFilters(name);
     await verifyModals(name);
+  };
+
+  const verifyTargetFilters = async (name) => {
+    const change = async (selector, value, type) => {
+      await evaluate(`(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        Object.getOwnPropertyDescriptor(${type}.prototype, 'value').set.call(element, ${JSON.stringify(value)});
+        element.dispatchEvent(new Event(${type === "HTMLInputElement" ? "'input'" : "'change'"}, { bubbles: true }));
+      })()`);
+    };
+    await change(".target-toolbar select:first-of-type", "docker", "HTMLSelectElement");
+    await waitFor(
+      "document.querySelectorAll('.target-table tbody tr').length === 1",
+      "kind filter",
+    );
+    assert.equal(
+      await evaluate(
+        "document.querySelector('.target-table tbody').textContent.includes('visual-docker')",
+      ),
+      true,
+    );
+    await change(".target-toolbar select:last-of-type", "unprobed", "HTMLSelectElement");
+    await change(".target-toolbar input", " VISUAL-DOCKER ", "HTMLInputElement");
+    await waitFor(
+      "document.querySelectorAll('.target-table tbody tr').length === 1",
+      "combined filters",
+    );
+    const facts = await evaluate(
+      "document.querySelector('.target-table .target-probe-facts').textContent",
+    );
+    assert.ok(facts.includes(name.startsWith("zh-CN") ? "暂无数据" : "Not available"));
+    await evaluate("document.querySelector('.table-scroll').focus()");
+    assert.equal(await evaluate("document.activeElement.matches('.table-scroll')"), true);
+    if (name.endsWith("mobile")) {
+      await evaluate("document.querySelector('.table-scroll').scrollLeft = 0");
+      await pressKey("ArrowRight");
+      await waitFor(
+        "document.querySelector('.table-scroll').scrollLeft > 0",
+        "keyboard table scroll",
+      );
+      await evaluate("document.querySelector('.table-scroll').scrollLeft = 0");
+    }
+    await screenshot(`${name}-filtered.png`);
+    await change(".target-toolbar select:last-of-type", "ready", "HTMLSelectElement");
+    await waitFor("document.querySelector('.table-empty') !== null", "empty filtered results");
+    assert.ok(
+      (await evaluate("document.querySelector('.table-empty').textContent")).includes(
+        name.startsWith("zh-CN") ? "没有匹配" : "No matching",
+      ),
+    );
+    await screenshot(`${name}-filter-empty.png`);
+    await clickAt(".target-toolbar button");
+    await waitFor(
+      "document.querySelectorAll('.target-table tbody tr').length === 3",
+      "clear target filters",
+    );
+    assert.equal(await evaluate("document.querySelector('.target-toolbar button').disabled"), true);
+    targetFilterChecks.push({
+      name,
+      combinedFilter: true,
+      noMatches: true,
+      clearRestored: 3,
+      missingProbeFacts: facts,
+    });
   };
 
   await command("Page.enable");
@@ -835,6 +901,7 @@ try {
       formChecks,
       commandChecks,
       modalChecks,
+      targetFilterChecks,
       mutationRequests,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {
