@@ -35,6 +35,13 @@ type AdminSandboxPage struct {
 	NextSandboxID string
 }
 
+type FoundationSandboxAccess struct {
+	Scope                                                 internalcoordination.FoundationScope
+	WorkspaceID, SandboxID, RuntimeID, RuntimeOperationID string
+	RuntimeSpecDigest, CredentialRef                      string
+	Generation, RuntimeGeneration                         int64
+}
+
 type adminSandboxPageRow struct {
 	TenantID               string     `json:"tenant_id"`
 	ProjectID              string     `json:"project_uid"`
@@ -89,6 +96,24 @@ JOIN cloud_agents.platform_operations AS operation
 LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
   ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
  AND activity.sandbox_generation = sandbox.operation_generation
+WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
+  AND sandbox.sandbox_uid = $2`
+	getFoundationSandboxAccessSQL = `SELECT sandbox.tenant_id, sandbox.project_uid,
+    sandbox.workspace_uid, sandbox.sandbox_uid, sandbox.generation, sandbox.observed_generation,
+    sandbox.desired_state, sandbox.observed_state, sandbox.writer_released,
+    sandbox.runtime_uid, sandbox.runtime_state, sandbox.runtime_operation_uid,
+    sandbox.runtime_generation, sandbox.runtime_spec_digest, sandbox.spec_digest,
+    volume.observed_state, target.target_kind, target.credential_ref,
+    operation.state, operation.cleanup_phase,
+    sandbox.expires_at IS NULL OR sandbox.expires_at > pg_catalog.clock_timestamp()
+FROM cloud_agents.sandbox_sessions AS sandbox
+JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, workspace_uid)
+JOIN cloud_agents.deployment_targets AS target
+  ON target.tenant_id = volume.tenant_id AND target.project_uid = volume.project_uid
+ AND target.target_uid = volume.target_uid
+JOIN cloud_agents.platform_operations AS operation
+  ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
+ AND operation.operation_generation = sandbox.operation_generation
 WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
   AND sandbox.sandbox_uid = $2`
 	adminSandboxPageCursorSQL = `SELECT 1 FROM cloud_agents.sandbox_sessions
@@ -180,6 +205,58 @@ func (service *DurableCoordinationService) GetAdminSandbox(
 		return AdminSandboxSnapshot{}, mapRuntimeProfileError(err)
 	}
 	return adminSandboxSnapshot(row, tenantID, projectID)
+}
+
+func (service *DurableCoordinationService) GetFoundationSandboxAccess(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
+	projectID, sandboxID string, expectedGeneration int64,
+) (FoundationSandboxAccess, error) {
+	if service == nil || service.runner == nil {
+		return FoundationSandboxAccess{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		!validMutationIdentifier(sandboxID) || expectedGeneration < 1 || expectedGeneration > 9007199254740991 {
+		return FoundationSandboxAccess{}, ErrCoordinationInvalidInput
+	}
+	var result FoundationSandboxAccess
+	var tenant, project, desiredState, observedState, runtimeState, volumeState, targetKind string
+	var operationState, cleanupPhase, specDigest string
+	var observedGeneration int64
+	var writerReleased, notExpired bool
+	var runtimeID, runtimeOperationID, runtimeSpecDigest *string
+	var runtimeGeneration *int64
+	err := service.withFoundationOperation(ctx, tenantID, principal, projectID, "projects.act", false,
+		func(operationContext context.Context, handle *tenantReadHandle, _ string) error {
+			err := handle.transaction.queryRow(operationContext, getFoundationSandboxAccessSQL, projectID, sandboxID).Scan(
+				&tenant, &project, &result.WorkspaceID, &result.SandboxID, &result.Generation,
+				&observedGeneration, &desiredState, &observedState, &writerReleased, &runtimeID,
+				&runtimeState, &runtimeOperationID, &runtimeGeneration, &runtimeSpecDigest, &specDigest,
+				&volumeState, &targetKind, &result.CredentialRef, &operationState, &cleanupPhase, &notExpired)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return internalcoordination.ErrFoundationSandboxNotFound
+			}
+			return err
+		})
+	if err != nil {
+		return FoundationSandboxAccess{}, mapRuntimeProfileError(err)
+	}
+	if result.Generation != expectedGeneration || desiredState != "running" || observedState != "running" ||
+		observedGeneration != result.Generation || writerReleased || runtimeState != "Running" || volumeState != "available" ||
+		operationState != "succeeded" || cleanupPhase != "complete" || !notExpired {
+		return FoundationSandboxAccess{}, internalcoordination.ErrFoundationSandboxConflict
+	}
+	if tenant != tenantID || project != projectID || result.SandboxID != sandboxID || targetKind != "docker" ||
+		runtimeID == nil || runtimeOperationID == nil || runtimeGeneration == nil || runtimeSpecDigest == nil ||
+		*runtimeGeneration != result.Generation || *runtimeSpecDigest != specDigest ||
+		!validMutationIdentifier(result.WorkspaceID) || !validMutationIdentifier(result.SandboxID) ||
+		!validMutationIdentifier(*runtimeID) || !validMutationIdentifier(*runtimeOperationID) ||
+		!validMutationIdentifier(result.CredentialRef) || !validCoordinationDigest(*runtimeSpecDigest) {
+		return FoundationSandboxAccess{}, ErrCoordinationResultDrift
+	}
+	result.Scope = internalcoordination.FoundationScope{TenantID: tenant, ProjectID: project}
+	result.RuntimeID, result.RuntimeOperationID = *runtimeID, *runtimeOperationID
+	result.RuntimeGeneration, result.RuntimeSpecDigest = *runtimeGeneration, *runtimeSpecDigest
+	return result, nil
 }
 
 func (service *DurableCoordinationService) ListAdminSandboxes(

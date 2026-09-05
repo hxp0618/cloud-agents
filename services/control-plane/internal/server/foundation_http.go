@@ -14,6 +14,7 @@ import (
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalcoordination "github.com/hxp0618/cloud-agents/services/control-plane/internal/coordination"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
@@ -24,6 +25,7 @@ type foundationStore interface {
 	ListRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RuntimeProfilePage, error)
 	ListPublishedRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.PublishedRuntimeProfilePage, error)
 	CreateFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxCreateInput) (internalcoordination.FoundationSandboxSnapshot, error)
+	GetFoundationSandboxAccess(context.Context, string, *authn.VerifiedPrincipal, string, string, int64) (postgres.FoundationSandboxAccess, error)
 	TransitionFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxLifecycleInput) (internalcoordination.FoundationSandboxLifecycleOperation, error)
 	GetAdminSandbox(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.AdminSandboxSnapshot, error)
 	ListAdminSandboxes(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminSandboxPage, error)
@@ -32,13 +34,14 @@ type foundationStore interface {
 type FoundationHTTPServer struct {
 	verifier AccessTokenVerifier
 	store    foundationStore
+	access   *opensandbox.CredentialDirectory
 }
 
-func NewFoundationHTTPServer(verifier AccessTokenVerifier, store foundationStore) (*FoundationHTTPServer, error) {
+func NewFoundationHTTPServer(verifier AccessTokenVerifier, store foundationStore, access *opensandbox.CredentialDirectory) (*FoundationHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("foundation HTTP server configuration is invalid")
 	}
-	return &FoundationHTTPServer{verifier: verifier, store: store}, nil
+	return &FoundationHTTPServer{verifier: verifier, store: store, access: access}, nil
 }
 
 func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -98,6 +101,8 @@ func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		server.transitionProfile(writer, request, tenantID, projectID, profileID, version, action, requestID, principal)
 	case "create-sandbox":
 		server.createSandbox(writer, request, tenantID, projectID, requestID, principal)
+	case "exec-sandbox":
+		server.execSandbox(writer, request, tenantID, projectID, profileID, requestID, principal)
 	case "admin-sandbox-collection":
 		server.listAdminSandboxes(writer, request, tenantID, projectID, requestID, principal)
 	case "get-admin-sandbox":
@@ -292,6 +297,59 @@ func (server *FoundationHTTPServer) createSandbox(writer http.ResponseWriter, re
 		return
 	}
 	writeJSONResponse(writer, http.StatusAccepted, requestID, body)
+}
+
+func (server *FoundationHTTPServer) execSandbox(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sandboxID, requestID string, principal *authn.VerifiedPrincipal) {
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 16<<10))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writePublicProblem(writer, http.StatusRequestEntityTooLarge, "request_too_large")
+		} else {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		}
+		return
+	}
+	validated, err := openapi.ValidateExecSandboxServerRequest(tenantID, projectID, sandboxID, requestID, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	access, err := server.store.GetFoundationSandboxAccess(request.Context(), tenantID, principal, projectID, sandboxID, validated.Body.ExpectedGeneration)
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	if server.access == nil {
+		writePublicProblem(writer, http.StatusServiceUnavailable, "sandbox_access_unavailable")
+		return
+	}
+	client, err := server.access.Client(access.CredentialRef)
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	result, err := client.Exec(request.Context(), opensandbox.ExecInput{
+		Identity: opensandbox.Identity{Tenant: access.Scope.TenantID, Project: access.Scope.ProjectID,
+			Workspace: access.WorkspaceID, Sandbox: access.SandboxID, Operation: access.RuntimeOperationID,
+			Generation: access.RuntimeGeneration, SpecDigest: access.RuntimeSpecDigest},
+		RuntimeID: access.RuntimeID, Command: validated.Body.Command,
+		Timeout: time.Duration(validated.Body.TimeoutSeconds) * time.Second,
+	})
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	value := platform.SandboxExecResult{APIVersion: platform.APIVersion, Kind: "SandboxExecResult",
+		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
+		SandboxID:  sandboxID, Generation: access.Generation, ExitCode: result.ExitCode,
+		Stdout: result.Stdout, Stderr: result.Stderr, ExecutionTimeMillis: result.ExecutionTimeMillis}
+	body, err = platform.EncodeSandboxExecResultResponseJSON(common.ResponseEnvelope[platform.SandboxExecResult]{Value: value})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
 func (server *FoundationHTTPServer) listAdminSandboxes(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID string, principal *authn.VerifiedPrincipal) {
@@ -542,6 +600,11 @@ func foundationPath(path string) (admin bool, tenantID, projectID, profileID str
 		}
 		return true, parts[0], parts[2], sandboxID, 0, sandboxAction, sandboxID != ""
 	}
+	if !admin && len(parts) == 5 && parts[1] == "projects" && parts[3] == "sandbox-sessions" {
+		if sandboxID, found := strings.CutSuffix(parts[4], ":exec"); found && sandboxID != "" {
+			return false, parts[0], parts[2], sandboxID, 0, "exec-sandbox", true
+		}
+	}
 	if !admin || len(parts) != 7 || parts[1] != "projects" || parts[3] != "runtime-profiles" || parts[4] == "" || parts[5] != "versions" {
 		return false, "", "", "", 0, "", false
 	}
@@ -572,6 +635,8 @@ func foundationPermission(admin bool, action, method string) (projectPermission,
 		return "projects.get", "environment-profiles.list", true
 	case !admin && action == "create-sandbox" && method == http.MethodPost:
 		return "projects.act", "environments.create", true
+	case !admin && action == "exec-sandbox" && method == http.MethodPost:
+		return "projects.act", "sandboxes.update", true
 	case admin && action == "admin-sandbox-collection" && method == http.MethodGet:
 		return "projects.get", "sandboxes.list", true
 	case admin && action == "get-admin-sandbox" && method == http.MethodGet:
@@ -614,6 +679,14 @@ func writeRuntimeProfile(writer http.ResponseWriter, status int, requestID strin
 
 func writeFoundationError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, opensandbox.ErrOutputLimit):
+		writePublicProblem(writer, http.StatusRequestEntityTooLarge, "sandbox_exec_output_limit")
+	case errors.Is(err, context.DeadlineExceeded):
+		writePublicProblem(writer, http.StatusGatewayTimeout, "sandbox_exec_timeout")
+	case errors.Is(err, opensandbox.ErrConflict), errors.Is(err, opensandbox.ErrRuntimeFailed), errors.Is(err, opensandbox.ErrNotFound):
+		writePublicProblem(writer, http.StatusConflict, "sandbox_runtime_unavailable")
+	case errors.Is(err, opensandbox.ErrInvalid), errors.Is(err, opensandbox.ErrUnavailable):
+		writePublicProblem(writer, http.StatusServiceUnavailable, "sandbox_access_unavailable")
 	case errors.Is(err, internalcoordination.ErrRuntimeProfileNotFound), errors.Is(err, internalcoordination.ErrFoundationSandboxNotFound):
 		writePublicProblem(writer, http.StatusNotFound, "not_found")
 	case errors.Is(err, postgres.ErrMutationDenied):

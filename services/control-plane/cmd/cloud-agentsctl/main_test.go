@@ -110,6 +110,32 @@ func TestRunRegistersDeploymentTargetThroughControlPlane(t *testing.T) {
 	}
 }
 
+func TestRunExecutesSandboxThroughControlPlane(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-sessions/sandbox-alpha:exec" ||
+			request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" ||
+			request.Header.Get("Idempotency-Key") != "" || string(body) != `{"expectedGeneration":3,"command":"printf hello","timeoutSeconds":5}` {
+			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.Path, request.Header, body)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"SandboxExecResult","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"sandboxId":"sandbox-alpha","generation":3,"exitCode":0,"stdout":"hello","stderr":"","executionTimeMillis":8}`))
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
+		"--sandbox", "sandbox-alpha", "--request-id", "request-alpha", "sandbox", "exec",
+		"--expected-generation", "3", "--command", "printf hello", "--timeout-seconds", "5",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"kind":"SandboxExecResult"`) || !strings.Contains(stdout.String(), `"stdout":"hello"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 	for _, test := range []struct {
 		args     []string
@@ -123,6 +149,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"execution", "download-artifact", "help"}, expected: "-message-index int"},
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
 		{args: []string{"events", "watch", "help"}, expected: "-until-terminal"},
+		{args: []string{"sandbox", "exec", "help"}, expected: "-expected-generation int"},
 	} {
 		var stdout bytes.Buffer
 		if err := run(test.args, &stdout); err != nil {

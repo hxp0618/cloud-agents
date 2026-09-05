@@ -35,6 +35,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -427,10 +428,15 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("local user environment HTTP server is unavailable")
 	}
 	var dockerProber *dockertarget.CredentialDirectory
+	var sandboxCredentials *opensandbox.CredentialDirectory
 	if config.dockerCredentials != "" {
 		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
 		if err != nil {
 			return errors.New("local Docker target credential directory is invalid")
+		}
+		sandboxCredentials, err = opensandbox.NewCredentialDirectory(config.dockerCredentials)
+		if err != nil {
+			return errors.New("local OpenSandbox credential directory is invalid")
 		}
 	}
 	var kubernetesProber *kubernetestarget.CredentialDirectory
@@ -483,7 +489,7 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local published environment profile HTTP server is unavailable")
 	}
-	foundationHTTPServer, err := server.NewFoundationHTTPServer(verifierAdapter, coordinationService)
+	foundationHTTPServer, err := server.NewFoundationHTTPServer(verifierAdapter, coordinationService, sandboxCredentials)
 	if err != nil {
 		return errors.New("local foundation HTTP server is unavailable")
 	}

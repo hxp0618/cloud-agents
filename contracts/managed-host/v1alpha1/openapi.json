@@ -910,6 +910,45 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}:exec": {
+      "post": {
+        "operationId": "foundationExecSandbox",
+        "x-cloud-agents-required-scope": "sandboxes.update",
+        "x-cloud-agents-coordination": "synchronous-access",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SandboxId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-exec-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded foreground command result from the authorized Sandbox generation",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-exec-result.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" },
+          "504": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "managedAgentListEnvironmentProfiles",

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-exec-request.schema.json",
+  "title": "SandboxExecRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedGeneration", "command", "timeoutSeconds"],
+  "properties": {
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "command": { "type": "string", "minLength": 1, "maxLength": 8192 },
+    "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 60 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "command must be valid UTF-8 without NUL bytes",
+    "the working directory is fixed to /workspace",
+    "the caller cannot submit runtime endpoints, credentials, uid, gid, environment variables or background mode"
+  ]
+}

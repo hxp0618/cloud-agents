@@ -286,6 +286,14 @@ try {
     if (attempt === 300) throw new Error("OpenSandbox did not start");
     await delay(100);
   }
+  const credentialDirectory = resolve(build, "credentials");
+  const fixtureCredentialDirectory = resolve(credentialDirectory, "fixture-only");
+  mkdirSync(fixtureCredentialDirectory, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    resolve(fixtureCredentialDirectory, "opensandbox.json"),
+    JSON.stringify({ endpoint: sandboxBase, apiKey }) + "\n",
+    { mode: 0o600 },
+  );
 
   const commonEnvironment = {
     ...process.env,
@@ -330,33 +338,41 @@ try {
 
   const lifecycleAPI = (action) =>
     parseMarker(
-      execFileSync(serverTestBinary, ["-test.run", "^TestFoundationSandboxLifecyclePostgres$", "-test.v"], {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
-          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
-          CLOUD_AGENTS_FOUNDATION_LIFECYCLE_ACTION: action,
+      execFileSync(
+        serverTestBinary,
+        ["-test.run", "^TestFoundationSandboxLifecyclePostgres$", "-test.v"],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+            CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+            CLOUD_AGENTS_FOUNDATION_LIFECYCLE_ACTION: action,
+          },
+          timeout: 120_000,
         },
-        timeout: 120_000,
-      }),
+      ),
       "FOUNDATION_LIFECYCLE_API",
     );
   const lifecycleController = (phase, marker, prior = prepareReceipt) =>
     parseMarker(
-      execFileSync(controllerTestBinary, ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"], {
-        encoding: "utf8",
-        env: {
-          ...commonEnvironment,
-          CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: phase,
-          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prior.runtimeId,
-          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: prepareReceipt.volumeName,
-          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
-          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: prior.operationId,
-          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: prior.specDigest,
+      execFileSync(
+        controllerTestBinary,
+        ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
+        {
+          encoding: "utf8",
+          env: {
+            ...commonEnvironment,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: phase,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prior.runtimeId,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: prepareReceipt.volumeName,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: prior.operationId,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: prior.specDigest,
+          },
+          timeout: 180_000,
         },
-        timeout: 180_000,
-      }),
+      ),
       marker,
     );
   const stopAPIReceipt = lifecycleAPI("stop");
@@ -368,11 +384,39 @@ try {
   assert.equal(rebuildReceipt.generation, rebuildAPIReceipt.generation);
   assert.equal(rebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
   assert.equal(rebuildReceipt.lifecycleTrigger, "manual");
+  const execReceipt = parseMarker(
+    execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationSandboxExecPostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY: credentialDirectory,
+          CLOUD_AGENTS_FOUNDATION_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+        },
+        timeout: 120_000,
+      },
+    ),
+    "FOUNDATION_EXEC_API",
+  );
+  assert.equal(execReceipt.generation, rebuildReceipt.generation);
+  assert.equal(execReceipt.exitCode, 7);
+  assert.equal(execReceipt.proofDigestVerified, true);
+  assert.ok(execReceipt.executionTimeMillis >= 0 && execReceipt.executionTimeMillis <= 65000);
+  assert.equal(execReceipt.adminStatus, 403);
+  assert.equal(execReceipt.staleGenerationStatus, 409);
+  assert.equal(execReceipt.outputLimitStatus, 413);
+  assert.equal(execReceipt.responseInfrastructureRedacted, true);
   assert.notEqual(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
   let expired = false;
   for (let attempt = 0; attempt < 150; attempt++) {
     if (
-      psql("SELECT expires_at <= clock_timestamp() FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND sandbox_uid='sandbox';") === "t"
+      psql(
+        "SELECT expires_at <= clock_timestamp() FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND sandbox_uid='sandbox';",
+      ) === "t"
     ) {
       expired = true;
       break;
@@ -394,7 +438,13 @@ try {
   assert.equal(finalRebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
   assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
   assert.equal(
-    docker("volume", "ls", "-q", "--filter", "label=cloud-agents.dev/resource=foundation-workspace"),
+    docker(
+      "volume",
+      "ls",
+      "-q",
+      "--filter",
+      "label=cloud-agents.dev/resource=foundation-workspace",
+    ),
     "",
   );
 
@@ -424,6 +474,7 @@ try {
     recover: recoverReceipt,
     stop: { api: stopAPIReceipt, controller: stopReceipt },
     rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
+    exec: execReceipt,
     ttl: ttlReceipt,
     finalRebuild: { api: finalRebuildAPIReceipt, controller: finalRebuildReceipt },
     checks: [
@@ -439,6 +490,10 @@ try {
       "generated Admin stop/rebuild with ordinary-user 403, idempotent replay, stale fencing, Operation and Audit",
       "stop deletes the exact runtime, releases its writer, and retains the physical Workspace volume",
       "rebuild uses the same physical volume and preserves Workspace bytes",
+      "generated Product Sandbox Exec uses database-authorized exact generation and physical runtime receipt",
+      "real bounded foreground command runs in /workspace and returns exit code, stdout, stderr, and duration",
+      "Admin token, stale generation, and combined output above 1 MiB are denied with 403, 409, and 413",
+      "Product Exec response omits endpoint, runtime identifier, and credential references",
       "database-clock TTL accepts the same durable Stop authority and records its trigger and Audit",
       "TTL stop deletes compute, releases its writer, and retains the physical Workspace volume",
       "rebuild after TTL expiry restores the same Workspace bytes",

@@ -313,6 +313,83 @@ func TestWaitReadyRequiresExecdHealth(t *testing.T) {
 	}
 }
 
+func TestExecUsesExactReceiptAndBoundsOutput(t *testing.T) {
+	id := identity()
+	overflow, commandFailed, commands, statuses := false, false, 0, 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL, "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
+		case "/command":
+			commands++
+			if request.Method != http.MethodPost || request.Header.Get("X-EXECD-ACCESS-TOKEN") != "owned" || request.Header.Get("Content-Type") != "application/json" {
+				t.Error("unsafe exec request")
+			}
+			var body struct {
+				Command    string `json:"command"`
+				Cwd        string `json:"cwd"`
+				Background bool   `json:"background"`
+				Timeout    int64  `json:"timeout"`
+			}
+			if json.NewDecoder(request.Body).Decode(&body) != nil || body.Command != "printf bounded" || body.Cwd != "/workspace" || body.Background || body.Timeout != 1000 {
+				t.Errorf("exec body = %+v", body)
+			}
+			writer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			_ = json.NewEncoder(writer).Encode(map[string]any{"type": "init", "text": "command-1"})
+			text := "stdout"
+			if overflow {
+				text = strings.Repeat("x", maxExecOutputBytes+1)
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"type": "stdout", "text": text})
+			if !overflow {
+				_ = json.NewEncoder(writer).Encode(map[string]any{"type": "stderr", "text": "stderr"})
+				if commandFailed {
+					_ = json.NewEncoder(writer).Encode(map[string]any{"type": "error", "error": map[string]any{"ename": "CommandExecError", "evalue": "7"}})
+				} else {
+					_ = json.NewEncoder(writer).Encode(map[string]any{"type": "execution_complete", "execution_time": 12})
+				}
+			}
+		case "/command/status/command-1":
+			statuses++
+			if request.Header.Get("X-EXECD-ACCESS-TOKEN") != "owned" {
+				t.Error("missing status credential")
+			}
+			exitCode := 0
+			if commandFailed {
+				exitCode = 7
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "command-1", "running": false, "exit_code": exitCode})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	input := ExecInput{Identity: id, RuntimeID: "physical-1", Command: "printf bounded", Timeout: time.Second}
+	result, err := client.Exec(context.Background(), input)
+	if err != nil || result.Stdout != "stdout" || result.Stderr != "stderr" || result.ExitCode != 0 || result.ExecutionTimeMillis != 12 || commands != 1 || statuses != 1 {
+		t.Fatalf("result=%+v commands=%d statuses=%d err=%v", result, commands, statuses, err)
+	}
+	commandFailed = true
+	result, err = client.Exec(context.Background(), input)
+	if err != nil || result.ExitCode != 7 || result.ExecutionTimeMillis != 0 || commands != 2 || statuses != 2 {
+		t.Fatalf("non-zero result=%+v commands=%d statuses=%d err=%v", result, commands, statuses, err)
+	}
+	overflow = true
+	if _, err := client.Exec(context.Background(), input); !errors.Is(err, ErrOutputLimit) || commands != 3 || statuses != 2 {
+		t.Fatalf("output limit commands=%d statuses=%d err=%v", commands, statuses, err)
+	}
+	input.Identity.Generation++
+	if _, err := client.Exec(context.Background(), input); !errors.Is(err, ErrConflict) || commands != 3 {
+		t.Fatalf("stale receipt commands=%d err=%v", commands, err)
+	}
+}
+
 // Invoked by the real Docker candidate harness; no credentials or user content are logged.
 func TestLiveDiscovery(t *testing.T) {
 	endpoint := os.Getenv("CA_BASE_ENDPOINT")

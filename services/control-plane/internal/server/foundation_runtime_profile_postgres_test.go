@@ -21,6 +21,7 @@ import (
 	api "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -69,7 +70,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewFoundationHTTPServer(verifier, store)
+	handler, err := NewFoundationHTTPServer(verifier, store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +269,7 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewFoundationHTTPServer(verifier, store)
+	handler, err := NewFoundationHTTPServer(verifier, store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,6 +324,95 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		"ordinaryUserStatus": 403, "staleFenceStatus": 409, "workspaceDisposition": "retain",
 	})
 	t.Logf("FOUNDATION_LIFECYCLE_API=%s", encoded)
+}
+
+func TestFoundationSandboxExecPostgres(t *testing.T) {
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
+	credentialPath := os.Getenv("CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY")
+	proofDigest := os.Getenv("CLOUD_AGENTS_FOUNDATION_EXPECTED_PROOF_DIGEST")
+	if runtimeURL == "" || ownerURL == "" || credentialPath == "" || proofDigest == "" {
+		t.Skip("foundation Sandbox Exec environment not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal("runtime pool unavailable")
+	}
+	defer runtimePool.Close()
+	ownerConfig, err := pgxpool.ParseConfig(ownerURL)
+	if err != nil {
+		t.Fatal("owner pool configuration invalid")
+	}
+	ownerConfig.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner")
+		return err
+	}
+	owner, err := pgxpool.NewWithConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal("owner pool unavailable")
+	}
+	defer owner.Close()
+	var generation int64
+	if err := owner.QueryRow(ctx, `SELECT generation FROM cloud_agents.sandbox_sessions
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+		  AND desired_state='running' AND observed_state='running' AND runtime_state='Running'`).Scan(&generation); err != nil {
+		t.Fatalf("running Sandbox unavailable: %v", err)
+	}
+	verifier, adminToken, userToken := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := opensandbox.NewCredentialDirectory(credentialPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
+
+	stale := platform.SandboxExecRequest{ExpectedGeneration: generation - 1, Command: "true", TimeoutSeconds: 10}
+	if _, err := user.ExecSandbox(ctx, "tenant", "project", "sandbox", "request-exec-stale", stale); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("stale generation status=%d err=%v", clientStatus(err), err)
+	}
+	request := platform.SandboxExecRequest{ExpectedGeneration: generation, Command: "true", TimeoutSeconds: 10}
+	if _, err := admin.ExecSandbox(ctx, "tenant", "project", "sandbox", "request-exec-admin", request); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("Admin Exec status=%d err=%v", clientStatus(err), err)
+	}
+	request.Command = `head -c 1048577 /dev/zero | tr '\0' x`
+	if _, err := user.ExecSandbox(ctx, "tenant", "project", "sandbox", "request-exec-output-limit", request); clientStatus(err) != http.StatusRequestEntityTooLarge {
+		t.Fatalf("output limit status=%d err=%v", clientStatus(err), err)
+	}
+	request.Command = "sha256sum /workspace/controller-proof.txt; printf exec-stderr >&2; exit 7"
+	result, err := user.ExecSandbox(ctx, "tenant", "project", "sandbox", "request-exec-success", request)
+	if err != nil || result.Value.Generation != generation || result.Value.ExitCode != 7 ||
+		!strings.Contains(result.Value.Stdout, proofDigest) || result.Value.Stderr != "exec-stderr" ||
+		result.Value.ExecutionTimeMillis < 0 || result.Value.ExecutionTimeMillis > 65000 {
+		t.Fatalf("Exec result=%+v err=%v", result.Value, err)
+	}
+	encoded, err := platform.EncodeSandboxExecResultResponseJSON(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"credentialRef", "providerCredentialRef", "endpoint", "runtimeId", "OPEN-SANDBOX"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("Exec response disclosed %q", forbidden)
+		}
+	}
+	evidence, _ := json.Marshal(map[string]any{
+		"generation": generation, "exitCode": result.Value.ExitCode, "proofDigestVerified": true,
+		"executionTimeMillis": result.Value.ExecutionTimeMillis,
+		"adminStatus":         403, "staleGenerationStatus": 409, "outputLimitStatus": 413,
+		"responseInfrastructureRedacted": true,
+	})
+	t.Logf("FOUNDATION_EXEC_API=%s", evidence)
 }
 
 func assertFoundationPublicRedaction(t *testing.T, ctx context.Context, baseURL, token string) {
@@ -434,6 +524,6 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 		return protected + "." + payload + "." + base64.RawURLEncoding.EncodeToString(signature)
 	}
 	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list")
-	user := issue("foundation-user-token", "environment-profiles.list environments.create projects.act projects.get")
+	user := issue("foundation-user-token", "environment-profiles.list environments.create projects.act projects.get sandboxes.update")
 	return verifier, admin, user
 }

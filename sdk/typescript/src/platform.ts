@@ -596,6 +596,22 @@ export type SandboxSessionCreateRequest = Readonly<{
   runtimeProfileVersion: number;
   ttlSeconds: number;
 }>;
+export type SandboxExecRequest = Readonly<{
+  expectedGeneration: number;
+  command: string;
+  timeoutSeconds: number;
+}>;
+export type SandboxExecResult = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxExecResult";
+  projectRef: NamespaceRef;
+  sandboxId: string;
+  generation: number;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  executionTimeMillis: number;
+}>;
 export type SandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "SandboxSession";
@@ -1568,6 +1584,19 @@ const sandboxSessionResponseShape: ResponseShape = {
     desiredState: scalarResponseShape,
     observedState: scalarResponseShape,
     expiresAt: scalarResponseShape,
+  },
+};
+const sandboxExecResultResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    sandboxId: scalarResponseShape,
+    generation: scalarResponseShape,
+    exitCode: scalarResponseShape,
+    stdout: scalarResponseShape,
+    stderr: scalarResponseShape,
+    executionTimeMillis: scalarResponseShape,
   },
 };
 const sandboxSessionLifecycleOperationResponseShape: ResponseShape = {
@@ -2766,6 +2795,73 @@ export function decodeSandboxSessionCreateRequest(value: unknown): SandboxSessio
 }
 export function encodeSandboxSessionCreateRequest(value: SandboxSessionCreateRequest): string {
   return JSON.stringify(decodeSandboxSessionCreateRequest(value));
+}
+export function decodeSandboxExecRequest(value: unknown): SandboxExecRequest {
+  const source = strictRecord(
+    value,
+    ["expectedGeneration", "command", "timeoutSeconds"],
+    ["expectedGeneration", "command", "timeoutSeconds"],
+  );
+  const command = boundedString(source.command, 1, 8192, "/command");
+  if (command.includes("\0") || new TextEncoder().encode(command).length > 8192)
+    error("INVALID_COMMAND", "/command");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    command,
+    timeoutSeconds: integer(source.timeoutSeconds, 1, 60, "/timeoutSeconds"),
+  });
+}
+export function encodeSandboxExecRequest(value: SandboxExecRequest): string {
+  return JSON.stringify(decodeSandboxExecRequest(value));
+}
+export function decodeSandboxExecResult(value: unknown): SandboxExecResult {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "sandboxId",
+      "generation",
+      "exitCode",
+      "stdout",
+      "stderr",
+      "executionTimeMillis",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "sandboxId",
+      "generation",
+      "exitCode",
+      "stdout",
+      "stderr",
+      "executionTimeMillis",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "SandboxExecResult")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const stdout = boundedString(source.stdout, 0, 1048576, "/stdout");
+  const stderr = boundedString(source.stderr, 0, 1048576, "/stderr");
+  if (new TextEncoder().encode(stdout).length + new TextEncoder().encode(stderr).length > 1048576)
+    error("INVALID_SANDBOX_EXEC_RESULT", "/stdout");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxExecResult",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    exitCode: integer(source.exitCode, -2147483648, 2147483647, "/exitCode"),
+    stdout,
+    stderr,
+    executionTimeMillis: integer(source.executionTimeMillis, 0, 65000, "/executionTimeMillis"),
+  });
 }
 export function decodeSandboxSessionLifecycleRequest(
   value: unknown,
@@ -6212,6 +6308,9 @@ export function parseRuntimeProfileSummaryPage(
 export function parseSandboxSession(text: string): ResponseEnvelope<SandboxSession> {
   return parseResponse(text, sandboxSessionResponseShape, decodeSandboxSession);
 }
+export function parseSandboxExecResult(text: string): ResponseEnvelope<SandboxExecResult> {
+  return parseResponse(text, sandboxExecResultResponseShape, decodeSandboxExecResult);
+}
 export function decodeSandboxSessionLifecycleOperation(
   value: unknown,
 ): SandboxSessionLifecycleOperation {
@@ -8521,6 +8620,36 @@ export class Client {
       result.value.sandboxId !== checked.sandboxId ||
       result.value.runtimeProfileId !== checked.runtimeProfileId ||
       result.value.runtimeProfileVersion !== checked.runtimeProfileVersion
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
+    return result;
+  }
+  async execSandbox(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    body: SandboxExecRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxExecResult>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    const checked = decodeSandboxExecRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}:exec`,
+        headers: { "X-Request-ID": requestId },
+        body: encodeSandboxExecRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("foundationExecSandbox", response);
+    const result = parseSandboxExecResult(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.sandboxId !== sandboxId ||
+      result.value.generation !== checked.expectedGeneration
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
     return result;

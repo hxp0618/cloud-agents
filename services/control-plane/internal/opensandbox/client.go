@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -25,6 +26,7 @@ var (
 	ErrNotFound      = errors.New("opensandbox resource is absent")
 	ErrConflict      = errors.New("opensandbox ownership or receipt conflicts")
 	ErrRuntimeFailed = errors.New("opensandbox runtime failed")
+	ErrOutputLimit   = errors.New("opensandbox command output limit exceeded")
 	identifier       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	platformID       = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
 	digest           = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -70,6 +72,27 @@ func (id Identity) Labels() map[string]string {
 
 // Observation contains only execution metadata. Running is not a readiness verdict.
 type Observation struct{ RuntimeID, RuntimeState string }
+
+const maxExecOutputBytes = 1 << 20
+
+type ExecInput struct {
+	Identity  Identity
+	RuntimeID string
+	Command   string
+	Timeout   time.Duration
+}
+
+type ExecResult struct {
+	Stdout, Stderr      string
+	ExitCode            int64
+	ExecutionTimeMillis int64
+}
+
+func (input ExecInput) valid() bool {
+	return input.Identity.valid() && identifier.MatchString(input.RuntimeID) && len(input.Command) >= 1 &&
+		len(input.Command) <= 8192 && utf8.ValidString(input.Command) && !strings.ContainsRune(input.Command, 0) &&
+		input.Timeout >= time.Second && input.Timeout <= time.Minute
+}
 
 type CreateInput struct {
 	Identity    Identity
@@ -314,36 +337,16 @@ func (c *Client) WaitReady(ctx context.Context, id Identity, runtimeID string) (
 }
 
 func (c *Client) probeExecd(ctx context.Context, runtimeID string) error {
-	var endpoint struct {
-		Endpoint string            `json:"endpoint"`
-		Headers  map[string]string `json:"headers"`
-	}
-	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+runtimeID+"/endpoints/44772", &endpoint); err != nil {
+	target, headers, err := c.execdEndpoint(ctx, runtimeID)
+	if err != nil {
 		return err
-	}
-	base, baseErr := url.Parse(c.endpoint)
-	raw := endpoint.Endpoint
-	if !strings.Contains(raw, "://") {
-		raw = base.Scheme + "://" + raw
-	}
-	target, err := url.Parse(raw)
-	if err != nil || baseErr != nil || target.Host == "" || target.Hostname() != base.Hostname() || target.Scheme != base.Scheme || target.User != nil ||
-		(target.Path != "" && target.Path != "/" && target.Path != "/proxy/44772") || target.RawPath != "" || target.RawQuery != "" || target.Fragment != "" || target.Opaque != "" ||
-		(target.Scheme != "http" && target.Scheme != "https") || len(endpoint.Headers) > 16 {
-		return ErrUnavailable
 	}
 	target.Path = "/ping"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
 	if err != nil {
 		return ErrUnavailable
 	}
-	for name, value := range endpoint.Headers {
-		if name == "" || len(name) > 128 || len(value) > 4096 || strings.EqualFold(name, "Host") ||
-			strings.ContainsAny(name+value, "\r\n") {
-			return ErrUnavailable
-		}
-		request.Header.Set(name, value)
-	}
+	request.Header = headers
 	response, err := c.http.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -357,6 +360,171 @@ func (c *Client) probeExecd(ctx context.Context, runtimeID string) error {
 		return ErrUnavailable
 	}
 	return nil
+}
+
+func (c *Client) execdEndpoint(ctx context.Context, runtimeID string) (*url.URL, http.Header, error) {
+	var endpoint struct {
+		Endpoint string            `json:"endpoint"`
+		Headers  map[string]string `json:"headers"`
+	}
+	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+runtimeID+"/endpoints/44772", &endpoint); err != nil {
+		return nil, nil, err
+	}
+	base, baseErr := url.Parse(c.endpoint)
+	raw := endpoint.Endpoint
+	if !strings.Contains(raw, "://") {
+		raw = base.Scheme + "://" + raw
+	}
+	target, err := url.Parse(raw)
+	if err != nil || baseErr != nil || target.Host == "" || target.Hostname() != base.Hostname() || target.Scheme != base.Scheme || target.User != nil ||
+		(target.Path != "" && target.Path != "/" && target.Path != "/proxy/44772") || target.RawPath != "" || target.RawQuery != "" || target.Fragment != "" || target.Opaque != "" ||
+		(target.Scheme != "http" && target.Scheme != "https") || len(endpoint.Headers) > 16 {
+		return nil, nil, ErrUnavailable
+	}
+	headers := make(http.Header, len(endpoint.Headers))
+	for name, value := range endpoint.Headers {
+		if name == "" || len(name) > 128 || len(value) > 4096 || strings.EqualFold(name, "Host") ||
+			strings.ContainsAny(name+value, "\r\n") {
+			return nil, nil, ErrUnavailable
+		}
+		headers.Set(name, value)
+	}
+	return target, headers, nil
+}
+
+// Exec runs one bounded foreground command in the fixed Workspace directory.
+// CP authorization and generation selection remain the caller's responsibility;
+// this adapter re-verifies the exact physical receipt before sending content.
+func (c *Client) Exec(ctx context.Context, input ExecInput) (ExecResult, error) {
+	if c == nil || ctx == nil || !input.valid() {
+		return ExecResult{}, ErrInvalid
+	}
+	execCtx, cancel := context.WithTimeout(ctx, input.Timeout+5*time.Second)
+	defer cancel()
+	var current sandbox
+	if err := c.call(execCtx, http.MethodGet, "/v1/sandboxes/"+input.RuntimeID, &current); err != nil {
+		return ExecResult{}, err
+	}
+	observation, err := current.observation(input.Identity)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	if observation.RuntimeID != input.RuntimeID || observation.RuntimeState != "Running" {
+		return ExecResult{}, ErrRuntimeFailed
+	}
+	target, headers, err := c.execdEndpoint(execCtx, input.RuntimeID)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	body, err := json.Marshal(map[string]any{"command": input.Command, "cwd": "/workspace", "background": false, "timeout": input.Timeout.Milliseconds()})
+	if err != nil {
+		return ExecResult{}, ErrInvalid
+	}
+	target.Path = "/command"
+	request, err := http.NewRequestWithContext(execCtx, http.MethodPost, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return ExecResult{}, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	request.Header.Set("Content-Type", "application/json")
+	httpClient := *c.http
+	httpClient.Timeout = 0
+	response, err := httpClient.Do(request)
+	if err != nil {
+		if execCtx.Err() != nil {
+			return ExecResult{}, execCtx.Err()
+		}
+		return ExecResult{}, ErrUnavailable
+	}
+	defer response.Body.Close()
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0]))
+	if response.StatusCode != http.StatusOK || mediaType != "text/event-stream" {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, (1<<20)+1))
+		return ExecResult{}, ErrUnavailable
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, (2<<20)+1))
+	result := ExecResult{}
+	executionID, terminal, commandFailed := "", false, false
+	for !terminal {
+		var event struct {
+			Type          string `json:"type"`
+			Text          string `json:"text"`
+			ExecutionTime int64  `json:"execution_time"`
+		}
+		if err := decoder.Decode(&event); err != nil {
+			return ExecResult{}, ErrUnavailable
+		}
+		switch event.Type {
+		case "init":
+			if executionID != "" || !identifier.MatchString(event.Text) {
+				return ExecResult{}, ErrUnavailable
+			}
+			executionID = event.Text
+		case "stdout":
+			if len(result.Stdout)+len(result.Stderr)+len(event.Text) > maxExecOutputBytes {
+				return ExecResult{}, ErrOutputLimit
+			}
+			result.Stdout += event.Text
+		case "stderr":
+			if len(result.Stdout)+len(result.Stderr)+len(event.Text) > maxExecOutputBytes {
+				return ExecResult{}, ErrOutputLimit
+			}
+			result.Stderr += event.Text
+		case "error":
+			commandFailed, terminal = true, true
+		case "execution_complete":
+			if event.ExecutionTime < 0 || event.ExecutionTime > 65000 {
+				return ExecResult{}, ErrUnavailable
+			}
+			result.ExecutionTimeMillis, terminal = event.ExecutionTime, true
+		case "status", "result", "execution_count", "ping":
+		default:
+			return ExecResult{}, ErrUnavailable
+		}
+	}
+	if executionID == "" {
+		return ExecResult{}, ErrUnavailable
+	}
+	target.Path = "/command/status/" + executionID
+	for {
+		statusRequest, err := http.NewRequestWithContext(execCtx, http.MethodGet, target.String(), http.NoBody)
+		if err != nil {
+			return ExecResult{}, ErrUnavailable
+		}
+		statusRequest.Header = headers.Clone()
+		statusResponse, err := httpClient.Do(statusRequest)
+		if err != nil {
+			if execCtx.Err() != nil {
+				return ExecResult{}, execCtx.Err()
+			}
+			return ExecResult{}, ErrUnavailable
+		}
+		var status struct {
+			ID       string `json:"id"`
+			Running  bool   `json:"running"`
+			ExitCode *int64 `json:"exit_code"`
+		}
+		data, readErr := io.ReadAll(io.LimitReader(statusResponse.Body, (64<<10)+1))
+		statusResponse.Body.Close()
+		if readErr != nil || len(data) > 64<<10 || statusResponse.StatusCode != http.StatusOK || json.Unmarshal(data, &status) != nil || status.ID != executionID {
+			if commandFailed {
+				return ExecResult{}, ErrRuntimeFailed
+			}
+			return ExecResult{}, ErrUnavailable
+		}
+		if !status.Running {
+			if status.ExitCode == nil || *status.ExitCode < -2147483648 || *status.ExitCode > 2147483647 {
+				return ExecResult{}, ErrUnavailable
+			}
+			result.ExitCode = *status.ExitCode
+			return result, nil
+		}
+		select {
+		case <-execCtx.Done():
+			return ExecResult{}, execCtx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 // Delete terminates the exact receipt. The caller must hold the durable claim and

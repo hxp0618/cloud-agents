@@ -44,6 +44,8 @@ import {
   decodeRoleBindingPage,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
+  decodeSandboxExecRequest,
+  decodeSandboxExecResult,
   decodeSandboxSession,
   decodeWatchCursor,
   decodeWorkerPage,
@@ -97,6 +99,51 @@ const platformFixtureRoot = resolve(
 );
 
 describe("generated platform JSON models", () => {
+  it("executes only a bounded command against the exact Sandbox generation", async () => {
+    const response = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "SandboxExecResult",
+      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      sandboxId: "sandbox-alpha",
+      generation: 3,
+      exitCode: 7,
+      stdout: "proof\n",
+      stderr: "failed",
+      executionTimeMillis: 0,
+    } as const;
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: {}, body: JSON.stringify(response) };
+    });
+    const result = await client.execSandbox(
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      "request-alpha",
+      { expectedGeneration: 3, command: "printf bounded", timeoutSeconds: 10 },
+    );
+    expect(result.value).toEqual(response);
+    expect(seen).toEqual([
+      {
+        method: "POST",
+        path: "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-sessions/sandbox-alpha:exec",
+        headers: { "X-Request-ID": "request-alpha" },
+        body: '{"expectedGeneration":3,"command":"printf bounded","timeoutSeconds":10}',
+      },
+    ]);
+    expect(() =>
+      decodeSandboxExecRequest({
+        expectedGeneration: 3,
+        command: "界".repeat(2731),
+        timeoutSeconds: 10,
+      }),
+    ).toThrow("INVALID_COMMAND");
+    expect(() =>
+      decodeSandboxExecResult({ ...response, stdout: "界".repeat(349526), stderr: "" }),
+    ).toThrow("INVALID_SANDBOX_EXEC_RESULT");
+  });
+
   it("replays the managed-agent Session contract and client lifecycle", async () => {
     const session = JSON.stringify({
       apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",

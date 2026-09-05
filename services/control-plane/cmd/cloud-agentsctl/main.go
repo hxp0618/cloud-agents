@@ -34,6 +34,7 @@ type globalOptions struct {
 	session        string
 	turn           string
 	execution      string
+	sandbox        string
 	lease          string
 	target         string
 	requestID      string
@@ -211,6 +212,23 @@ func run(args []string, stdout io.Writer) error {
 		var provider string
 		if err = parseActionFlags("session create", actionArgs, func(set *flag.FlagSet) { set.StringVar(&provider, "provider", "", "provider kind") }); err == nil {
 			value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{SessionID: options.session, ProviderKind: provider, EnvironmentLeaseID: options.lease})
+		}
+	case "sandbox exec":
+		var generation, timeoutSeconds int64
+		var command string
+		if err = parseActionFlags("sandbox exec", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&generation, "expected-generation", 0, "Sandbox fencing generation")
+			set.StringVar(&command, "command", "", "foreground shell command")
+			set.Int64Var(&timeoutSeconds, "timeout-seconds", 30, "command timeout from 1 to 60 seconds")
+		}); err == nil && generation < 1 {
+			err = errors.New("--expected-generation must be greater than zero")
+		} else if err == nil && command == "" {
+			err = errors.New("--command is required")
+		} else if err == nil && (timeoutSeconds < 1 || timeoutSeconds > 60) {
+			err = errors.New("--timeout-seconds must be between 1 and 60")
+		} else if err == nil {
+			value, err = client.ExecSandbox(ctx, options.tenant, options.project, options.sandbox, options.requestID,
+				platform.SandboxExecRequest{ExpectedGeneration: generation, Command: command, TimeoutSeconds: timeoutSeconds})
 		}
 	case "session list":
 		var pageSize int
@@ -592,6 +610,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.session, "session", "", "session identifier")
 	set.StringVar(&options.turn, "turn", "", "turn identifier")
 	set.StringVar(&options.execution, "execution", "", "execution identifier")
+	set.StringVar(&options.sandbox, "sandbox", "", "Sandbox identifier")
 	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
 	set.StringVar(&options.target, "target", "", "deployment target identifier")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
@@ -658,6 +677,9 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if requiresExecution(command, action) && options.execution == "" {
 		return globalOptions{}, "", "", nil, errors.New("--execution is required")
+	}
+	if requiresSandbox(command, action) && options.sandbox == "" {
+		return globalOptions{}, "", "", nil, errors.New("--sandbox is required")
 	}
 	if requiresLease(command, action) && options.lease == "" {
 		return globalOptions{}, "", "", nil, errors.New("--lease is required")
@@ -745,6 +767,8 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.DeploymentTargetResult:
 		return result.Value
+	case openapi.SandboxExecResult:
+		return result.Value
 	case openapi.RBACMutationResult:
 		return result.Value
 	default:
@@ -795,7 +819,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
 		return true
 	default:
 		return false
@@ -803,7 +827,7 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
+	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "sandbox" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool {
 	return command == "organization" && action != "list" || command == "project" && action == "list"
@@ -824,6 +848,7 @@ func requiresTurn(command, action string) bool {
 func requiresExecution(command, action string) bool {
 	return command == "execution" && action != "list"
 }
+func requiresSandbox(command, action string) bool { return command == "sandbox" }
 func requiresLease(command, action string) bool {
 	return command == "environment-lease" && action != "list" || command == "session" && action == "create"
 }
@@ -845,6 +870,7 @@ resources and actions:
   tenant get
   organization get|list|create
   project get|list|create
+  sandbox exec
   session get|list|create|close
   turn get|list|create
   execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input

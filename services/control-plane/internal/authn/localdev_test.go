@@ -105,6 +105,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		{"role-bindings.list", "tenant", "tenant-1"},
 		{"roles.get", "tenant", "tenant-1"},
 		{"roles.list", "tenant", "tenant-1"},
+		{"sandboxes.update", "project", "project-1"},
 		{"tenants.get", "tenant", "tenant-1"},
 	} {
 		if _, err := verifier.Verify(token, LocalVerificationRequest{
@@ -142,6 +143,10 @@ func TestLocalVerifierSeparatesAdminScopes(t *testing.T) {
 		if _, err := verifier.Verify(adminToken, request); err != nil {
 			t.Fatalf("admin token %s verification failed: %v", permission, err)
 		}
+	}
+	request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "sandboxes.update"}
+	if _, err := verifier.Verify(adminToken, request); errorCategory(err) != errorScopeMismatch {
+		t.Fatalf("admin token unexpectedly gained user content access: %v", err)
 	}
 }
 

@@ -17,7 +17,8 @@
 - product-000055 已把 claim/renew/settle/reaper 接入生产启动的 Controller：真实 OrbStack Docker 中创建长期卷和 OpenSandbox，在首进程结算前退出后由第二进程回收 claim、严格 adopt 同一 runtime，并保留相同 Workspace 摘要；真实 Failed runtime 精确补偿，最终无 test-owned Sandbox/volume。生成 Admin Sandbox list/detail、服务端普通用户 403 和敏感字段排除通过；Admin Web 已提供真实 RuntimeProfile 与 Sandbox/Workspace 列表、详情及 Profile 生命周期，八种双语/主题/视口组合无溢出。见 [Controller 与 Admin 联合证据](evidence/base-m1-controller-admin-20260906.md)。本轮是本地 Docker/一次性 PostgreSQL 与本地 Web，不是部署、Kubernetes 或客户节点证据。
 - 手动 Stop/Rebuild 垂直切片已接通：product-000056 以 generation/resourceVersion/精确资源确认接受持久化 Operation/outbox/Audit；真实 OpenSandbox Stop 删除计算并释放 writer、同一物理卷 Rebuild 后文件摘要不变，旧 generation 和外来卷 owner 被拒绝，普通用户 Admin API 为 403。Admin Web 用生成 SDK 和显式影响确认提交真实请求，202 只显示“请求已接受”。见 [Sandbox 生命周期证据](evidence/base-m1-sandbox-lifecycle-20260906.md)。本轮仍是本地 Docker/一次性 PostgreSQL 与本地 Web，不是部署、Kubernetes 或客户节点证据。
 - TTL 自动停止垂直切片已接通：product-000057 用数据库时钟计算/判断 `expiresAt`，Controller 原子接受标准 Stop Operation，不另建物理删除路径；旧记录不回填 TTL，Rebuild 刷新期限。真实等待 60 秒后 generation 4 自动 Stop 删除计算并保留卷，generation 5 Rebuild 读回同一文件摘要；Admin API/Web 展示 TTL、到期时间与 manual/ttl 原因，Audit 和精确清理通过。见 [TTL 与恢复证据](evidence/base-m1-sandbox-ttl-20260906.md)。结合既有 Controller/Admin 和手动生命周期证据，BASE-M1 已覆盖当前固定退出范围。
-- 下一项：进入 BASE-M2，先核对既有 Exec/Files/OpenSandbox 接缝与 API contract，选择不依赖 Agent 的最小真实 Exec 垂直切片；随后补 PTY/reconnect、Files 边界、Access Gateway、私有 Preview、短期 SSH 和网络策略实际执行。不得把已有内部 Agent 命令或 PoC 直接冒充通用访问 API。
+- BASE-M2 首个同步 Exec 垂直切片已接通：Product API 只接受 Sandbox generation、bounded command 和 timeout；Control Plane 经服务端 user scope、PostgreSQL project authority 和完整物理回执执行固定 `/workspace` 前台命令，生成 Go/TypeScript SDK 与 CLI 同步更新。真实 OpenSandbox 返回 Workspace 摘要、stderr 和 exit 7；Admin 403、旧 generation 409、超 1 MiB 413，响应不含 endpoint/runtime/credential。见 [同步 Exec 证据](evidence/base-m2-sandbox-exec-20260906.md)。这不是 PTY/Files/访问网关或 BASE-M2 阶段完成。
+- 下一项：继续 BASE-M2，优先完成带持久化 Access Grant、短期凭据、generation/expiry/revoke 的 PTY session 与 cursor reconnect，并补对应 Admin Grant 元数据/诊断；随后完成 Files、私有 Preview、短期 SSH 和网络策略实际执行。不得让 Admin 读取终端或文件内容。
 - 本次未改既有 Agent/Lease/Profile/User Web 行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -40,7 +41,7 @@
 | ---------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | BASE-M0    | VERIFIED    | 固定候选、no-Agent Docker PoC、产品执行接缝、幂等 adopt、失败补偿及对应 Admin 运维投影已有固定证据；不表示底座产品已就绪 |
 | BASE-M1    | VERIFIED    | 真实长期卷、跨进程恢复、失败补偿、手动与 TTL Stop/Rebuild、单写 fencing、Operation/Audit 和 Admin 保留/到期反馈已实测 |
-| BASE-M2    | NOT STARTED | Exec/PTY/Files/Preview/SSH 和真实策略执行；Admin grant/策略/诊断管理，不读取用户内容                        |
+| BASE-M2    | IN PROGRESS | bounded 同步 Exec 已真实接通；仍缺 PTY/reconnect、Files、Gateway/Grant、Preview/SSH、策略执行和对应 Admin 管理 |
 | BASE-M3    | NOT STARTED | outbound RemoteWorker 注册/证书/重连/fencing，以及节点归属、健康、Drain/Resume 管理                         |
 | BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |
 | BASE-M5    | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收                                    |

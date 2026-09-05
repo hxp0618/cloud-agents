@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
@@ -642,6 +643,22 @@ type SandboxSessionCreateRequest struct {
 	RuntimeProfileVersion int64  `json:"runtimeProfileVersion"`
 	TTLSeconds            int64  `json:"ttlSeconds"`
 }
+type SandboxExecRequest struct {
+	ExpectedGeneration int64  `json:"expectedGeneration"`
+	Command            string `json:"command"`
+	TimeoutSeconds     int64  `json:"timeoutSeconds"`
+}
+type SandboxExecResult struct {
+	APIVersion          string            `json:"apiVersion"`
+	Kind                string            `json:"kind"`
+	ProjectRef          common.ProjectRef `json:"projectRef"`
+	SandboxID           string            `json:"sandboxId"`
+	Generation          int64             `json:"generation"`
+	ExitCode            int64             `json:"exitCode"`
+	Stdout              string            `json:"stdout"`
+	Stderr              string            `json:"stderr"`
+	ExecutionTimeMillis int64             `json:"executionTimeMillis"`
+}
 type SandboxSession struct {
 	APIVersion            string            `json:"apiVersion"`
 	Kind                  string            `json:"kind"`
@@ -1071,6 +1088,7 @@ var adminSandboxSessionPageResponseShape = common.ObjectResponseShape(map[string
 var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape()})
 var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
+var sandboxExecResultResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "exitCode": common.ScalarResponseShape(), "stdout": common.ScalarResponseShape(), "stderr": common.ScalarResponseShape(), "executionTimeMillis": common.ScalarResponseShape()})
 var sandboxSessionLifecycleOperationResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "idempotencyKey": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "requestedBy": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "requestedAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "currentStep": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "computeDisposition": common.ScalarResponseShape(), "workspaceDisposition": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -3518,6 +3536,76 @@ func EncodeSandboxSessionCreateRequestJSON(value SandboxSessionCreateRequest) ([
 		return nil, err
 	}
 	return raw, nil
+}
+func DecodeSandboxExecRequestJSON(data []byte) (SandboxExecRequest, error) {
+	allowed := []string{"expectedGeneration", "command", "timeoutSeconds"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return SandboxExecRequest{}, err
+	}
+	var value SandboxExecRequest
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxExecRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if value.ExpectedGeneration < 1 || value.ExpectedGeneration > 9007199254740991 {
+		return SandboxExecRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	if !utf8.ValidString(value.Command) || len(value.Command) < 1 || len(value.Command) > 8192 || strings.IndexByte(value.Command, 0) >= 0 {
+		return SandboxExecRequest{}, common.ContractError("INVALID_COMMAND", "/command")
+	}
+	if value.TimeoutSeconds < 1 || value.TimeoutSeconds > 60 {
+		return SandboxExecRequest{}, common.ContractError("INVALID_TIMEOUT", "/timeoutSeconds")
+	}
+	return value, nil
+}
+func EncodeSandboxExecRequestJSON(value SandboxExecRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxExecRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeSandboxExecResultJSON(data []byte) (SandboxExecResult, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "sandboxId", "generation", "exitCode", "stdout", "stderr", "executionTimeMillis"}, []string{"apiVersion", "kind", "projectRef", "sandboxId", "generation", "exitCode", "stdout", "stderr", "executionTimeMillis"})
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
+	var value SandboxExecResult
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxExecResult{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	project, err := common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
+	value.ProjectRef = project
+	if value.APIVersion != APIVersion || value.Kind != "SandboxExecResult" || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.ExitCode < -2147483648 || value.ExitCode > 2147483647 || !utf8.ValidString(value.Stdout) || !utf8.ValidString(value.Stderr) || len(value.Stdout)+len(value.Stderr) > 1048576 || value.ExecutionTimeMillis < 0 || value.ExecutionTimeMillis > 65000 {
+		return SandboxExecResult{}, common.ContractError("INVALID_SANDBOX_EXEC_RESULT", "")
+	}
+	return value, nil
+}
+func DecodeSandboxExecResultResponseJSON(data []byte) (common.ResponseEnvelope[SandboxExecResult], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxExecResultResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxExecResult]{}, err
+	}
+	value, err := DecodeSandboxExecResultJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxExecResult]{}, err
+	}
+	return common.ResponseEnvelope[SandboxExecResult]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeSandboxExecResultResponseJSON(value common.ResponseEnvelope[SandboxExecResult]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxExecResultJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func DecodeSandboxSessionLifecycleRequestJSON(data []byte) (SandboxSessionLifecycleRequest, error) {
 	allowed := []string{"expectedGeneration", "expectedResourceVersion", "confirmedSandboxId", "computeDisposition", "workspaceDisposition"}

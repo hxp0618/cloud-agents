@@ -177,6 +177,7 @@ type RuntimeProfileResult = common.ResponseEnvelope[platform.RuntimeProfile]
 type RuntimeProfilePageResult = common.ResponseEnvelope[platform.RuntimeProfilePage]
 type RuntimeProfileSummaryPageResult = common.ResponseEnvelope[platform.RuntimeProfileSummaryPage]
 type SandboxSessionResult = common.ResponseEnvelope[platform.SandboxSession]
+type SandboxExecResult = common.ResponseEnvelope[platform.SandboxExecResult]
 type SandboxSessionLifecycleOperationResult = common.ResponseEnvelope[platform.SandboxSessionLifecycleOperation]
 type AdminSandboxSessionResult = common.ResponseEnvelope[platform.AdminSandboxSession]
 type AdminSandboxSessionPageResult = common.ResponseEnvelope[platform.AdminSandboxSessionPage]
@@ -1429,6 +1430,31 @@ func (client *Client) CreateSandbox(ctx context.Context, tenantID, projectID, re
 	got := value.Value
 	if got.ProjectRef.ID != projectID || got.WorkspaceID != body.WorkspaceID || got.SandboxID != body.SandboxID || got.RuntimeProfileID != body.RuntimeProfileID || got.RuntimeProfileVersion != body.RuntimeProfileVersion {
 		return SandboxSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId")
+	}
+	return value, nil
+}
+func (client *Client) ExecSandbox(ctx context.Context, tenantID, projectID, sandboxID, requestID string, body platform.SandboxExecRequest) (SandboxExecResult, error) {
+	bodyBytes, err := platform.EncodeSandboxExecRequestJSON(body)
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
+	input, err := ValidateExecSandboxServerRequest(tenantID, projectID, sandboxID, requestID, bodyBytes)
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID + ":exec", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
+	if err != nil {
+		return SandboxExecResult{}, err
+	}
+	if response.Status != 200 {
+		return SandboxExecResult{}, client.problemError("foundationExecSandbox", response)
+	}
+	value, err := platform.DecodeSandboxExecResultResponseJSON(response.Body)
+	if err != nil {
+		return SandboxExecResult{}, &ClientError{Operation: "foundationExecSandbox", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.SandboxID != sandboxID || value.Value.Generation != input.Body.ExpectedGeneration {
+		return SandboxExecResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId")
 	}
 	return value, nil
 }
@@ -4777,6 +4803,28 @@ func ValidateCreateSandboxServerRequest(tenantID, projectID, requestID, idempote
 		return CreateSandboxServerInput{}, err
 	}
 	return CreateSandboxServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type ExecSandboxServerInput struct {
+	TenantID  string
+	ProjectID string
+	SandboxID string
+	RequestID string
+	Body      platform.SandboxExecRequest
+}
+
+func ValidateExecSandboxServerRequest(tenantID, projectID, sandboxID, requestID string, body []byte) (ExecSandboxServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return ExecSandboxServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(sandboxID, "/sandboxId"); err != nil {
+		return ExecSandboxServerInput{}, err
+	}
+	value, err := platform.DecodeSandboxExecRequestJSON(body)
+	if err != nil {
+		return ExecSandboxServerInput{}, err
+	}
+	return ExecSandboxServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID, Body: value}, nil
 }
 
 type CreateAdminEnvironmentProfileServerInput struct {

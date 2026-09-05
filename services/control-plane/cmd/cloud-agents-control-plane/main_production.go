@@ -237,13 +237,14 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("project HTTP server is unavailable")
 	}
 	var dockerProber *dockertarget.CredentialDirectory
+	var sandboxCredentials *opensandbox.CredentialDirectory
 	if config.dockerCredentials != "" {
 		dockerProber, err = dockertarget.NewCredentialDirectory(config.dockerCredentials)
 		if err != nil {
 			return errors.New("Docker target credential directory is invalid")
 		}
-		sandboxCredentials, credentialErr := opensandbox.NewCredentialDirectory(config.dockerCredentials)
-		if credentialErr != nil {
+		sandboxCredentials, err = opensandbox.NewCredentialDirectory(config.dockerCredentials)
+		if err != nil {
 			return errors.New("OpenSandbox credential directory is invalid")
 		}
 		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, sandboxCredentials)
@@ -308,7 +309,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("published environment profile HTTP server is unavailable")
 	}
-	foundationServer, err := server.NewFoundationHTTPServer(verifier, coordinationService)
+	foundationServer, err := server.NewFoundationHTTPServer(verifier, coordinationService, sandboxCredentials)
 	if err != nil {
 		return errors.New("foundation HTTP server is unavailable")
 	}

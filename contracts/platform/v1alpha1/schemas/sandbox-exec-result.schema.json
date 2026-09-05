@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-exec-result.schema.json",
+  "title": "SandboxExecResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "sandboxId", "generation", "exitCode", "stdout", "stderr", "executionTimeMillis"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxExecResult" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "exitCode": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+    "stdout": { "type": "string", "maxLength": 1048576 },
+    "stderr": { "type": "string", "maxLength": 1048576 },
+    "executionTimeMillis": { "type": "integer", "minimum": 0, "maximum": 65000 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "stdout and stderr contain at most 1048576 UTF-8 bytes combined",
+    "runtime identifiers, endpoints and credential references are absent",
+    "this user response is never projected into Admin APIs"
+  ]
+}

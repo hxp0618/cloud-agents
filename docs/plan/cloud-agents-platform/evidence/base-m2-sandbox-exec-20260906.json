@@ -1,0 +1,39 @@
+{
+  "run": "foundation-controller-4a673e30-2cb6-4b71-ad22-90464ef23a67",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "2a3497f135e0341590b13da025e6b4bb0d64db69",
+    "dirty": true
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "architecture": "linux/arm64",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "runtime": {
+    "sourceRef": "207d94c7dc7735c143856fe5c6538b743e478786",
+    "serverImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "exec": {
+    "generation": 3,
+    "workspace": "/workspace",
+    "workspaceProofDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "proofDigestVerified": true,
+    "exitCode": 7,
+    "executionTimeMillis": 0,
+    "adminStatus": 403,
+    "staleGenerationStatus": 409,
+    "outputLimitBytes": 1048576,
+    "outputLimitStatus": 413,
+    "responseInfrastructureRedacted": true
+  },
+  "cleanup": {
+    "ownedRuntimeContainers": 0,
+    "ownedWorkspaceVolumes": 0,
+    "ownedHarnessContainers": 0
+  },
+  "boundary": "Local OrbStack Docker and disposable PostgreSQL only; no PTY, Files, Access Gateway, Preview, SSH, Admin Web browser, deployment, image publication, Kubernetes or customer node"
+}
