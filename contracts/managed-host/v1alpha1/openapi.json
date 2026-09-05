@@ -11,6 +11,25 @@
     }
   ],
   "paths": {
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/denied-write-events": {
+      "get": {
+        "operationId": "adminListDeniedWriteEvents",
+        "x-cloud-agents-required-scope": "audit.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": { "description": "Authenticated denied Admin writes, newest first; metadata only", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-denied-write-event-page.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}": {
       "get": {
         "operationId": "managedHostGetProjectContext",

@@ -332,7 +332,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("user environment HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(verifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesNetworkPolicyPath(request.URL.Path) {
 			networkPolicyServer.ServeHTTP(writer, request)
 			return
@@ -358,7 +358,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return
 		}
 		adminDeploymentTargetServer.ServeHTTP(writer, request)
-	}))
+	})))
 	mux.Handle(server.OrganizationCollectionRoute, organizationServer)
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleCollectionRoute, roleServer)

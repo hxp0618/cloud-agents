@@ -2408,3 +2408,18 @@ td > button small {
     transition-duration: 0.01ms !important;
   }
 }
+.denied-write-table {
+  table-layout: fixed;
+  min-width: 1180px;
+}
+
+.denied-write-table th:first-child,
+.denied-write-table td:first-child {
+  width: 180px;
+  white-space: nowrap;
+}
+
+.denied-write-table code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

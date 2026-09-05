@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/admin-denied-write-event.schema.json",
+  "title": "AdminDeniedWriteEvent",
+  "description": "Authenticated Admin write that returned an authorization rejection. Actor is verified; action is a trusted route operation ID. Resource ID and profile version are requested route identifiers, not proof of resource existence or execution. No request body, credentials, operation ID or observed generation is recorded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "eventId", "tenantId", "projectId", "actor", "action", "result", "stableErrorCode", "requestId", "occurredAt"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "AdminDeniedWriteEvent" },
+    "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "actor": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "action": { "enum": ["adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget"] },
+    "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "profileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "result": { "const": "denied" },
+    "stableErrorCode": { "const": "AUTHORIZATION_DENIED" },
+    "requestId": { "description": "Validated caller correlation ID, or request-unknown when missing or malformed. Event ID remains server-generated and unique.", "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

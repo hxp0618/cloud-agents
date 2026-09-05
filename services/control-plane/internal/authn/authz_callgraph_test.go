@@ -30,6 +30,10 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"internal/store/postgres/admin_denied_write.go:DurableCoordinationService.ListAdminDeniedWrites:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/admin_denied_write.go:DurableCoordinationService.ListAdminDeniedWrites:method.Bind",
+		"internal/store/postgres/admin_denied_write.go:DurableCoordinationService.ListAdminDeniedWrites:package.VerifiedOperationBinder",
+		"internal/store/postgres/admin_denied_write.go:DurableCoordinationService.ListAdminDeniedWrites:package.WithVerifiedOperation",
 		"internal/authz/rbac.go:<package>:package.VerifiedOperation",
 		"internal/authz/rbac.go:<package>:package.VerifiedOperationBinder",
 		"internal/authz/rbac.go:VerifiedOperation.Actor:package.VerifiedOperation",

@@ -36,19 +36,19 @@ func (row readinessRow) Scan(dest ...any) error {
 }
 
 func TestCheckProductSchemaReadiness(t *testing.T) {
-	current := productRunnerBindingSelector("000051")
+	current := productRunnerBindingSelector("000052")
 	tests := []struct {
 		name    string
 		row     readinessRow
 		wantErr bool
 	}{
-		{name: "current", row: readinessRow{count: 51, first: "000001", last: "000051", bundleDigest: current.schemaBundleDigest}},
-		{name: "previous head", row: readinessRow{count: 50, first: "000001", last: "000050", bundleDigest: productRunnerBindingSelector("000050").schemaBundleDigest}, wantErr: true},
+		{name: "current", row: readinessRow{count: 52, first: "000001", last: "000052", bundleDigest: current.schemaBundleDigest}},
+		{name: "previous head", row: readinessRow{count: 51, first: "000001", last: "000051", bundleDigest: productRunnerBindingSelector("000051").schemaBundleDigest}, wantErr: true},
 		{name: "missing", row: readinessRow{}, wantErr: true},
 		{name: "stale", row: readinessRow{count: 31, first: "000001", last: "000031", bundleDigest: productRunnerBindingSelector("000031").schemaBundleDigest}, wantErr: true},
 		{name: "stale current", row: readinessRow{count: 41, first: "000001", last: "000041", bundleDigest: productRunnerBindingSelector("000041").schemaBundleDigest}, wantErr: true},
-		{name: "ahead", row: readinessRow{count: 52, first: "000001", last: "000052", bundleDigest: current.schemaBundleDigest}, wantErr: true},
-		{name: "wrong bundle", row: readinessRow{count: 51, first: "000001", last: "000051", bundleDigest: productRunnerBindingSelector("000050").schemaBundleDigest}, wantErr: true},
+		{name: "ahead", row: readinessRow{count: 53, first: "000001", last: "000053", bundleDigest: current.schemaBundleDigest}, wantErr: true},
+		{name: "wrong bundle", row: readinessRow{count: 52, first: "000001", last: "000052", bundleDigest: productRunnerBindingSelector("000051").schemaBundleDigest}, wantErr: true},
 		{name: "query failure", row: readinessRow{err: errors.New("query failed")}, wantErr: true},
 	}
 	for _, test := range tests {

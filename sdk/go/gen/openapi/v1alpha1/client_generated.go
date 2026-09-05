@@ -93,6 +93,37 @@ type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type WorkerPageResult = common.ResponseEnvelope[platform.WorkerPage]
+type AdminDeniedWriteEventPageResult = common.ResponseEnvelope[platform.AdminDeniedWriteEventPage]
+
+func (client *Client) ListAdminDeniedWriteEvents(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (AdminDeniedWriteEventPageResult, error) {
+	input, err := ValidateListMaintenanceOperationsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		return AdminDeniedWriteEventPageResult{}, err
+	}
+	query := url.Values{}
+	query.Set("pageSize", strconv.Itoa(input.PageSize))
+	if input.PageToken != "" {
+		query.Set("pageToken", input.PageToken)
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/denied-write-events?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminDeniedWriteEventPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminDeniedWriteEventPageResult{}, client.problemError("adminListDeniedWriteEvents", response)
+	}
+	result, err := platform.DecodeAdminDeniedWriteEventPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminDeniedWriteEventPageResult{}, &ClientError{Operation: "adminListDeniedWriteEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range result.Value.Events {
+		if event.TenantID != tenantID || event.ProjectID != projectID {
+			return AdminDeniedWriteEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
+	}
+	return result, nil
+}
+
 type WorkerHealthObservationResult = common.ResponseEnvelope[platform.WorkerHealthObservation]
 
 func ValidateGetAdminWorkerHealthServerRequest(tenantID, projectID, leaseID, requestID string, expectedGeneration int64) error {

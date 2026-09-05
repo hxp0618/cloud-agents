@@ -647,6 +647,125 @@ export type AdminAuditEventPage = Readonly<{
   events: readonly AdminAuditEvent[];
   nextPageToken?: string;
 }>;
+const adminDeniedWriteActions = [
+  "adminUpgradeEnvironmentLease",
+  "adminRollbackEnvironmentLease",
+  "adminRegisterWorkerRelease",
+  "adminSetStoragePolicy",
+  "adminSetNetworkPolicy",
+  "adminSetProjectLeaseQuota",
+  "adminCreateEnvironmentProfile",
+  "adminPublishEnvironmentProfile",
+  "adminDisableEnvironmentProfile",
+  "adminRegisterDeploymentTarget",
+  "adminProbeDeploymentTarget",
+  "adminTransitionDeploymentTargetScheduling",
+  "adminCleanupDeploymentTarget",
+] as const;
+export type AdminDeniedWriteEvent = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminDeniedWriteEvent";
+  eventId: string;
+  tenantId: string;
+  projectId: string;
+  actor: string;
+  action: (typeof adminDeniedWriteActions)[number];
+  resourceId?: string;
+  profileVersion?: number;
+  result: "denied";
+  stableErrorCode: "AUTHORIZATION_DENIED";
+  requestId: string;
+  occurredAt: string;
+}>;
+export type AdminDeniedWriteEventPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminDeniedWriteEventPage";
+  events: readonly AdminDeniedWriteEvent[];
+  nextPageToken?: string;
+}>;
+export function decodeAdminDeniedWriteEvent(value: unknown): AdminDeniedWriteEvent {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "eventId",
+      "tenantId",
+      "projectId",
+      "actor",
+      "action",
+      "resourceId",
+      "profileVersion",
+      "result",
+      "stableErrorCode",
+      "requestId",
+      "occurredAt",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "eventId",
+      "tenantId",
+      "projectId",
+      "actor",
+      "action",
+      "result",
+      "stableErrorCode",
+      "requestId",
+      "occurredAt",
+    ],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "AdminDeniedWriteEvent" ||
+    source.result !== "denied" ||
+    source.stableErrorCode !== "AUTHORIZATION_DENIED" ||
+    !adminDeniedWriteActions.includes(source.action as (typeof adminDeniedWriteActions)[number]) ||
+    typeof source.actor !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/u.test(source.actor)
+  )
+    error("INVALID_ADMIN_DENIED_WRITE_EVENT", "");
+  for (const key of ["eventId", "tenantId", "projectId", "requestId"])
+    identifier(source[key], "/" + key);
+  if (source.resourceId !== undefined) identifier(source.resourceId, "/resourceId");
+  if (source.profileVersion !== undefined)
+    integer(source.profileVersion, 1, 2147483647, "/profileVersion");
+  dateTime(source.occurredAt, "/occurredAt");
+  return Object.freeze(source) as AdminDeniedWriteEvent;
+}
+export function decodeAdminDeniedWriteEventPage(value: unknown): AdminDeniedWriteEventPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "events", "nextPageToken"],
+    ["apiVersion", "kind", "events"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "AdminDeniedWriteEventPage" ||
+    !Array.isArray(source.events) ||
+    source.events.length > 200
+  )
+    error("INVALID_ADMIN_DENIED_WRITE_EVENT_PAGE", "/events");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "AdminDeniedWriteEventPage" as const,
+    events: Object.freeze((source.events as unknown[]).map(decodeAdminDeniedWriteEvent)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function parseAdminDeniedWriteEventPage(
+  text: string,
+): ResponseEnvelope<AdminDeniedWriteEventPage> {
+  return parseResponse(
+    text,
+    adminDeniedWriteEventPageResponseShape,
+    decodeAdminDeniedWriteEventPage,
+  );
+}
 export type DeploymentTargetCleanupResource = Readonly<{
   resourceKind: "container" | "deployment" | "pods" | "service" | "workspace-volume";
   resourceName: string;
@@ -863,6 +982,31 @@ export type ManagedAgentEventPage = Readonly<{
 }>;
 
 const scalarResponseShape: ResponseShape = Object.freeze({});
+const adminDeniedWriteEventResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    eventId: scalarResponseShape,
+    tenantId: scalarResponseShape,
+    projectId: scalarResponseShape,
+    actor: scalarResponseShape,
+    action: scalarResponseShape,
+    resourceId: scalarResponseShape,
+    profileVersion: scalarResponseShape,
+    result: scalarResponseShape,
+    stableErrorCode: scalarResponseShape,
+    requestId: scalarResponseShape,
+    occurredAt: scalarResponseShape,
+  },
+};
+const adminDeniedWriteEventPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    events: { item: adminDeniedWriteEventResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
 const referenceResponseShape: ResponseShape = {
   fields: { namespace: scalarResponseShape, kind: scalarResponseShape, id: scalarResponseShape },
 };
@@ -6406,6 +6550,39 @@ export class Client {
     const result = parseRoleBindingPage(response.body);
     if (result.value.roleBindings.some(({ metadata }) => metadata.tenantRef.id !== tenantId))
       error("PATH_BODY_AUTHORITY_MISMATCH", "/roleBindings");
+    return result;
+  }
+  async listAdminDeniedWriteEvents(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminDeniedWriteEventPage>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken) query.set("pageToken", pageToken);
+    const suffix = query.size ? `?${query}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/denied-write-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListDeniedWriteEvents", response);
+    const result = parseAdminDeniedWriteEventPage(response.body);
+    if (
+      result.value.events.some(
+        (event) => event.tenantId !== tenantId || event.projectId !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
     return result;
   }
   async getProjectContext(

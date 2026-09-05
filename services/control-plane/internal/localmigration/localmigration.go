@@ -220,6 +220,8 @@ func supportedManifestLength(schemaHead string) (int, bool) {
 		return 50, true
 	case "000051":
 		return 51, true
+	case "000052":
+		return 52, true
 	default:
 		return 0, false
 	}
@@ -422,7 +424,7 @@ func bindIndependentProductSelection(root string, config Config) (boundRunnerSel
 func selectGeneratedRunnerBinding(config Config) (generatedRunnerBindingSelector, error) {
 	if strings.HasPrefix(config.ManifestSelector, "product-") {
 		version := strings.TrimPrefix(config.ManifestSelector, "product-")
-		if version != "000015" && version != "000016" && version != "000017" && version != "000018" && version != "000019" && version != "000020" && version != "000021" && version != "000022" && version != "000023" && version != "000024" && version != "000025" && version != "000026" && version != "000027" && version != "000028" && version != "000029" && version != "000030" && version != "000031" && version != "000032" && version != "000033" && version != "000034" && version != "000035" && version != "000036" && version != "000037" && version != "000038" && version != "000039" && version != "000040" && version != "000041" && version != "000042" && version != "000043" && version != "000044" && version != "000045" && version != "000046" && version != "000047" && version != "000048" && version != "000049" && version != "000050" && version != "000051" {
+		if version != "000015" && version != "000016" && version != "000017" && version != "000018" && version != "000019" && version != "000020" && version != "000021" && version != "000022" && version != "000023" && version != "000024" && version != "000025" && version != "000026" && version != "000027" && version != "000028" && version != "000029" && version != "000030" && version != "000031" && version != "000032" && version != "000033" && version != "000034" && version != "000035" && version != "000036" && version != "000037" && version != "000038" && version != "000039" && version != "000040" && version != "000041" && version != "000042" && version != "000043" && version != "000044" && version != "000045" && version != "000046" && version != "000047" && version != "000048" && version != "000049" && version != "000050" && version != "000051" && version != "000052" {
 			return generatedRunnerBindingSelector{}, errors.New("unknown product selector")
 		}
 		selector := productRunnerBindingSelector(version)

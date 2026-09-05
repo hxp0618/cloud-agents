@@ -73,6 +73,7 @@ import {
   type WorkerStatusFilter,
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
+import { DeniedWritePanel } from "./DeniedWritePanel";
 import { TargetFilters } from "./TargetFilters";
 import { AdminSidebar } from "./AdminSidebar";
 import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } from "./navigation";
@@ -3044,6 +3045,11 @@ export function App() {
                   onSelect={selectMaintenanceOperation}
                 />
               </div>
+              <DeniedWritePanel
+                key={`${connection.tenantId}/${connection.projectId}`}
+                client={client}
+                connection={connection}
+              />
             </section>
           )}
         </main>

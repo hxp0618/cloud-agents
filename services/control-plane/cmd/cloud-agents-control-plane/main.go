@@ -484,7 +484,7 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("local published environment profile HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(verifierAdapter, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesNetworkPolicyPath(request.URL.Path) {
 			networkPolicyHTTPServer.ServeHTTP(writer, request)
 			return
@@ -510,7 +510,7 @@ func run(ctx context.Context, args []string) error {
 			return
 		}
 		adminDeploymentTargetHTTPServer.ServeHTTP(writer, request)
-	}))
+	})))
 	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
 	mux.Handle(server.RoleCollectionRoute, roleHTTPServer)

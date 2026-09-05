@@ -4,6 +4,19 @@ export const supportedLocales = ["zh-CN", "en-US"] as const;
 export type Locale = (typeof supportedLocales)[number];
 
 const enUS = {
+  "denied.title": "Denied writes",
+  "denied.description":
+    "Authenticated Admin requests rejected with 403. Metadata only; requested identifiers do not confirm resource existence. No request bodies or credentials are recorded.",
+  "denied.time": "Time / result",
+  "denied.action": "API operation / error",
+  "denied.resource": "Requested resource",
+  "denied.actor": "Verified actor digest",
+  "denied.status": "Denied",
+  "denied.empty": "No authenticated denied writes recorded in this project.",
+  "denied.timeout": "Reading audit events timed out. Refresh to try again.",
+  "denied.version": "Requested profile version {version}",
+  "denied.pagination": "Denied write pagination",
+  "denied.page": "Page {page}",
   "pagination.label": "Deployment target pagination",
   "pagination.size": "Targets per page",
   "pagination.perPage": "{count} per page",
@@ -629,6 +642,19 @@ const enUS = {
 export type MessageKey = keyof typeof enUS;
 
 const zhCN = {
+  "denied.title": "被拒绝的写请求",
+  "denied.description":
+    "已验证身份、返回 403 的 Admin 请求。仅记录元数据；请求中的标识不代表资源确实存在。不记录请求体或凭据。",
+  "denied.time": "时间 / 结果",
+  "denied.action": "API 操作 / 错误",
+  "denied.resource": "请求的资源",
+  "denied.actor": "已验证操作者摘要",
+  "denied.status": "已拒绝",
+  "denied.empty": "此项目尚无已验证身份的写请求拒绝记录。",
+  "denied.timeout": "读取审计记录超时，请刷新重试。",
+  "denied.version": "请求的 Profile 版本 {version}",
+  "denied.pagination": "写请求拒绝记录分页",
+  "denied.page": "第 {page} 页",
   "pagination.label": "部署目标分页",
   "pagination.size": "每页目标数量",
   "pagination.perPage": "每页 {count} 条",

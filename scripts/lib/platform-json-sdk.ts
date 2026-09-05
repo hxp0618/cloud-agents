@@ -58,6 +58,8 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+  "admin-denied-write-event.schema.json",
+  "admin-denied-write-event-page.schema.json",
   "admin-environment-lease-upgrade-request.schema.json",
   "admin-audit-event-page.schema.json",
   "admin-audit-event.schema.json",
@@ -259,6 +261,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminGetProjectLeaseQuota",
     "adminGetStoragePolicy",
     "adminGetWorkerHealth",
+    "adminListDeniedWriteEvents",
     "adminListDeploymentTargetAuditEvents",
     "adminListDeploymentTargetOperations",
     "adminListDeploymentTargets",

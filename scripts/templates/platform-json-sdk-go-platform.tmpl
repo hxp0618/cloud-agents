@@ -136,6 +136,38 @@ type MaintenanceOperation struct { APIVersion string `json:"apiVersion"`; Kind s
 type MaintenanceOperationPage struct { APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; Operations []MaintenanceOperation `json:"operations"`; NextPageToken string `json:"nextPageToken,omitempty"` }
 type AdminAuditEvent struct { APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; EventID string `json:"eventId"`; Actor string `json:"actor"`; Action string `json:"action"`; ResourceKind string `json:"resourceKind"`; ResourceID string `json:"resourceId"`; ResourceGeneration int64 `json:"resourceGeneration"`; Result string `json:"result"`; OccurredAt string `json:"occurredAt"`; RequestID string `json:"requestId"`; OperationID string `json:"operationId"`; StableErrorCode string `json:"stableErrorCode,omitempty"` }
 type AdminAuditEventPage struct { APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; Events []AdminAuditEvent `json:"events"`; NextPageToken string `json:"nextPageToken,omitempty"` }
+type AdminDeniedWriteEvent struct {
+  APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; EventID string `json:"eventId"`
+  TenantID string `json:"tenantId"`; ProjectID string `json:"projectId"`; Actor string `json:"actor"`; Action string `json:"action"`
+  ResourceID string `json:"resourceId,omitempty"`; ProfileVersion int64 `json:"profileVersion,omitempty"`
+  Result string `json:"result"`; StableErrorCode string `json:"stableErrorCode"`; RequestID string `json:"requestId"`; OccurredAt string `json:"occurredAt"`
+}
+type AdminDeniedWriteEventPage struct { APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; Events []AdminDeniedWriteEvent `json:"events"`; NextPageToken string `json:"nextPageToken,omitempty"` }
+var adminDeniedWriteEventResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "eventId": common.ScalarResponseShape(), "tenantId": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "actor": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "resourceId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "result": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape()})
+var adminDeniedWriteEventPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "events": common.ArrayResponseShape(adminDeniedWriteEventResponseShape), "nextPageToken": common.ScalarResponseShape()})
+func DecodeAdminDeniedWriteEventJSON(data []byte) (AdminDeniedWriteEvent, error) {
+  fields, err := common.DecodeStrictObject(data, []string{"apiVersion","kind","eventId","tenantId","projectId","actor","action","resourceId","profileVersion","result","stableErrorCode","requestId","occurredAt"}, []string{"apiVersion","kind","eventId","tenantId","projectId","actor","action","result","stableErrorCode","requestId","occurredAt"}); if err != nil { return AdminDeniedWriteEvent{}, err }
+  var value AdminDeniedWriteEvent
+  if json.Unmarshal(data, &value) != nil { return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "") }
+  if value.APIVersion != APIVersion || value.Kind != "AdminDeniedWriteEvent" || value.Result != "denied" || value.StableErrorCode != "AUTHORIZATION_DENIED" || !digestPattern.MatchString(value.Actor) { return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "") }
+  switch value.Action { case "adminUpgradeEnvironmentLease","adminRollbackEnvironmentLease","adminRegisterWorkerRelease","adminSetStoragePolicy","adminSetNetworkPolicy","adminSetProjectLeaseQuota","adminCreateEnvironmentProfile","adminPublishEnvironmentProfile","adminDisableEnvironmentProfile","adminRegisterDeploymentTarget","adminProbeDeploymentTarget","adminTransitionDeploymentTargetScheduling","adminCleanupDeploymentTarget": default: return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "/action") }
+  for _, id := range []string{value.EventID, value.TenantID, value.ProjectID, value.RequestID} { if common.ValidateIdentifier(id, "") != nil { return value, common.ContractError("INVALID_IDENTIFIER", "") } }
+  if _, ok := fields["resourceId"]; ok && common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil { return value, common.ContractError("INVALID_IDENTIFIER", "/resourceId") }
+  if _, ok := fields["profileVersion"]; ok && (value.ProfileVersion < 1 || value.ProfileVersion > 2147483647) { return value, common.ContractError("INVALID_VERSION", "/profileVersion") }
+  if err := common.ValidateDateTime(value.OccurredAt, "/occurredAt"); err != nil { return value, err }; return value, nil
+}
+func DecodeAdminDeniedWriteEventPageJSON(data []byte) (AdminDeniedWriteEventPage, error) {
+  fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "events", "nextPageToken"}, []string{"apiVersion", "kind", "events"}); if err != nil { return AdminDeniedWriteEventPage{}, err }
+  var page AdminDeniedWriteEventPage; if json.Unmarshal(data, &page) != nil || page.APIVersion != APIVersion || page.Kind != "AdminDeniedWriteEventPage" || page.Events == nil || len(page.Events) > 200 { return page, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT_PAGE", "") }
+  var items []json.RawMessage; if json.Unmarshal(fields["events"], &items) != nil { return page, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT_PAGE", "/events") }
+  for _, item := range items { if _, err := DecodeAdminDeniedWriteEventJSON(item); err != nil { return page, err } }
+  if _, ok := fields["nextPageToken"]; ok { if err := common.ValidatePageToken(page.NextPageToken, "/nextPageToken"); err != nil { return page, err } }; return page, nil
+}
+func DecodeAdminDeniedWriteEventPageResponseJSON(data []byte) (common.ResponseEnvelope[AdminDeniedWriteEventPage], error) {
+  raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, adminDeniedWriteEventPageResponseShape); if err != nil { return common.ResponseEnvelope[AdminDeniedWriteEventPage]{}, err }
+  value, err := DecodeAdminDeniedWriteEventPageJSON(raw); if err != nil { return common.ResponseEnvelope[AdminDeniedWriteEventPage]{}, err }; return common.ResponseEnvelope[AdminDeniedWriteEventPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeAdminDeniedWriteEventPageResponseJSON(value common.ResponseEnvelope[AdminDeniedWriteEventPage]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
 type DeploymentTargetCleanupResource struct { ResourceKind string `json:"resourceKind"`; ResourceName string `json:"resourceName"` }
 type DeploymentTargetCleanupWorker struct { WorkerName string `json:"workerName"`; LeaseID string `json:"leaseId"`; LeaseGeneration int64 `json:"leaseGeneration"`; Disposition string `json:"disposition"`; Resources []DeploymentTargetCleanupResource `json:"resources"` }
 type DeploymentTargetCleanupPreviewSpec struct { ProjectRef common.ProjectRef `json:"projectRef"`; TargetKind string `json:"targetKind"`; ExpectedGeneration int64 `json:"expectedGeneration"`; ExpectedResourceVersion string `json:"expectedResourceVersion"`; ImpactDigest string `json:"impactDigest"`; CanCleanup bool `json:"canCleanup"`; Workers []DeploymentTargetCleanupWorker `json:"workers"` }

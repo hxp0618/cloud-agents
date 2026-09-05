@@ -166,7 +166,9 @@ func TestProductionSurfaceAndDependencyClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(consumeCallers) != 1 || filepath.Clean(consumeCallers[0]) != filepath.Clean("../../internal/authz/rbac.go") {
+	// The second consumer can append authenticated rejection evidence only; it does not
+	// execute an RBAC resource mutation or manufacture an authorization snapshot.
+	if len(consumeCallers) != 2 || filepath.Clean(consumeCallers[0]) != filepath.Clean("../../internal/authz/rbac.go") || filepath.Clean(consumeCallers[1]) != filepath.Clean("../../internal/store/postgres/admin_denied_write.go") {
 		t.Fatalf("Slice C ConsumeVerifiedPrincipal closure changed: %v", consumeCallers)
 	}
 	if len(verifyCallers) != 0 {

@@ -28,6 +28,7 @@ export type AdminClient = Pick<
   | "listAdminDeploymentTargets"
   | "listAdminDeploymentTargetOperations"
   | "listAdminMaintenanceOperations"
+  | "listAdminDeniedWriteEvents"
   | "listAdminDeploymentTargetAuditEvents"
   | "registerAdminDeploymentTarget"
   | "getAdminDeploymentTarget"
