@@ -1437,6 +1437,15 @@ td > button small {
   grid-template-columns: 1fr;
 }
 
+.dialog > .resource-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog > .resource-form > * {
+  flex-shrink: 0;
+}
+
 .dialog-actions {
   position: sticky;
   bottom: -20px;

@@ -67,6 +67,7 @@ try {
   const consoleWarnings = [];
   const httpFailures = [];
   const layoutChecks = [];
+  const formChecks = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
@@ -165,6 +166,21 @@ try {
   const screenshot = async (filename) => {
     await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
     await delay(250);
+    const formCheck = await evaluate(`(() => {
+      const form = document.querySelector(".admin-sheet .resource-form");
+      const footer = form?.querySelector(".dialog-actions");
+      if (!footer) return null;
+      const rect = footer.getBoundingClientRect();
+      return { footerBottom: rect.bottom, footerTop: rect.top, viewportHeight: innerHeight, formScrollable: form.scrollHeight > form.clientHeight };
+    })()`);
+    if (formCheck !== null) {
+      assert.ok(
+        Math.abs(formCheck.footerBottom - formCheck.viewportHeight) <= 1,
+        "Sheet footer must reach viewport bottom",
+      );
+      assert.ok(formCheck.footerTop >= 0, "Sheet actions must remain visible");
+      formChecks.push({ filename, ...formCheck });
+    }
     layoutChecks.push(
       JSON.parse(
         await evaluate(
@@ -335,6 +351,26 @@ try {
   await pressKey("Escape");
   await waitFor("document.querySelector('.admin-sheet') === null", "Sheet Escape close");
 
+  await click(".sidebar nav button:nth-child(5)");
+  await click(".heading-actions .button.primary");
+  await waitFor(
+    "document.querySelector('#register-release-title') !== null",
+    "release create Sheet",
+  );
+  await screenshot("release-form-light-desktop.png");
+  await setViewport(390, 360);
+  await waitFor(
+    "document.querySelector('.admin-sheet').getBoundingClientRect().height === 360",
+    "short mobile Sheet resize",
+  );
+  await evaluate(
+    "document.querySelector('.admin-sheet .resource-form').scrollTop = document.querySelector('.admin-sheet .resource-form').scrollHeight",
+  );
+  await screenshot("release-form-light-short-mobile.png");
+  await closeSheet();
+  await setViewport(1440, 900);
+  await navigateTargets();
+
   await setTheme("dark");
   await screenshot("list-dark-desktop.png");
   await setViewport(390, 844);
@@ -461,6 +497,7 @@ try {
         messageKeyVisible: authority.messageKeyVisible,
       },
       layoutChecks,
+      formChecks,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {
         sidebarShortcut: true,
