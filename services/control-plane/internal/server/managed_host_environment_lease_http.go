@@ -118,6 +118,8 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		return
 	}
 	switch {
+	case action == "worker-health" && request.Method == http.MethodGet:
+		server.getWorkerHealth(writer, request, tenantID, projectID, leaseID, requestID, bearer)
 	case action == "worker-collection" && request.Method == http.MethodGet:
 		server.listWorkers(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "collection" && request.Method == http.MethodGet:
@@ -889,6 +891,9 @@ func managedHostEnvironmentLeasePath(path string) (tenantID, projectID, leaseID,
 func adminEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, action string, ok bool) {
 	if strings.HasPrefix(path, AdminEnvironmentLeaseRoutePrefix) {
 		parts := strings.Split(strings.TrimPrefix(path, AdminEnvironmentLeaseRoutePrefix), "/")
+		if len(parts) == 6 && parts[1] == "projects" && parts[3] == "workers" && parts[5] == "health" && parts[0] != "" && parts[2] != "" && parts[4] != "" {
+			return parts[0], parts[2], parts[4], "worker-health", true
+		}
 		if len(parts) == 4 && parts[1] == "projects" && parts[3] == "workers" && parts[0] != "" && parts[2] != "" {
 			return parts[0], parts[2], "", "worker-collection", true
 		}
@@ -984,7 +989,7 @@ func HandlesAdminEnvironmentLeasePath(path string) bool {
 
 func environmentLeasePermission(action, method string, admin bool) (string, bool) {
 	switch {
-	case admin && action == "worker-collection" && method == http.MethodGet:
+	case admin && (action == "worker-collection" || action == "worker-health") && method == http.MethodGet:
 		return "workers.list", true
 	case action == "collection" && method == http.MethodGet:
 		return "leases.list", true

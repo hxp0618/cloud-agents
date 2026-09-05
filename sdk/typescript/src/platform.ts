@@ -1504,6 +1504,56 @@ const roleNames = new Set<RoleName>([
   "project.developer",
   "project.viewer",
 ]);
+export type WorkerHealthObservation = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "WorkerHealthObservation";
+  tenantId: string;
+  projectId: string;
+  workerId: string;
+  generation: number;
+  resourceVersion: string;
+  state: "serving" | "unavailable";
+  checkedAt: string;
+}>;
+const workerHealthKeys = [
+  "apiVersion",
+  "kind",
+  "tenantId",
+  "projectId",
+  "workerId",
+  "generation",
+  "resourceVersion",
+  "state",
+  "checkedAt",
+];
+export function decodeWorkerHealthObservation(value: unknown): WorkerHealthObservation {
+  const source = strictRecord(value, workerHealthKeys, workerHealthKeys);
+  if (source.apiVersion !== platformApiVersion || source.kind !== "WorkerHealthObservation")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const resourceVersion = string(source.resourceVersion, "/resourceVersion");
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(resourceVersion) || resourceVersion.length > 20)
+    error("INVALID_RESOURCE_VERSION", "/resourceVersion");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "WorkerHealthObservation",
+    tenantId: identifier(source.tenantId, "/tenantId"),
+    projectId: identifier(source.projectId, "/projectId"),
+    workerId: identifier(source.workerId, "/workerId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    resourceVersion,
+    state: enumValue(source.state, ["serving", "unavailable"] as const, "/state"),
+    checkedAt: dateTime(source.checkedAt, "/checkedAt"),
+  });
+}
+export function parseWorkerHealthObservation(
+  text: string,
+): ResponseEnvelope<WorkerHealthObservation> {
+  return parseResponse(
+    text,
+    { fields: Object.fromEntries(workerHealthKeys.map((key) => [key, scalarResponseShape])) },
+    decodeWorkerHealthObservation,
+  );
+}
 const permissionPattern = /^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$/u;
 const identifierPattern = /^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$/u;
 
@@ -6533,6 +6583,36 @@ export class Client {
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentLeases");
+    return result;
+  }
+  async getAdminWorkerHealth(
+    tenantId: string,
+    projectId: string,
+    leaseId: string,
+    requestId: string,
+    expectedGeneration: number,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkerHealthObservation>> {
+    validateLeasePath(tenantId, projectId, leaseId, requestId);
+    integer(expectedGeneration, 1, Number.MAX_SAFE_INTEGER, "/expectedGeneration");
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workers/${leaseId}/health?expectedGeneration=${expectedGeneration}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetWorkerHealth", response);
+    const result = parseWorkerHealthObservation(response.body),
+      value = result.value;
+    if (
+      value.tenantId !== tenantId ||
+      value.projectId !== projectId ||
+      value.workerId !== leaseId ||
+      value.generation !== expectedGeneration
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/workerId");
     return result;
   }
   async listAdminWorkers(

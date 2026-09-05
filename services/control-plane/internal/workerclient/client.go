@@ -56,6 +56,7 @@ type Config struct {
 }
 
 type Supervisor struct {
+	httpClient     *http.Client
 	client         workerv1alpha1connect.WorkerExecutionServiceClient
 	runtimeClient  workerruntimev1alpha1connect.WorkerRuntimeServiceClient
 	workerIdentity *workerv1alpha1.WorkloadIdentity
@@ -407,7 +408,18 @@ func NewMTLS(config MTLSConfig) (*Supervisor, error) {
 		}},
 	}
 	httpClient := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidConfig }}
-	return New(Config{Client: workerv1alpha1connect.NewWorkerExecutionServiceClient(httpClient, endpoint), RuntimeClient: workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(httpClient, endpoint), ExpectedWorkerIdentity: config.ExpectedWorkerIdentity, Clock: config.Clock})
+	supervisor, err := New(Config{Client: workerv1alpha1connect.NewWorkerExecutionServiceClient(httpClient, endpoint), RuntimeClient: workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(httpClient, endpoint), ExpectedWorkerIdentity: config.ExpectedWorkerIdentity, Clock: config.Clock})
+	if err == nil {
+		supervisor.httpClient = httpClient
+	}
+	return supervisor, err
+}
+
+// CloseIdleConnections releases an on-demand mTLS client's pooled connections.
+func (supervisor *Supervisor) CloseIdleConnections() {
+	if supervisor != nil && supervisor.httpClient != nil {
+		supervisor.httpClient.CloseIdleConnections()
+	}
 }
 
 func validateNegotiation(response *connect.Response[workerv1alpha1.NegotiationResponse], expected *workerv1alpha1.WorkloadIdentity, now time.Time, required []workerv1alpha1.Capability) (*bindingState, error) {

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/worker-health-observation.schema.json",
+  "title": "WorkerHealthObservation",
+  "description": "Request-time Control Plane mTLS health observation of the persisted Worker route. Generation and resourceVersion identify the unchanged Lease snapshot, not a Worker fencing acknowledgement. Not a periodic heartbeat, readiness admission, or durable lastHealthAt update.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "tenantId", "projectId", "workerId", "generation", "resourceVersion", "state", "checkedAt"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "WorkerHealthObservation" },
+    "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "resourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "state": { "enum": ["serving", "unavailable"] },
+    "checkedAt": { "type": "string", "format": "date-time" }
+  }
+}

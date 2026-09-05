@@ -16,6 +16,53 @@ import (
 
 const APIVersion = "platform.cloud-agents.dev/v1alpha1"
 
+type WorkerHealthObservation struct {
+	APIVersion      string `json:"apiVersion"`
+	Kind            string `json:"kind"`
+	TenantID        string `json:"tenantId"`
+	ProjectID       string `json:"projectId"`
+	WorkerID        string `json:"workerId"`
+	Generation      int64  `json:"generation"`
+	ResourceVersion string `json:"resourceVersion"`
+	State           string `json:"state"`
+	CheckedAt       string `json:"checkedAt"`
+}
+
+var workerHealthKeys = []string{"apiVersion", "kind", "tenantId", "projectId", "workerId", "generation", "resourceVersion", "state", "checkedAt"}
+
+func DecodeWorkerHealthObservationJSON(data []byte) (WorkerHealthObservation, error) {
+	fields, err := common.DecodeStrictObject(data, workerHealthKeys, workerHealthKeys)
+	if err != nil {
+		return WorkerHealthObservation{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var value WorkerHealthObservation
+	if json.Unmarshal(raw, &value) != nil || value.APIVersion != APIVersion || value.Kind != "WorkerHealthObservation" || value.Generation < 1 || value.Generation > 9007199254740991 || value.State != "serving" && value.State != "unavailable" || common.ValidateResourceVersion(value.ResourceVersion, "/resourceVersion") != nil || common.ValidateDateTime(value.CheckedAt, "/checkedAt") != nil {
+		return WorkerHealthObservation{}, common.ContractError("INVALID_WORKER_HEALTH", "")
+	}
+	for _, id := range []string{value.TenantID, value.ProjectID, value.WorkerID} {
+		if common.ValidateIdentifier(id, "/workerId") != nil {
+			return WorkerHealthObservation{}, common.ContractError("INVALID_IDENTIFIER", "/workerId")
+		}
+	}
+	return value, nil
+}
+func DecodeWorkerHealthObservationResponseJSON(data []byte) (common.ResponseEnvelope[WorkerHealthObservation], error) {
+	fields := map[string]common.ResponseShape{}
+	for _, key := range workerHealthKeys {
+		fields[key] = common.ScalarResponseShape()
+	}
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, common.ObjectResponseShape(fields))
+	if err != nil {
+		return common.ResponseEnvelope[WorkerHealthObservation]{}, err
+	}
+	value, err := DecodeWorkerHealthObservationJSON(raw)
+	return common.ResponseEnvelope[WorkerHealthObservation]{Value: value, Unknown: sidecar}, err
+}
+func EncodeWorkerHealthObservationResponseJSON(value common.ResponseEnvelope[WorkerHealthObservation]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
 var (
 	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
 	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)

@@ -475,6 +475,13 @@ const enUS = {
   "lease.releaseBoundary":
     "The browser sends only the previewed release digest and fences to Admin API; it never connects to the target.",
   "worker.eyebrow": "Lease-backed Worker",
+  "worker.liveHealth": "Live health check",
+  "worker.checkHealth": "Check health now",
+  "worker.checkingHealth": "Checking health…",
+  "worker.healthServing": "Serving at check time",
+  "worker.healthUnavailable": "Unavailable at check time",
+  "worker.liveHealthBoundary":
+    "Control Plane checks the registered Worker over mTLS. This is a one-time observation, not a heartbeat or session admission check. Only ready Workers can be checked.",
   "worker.id": "Worker ID",
   "worker.lease": "Lease",
   "worker.target": "Target / kind / bound generation",
@@ -1037,6 +1044,13 @@ const zhCN = {
   "lease.releaseConfirm": "确认{action}",
   "lease.releaseBoundary": "浏览器仅向管理员 API 提交预览中的发布摘要和栅栏，绝不直接连接目标。",
   "worker.eyebrow": "租约关联工作节点",
+  "worker.liveHealth": "即时健康检查",
+  "worker.checkHealth": "立即检查健康状态",
+  "worker.checkingHealth": "正在检查健康状态…",
+  "worker.healthServing": "检查时可服务",
+  "worker.healthUnavailable": "检查时不可用",
+  "worker.liveHealthBoundary":
+    "由 Control Plane 通过 mTLS 检查已登记的 Worker。这是单次观测，不是持续心跳或会话准入检查；仅就绪节点可检查。",
   "worker.id": "工作节点 ID",
   "worker.lease": "租约",
   "worker.target": "部署目标 / 类型 / 绑定代次",

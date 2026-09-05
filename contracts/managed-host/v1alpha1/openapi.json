@@ -446,6 +446,29 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/workers/{leaseId}/health": {
+      "get": {
+        "operationId": "adminGetWorkerHealth",
+        "x-cloud-agents-required-scope": "workers.list",
+        "description": "Read-only, uncached mTLS health check of the persisted ready Worker route, bounded to five seconds. No browser-supplied endpoint or credential. Lease generation/resource version and route must remain unchanged throughout. No lifecycle mutation or periodic heartbeat is implied.",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "name": "expectedGeneration", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } }
+        ],
+        "responses": {
+          "200": { "description": "Request-time observation without secrets or user content", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-health-observation.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/worker-releases": {
       "get": {
         "operationId": "adminListWorkerReleases",

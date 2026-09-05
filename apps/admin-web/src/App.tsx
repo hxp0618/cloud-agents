@@ -24,6 +24,7 @@ import {
   type StoragePolicy,
   type StoragePolicySetRequest,
   type Worker,
+  type WorkerHealthObservation,
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -3054,6 +3055,14 @@ export function App() {
               ×
             </button>
             <WorkerDetail worker={selectedWorker} />
+            {client !== null ? (
+              <WorkerHealthCheck
+                key={`${connection.tenantId}:${connection.projectId}:${selectedWorker.metadata.uid}:${selectedWorker.spec.generation}:${selectedWorker.metadata.resourceVersion}`}
+                worker={selectedWorker}
+                client={client}
+                connection={connection}
+              />
+            ) : null}
           </aside>
         </AdminSheet>
       ) : null}
@@ -4881,6 +4890,80 @@ function CleanupConfirmation({
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+function WorkerHealthCheck({
+  worker,
+  client,
+  connection,
+}: Readonly<{ worker: Worker; client: AdminClient; connection: SavedAdminConnection }>) {
+  const { t, dateTime } = useI18n();
+  const [observation, setObservation] = useState<WorkerHealthObservation | null>(null);
+  const [failure, setFailure] = useState<ReturnType<typeof adminFailure> | null>(null);
+  const [pending, setPending] = useState(false);
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => () => active.current?.abort(), [client, connection]);
+  async function check() {
+    active.current?.abort();
+    const controller = new AbortController();
+    active.current = controller;
+    setPending(true);
+    setObservation(null);
+    setFailure(null);
+    try {
+      const result = await client.getAdminWorkerHealth(
+        connection.tenantId,
+        connection.projectId,
+        worker.spec.leaseId,
+        crypto.randomUUID(),
+        worker.spec.generation,
+        controller.signal,
+      );
+      if (!controller.signal.aborted) setObservation(result.value);
+    } catch (cause) {
+      if (!controller.signal.aborted) setFailure(adminFailure(cause));
+    } finally {
+      if (!controller.signal.aborted) setPending(false);
+    }
+  }
+  return (
+    <section
+      className="action-block worker-health-check"
+      aria-label={t("worker.liveHealth")}
+      aria-busy={pending}
+    >
+      <button
+        type="button"
+        className="button outline"
+        disabled={pending || worker.spec.state !== "ready"}
+        onClick={() => void check()}
+      >
+        {t(pending ? "worker.checkingHealth" : "worker.checkHealth")}
+      </button>
+      <p className="boundary-note">{t("worker.liveHealthBoundary")}</p>
+      <div role="status" aria-live="polite">
+        {observation !== null ? (
+          <p>
+            {t(
+              observation.state === "serving" ? "worker.healthServing" : "worker.healthUnavailable",
+            )}{" "}
+            · {dateTime(observation.checkedAt)}
+          </p>
+        ) : null}
+      </div>
+      {failure !== null ? (
+        <p className="danger-text" role="alert">
+          {t(failure.key)}
+          {failure.code !== null ? (
+            <>
+              {" "}
+              · <code>{failure.code}</code>
+            </>
+          ) : null}
+        </p>
+      ) : null}
     </section>
   );
 }

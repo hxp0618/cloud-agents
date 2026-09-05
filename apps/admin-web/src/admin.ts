@@ -38,6 +38,7 @@ export type AdminClient = Pick<
   | "transitionAdminDeploymentTargetScheduling"
   | "listAdminEnvironmentLeases"
   | "listAdminWorkers"
+  | "getAdminWorkerHealth"
   | "listAdminWorkerReleases"
   | "registerAdminWorkerRelease"
   | "getAdminEnvironmentLease"

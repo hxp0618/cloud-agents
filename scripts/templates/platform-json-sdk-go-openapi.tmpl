@@ -50,6 +50,19 @@ type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type EnvironmentLeasePageResult = common.ResponseEnvelope[platform.EnvironmentLeasePage]
 type WorkerPageResult = common.ResponseEnvelope[platform.WorkerPage]
+type WorkerHealthObservationResult = common.ResponseEnvelope[platform.WorkerHealthObservation]
+func ValidateGetAdminWorkerHealthServerRequest(tenantID, projectID, leaseID, requestID string, expectedGeneration int64) error {
+  if err := validateLeasePath(tenantID, projectID, leaseID, requestID); err != nil { return err }
+  if err := common.ValidateIdentifier(leaseID, "/leaseId"); err != nil { return err }
+  if expectedGeneration < 1 || expectedGeneration > 9007199254740991 { return common.ContractError("INVALID_GENERATION", "/expectedGeneration") }; return nil
+}
+func (client *Client) GetAdminWorkerHealth(ctx context.Context, tenantID, projectID, leaseID, requestID string, expectedGeneration int64) (WorkerHealthObservationResult, error) {
+  if err := ValidateGetAdminWorkerHealthServerRequest(tenantID, projectID, leaseID, requestID, expectedGeneration); err != nil { return WorkerHealthObservationResult{}, err }
+  path := "/v1/admin/tenants/"+tenantID+"/projects/"+projectID+"/workers/"+leaseID+"/health?expectedGeneration="+strconv.FormatInt(expectedGeneration, 10)
+  response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}}); if err != nil { return WorkerHealthObservationResult{}, err }; if response.Status != 200 { return WorkerHealthObservationResult{}, client.problemError("adminGetWorkerHealth", response) }
+  result, err := platform.DecodeWorkerHealthObservationResponseJSON(response.Body); if err != nil { return WorkerHealthObservationResult{}, &ClientError{Operation: "adminGetWorkerHealth", Status: response.Status, Cause: err} }
+  value := result.Value; if value.TenantID != tenantID || value.ProjectID != projectID || value.WorkerID != leaseID || value.Generation != expectedGeneration { return WorkerHealthObservationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/workerId") }; return result, nil
+}
 type WorkerReleaseResult = common.ResponseEnvelope[platform.WorkerRelease]
 type WorkerReleasePageResult = common.ResponseEnvelope[platform.WorkerReleasePage]
 type ProjectLeaseQuotaResult = common.ResponseEnvelope[platform.ProjectLeaseQuota]
