@@ -100,6 +100,7 @@ func EncodeWorkerHealthObservationResponseJSON(value common.ResponseEnvelope[Wor
 var (
 	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
 	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
 	roleNames                    = map[string]struct{}{
 		"platform.admin": {}, "tenant.admin": {}, "organization.admin": {}, "project.admin": {},
@@ -575,6 +576,84 @@ type UserEnvironment struct {
 	StableErrorCode string            `json:"stableErrorCode,omitempty"`
 	ExpiresAt       string            `json:"expiresAt"`
 }
+type RuntimeProfileCreateRequest struct {
+	ProfileID     string `json:"profileId"`
+	ProfileName   string `json:"profileName"`
+	Version       int64  `json:"version"`
+	Description   string `json:"description"`
+	TargetID      string `json:"targetId"`
+	ImageURI      string `json:"imageUri"`
+	ReleaseDigest string `json:"releaseDigest"`
+	CPUMillis     int64  `json:"cpuMillis"`
+	MemoryBytes   int64  `json:"memoryBytes"`
+}
+type RuntimeProfileTransitionRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+}
+type RuntimeProfileSpec struct {
+	ProjectRef    common.ProjectRef `json:"projectRef"`
+	ProfileID     string            `json:"profileId"`
+	Version       int64             `json:"version"`
+	Description   string            `json:"description"`
+	Status        string            `json:"status"`
+	TargetID      string            `json:"targetId"`
+	ImageURI      string            `json:"imageUri"`
+	ReleaseDigest string            `json:"releaseDigest"`
+	CPUMillis     int64             `json:"cpuMillis"`
+	MemoryBytes   int64             `json:"memoryBytes"`
+	PublishedAt   string            `json:"publishedAt,omitempty"`
+	DisabledAt    string            `json:"disabledAt,omitempty"`
+}
+type RuntimeProfile struct {
+	ResourceBase
+	Spec RuntimeProfileSpec `json:"spec"`
+}
+type RuntimeProfilePage struct {
+	APIVersion      string           `json:"apiVersion"`
+	Kind            string           `json:"kind"`
+	RuntimeProfiles []RuntimeProfile `json:"runtimeProfiles"`
+	NextPageToken   string           `json:"nextPageToken,omitempty"`
+}
+type RuntimeProfileSummary struct {
+	APIVersion         string            `json:"apiVersion"`
+	Kind               string            `json:"kind"`
+	ProjectRef         common.ProjectRef `json:"projectRef"`
+	ProfileID          string            `json:"profileId"`
+	Name               string            `json:"name"`
+	Version            int64             `json:"version"`
+	Description        string            `json:"description"`
+	Status             string            `json:"status"`
+	Availability       string            `json:"availability"`
+	CPUMillis          int64             `json:"cpuMillis"`
+	MemoryBytes        int64             `json:"memoryBytes"`
+	WorkspaceRetention string            `json:"workspaceRetention"`
+}
+type RuntimeProfileSummaryPage struct {
+	APIVersion      string                  `json:"apiVersion"`
+	Kind            string                  `json:"kind"`
+	RuntimeProfiles []RuntimeProfileSummary `json:"runtimeProfiles"`
+	NextPageToken   string                  `json:"nextPageToken,omitempty"`
+}
+type SandboxSessionCreateRequest struct {
+	WorkspaceID           string `json:"workspaceId"`
+	WorkspaceName         string `json:"workspaceName"`
+	SandboxID             string `json:"sandboxId"`
+	RuntimeProfileID      string `json:"runtimeProfileId"`
+	RuntimeProfileVersion int64  `json:"runtimeProfileVersion"`
+}
+type SandboxSession struct {
+	APIVersion            string            `json:"apiVersion"`
+	Kind                  string            `json:"kind"`
+	ProjectRef            common.ProjectRef `json:"projectRef"`
+	OperationID           string            `json:"operationId"`
+	WorkspaceID           string            `json:"workspaceId"`
+	SandboxID             string            `json:"sandboxId"`
+	RuntimeProfileID      string            `json:"runtimeProfileId"`
+	RuntimeProfileVersion int64             `json:"runtimeProfileVersion"`
+	Generation            int64             `json:"generation"`
+	DesiredState          string            `json:"desiredState"`
+	ObservedState         string            `json:"observedState"`
+}
 type DeploymentTargetRegisterRequest struct {
 	TargetID      string `json:"targetId"`
 	TargetName    string `json:"targetName"`
@@ -920,6 +999,10 @@ var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]
 var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storageSummary": common.ScalarResponseShape(), "networkSummary": common.ScalarResponseShape()})
 var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "environmentProfiles": common.ArrayResponseShape(environmentProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var userEnvironmentResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "environmentId": common.ScalarResponseShape(), "profileId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
+var runtimeProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(resourceResponseShape("RuntimeProfile")), "nextPageToken": common.ScalarResponseShape()})
+var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape()})
+var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
+var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"deploymentTargets": common.ArrayResponseShape(resourceResponseShape("DeploymentTarget")), "nextPageToken": common.ScalarResponseShape(),
@@ -3064,6 +3147,351 @@ func EncodeUserEnvironmentResponseJSON(value common.ResponseEnvelope[UserEnviron
 		return nil, err
 	}
 	if _, err := DecodeUserEnvironmentJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
+func validateRuntimeProfileSummaryValues(profileID string, version int64, description string, cpuMillis, memoryBytes int64, path string) error {
+	if common.ValidateIdentifier(profileID, path+"/profileId") != nil {
+		return common.ContractError("INVALID_IDENTIFIER", path+"/profileId")
+	}
+	if version < 1 || version > 2147483647 {
+		return common.ContractError("INVALID_PROFILE_VERSION", path+"/version")
+	}
+	if common.ValidateString(description, 1, 1024, path+"/description") != nil || strings.IndexFunc(description, func(value rune) bool { return value < 32 || value == 127 }) >= 0 {
+		return common.ContractError("INVALID_DESCRIPTION", path+"/description")
+	}
+	if cpuMillis < 100 || cpuMillis > 64000 || memoryBytes < 134217728 || memoryBytes > 1099511627776 {
+		return common.ContractError("INVALID_RESOURCE_LIMIT", path)
+	}
+	return nil
+}
+func validateRuntimeProfileValues(profileID string, version int64, description, targetID, imageURI, releaseDigest string, cpuMillis, memoryBytes int64, path string) error {
+	if err := validateRuntimeProfileSummaryValues(profileID, version, description, cpuMillis, memoryBytes, path); err != nil {
+		return err
+	}
+	if common.ValidateIdentifier(targetID, path+"/targetId") != nil {
+		return common.ContractError("INVALID_IDENTIFIER", path+"/targetId")
+	}
+	if len(imageURI) > 1024 || !runtimeImagePattern.MatchString(imageURI) {
+		return common.ContractError("INVALID_RUNTIME_IMAGE", path+"/imageUri")
+	}
+	if !digestPattern.MatchString(releaseDigest) || !strings.HasSuffix(imageURI, "@"+releaseDigest) {
+		return common.ContractError("RUNTIME_IMAGE_DIGEST_MISMATCH", path+"/imageUri")
+	}
+	return nil
+}
+func DecodeRuntimeProfileCreateRequestJSON(data []byte) (RuntimeProfileCreateRequest, error) {
+	allowed := []string{"profileId", "profileName", "version", "description", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return RuntimeProfileCreateRequest{}, err
+	}
+	var value RuntimeProfileCreateRequest
+	if json.Unmarshal(data, &value) != nil {
+		return RuntimeProfileCreateRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if common.ValidateIdentifier(value.ProfileName, "/profileName") != nil {
+		return RuntimeProfileCreateRequest{}, common.ContractError("INVALID_IDENTIFIER", "/profileName")
+	}
+	if err := validateRuntimeProfileValues(value.ProfileID, value.Version, value.Description, value.TargetID, value.ImageURI, value.ReleaseDigest, value.CPUMillis, value.MemoryBytes, ""); err != nil {
+		return RuntimeProfileCreateRequest{}, err
+	}
+	return value, nil
+}
+func EncodeRuntimeProfileCreateRequestJSON(value RuntimeProfileCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeRuntimeProfileCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeRuntimeProfileTransitionRequestJSON(data []byte) (RuntimeProfileTransitionRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedResourceVersion"}, []string{"expectedResourceVersion"})
+	if err != nil {
+		return RuntimeProfileTransitionRequest{}, err
+	}
+	value, err := fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(value, "/expectedResourceVersion") != nil {
+		return RuntimeProfileTransitionRequest{}, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	return RuntimeProfileTransitionRequest{ExpectedResourceVersion: value}, nil
+}
+func EncodeRuntimeProfileTransitionRequestJSON(value RuntimeProfileTransitionRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeRuntimeProfileTransitionRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeRuntimeProfileJSON(data []byte) (RuntimeProfile, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return RuntimeProfile{}, err
+	}
+	base, err := checkResourceBase(fields, "RuntimeProfile")
+	if err != nil {
+		return RuntimeProfile{}, err
+	}
+	allowed := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes", "publishedAt", "disabledAt"}
+	specFields, err := strictSpec(fields["spec"], allowed, allowed[:10])
+	if err != nil {
+		return RuntimeProfile{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return RuntimeProfile{}, err
+	}
+	var spec RuntimeProfileSpec
+	if json.Unmarshal(fields["spec"], &spec) != nil {
+		return RuntimeProfile{}, common.ContractError("INVALID_FIELD_TYPE", "/spec")
+	}
+	spec.ProjectRef = project
+	if err := validateRuntimeProfileValues(spec.ProfileID, spec.Version, spec.Description, spec.TargetID, spec.ImageURI, spec.ReleaseDigest, spec.CPUMillis, spec.MemoryBytes, "/spec"); err != nil {
+		return RuntimeProfile{}, err
+	}
+	if spec.Status != "draft" && spec.Status != "published" && spec.Status != "disabled" {
+		return RuntimeProfile{}, common.ContractError("INVALID_STATE", "/spec/status")
+	}
+	if spec.PublishedAt != "" && common.ValidateDateTime(spec.PublishedAt, "/spec/publishedAt") != nil || spec.DisabledAt != "" && common.ValidateDateTime(spec.DisabledAt, "/spec/disabledAt") != nil {
+		return RuntimeProfile{}, common.ContractError("INVALID_DATE_TIME", "/spec")
+	}
+	if spec.Status == "draft" && (spec.PublishedAt != "" || spec.DisabledAt != "") || spec.Status == "published" && (spec.PublishedAt == "" || spec.DisabledAt != "") || spec.Status == "disabled" && (spec.PublishedAt == "" || spec.DisabledAt == "") {
+		return RuntimeProfile{}, common.ContractError("INVALID_PROFILE_LIFECYCLE", "/spec/status")
+	}
+	if spec.DisabledAt != "" {
+		publishedAt, _ := time.Parse(time.RFC3339Nano, spec.PublishedAt)
+		disabledAt, _ := time.Parse(time.RFC3339Nano, spec.DisabledAt)
+		if disabledAt.Before(publishedAt) {
+			return RuntimeProfile{}, common.ContractError("INVALID_PROFILE_LIFECYCLE", "/spec/disabledAt")
+		}
+	}
+	return RuntimeProfile{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeRuntimeProfileResponseJSON(data []byte) (common.ResponseEnvelope[RuntimeProfile], error) {
+	fields, sidecar, err := strictResource(data, "RuntimeProfile")
+	if err != nil {
+		return common.ResponseEnvelope[RuntimeProfile]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeRuntimeProfileJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[RuntimeProfile]{}, err
+	}
+	return common.ResponseEnvelope[RuntimeProfile]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeRuntimeProfileResponseJSON(value common.ResponseEnvelope[RuntimeProfile]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeRuntimeProfileJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeRuntimeProfilePageJSON(data []byte) (RuntimeProfilePage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "runtimeProfiles", "nextPageToken"}, []string{"apiVersion", "kind", "runtimeProfiles"})
+	if err != nil {
+		return RuntimeProfilePage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return RuntimeProfilePage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "RuntimeProfilePage" {
+		return RuntimeProfilePage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var raw []json.RawMessage
+	if json.Unmarshal(fields["runtimeProfiles"], &raw) != nil || raw == nil || len(raw) > 200 {
+		return RuntimeProfilePage{}, common.ContractError("INVALID_RUNTIME_PROFILE_PAGE", "/runtimeProfiles")
+	}
+	values := make([]RuntimeProfile, 0, len(raw))
+	for index, item := range raw {
+		value, err := DecodeRuntimeProfileJSON(item)
+		if err != nil {
+			return RuntimeProfilePage{}, common.ContractError("INVALID_RUNTIME_PROFILE", "/runtimeProfiles/"+itoa(index))
+		}
+		values = append(values, value)
+	}
+	page := RuntimeProfilePage{APIVersion: apiVersion, Kind: kind, RuntimeProfiles: values}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return RuntimeProfilePage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeRuntimeProfilePageResponseJSON(data []byte) (common.ResponseEnvelope[RuntimeProfilePage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, runtimeProfilePageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[RuntimeProfilePage]{}, err
+	}
+	value, err := DecodeRuntimeProfilePageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[RuntimeProfilePage]{}, err
+	}
+	return common.ResponseEnvelope[RuntimeProfilePage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeRuntimeProfilePageResponseJSON(value common.ResponseEnvelope[RuntimeProfilePage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeRuntimeProfileSummaryJSON(data []byte) (RuntimeProfileSummary, error) {
+	allowed := []string{"apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "cpuMillis", "memoryBytes", "workspaceRetention"}
+	fields, err := common.DecodeStrictObject(data, allowed, allowed)
+	if err != nil {
+		return RuntimeProfileSummary{}, err
+	}
+	var value RuntimeProfileSummary
+	if json.Unmarshal(data, &value) != nil {
+		return RuntimeProfileSummary{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "RuntimeProfileSummary" || value.Status != "published" || value.Availability != "available" || value.WorkspaceRetention != "retained" {
+		return RuntimeProfileSummary{}, common.ContractError("INVALID_RUNTIME_PROFILE_AVAILABILITY", "/status")
+	}
+	project, err := common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return RuntimeProfileSummary{}, err
+	}
+	value.ProjectRef = project
+	if common.ValidateIdentifier(value.Name, "/name") != nil {
+		return RuntimeProfileSummary{}, common.ContractError("INVALID_IDENTIFIER", "/name")
+	}
+	if err := validateRuntimeProfileSummaryValues(value.ProfileID, value.Version, value.Description, value.CPUMillis, value.MemoryBytes, ""); err != nil {
+		return RuntimeProfileSummary{}, err
+	}
+	return value, nil
+}
+func DecodeRuntimeProfileSummaryPageJSON(data []byte) (RuntimeProfileSummaryPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "runtimeProfiles", "nextPageToken"}, []string{"apiVersion", "kind", "runtimeProfiles"})
+	if err != nil {
+		return RuntimeProfileSummaryPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return RuntimeProfileSummaryPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "RuntimeProfileSummaryPage" {
+		return RuntimeProfileSummaryPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var raw []json.RawMessage
+	if json.Unmarshal(fields["runtimeProfiles"], &raw) != nil || raw == nil || len(raw) > 200 {
+		return RuntimeProfileSummaryPage{}, common.ContractError("INVALID_RUNTIME_PROFILE_SUMMARY_PAGE", "/runtimeProfiles")
+	}
+	values := make([]RuntimeProfileSummary, 0, len(raw))
+	for index, item := range raw {
+		value, err := DecodeRuntimeProfileSummaryJSON(item)
+		if err != nil {
+			return RuntimeProfileSummaryPage{}, common.ContractError("INVALID_RUNTIME_PROFILE_SUMMARY", "/runtimeProfiles/"+itoa(index))
+		}
+		values = append(values, value)
+	}
+	page := RuntimeProfileSummaryPage{APIVersion: apiVersion, Kind: kind, RuntimeProfiles: values}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return RuntimeProfileSummaryPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeRuntimeProfileSummaryPageResponseJSON(data []byte) (common.ResponseEnvelope[RuntimeProfileSummaryPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, runtimeProfileSummaryPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[RuntimeProfileSummaryPage]{}, err
+	}
+	value, err := DecodeRuntimeProfileSummaryPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[RuntimeProfileSummaryPage]{}, err
+	}
+	return common.ResponseEnvelope[RuntimeProfileSummaryPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeRuntimeProfileSummaryPageResponseJSON(value common.ResponseEnvelope[RuntimeProfileSummaryPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxSessionCreateRequestJSON(data []byte) (SandboxSessionCreateRequest, error) {
+	allowed := []string{"workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return SandboxSessionCreateRequest{}, err
+	}
+	var value SandboxSessionCreateRequest
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxSessionCreateRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	for path, id := range map[string]string{"/workspaceId": value.WorkspaceID, "/workspaceName": value.WorkspaceName, "/sandboxId": value.SandboxID, "/runtimeProfileId": value.RuntimeProfileID} {
+		if common.ValidateIdentifier(id, path) != nil {
+			return SandboxSessionCreateRequest{}, common.ContractError("INVALID_IDENTIFIER", path)
+		}
+	}
+	if value.RuntimeProfileVersion < 1 || value.RuntimeProfileVersion > 2147483647 {
+		return SandboxSessionCreateRequest{}, common.ContractError("INVALID_PROFILE_VERSION", "/runtimeProfileVersion")
+	}
+	return value, nil
+}
+func EncodeSandboxSessionCreateRequestJSON(value SandboxSessionCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxSessionCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeSandboxSessionJSON(data []byte) (SandboxSession, error) {
+	allowed := []string{"apiVersion", "kind", "projectRef", "operationId", "workspaceId", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "generation", "desiredState", "observedState"}
+	fields, err := common.DecodeStrictObject(data, allowed, allowed)
+	if err != nil {
+		return SandboxSession{}, err
+	}
+	var value SandboxSession
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxSession{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "SandboxSession" || value.DesiredState != "running" || value.ObservedState != "pending" {
+		return SandboxSession{}, common.ContractError("INVALID_SANDBOX_SESSION", "/observedState")
+	}
+	project, err := common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxSession{}, err
+	}
+	value.ProjectRef = project
+	for path, id := range map[string]string{"/operationId": value.OperationID, "/workspaceId": value.WorkspaceID, "/sandboxId": value.SandboxID, "/runtimeProfileId": value.RuntimeProfileID} {
+		if common.ValidateIdentifier(id, path) != nil {
+			return SandboxSession{}, common.ContractError("INVALID_IDENTIFIER", path)
+		}
+	}
+	if value.RuntimeProfileVersion < 1 || value.RuntimeProfileVersion > 2147483647 || value.Generation < 1 {
+		return SandboxSession{}, common.ContractError("INVALID_SANDBOX_SESSION", "/generation")
+	}
+	return value, nil
+}
+func DecodeSandboxSessionResponseJSON(data []byte) (common.ResponseEnvelope[SandboxSession], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxSessionResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxSession]{}, err
+	}
+	value, err := DecodeSandboxSessionJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxSession]{}, err
+	}
+	return common.ResponseEnvelope[SandboxSession]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeSandboxSessionResponseJSON(value common.ResponseEnvelope[SandboxSession]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxSessionJSON(raw); err != nil {
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

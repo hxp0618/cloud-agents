@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runtime-profile-summary-page.schema.json",
+  "title": "RuntimeProfileSummaryPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "runtimeProfiles"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "RuntimeProfileSummaryPage" },
+    "runtimeProfiles": { "type": "array", "maxItems": 200, "items": { "$ref": "runtime-profile-summary.schema.json" } },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

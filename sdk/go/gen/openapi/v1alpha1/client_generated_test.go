@@ -434,6 +434,53 @@ func TestGeneratedOpenAPIClientCreatesAndGetsUserEnvironment(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientFoundationRuntimeProfileAndSandbox(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","targetId":"docker-primary","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)
+	adminPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfilePage","runtimeProfiles":[` + string(profile) + `]}`)
+	publicPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummaryPage","runtimeProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","name":"foundation","version":1,"description":"Retained no-agent workspace","status":"published","availability":"available","cpuMillis":500,"memoryBytes":536870912,"workspaceRetention":"retained"}]}`)
+	sandbox := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"SandboxSession","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"operationId":"operation-sandbox","workspaceId":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1,"generation":1,"desiredState":"running","observedState":"pending"}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		switch {
+		case request.Method == "POST" && strings.Contains(request.Path, "/admin/"):
+			return Response{Status: 201, Headers: map[string]string{HeaderResourceVersion: "1"}, Body: profile}, nil
+		case request.Method == "GET" && strings.Contains(request.Path, "/admin/"):
+			return Response{Status: 200, Body: adminPage}, nil
+		case request.Method == "GET":
+			return Response{Status: 200, Body: publicPage}, nil
+		default:
+			return Response{Status: 202, Body: sandbox}, nil
+		}
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := platform.RuntimeProfileCreateRequest{
+		ProfileID: "foundation", ProfileName: "foundation", Version: 1,
+		Description: "Retained no-agent workspace", TargetID: "docker-primary",
+		ImageURI: "registry.example.test/runtime@" + digest, ReleaseDigest: digest,
+		CPUMillis: 500, MemoryBytes: 536870912,
+	}
+	if _, err := client.CreateAdminRuntimeProfile(context.Background(), "tenant-alpha", "project-alpha", "request-runtime-create", "runtime-create-key", body); err != nil {
+		t.Fatal(err)
+	}
+	if page, err := client.ListAdminRuntimeProfiles(context.Background(), "tenant-alpha", "project-alpha", "request-runtime-admin-list", 0, ""); err != nil || len(page.Value.RuntimeProfiles) != 1 {
+		t.Fatalf("Admin RuntimeProfiles=%#v error=%v", page.Value, err)
+	}
+	if page, err := client.ListRuntimeProfiles(context.Background(), "tenant-alpha", "project-alpha", "request-runtime-public-list", 0, ""); err != nil || len(page.Value.RuntimeProfiles) != 1 || page.Value.RuntimeProfiles[0].WorkspaceRetention != "retained" {
+		t.Fatalf("public RuntimeProfiles=%#v error=%v", page.Value, err)
+	}
+	request := platform.SandboxSessionCreateRequest{WorkspaceID: "workspace", WorkspaceName: "workspace", SandboxID: "sandbox", RuntimeProfileID: "foundation", RuntimeProfileVersion: 1}
+	if result, err := client.CreateSandbox(context.Background(), "tenant-alpha", "project-alpha", "request-sandbox-create", "sandbox-create-key", request); err != nil || result.Value.OperationID != "operation-sandbox" {
+		t.Fatalf("Sandbox=%#v error=%v", result.Value, err)
+	}
+	if len(seen) != 4 || seen[0].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles" || seen[1].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles?pageSize=50" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/runtime-profiles?pageSize=50" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-sessions" {
+		t.Fatalf("foundation requests=%#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
 	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}],"nextPageToken":"session-page-token-1"}`)

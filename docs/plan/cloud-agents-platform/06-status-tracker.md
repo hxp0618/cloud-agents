@@ -12,8 +12,9 @@
 - Go 运行时回执接缝已新增：`internal/opensandbox` 按完整归属/generation/摘要发现已有物理对象，重复或冲突回执 fail closed，清理前复核回执；标准 HTTP 限制重定向、响应大小和错误内容。固定 Docker 实测 14 项含 Go 发现、重复拒绝、旧 generation 拒绝及清理重放，卷/Files 摘要保留；见 [Go 接缝证据](evidence/base-m0-go-receipts-20260905.md)。该包目前由真实 PoC 驱动，未接公共 API/Controller，不能证明 CP 自动恢复或 Admin 生命周期已交付。
 - 接入前修复公共 ID 兼容缺口：128 字符/含 `~` 的合法 Identifier 采用 v2 双半 SHA-256 标签，发现与清理仍核验完整归属，不缩短公共契约。真实候选 14 项通过，见 [ID 回执兼容证据](evidence/base-m0-public-id-receipts-20260905.md)。未接通产品持久化链；新编码不承担旧 PoC 对象迁移。
 - 首条持久化内核已落地：新 foundation profile 生成 Go/SQL 身份，000053 用独立 Workspace/Volume/Sandbox 表与既有 Operation/outbox/finalizer/Audit 原子接受意图。PostgreSQL 17.6 实测并发重放、冲突回滚、RLS、重启持久化和独占认领；Go 绑定完整解析后摘要。见 [内核证据与未覆盖项](evidence/base-foundation-intents-20260905.md)。SQL/数据库 fixture 不代表产品链路完成。
-- 000053 已纳入版本化产品安装链：真实 runner 从 product-000052 精确升级一条到 000053，当前产品 CLI 全新安装 53 条并在重放时 no-op；两条路径均核对账本和新表。生成器、DDL 白名单、runner/readiness、release tar 与 migrate Dockerfile 使用当前 000053，旧 000052 包保留。见 [产品迁移证据](evidence/base-foundation-product-migration-20260905.md)。未构建/发布镜像或部署；本机 `uv` 与仓库 pin 不符，因此不声称 umbrella contract suite 通过。
-- 下一项：接通首条链路的 RuntimeProfile 解析、公共生成契约及带权限的 Go store/API，再把 Go 回执接缝放入 durable claim 保护的 Controller 路径与 Admin 元数据闭环。旧 Project profile 的副作用限制未变；新意图目前只接受可信服务端解析输入，不能直接暴露给用户。不使用查找后直接 POST 或进程内锁冒充跨进程幂等。真实创建/adopt、就绪、补偿、物理 writer fencing 与 CP/Controller 自动恢复仍待完成。未迁移长期 Workspace/旧卷、接入客户节点或部署生产。
+- 000053 已纳入版本化产品安装链：真实 runner 从 product-000052 精确升级一条到 000053，当时产品 CLI 全新安装 53 条并在重放时 no-op；两条路径均核对账本和新表。该冻结包现作为 000054 的升级输入保留。见 [产品迁移证据](evidence/base-foundation-product-migration-20260905.md)。未构建/发布镜像或部署；本机 `uv` 与仓库 pin 不符，因此不声称 umbrella contract suite 通过。
+- 独立 no-Agent RuntimeProfile 与首条公开 Sandbox admission 已接通：product-000054 增加不可变 draft/published/disabled authority，生成 SDK、Admin/User HTTP 与 project/product scope 校验；User 只提交 profile ID/version，公开投影不含 Target/image/release/endpoint/凭据引用。PostgreSQL 17.6 使用真实签名 token 和生成客户端验证生命周期、普通用户 Admin 403、disable/replay、RLS 和 durable Operation/outbox；见 [API 与 authority 证据](evidence/base-runtime-profile-api-20260905.md)。ready Target 仍是 SQL fixture，不代表物理 Sandbox 或 Admin 页面完成。
+- 下一项：把既有 Go OpenSandbox 回执接缝接入 durable claim 保护的 Controller，完成真实 create/adopt/readiness、失败补偿、claim renewal 和重启自动恢复；同一切片交付 RuntimeProfile/Sandbox Admin 运维元数据页面。不得用查找后直接 POST、进程内锁或静态 UI 冒充跨进程幂等与联合闭环。物理 writer fencing、长期卷实际挂载和 stop/rebuild 数据保留随后仍需完成；未接入客户节点或部署生产。
 - 本次未改既有 Agent/Lease/Profile/User Web 行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -35,7 +36,7 @@
 | 阶段       | 状态        | 尚需证明的完成范围                                                                                          |
 | ---------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | BASE-M0    | IN PROGRESS | 固定候选和 no-Agent Docker PoC 已实测；尚需 CP 执行接缝、幂等/adopt、失败补偿和 Admin 联合闭环              |
-| BASE-M1    | IN PROGRESS | 意图持久化内核已有数据库实测；尚需物理卷、API/SDK、Controller 自动恢复与对应 Admin 生命周期联合闭环           |
+| BASE-M1    | IN PROGRESS | 意图内核和 RuntimeProfile/Sandbox API/SDK 已有数据库实测；尚需物理卷、Controller 自动恢复与对应 Admin 生命周期联合闭环 |
 | BASE-M2    | NOT STARTED | Exec/PTY/Files/Preview/SSH 和真实策略执行；Admin grant/策略/诊断管理，不读取用户内容                        |
 | BASE-M3    | NOT STARTED | outbound RemoteWorker 注册/证书/重连/fencing，以及节点归属、健康、Drain/Resume 管理                         |
 | BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |

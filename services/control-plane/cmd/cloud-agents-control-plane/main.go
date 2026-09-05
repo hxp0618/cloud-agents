@@ -483,8 +483,16 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local published environment profile HTTP server is unavailable")
 	}
+	foundationHTTPServer, err := server.NewFoundationHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local foundation HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(verifierAdapter, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesFoundationPath(request.URL.Path) {
+			foundationHTTPServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesNetworkPolicyPath(request.URL.Path) {
 			networkPolicyHTTPServer.ServeHTTP(writer, request)
 			return
@@ -526,6 +534,10 @@ func run(ctx context.Context, args []string) error {
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	if runtimeSupervisor == nil {
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesFoundationPath(request.URL.Path) {
+				foundationHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesProjectLeaseQuotaPath(request.URL.Path) {
 				projectLeaseQuotaHTTPServer.ServeHTTP(writer, request)
 				return
@@ -574,6 +586,10 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local managed agent execution HTTP server is unavailable")
 		}
 		mux.Handle(server.LocalProjectGetRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if server.HandlesFoundationPath(request.URL.Path) {
+				foundationHTTPServer.ServeHTTP(writer, request)
+				return
+			}
 			if server.HandlesProjectLeaseQuotaPath(request.URL.Path) {
 				projectLeaseQuotaHTTPServer.ServeHTTP(writer, request)
 				return

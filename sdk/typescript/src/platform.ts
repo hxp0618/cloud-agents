@@ -531,6 +531,83 @@ export type UserEnvironment = Readonly<{
   stableErrorCode?: string;
   expiresAt: string;
 }>;
+export type RuntimeProfileCreateRequest = Readonly<{
+  profileId: string;
+  profileName: string;
+  version: number;
+  description: string;
+  targetId: string;
+  imageUri: string;
+  releaseDigest: `sha256:${string}`;
+  cpuMillis: number;
+  memoryBytes: number;
+}>;
+export type RuntimeProfileTransitionRequest = Readonly<{ expectedResourceVersion: string }>;
+export type RuntimeProfile = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RuntimeProfile";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    profileId: string;
+    version: number;
+    description: string;
+    status: "draft" | "published" | "disabled";
+    targetId: string;
+    imageUri: string;
+    releaseDigest: `sha256:${string}`;
+    cpuMillis: number;
+    memoryBytes: number;
+    publishedAt?: string;
+    disabledAt?: string;
+  }>;
+}>;
+export type RuntimeProfilePage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RuntimeProfilePage";
+  runtimeProfiles: readonly RuntimeProfile[];
+  nextPageToken?: string;
+}>;
+export type RuntimeProfileSummary = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RuntimeProfileSummary";
+  projectRef: NamespaceRef;
+  profileId: string;
+  name: string;
+  version: number;
+  description: string;
+  status: "published";
+  availability: "available";
+  cpuMillis: number;
+  memoryBytes: number;
+  workspaceRetention: "retained";
+}>;
+export type RuntimeProfileSummaryPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RuntimeProfileSummaryPage";
+  runtimeProfiles: readonly RuntimeProfileSummary[];
+  nextPageToken?: string;
+}>;
+export type SandboxSessionCreateRequest = Readonly<{
+  workspaceId: string;
+  workspaceName: string;
+  sandboxId: string;
+  runtimeProfileId: string;
+  runtimeProfileVersion: number;
+}>;
+export type SandboxSession = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxSession";
+  projectRef: NamespaceRef;
+  operationId: string;
+  workspaceId: string;
+  sandboxId: string;
+  runtimeProfileId: string;
+  runtimeProfileVersion: number;
+  generation: number;
+  desiredState: "running";
+  observedState: "pending";
+}>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
@@ -657,6 +734,9 @@ const adminDeniedWriteActions = [
   "adminCreateEnvironmentProfile",
   "adminPublishEnvironmentProfile",
   "adminDisableEnvironmentProfile",
+  "adminCreateRuntimeProfile",
+  "adminPublishRuntimeProfile",
+  "adminDisableRuntimeProfile",
   "adminRegisterDeploymentTarget",
   "adminProbeDeploymentTarget",
   "adminTransitionDeploymentTargetScheduling",
@@ -1348,6 +1428,67 @@ const userEnvironmentResponseShape: ResponseShape = {
     expiresAt: scalarResponseShape,
   },
 };
+const runtimeProfileResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  profileId: scalarResponseShape,
+  version: scalarResponseShape,
+  description: scalarResponseShape,
+  status: scalarResponseShape,
+  targetId: scalarResponseShape,
+  imageUri: scalarResponseShape,
+  releaseDigest: scalarResponseShape,
+  cpuMillis: scalarResponseShape,
+  memoryBytes: scalarResponseShape,
+  publishedAt: scalarResponseShape,
+  disabledAt: scalarResponseShape,
+});
+const runtimeProfilePageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    runtimeProfiles: { item: runtimeProfileResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const runtimeProfileSummaryResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    profileId: scalarResponseShape,
+    name: scalarResponseShape,
+    version: scalarResponseShape,
+    description: scalarResponseShape,
+    status: scalarResponseShape,
+    availability: scalarResponseShape,
+    cpuMillis: scalarResponseShape,
+    memoryBytes: scalarResponseShape,
+    workspaceRetention: scalarResponseShape,
+  },
+};
+const runtimeProfileSummaryPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    runtimeProfiles: { item: runtimeProfileSummaryResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const sandboxSessionResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    operationId: scalarResponseShape,
+    workspaceId: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    runtimeProfileId: scalarResponseShape,
+    runtimeProfileVersion: scalarResponseShape,
+    generation: scalarResponseShape,
+    desiredState: scalarResponseShape,
+    observedState: scalarResponseShape,
+  },
+};
 const deploymentTargetResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   generation: scalarResponseShape,
@@ -1809,6 +1950,11 @@ function profileDescription(value: unknown, path: string): string {
     const code = character.codePointAt(0)!;
     if (code < 32 || code === 127) error("INVALID_PROFILE_DESCRIPTION", path);
   }
+  return text;
+}
+function runtimeImage(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 1024, path);
+  if (!/^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$/u.test(text)) error("INVALID_RUNTIME_IMAGE", path);
   return text;
 }
 function policySummary(value: unknown, path: string): string {
@@ -2385,6 +2531,89 @@ export function encodeEnvironmentProfileTransitionRequest(
   value: EnvironmentProfileTransitionRequest,
 ): string {
   return JSON.stringify(decodeEnvironmentProfileTransitionRequest(value));
+}
+export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfileCreateRequest {
+  const source = strictRecord(
+    value,
+    [
+      "profileId",
+      "profileName",
+      "version",
+      "description",
+      "targetId",
+      "imageUri",
+      "releaseDigest",
+      "cpuMillis",
+      "memoryBytes",
+    ],
+    [
+      "profileId",
+      "profileName",
+      "version",
+      "description",
+      "targetId",
+      "imageUri",
+      "releaseDigest",
+      "cpuMillis",
+      "memoryBytes",
+    ],
+  );
+  const imageUri = runtimeImage(source.imageUri, "/imageUri");
+  const releaseDigest = digest(source.releaseDigest, "/releaseDigest") as `sha256:${string}`;
+  if (!imageUri.endsWith(`@${releaseDigest}`)) error("RUNTIME_IMAGE_DIGEST_MISMATCH", "/imageUri");
+  return Object.freeze({
+    profileId: identifier(source.profileId, "/profileId"),
+    profileName: identifier(source.profileName, "/profileName"),
+    version: integer(source.version, 1, 2147483647, "/version"),
+    description: profileDescription(source.description, "/description"),
+    targetId: identifier(source.targetId, "/targetId"),
+    imageUri,
+    releaseDigest,
+    cpuMillis: integer(source.cpuMillis, 100, 64000, "/cpuMillis"),
+    memoryBytes: integer(source.memoryBytes, 134217728, 1099511627776, "/memoryBytes"),
+  });
+}
+export function encodeRuntimeProfileCreateRequest(value: RuntimeProfileCreateRequest): string {
+  return JSON.stringify(decodeRuntimeProfileCreateRequest(value));
+}
+export function decodeRuntimeProfileTransitionRequest(
+  value: unknown,
+): RuntimeProfileTransitionRequest {
+  const source = strictRecord(value, ["expectedResourceVersion"], ["expectedResourceVersion"]);
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion) || expectedResourceVersion.length > 20)
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({ expectedResourceVersion });
+}
+export function encodeRuntimeProfileTransitionRequest(
+  value: RuntimeProfileTransitionRequest,
+): string {
+  return JSON.stringify(decodeRuntimeProfileTransitionRequest(value));
+}
+export function decodeSandboxSessionCreateRequest(value: unknown): SandboxSessionCreateRequest {
+  const source = strictRecord(
+    value,
+    ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"],
+    ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"],
+  );
+  return Object.freeze({
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    workspaceName: identifier(source.workspaceName, "/workspaceName"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    runtimeProfileId: identifier(source.runtimeProfileId, "/runtimeProfileId"),
+    runtimeProfileVersion: integer(
+      source.runtimeProfileVersion,
+      1,
+      2147483647,
+      "/runtimeProfileVersion",
+    ),
+  });
+}
+export function encodeSandboxSessionCreateRequest(value: SandboxSessionCreateRequest): string {
+  return JSON.stringify(decodeSandboxSessionCreateRequest(value));
 }
 export function decodeEnvironmentLeaseTerminateRequest(
   value: unknown,
@@ -4005,6 +4234,242 @@ export function decodeUserEnvironment(value: unknown): UserEnvironment {
     stableErrorCode === undefined ? environment : { ...environment, stableErrorCode },
   );
 }
+export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
+  const source = record(value);
+  const root = base(source, "RuntimeProfile");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "profileId",
+      "version",
+      "description",
+      "status",
+      "targetId",
+      "imageUri",
+      "releaseDigest",
+      "cpuMillis",
+      "memoryBytes",
+      "publishedAt",
+      "disabledAt",
+    ],
+    [
+      "projectRef",
+      "profileId",
+      "version",
+      "description",
+      "status",
+      "targetId",
+      "imageUri",
+      "releaseDigest",
+      "cpuMillis",
+      "memoryBytes",
+    ],
+    "/spec",
+  );
+  const status = enumValue(
+    spec.status,
+    ["draft", "published", "disabled"] as const,
+    "/spec/status",
+  );
+  const publishedAt =
+    spec.publishedAt === undefined ? undefined : dateTime(spec.publishedAt, "/spec/publishedAt");
+  const disabledAt =
+    spec.disabledAt === undefined ? undefined : dateTime(spec.disabledAt, "/spec/disabledAt");
+  if (
+    status === "draft"
+      ? publishedAt !== undefined || disabledAt !== undefined
+      : status === "published"
+        ? publishedAt === undefined || disabledAt !== undefined
+        : publishedAt === undefined ||
+          disabledAt === undefined ||
+          Date.parse(disabledAt) < Date.parse(publishedAt)
+  )
+    error("INVALID_PROFILE_LIFECYCLE", "/spec/status");
+  const imageUri = runtimeImage(spec.imageUri, "/spec/imageUri");
+  const releaseDigest = digest(spec.releaseDigest, "/spec/releaseDigest") as `sha256:${string}`;
+  if (!imageUri.endsWith(`@${releaseDigest}`))
+    error("RUNTIME_IMAGE_DIGEST_MISMATCH", "/spec/imageUri");
+  return Object.freeze({
+    ...root,
+    kind: "RuntimeProfile",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      profileId: identifier(spec.profileId, "/spec/profileId"),
+      version: integer(spec.version, 1, 2147483647, "/spec/version"),
+      description: profileDescription(spec.description, "/spec/description"),
+      status,
+      targetId: identifier(spec.targetId, "/spec/targetId"),
+      imageUri,
+      releaseDigest,
+      cpuMillis: integer(spec.cpuMillis, 100, 64000, "/spec/cpuMillis"),
+      memoryBytes: integer(spec.memoryBytes, 134217728, 1099511627776, "/spec/memoryBytes"),
+      ...(publishedAt === undefined ? {} : { publishedAt }),
+      ...(disabledAt === undefined ? {} : { disabledAt }),
+    }),
+  });
+}
+export function decodeRuntimeProfilePage(value: unknown): RuntimeProfilePage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "runtimeProfiles", "nextPageToken"],
+    ["apiVersion", "kind", "runtimeProfiles"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "RuntimeProfilePage" ||
+    !Array.isArray(source.runtimeProfiles) ||
+    source.runtimeProfiles.length > 200
+  )
+    error("INVALID_RUNTIME_PROFILE_PAGE", "/runtimeProfiles");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "RuntimeProfilePage" as const,
+    runtimeProfiles: Object.freeze((source.runtimeProfiles as unknown[]).map(decodeRuntimeProfile)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeRuntimeProfileSummary(value: unknown): RuntimeProfileSummary {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "profileId",
+      "name",
+      "version",
+      "description",
+      "status",
+      "availability",
+      "cpuMillis",
+      "memoryBytes",
+      "workspaceRetention",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "profileId",
+      "name",
+      "version",
+      "description",
+      "status",
+      "availability",
+      "cpuMillis",
+      "memoryBytes",
+      "workspaceRetention",
+    ],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "RuntimeProfileSummary" ||
+    source.status !== "published" ||
+    source.availability !== "available" ||
+    source.workspaceRetention !== "retained"
+  )
+    error("INVALID_RUNTIME_PROFILE_AVAILABILITY", "/status");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "RuntimeProfileSummary",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    profileId: identifier(source.profileId, "/profileId"),
+    name: identifier(source.name, "/name"),
+    version: integer(source.version, 1, 2147483647, "/version"),
+    description: profileDescription(source.description, "/description"),
+    status: "published",
+    availability: "available",
+    cpuMillis: integer(source.cpuMillis, 100, 64000, "/cpuMillis"),
+    memoryBytes: integer(source.memoryBytes, 134217728, 1099511627776, "/memoryBytes"),
+    workspaceRetention: "retained",
+  });
+}
+export function decodeRuntimeProfileSummaryPage(value: unknown): RuntimeProfileSummaryPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "runtimeProfiles", "nextPageToken"],
+    ["apiVersion", "kind", "runtimeProfiles"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "RuntimeProfileSummaryPage" ||
+    !Array.isArray(source.runtimeProfiles) ||
+    source.runtimeProfiles.length > 200
+  )
+    error("INVALID_RUNTIME_PROFILE_SUMMARY_PAGE", "/runtimeProfiles");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "RuntimeProfileSummaryPage" as const,
+    runtimeProfiles: Object.freeze(
+      (source.runtimeProfiles as unknown[]).map(decodeRuntimeProfileSummary),
+    ),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeSandboxSession(value: unknown): SandboxSession {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "operationId",
+      "workspaceId",
+      "sandboxId",
+      "runtimeProfileId",
+      "runtimeProfileVersion",
+      "generation",
+      "desiredState",
+      "observedState",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "operationId",
+      "workspaceId",
+      "sandboxId",
+      "runtimeProfileId",
+      "runtimeProfileVersion",
+      "generation",
+      "desiredState",
+      "observedState",
+    ],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "SandboxSession" ||
+    source.desiredState !== "running" ||
+    source.observedState !== "pending"
+  )
+    error("INVALID_SANDBOX_SESSION", "/observedState");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxSession",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    operationId: identifier(source.operationId, "/operationId"),
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    runtimeProfileId: identifier(source.runtimeProfileId, "/runtimeProfileId"),
+    runtimeProfileVersion: integer(
+      source.runtimeProfileVersion,
+      1,
+      2147483647,
+      "/runtimeProfileVersion",
+    ),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    desiredState: "running",
+    observedState: "pending",
+  });
+}
 export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
   const source = record(value);
   const root = base(source, "DeploymentTarget");
@@ -5338,6 +5803,24 @@ export function parseEnvironmentProfileSummaryPage(
 }
 export function parseUserEnvironment(text: string): ResponseEnvelope<UserEnvironment> {
   return parseResponse(text, userEnvironmentResponseShape, decodeUserEnvironment);
+}
+export function parseRuntimeProfile(text: string): ResponseEnvelope<RuntimeProfile> {
+  return parseResponse(text, runtimeProfileResponseShape, decodeRuntimeProfile);
+}
+export function parseRuntimeProfilePage(text: string): ResponseEnvelope<RuntimeProfilePage> {
+  return parseResponse(text, runtimeProfilePageResponseShape, decodeRuntimeProfilePage);
+}
+export function parseRuntimeProfileSummaryPage(
+  text: string,
+): ResponseEnvelope<RuntimeProfileSummaryPage> {
+  return parseResponse(
+    text,
+    runtimeProfileSummaryPageResponseShape,
+    decodeRuntimeProfileSummaryPage,
+  );
+}
+export function parseSandboxSession(text: string): ResponseEnvelope<SandboxSession> {
+  return parseResponse(text, sandboxSessionResponseShape, decodeSandboxSession);
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
@@ -7452,6 +7935,69 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/action");
     return result;
   }
+  async listRuntimeProfiles(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfileSummaryPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/runtime-profiles${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("foundationListRuntimeProfiles", response);
+    const result = parseRuntimeProfileSummaryPage(response.body);
+    if (result.value.runtimeProfiles.some(({ projectRef }) => projectRef.id !== projectId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/runtimeProfiles");
+    return result;
+  }
+  async createSandbox(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxSessionCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxSession>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeSandboxSessionCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-sessions`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSandboxSessionCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 202) throw await this.problem("foundationCreateSandbox", response);
+    const result = parseSandboxSession(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.workspaceId !== checked.workspaceId ||
+      result.value.sandboxId !== checked.sandboxId ||
+      result.value.runtimeProfileId !== checked.runtimeProfileId ||
+      result.value.runtimeProfileVersion !== checked.runtimeProfileVersion
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
+    return result;
+  }
   async listEnvironmentProfiles(
     tenantId: string,
     projectId: string,
@@ -7556,6 +8102,185 @@ export class Client {
     const result = parseUserEnvironment(response.body);
     if (result.value.projectRef.id !== projectId || result.value.environmentId !== environmentId)
       error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId");
+    return result;
+  }
+  async listAdminRuntimeProfiles(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfilePage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/runtime-profiles${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListRuntimeProfiles", response);
+    const result = parseRuntimeProfilePage(response.body);
+    if (
+      result.value.runtimeProfiles.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/runtimeProfiles");
+    return result;
+  }
+  async createAdminRuntimeProfile(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RuntimeProfileCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfile>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRuntimeProfileCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/runtime-profiles`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRuntimeProfileCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem("adminCreateRuntimeProfile", response);
+    const result = parseRuntimeProfile(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.profileId !== checked.profileId ||
+      result.value.spec.version !== checked.version ||
+      result.value.metadata.name !== checked.profileName
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async publishAdminRuntimeProfile(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    profileVersion: number,
+    requestId: string,
+    idempotencyKey: string,
+    body: RuntimeProfileTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfile>> {
+    return this.transitionAdminRuntimeProfile(
+      "publish",
+      tenantId,
+      projectId,
+      profileId,
+      profileVersion,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  async disableAdminRuntimeProfile(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    profileVersion: number,
+    requestId: string,
+    idempotencyKey: string,
+    body: RuntimeProfileTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfile>> {
+    return this.transitionAdminRuntimeProfile(
+      "disable",
+      tenantId,
+      projectId,
+      profileId,
+      profileVersion,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  private async transitionAdminRuntimeProfile(
+    action: "publish" | "disable",
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    profileVersion: number,
+    requestId: string,
+    idempotencyKey: string,
+    body: RuntimeProfileTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfile>> {
+    validateEnvironmentProfilePath(tenantId, projectId, profileId, profileVersion, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRuntimeProfileTransitionRequest(body);
+    const operation =
+      action === "publish" ? "adminPublishRuntimeProfile" : "adminDisableRuntimeProfile";
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/runtime-profiles/${profileId}/versions/${profileVersion}:${action}`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRuntimeProfileTransitionRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem(operation, response);
+    const result = parseRuntimeProfile(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.profileId !== profileId ||
+      result.value.spec.version !== profileVersion
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async getAdminRuntimeProfile(
+    tenantId: string,
+    projectId: string,
+    profileId: string,
+    version: number,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RuntimeProfile>> {
+    validateEnvironmentProfilePath(tenantId, projectId, profileId, version, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/runtime-profiles/${profileId}/versions/${version}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetRuntimeProfile", response);
+    const result = parseRuntimeProfile(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.profileId !== profileId ||
+      result.value.spec.version !== version
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
   async listAdminEnvironmentProfiles(

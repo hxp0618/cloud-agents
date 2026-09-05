@@ -1,0 +1,45 @@
+{
+  "sourceBase": "5144a756d72be8db25dd457240d99a27b4329bda",
+  "branch": "codex/cloud-agents-platform-p0",
+  "backend": "orbstack",
+  "dockerServer": "29.4.0",
+  "architecture": "aarch64",
+  "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+  "schemaHead": "000054",
+  "migrationCount": 54,
+  "schemaBundleDigest": "sha256:04e3b5a7c34c8c91fbb683219cfad45659e8a617341e8c1e489aaacf9da0f08d",
+  "manifestDigest": "sha256:6c722c9ed206b3de79623cd13acc9e21fa0cd525678b9f8b7007cd5efa25bb0a",
+  "migrationSQLDigest": "sha256:6306b7aafcc28954e2a90eeb4c87ecdea0aef88e04f82f7f6edba6c7b28cb250",
+  "upgrade": {
+    "from": "000053",
+    "to": "000054",
+    "applied": 1
+  },
+  "fresh": {
+    "schema_head": "000054",
+    "applied": 54,
+    "no_op": false
+  },
+  "replay": {
+    "schema_head": "000054",
+    "applied": 0,
+    "no_op": true
+  },
+  "checks": [
+    "real generated Admin and User SDK clients over HTTP",
+    "project and product scope authorization with ordinary user Admin 403",
+    "RuntimeProfile draft publish disable lifecycle",
+    "published public projection redacts infrastructure fields",
+    "durable Sandbox Operation and outbox acceptance",
+    "idempotent replay after profile disable and new admission rejection",
+    "runtime role cannot bypass RuntimeProfile authority",
+    "product-000053 to product-000054 exact upgrade and no-op replay"
+  ],
+  "cleanup": "owned disposable PostgreSQL container and anonymous volume removed",
+  "boundary": "ready Docker Target is a SQL fixture; no Controller, physical Sandbox, volume mount or Admin UI was exercised",
+  "toolBoundaries": {
+    "contractUmbrella": "not run past preflight: actual Bun 1.4.1 and uv 0.6.0 differ from pins 1.3.14 and 0.12.5",
+    "goModulesUmbrella": "not run past preflight: actual Go 1.27.1 differs from pin 1.26.6",
+    "repositoryLint": "stops at unrelated apps/admin-web/visual-baseline/daytona-v0.190.0/capture-worker-health.mjs:141 no-console"
+  }
+}

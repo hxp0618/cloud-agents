@@ -172,6 +172,31 @@ func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testin
 	}
 }
 
+func TestGeneratedRuntimeProfileKeepsAdminAndUserBoundaries(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","targetId":"docker-primary","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)
+	decoded, err := DecodeRuntimeProfileResponseJSON(profile)
+	if err != nil || decoded.Value.Spec.TargetID != "docker-primary" {
+		t.Fatalf("profile=%#v error=%v", decoded.Value, err)
+	}
+	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","name":"foundation","version":1,"description":"Retained no-agent workspace","status":"published","availability":"available","cpuMillis":500,"memoryBytes":536870912,"workspaceRetention":"retained"}`)
+	if value, err := DecodeRuntimeProfileSummaryJSON(summary); err != nil || value.WorkspaceRetention != "retained" {
+		t.Fatalf("summary=%#v error=%v", value, err)
+	}
+	withTarget := append(append([]byte(nil), summary[:len(summary)-1]...), []byte(`,"targetId":"docker-primary"}`)...)
+	if _, err := DecodeRuntimeProfileSummaryJSON(withTarget); err == nil {
+		t.Fatal("public RuntimeProfile summary accepted Admin Target authority")
+	}
+	request := []byte(`{"workspaceId":"workspace","workspaceName":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1}`)
+	if value, err := DecodeSandboxSessionCreateRequestJSON(request); err != nil || value.RuntimeProfileID != "foundation" {
+		t.Fatalf("sandbox request=%#v error=%v", value, err)
+	}
+	withEndpoint := append(append([]byte(nil), request[:len(request)-1]...), []byte(`,"endpoint":"tcp://host"}`)...)
+	if _, err := DecodeSandboxSessionCreateRequestJSON(withEndpoint); err == nil {
+		t.Fatal("public Sandbox request accepted an infrastructure endpoint")
+	}
+}
+
 func TestGeneratedStoragePolicyContractKeepsSupportedLifecycle(t *testing.T) {
 	policy := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"StoragePolicy","metadata":{"uid":"storage-standard","name":"storage-standard","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"20 GiB managed workspace","workspaceType":"managed-volume","workspaceCapacityBytes":21474836480,"retentionSeconds":0,"cleanupOnLeaseTermination":true,"allowWorkspaceReuse":true}}`)
 	decoded, err := DecodeStoragePolicyResponseJSON(policy)

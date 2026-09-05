@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-session.schema.json",
+  "title": "SandboxSession",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "operationId", "workspaceId", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "generation", "desiredState", "observedState"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxSession" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeProfileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "desiredState": { "const": "running" },
+    "observedState": { "const": "pending" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "operationId is the durable asynchronous Operation accepted by Control Plane",
+    "Target, image, release, endpoint and credential data are absent"
+  ]
+}

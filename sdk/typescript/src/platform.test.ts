@@ -42,6 +42,9 @@ import {
   decodeRolePage,
   decodeRoleBinding,
   decodeRoleBindingPage,
+  decodeRuntimeProfile,
+  decodeRuntimeProfileSummary,
+  decodeSandboxSession,
   decodeWatchCursor,
   decodeWorkerPage,
   decodeWorkerRelease,
@@ -72,6 +75,9 @@ import {
   parseManagedAgentTurnPage,
   parseManagedAgentExecution,
   parseManagedAgentExecutionPage,
+  parseRuntimeProfile,
+  parseRuntimeProfileSummaryPage,
+  parseSandboxSession,
   parseWatchCursor,
   parseWorkerPage,
   parseWorkerRelease,
@@ -771,6 +777,140 @@ describe("generated platform JSON models", () => {
       "/v1/tenants/tenant-alpha/projects/project-alpha/environment-profiles?pageSize=1",
     );
   });
+  it("keeps no-agent RuntimeProfile authority in Admin and public Sandbox requests", async () => {
+    const digest = `sha256:${"a".repeat(64)}` as const;
+    const profile = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "RuntimeProfile",
+      metadata: {
+        uid: "rp-0123456789abcdef0123456789abcdef",
+        name: "foundation",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-05T03:00:00Z",
+        updatedAt: "2026-09-05T03:00:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        profileId: "foundation",
+        version: 1,
+        description: "Retained no-agent workspace",
+        status: "draft",
+        targetId: "docker-primary",
+        imageUri: `registry.example.test/runtime@${digest}`,
+        releaseDigest: digest,
+        cpuMillis: 500,
+        memoryBytes: 536870912,
+      },
+    };
+    const summary = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "RuntimeProfileSummary",
+      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      profileId: "foundation",
+      name: "foundation",
+      version: 1,
+      description: "Retained no-agent workspace",
+      status: "published",
+      availability: "available",
+      cpuMillis: 500,
+      memoryBytes: 536870912,
+      workspaceRetention: "retained",
+    };
+    const sandbox = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "SandboxSession",
+      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      operationId: "operation-sandbox",
+      workspaceId: "workspace",
+      sandboxId: "sandbox",
+      runtimeProfileId: "foundation",
+      runtimeProfileVersion: 1,
+      generation: 1,
+      desiredState: "running",
+      observedState: "pending",
+    };
+    expect(decodeRuntimeProfile(profile).spec.targetId).toBe("docker-primary");
+    expect(parseRuntimeProfile(JSON.stringify(profile)).value.spec.status).toBe("draft");
+    expect(decodeSandboxSession(sandbox).observedState).toBe("pending");
+    expect(parseSandboxSession(JSON.stringify(sandbox)).value.operationId).toBe(
+      "operation-sandbox",
+    );
+    expect(() => decodeRuntimeProfileSummary({ ...summary, credentialRef: "secret" })).toThrow();
+
+    const profilePage = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "RuntimeProfilePage",
+      runtimeProfiles: [profile],
+    });
+    const summaryPage = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "RuntimeProfileSummaryPage",
+      runtimeProfiles: [summary],
+    });
+    expect(parseRuntimeProfileSummaryPage(summaryPage).value.runtimeProfiles).toHaveLength(1);
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      if (request.path.endsWith("/sandbox-sessions"))
+        return { status: 202, headers: {}, body: JSON.stringify(sandbox) };
+      if (request.path.includes("/admin/")) {
+        if (request.method === "GET") return { status: 200, headers: {}, body: profilePage };
+        return {
+          status: 201,
+          headers: { "X-Resource-Version": "1" },
+          body: JSON.stringify(profile),
+        };
+      }
+      return { status: 200, headers: {}, body: summaryPage };
+    });
+    await client.createAdminRuntimeProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "request-runtime-create",
+      "runtime-create-key",
+      {
+        profileId: "foundation",
+        profileName: "foundation",
+        version: 1,
+        description: "Retained no-agent workspace",
+        targetId: "docker-primary",
+        imageUri: `registry.example.test/runtime@${digest}`,
+        releaseDigest: digest,
+        cpuMillis: 500,
+        memoryBytes: 536870912,
+      },
+    );
+    await client.listAdminRuntimeProfiles(
+      "tenant-alpha",
+      "project-alpha",
+      "request-runtime-admin-list",
+    );
+    await client.listRuntimeProfiles(
+      "tenant-alpha",
+      "project-alpha",
+      "request-runtime-public-list",
+    );
+    await client.createSandbox(
+      "tenant-alpha",
+      "project-alpha",
+      "request-sandbox-create",
+      "sandbox-create-key",
+      {
+        workspaceId: "workspace",
+        workspaceName: "workspace",
+        sandboxId: "sandbox",
+        runtimeProfileId: "foundation",
+        runtimeProfileVersion: 1,
+      },
+    );
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",
+      "GET /v1/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sandbox-sessions",
+    ]);
+  });
   it("manages only the supported Storage Policy lifecycle", async () => {
     const policy = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
@@ -897,26 +1037,61 @@ describe("generated platform JSON models", () => {
     expect(decodeNetworkPolicyPage(page).networkPolicies).toHaveLength(1);
     expect(parseNetworkPolicy(JSON.stringify(policy)).value.metadata.uid).toBe("network-public");
     expect(parseNetworkPolicyPage(JSON.stringify(page)).value.networkPolicies).toHaveLength(1);
-    expect(() => decodeNetworkPolicy({ ...policy, spec: { ...policy.spec, endpoint: "tcp://host" } })).toThrow();
+    expect(() =>
+      decodeNetworkPolicy({ ...policy, spec: { ...policy.spec, endpoint: "tcp://host" } }),
+    ).toThrow();
 
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
-      if (request.path.endsWith("/audit-events?pageSize=1")) return { status: 200, headers: {}, body: JSON.stringify({ apiVersion: policy.apiVersion, kind: "AdminAuditEventPage", events: [] }) };
-      if (request.path.endsWith("/network-policies?pageSize=1")) return { status: 200, headers: {}, body: JSON.stringify(page) };
+      if (request.path.endsWith("/audit-events?pageSize=1"))
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            apiVersion: policy.apiVersion,
+            kind: "AdminAuditEventPage",
+            events: [],
+          }),
+        };
+      if (request.path.endsWith("/network-policies?pageSize=1"))
+        return { status: 200, headers: {}, body: JSON.stringify(page) };
       return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(policy) };
     });
-    await client.listAdminNetworkPolicies("tenant-alpha", "project-alpha", "request-network-list", 1);
-    await client.getAdminNetworkPolicy("tenant-alpha", "project-alpha", "network-public", "request-network-get");
-    await client.setAdminNetworkPolicy("tenant-alpha", "project-alpha", "network-public", "request-network-set", "network-set-key-0001", {
-      expectedResourceVersion: "0",
-      policyName: "network-public",
-      userSummary: "Public internet access",
-      defaultEgress: "public",
-      ingressEnabled: false,
-      previewEnabled: false,
-    });
-    await client.listAdminNetworkPolicyAuditEvents("tenant-alpha", "project-alpha", "network-public", "request-network-audit", 1);
+    await client.listAdminNetworkPolicies(
+      "tenant-alpha",
+      "project-alpha",
+      "request-network-list",
+      1,
+    );
+    await client.getAdminNetworkPolicy(
+      "tenant-alpha",
+      "project-alpha",
+      "network-public",
+      "request-network-get",
+    );
+    await client.setAdminNetworkPolicy(
+      "tenant-alpha",
+      "project-alpha",
+      "network-public",
+      "request-network-set",
+      "network-set-key-0001",
+      {
+        expectedResourceVersion: "0",
+        policyName: "network-public",
+        userSummary: "Public internet access",
+        defaultEgress: "public",
+        ingressEnabled: false,
+        previewEnabled: false,
+      },
+    );
+    await client.listAdminNetworkPolicyAuditEvents(
+      "tenant-alpha",
+      "project-alpha",
+      "network-public",
+      "request-network-audit",
+      1,
+    );
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies?pageSize=1",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-public",

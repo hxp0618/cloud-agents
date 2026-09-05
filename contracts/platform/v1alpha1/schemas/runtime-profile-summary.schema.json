@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runtime-profile-summary.schema.json",
+  "title": "RuntimeProfileSummary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "cpuMillis", "memoryBytes", "workspaceRetention"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "RuntimeProfileSummary" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "name": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "status": { "const": "published" },
+    "availability": { "const": "available" },
+    "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+    "memoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+    "workspaceRetention": { "const": "retained" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "only published profiles bound to a ready active Target are returned",
+    "target, image, release digest, endpoint and credential references are absent"
+  ]
+}

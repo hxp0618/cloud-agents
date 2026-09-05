@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runtime-profile-transition-request.schema.json",
+  "title": "RuntimeProfileTransitionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion"],
+  "properties": {
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" }
+  }
+}

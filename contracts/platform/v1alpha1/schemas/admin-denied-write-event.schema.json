@@ -13,7 +13,7 @@
     "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "actor": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-    "action": { "enum": ["adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget"] },
+    "action": { "enum": ["adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget"] },
     "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "profileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
     "result": { "const": "denied" },

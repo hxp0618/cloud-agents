@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-session-create-request.schema.json",
+  "title": "SandboxSessionCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"],
+  "properties": {
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeProfileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the caller supplies only public resource identities and an immutable published RuntimeProfile version",
+    "Control Plane resolves Target, image, release and resource limits"
+  ]
+}

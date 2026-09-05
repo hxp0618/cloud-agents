@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runtime-profile-create-request.schema.json",
+  "title": "RuntimeProfileCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profileId", "profileName", "version", "description", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+  "properties": {
+    "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "profileName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
+    "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+    "memoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "imageUri must end in the exact releaseDigest",
+    "a new profileId starts at version 1 and later immutable drafts use the next consecutive version",
+    "this Admin-only request never accepts endpoint or credential bytes"
+  ]
+}
