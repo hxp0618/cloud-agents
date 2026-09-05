@@ -16,7 +16,7 @@
     "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
     "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
     "desiredState": { "const": "running" },
-    "observedState": { "const": "pending" }
+    "observedState": { "enum": ["pending", "running", "unknown", "failed", "stopped"] }
   },
   "x-cloud-agents-semantic-constraints": [
     "operationId is the durable asynchronous Operation accepted by Control Plane",

@@ -18,6 +18,8 @@ import {
   listAdminProjectLeaseQuotaAuditEvents,
   listAdminLeases,
   listAdminProfiles,
+  listAdminRuntimeProfiles,
+  listAdminSandboxes,
   listAdminStoragePolicies,
   listAdminNetworkPolicies,
   listAdminStoragePolicyAuditEvents,
@@ -453,6 +455,51 @@ describe("Admin Web boundary", () => {
 
     await listAdminProfiles(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("uses only Admin API RuntimeProfile and Sandbox pagination", async () => {
+    const calls: string[] = [];
+    const client = {
+      listAdminRuntimeProfiles: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        calls.push(`profiles:${pageToken ?? "first"}`);
+        return {
+          value: {
+            runtimeProfiles: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-profile-page" } : {}),
+          },
+        };
+      },
+      listAdminSandboxSessions: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        calls.push(`sandboxes:${pageToken ?? "first"}`);
+        return {
+          value: {
+            sandboxSessions: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-sandbox-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+    const signal = new AbortController().signal;
+    await listAdminRuntimeProfiles(client, "tenant-alpha", "project-alpha", signal);
+    await listAdminSandboxes(client, "tenant-alpha", "project-alpha", signal);
+    expect(calls).toEqual([
+      "profiles:first",
+      "profiles:next-profile-page",
+      "sandboxes:first",
+      "sandboxes:next-sandbox-page",
+    ]);
   });
 
   it("uses only Admin API storage policy and audit pagination", async () => {

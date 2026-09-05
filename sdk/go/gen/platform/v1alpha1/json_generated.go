@@ -654,6 +654,40 @@ type SandboxSession struct {
 	DesiredState          string            `json:"desiredState"`
 	ObservedState         string            `json:"observedState"`
 }
+type AdminSandboxSessionSpec struct {
+	ProjectRef             common.ProjectRef `json:"projectRef"`
+	OperationID            string            `json:"operationId"`
+	OperationState         string            `json:"operationState"`
+	CleanupPhase           string            `json:"cleanupPhase"`
+	WorkspaceID            string            `json:"workspaceId"`
+	WorkspaceName          string            `json:"workspaceName"`
+	VolumeID               string            `json:"volumeId"`
+	PhysicalVolumeID       string            `json:"physicalVolumeId,omitempty"`
+	WorkspaceRetention     string            `json:"workspaceRetention"`
+	WorkspaceObservedState string            `json:"workspaceObservedState"`
+	RuntimeProfileID       string            `json:"runtimeProfileId"`
+	RuntimeProfileVersion  int64             `json:"runtimeProfileVersion"`
+	TargetID               string            `json:"targetId"`
+	Generation             int64             `json:"generation"`
+	ObservedGeneration     int64             `json:"observedGeneration"`
+	DesiredState           string            `json:"desiredState"`
+	ObservedState          string            `json:"observedState"`
+	WriterReleased         bool              `json:"writerReleased"`
+	RuntimeID              string            `json:"runtimeId,omitempty"`
+	RuntimeState           string            `json:"runtimeState,omitempty"`
+	StableErrorCode        string            `json:"stableErrorCode,omitempty"`
+	ObservedAt             string            `json:"observedAt,omitempty"`
+}
+type AdminSandboxSession struct {
+	ResourceBase
+	Spec AdminSandboxSessionSpec `json:"spec"`
+}
+type AdminSandboxSessionPage struct {
+	APIVersion      string                `json:"apiVersion"`
+	Kind            string                `json:"kind"`
+	SandboxSessions []AdminSandboxSession `json:"sandboxSessions"`
+	NextPageToken   string                `json:"nextPageToken,omitempty"`
+}
 type DeploymentTargetRegisterRequest struct {
 	TargetID      string `json:"targetId"`
 	TargetName    string `json:"targetName"`
@@ -933,6 +967,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "imageRepository": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "platformVersion": common.ScalarResponseShape(), "runtimeVersion": common.ScalarResponseShape(), "codexVersion": common.ScalarResponseShape(), "claudeCodeVersion": common.ScalarResponseShape(), "architectures": common.ArrayResponseShape(common.ScalarResponseShape()), "status": common.ScalarResponseShape(), "verificationState": common.ScalarResponseShape(), "verificationEvidenceDigest": common.ScalarResponseShape(), "approvedAt": common.ScalarResponseShape()}
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
+	case "AdminSandboxSession":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
 	case "NetworkPolicy":
@@ -1000,6 +1036,7 @@ var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[stri
 var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "environmentProfiles": common.ArrayResponseShape(environmentProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var userEnvironmentResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "environmentId": common.ScalarResponseShape(), "profileId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var runtimeProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(resourceResponseShape("RuntimeProfile")), "nextPageToken": common.ScalarResponseShape()})
+var adminSandboxSessionPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "sandboxSessions": common.ArrayResponseShape(resourceResponseShape("AdminSandboxSession")), "nextPageToken": common.ScalarResponseShape()})
 var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape()})
 var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape()})
@@ -3457,7 +3494,12 @@ func DecodeSandboxSessionJSON(data []byte) (SandboxSession, error) {
 	if json.Unmarshal(data, &value) != nil {
 		return SandboxSession{}, common.ContractError("INVALID_FIELD_TYPE", "")
 	}
-	if value.APIVersion != APIVersion || value.Kind != "SandboxSession" || value.DesiredState != "running" || value.ObservedState != "pending" {
+	if value.APIVersion != APIVersion || value.Kind != "SandboxSession" || value.DesiredState != "running" {
+		return SandboxSession{}, common.ContractError("INVALID_SANDBOX_SESSION", "/observedState")
+	}
+	switch value.ObservedState {
+	case "pending", "running", "unknown", "failed", "stopped":
+	default:
 		return SandboxSession{}, common.ContractError("INVALID_SANDBOX_SESSION", "/observedState")
 	}
 	project, err := common.DecodeProjectRefJSON(fields["projectRef"])
@@ -3492,6 +3534,154 @@ func EncodeSandboxSessionResponseJSON(value common.ResponseEnvelope[SandboxSessi
 		return nil, err
 	}
 	if _, err := DecodeSandboxSessionJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return AdminSandboxSession{}, err
+	}
+	base, err := checkResourceBase(fields, "AdminSandboxSession")
+	if err != nil {
+		return AdminSandboxSession{}, err
+	}
+	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "targetId", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "runtimeId", "runtimeState", "stableErrorCode", "observedAt"}
+	required := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "targetId", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased"}
+	specFields, err := strictSpec(fields["spec"], allowed, required)
+	if err != nil {
+		return AdminSandboxSession{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return AdminSandboxSession{}, err
+	}
+	var spec AdminSandboxSessionSpec
+	if json.Unmarshal(fields["spec"], &spec) != nil {
+		return AdminSandboxSession{}, common.ContractError("INVALID_FIELD_TYPE", "/spec")
+	}
+	spec.ProjectRef = project
+	for path, id := range map[string]string{"/spec/operationId": spec.OperationID, "/spec/workspaceId": spec.WorkspaceID, "/spec/workspaceName": spec.WorkspaceName, "/spec/volumeId": spec.VolumeID, "/spec/runtimeProfileId": spec.RuntimeProfileID, "/spec/targetId": spec.TargetID} {
+		if common.ValidateIdentifier(id, path) != nil {
+			return AdminSandboxSession{}, common.ContractError("INVALID_IDENTIFIER", path)
+		}
+	}
+	for path, id := range map[string]string{"/spec/physicalVolumeId": spec.PhysicalVolumeID, "/spec/runtimeId": spec.RuntimeID, "/spec/stableErrorCode": spec.StableErrorCode} {
+		if id != "" && common.ValidateIdentifier(id, path) != nil {
+			return AdminSandboxSession{}, common.ContractError("INVALID_IDENTIFIER", path)
+		}
+	}
+	switch spec.OperationState {
+	case "pending", "running", "reconciling", "succeeded", "failed":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/operationState")
+	}
+	switch spec.CleanupPhase {
+	case "none", "complete", "blocked":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/cleanupPhase")
+	}
+	switch spec.WorkspaceObservedState {
+	case "pending", "available", "unknown", "failed":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/workspaceObservedState")
+	}
+	switch spec.DesiredState {
+	case "running", "stopped":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/desiredState")
+	}
+	switch spec.ObservedState {
+	case "pending", "running", "unknown", "failed", "stopped":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/observedState")
+	}
+	switch spec.RuntimeState {
+	case "", "Pending", "Running", "Pausing", "Paused", "Resuming", "Stopping", "Terminated", "Failed":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/runtimeState")
+	}
+	if spec.WorkspaceRetention != "retained" || spec.RuntimeProfileVersion < 1 || spec.RuntimeProfileVersion > 2147483647 || spec.Generation < 1 || spec.ObservedGeneration < 0 || spec.ObservedGeneration > spec.Generation || spec.WriterReleased && spec.ObservedState != "stopped" {
+		return AdminSandboxSession{}, common.ContractError("INVALID_ADMIN_SANDBOX_SESSION", "/spec")
+	}
+	if spec.ObservedAt != "" && common.ValidateDateTime(spec.ObservedAt, "/spec/observedAt") != nil {
+		return AdminSandboxSession{}, common.ContractError("INVALID_DATE_TIME", "/spec/observedAt")
+	}
+	return AdminSandboxSession{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeAdminSandboxSessionResponseJSON(data []byte) (common.ResponseEnvelope[AdminSandboxSession], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, resourceResponseShape("AdminSandboxSession"))
+	if err != nil {
+		return common.ResponseEnvelope[AdminSandboxSession]{}, err
+	}
+	value, err := DecodeAdminSandboxSessionJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[AdminSandboxSession]{}, err
+	}
+	return common.ResponseEnvelope[AdminSandboxSession]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeAdminSandboxSessionResponseJSON(value common.ResponseEnvelope[AdminSandboxSession]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeAdminSandboxSessionJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeAdminSandboxSessionPageJSON(data []byte) (AdminSandboxSessionPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "sandboxSessions", "nextPageToken"}, []string{"apiVersion", "kind", "sandboxSessions"})
+	if err != nil {
+		return AdminSandboxSessionPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return AdminSandboxSessionPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "AdminSandboxSessionPage" {
+		return AdminSandboxSessionPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var raw []json.RawMessage
+	if json.Unmarshal(fields["sandboxSessions"], &raw) != nil || raw == nil || len(raw) > 200 {
+		return AdminSandboxSessionPage{}, common.ContractError("INVALID_ADMIN_SANDBOX_SESSION_PAGE", "/sandboxSessions")
+	}
+	values := make([]AdminSandboxSession, 0, len(raw))
+	for index, item := range raw {
+		value, err := DecodeAdminSandboxSessionJSON(item)
+		if err != nil {
+			return AdminSandboxSessionPage{}, common.ContractError("INVALID_ADMIN_SANDBOX_SESSION", "/sandboxSessions/"+itoa(index))
+		}
+		values = append(values, value)
+	}
+	page := AdminSandboxSessionPage{APIVersion: apiVersion, Kind: kind, SandboxSessions: values}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return AdminSandboxSessionPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeAdminSandboxSessionPageResponseJSON(data []byte) (common.ResponseEnvelope[AdminSandboxSessionPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, adminSandboxSessionPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[AdminSandboxSessionPage]{}, err
+	}
+	value, err := DecodeAdminSandboxSessionPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[AdminSandboxSessionPage]{}, err
+	}
+	return common.ResponseEnvelope[AdminSandboxSessionPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeAdminSandboxSessionPageResponseJSON(value common.ResponseEnvelope[AdminSandboxSessionPage]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeAdminSandboxSessionPageJSON(raw); err != nil {
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

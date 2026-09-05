@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/admin-sandbox-session-page.schema.json",
+  "title": "AdminSandboxSessionPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "sandboxSessions"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "AdminSandboxSessionPage" },
+    "sandboxSessions": { "type": "array", "maxItems": 200, "items": { "$ref": "admin-sandbox-session.schema.json" } },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

@@ -27,13 +27,13 @@ func TestFoundationProductUpgradePostgres(t *testing.T) {
 		}
 		return result
 	}
-	if result := run("000053"); result.Applied != 53 || result.NoOp || result.SchemaHead != "000053" {
+	if result := run("000054"); result.Applied != 54 || result.NoOp || result.SchemaHead != "000054" {
 		t.Fatalf("initial result = %+v", result)
 	}
-	if result := run("000054"); result.Applied != 1 || result.NoOp || result.SchemaHead != "000054" {
+	if result := run("000055"); result.Applied != 1 || result.NoOp || result.SchemaHead != "000055" {
 		t.Fatalf("upgrade result = %+v", result)
 	}
-	if result := run("000054"); result.Applied != 0 || !result.NoOp || result.SchemaHead != "000054" {
+	if result := run("000055"); result.Applied != 0 || !result.NoOp || result.SchemaHead != "000055" {
 		t.Fatalf("replay result = %+v", result)
 	}
 }

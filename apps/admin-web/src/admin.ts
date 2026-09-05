@@ -5,6 +5,7 @@ import {
   type Client,
   type AdminEnvironmentLeaseUpgradeRequest,
   type AdminAuditEvent,
+  type AdminSandboxSession,
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
   type DeploymentTargetCleanupRequest,
@@ -15,6 +16,7 @@ import {
   type EnvironmentProfile,
   type MaintenanceOperation,
   type ProjectLeaseQuota,
+  type RuntimeProfile,
   type StoragePolicy,
   type NetworkPolicy,
   type Worker,
@@ -64,6 +66,13 @@ export type AdminClient = Pick<
   | "getAdminNetworkPolicy"
   | "setAdminNetworkPolicy"
   | "listAdminNetworkPolicyAuditEvents"
+  | "listAdminRuntimeProfiles"
+  | "createAdminRuntimeProfile"
+  | "publishAdminRuntimeProfile"
+  | "disableAdminRuntimeProfile"
+  | "getAdminRuntimeProfile"
+  | "listAdminSandboxSessions"
+  | "getAdminSandboxSession"
 >;
 
 export type SavedAdminConnection = Readonly<{
@@ -501,6 +510,87 @@ export async function listAdminProfiles(
       (left, right) =>
         left.metadata.name.localeCompare(right.metadata.name) ||
         right.spec.version - left.spec.version,
+    ),
+  );
+}
+
+export async function listAdminRuntimeProfiles(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly RuntimeProfile[]> {
+  const profiles: RuntimeProfile[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminRuntimeProfiles(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    profiles.push(...page.value.runtimeProfiles);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.runtimeProfilePageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    profiles.toSorted(
+      (left, right) =>
+        left.metadata.name.localeCompare(right.metadata.name) ||
+        right.spec.version - left.spec.version,
+    ),
+  );
+}
+
+export function replaceRuntimeProfile(
+  profiles: readonly RuntimeProfile[],
+  profile: RuntimeProfile,
+): readonly RuntimeProfile[] {
+  return Object.freeze(
+    [...profiles.filter(({ metadata }) => metadata.uid !== profile.metadata.uid), profile].toSorted(
+      (left, right) =>
+        left.metadata.name.localeCompare(right.metadata.name) ||
+        right.spec.version - left.spec.version,
+    ),
+  );
+}
+
+export async function listAdminSandboxes(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminSandboxSession[]> {
+  const sandboxes: AdminSandboxSession[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminSandboxSessions(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    sandboxes.push(...page.value.sandboxSessions);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.sandboxPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    sandboxes.toSorted((left, right) =>
+      (right.metadata.updatedAt ?? right.metadata.createdAt).localeCompare(
+        left.metadata.updatedAt ?? left.metadata.createdAt,
+      ),
     ),
   );
 }

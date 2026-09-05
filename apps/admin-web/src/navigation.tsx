@@ -4,9 +4,11 @@ import { useI18n, type MessageKey, type Translate } from "./i18n";
 export const navigationPages = [
   { id: "overview", label: "nav.overview", group: "nav.group.resources" },
   { id: "targets", label: "nav.targets", group: "nav.group.resources" },
+  { id: "sandboxes", label: "nav.sandboxes", group: "nav.group.resources" },
   { id: "leases", label: "nav.leases", group: "nav.group.resources" },
   { id: "workers", label: "nav.workers", group: "nav.group.resources" },
   { id: "releases", label: "nav.releases", group: "nav.group.resources" },
+  { id: "runtimeProfiles", label: "nav.runtimeProfiles", group: "nav.group.configuration" },
   { id: "profiles", label: "nav.profiles", group: "nav.group.configuration" },
   { id: "storage", label: "nav.storagePolicies", group: "nav.group.configuration" },
   { id: "network", label: "nav.networkPolicies", group: "nav.group.configuration" },
@@ -18,9 +20,11 @@ export type Page = (typeof navigationPages)[number]["id"];
 const navigationIconPaths: Record<Page | "sidebar" | "search" | "arrow", string> = {
   overview: "M3 13h4l3-8 4 14 3-8h4",
   targets: "M3 3h18v7H3zM3 14h18v7H3zM7 6h.01M7 17h.01",
+  sandboxes: "M4 6 12 2l8 4-8 4zM4 6v12l8 4 8-4V6M12 10v12",
   leases: "M12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
   workers: "M7 7h10v10H7zM10 1v6M14 1v6M10 17v6M14 17v6M1 10h6M1 14h6M17 10h6M17 14h6",
   releases: "m3 7 9-4 9 4-9 4zM3 12l9 4 9-4M3 17l9 4 9-4",
+  runtimeProfiles: "M4 3h16v18H4zM8 7h8M8 12h8M8 17h4",
   profiles: "M4 3h16v18H4zM8 7h8M8 12h8M8 17h4",
   storage: "M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01",
   network: "M9 3h6v6H9zM2 15h6v6H2zM16 15h6v6h-6zM12 9v3M5 15v-3h14v3",

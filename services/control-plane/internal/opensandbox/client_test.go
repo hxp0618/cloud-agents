@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func identity() Identity {
@@ -199,6 +200,115 @@ func TestPublicIdentifiersInReceiptLabels(t *testing.T) {
 	defer server.Close()
 	client, _ := New(server.URL, "key")
 	if _, err := client.Find(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateAdoptsOrCreatesRetainedVolume(t *testing.T) {
+	for _, existing := range []bool{true, false} {
+		t.Run(map[bool]string{true: "adopt", false: "create"}[existing], func(t *testing.T) {
+			id := identity()
+			posts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.Method == http.MethodGet && request.URL.Path == "/v1/sandboxes" {
+					items := []sandbox{}
+					if existing {
+						item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+						item.Status.State = "Running"
+						items = append(items, item)
+					}
+					_ = json.NewEncoder(writer).Encode(map[string]any{"items": items, "pagination": map[string]any{"page": 1, "hasNextPage": false}})
+					return
+				}
+				if request.Method != http.MethodPost || request.URL.Path != "/v1/sandboxes" {
+					http.NotFound(writer, request)
+					return
+				}
+				posts++
+				var body struct {
+					Image          map[string]string `json:"image"`
+					Entrypoint     []string          `json:"entrypoint"`
+					Timeout        *int64            `json:"timeout"`
+					ResourceLimits map[string]string `json:"resourceLimits"`
+					Volumes        []struct {
+						Name      string `json:"name"`
+						MountPath string `json:"mountPath"`
+						ReadOnly  bool   `json:"readOnly"`
+						PVC       struct {
+							ClaimName                  string `json:"claimName"`
+							CreateIfNotExists          bool   `json:"createIfNotExists"`
+							DeleteOnSandboxTermination bool   `json:"deleteOnSandboxTermination"`
+						} `json:"pvc"`
+					} `json:"volumes"`
+				}
+				if json.NewDecoder(request.Body).Decode(&body) != nil || body.Image["uri"] != "node@sha256:"+strings.Repeat("b", 64) ||
+					strings.Join(body.Entrypoint, " ") != "sleep infinity" || body.Timeout != nil ||
+					body.ResourceLimits["cpu"] != "500m" || body.ResourceLimits["memory"] != "536870912" ||
+					len(body.Volumes) != 1 || body.Volumes[0].Name != "workspace" || body.Volumes[0].MountPath != "/workspace" ||
+					body.Volumes[0].ReadOnly || body.Volumes[0].PVC.ClaimName != "ca-ws-volume" ||
+					body.Volumes[0].PVC.CreateIfNotExists || body.Volumes[0].PVC.DeleteOnSandboxTermination {
+					t.Error("unsafe create body")
+				}
+				item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+				item.Status.State = "Pending"
+				writer.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(writer).Encode(item)
+			}))
+			defer server.Close()
+			client, _ := New(server.URL, "private-key")
+			observation, err := client.Create(context.Background(), CreateInput{
+				Identity: id, ImageURI: "node@sha256:" + strings.Repeat("b", 64), VolumeName: "ca-ws-volume",
+				CPUMillis: 500, MemoryBytes: 512 << 20,
+			})
+			if err != nil || observation.RuntimeID != "physical-1" || posts != map[bool]int{true: 0, false: 1}[existing] {
+				t.Fatalf("observation = %#v, posts = %d, error = %v", observation, posts, err)
+			}
+		})
+	}
+}
+
+func TestWaitReadyRequiresExecdHealth(t *testing.T) {
+	id := identity()
+	state := "Running"
+	healthy := true
+	pings := 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = state
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/proxy/44772", "headers": map[string]string{"X-Route": "owned"}})
+		case "/ping":
+			pings++
+			if request.Header.Get("X-Route") != "owned" {
+				t.Error("missing endpoint header")
+			}
+			if !healthy {
+				writer.WriteHeader(http.StatusServiceUnavailable)
+			}
+			_, _ = writer.Write([]byte("pong"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	observation, err := client.WaitReady(context.Background(), id, "physical-1")
+	if err != nil || observation.RuntimeState != "Running" || pings != 1 {
+		t.Fatalf("observation = %#v, pings = %d, error = %v", observation, pings, err)
+	}
+	healthy = false
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	observation, err = client.WaitReady(ctx, id, "physical-1")
+	if !errors.Is(err, context.DeadlineExceeded) || observation.RuntimeID != "physical-1" || observation.RuntimeState != "Running" {
+		t.Fatalf("timed out observation = %#v, error = %v", observation, err)
+	}
+	state = "Failed"
+	if _, err := client.WaitReady(context.Background(), id, "physical-1"); !errors.Is(err, ErrRuntimeFailed) {
 		t.Fatal(err)
 	}
 }

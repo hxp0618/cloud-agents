@@ -3,6 +3,7 @@
 package opensandbox
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,13 +20,15 @@ import (
 )
 
 var (
-	ErrInvalid     = errors.New("opensandbox request is invalid")
-	ErrUnavailable = errors.New("opensandbox authority is unavailable")
-	ErrNotFound    = errors.New("opensandbox resource is absent")
-	ErrConflict    = errors.New("opensandbox ownership or receipt conflicts")
-	identifier     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
-	platformID     = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
-	digest         = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	ErrInvalid       = errors.New("opensandbox request is invalid")
+	ErrUnavailable   = errors.New("opensandbox authority is unavailable")
+	ErrNotFound      = errors.New("opensandbox resource is absent")
+	ErrConflict      = errors.New("opensandbox ownership or receipt conflicts")
+	ErrRuntimeFailed = errors.New("opensandbox runtime failed")
+	identifier       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	platformID       = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
+	digest           = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	runtimeImage     = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 )
 
 type Identity struct {
@@ -67,6 +70,21 @@ func (id Identity) Labels() map[string]string {
 
 // Observation contains only execution metadata. Running is not a readiness verdict.
 type Observation struct{ RuntimeID, RuntimeState string }
+
+type CreateInput struct {
+	Identity    Identity
+	ImageURI    string
+	VolumeName  string
+	CPUMillis   int64
+	MemoryBytes int64
+}
+
+func (input CreateInput) valid() bool {
+	return input.Identity.valid() && runtimeImage.MatchString(input.ImageURI) &&
+		identifier.MatchString(input.VolumeName) && len(input.VolumeName) <= 63 &&
+		input.CPUMillis >= 100 && input.CPUMillis <= 64000 &&
+		input.MemoryBytes >= 134217728 && input.MemoryBytes <= 1099511627776
+}
 
 type Client struct {
 	endpoint, key string
@@ -199,6 +217,146 @@ func (c *Client) Find(ctx context.Context, id Identity) (Observation, error) {
 		}
 	}
 	return Observation{}, ErrUnavailable
+}
+
+// Create adopts an exact receipt before creating. Cross-process exclusion is the
+// caller's durable claim; a lost POST response is recovered by the next Find.
+func (c *Client) Create(ctx context.Context, input CreateInput) (Observation, error) {
+	if c == nil || !input.valid() {
+		return Observation{}, ErrInvalid
+	}
+	if found, err := c.Find(ctx, input.Identity); err == nil {
+		return found, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return Observation{}, err
+	}
+	body := map[string]any{
+		"image":      map[string]string{"uri": input.ImageURI},
+		"entrypoint": []string{"sleep", "infinity"},
+		"resourceLimits": map[string]string{
+			"cpu": strconv.FormatInt(input.CPUMillis, 10) + "m", "memory": strconv.FormatInt(input.MemoryBytes, 10),
+		},
+		"metadata": input.Identity.Labels(),
+		"volumes": []map[string]any{{
+			"name": "workspace", "pvc": map[string]any{
+				"claimName": input.VolumeName, "createIfNotExists": false, "deleteOnSandboxTermination": false,
+			}, "mountPath": "/workspace", "readOnly": false,
+		}},
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return Observation{}, ErrInvalid
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/v1/sandboxes", bytes.NewReader(encoded))
+	if err != nil {
+		return Observation{}, ErrInvalid
+	}
+	request.Header.Set("OPEN-SANDBOX-API-KEY", c.key)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return Observation{}, ctx.Err()
+		}
+		return Observation{}, ErrUnavailable
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusConflict {
+			return Observation{}, ErrConflict
+		}
+		return Observation{}, ErrUnavailable
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	var created sandbox
+	if err != nil || len(data) > 1<<20 || json.Unmarshal(data, &created) != nil {
+		return Observation{}, ErrUnavailable
+	}
+	return created.observation(input.Identity)
+}
+
+// WaitReady verifies the candidate state and its command service; Running alone
+// is not readiness because an invalid entrypoint can fail asynchronously.
+func (c *Client) WaitReady(ctx context.Context, id Identity, runtimeID string) (Observation, error) {
+	if c == nil || !id.valid() || !identifier.MatchString(runtimeID) {
+		return Observation{}, ErrInvalid
+	}
+	last := Observation{RuntimeID: runtimeID}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var current sandbox
+		if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+runtimeID, &current); err != nil {
+			return last, err
+		}
+		observation, err := current.observation(id)
+		if err != nil {
+			return last, err
+		}
+		last = observation
+		switch observation.RuntimeState {
+		case "Running":
+			if err := c.probeExecd(ctx, runtimeID); err == nil {
+				return observation, nil
+			} else if !errors.Is(err, ErrUnavailable) {
+				return observation, err
+			}
+		case "Failed", "Terminated":
+			return observation, ErrRuntimeFailed
+		}
+		select {
+		case <-ctx.Done():
+			return last, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *Client) probeExecd(ctx context.Context, runtimeID string) error {
+	var endpoint struct {
+		Endpoint string            `json:"endpoint"`
+		Headers  map[string]string `json:"headers"`
+	}
+	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+runtimeID+"/endpoints/44772", &endpoint); err != nil {
+		return err
+	}
+	base, baseErr := url.Parse(c.endpoint)
+	raw := endpoint.Endpoint
+	if !strings.Contains(raw, "://") {
+		raw = base.Scheme + "://" + raw
+	}
+	target, err := url.Parse(raw)
+	if err != nil || baseErr != nil || target.Host == "" || target.Hostname() != base.Hostname() || target.Scheme != base.Scheme || target.User != nil ||
+		(target.Path != "" && target.Path != "/" && target.Path != "/proxy/44772") || target.RawPath != "" || target.RawQuery != "" || target.Fragment != "" || target.Opaque != "" ||
+		(target.Scheme != "http" && target.Scheme != "https") || len(endpoint.Headers) > 16 {
+		return ErrUnavailable
+	}
+	target.Path = "/ping"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
+	if err != nil {
+		return ErrUnavailable
+	}
+	for name, value := range endpoint.Headers {
+		if name == "" || len(name) > 128 || len(value) > 4096 || strings.EqualFold(name, "Host") ||
+			strings.ContainsAny(name+value, "\r\n") {
+			return ErrUnavailable
+		}
+		request.Header.Set(name, value)
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrUnavailable
+	}
+	defer response.Body.Close()
+	copied, copyErr := io.Copy(io.Discard, io.LimitReader(response.Body, (1<<20)+1))
+	if copyErr != nil || copied > 1<<20 || response.StatusCode != http.StatusOK {
+		return ErrUnavailable
+	}
+	return nil
 }
 
 // Delete terminates the exact receipt. The caller must hold the durable claim and

@@ -606,7 +606,50 @@ export type SandboxSession = Readonly<{
   runtimeProfileVersion: number;
   generation: number;
   desiredState: "running";
-  observedState: "pending";
+  observedState: "pending" | "running" | "unknown" | "failed" | "stopped";
+}>;
+export type AdminSandboxSession = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminSandboxSession";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    operationId: string;
+    operationState: "pending" | "running" | "reconciling" | "succeeded" | "failed";
+    cleanupPhase: "none" | "complete" | "blocked";
+    workspaceId: string;
+    workspaceName: string;
+    volumeId: string;
+    physicalVolumeId?: string;
+    workspaceRetention: "retained";
+    workspaceObservedState: "pending" | "available" | "unknown" | "failed";
+    runtimeProfileId: string;
+    runtimeProfileVersion: number;
+    targetId: string;
+    generation: number;
+    observedGeneration: number;
+    desiredState: "running" | "stopped";
+    observedState: "pending" | "running" | "unknown" | "failed" | "stopped";
+    writerReleased: boolean;
+    runtimeId?: string;
+    runtimeState?:
+      | "Pending"
+      | "Running"
+      | "Pausing"
+      | "Paused"
+      | "Resuming"
+      | "Stopping"
+      | "Terminated"
+      | "Failed";
+    stableErrorCode?: string;
+    observedAt?: string;
+  }>;
+}>;
+export type AdminSandboxSessionPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "AdminSandboxSessionPage";
+  sandboxSessions: readonly AdminSandboxSession[];
+  nextPageToken?: string;
 }>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
@@ -1487,6 +1530,38 @@ const sandboxSessionResponseShape: ResponseShape = {
     generation: scalarResponseShape,
     desiredState: scalarResponseShape,
     observedState: scalarResponseShape,
+  },
+};
+const adminSandboxSessionResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  operationId: scalarResponseShape,
+  operationState: scalarResponseShape,
+  cleanupPhase: scalarResponseShape,
+  workspaceId: scalarResponseShape,
+  workspaceName: scalarResponseShape,
+  volumeId: scalarResponseShape,
+  physicalVolumeId: scalarResponseShape,
+  workspaceRetention: scalarResponseShape,
+  workspaceObservedState: scalarResponseShape,
+  runtimeProfileId: scalarResponseShape,
+  runtimeProfileVersion: scalarResponseShape,
+  targetId: scalarResponseShape,
+  generation: scalarResponseShape,
+  observedGeneration: scalarResponseShape,
+  desiredState: scalarResponseShape,
+  observedState: scalarResponseShape,
+  writerReleased: scalarResponseShape,
+  runtimeId: scalarResponseShape,
+  runtimeState: scalarResponseShape,
+  stableErrorCode: scalarResponseShape,
+  observedAt: scalarResponseShape,
+});
+const adminSandboxSessionPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    sandboxSessions: { item: adminSandboxSessionResponseShape },
+    nextPageToken: scalarResponseShape,
   },
 };
 const deploymentTargetResponseShape = resourceResponseShape({
@@ -4447,8 +4522,7 @@ export function decodeSandboxSession(value: unknown): SandboxSession {
   if (
     source.apiVersion !== platformApiVersion ||
     source.kind !== "SandboxSession" ||
-    source.desiredState !== "running" ||
-    source.observedState !== "pending"
+    source.desiredState !== "running"
   )
     error("INVALID_SANDBOX_SESSION", "/observedState");
   return Object.freeze({
@@ -4467,8 +4541,167 @@ export function decodeSandboxSession(value: unknown): SandboxSession {
     ),
     generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
     desiredState: "running",
-    observedState: "pending",
+    observedState: enumValue(
+      source.observedState,
+      ["pending", "running", "unknown", "failed", "stopped"] as const,
+      "/observedState",
+    ),
   });
+}
+export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
+  const source = record(value);
+  const root = base(source, "AdminSandboxSession");
+  const fields = [
+    "projectRef",
+    "operationId",
+    "operationState",
+    "cleanupPhase",
+    "workspaceId",
+    "workspaceName",
+    "volumeId",
+    "physicalVolumeId",
+    "workspaceRetention",
+    "workspaceObservedState",
+    "runtimeProfileId",
+    "runtimeProfileVersion",
+    "targetId",
+    "generation",
+    "observedGeneration",
+    "desiredState",
+    "observedState",
+    "writerReleased",
+    "runtimeId",
+    "runtimeState",
+    "stableErrorCode",
+    "observedAt",
+  ] as const;
+  const spec = strictRecord(
+    source.spec,
+    fields,
+    fields.filter(
+      (field) =>
+        ![
+          "physicalVolumeId",
+          "runtimeId",
+          "runtimeState",
+          "stableErrorCode",
+          "observedAt",
+        ].includes(field),
+    ),
+    "/spec",
+  );
+  const generation = integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation");
+  const observedGeneration = integer(
+    spec.observedGeneration,
+    0,
+    generation,
+    "/spec/observedGeneration",
+  );
+  const result = {
+    projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+    operationId: identifier(spec.operationId, "/spec/operationId"),
+    operationState: enumValue(
+      spec.operationState,
+      ["pending", "running", "reconciling", "succeeded", "failed"] as const,
+      "/spec/operationState",
+    ),
+    cleanupPhase: enumValue(
+      spec.cleanupPhase,
+      ["none", "complete", "blocked"] as const,
+      "/spec/cleanupPhase",
+    ),
+    workspaceId: identifier(spec.workspaceId, "/spec/workspaceId"),
+    workspaceName: identifier(spec.workspaceName, "/spec/workspaceName"),
+    volumeId: identifier(spec.volumeId, "/spec/volumeId"),
+    workspaceRetention: enumValue(
+      spec.workspaceRetention,
+      ["retained"] as const,
+      "/spec/workspaceRetention",
+    ),
+    workspaceObservedState: enumValue(
+      spec.workspaceObservedState,
+      ["pending", "available", "unknown", "failed"] as const,
+      "/spec/workspaceObservedState",
+    ),
+    runtimeProfileId: identifier(spec.runtimeProfileId, "/spec/runtimeProfileId"),
+    runtimeProfileVersion: integer(
+      spec.runtimeProfileVersion,
+      1,
+      2147483647,
+      "/spec/runtimeProfileVersion",
+    ),
+    targetId: identifier(spec.targetId, "/spec/targetId"),
+    generation,
+    observedGeneration,
+    desiredState: enumValue(
+      spec.desiredState,
+      ["running", "stopped"] as const,
+      "/spec/desiredState",
+    ),
+    observedState: enumValue(
+      spec.observedState,
+      ["pending", "running", "unknown", "failed", "stopped"] as const,
+      "/spec/observedState",
+    ),
+    writerReleased: boolean(spec.writerReleased, "/spec/writerReleased"),
+    ...(spec.physicalVolumeId === undefined
+      ? {}
+      : { physicalVolumeId: identifier(spec.physicalVolumeId, "/spec/physicalVolumeId") }),
+    ...(spec.runtimeId === undefined
+      ? {}
+      : { runtimeId: identifier(spec.runtimeId, "/spec/runtimeId") }),
+    ...(spec.runtimeState === undefined
+      ? {}
+      : {
+          runtimeState: enumValue(
+            spec.runtimeState,
+            [
+              "Pending",
+              "Running",
+              "Pausing",
+              "Paused",
+              "Resuming",
+              "Stopping",
+              "Terminated",
+              "Failed",
+            ] as const,
+            "/spec/runtimeState",
+          ),
+        }),
+    ...(spec.stableErrorCode === undefined
+      ? {}
+      : { stableErrorCode: identifier(spec.stableErrorCode, "/spec/stableErrorCode") }),
+    ...(spec.observedAt === undefined
+      ? {}
+      : { observedAt: dateTime(spec.observedAt, "/spec/observedAt") }),
+  };
+  return Object.freeze({ ...root, kind: "AdminSandboxSession", spec: Object.freeze(result) });
+}
+export function decodeAdminSandboxSessionPage(value: unknown): AdminSandboxSessionPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "sandboxSessions", "nextPageToken"],
+    ["apiVersion", "kind", "sandboxSessions"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "AdminSandboxSessionPage" ||
+    !Array.isArray(source.sandboxSessions) ||
+    source.sandboxSessions.length > 200
+  )
+    error("INVALID_ADMIN_SANDBOX_SESSION_PAGE", "/sandboxSessions");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "AdminSandboxSessionPage" as const,
+    sandboxSessions: Object.freeze(
+      (source.sandboxSessions as unknown[]).map(decodeAdminSandboxSession),
+    ),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
 }
 export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
   const source = record(value);
@@ -5821,6 +6054,14 @@ export function parseRuntimeProfileSummaryPage(
 }
 export function parseSandboxSession(text: string): ResponseEnvelope<SandboxSession> {
   return parseResponse(text, sandboxSessionResponseShape, decodeSandboxSession);
+}
+export function parseAdminSandboxSession(text: string): ResponseEnvelope<AdminSandboxSession> {
+  return parseResponse(text, adminSandboxSessionResponseShape, decodeAdminSandboxSession);
+}
+export function parseAdminSandboxSessionPage(
+  text: string,
+): ResponseEnvelope<AdminSandboxSessionPage> {
+  return parseResponse(text, adminSandboxSessionPageResponseShape, decodeAdminSandboxSessionPage);
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
@@ -8279,6 +8520,68 @@ export class Client {
       result.value.spec.projectRef.id !== projectId ||
       result.value.spec.profileId !== profileId ||
       result.value.spec.version !== version
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminSandboxSessions(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminSandboxSessionPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sandbox-sessions${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListSandboxSessions", response);
+    const result = parseAdminSandboxSessionPage(response.body);
+    if (
+      result.value.sandboxSessions.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxSessions");
+    return result;
+  }
+  async getAdminSandboxSession(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminSandboxSession>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetSandboxSession", response);
+    const result = parseAdminSandboxSession(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.metadata.uid !== sandboxId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;

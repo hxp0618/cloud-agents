@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   createHTTPClient,
+  type AdminSandboxSession,
   type AdminAuditEvent,
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
@@ -21,6 +22,8 @@ import {
   type NetworkPolicy,
   type ProjectLeaseQuota,
   type ProjectLeaseQuotaSetRequest,
+  type RuntimeProfile,
+  type RuntimeProfileCreateRequest,
   type StoragePolicy,
   type StoragePolicySetRequest,
   type Worker,
@@ -51,6 +54,8 @@ import {
   listAdminStoragePolicyAuditEvents,
   listAdminProfileAuditEvents,
   listAdminProfiles,
+  listAdminRuntimeProfiles,
+  listAdminSandboxes,
   listAdminReleases,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
@@ -62,6 +67,7 @@ import {
   readSavedAdminConnection,
   replaceLease,
   replaceProfile,
+  replaceRuntimeProfile,
   replaceRelease,
   replaceStoragePolicy,
   replaceTarget,
@@ -137,6 +143,20 @@ function storagePolicyFormFrom(policy?: StoragePolicy) {
   };
 }
 
+function runtimeProfileForm() {
+  return {
+    profileId: "",
+    profileName: "",
+    version: "1",
+    description: "",
+    targetId: "",
+    imageUri: "",
+    releaseDigest: "",
+    cpuMillis: "1000",
+    memoryMiB: "1024",
+  };
+}
+
 function statusLabel(status: ConnectionStatus, t: Translate): string {
   if (status === "connected") return t("connection.connected");
   if (status === "connecting") return t("connection.authorizing");
@@ -145,7 +165,13 @@ function statusLabel(status: ConnectionStatus, t: Translate): string {
 }
 
 function phaseTone(phase: string): string {
-  if (phase === "ready" || phase === "complete" || phase === "succeeded" || phase === "published")
+  if (
+    phase === "ready" ||
+    phase === "available" ||
+    phase === "complete" ||
+    phase === "succeeded" ||
+    phase === "published"
+  )
     return "success";
   if (
     [
@@ -204,6 +230,17 @@ const phaseMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   starting: "phase.starting",
   stopping: "phase.stopping",
   "cleanup-pending": "phase.cleanupPending",
+  available: "phase.available",
+  unknown: "phase.unknown",
+  stopped: "phase.stopped",
+  Pending: "phase.pending",
+  Running: "phase.running",
+  Pausing: "phase.stopping",
+  Paused: "phase.stopped",
+  Resuming: "phase.starting",
+  Stopping: "phase.stopping",
+  Terminated: "phase.stopped",
+  Failed: "phase.failed",
 });
 
 const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -469,6 +506,12 @@ export function App() {
   const [profiles, setProfiles] = useState<readonly EnvironmentProfile[]>(Object.freeze([]));
   const [selectedProfileVersionId, setSelectedProfileVersionId] = useState("");
   const [profileAudit, setProfileAudit] = useState<readonly AdminAuditEvent[]>(Object.freeze([]));
+  const [runtimeProfiles, setRuntimeProfiles] = useState<readonly RuntimeProfile[]>(
+    Object.freeze([]),
+  );
+  const [selectedRuntimeProfileVersionId, setSelectedRuntimeProfileVersionId] = useState("");
+  const [sandboxes, setSandboxes] = useState<readonly AdminSandboxSession[]>(Object.freeze([]));
+  const [selectedSandboxId, setSelectedSandboxId] = useState("");
   const [storagePolicies, setStoragePolicies] = useState<readonly StoragePolicy[]>(
     Object.freeze([]),
   );
@@ -507,9 +550,14 @@ export function App() {
   const [registering, setRegistering] = useState(false);
   const [registeringRelease, setRegisteringRelease] = useState(false);
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
+  const [runtimeProfileDetailOpen, setRuntimeProfileDetailOpen] = useState(false);
+  const [sandboxDetailOpen, setSandboxDetailOpen] = useState(false);
   const [maintenanceDetailOpen, setMaintenanceDetailOpen] = useState(false);
   const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
+  const [runtimeProfileTransition, setRuntimeProfileTransition] =
+    useState<ProfileTransition | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
+  const [creatingRuntimeProfile, setCreatingRuntimeProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
   const [error, setError] = useState<ReturnType<typeof adminFailure> | null>(null);
   const [notice, setNotice] = useState<LocalizedMessage | null>(null);
@@ -535,6 +583,7 @@ export function App() {
     targetRefs: "",
     providerCredentialRef: "",
   });
+  const [runtimeProfileDraft, setRuntimeProfileDraft] = useState(runtimeProfileForm);
   const [releaseForm, setReleaseForm] = useState({
     releaseId: "",
     releaseName: "",
@@ -606,6 +655,10 @@ export function App() {
   const selectedProfile = profiles.find(
     ({ metadata }) => metadata.uid === selectedProfileVersionId,
   );
+  const selectedRuntimeProfile = runtimeProfiles.find(
+    ({ metadata }) => metadata.uid === selectedRuntimeProfileVersionId,
+  );
+  const selectedSandbox = sandboxes.find(({ metadata }) => metadata.uid === selectedSandboxId);
   const selectedStoragePolicy = storagePolicies.find(
     ({ metadata }) => metadata.uid === selectedStoragePolicyId,
   );
@@ -683,6 +736,36 @@ export function App() {
             String(spec.version),
             spec.status,
             ...spec.providerKinds,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleRuntimeProfiles =
+    normalizedQuery === ""
+      ? runtimeProfiles
+      : runtimeProfiles.filter(({ metadata, spec }) =>
+          [
+            metadata.uid,
+            metadata.name,
+            spec.profileId,
+            String(spec.version),
+            spec.status,
+            spec.targetId,
+            spec.imageUri,
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+        );
+  const visibleSandboxes =
+    normalizedQuery === ""
+      ? sandboxes
+      : sandboxes.filter(({ metadata, spec }) =>
+          [
+            metadata.uid,
+            spec.workspaceId,
+            spec.workspaceName,
+            spec.volumeId,
+            spec.physicalVolumeId ?? "",
+            spec.runtimeProfileId,
+            spec.targetId,
+            spec.operationId,
+            spec.observedState,
           ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
         );
   const visibleStoragePolicies =
@@ -763,6 +846,9 @@ export function App() {
   );
 
   useEffect(() => {
+    const sandboxLifecyclePending = sandboxes.some(({ spec }) =>
+      ["pending", "unknown"].includes(spec.observedState),
+    );
     const lifecyclePending =
       targets.some(({ spec }) => spec.observedPhase === "probing") ||
       leases.some(
@@ -770,7 +856,8 @@ export function App() {
           spec.observedPhase === "provisioning" ||
           spec.observedPhase === "terminating" ||
           ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
-      );
+      ) ||
+      sandboxLifecyclePending;
     const observeHealth =
       (page === "workers" || page === "overview") &&
       workers.some(({ spec }) => spec.state === "ready");
@@ -790,14 +877,18 @@ export function App() {
             ? loadLeaseAuthority(client, connection, selectedLeaseId, signal)
             : Promise.resolve({ leases, selectedLeaseId }),
           listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
+          sandboxLifecyclePending
+            ? listAdminSandboxes(client, connection.tenantId, connection.projectId, signal)
+            : Promise.resolve(sandboxes),
         ])
-          .then(([loadedTargets, loadedLeases, loadedWorkers]) => {
+          .then(([loadedTargets, loadedLeases, loadedWorkers, loadedSandboxes]) => {
             if (controller.signal.aborted) return;
             setTargets(loadedTargets.targets);
             setSelectedTargetId(loadedTargets.selectedTargetId);
             setLeases(loadedLeases.leases);
             setSelectedLeaseId(loadedLeases.selectedLeaseId);
             setWorkers(loadedWorkers);
+            setSandboxes(loadedSandboxes);
             setSelectedWorkerId((current) =>
               loadedWorkers.some(({ metadata }) => metadata.uid === current)
                 ? current
@@ -826,6 +917,7 @@ export function App() {
     selectedTargetId,
     targets,
     workers,
+    sandboxes,
     page,
   ]);
 
@@ -853,8 +945,11 @@ export function App() {
     setLeaseReleaseConfirmationOpen(false);
     setWorkerDetailOpen(false);
     setProfileDetailOpen(false);
+    setRuntimeProfileDetailOpen(false);
+    setSandboxDetailOpen(false);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
+    setRuntimeProfileTransition(null);
     setRegisteringRelease(false);
   }
 
@@ -881,6 +976,10 @@ export function App() {
     setProfiles(Object.freeze([]));
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
+    setRuntimeProfiles(Object.freeze([]));
+    setSelectedRuntimeProfileVersionId("");
+    setSandboxes(Object.freeze([]));
+    setSelectedSandboxId("");
     setStoragePolicies(Object.freeze([]));
     setNetworkPolicies([]);
     setNetworkEditorEpoch((current) => current + 1);
@@ -899,9 +998,14 @@ export function App() {
     setWorkerDetailOpen(false);
     setRegisteringRelease(false);
     setProfileDetailOpen(false);
+    setRuntimeProfileDetailOpen(false);
+    setSandboxDetailOpen(false);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
+    setRuntimeProfileTransition(null);
     setCreatingProfile(false);
+    setCreatingRuntimeProfile(false);
+    setRuntimeProfileDraft(runtimeProfileForm());
     setMobileNavOpen(false);
     setBusy(null);
     setError(null);
@@ -936,6 +1040,8 @@ export function App() {
         loadedWorkers,
         loadedReleases,
         loadedProfiles,
+        loadedRuntimeProfiles,
+        loadedSandboxes,
         loadedStoragePolicies,
         loadedNetworkPolicies,
         loadedQuota,
@@ -947,6 +1053,13 @@ export function App() {
         listAdminWorkers(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         listAdminReleases(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
+        listAdminRuntimeProfiles(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
+        listAdminSandboxes(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         listAdminStoragePolicies(
           nextClient,
           nextConnection.tenantId,
@@ -992,6 +1105,10 @@ export function App() {
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
+      setRuntimeProfiles(loadedRuntimeProfiles);
+      setSelectedRuntimeProfileVersionId(loadedRuntimeProfiles[0]?.metadata.uid ?? "");
+      setSandboxes(loadedSandboxes);
+      setSelectedSandboxId(loadedSandboxes[0]?.metadata.uid ?? "");
       setStoragePolicies(loadedStoragePolicies);
       setNetworkPolicies(loadedNetworkPolicies);
       setSelectedStoragePolicyId(loadedStoragePolicies[0]?.metadata.uid ?? "");
@@ -1080,6 +1197,8 @@ export function App() {
         loadedWorkers,
         loadedReleases,
         loadedProfiles,
+        loadedRuntimeProfiles,
+        loadedSandboxes,
         loadedStoragePolicies,
         loadedNetworkPolicies,
         loadedQuota,
@@ -1091,6 +1210,8 @@ export function App() {
         listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
         listAdminReleases(client, connection.tenantId, connection.projectId, signal),
         loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
+        listAdminRuntimeProfiles(client, connection.tenantId, connection.projectId, signal),
+        listAdminSandboxes(client, connection.tenantId, connection.projectId, signal),
         listAdminStoragePolicies(client, connection.tenantId, connection.projectId, signal),
         listAdminNetworkPolicies(client, connection.tenantId, connection.projectId, signal),
         loadAdminProjectLeaseQuota(client, connection.tenantId, connection.projectId, signal),
@@ -1115,6 +1236,18 @@ export function App() {
       setReleases(loadedReleases);
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
+      setRuntimeProfiles(loadedRuntimeProfiles);
+      setSelectedRuntimeProfileVersionId((current) =>
+        loadedRuntimeProfiles.some(({ metadata }) => metadata.uid === current)
+          ? current
+          : (loadedRuntimeProfiles[0]?.metadata.uid ?? ""),
+      );
+      setSandboxes(loadedSandboxes);
+      setSelectedSandboxId((current) =>
+        loadedSandboxes.some(({ metadata }) => metadata.uid === current)
+          ? current
+          : (loadedSandboxes[0]?.metadata.uid ?? ""),
+      );
       setStoragePolicies(loadedStoragePolicies);
       setNetworkPolicies(loadedNetworkPolicies);
       setSelectedStoragePolicyId((current) =>
@@ -1341,6 +1474,123 @@ export function App() {
         ]);
         setProfiles((current) => replaceProfile(current, result.value));
         setProfileAudit(audit);
+      },
+    );
+  }
+
+  function selectRuntimeProfile(profileVersionId: string) {
+    setRuntimeProfileDetailOpen(true);
+    setRuntimeProfileTransition(null);
+    const profile = runtimeProfiles.find(({ metadata }) => metadata.uid === profileVersionId);
+    if (client === null || profile === undefined) return;
+    setSelectedRuntimeProfileVersionId(profileVersionId);
+    void runOperation(
+      `get-runtime-profile:${profileVersionId}`,
+      { key: "operation.runtimeProfileDetail" },
+      async (signal) => {
+        const result = await client.getAdminRuntimeProfile(
+          connection.tenantId,
+          connection.projectId,
+          profile.spec.profileId,
+          profile.spec.version,
+          newRequestId(),
+          signal,
+        );
+        setRuntimeProfiles((current) => replaceRuntimeProfile(current, result.value));
+      },
+    );
+  }
+
+  function selectSandbox(sandboxId: string) {
+    setSandboxDetailOpen(true);
+    setSelectedSandboxId(sandboxId);
+    if (client === null) return;
+    void runOperation(
+      `get-sandbox:${sandboxId}`,
+      { key: "operation.sandboxDetail" },
+      async (signal) => {
+        const result = await client.getAdminSandboxSession(
+          connection.tenantId,
+          connection.projectId,
+          sandboxId,
+          newRequestId(),
+          signal,
+        );
+        setSandboxes((current) =>
+          Object.freeze(
+            current.map((sandbox) => (sandbox.metadata.uid === sandboxId ? result.value : sandbox)),
+          ),
+        );
+      },
+    );
+  }
+
+  function createRuntimeProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null) return;
+    const body: RuntimeProfileCreateRequest = {
+      profileId: runtimeProfileDraft.profileId.trim(),
+      profileName: runtimeProfileDraft.profileName.trim(),
+      version: Number(runtimeProfileDraft.version),
+      description: runtimeProfileDraft.description.trim(),
+      targetId: runtimeProfileDraft.targetId,
+      imageUri: runtimeProfileDraft.imageUri.trim(),
+      releaseDigest: runtimeProfileDraft.releaseDigest.trim() as `sha256:${string}`,
+      cpuMillis: Number(runtimeProfileDraft.cpuMillis),
+      memoryBytes: Number(runtimeProfileDraft.memoryMiB) * 1_048_576,
+    };
+    const key = `create-runtime-profile:${body.profileId}:${body.version}`;
+    void runOperation(key, { key: "operation.createRuntimeProfile" }, async (signal) => {
+      const result = await client.createAdminRuntimeProfile(
+        connection.tenantId,
+        connection.projectId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      setRuntimeProfiles((current) => replaceRuntimeProfile(current, result.value));
+      setSelectedRuntimeProfileVersionId(result.value.metadata.uid);
+      setRuntimeProfileDraft(runtimeProfileForm());
+      setCreatingRuntimeProfile(false);
+    });
+  }
+
+  function transitionRuntimeProfile() {
+    if (
+      client === null ||
+      selectedRuntimeProfile === undefined ||
+      runtimeProfileTransition === null
+    )
+      return;
+    const profile = selectedRuntimeProfile;
+    const action = runtimeProfileTransition;
+    const key = `runtime-profile:${action}:${profile.metadata.uid}:${profile.metadata.resourceVersion}`;
+    setRuntimeProfileTransition(null);
+    void runOperation(
+      key,
+      {
+        key:
+          action === "publish"
+            ? "operation.publishRuntimeProfile"
+            : "operation.disableRuntimeProfile",
+      },
+      async (signal) => {
+        const args = [
+          connection.tenantId,
+          connection.projectId,
+          profile.spec.profileId,
+          profile.spec.version,
+          newRequestId(),
+          idempotencyKey(key),
+          { expectedResourceVersion: profile.metadata.resourceVersion },
+          signal,
+        ] as const;
+        const result =
+          action === "publish"
+            ? await client.publishAdminRuntimeProfile(...args)
+            : await client.disableAdminRuntimeProfile(...args);
+        setRuntimeProfiles((current) => replaceRuntimeProfile(current, result.value));
       },
     );
   }
@@ -2001,6 +2251,8 @@ export function App() {
             workers: workers.length,
             releases: releases.length,
             profiles: profiles.length,
+            runtimeProfiles: runtimeProfiles.length,
+            sandboxes: sandboxes.length,
             storage: storagePolicies.length,
             network: networkPolicies.length,
             quotas: leaseQuota === undefined ? 0 : 1,
@@ -2076,42 +2328,50 @@ export function App() {
                   ? t("page.overview.title")
                   : page === "targets"
                     ? t("page.targets.title")
-                    : page === "workers"
-                      ? t("page.workers.title")
-                      : page === "releases"
-                        ? t("page.releases.title")
-                        : page === "profiles"
-                          ? t("page.profiles.title")
-                          : page === "storage"
-                            ? t("page.storagePolicies.title")
-                            : page === "network"
-                              ? t("page.networkPolicies.title")
-                              : page === "quotas"
-                                ? t("page.quotas.title")
-                                : page === "leases"
-                                  ? t("page.leases.title")
-                                  : t("page.maintenance.title")}
+                    : page === "sandboxes"
+                      ? t("page.sandboxes.title")
+                      : page === "workers"
+                        ? t("page.workers.title")
+                        : page === "releases"
+                          ? t("page.releases.title")
+                          : page === "profiles"
+                            ? t("page.profiles.title")
+                            : page === "runtimeProfiles"
+                              ? t("page.runtimeProfiles.title")
+                              : page === "storage"
+                                ? t("page.storagePolicies.title")
+                                : page === "network"
+                                  ? t("page.networkPolicies.title")
+                                  : page === "quotas"
+                                    ? t("page.quotas.title")
+                                    : page === "leases"
+                                      ? t("page.leases.title")
+                                      : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
                   ? t("page.overview.description")
                   : page === "targets"
                     ? t("page.targets.description")
-                    : page === "workers"
-                      ? t("page.workers.description")
-                      : page === "releases"
-                        ? t("page.releases.description")
-                        : page === "profiles"
-                          ? t("page.profiles.description")
-                          : page === "storage"
-                            ? t("page.storagePolicies.description")
-                            : page === "network"
-                              ? t("page.networkPolicies.description")
-                              : page === "quotas"
-                                ? t("page.quotas.description")
-                                : page === "leases"
-                                  ? t("page.leases.description")
-                                  : t("page.maintenance.description")}
+                    : page === "sandboxes"
+                      ? t("page.sandboxes.description")
+                      : page === "workers"
+                        ? t("page.workers.description")
+                        : page === "releases"
+                          ? t("page.releases.description")
+                          : page === "profiles"
+                            ? t("page.profiles.description")
+                            : page === "runtimeProfiles"
+                              ? t("page.runtimeProfiles.description")
+                              : page === "storage"
+                                ? t("page.storagePolicies.description")
+                                : page === "network"
+                                  ? t("page.networkPolicies.description")
+                                  : page === "quotas"
+                                    ? t("page.quotas.description")
+                                    : page === "leases"
+                                      ? t("page.leases.description")
+                                      : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -2154,6 +2414,30 @@ export function App() {
                   }
                 >
                   {t("action.createProfile")}
+                </button>
+              ) : page === "runtimeProfiles" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => {
+                    setRuntimeProfileDraft((current) => ({
+                      ...current,
+                      targetId:
+                        current.targetId ||
+                        targets.find(
+                          ({ spec }) =>
+                            spec.targetKind === "docker" && spec.observedPhase === "ready",
+                        )?.metadata.uid ||
+                        targets.find(({ spec }) => spec.targetKind === "docker")?.metadata.uid ||
+                        "",
+                    }));
+                    setCreatingRuntimeProfile(true);
+                  }}
+                  disabled={
+                    busy !== null || !targets.some(({ spec }) => spec.targetKind === "docker")
+                  }
+                >
+                  {t("action.createRuntimeProfile")}
                 </button>
               ) : page === "network" ? (
                 <button
@@ -2406,6 +2690,29 @@ export function App() {
                 />
               </section>
             </>
+          ) : page === "sandboxes" ? (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label={t("search.sandboxes.label")}
+                  placeholder={t("search.sandboxes.placeholder")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">
+                  sandboxes.list · {number(visibleSandboxes.length)}
+                </span>
+              </div>
+              <div className="panel target-list-panel">
+                <SandboxTable
+                  sandboxes={visibleSandboxes}
+                  selectedSandboxId={selectedSandboxId}
+                  onSelect={selectSandbox}
+                />
+              </div>
+              <p className="cluster-boundary">{t("sandbox.boundary")}</p>
+            </section>
           ) : page === "targets" ? (
             <section className="resource-list">
               <div className="list-toolbar target-toolbar">
@@ -2561,6 +2868,29 @@ export function App() {
               <div className="panel target-list-panel">
                 <ReleaseTable releases={visibleReleases} />
               </div>
+            </section>
+          ) : page === "runtimeProfiles" ? (
+            <section className="resource-list">
+              <div className="list-toolbar">
+                <input
+                  type="search"
+                  aria-label={t("search.runtimeProfiles.label")}
+                  placeholder={t("search.runtimeProfiles.placeholder")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="scope-chip">
+                  profiles.list · {number(visibleRuntimeProfiles.length)}
+                </span>
+              </div>
+              <div className="panel target-list-panel">
+                <RuntimeProfileTable
+                  profiles={visibleRuntimeProfiles}
+                  selectedProfileVersionId={selectedRuntimeProfileVersionId}
+                  onSelect={selectRuntimeProfile}
+                />
+              </div>
+              <p className="cluster-boundary">{t("runtimeProfile.boundary")}</p>
             </section>
           ) : page === "profiles" ? (
             <section className="resource-list">
@@ -3058,6 +3388,279 @@ export function App() {
           )}
         </main>
       </section>
+
+      {runtimeProfileDetailOpen && selectedRuntimeProfile !== undefined ? (
+        <AdminSheet
+          label={t("sheet.runtimeProfile", { name: selectedRuntimeProfile.metadata.name })}
+          feedback={feedback}
+          onClose={() => {
+            setRuntimeProfileDetailOpen(false);
+            setRuntimeProfileTransition(null);
+          }}
+        >
+          <aside className="detail-panel" aria-label={t("sheet.selectedRuntimeProfile")}>
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label={t("action.close")}
+              onClick={() => {
+                setRuntimeProfileDetailOpen(false);
+                setRuntimeProfileTransition(null);
+              }}
+            >
+              ×
+            </button>
+            <RuntimeProfileDetail
+              profile={selectedRuntimeProfile}
+              disabled={busy !== null}
+              onTransition={setRuntimeProfileTransition}
+            />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
+      {sandboxDetailOpen && selectedSandbox !== undefined ? (
+        <AdminSheet
+          label={t("sheet.sandbox", { name: selectedSandbox.metadata.name })}
+          feedback={feedback}
+          onClose={() => setSandboxDetailOpen(false)}
+        >
+          <aside className="detail-panel" aria-label={t("sheet.selectedSandbox")}>
+            <button
+              className="sheet-close"
+              type="button"
+              aria-label={t("action.close")}
+              onClick={() => setSandboxDetailOpen(false)}
+            >
+              ×
+            </button>
+            <SandboxDetail sandbox={selectedSandbox} />
+          </aside>
+        </AdminSheet>
+      ) : null}
+
+      {runtimeProfileTransition !== null && selectedRuntimeProfile !== undefined ? (
+        <AdminSheet
+          confirmation
+          feedback={feedback}
+          label={t("sheet.profileTransition", {
+            action: t(
+              runtimeProfileTransition === "publish"
+                ? "profile.transition.publish"
+                : "profile.transition.disable",
+            ),
+            name: selectedRuntimeProfile.metadata.name,
+          })}
+          onClose={() => setRuntimeProfileTransition(null)}
+        >
+          <ProfileTransitionConfirmation
+            profile={selectedRuntimeProfile}
+            action={runtimeProfileTransition}
+            disabled={busy !== null}
+            onClose={() => setRuntimeProfileTransition(null)}
+            onConfirm={transitionRuntimeProfile}
+          />
+        </AdminSheet>
+      ) : null}
+
+      {creatingRuntimeProfile ? (
+        <AdminSheet
+          label={t("runtimeProfile.createTitle")}
+          feedback={feedback}
+          onClose={() => setCreatingRuntimeProfile(false)}
+        >
+          <section className="dialog" aria-labelledby="create-runtime-profile-title">
+            <div className="panel-heading">
+              <div>
+                <div className="eyebrow">no-Agent</div>
+                <h2 id="create-runtime-profile-title">{t("runtimeProfile.createTitle")}</h2>
+                <p>{t("runtimeProfile.createDescription")}</p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={t("action.close")}
+                onClick={() => setCreatingRuntimeProfile(false)}
+              >
+                ×
+              </button>
+            </div>
+            <form className="resource-form" onSubmit={createRuntimeProfile}>
+              <div className="form-row">
+                <label>
+                  <span>{t("runtimeProfile.id")}</span>
+                  <input
+                    value={runtimeProfileDraft.profileId}
+                    pattern={targetIdentifierPattern}
+                    maxLength={128}
+                    required
+                    autoFocus
+                    data-sheet-autofocus
+                    spellCheck={false}
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        profileId: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("runtimeProfile.name")}</span>
+                  <input
+                    value={runtimeProfileDraft.profileName}
+                    pattern={targetIdentifierPattern}
+                    maxLength={128}
+                    required
+                    spellCheck={false}
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        profileName: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  <span>{t("profile.version")}</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="2147483647"
+                    value={runtimeProfileDraft.version}
+                    required
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        version: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("runtimeProfile.target")}</span>
+                  <select
+                    value={runtimeProfileDraft.targetId}
+                    required
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        targetId: event.target.value,
+                      })
+                    }
+                  >
+                    {targets
+                      .filter(({ spec }) => spec.targetKind === "docker")
+                      .map((target) => (
+                        <option key={target.metadata.uid} value={target.metadata.uid}>
+                          {target.metadata.name} · {phaseLabel(target.spec.observedPhase, t)}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>{t("runtimeProfile.description")}</span>
+                <input
+                  value={runtimeProfileDraft.description}
+                  placeholder={t("runtimeProfile.descriptionPlaceholder")}
+                  minLength={1}
+                  maxLength={1024}
+                  required
+                  onChange={(event) =>
+                    setRuntimeProfileDraft({
+                      ...runtimeProfileDraft,
+                      description: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span>{t("runtimeProfile.image")}</span>
+                <input
+                  className="mono"
+                  value={runtimeProfileDraft.imageUri}
+                  placeholder={`registry.example/runtime@sha256:${"a".repeat(64)}`}
+                  maxLength={1024}
+                  required
+                  spellCheck={false}
+                  onChange={(event) =>
+                    setRuntimeProfileDraft({ ...runtimeProfileDraft, imageUri: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>{t("runtimeProfile.releaseDigest")}</span>
+                <input
+                  className="mono"
+                  value={runtimeProfileDraft.releaseDigest}
+                  placeholder={`sha256:${"a".repeat(64)}`}
+                  pattern="sha256:[0-9a-f]{64}"
+                  minLength={71}
+                  maxLength={71}
+                  required
+                  spellCheck={false}
+                  onChange={(event) =>
+                    setRuntimeProfileDraft({
+                      ...runtimeProfileDraft,
+                      releaseDigest: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  <span>{t("runtimeProfile.cpu")}</span>
+                  <input
+                    type="number"
+                    min="100"
+                    max="64000"
+                    value={runtimeProfileDraft.cpuMillis}
+                    required
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        cpuMillis: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>{t("runtimeProfile.memory")}</span>
+                  <input
+                    type="number"
+                    min="128"
+                    max="1048576"
+                    value={runtimeProfileDraft.memoryMiB}
+                    required
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        memoryMiB: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <p className="boundary-note">{t("runtimeProfile.boundary")}</p>
+              <div className="dialog-actions">
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => setCreatingRuntimeProfile(false)}
+                >
+                  {t("action.cancel")}
+                </button>
+                <button className="button primary" type="submit" disabled={busy !== null}>
+                  {t("runtimeProfile.createDraft")}
+                </button>
+              </div>
+            </form>
+          </section>
+        </AdminSheet>
+      ) : null}
 
       {targetDetailOpen && selectedTarget !== undefined ? (
         <AdminSheet
@@ -4516,6 +5119,155 @@ function StoragePolicyTable({
   );
 }
 
+function RuntimeProfileTable({
+  profiles,
+  selectedProfileVersionId,
+  onSelect,
+}: Readonly<{
+  profiles: readonly RuntimeProfile[];
+  selectedProfileVersionId: string;
+  onSelect: (profileVersionId: string) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  if (profiles.length === 0)
+    return <div className="table-empty">{t("table.empty.runtimeProfiles")}</div>;
+  return (
+    <div
+      className="table-scroll"
+      tabIndex={0}
+      role="region"
+      aria-label={t("page.runtimeProfiles.title")}
+    >
+      <table>
+        <thead>
+          <tr>
+            <th>{t("table.name")}</th>
+            <th>{t("table.version")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.target")}</th>
+            <th>{t("table.capacity")}</th>
+            <th>{t("table.updated")}</th>
+            <th aria-label={t("table.actions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {profiles.map((profile) => (
+            <tr
+              key={profile.metadata.uid}
+              className={profile.metadata.uid === selectedProfileVersionId ? "selected" : ""}
+              onClick={() => onSelect(profile.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(profile.metadata.uid)}>
+                  <strong>{profile.metadata.name}</strong>
+                  <small>{profile.spec.profileId}</small>
+                </button>
+              </td>
+              <td className="mono">v{number(profile.spec.version)}</td>
+              <td>
+                <span className={`phase ${phaseTone(profile.spec.status)}`}>
+                  <i /> {phaseLabel(profile.spec.status, t)}
+                </span>
+              </td>
+              <td className="mono">{profile.spec.targetId}</td>
+              <td>
+                {number(profile.spec.cpuMillis)} mCPU ·{" "}
+                {number(Math.round(profile.spec.memoryBytes / 1_048_576))} MiB
+              </td>
+              <td>{dateTime(profile.metadata.updatedAt ?? profile.metadata.createdAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={t("table.view", { name: profile.metadata.name })}
+                  onClick={() => onSelect(profile.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SandboxTable({
+  sandboxes,
+  selectedSandboxId,
+  onSelect,
+}: Readonly<{
+  sandboxes: readonly AdminSandboxSession[];
+  selectedSandboxId: string;
+  onSelect: (sandboxId: string) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  if (sandboxes.length === 0)
+    return <div className="table-empty">{t("table.empty.sandboxes")}</div>;
+  return (
+    <div className="table-scroll" tabIndex={0} role="region" aria-label={t("page.sandboxes.title")}>
+      <table className="sandbox-table">
+        <thead>
+          <tr>
+            <th>{t("sandbox.id")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("table.workspace")}</th>
+            <th>{t("table.profile")}</th>
+            <th>{t("table.target")}</th>
+            <th>{t("table.generation")}</th>
+            <th>{t("table.updated")}</th>
+            <th aria-label={t("table.actions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {sandboxes.map((sandbox) => (
+            <tr
+              key={sandbox.metadata.uid}
+              className={sandbox.metadata.uid === selectedSandboxId ? "selected" : ""}
+              onClick={() => onSelect(sandbox.metadata.uid)}
+            >
+              <td>
+                <button type="button" onClick={() => onSelect(sandbox.metadata.uid)}>
+                  <strong>{sandbox.metadata.name}</strong>
+                  <small>{sandbox.spec.operationId}</small>
+                </button>
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(sandbox.spec.observedState)}`}>
+                  <i /> {phaseLabel(sandbox.spec.observedState, t)}
+                </span>
+              </td>
+              <td>
+                <strong>{sandbox.spec.workspaceName}</strong>
+                <small className="table-subline mono">{sandbox.spec.volumeId}</small>
+              </td>
+              <td className="mono">
+                {sandbox.spec.runtimeProfileId} · v{number(sandbox.spec.runtimeProfileVersion)}
+              </td>
+              <td className="mono">{sandbox.spec.targetId}</td>
+              <td className="mono">
+                {number(sandbox.spec.observedGeneration)} / {number(sandbox.spec.generation)}
+              </td>
+              <td>{dateTime(sandbox.metadata.updatedAt ?? sandbox.metadata.createdAt)}</td>
+              <td className="row-action-cell">
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={t("table.view", { name: sandbox.metadata.name })}
+                  onClick={() => onSelect(sandbox.metadata.uid)}
+                >
+                  ···
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ProfileTable({
   profiles,
   selectedProfileVersionId,
@@ -5662,6 +6414,217 @@ function LeaseReleaseConfirmation({
   );
 }
 
+function RuntimeProfileDetail({
+  profile,
+  disabled,
+  onTransition,
+}: Readonly<{
+  profile: RuntimeProfile;
+  disabled: boolean;
+  onTransition: (action: ProfileTransition) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  return (
+    <>
+      <div className="detail-heading">
+        <div>
+          <div className="eyebrow">no-Agent · v{number(profile.spec.version)}</div>
+          <h2>{profile.metadata.name}</h2>
+          <span className={`phase ${phaseTone(profile.spec.status)}`}>
+            <i /> {phaseLabel(profile.spec.status, t)}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>{t("runtimeProfile.id")}</dt>
+          <dd className="mono">{profile.spec.profileId}</dd>
+        </div>
+        <div>
+          <dt>{t("profile.version")}</dt>
+          <dd className="mono">v{number(profile.spec.version)}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.description")}</dt>
+          <dd>{profile.spec.description}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.target")}</dt>
+          <dd className="mono">{profile.spec.targetId}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.image")}</dt>
+          <dd className="mono break">{profile.spec.imageUri}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.releaseDigest")}</dt>
+          <dd className="mono break">{profile.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>{t("profile.cpuMemory")}</dt>
+          <dd>
+            {number(profile.spec.cpuMillis)} mCPU /{" "}
+            {number(Math.round(profile.spec.memoryBytes / 1_048_576))} MiB
+          </dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{profile.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>{t("profile.created")}</dt>
+          <dd>{dateTime(profile.metadata.createdAt)}</dd>
+        </div>
+        <div>
+          <dt>{t("profile.published")}</dt>
+          <dd>
+            {profile.spec.publishedAt === undefined
+              ? t("common.never")
+              : dateTime(profile.spec.publishedAt)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("profile.disabled")}</dt>
+          <dd>
+            {profile.spec.disabledAt === undefined
+              ? t("common.never")
+              : dateTime(profile.spec.disabledAt)}
+          </dd>
+        </div>
+      </dl>
+      {profile.spec.status === "draft" ? (
+        <section className="action-block">
+          <h3>{t("profile.publishTitle")}</h3>
+          <p>{t("profile.publishDescription")}</p>
+          <button
+            className="button primary"
+            type="button"
+            disabled={disabled}
+            onClick={() => onTransition("publish")}
+          >
+            {t("profile.publishVersion")}
+          </button>
+        </section>
+      ) : profile.spec.status === "published" ? (
+        <section className="action-block">
+          <h3>{t("profile.disableTitle")}</h3>
+          <p>{t("profile.disableDescription")}</p>
+          <button
+            className="button danger"
+            type="button"
+            disabled={disabled}
+            onClick={() => onTransition("disable")}
+          >
+            {t("profile.disableVersion")}
+          </button>
+        </section>
+      ) : null}
+      <p className="boundary-note">{t("runtimeProfile.boundary")}</p>
+    </>
+  );
+}
+
+function SandboxDetail({ sandbox }: Readonly<{ sandbox: AdminSandboxSession }>) {
+  const { t, number, dateTime } = useI18n();
+  return (
+    <>
+      <div className="detail-heading">
+        <div>
+          <div className="eyebrow">Sandbox · g{number(sandbox.spec.generation)}</div>
+          <h2>{sandbox.metadata.name}</h2>
+          <span className={`phase ${phaseTone(sandbox.spec.observedState)}`}>
+            <i /> {phaseLabel(sandbox.spec.observedState, t)}
+          </span>
+        </div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>{t("sandbox.workspace")}</dt>
+          <dd className="mono">
+            {sandbox.spec.workspaceName} · {sandbox.spec.workspaceId}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.volume")}</dt>
+          <dd className="mono">{sandbox.spec.volumeId}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.physicalVolume")}</dt>
+          <dd className="mono break">{sandbox.spec.physicalVolumeId ?? t("common.notBound")}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.workspaceState")}</dt>
+          <dd>{phaseLabel(sandbox.spec.workspaceObservedState, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.profile")}</dt>
+          <dd className="mono">
+            {sandbox.spec.runtimeProfileId} · v{number(sandbox.spec.runtimeProfileVersion)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.target")}</dt>
+          <dd className="mono">{sandbox.spec.targetId}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.operation")}</dt>
+          <dd className="mono break">{sandbox.spec.operationId}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.operationState")}</dt>
+          <dd>
+            {phaseLabel(sandbox.spec.operationState, t)} ·{" "}
+            {phaseLabel(sandbox.spec.cleanupPhase, t)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.desiredState")}</dt>
+          <dd>{phaseLabel(sandbox.spec.desiredState, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(sandbox.spec.generation)}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.observedGeneration")}</dt>
+          <dd className="mono">{number(sandbox.spec.observedGeneration)}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.writerReleased")}</dt>
+          <dd>{t(sandbox.spec.writerReleased ? "common.yes" : "common.no")}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.runtimeId")}</dt>
+          <dd className="mono break">{sandbox.spec.runtimeId ?? t("common.notBound")}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.runtimeState")}</dt>
+          <dd>{sandbox.spec.runtimeState ?? t("common.notObserved")}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.observedAt")}</dt>
+          <dd>
+            {sandbox.spec.observedAt === undefined
+              ? t("common.notObserved")
+              : dateTime(sandbox.spec.observedAt)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{sandbox.metadata.resourceVersion}</dd>
+        </div>
+        {sandbox.spec.stableErrorCode === undefined ? null : (
+          <div>
+            <dt>{t("detail.stableError")}</dt>
+            <dd className="mono danger-text">{sandbox.spec.stableErrorCode}</dd>
+          </div>
+        )}
+      </dl>
+      <p className="boundary-note">{t("sandbox.boundary")}</p>
+    </>
+  );
+}
+
 function ProfileTransitionConfirmation({
   profile,
   action,
@@ -5669,7 +6632,7 @@ function ProfileTransitionConfirmation({
   onClose,
   onConfirm,
 }: Readonly<{
-  profile: EnvironmentProfile;
+  profile: EnvironmentProfile | RuntimeProfile;
   action: ProfileTransition;
   disabled: boolean;
   onClose: () => void;

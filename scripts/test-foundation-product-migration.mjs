@@ -13,6 +13,7 @@ const build = mkdtempSync(resolve(tmpdir(), "cloud-agents-foundation-migrate-"))
 const binary = resolve(build, "cloud-agents-product-migrate");
 const testBinary = resolve(build, "localmigration.test");
 const serverTestBinary = resolve(build, "server.test");
+const postgresTestBinary = resolve(build, "postgres.test");
 const docker = (...args) =>
   execFileSync("docker", ["--context", "orbstack", ...args], {
     encoding: "utf8",
@@ -121,9 +122,19 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
       timeout: 120_000,
     },
   );
+  execFileSync(
+    "go",
+    ["test", "-c", "-o", postgresTestBinary, "./services/control-plane/internal/store/postgres"],
+    {
+      cwd: root,
+      env: { ...process.env, CGO_ENABLED: "0", GOOS: "linux", GOARCH: goarch },
+      timeout: 120_000,
+    },
+  );
   docker("cp", binary, `${name}:/tmp/cloud-agents-product-migrate`);
   docker("cp", testBinary, `${name}:/tmp/localmigration.test`);
   docker("cp", serverTestBinary, `${name}:/tmp/server.test`);
+  docker("cp", postgresTestBinary, `${name}:/tmp/postgres.test`);
   const migrate = (head, database) => {
     const output = docker(
       "exec",
@@ -153,19 +164,19 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
     "-test.v",
   );
   assert.ok(upgradeOutput.includes("--- PASS: TestFoundationProductUpgradePostgres"));
-  const fresh = migrate("000054", "foundation_fresh");
+  const fresh = migrate("000055", "foundation_fresh");
   assert.deepEqual(
     { applied: fresh.applied, no_op: fresh.no_op, schema_head: fresh.schema_head },
-    { applied: 54, no_op: false, schema_head: "000054" },
+    { applied: 55, no_op: false, schema_head: "000055" },
   );
-  const replay = migrate("000054", "foundation_fresh");
+  const replay = migrate("000055", "foundation_fresh");
   assert.deepEqual(
     { applied: replay.applied, no_op: replay.no_op, schema_head: replay.schema_head },
-    { applied: 0, no_op: true, schema_head: "000054" },
+    { applied: 0, no_op: true, schema_head: "000055" },
   );
   const schemaBundleDigest = JSON.parse(
     readFileSync(
-      resolve(root, "services/control-plane/migrations/product/000054/manifest.json"),
+      resolve(root, "services/control-plane/migrations/product/000055/manifest.json"),
       "utf8",
     ),
   ).schema_bundle_digest;
@@ -179,11 +190,11 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "54|000001|000054|2",
+    "55|000001|000055|2",
   );
   assert.equal(
     psql(
-      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000054';",
+      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000055';",
       "foundation_migration",
       "foundation_upgrade",
     )
@@ -201,7 +212,7 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "54|000001|000054|1",
+    "55|000001|000055|1",
   );
   assert.equal(
     psql(
@@ -266,23 +277,38 @@ INSERT INTO cloud_agents.deployment_targets (
     "-test.v",
   );
   assert.ok(serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"));
+  const controllerOutput = docker(
+    "exec",
+    "-e",
+    "CLOUD_AGENTS_FOUNDATION_CONTROLLER_DATABASE_URL=postgres://foundation_runtime@127.0.0.1/foundation_fresh?sslmode=disable",
+    "-e",
+    "CLOUD_AGENTS_FOUNDATION_CONTROLLER_OWNER_DATABASE_URL=postgres://foundation_migration@127.0.0.1/foundation_fresh?sslmode=disable",
+    name,
+    "/tmp/postgres.test",
+    "-test.run",
+    "^TestFoundationControllerPostgres$",
+    "-test.v",
+  );
+  assert.ok(controllerOutput.includes("--- PASS: TestFoundationControllerPostgres"));
   process.stdout.write(
     JSON.stringify({
       postgres: psql("SHOW server_version;"),
       architecture,
-      upgradeFrom: "000053",
-      upgradeTo: "000054",
+      upgradeFrom: "000054",
+      upgradeTo: "000055",
       fresh,
       replay,
       checks: [
-        "product-000053 fresh install",
-        "product-000053 to product-000054 exact upgrade",
-        "product-000054 no-op replay",
-        "54-row immutable ledger with two bundle digests",
+        "product-000054 fresh install",
+        "product-000054 to product-000055 exact upgrade",
+        "product-000055 no-op replay",
+        "55-row immutable ledger with two bundle digests",
         "foundation and runtime profile tables installed",
         "real Admin/User generated SDK and HTTP authorization",
         "RuntimeProfile create/publish/disable and public redaction",
         "durable Sandbox Operation/outbox acceptance and replay",
+        "Controller claim renewal, retry, expired-claim recovery, terminal exhaustion and settlement",
+        "legacy project dispatcher cannot claim foundation operation effects",
         "ordinary user Admin 403 and direct intent bypass denial",
       ],
       boundary:

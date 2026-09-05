@@ -27,9 +27,11 @@ import (
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/foundationcontroller"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -240,6 +242,21 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		if err != nil {
 			return errors.New("Docker target credential directory is invalid")
 		}
+		sandboxCredentials, credentialErr := opensandbox.NewCredentialDirectory(config.dockerCredentials)
+		if credentialErr != nil {
+			return errors.New("OpenSandbox credential directory is invalid")
+		}
+		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, sandboxCredentials)
+		if controllerErr != nil {
+			return errors.New("foundation controller is unavailable")
+		}
+		foundationContext, cancelFoundation := context.WithCancel(ctx)
+		foundationDone := make(chan struct{})
+		go func() {
+			defer close(foundationDone)
+			foundationController.Run(foundationContext, logger)
+		}()
+		defer func() { cancelFoundation(); <-foundationDone }()
 	}
 	var kubernetesProber *kubernetestarget.CredentialDirectory
 	if config.kubernetesCredentials != "" {

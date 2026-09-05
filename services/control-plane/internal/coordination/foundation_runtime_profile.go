@@ -22,6 +22,7 @@ var (
 	ErrRuntimeProfileConflict    = errors.New("runtime profile conflicts")
 	ErrRuntimeProfileUnavailable = errors.New("runtime profile is unavailable")
 	ErrFoundationSandboxConflict = errors.New("foundation sandbox conflicts")
+	ErrFoundationSandboxNotFound = errors.New("foundation sandbox was not found")
 	runtimeProfileDigestPattern  = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	runtimeProfileImagePattern   = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 	runtimeProfileIdempotencyKey = regexp.MustCompile(`^[A-Za-z0-9._~-]{16,128}$`)
@@ -193,8 +194,9 @@ func (snapshot FoundationSandboxSnapshot) Validate() error {
 	if !validFoundationScope(snapshot.Scope, snapshot.Scope.TenantID) || !validIdentifier(snapshot.OperationID) ||
 		!validIdentifier(snapshot.WorkspaceID) || !validIdentifier(snapshot.SandboxID) ||
 		!validIdentifier(snapshot.RuntimeProfileID) || snapshot.RuntimeProfileVersion < 1 ||
-		snapshot.RuntimeProfileVersion > 2147483647 || snapshot.Generation < 1 ||
-		snapshot.DesiredState != "running" || snapshot.ObservedState != "pending" {
+		snapshot.RuntimeProfileVersion > 2147483647 || snapshot.Generation < 1 || snapshot.DesiredState != "running" ||
+		(snapshot.ObservedState != "pending" && snapshot.ObservedState != "running" && snapshot.ObservedState != "unknown" &&
+			snapshot.ObservedState != "failed" && snapshot.ObservedState != "stopped") {
 		return ErrInvalidRuntimeProfile
 	}
 	return nil

@@ -84,6 +84,7 @@ try {
   const modalChecks = [];
   const targetFilterChecks = [];
   const overviewChecks = [];
+  const foundationResourceChecks = [];
   const mutationRequests = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
@@ -622,7 +623,7 @@ try {
     assert.equal(geometry.width, geometry.viewportWidth < 768 ? 358 : 576);
     assert.equal(geometry.inputHeight, 48);
     assert.equal(geometry.fontSize, "14px");
-    assert.equal(geometry.count, 9);
+    assert.equal(geometry.count, 11);
     assert.equal(await evaluate("document.querySelector('#command-targets') === null"), true);
     await screenshot(`commands-${name}.png`);
     await pressKey("ArrowUp");
@@ -683,6 +684,8 @@ try {
     await verifyTargetFilters(name);
     await verifyModals(name);
     await verifyOverview(name);
+    await verifyFoundationResources(name);
+    await navigateTargets();
     const prefix = name.startsWith("zh-CN") ? "zh-CN-" : "";
     const dimensions = name.slice(6);
     await openTarget("visual-ssh");
@@ -812,6 +815,47 @@ try {
     await navigateTargets();
   };
 
+  const verifyFoundationResources = async (name) => {
+    await navigatePage("runtimeProfiles");
+    await waitFor(
+      "document.querySelectorAll('tbody tr').length === 1",
+      "persisted Runtime Profile",
+    );
+    const runtimeProfileRow = await evaluate("document.querySelector('tbody tr').innerText");
+    assert.match(runtimeProfileRow, /visual-runtime/);
+    await screenshot(`foundation-runtime-profiles-${name}.png`);
+    await clickAt("tbody tr td:first-child button");
+    await waitFor("document.querySelector('.admin-sheet') !== null", "Runtime Profile detail");
+    const runtimeProfileDetail = await evaluate("document.querySelector('.admin-sheet').innerText");
+    assert.ok(!runtimeProfileDetail.includes("fixture-only"));
+    assert.ok(!runtimeProfileDetail.includes("127.0.0.1"));
+    await screenshot(`foundation-runtime-profile-detail-${name}.png`);
+    await closeSheet();
+
+    await navigatePage("sandboxes");
+    await waitFor(
+      "document.querySelectorAll('tbody tr').length === 1",
+      "persisted Sandbox session",
+    );
+    const sandboxRow = await evaluate("document.querySelector('tbody tr').innerText");
+    assert.match(sandboxRow, /visual-sandbox/);
+    await screenshot(`foundation-sandboxes-${name}.png`);
+    await clickAt("tbody tr td:first-child button");
+    await waitFor("document.querySelector('.admin-sheet') !== null", "Sandbox detail");
+    const sandboxDetail = await evaluate("document.querySelector('.admin-sheet').innerText");
+    for (const forbidden of ["fixture-only", "127.0.0.1", "node@sha256:"]) {
+      assert.ok(!sandboxDetail.includes(forbidden), `Sandbox detail disclosed ${forbidden}`);
+    }
+    await screenshot(`foundation-sandbox-detail-${name}.png`);
+    await closeSheet();
+    foundationResourceChecks.push({
+      name,
+      runtimeProfile: runtimeProfileRow,
+      sandbox: sandboxRow,
+      sandboxInfrastructureDetailsExcluded: true,
+    });
+  };
+
   const verifyTargetFilters = async (name) => {
     const change = async (selector, value) => {
       await evaluate(`(() => {
@@ -873,7 +917,7 @@ try {
     await pressKey("Enter");
     assert.equal(await evaluate("document.querySelectorAll('.target-table tbody tr').length"), 2);
     await closeFilter();
-    await change(".target-toolbar > input", " VISUAL-DOCKER ");
+    await change(".target-toolbar > input", " VISUAL-SSH ");
     await waitFor(
       "document.querySelectorAll('.target-table tbody tr').length === 1",
       "combined filters",
@@ -1198,6 +1242,7 @@ try {
       modalChecks,
       targetFilterChecks,
       overviewChecks,
+      foundationResourceChecks,
       mutationRequests,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {

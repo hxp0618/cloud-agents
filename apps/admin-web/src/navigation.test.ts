@@ -7,7 +7,7 @@ describe("admin navigation commands", () => {
   const chinese: Translate = (key, values) => translate("zh-CN", key, values);
 
   it("uses unique real resource routes and excludes the current page", () => {
-    expect(new Set(navigationPages.map(({ id }) => id)).size).toBe(10);
+    expect(new Set(navigationPages.map(({ id }) => id)).size).toBe(12);
     expect(matchingNavigation("targets", "", english).map(({ id }) => id)).toEqual(
       navigationPages.filter(({ id }) => id !== "targets").map(({ id }) => id),
     );

@@ -841,8 +841,7 @@ func inspectWorkspaceVolume(ctx context.Context, client *http.Client, base, name
 		return volumeInspect{}, false, ErrDeploymentFailed
 	}
 	var volume volumeInspect
-	decoder := json.NewDecoder(io.LimitReader(response.Body, maxDockerBodyBytes+1))
-	if decoder.Decode(&volume) != nil || decoder.Decode(&struct{}{}) != io.EOF || volume.Name != name {
+	if decodeDockerJSON(response.Body, &volume) != nil || volume.Name != name {
 		return volumeInspect{}, false, ErrDeploymentFailed
 	}
 	return volume, true, nil
@@ -981,8 +980,15 @@ func dockerJSON(ctx context.Context, client *http.Client, method, target string,
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxDockerBodyBytes))
 		return nil
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, maxDockerBodyBytes+1))
-	if decoder.Decode(output) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+	if decodeDockerJSON(response.Body, output) != nil {
+		return ErrDeploymentFailed
+	}
+	return nil
+}
+
+func decodeDockerJSON(body io.Reader, output any) error {
+	data, err := io.ReadAll(io.LimitReader(body, maxDockerBodyBytes+1))
+	if err != nil || len(data) > maxDockerBodyBytes || json.Unmarshal(data, output) != nil {
 		return ErrDeploymentFailed
 	}
 	return nil

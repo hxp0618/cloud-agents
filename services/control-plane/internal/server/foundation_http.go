@@ -24,6 +24,8 @@ type foundationStore interface {
 	ListRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RuntimeProfilePage, error)
 	ListPublishedRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.PublishedRuntimeProfilePage, error)
 	CreateFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxCreateInput) (internalcoordination.FoundationSandboxSnapshot, error)
+	GetAdminSandbox(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.AdminSandboxSnapshot, error)
+	ListAdminSandboxes(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminSandboxPage, error)
 }
 
 type FoundationHTTPServer struct {
@@ -95,6 +97,10 @@ func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		server.transitionProfile(writer, request, tenantID, projectID, profileID, version, action, requestID, principal)
 	case "create-sandbox":
 		server.createSandbox(writer, request, tenantID, projectID, requestID, principal)
+	case "admin-sandbox-collection":
+		server.listAdminSandboxes(writer, request, tenantID, projectID, requestID, principal)
+	case "get-admin-sandbox":
+		server.getAdminSandbox(writer, request, tenantID, projectID, profileID, requestID, principal)
 	}
 }
 
@@ -283,6 +289,63 @@ func (server *FoundationHTTPServer) createSandbox(writer http.ResponseWriter, re
 	writeJSONResponse(writer, http.StatusAccepted, requestID, body)
 }
 
+func (server *FoundationHTTPServer) listAdminSandboxes(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID string, principal *authn.VerifiedPrincipal) {
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapi.ValidateListAdminSandboxSessionsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	after, ok := decodeFoundationPageToken("admin-sandbox/v1", tenantID, projectID, validated.PageToken)
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	page, err := server.store.ListAdminSandboxes(request.Context(), tenantID, principal, projectID, after, validated.PageSize)
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	values := make([]platform.AdminSandboxSession, 0, len(page.Sandboxes))
+	for _, sandbox := range page.Sandboxes {
+		values = append(values, adminSandboxResource(sandbox))
+	}
+	next, ok := encodeFoundationPageToken("admin-sandbox/v1", tenantID, projectID, page.NextSandboxID)
+	if !ok {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	body, err := platform.EncodeAdminSandboxSessionPageResponseJSON(common.ResponseEnvelope[platform.AdminSandboxSessionPage]{Value: platform.AdminSandboxSessionPage{APIVersion: platform.APIVersion, Kind: "AdminSandboxSessionPage", SandboxSessions: values, NextPageToken: next}})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writeJSONResponse(writer, http.StatusOK, requestID, body)
+}
+
+func (server *FoundationHTTPServer) getAdminSandbox(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sandboxID, requestID string, principal *authn.VerifiedPrincipal) {
+	if _, err := openapi.ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID); err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	value, err := server.store.GetAdminSandbox(request.Context(), tenantID, principal, projectID, sandboxID)
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	body, err := platform.EncodeAdminSandboxSessionResponseJSON(common.ResponseEnvelope[platform.AdminSandboxSession]{Value: adminSandboxResource(value)})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Resource-Version", strconv.FormatInt(value.ResourceVersion, 10))
+	writeJSONResponse(writer, http.StatusOK, requestID, body)
+}
+
 func foundationMutationBody(writer http.ResponseWriter, request *http.Request) (string, []byte, bool) {
 	key, ok := exactSingleHeader(request.Header, "Idempotency-Key")
 	if !ok {
@@ -330,6 +393,36 @@ func runtimeProfileSummaryResource(summary internalcoordination.RuntimeProfileSu
 		CPUMillis: summary.CPUMillis, MemoryBytes: summary.MemoryBytes, WorkspaceRetention: "retained"}
 }
 
+func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.AdminSandboxSession {
+	physicalVolumeID, runtimeID, stableErrorCode, observedAt := "", "", "", ""
+	if snapshot.PhysicalVolumeID != nil {
+		physicalVolumeID = *snapshot.PhysicalVolumeID
+	}
+	if snapshot.RuntimeID != nil {
+		runtimeID = *snapshot.RuntimeID
+	}
+	if snapshot.StableErrorCode != nil {
+		stableErrorCode = *snapshot.StableErrorCode
+	}
+	if snapshot.ObservedAt != nil {
+		observedAt = snapshot.ObservedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return platform.AdminSandboxSession{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "AdminSandboxSession", Metadata: common.ResourceMetadata{
+		UID: snapshot.SandboxID, Name: snapshot.SandboxID,
+		TenantRef:       common.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID},
+		ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}}, Spec: platform.AdminSandboxSessionSpec{
+		ProjectRef:  common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
+		OperationID: snapshot.OperationID, OperationState: snapshot.OperationState, CleanupPhase: snapshot.CleanupPhase,
+		WorkspaceID: snapshot.WorkspaceID, WorkspaceName: snapshot.WorkspaceName, VolumeID: snapshot.VolumeID,
+		PhysicalVolumeID: physicalVolumeID, WorkspaceRetention: "retained", WorkspaceObservedState: snapshot.WorkspaceObservedState,
+		RuntimeProfileID: snapshot.RuntimeProfileID, RuntimeProfileVersion: snapshot.RuntimeProfileVersion,
+		TargetID: snapshot.TargetID, Generation: snapshot.Generation, ObservedGeneration: snapshot.ObservedGeneration,
+		DesiredState: snapshot.DesiredState, ObservedState: snapshot.ObservedState, WriterReleased: snapshot.WriterReleased,
+		RuntimeID: runtimeID, RuntimeState: snapshot.RuntimeState, StableErrorCode: stableErrorCode, ObservedAt: observedAt,
+	}}
+}
+
 func foundationPath(path string) (admin bool, tenantID, projectID, profileID string, version int64, action string, ok bool) {
 	prefix := "/v1/tenants/"
 	if strings.HasPrefix(path, "/v1/admin/tenants/") {
@@ -346,7 +439,12 @@ func foundationPath(path string) (admin bool, tenantID, projectID, profileID str
 			return false, parts[0], parts[2], "", 0, "public-list", true
 		case parts[3] == "sandbox-sessions" && !admin:
 			return false, parts[0], parts[2], "", 0, "create-sandbox", true
+		case parts[3] == "sandbox-sessions" && admin:
+			return true, parts[0], parts[2], "", 0, "admin-sandbox-collection", true
 		}
+	}
+	if admin && len(parts) == 5 && parts[1] == "projects" && parts[3] == "sandbox-sessions" && parts[4] != "" {
+		return true, parts[0], parts[2], parts[4], 0, "get-admin-sandbox", true
 	}
 	if !admin || len(parts) != 7 || parts[1] != "projects" || parts[3] != "runtime-profiles" || parts[4] == "" || parts[5] != "versions" {
 		return false, "", "", "", 0, "", false
@@ -378,6 +476,10 @@ func foundationPermission(admin bool, action, method string) (projectPermission,
 		return "projects.get", "environment-profiles.list", true
 	case !admin && action == "create-sandbox" && method == http.MethodPost:
 		return "projects.act", "environments.create", true
+	case admin && action == "admin-sandbox-collection" && method == http.MethodGet:
+		return "projects.get", "sandboxes.list", true
+	case admin && action == "get-admin-sandbox" && method == http.MethodGet:
+		return "projects.get", "sandboxes.get", true
 	default:
 		return "", "", false
 	}
@@ -414,7 +516,7 @@ func writeRuntimeProfile(writer http.ResponseWriter, status int, requestID strin
 
 func writeFoundationError(writer http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, internalcoordination.ErrRuntimeProfileNotFound):
+	case errors.Is(err, internalcoordination.ErrRuntimeProfileNotFound), errors.Is(err, internalcoordination.ErrFoundationSandboxNotFound):
 		writePublicProblem(writer, http.StatusNotFound, "not_found")
 	case errors.Is(err, postgres.ErrMutationDenied):
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")

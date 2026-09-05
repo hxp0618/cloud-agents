@@ -421,6 +421,7 @@ export function classifyMigrationStatement(
         "000028",
         "000036",
         "000053",
+        "000055",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -574,6 +575,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000055",
+          [
+            "function:unquoted:cloud_agents/unquoted:claim_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -599,7 +606,7 @@ export function classifyMigrationStatement(
         !hasTopLevelComma(subcommand.slice(2));
       const targetIdentity = qualifiedIdentity("table", tokens, 2);
       const dropResourceKindConstraint =
-        migrationId === "000003" &&
+        (migrationId === "000003" || migrationId === "000055") &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:resource_changes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"].join("\0");

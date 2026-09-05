@@ -1138,6 +1138,58 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/sandbox-sessions": {
+      "get": {
+        "operationId": "adminListSandboxSessions",
+        "x-cloud-agents-required-scope": "sandboxes.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin Sandbox and retained Workspace metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}": {
+      "get": {
+        "operationId": "adminGetSandboxSession",
+        "x-cloud-agents-required-scope": "sandboxes.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SandboxId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin Sandbox and retained Workspace metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "adminListEnvironmentProfiles",
@@ -1829,6 +1881,12 @@
         "in": "path",
         "required": true,
         "schema": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      },
+      "SandboxId": {
+        "name": "sandboxId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
       },
       "StoragePolicyId": {
         "name": "storagePolicyId",

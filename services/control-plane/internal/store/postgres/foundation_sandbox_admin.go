@@ -1,0 +1,247 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"time"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	internalcoordination "github.com/hxp0618/cloud-agents/services/control-plane/internal/coordination"
+	"github.com/jackc/pgx/v5"
+)
+
+type AdminSandboxSnapshot struct {
+	Scope internalcoordination.FoundationScope
+
+	SandboxID, OperationID, OperationState, CleanupPhase  string
+	WorkspaceID, WorkspaceName, VolumeID, TargetID        string
+	WorkspaceObservedState                                string
+	RuntimeProfileID                                      string
+	DesiredState, ObservedState                           string
+	RuntimeState                                          string
+	PhysicalVolumeID, RuntimeID, StableErrorCode          *string
+	RuntimeProfileVersion, Generation, ObservedGeneration int64
+	ResourceVersion                                       int64
+	WriterReleased                                        bool
+	CreatedAt, UpdatedAt                                  time.Time
+	ObservedAt                                            *time.Time
+}
+
+type AdminSandboxPage struct {
+	Sandboxes     []AdminSandboxSnapshot
+	NextSandboxID string
+}
+
+type adminSandboxPageRow struct {
+	TenantID               string     `json:"tenant_id"`
+	ProjectID              string     `json:"project_uid"`
+	SandboxID              string     `json:"sandbox_uid"`
+	OperationID            string     `json:"operation_id"`
+	OperationState         string     `json:"operation_state"`
+	CleanupPhase           string     `json:"cleanup_phase"`
+	WorkspaceID            string     `json:"workspace_uid"`
+	WorkspaceName          string     `json:"workspace_name"`
+	VolumeID               string     `json:"volume_uid"`
+	PhysicalVolumeID       *string    `json:"physical_volume_uid"`
+	WorkspaceRetention     string     `json:"retention"`
+	WorkspaceObservedState string     `json:"workspace_observed_state"`
+	RuntimeProfileID       string     `json:"runtime_profile_uid"`
+	RuntimeProfileVersion  int64      `json:"runtime_profile_version"`
+	TargetID               string     `json:"target_uid"`
+	Generation             int64      `json:"generation"`
+	ObservedGeneration     int64      `json:"observed_generation"`
+	DesiredState           string     `json:"desired_state"`
+	ObservedState          string     `json:"observed_state"`
+	WriterReleased         bool       `json:"writer_released"`
+	RuntimeID              *string    `json:"runtime_uid"`
+	RuntimeState           string     `json:"runtime_state"`
+	StableErrorCode        *string    `json:"stable_error_code"`
+	ResourceVersion        int64      `json:"resource_version"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+	ObservedAt             *time.Time `json:"observed_at"`
+}
+
+const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.sandbox_uid,
+    sandbox.operation_id, operation.state AS operation_state, operation.cleanup_phase,
+    sandbox.workspace_uid, workspace.workspace_name, volume.volume_uid, volume.physical_volume_uid,
+    volume.retention, volume.observed_state AS workspace_observed_state,
+    sandbox.runtime_profile_uid, sandbox.runtime_profile_version, volume.target_uid,
+    sandbox.generation, sandbox.observed_generation, sandbox.desired_state, sandbox.observed_state,
+    sandbox.writer_released, sandbox.runtime_uid, sandbox.runtime_state, sandbox.stable_error_code,
+    sandbox.resource_version, operation.created_at, operation.updated_at, sandbox.observed_at`
+
+var (
+	getAdminSandboxSQL = `SELECT ` + adminSandboxColumns + `
+FROM cloud_agents.sandbox_sessions AS sandbox
+JOIN cloud_agents.workspaces AS workspace USING (tenant_id, project_uid, workspace_uid)
+JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, workspace_uid)
+JOIN cloud_agents.platform_operations AS operation
+  ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
+ AND operation.operation_generation = sandbox.operation_generation
+WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
+  AND sandbox.sandbox_uid = $2`
+	adminSandboxPageCursorSQL = `SELECT 1 FROM cloud_agents.sandbox_sessions
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND sandbox_uid = $2`
+	listAdminSandboxesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(sandbox_row)
+    ORDER BY sandbox_row.sandbox_uid), '[]'::jsonb)
+FROM (
+    SELECT ` + adminSandboxColumns + `
+    FROM cloud_agents.sandbox_sessions AS sandbox
+    JOIN cloud_agents.workspaces AS workspace USING (tenant_id, project_uid, workspace_uid)
+    JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, workspace_uid)
+    JOIN cloud_agents.platform_operations AS operation
+      ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
+     AND operation.operation_generation = sandbox.operation_generation
+    WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
+      AND sandbox.sandbox_uid > $2
+    ORDER BY sandbox.sandbox_uid
+    LIMIT $3
+) AS sandbox_row`
+)
+
+func (service *DurableCoordinationService) GetAdminSandbox(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, sandboxID string,
+) (AdminSandboxSnapshot, error) {
+	if service == nil || service.runner == nil {
+		return AdminSandboxSnapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(sandboxID) {
+		return AdminSandboxSnapshot{}, ErrCoordinationInvalidInput
+	}
+	var row adminSandboxPageRow
+	err := service.withFoundationOperation(ctx, tenantID, principal, projectID, "projects.get", false, func(operationContext context.Context, handle *tenantReadHandle, _ string) error {
+		err := scanAdminSandboxRow(handle.transaction.queryRow(operationContext, getAdminSandboxSQL, projectID, sandboxID), &row)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return internalcoordination.ErrFoundationSandboxNotFound
+		}
+		return err
+	})
+	if err != nil {
+		return AdminSandboxSnapshot{}, mapRuntimeProfileError(err)
+	}
+	return adminSandboxSnapshot(row, tenantID, projectID)
+}
+
+func (service *DurableCoordinationService) ListAdminSandboxes(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, afterSandboxID string, limit int,
+) (AdminSandboxPage, error) {
+	if service == nil || service.runner == nil {
+		return AdminSandboxPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validFoundationPageInput(tenantID, projectID, afterSandboxID, limit) {
+		return AdminSandboxPage{}, ErrCoordinationInvalidInput
+	}
+	var result AdminSandboxPage
+	err := service.withFoundationOperation(ctx, tenantID, principal, projectID, "projects.get", false, func(operationContext context.Context, handle *tenantReadHandle, _ string) error {
+		if err := validateRuntimeProfileCursor(operationContext, handle, adminSandboxPageCursorSQL, projectID, afterSandboxID); err != nil {
+			return err
+		}
+		var raw []byte
+		if err := handle.transaction.queryRow(operationContext, listAdminSandboxesSQL, projectID, afterSandboxID, limit+1).Scan(&raw); err != nil {
+			return err
+		}
+		var rows []adminSandboxPageRow
+		if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+			return ErrCoordinationResultDrift
+		}
+		sandboxes := make([]AdminSandboxSnapshot, 0, len(rows))
+		for _, row := range rows {
+			snapshot, err := adminSandboxSnapshot(row, tenantID, projectID)
+			if err != nil {
+				return err
+			}
+			sandboxes = append(sandboxes, snapshot)
+		}
+		result.Sandboxes = sandboxes
+		if len(sandboxes) > limit {
+			result.Sandboxes = sandboxes[:limit]
+			result.NextSandboxID = result.Sandboxes[len(result.Sandboxes)-1].SandboxID
+		}
+		return nil
+	})
+	return result, mapRuntimeProfileError(err)
+}
+
+func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
+	if row == nil || value == nil {
+		return ErrCoordinationResultDrift
+	}
+	return row.Scan(&value.TenantID, &value.ProjectID, &value.SandboxID, &value.OperationID,
+		&value.OperationState, &value.CleanupPhase, &value.WorkspaceID, &value.WorkspaceName,
+		&value.VolumeID, &value.PhysicalVolumeID, &value.WorkspaceRetention, &value.WorkspaceObservedState,
+		&value.RuntimeProfileID, &value.RuntimeProfileVersion, &value.TargetID, &value.Generation,
+		&value.ObservedGeneration, &value.DesiredState, &value.ObservedState, &value.WriterReleased,
+		&value.RuntimeID, &value.RuntimeState, &value.StableErrorCode, &value.ResourceVersion,
+		&value.CreatedAt, &value.UpdatedAt, &value.ObservedAt)
+}
+
+func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (AdminSandboxSnapshot, error) {
+	value := AdminSandboxSnapshot{
+		Scope:     internalcoordination.FoundationScope{TenantID: row.TenantID, ProjectID: row.ProjectID},
+		SandboxID: row.SandboxID, OperationID: row.OperationID, OperationState: row.OperationState,
+		CleanupPhase: row.CleanupPhase, WorkspaceID: row.WorkspaceID, WorkspaceName: row.WorkspaceName,
+		VolumeID: row.VolumeID, PhysicalVolumeID: row.PhysicalVolumeID, WorkspaceObservedState: row.WorkspaceObservedState,
+		RuntimeProfileID: row.RuntimeProfileID, RuntimeProfileVersion: row.RuntimeProfileVersion,
+		TargetID: row.TargetID, Generation: row.Generation, ObservedGeneration: row.ObservedGeneration,
+		DesiredState: row.DesiredState, ObservedState: row.ObservedState, WriterReleased: row.WriterReleased,
+		RuntimeID: row.RuntimeID, RuntimeState: row.RuntimeState, StableErrorCode: row.StableErrorCode,
+		ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		ObservedAt: row.ObservedAt,
+	}
+	if row.TenantID != tenantID || row.ProjectID != projectID || row.WorkspaceRetention != "retain" || !validAdminSandboxSnapshot(value) {
+		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+	}
+	return value, nil
+}
+
+func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
+	for _, id := range []string{value.Scope.TenantID, value.Scope.ProjectID, value.SandboxID, value.OperationID,
+		value.WorkspaceID, value.WorkspaceName, value.VolumeID, value.RuntimeProfileID, value.TargetID} {
+		if !validMutationIdentifier(id) {
+			return false
+		}
+	}
+	for _, id := range []*string{value.PhysicalVolumeID, value.RuntimeID, value.StableErrorCode} {
+		if id != nil && !validMutationIdentifier(*id) {
+			return false
+		}
+	}
+	if value.RuntimeProfileVersion < 1 || value.RuntimeProfileVersion > 2147483647 || value.Generation < 1 ||
+		value.ObservedGeneration < 0 || value.ObservedGeneration > value.Generation || value.ResourceVersion < 0 ||
+		value.CreatedAt.IsZero() || value.UpdatedAt.Before(value.CreatedAt) || value.WriterReleased && value.ObservedState != "stopped" {
+		return false
+	}
+	switch value.OperationState {
+	case "pending", "running", "reconciling", "succeeded", "failed":
+	default:
+		return false
+	}
+	switch value.CleanupPhase {
+	case "none", "complete", "blocked":
+	default:
+		return false
+	}
+	switch value.WorkspaceObservedState {
+	case "pending", "available", "unknown", "failed":
+	default:
+		return false
+	}
+	switch value.DesiredState {
+	case "running", "stopped":
+	default:
+		return false
+	}
+	switch value.ObservedState {
+	case "pending", "running", "unknown", "failed", "stopped":
+	default:
+		return false
+	}
+	switch value.RuntimeState {
+	case "", "Pending", "Running", "Pausing", "Paused", "Resuming", "Stopping", "Terminated", "Failed":
+	default:
+		return false
+	}
+	return value.ObservedAt == nil || !value.ObservedAt.IsZero()
+}

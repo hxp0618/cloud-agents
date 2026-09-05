@@ -83,11 +83,19 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release := "sha256:" + strings.Repeat("a", 64)
+	successImage := os.Getenv("CLOUD_AGENTS_FOUNDATION_SUCCESS_IMAGE_URI")
+	if successImage == "" {
+		successImage = "registry.invalid/runtime@sha256:" + strings.Repeat("a", 64)
+	}
+	successImageParts := strings.Split(successImage, "@")
+	if len(successImageParts) != 2 {
+		t.Fatal("success image must be digest-pinned")
+	}
+	release := successImageParts[1]
 	create := platform.RuntimeProfileCreateRequest{
 		ProfileID: "profile", ProfileName: "profile", Version: 1,
 		Description: "No-agent retained workspace", TargetID: "target",
-		ImageURI: "registry.invalid/runtime@" + release, ReleaseDigest: release,
+		ImageURI: successImage, ReleaseDigest: release,
 		CPUMillis: 500, MemoryBytes: 536870912,
 	}
 	if _, err := platform.EncodeRuntimeProfileCreateRequestJSON(create); err != nil {
@@ -104,8 +112,37 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	if err != nil || published.Value.Spec.Status != "published" || published.Value.Metadata.ResourceVersion != "2" {
 		t.Fatalf("publish profile: value=%+v err=%v", published.Value, err)
 	}
+	failureImage := os.Getenv("CLOUD_AGENTS_FOUNDATION_FAILURE_IMAGE_URI")
+	if failureImage != "" {
+		parts := strings.Split(failureImage, "@")
+		if len(parts) != 2 {
+			t.Fatal("failure image must be digest-pinned")
+		}
+		failureCreate := create
+		failureCreate.ProfileID = "profile-failure"
+		failureCreate.ProfileName = "profile-failure"
+		failureCreate.Description = "Controller failure compensation"
+		failureCreate.ImageURI = failureImage
+		failureCreate.ReleaseDigest = parts[1]
+		failureCreated, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-failure-create", "profile-failure-create-key", failureCreate)
+		if err != nil || failureCreated.Value.Spec.Status != "draft" {
+			t.Fatalf("create failure profile: value=%+v err=%v", failureCreated.Value, err)
+		}
+		failurePublished, err := admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "profile-failure", 1, "request-failure-publish", "profile-failure-publish-key", platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+		if err != nil || failurePublished.Value.Spec.Status != "published" {
+			t.Fatalf("publish failure profile: value=%+v err=%v", failurePublished.Value, err)
+		}
+	}
 	page, err := user.ListRuntimeProfiles(ctx, "tenant", "project", "request-public-list", 50, "")
-	if err != nil || len(page.Value.RuntimeProfiles) != 1 || page.Value.RuntimeProfiles[0].ProfileID != "profile" {
+	expectedProfiles := 1
+	if failureImage != "" {
+		expectedProfiles = 2
+	}
+	hasPrimaryProfile := false
+	for _, profile := range page.Value.RuntimeProfiles {
+		hasPrimaryProfile = hasPrimaryProfile || profile.ProfileID == "profile"
+	}
+	if err != nil || len(page.Value.RuntimeProfiles) != expectedProfiles || !hasPrimaryProfile {
 		t.Fatalf("public profiles: value=%+v err=%v", page.Value, err)
 	}
 	assertFoundationPublicRedaction(t, ctx, httpServer.URL, userToken)
@@ -118,9 +155,39 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	if err != nil || sandbox.Value.ObservedState != "pending" || sandbox.Value.OperationID == "" {
 		t.Fatalf("create sandbox: value=%+v err=%v", sandbox.Value, err)
 	}
+	terminalRequest := sandboxRequest
+	terminalRequest.WorkspaceID = "workspace-terminal"
+	terminalRequest.WorkspaceName = "workspace-terminal"
+	terminalRequest.SandboxID = "sandbox-terminal"
+	if failureImage != "" {
+		terminalRequest.RuntimeProfileID = "profile-failure"
+	}
+	terminal, err := user.CreateSandbox(ctx, "tenant", "project", "request-sandbox-terminal", "sandbox-terminal-key", terminalRequest)
+	if err != nil || terminal.Value.ObservedState != "pending" || terminal.Value.OperationID == "" {
+		t.Fatalf("create terminal sandbox fixture: value=%+v err=%v", terminal.Value, err)
+	}
+	if _, err := user.ListAdminSandboxSessions(ctx, "tenant", "project", "request-user-sandbox-denied", 50, ""); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user Admin sandbox status=%d err=%v", clientStatus(err), err)
+	}
+	adminSandboxes, err := admin.ListAdminSandboxSessions(ctx, "tenant", "project", "request-admin-sandboxes", 50, "")
+	if err != nil || len(adminSandboxes.Value.SandboxSessions) != 2 {
+		t.Fatalf("Admin sandbox list: value=%+v err=%v", adminSandboxes.Value, err)
+	}
+	adminSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-admin-sandbox")
+	if err != nil || adminSandbox.Value.Spec.WorkspaceID != "workspace" || adminSandbox.Value.Spec.RuntimeProfileID != "profile" ||
+		adminSandbox.Value.Spec.ObservedState != "pending" || adminSandbox.Value.Metadata.ResourceVersion != "0" {
+		t.Fatalf("Admin sandbox detail: value=%+v err=%v", adminSandbox.Value, err)
+	}
+	assertAdminSandboxRedaction(t, ctx, httpServer.URL, adminToken)
 	disabled, err := admin.DisableAdminRuntimeProfile(ctx, "tenant", "project", "profile", 1, "request-disable", "profile-disable-key", platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "2"})
 	if err != nil || disabled.Value.Spec.Status != "disabled" || disabled.Value.Metadata.ResourceVersion != "3" {
 		t.Fatalf("disable profile: value=%+v err=%v", disabled.Value, err)
+	}
+	if failureImage != "" {
+		failureDisabled, err := admin.DisableAdminRuntimeProfile(ctx, "tenant", "project", "profile-failure", 1, "request-failure-disable", "profile-failure-disable-key", platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "2"})
+		if err != nil || failureDisabled.Value.Spec.Status != "disabled" {
+			t.Fatalf("disable failure profile: value=%+v err=%v", failureDisabled.Value, err)
+		}
 	}
 	replay, err := user.CreateSandbox(ctx, "tenant", "project", "request-sandbox-replay", "sandbox-create-key", sandboxRequest)
 	if err != nil || replay.Value.OperationID != sandbox.Value.OperationID {
@@ -148,7 +215,8 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if profiles != 1 || activities != 3 || operations != 1 || outbox != 1 || workspaces != 1 || sandboxes != 1 {
+	expectedActivities := expectedProfiles * 3
+	if profiles != expectedProfiles || activities != expectedActivities || operations != 2 || outbox != 2 || workspaces != 2 || sandboxes != 2 {
 		t.Fatalf("durable closure profiles=%d activity=%d operations=%d outbox=%d workspaces=%d sandboxes=%d", profiles, activities, operations, outbox, workspaces, sandboxes)
 	}
 	if _, err := runtimePool.Exec(ctx, `SELECT cloud_agents.accept_foundation_intent_v1(
@@ -156,7 +224,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 		'direct-operation','direct-event','sha256:`+strings.Repeat("b", 64)+`','direct-runtime-key','sha256:`+strings.Repeat("c", 64)+`')`); pgErrorCode(err) != "42501" {
 		t.Fatalf("runtime bypass was not denied: code=%s err=%v", pgErrorCode(err), err)
 	}
-	t.Log("real Admin/User generated clients, HTTP403, RuntimeProfile lifecycle, redaction, RLS-backed durable acceptance, disable/replay and direct-authority denial passed; no Controller or Docker runtime claimed")
+	t.Log("real Admin/User generated clients, HTTP403, RuntimeProfile lifecycle, Sandbox operational projection/redaction, RLS-backed durable acceptance, disable/replay and direct-authority denial passed; no Controller or Docker runtime claimed")
 }
 
 func assertFoundationPublicRedaction(t *testing.T, ctx context.Context, baseURL, token string) {
@@ -179,6 +247,30 @@ func assertFoundationPublicRedaction(t *testing.T, ctx context.Context, baseURL,
 	for _, forbidden := range []string{"targetId", "imageUri", "releaseDigest", "endpoint", "credentialRef", "providerCredentialRef", "fixture-only", "127.0.0.1"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("public response disclosed %q: %s", forbidden, body)
+		}
+	}
+}
+
+func assertAdminSandboxRedaction(t *testing.T, ctx context.Context, baseURL, token string) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/admin/tenants/tenant/projects/project/sandbox-sessions/sandbox", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("X-Request-ID", "request-admin-sandbox-raw")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("Admin sandbox response status=%d body=%s err=%v", response.StatusCode, body, err)
+	}
+	for _, forbidden := range []string{"imageUri", "releaseDigest", "endpoint", "credentialRef", "providerCredentialRef", "prompt", "artifact", "fileContent", "registry.invalid"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("Admin sandbox response disclosed %q: %s", forbidden, body)
 		}
 	}
 }
@@ -243,7 +335,7 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 		}
 		return protected + "." + payload + "." + base64.RawURLEncoding.EncodeToString(signature)
 	}
-	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list")
+	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.get sandboxes.list")
 	user := issue("foundation-user-token", "environment-profiles.list environments.create projects.act projects.get")
 	return verifier, admin, user
 }

@@ -429,7 +429,8 @@ func mapRuntimeProfileError(err error) error {
 	case errors.Is(err, internalcoordination.ErrRuntimeProfileNotFound),
 		errors.Is(err, internalcoordination.ErrRuntimeProfileConflict),
 		errors.Is(err, internalcoordination.ErrRuntimeProfileUnavailable),
-		errors.Is(err, internalcoordination.ErrFoundationSandboxConflict):
+		errors.Is(err, internalcoordination.ErrFoundationSandboxConflict),
+		errors.Is(err, internalcoordination.ErrFoundationSandboxNotFound):
 		return err
 	default:
 		return mapCoordinationDatabaseError("foundation runtime profile", err)

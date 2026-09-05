@@ -177,6 +177,8 @@ type RuntimeProfileResult = common.ResponseEnvelope[platform.RuntimeProfile]
 type RuntimeProfilePageResult = common.ResponseEnvelope[platform.RuntimeProfilePage]
 type RuntimeProfileSummaryPageResult = common.ResponseEnvelope[platform.RuntimeProfileSummaryPage]
 type SandboxSessionResult = common.ResponseEnvelope[platform.SandboxSession]
+type AdminSandboxSessionResult = common.ResponseEnvelope[platform.AdminSandboxSession]
+type AdminSandboxSessionPageResult = common.ResponseEnvelope[platform.AdminSandboxSessionPage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
 type MaintenanceOperationResult = common.ResponseEnvelope[platform.MaintenanceOperation]
@@ -1542,6 +1544,61 @@ func (client *Client) GetAdminRuntimeProfile(ctx context.Context, tenantID, proj
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.ProfileID != profileID || value.Value.Spec.Version != version {
 		return RuntimeProfileResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminSandboxSessions(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (AdminSandboxSessionPageResult, error) {
+	if pageSize == 0 {
+		pageSize = 50
+	}
+	input, err := ValidateListAdminSandboxSessionsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		return AdminSandboxSessionPageResult{}, err
+	}
+	query := url.Values{}
+	query.Set("pageSize", strconv.Itoa(input.PageSize))
+	if input.PageToken != "" {
+		query.Set("pageToken", input.PageToken)
+	}
+	requestPath := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions?" + query.Encode()
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: requestPath, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminSandboxSessionPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminSandboxSessionPageResult{}, client.problemError("adminListSandboxSessions", response)
+	}
+	value, err := platform.DecodeAdminSandboxSessionPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminSandboxSessionPageResult{}, &ClientError{Operation: "adminListSandboxSessions", Status: response.Status, Cause: err}
+	}
+	for _, sandbox := range value.Value.SandboxSessions {
+		if sandbox.Metadata.TenantRef.ID != tenantID || sandbox.Spec.ProjectRef.ID != projectID {
+			return AdminSandboxSessionPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxSessions")
+		}
+	}
+	return value, nil
+}
+func (client *Client) GetAdminSandboxSession(ctx context.Context, tenantID, projectID, sandboxID, requestID string) (AdminSandboxSessionResult, error) {
+	if _, err := ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID); err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminSandboxSessionResult{}, client.problemError("adminGetSandboxSession", response)
+	}
+	value, err := platform.DecodeAdminSandboxSessionResponseJSON(response.Body)
+	if err != nil {
+		return AdminSandboxSessionResult{}, &ClientError{Operation: "adminGetSandboxSession", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != sandboxID {
+		return AdminSandboxSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
 }
@@ -4584,6 +4641,46 @@ func ValidateGetAdminRuntimeProfileServerRequest(tenantID, projectID, profileID 
 		return GetAdminRuntimeProfileServerInput{}, err
 	}
 	return GetAdminRuntimeProfileServerInput{TenantID: tenantID, ProjectID: projectID, ProfileID: profileID, Version: version, RequestID: requestID}, nil
+}
+
+type ListAdminSandboxSessionsServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminSandboxSessionsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminSandboxSessionsServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return ListAdminSandboxSessionsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminSandboxSessionsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminSandboxSessionsServerInput{}, err
+		}
+	}
+	return ListAdminSandboxSessionsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type GetAdminSandboxSessionServerInput struct {
+	TenantID  string
+	ProjectID string
+	SandboxID string
+	RequestID string
+}
+
+func ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID string) (GetAdminSandboxSessionServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return GetAdminSandboxSessionServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(sandboxID, "/sandboxId"); err != nil {
+		return GetAdminSandboxSessionServerInput{}, err
+	}
+	return GetAdminSandboxSessionServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID}, nil
 }
 
 type CreateSandboxServerInput struct {
