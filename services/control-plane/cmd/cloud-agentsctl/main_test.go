@@ -307,6 +307,7 @@ func TestRunExecutionDownloadArtifactWritesRawBytes(t *testing.T) {
 			t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.Path, request.Header)
 		}
 		writer.Header().Set("Content-Type", "application/octet-stream")
+		writer.Header().Set("Content-Disposition", `attachment; filename="result.bin"`)
 		_, _ = writer.Write([]byte{0, 1, 2, 255})
 	}))
 	defer server.Close()

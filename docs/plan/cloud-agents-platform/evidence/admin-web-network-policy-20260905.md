@@ -15,6 +15,7 @@ Non-default execution semantics are intentionally **not claimed implemented**. R
 - `bun run platform:contracts:check` passed, including exact generated SDK checks.
 - Admin Web and User Web independently passed their production builds. Admin build reports the existing-style single-bundle size warning; this is not a performance qualification.
 - A broader `go -C services/control-plane test ./...` run is not a passing gate: `TestRunExecutionDownloadArtifactWritesRawBytes` fails because its response fixture lacks required `Content-Disposition`. Neither that fixture nor download validation was changed by this slice. Focused successes must not be reported as whole-suite success.
+- That broad run also reached the migration package's default 10-minute cumulative timeout; the test active at the deadline was `TestRunnerLedgerEntryExecutionAdmissionUseRetirementIsExactAndOneShot`. This is not evidence of a migration 000049 execution failure: its packaged real PostgreSQL run passed below. The follow-up added the required download header to the Artifact fixture without relaxing production validation. The full CLI and generated OpenAPI SDK test packages passed, and the individual migration timeout-point test passed in 1.269 seconds with a 60-second limit. The whole-suite gate remains unqualified. Follow-up logs: `artifact-followup.log` and `migration-timeout-point.log` in the same temporary evidence directory.
 
 ## Real PostgreSQL / Control Plane / Docker run
 
