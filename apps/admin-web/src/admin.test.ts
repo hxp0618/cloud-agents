@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
+  adminFailure,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminProjectLeaseQuotaAuditEvents,
@@ -25,6 +26,30 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("shows only validated stable error codes and localized messages, never raw diagnostics", () => {
+    const problem = {
+      type: "https://problems.cloud-agents.dev/environment-cleanup-unavailable",
+      title: "untrusted diagnostics must not render",
+      status: 503,
+      error: { code: "ENVIRONMENT_CLEANUP_UNAVAILABLE", retryable: true },
+      requestId: "test-safe-feedback",
+    };
+    expect(adminFailure(new ClientError("cleanup", 503, problem))).toEqual({
+      key: "error.actuatorUnavailable",
+      code: "ENVIRONMENT_CLEANUP_UNAVAILABLE",
+    });
+    for (const invalid of [
+      { ...problem, credential: "secret-bytes" },
+      { ...problem, error: { ...problem.error, code: "secret-bytes" } },
+      { ...problem, status: 500 },
+      null,
+    ])
+      expect(adminFailure(new ClientError("cleanup", 503, invalid))).toEqual({
+        key: "error.actuatorUnavailable",
+        code: null,
+      });
+    expect(adminFailure(new Error("secret-bytes"))).toEqual({ key: "error.generic", code: null });
+  });
   it("submits the exact cleanup fences returned by the preview", () => {
     expect(
       cleanupRequestFromPreview({

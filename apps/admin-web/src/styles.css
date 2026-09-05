@@ -1005,6 +1005,68 @@ label > small {
   border-color: var(--warning-separator);
 }
 
+.operation-feedback .banner {
+  margin: 0;
+  padding: 12px 16px;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.operation-feedback .banner > svg {
+  flex: 0 0 16px;
+  margin-top: 2px;
+}
+
+.operation-feedback .banner > div,
+.operation-feedback .banner > span:not(.spinner) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.operation-feedback code {
+  display: block;
+  font-weight: 500;
+}
+
+.operation-feedback p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.operation-feedback button {
+  flex: 0 0 auto;
+}
+
+/* Native modal siblings are inert. Keep feedback visible only on the top resource modal. */
+.app-shell:has(> .admin-sheet[open]) .content > .operation-feedback,
+.admin-sheet:has(~ .admin-sheet[open]) > .operation-feedback {
+  display: none;
+}
+
+.admin-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-sheet > .detail-panel,
+.admin-sheet > .dialog {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.admin-sheet > .operation-feedback {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40%;
+  margin: 16px;
+  overflow: auto;
+}
+
+.confirmation-dialog > .operation-feedback {
+  margin: 16px 0 0;
+}
+
 .spinner {
   width: 14px;
   height: 14px;

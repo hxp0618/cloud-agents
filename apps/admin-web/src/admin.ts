@@ -1,6 +1,7 @@
 import {
   ClientError,
   JSONContractError,
+  parseProblem,
   type Client,
   type AdminEnvironmentLeaseUpgradeRequest,
   type AdminAuditEvent,
@@ -728,4 +729,17 @@ export function adminErrorKey(error: unknown): MessageKey {
   if (error instanceof DOMException && error.name === "AbortError") return "error.cancelled";
   if (error instanceof TypeError) return "error.connection";
   return "error.generic";
+}
+
+export function adminFailure(error: unknown): Readonly<{ key: MessageKey; code: string | null }> {
+  let code: string | null = null;
+  if (error instanceof ClientError) {
+    try {
+      const problem = parseProblem(JSON.stringify(error.problem));
+      if (problem.status === error.status) code = problem.error.code;
+    } catch {
+      // Invalid responses must not expose unvalidated diagnostics or secret fields.
+    }
+  }
+  return { key: adminErrorKey(error), code };
 }

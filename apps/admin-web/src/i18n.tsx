@@ -553,7 +553,8 @@ const enUS = {
   "error.contract": "Control Plane returned a response outside the generated Admin API contract.",
   "error.timeout":
     "The operation timed out. Refresh before retrying because it may have completed server-side.",
-  "error.cancelled": "The operation was cancelled.",
+  "error.cancelled":
+    "Stopped waiting. The operation may continue server-side; refresh before retrying.",
   "error.connection":
     "The Control Plane endpoint or token format is invalid. Use HTTPS or loopback HTTP.",
   "error.generic": "The Admin API operation failed. Refresh server state, then retry safely.",
@@ -1082,7 +1083,7 @@ const zhCN = {
   "error.actuatorUnavailable": "目标执行器不可用；服务端状态已保留，请检查目标后重试。",
   "error.contract": "控制平面返回内容不符合生成的管理员 API 合约。",
   "error.timeout": "操作超时；操作可能已在服务端完成，请先刷新再重试。",
-  "error.cancelled": "操作已取消。",
+  "error.cancelled": "已停止等待；操作可能仍在服务端执行，请刷新状态后再重试。",
   "error.connection": "控制平面地址或令牌格式无效，请使用 HTTPS 或回环 HTTP。",
   "error.generic": "管理员 API 操作失败，请刷新服务端状态后安全重试。",
   "error.targetPageToken": "控制平面重复返回了目标分页令牌。",

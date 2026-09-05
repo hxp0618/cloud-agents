@@ -29,7 +29,7 @@ import {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
-  adminErrorKey,
+  adminFailure,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminLeases,
@@ -266,12 +266,14 @@ function AdminSheet({
   children,
   confirmation = false,
   returnFocus,
+  feedback,
 }: Readonly<{
   label: string;
   onClose: () => void;
   children: ReactNode;
   confirmation?: boolean;
   returnFocus?: HTMLElement | null;
+  feedback: ReactNode;
 }>) {
   const ref = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef(returnFocus);
@@ -305,6 +307,7 @@ function AdminSheet({
       }}
     >
       {children}
+      {feedback}
     </dialog>
   );
 }
@@ -483,7 +486,7 @@ export function App() {
   const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
-  const [error, setError] = useState<MessageKey | null>(null);
+  const [error, setError] = useState<ReturnType<typeof adminFailure> | null>(null);
   const [notice, setNotice] = useState<LocalizedMessage | null>(null);
   const [targetForm, setTargetForm] = useState({
     targetId: "",
@@ -787,7 +790,7 @@ export function App() {
           );
         })
         .catch((cause: unknown) => {
-          if (!controller.signal.aborted) setError(adminErrorKey(cause));
+          if (!controller.signal.aborted) setError(adminFailure(cause));
         });
     }, 5_000);
     return () => {
@@ -801,6 +804,7 @@ export function App() {
   }
 
   function navigate(nextPage: Page) {
+    setError(null);
     setCommandsOpen(false);
     setPage(nextPage);
     setQuery("");
@@ -879,7 +883,7 @@ export function App() {
     const bearer = token.trim();
     if (Object.values(nextConnection).some((value) => value === "") || bearer === "") {
       setStatus("error");
-      setError("connection.required");
+      setError({ key: "connection.required", code: null });
       return;
     }
     const controller = new AbortController();
@@ -967,7 +971,7 @@ export function App() {
     } catch (cause) {
       setClient(null);
       setStatus(controller.signal.aborted ? "disconnected" : "error");
-      setError(controller.signal.aborted ? null : adminErrorKey(cause));
+      setError(controller.signal.aborted ? null : adminFailure(cause));
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
     }
@@ -1000,7 +1004,7 @@ export function App() {
       pendingKeysRef.current.delete(operationKey);
       setNotice(message);
     } catch (cause) {
-      setError(adminErrorKey(cause));
+      setError(adminFailure(cause));
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
       busyRef.current = false;
@@ -1854,7 +1858,7 @@ export function App() {
             </label>
             {error !== null ? (
               <p className="banner danger" role="alert">
-                {t(error)}
+                {t(error.key)}
               </p>
             ) : null}
             <button
@@ -1873,6 +1877,41 @@ export function App() {
       </main>
     );
   }
+
+  const feedback =
+    busy !== null || error !== null ? (
+      <div className="operation-feedback">
+        {busy !== null ? (
+          <div className="banner running" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <span>{t(busy.message.key, busy.message.values)}…</span>
+            <button type="button" onClick={() => requestRef.current?.abort()}>
+              {t("action.cancelWait")}
+            </button>
+          </div>
+        ) : null}
+        {error !== null ? (
+          <div className="banner danger" role="alert">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v6M12 16h.01" />
+            </svg>
+            <div>
+              {error.code !== null ? <code>{error.code}</code> : null}
+              <p>{t(error.key)}</p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    ) : null;
 
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
@@ -2101,20 +2140,7 @@ export function App() {
             </div>
           </div>
 
-          {busy !== null ? (
-            <div className="banner running" role="status" aria-live="polite">
-              <span className="spinner" aria-hidden="true" />{" "}
-              {t(busy.message.key, busy.message.values)}…
-              <button type="button" onClick={() => requestRef.current?.abort()}>
-                {t("action.cancelWait")}
-              </button>
-            </div>
-          ) : null}
-          {error !== null ? (
-            <div className="banner danger" role="alert">
-              {t(error)}
-            </div>
-          ) : null}
+          {feedback}
           {notice !== null ? (
             <div className="banner success" role="status">
               {t("notice.completed", {
@@ -2710,6 +2736,7 @@ export function App() {
       {targetDetailOpen && selectedTarget !== undefined ? (
         <AdminSheet
           label={t("sheet.target", { name: selectedTarget.metadata.name })}
+          feedback={feedback}
           onClose={() => {
             setTargetDetailOpen(false);
             setCleanupConfirmationOpen(false);
@@ -2747,6 +2774,7 @@ export function App() {
       selectedSchedulingPreview !== null ? (
         <AdminSheet
           label={t("sheet.scheduling", { name: selectedTarget.metadata.name })}
+          feedback={feedback}
           confirmation
           returnFocus={operationTriggerRef.current}
           onClose={() => setSchedulingConfirmationOpen(false)}
@@ -2766,6 +2794,7 @@ export function App() {
       selectedCleanupPreview !== null ? (
         <AdminSheet
           label={t("sheet.cleanup", { name: selectedTarget.metadata.name })}
+          feedback={feedback}
           confirmation
           returnFocus={operationTriggerRef.current}
           onClose={() => setCleanupConfirmationOpen(false)}
@@ -2783,6 +2812,7 @@ export function App() {
       {leaseDetailOpen && selectedLease !== undefined ? (
         <AdminSheet
           label={t("sheet.lease", { name: selectedLease.metadata.name })}
+          feedback={feedback}
           onClose={() => {
             setLeaseDetailOpen(false);
             setLeaseReleaseConfirmationOpen(false);
@@ -2819,6 +2849,7 @@ export function App() {
       selectedLeaseReleasePreview !== null ? (
         <AdminSheet
           label={t("sheet.leaseRelease", { name: selectedLease.metadata.name })}
+          feedback={feedback}
           confirmation
           returnFocus={operationTriggerRef.current}
           onClose={() => setLeaseReleaseConfirmationOpen(false)}
@@ -2836,6 +2867,7 @@ export function App() {
       {workerDetailOpen && selectedWorker !== undefined ? (
         <AdminSheet
           label={t("sheet.worker", { name: selectedWorker.metadata.name })}
+          feedback={feedback}
           onClose={() => setWorkerDetailOpen(false)}
         >
           <aside className="detail-panel" aria-label={t("sheet.selectedWorker")}>
@@ -2855,6 +2887,7 @@ export function App() {
       {profileDetailOpen && selectedProfile !== undefined ? (
         <AdminSheet
           label={t("sheet.profile", { name: selectedProfile.metadata.name })}
+          feedback={feedback}
           onClose={() => {
             setProfileDetailOpen(false);
             setProfileTransition(null);
@@ -2884,6 +2917,7 @@ export function App() {
 
       {maintenanceDetailOpen && selectedMaintenanceOperation !== undefined ? (
         <AdminSheet
+          feedback={feedback}
           label={t("sheet.maintenance", {
             id: selectedMaintenanceOperation.operationId,
           })}
@@ -2906,6 +2940,7 @@ export function App() {
       {profileTransition !== null && selectedProfile !== undefined ? (
         <AdminSheet
           confirmation
+          feedback={feedback}
           label={t("sheet.profileTransition", {
             action: t(
               profileTransition === "publish"
@@ -2929,6 +2964,7 @@ export function App() {
       {registeringRelease ? (
         <AdminSheet
           label={t("release.register.title")}
+          feedback={feedback}
           onClose={() => setRegisteringRelease(false)}
         >
           <section className="dialog" aria-labelledby="register-release-title">
@@ -3153,7 +3189,11 @@ export function App() {
       ) : null}
 
       {creatingProfile ? (
-        <AdminSheet label={t("profile.create.title")} onClose={() => setCreatingProfile(false)}>
+        <AdminSheet
+          feedback={feedback}
+          label={t("profile.create.title")}
+          onClose={() => setCreatingProfile(false)}
+        >
           <section className="dialog" aria-labelledby="create-profile-title">
             <div className="panel-heading">
               <div>
@@ -3425,7 +3465,11 @@ export function App() {
       ) : null}
 
       {registering ? (
-        <AdminSheet label={t("target.register.title")} onClose={() => setRegistering(false)}>
+        <AdminSheet
+          feedback={feedback}
+          label={t("target.register.title")}
+          onClose={() => setRegistering(false)}
+        >
           <section className="dialog" aria-labelledby="register-title">
             <div className="panel-heading">
               <div>

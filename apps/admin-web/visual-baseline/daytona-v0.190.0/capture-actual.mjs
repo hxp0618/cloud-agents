@@ -429,6 +429,49 @@ try {
       reviewGate: true,
       keyboardContained: true,
     });
+    const cleanup = ".cleanup-preview-block button";
+    await evaluate(
+      `document.querySelector(${JSON.stringify(cleanup)}).scrollIntoView({ block: 'nearest' })`,
+    );
+    await clickAt(cleanup);
+    await waitFor(
+      "document.querySelector('.admin-sheet .operation-feedback code')?.textContent === 'ENVIRONMENT_CLEANUP_UNAVAILABLE'",
+      "real cleanup failure",
+    );
+    assert.equal(await evaluate("document.querySelector('.confirmation-dialog') === null"), true);
+    const errorFeedback = await evaluate(`(() => {
+      const visible = [...document.querySelectorAll('.operation-feedback')].filter(el => el.checkVisibility());
+      const alert = visible[0]?.querySelector('[role=alert]');
+      return {count:visible.length,inModal:!!alert?.closest('dialog:modal'),text:alert?.textContent,fontSize:alert ? getComputedStyle(alert.querySelector('p')).fontSize : null};
+    })()`);
+    assert.equal(errorFeedback.count, 1);
+    assert.equal(errorFeedback.inModal, true);
+    assert.equal(errorFeedback.fontSize, "14px");
+    assert.match(
+      errorFeedback.text,
+      name.startsWith("zh-CN") ? /目标执行器不可用/ : /target actuator is unavailable/,
+    );
+    await screenshot(`cleanup-error-${name}.png`);
+    // Retrying another real preview clears the old failure without submitting a mutation.
+    await evaluate(
+      `document.querySelector(${JSON.stringify(trigger)}).scrollIntoView({ block: 'nearest' })`,
+    );
+    await clickAt(trigger);
+    await waitFor(
+      "document.querySelector('.confirmation-dialog')?.matches(':modal')",
+      "preview recovery",
+    );
+    assert.equal(
+      await evaluate("document.querySelector('.operation-feedback [role=alert]') === null"),
+      true,
+    );
+    await pressKey("Escape");
+    await waitFor(
+      "!document.querySelector('.confirmation-dialog')",
+      "recovered confirmation close",
+    );
+    modalChecks[modalChecks.length - 1].errorFeedback = errorFeedback;
+    modalChecks[modalChecks.length - 1].previewRecovery = true;
     await pressKey("Escape");
     await waitFor("!document.querySelector('.admin-sheet')", "detail Escape close");
     assert.equal(await evaluate("document.activeElement.matches('tbody .row-action')"), true);
