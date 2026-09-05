@@ -58,11 +58,22 @@ const spec = (operation) => ({
   metadata: {
     "cloud-agents-poc": run,
     operation,
-    "cloud-agents-tenant": "tenant-poc",
-    "cloud-agents-project": "project-poc",
-    "cloud-agents-workspace": volume,
-    "cloud-agents-sandbox": run,
-    "cloud-agents-operation": operation,
+    "cloud-agents-receipt-version": "2",
+    ...Object.fromEntries(
+      Object.entries({
+        tenant: "A" + "~".repeat(126) + "Z",
+        project: "project-poc",
+        workspace: volume,
+        sandbox: run,
+        operation,
+      }).flatMap(([name, value]) => {
+        const digest = createHash("sha256").update(value).digest("hex");
+        return [
+          [`cloud-agents-${name}-sha256-a`, digest.slice(0, 32)],
+          [`cloud-agents-${name}-sha256-b`, digest.slice(32)],
+        ];
+      }),
+    ),
     "cloud-agents-generation": "1",
     "cloud-agents-spec-sha256-a": "a".repeat(32),
     "cloud-agents-spec-sha256-b": "a".repeat(32),

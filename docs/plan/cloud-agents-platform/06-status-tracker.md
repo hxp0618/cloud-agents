@@ -10,7 +10,8 @@
 - BASE-M0 已开始。固定 OpenSandbox server `v0.2.2` / source `207d94c7`、execd `v1.0.21` 和镜像 digest；真实 OrbStack Docker 29.4.0 linux/arm64 PoC 通过无 Provider 的 create/exec/Files、删除计算保留卷与重建读回摘要、缺失卷拒绝及精确清理。见 [候选核对与领域映射](evidence/base-m0-opensandbox-candidate-20260905.md)。
 - 候选缺口已实证：相同创建输入产生两个 Sandbox；不存在的入口程序初始被接受为 Running，随后变为 Failed/exit 127。不能用创建响应替代 CP 幂等、Workspace 单写和就绪判断。当前仅技术 PoC，不是产品后端或 BASE-M0 联合验收。
 - Go 运行时回执接缝已新增：`internal/opensandbox` 按完整归属/generation/摘要发现已有物理对象，重复或冲突回执 fail closed，清理前复核回执；标准 HTTP 限制重定向、响应大小和错误内容。固定 Docker 实测 14 项含 Go 发现、重复拒绝、旧 generation 拒绝及清理重放，卷/Files 摘要保留；见 [Go 接缝证据](evidence/base-m0-go-receipts-20260905.md)。该包目前由真实 PoC 驱动，未接公共 API/Controller，不能证明 CP 自动恢复或 Admin 生命周期已交付。
-- 下一项：定义并接通首条 Workspace/Sandbox 持久化意图与生成契约，复用 durable coordination 和 Admin Target/Operation/Audit，把 Go 回执接缝放入受 durable claim 保护的调谐路径；补齐创建/adopt、实际就绪与部分创建补偿和对应 Admin 元数据闭环。不使用查找后直接 POST 或进程内锁冒充跨进程幂等。未迁移长期 Workspace/旧卷、接入客户节点或部署生产；这些动作仍遵守各自授权边界。
+- 接入前修复公共 ID 兼容缺口：128 字符/含 `~` 的合法 Identifier 采用 v2 双半 SHA-256 标签，发现与清理仍核验完整归属，不缩短公共契约。真实候选 14 项通过，见 [ID 回执兼容证据](evidence/base-m0-public-id-receipts-20260905.md)。未接通产品持久化链；新编码不承担旧 PoC 对象迁移。
+- 下一项：定义并接通首条 Workspace/Sandbox 持久化意图与生成契约，复用 durable coordination 和 Admin Target/Operation/Audit，把 Go 回执接缝放入受 durable claim 保护的调谐路径；补齐创建/adopt、实际就绪与部分创建补偿和对应 Admin 元数据闭环。现有 generated Project profile 禁止外部副作用，必须新增版本化能力，不能借旧 profile 执行 Sandbox 创建。不使用查找后直接 POST 或进程内锁冒充跨进程幂等。未迁移长期 Workspace/旧卷、接入客户节点或部署生产；这些动作仍遵守各自授权边界。
 - 本次未改既有 Agent/Lease/Profile/User Web 行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）

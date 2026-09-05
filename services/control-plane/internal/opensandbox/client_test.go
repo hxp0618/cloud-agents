@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -24,7 +25,9 @@ func TestReceiptGuards(t *testing.T) {
 		want      error
 	}{
 		{"running is only runtime state", func(*sandbox) {}, false, nil},
-		{"tenant", func(s *sandbox) { s.Metadata["cloud-agents-tenant"] = "other" }, false, ErrConflict},
+		{"tenant", func(s *sandbox) { s.Metadata["cloud-agents-tenant-sha256-a"] = "other" }, false, ErrConflict},
+		{"tenant second half", func(s *sandbox) { s.Metadata["cloud-agents-tenant-sha256-b"] = "other" }, false, ErrConflict},
+		{"encoding version", func(s *sandbox) { delete(s.Metadata, "cloud-agents-receipt-version") }, false, ErrConflict},
 		{"generation", func(s *sandbox) { s.Metadata["cloud-agents-generation"] = "2" }, false, ErrConflict},
 		{"digest first half", func(s *sandbox) { s.Metadata["cloud-agents-spec-sha256-a"] = "other" }, false, ErrConflict},
 		{"digest second half", func(s *sandbox) { s.Metadata["cloud-agents-spec-sha256-b"] = "other" }, false, ErrConflict},
@@ -135,7 +138,7 @@ func TestInvalidIdentityAndErrorRedaction(t *testing.T) {
 	defer server.Close()
 	client, _ := New(server.URL, "private-key")
 	invalid := identity()
-	invalid.Tenant = strings.Repeat("a", 64)
+	invalid.Tenant = strings.Repeat("a", 129)
 	if invalid.Labels() != nil {
 		t.Fatal("invalid labels produced")
 	}
@@ -159,13 +162,54 @@ func TestInvalidIdentityAndErrorRedaction(t *testing.T) {
 	}
 }
 
+func TestPublicIdentifiersInReceiptLabels(t *testing.T) {
+	id := identity()
+	id.Tenant = "A" + strings.Repeat("~", 126) + "Z"
+	id.Sandbox = id.Tenant
+	labels := id.Labels()
+	if len(labels) != 14 {
+		t.Fatal("missing receipt fields", len(labels))
+	}
+	for _, value := range labels {
+		if len(value) > 63 || strings.Contains(value, "~") {
+			t.Fatal("not a candidate label value")
+		}
+	}
+	for _, value := range []string{"", "_a", "a~", strings.Repeat("a", 129), "a/b", "中文", "a\n"} {
+		invalid := id
+		invalid.Workspace = value
+		if invalid.Labels() != nil {
+			t.Fatal("accepted invalid public identifier")
+		}
+	}
+	other := id
+	other.Tenant = strings.ToLower(id.Tenant)
+	if other.Labels()["cloud-agents-tenant-sha256-a"] == labels["cloud-agents-tenant-sha256-a"] {
+		t.Fatal("identifier case normalized")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		filter, err := url.ParseQuery(r.URL.Query().Get("metadata"))
+		if err != nil || len(filter) != 2 || filter.Get("cloud-agents-sandbox-sha256-a") != labels["cloud-agents-sandbox-sha256-a"] || filter.Get("cloud-agents-sandbox-sha256-b") != labels["cloud-agents-sandbox-sha256-b"] {
+			t.Error("discovery does not bind full sandbox digest")
+		}
+		item := sandbox{ID: "physical-1", Metadata: labels}
+		item.Status.State = "Running"
+		json.NewEncoder(w).Encode(map[string]any{"items": []sandbox{item}, "pagination": map[string]any{"page": 1, "hasNextPage": false}})
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "key")
+	if _, err := client.Find(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Invoked by the real Docker candidate harness; no credentials or user content are logged.
 func TestLiveDiscovery(t *testing.T) {
 	endpoint := os.Getenv("CA_BASE_ENDPOINT")
 	if endpoint == "" {
 		t.Skip("requires owned candidate harness")
 	}
-	id := Identity{Tenant: "tenant-poc", Project: "project-poc", Workspace: os.Getenv("CA_BASE_VOLUME"), Sandbox: os.Getenv("CA_BASE_RUN"), Operation: os.Getenv("CA_BASE_OPERATION"), Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
+	id := Identity{Tenant: "A" + strings.Repeat("~", 126) + "Z", Project: "project-poc", Workspace: os.Getenv("CA_BASE_VOLUME"), Sandbox: os.Getenv("CA_BASE_RUN"), Operation: os.Getenv("CA_BASE_OPERATION"), Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
 	client, err := New(endpoint, os.Getenv("CA_BASE_KEY"))
 	if err != nil {
 		t.Fatal(err)

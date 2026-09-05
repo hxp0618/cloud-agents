@@ -4,6 +4,8 @@ package opensandbox
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,7 +24,7 @@ var (
 	ErrNotFound    = errors.New("opensandbox resource is absent")
 	ErrConflict    = errors.New("opensandbox ownership or receipt conflicts")
 	identifier     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
-	labelValue     = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$`)
+	platformID     = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
 	digest         = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 )
 
@@ -34,7 +36,7 @@ type Identity struct {
 
 func (id Identity) valid() bool {
 	for _, value := range []string{id.Tenant, id.Project, id.Workspace, id.Sandbox, id.Operation} {
-		if !labelValue.MatchString(value) {
+		if !platformID.MatchString(value) {
 			return false
 		}
 	}
@@ -45,16 +47,22 @@ func (id Identity) Labels() map[string]string {
 	if !id.valid() {
 		return nil
 	}
-	// Candidate metadata uses Kubernetes label-value rules (63 chars, no colon).
-	// Preserve all SHA-256 bits as two hex halves; never truncate the digest.
-	hex := strings.TrimPrefix(id.SpecDigest, "sha256:")
-	return map[string]string{
-		"cloud-agents-tenant": id.Tenant, "cloud-agents-project": id.Project,
-		"cloud-agents-workspace": id.Workspace, "cloud-agents-sandbox": id.Sandbox,
-		"cloud-agents-operation": id.Operation, "cloud-agents-generation": strconv.FormatInt(id.Generation, 10),
-		"cloud-agents-spec-sha256-a": hex[:32],
-		"cloud-agents-spec-sha256-b": hex[32:],
+	// Candidate labels cannot carry all valid public identifiers (128 chars/~).
+	// Version the encoding and preserve every SHA-256 bit, without normalizing IDs.
+	labels := map[string]string{
+		"cloud-agents-receipt-version": "2",
+		"cloud-agents-generation":      strconv.FormatInt(id.Generation, 10),
 	}
+	for name, value := range map[string]string{"tenant": id.Tenant, "project": id.Project, "workspace": id.Workspace, "sandbox": id.Sandbox, "operation": id.Operation} {
+		sum := sha256.Sum256([]byte(value))
+		encoded := hex.EncodeToString(sum[:])
+		labels["cloud-agents-"+name+"-sha256-a"] = encoded[:32]
+		labels["cloud-agents-"+name+"-sha256-b"] = encoded[32:]
+	}
+	encoded := strings.TrimPrefix(id.SpecDigest, "sha256:")
+	labels["cloud-agents-spec-sha256-a"] = encoded[:32]
+	labels["cloud-agents-spec-sha256-b"] = encoded[32:]
+	return labels
 }
 
 // Observation contains only execution metadata. Running is not a readiness verdict.
@@ -152,7 +160,11 @@ func (c *Client) Find(ctx context.Context, id Identity) (Observation, error) {
 		return Observation{}, ErrInvalid
 	}
 	var found *Observation
-	filter := url.Values{"cloud-agents-sandbox": {id.Sandbox}}
+	labels := id.Labels()
+	filter := url.Values{
+		"cloud-agents-sandbox-sha256-a": {labels["cloud-agents-sandbox-sha256-a"]},
+		"cloud-agents-sandbox-sha256-b": {labels["cloud-agents-sandbox-sha256-b"]},
+	}
 	// ponytail: bounded sequential scan; fail closed above 100 pages, never infer absence.
 	for page := 1; page <= 100; page++ {
 		query := url.Values{"metadata": {filter.Encode()}, "page": {strconv.Itoa(page)}, "pageSize": {"100"}}
