@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json",
+  "title": "SandboxSessionLifecycleOperation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "operationId",
+    "idempotencyKey",
+    "action",
+    "sandboxId",
+    "sandboxGeneration",
+    "requestedBy",
+    "requestId",
+    "requestedAt",
+    "updatedAt",
+    "state",
+    "currentStep",
+    "cleanupPhase",
+    "computeDisposition",
+    "workspaceDisposition"
+  ],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxSessionLifecycleOperation" },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "idempotencyKey": { "$ref": "../../../common/v1alpha1/schemas/idempotency-key.schema.json" },
+    "action": { "enum": ["sandbox.stop", "sandbox.rebuild"] },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 2, "maximum": 9223372036854775807 },
+    "requestedBy": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "requestId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "requestedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "state": { "enum": ["pending", "running", "reconciling", "succeeded", "failed"] },
+    "currentStep": { "enum": ["pending-controller", "deleting-compute", "creating-compute", "retrying", "complete", "failed"] },
+    "cleanupPhase": { "enum": ["none", "complete", "blocked"] },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "computeDisposition": { "enum": ["delete", "create"] },
+    "workspaceDisposition": { "const": "retain" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "sandbox.stop deletes only the compute runtime and sandbox.rebuild creates a new generation",
+    "Workspace data and volume ownership metadata are always retained",
+    "The operation contains metadata only and never endpoint, credential, prompt, file or artifact content"
+  ]
+}

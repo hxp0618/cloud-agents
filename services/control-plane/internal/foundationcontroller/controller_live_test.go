@@ -36,13 +36,14 @@ type liveControllerEnvironment struct {
 	owner           *pgxpool.Pool
 	sandbox         *opensandbox.Client
 	dockerSocket    string
+	dockerEndpoint  string
 	sandboxEndpoint string
 	sandboxKey      string
 }
 
 func TestLiveFoundationControllerRestart(t *testing.T) {
 	phase := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PHASE")
-	if phase != "prepare" && phase != "recover" {
+	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "rebuild" {
 		t.Skip("live foundation Controller phase is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
@@ -52,7 +53,11 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 		prepareLiveControllerRestart(t, ctx, environment)
 		return
 	}
-	recoverLiveControllerRestart(t, ctx, environment)
+	if phase == "recover" {
+		recoverLiveControllerRestart(t, ctx, environment)
+		return
+	}
+	lifecycleLiveController(t, ctx, environment, phase)
 }
 
 func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControllerEnvironment {
@@ -151,7 +156,7 @@ func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControl
 	if err != nil {
 		t.Fatal(err)
 	}
-	return liveControllerEnvironment{controller, store, owner, sandbox, dockerSocket, sandboxEndpoint, sandboxKey}
+	return liveControllerEnvironment{controller, store, owner, sandbox, dockerSocket, server.URL, sandboxEndpoint, sandboxKey}
 }
 
 func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
@@ -177,7 +182,8 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	}
 	receipt, _ := json.Marshal(map[string]string{
 		"runtimeId": result.runtimeID, "volumeName": result.volumeName,
-		"proofDigest": hex.EncodeToString(proofDigest[:]),
+		"proofDigest": hex.EncodeToString(proofDigest[:]), "operationId": claimed.Claim.OperationID,
+		"specDigest": claimed.Claim.SpecDigest,
 	})
 	t.Logf("FOUNDATION_LIVE_PREPARE=%s", receipt)
 	// Intentionally exit without settlement: the next OS process must reap and adopt.
@@ -227,23 +233,86 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		t.Fatalf("failed runtime still exists: %v", err)
 	}
 
-	if err := environment.sandbox.Delete(ctx, identity, expectedRuntime); err != nil {
-		t.Fatalf("delete successful runtime: %v", err)
-	}
-	for _, volume := range []struct {
-		name, workspace string
-	}{{success.volumeName, success.workspaceID}, {failure.volumeName, failure.workspaceID}} {
-		removeLiveVolume(t, ctx, environment.dockerSocket, volume.name, volume.workspace)
-	}
-	if count := liveSandboxCount(t, ctx, environment); count != 0 {
+	removeLiveVolume(t, ctx, environment.dockerSocket, failure.volumeName, failure.workspaceID)
+	if count := liveSandboxCount(t, ctx, environment); count != 1 {
 		t.Fatalf("OpenSandbox residue = %d", count)
 	}
 	receipt, _ := json.Marshal(map[string]any{
 		"runtimeId": expectedRuntime, "adopted": true, "deliveryAttempts": success.deliveryAttempts,
 		"failureRuntimeId": failure.runtimeID, "failureCompensated": true,
-		"workspaceDigest": expectedDigest, "cleanup": "zero owned sandboxes and volumes",
+		"workspaceDigest": expectedDigest, "cleanup": "failed runtime and volume removed; successful runtime retained for lifecycle",
 	})
 	t.Logf("FOUNDATION_LIVE_RECOVER=%s", receipt)
+}
+
+func lifecycleLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment, phase string) {
+	t.Helper()
+	priorRuntime := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID")
+	expectedVolume := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME")
+	expectedDigest := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST")
+	if priorRuntime == "" || expectedVolume == "" || expectedDigest == "" {
+		t.Fatal("live lifecycle receipt is missing")
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("%s reconcile = %v / %v", phase, worked, err)
+	}
+	current := readLiveSandbox(t, ctx, environment.owner, "sandbox")
+	if current.volumeName != expectedVolume || current.operationState != "succeeded" || current.cleanupPhase != "complete" {
+		t.Fatalf("%s settlement = %#v", phase, current)
+	}
+	if phase == "stop" {
+		priorOperationID := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID")
+		priorSpecDigest := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST")
+		if priorOperationID == "" || priorSpecDigest == "" {
+			t.Fatal("prior runtime receipt is missing")
+		}
+		if current.observedState != "stopped" || !current.writerReleased || current.runtimeID != "" || current.generation != 2 {
+			t.Fatalf("stop settlement = %#v", current)
+		}
+		oldIdentity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: current.workspaceID,
+			Sandbox: "sandbox", Operation: priorOperationID, Generation: 1, SpecDigest: priorSpecDigest}
+		if _, err := environment.sandbox.Find(ctx, oldIdentity); !errors.Is(err, opensandbox.ErrNotFound) {
+			t.Fatalf("stopped runtime still exists: %v", err)
+		}
+		receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "runtimeDeleted": true,
+			"workspaceVolume": current.volumeName, "writerReleased": current.writerReleased})
+		t.Logf("FOUNDATION_LIVE_STOP=%s", receipt)
+		return
+	}
+	if current.observedState != "running" || current.writerReleased || current.runtimeID == "" ||
+		current.runtimeID == priorRuntime || current.generation != 3 {
+		t.Fatalf("rebuild settlement = %#v", current)
+	}
+	if output := liveCommand(t, ctx, environment, current.runtimeID, "sha256sum /workspace/controller-proof.txt"); !strings.Contains(output, expectedDigest) {
+		t.Fatalf("rebuilt workspace response = %s", output)
+	}
+	currentIdentity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: current.workspaceID,
+		Sandbox: "sandbox", Operation: current.operationID, Generation: current.generation, SpecDigest: current.specDigest}
+	staleIdentity := currentIdentity
+	staleIdentity.Generation--
+	if err := environment.sandbox.Delete(ctx, staleIdentity, current.runtimeID); !errors.Is(err, opensandbox.ErrConflict) {
+		t.Fatalf("stale generation was not fenced: %v", err)
+	}
+	wrongOwner := dockertarget.FoundationWorkspaceVolume{TenantID: "tenant", ProjectID: "project", TargetID: "target", WorkspaceID: "workspace-foreign"}
+	createLiveVolume(t, ctx, environment.dockerSocket, wrongOwner.Name(), map[string]string{"cloud-agents.dev/managed": "true", "cloud-agents.dev/resource": "foundation-workspace", "cloud-agents.dev/tenant": "other"})
+	if _, err := environment.controller.docker.EnsureFoundationWorkspaceVolume(ctx, environment.dockerEndpoint, "fixture-only", wrongOwner); !errors.Is(err, dockertarget.ErrDeploymentConflict) {
+		t.Fatalf("foreign volume owner was not rejected: %v", err)
+	}
+	status, _ := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodDelete, "/volumes/"+wrongOwner.Name())
+	if status != http.StatusNoContent {
+		t.Fatalf("foreign fixture cleanup status=%d", status)
+	}
+	if err := environment.sandbox.Delete(ctx, currentIdentity, current.runtimeID); err != nil {
+		t.Fatalf("delete rebuilt runtime: %v", err)
+	}
+	removeLiveVolume(t, ctx, environment.dockerSocket, current.volumeName, current.workspaceID)
+	if count := liveSandboxCount(t, ctx, environment); count != 0 {
+		t.Fatalf("OpenSandbox residue = %d", count)
+	}
+	receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "runtimeId": current.runtimeID,
+		"priorRuntimeId": priorRuntime, "workspaceDigest": expectedDigest, "staleGenerationRejected": true,
+		"foreignVolumeOwnerRejected": true, "cleanup": "zero owned sandboxes and volumes"})
+	t.Logf("FOUNDATION_LIVE_REBUILD=%s", receipt)
 }
 
 type liveSandboxRow struct {
@@ -251,6 +320,7 @@ type liveSandboxRow struct {
 	volumeName, operationState, cleanupPhase, stableError          string
 	generation                                                     int64
 	deliveryAttempts                                               int
+	writerReleased                                                 bool
 }
 
 func readLiveSandbox(t *testing.T, ctx context.Context, owner *pgxpool.Pool, sandboxID string) liveSandboxRow {
@@ -258,7 +328,7 @@ func readLiveSandbox(t *testing.T, ctx context.Context, owner *pgxpool.Pool, san
 	var row liveSandboxRow
 	err := owner.QueryRow(ctx, `SELECT s.workspace_uid,s.operation_id,s.generation,s.spec_digest,
 		COALESCE(s.runtime_uid,''),s.observed_state,v.physical_volume_uid,o.state,o.cleanup_phase,
-		COALESCE(o.terminal_error_code,''),e.delivery_attempts
+		COALESCE(o.terminal_error_code,''),e.delivery_attempts,s.writer_released
 		FROM cloud_agents.sandbox_sessions s
 		JOIN cloud_agents.workspace_volumes v USING (tenant_id,project_uid,workspace_uid)
 		JOIN cloud_agents.platform_operations o ON o.tenant_id=s.tenant_id AND o.operation_id=s.operation_id AND o.operation_generation=s.operation_generation
@@ -266,11 +336,30 @@ func readLiveSandbox(t *testing.T, ctx context.Context, owner *pgxpool.Pool, san
 		WHERE s.tenant_id='tenant' AND s.sandbox_uid=$1`, sandboxID).Scan(
 		&row.workspaceID, &row.operationID, &row.generation, &row.specDigest, &row.runtimeID,
 		&row.observedState, &row.volumeName, &row.operationState, &row.cleanupPhase,
-		&row.stableError, &row.deliveryAttempts)
+		&row.stableError, &row.deliveryAttempts, &row.writerReleased)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return row
+}
+
+func createLiveVolume(t *testing.T, ctx context.Context, socket, name string, labels map[string]string) {
+	t.Helper()
+	encoded, _ := json.Marshal(map[string]any{"Name": name, "Labels": labels})
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	defer transport.CloseIdleConnections()
+	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://docker/volumes/create", bytes.NewReader(encoded))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := (&http.Client{Transport: transport}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create foreign fixture volume status=%d", response.StatusCode)
+	}
 }
 
 func liveCommand(t *testing.T, ctx context.Context, environment liveControllerEnvironment, runtimeID, command string) string {

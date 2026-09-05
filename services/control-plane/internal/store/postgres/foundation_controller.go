@@ -12,14 +12,15 @@ import (
 
 const (
 	claimFoundationSandboxSQL = `SELECT tenant_id, event_id, delivery_attempts, claim_expires_at,
-    operation_id, operation_generation, project_uid, workspace_uid, workspace_name, volume_uid,
-    target_uid, target_generation, target_endpoint, credential_ref, sandbox_uid,
+    operation_id, operation_generation, action, project_uid, workspace_uid, workspace_name, volume_uid,
+    physical_volume_uid, target_uid, target_generation, target_endpoint, credential_ref, sandbox_uid,
     sandbox_generation, image_uri, runtime_profile_uid, runtime_profile_version,
-    cpu_millis, memory_bytes, spec_digest
-FROM cloud_agents.claim_foundation_sandbox_v1($1,$2,$3,$4,$5,$6)`
+    cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
+    runtime_generation, runtime_spec_digest
+FROM cloud_agents.claim_foundation_sandbox_v2($1,$2,$3,$4,$5,$6)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
-FROM cloud_agents.settle_foundation_sandbox_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
+FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
 	reapFoundationSandboxSQL = `SELECT tenant_id, event_id, outbox_state, delivery_attempts
 FROM cloud_agents.reap_foundation_sandbox_claim_v1($1,$2)`
 )
@@ -33,7 +34,9 @@ type FoundationSandboxClaimInput struct {
 type FoundationSandboxClaim struct {
 	TenantID, EventID, OperationID, ProjectID, WorkspaceID, WorkspaceName string
 	VolumeID, TargetID, TargetEndpoint, CredentialRef, SandboxID          string
-	ImageURI, SpecDigest                                                  string
+	Action, ImageURI, SpecDigest, RuntimeState                            string
+	PhysicalVolumeName, RuntimeID, RuntimeOperationID, RuntimeSpecDigest  *string
+	RuntimeGeneration                                                     *int64
 	DeliveryAttempts                                                      int32
 	OperationGeneration, TargetGeneration, SandboxGeneration              int64
 	RuntimeProfileID                                                      string
@@ -122,11 +125,13 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 			input.HolderID, input.HolderIncarnation, input.ClaimToken, input.LeaseSeconds,
 			input.SubjectDigest, input.AuditFactID,
 		).Scan(&claim.TenantID, &claim.EventID, &claim.DeliveryAttempts, &claim.ClaimExpiresAt,
-			&claim.OperationID, &claim.OperationGeneration, &claim.ProjectID, &claim.WorkspaceID,
-			&claim.WorkspaceName, &claim.VolumeID, &claim.TargetID, &claim.TargetGeneration,
+			&claim.OperationID, &claim.OperationGeneration, &claim.Action, &claim.ProjectID, &claim.WorkspaceID,
+			&claim.WorkspaceName, &claim.VolumeID, &claim.PhysicalVolumeName, &claim.TargetID, &claim.TargetGeneration,
 			&claim.TargetEndpoint, &claim.CredentialRef, &claim.SandboxID, &claim.SandboxGeneration,
 			&claim.ImageURI, &claim.RuntimeProfileID, &claim.RuntimeProfileVersion,
-			&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest)
+			&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest, &claim.RuntimeID,
+			&claim.RuntimeState, &claim.RuntimeOperationID, &claim.RuntimeGeneration,
+			&claim.RuntimeSpecDigest)
 		if errors.Is(err, pgx.ErrNoRows) {
 			result.Found = false
 			return nil
@@ -213,14 +218,33 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 		Sandbox: claim.SandboxID, ImageURI: claim.ImageURI, CPUMillis: claim.CPUMillis,
 		MemoryBytes: claim.MemoryBytes,
 	})
-	requestDigest, requestErr := coordination.FoundationSandboxCreateDigest(coordination.FoundationSandboxCreateInput{
-		Scope:       coordination.FoundationScope{TenantID: claim.TenantID, ProjectID: claim.ProjectID},
-		WorkspaceID: claim.WorkspaceID, WorkspaceName: claim.WorkspaceName, SandboxID: claim.SandboxID,
-		RuntimeProfileID: claim.RuntimeProfileID, RuntimeProfileVersion: claim.RuntimeProfileVersion,
-		Mutation: coordination.FoundationMutation{RequestID: "claim", IdempotencyKey: "foundation-claim-check"},
-	})
+	requestDigest := claim.SpecDigest
+	requestErr := error(nil)
+	if claim.Action == "sandbox.create" {
+		requestDigest, requestErr = coordination.FoundationSandboxCreateDigest(coordination.FoundationSandboxCreateInput{
+			Scope:       coordination.FoundationScope{TenantID: claim.TenantID, ProjectID: claim.ProjectID},
+			WorkspaceID: claim.WorkspaceID, WorkspaceName: claim.WorkspaceName, SandboxID: claim.SandboxID,
+			RuntimeProfileID: claim.RuntimeProfileID, RuntimeProfileVersion: claim.RuntimeProfileVersion,
+			Mutation: coordination.FoundationMutation{RequestID: "claim", IdempotencyKey: "foundation-claim-check"},
+		})
+	}
 	endpoint, endpointErr := url.Parse(claim.TargetEndpoint)
-	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest &&
+	validVolume := claim.PhysicalVolumeName == nil || validMutationIdentifier(*claim.PhysicalVolumeName)
+	validCurrentReceipt := claim.RuntimeID == nil && claim.RuntimeOperationID == nil &&
+		claim.RuntimeGeneration == nil && claim.RuntimeSpecDigest == nil ||
+		claim.RuntimeID != nil && claim.RuntimeOperationID != nil && claim.RuntimeGeneration != nil &&
+			claim.RuntimeSpecDigest != nil && validMutationIdentifier(*claim.RuntimeID) &&
+			*claim.RuntimeOperationID == claim.OperationID && *claim.RuntimeGeneration == claim.SandboxGeneration &&
+			*claim.RuntimeSpecDigest == claim.SpecDigest
+	validActionReceipt := claim.Action == "sandbox.create" && claim.SandboxGeneration == 1 && validVolume && validCurrentReceipt ||
+		claim.Action == "sandbox.rebuild" && claim.SandboxGeneration > 1 && claim.PhysicalVolumeName != nil &&
+			validVolume && validCurrentReceipt ||
+		claim.Action == "sandbox.stop" && claim.PhysicalVolumeName != nil && claim.RuntimeID != nil &&
+			claim.RuntimeOperationID != nil && claim.RuntimeGeneration != nil && claim.RuntimeSpecDigest != nil &&
+			validMutationIdentifier(*claim.PhysicalVolumeName) && validMutationIdentifier(*claim.RuntimeID) &&
+			validMutationIdentifier(*claim.RuntimeOperationID) && *claim.RuntimeGeneration > 0 &&
+			*claim.RuntimeGeneration < claim.SandboxGeneration && validCoordinationDigest(*claim.RuntimeSpecDigest)
+	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validActionReceipt &&
 		endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" &&
 		validMutationIdentifier(claim.EventID) && validMutationIdentifier(claim.OperationID) &&
 		validMutationIdentifier(claim.CredentialRef) && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 &&

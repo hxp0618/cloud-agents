@@ -24,6 +24,7 @@ type foundationStore interface {
 	ListRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RuntimeProfilePage, error)
 	ListPublishedRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.PublishedRuntimeProfilePage, error)
 	CreateFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxCreateInput) (internalcoordination.FoundationSandboxSnapshot, error)
+	TransitionFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxLifecycleInput) (internalcoordination.FoundationSandboxLifecycleOperation, error)
 	GetAdminSandbox(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.AdminSandboxSnapshot, error)
 	ListAdminSandboxes(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminSandboxPage, error)
 }
@@ -101,6 +102,8 @@ func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		server.listAdminSandboxes(writer, request, tenantID, projectID, requestID, principal)
 	case "get-admin-sandbox":
 		server.getAdminSandbox(writer, request, tenantID, projectID, profileID, requestID, principal)
+	case internalcoordination.FoundationSandboxStop, internalcoordination.FoundationSandboxRebuild:
+		server.transitionAdminSandbox(writer, request, tenantID, projectID, profileID, action, requestID, principal)
 	}
 }
 
@@ -346,6 +349,52 @@ func (server *FoundationHTTPServer) getAdminSandbox(writer http.ResponseWriter, 
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
+func (server *FoundationHTTPServer) transitionAdminSandbox(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sandboxID, action, requestID string, principal *authn.VerifiedPrincipal) {
+	key, body, ok := foundationMutationBody(writer, request)
+	if !ok {
+		return
+	}
+	var transition platform.SandboxSessionLifecycleRequest
+	var err error
+	if action == internalcoordination.FoundationSandboxStop {
+		var validated openapi.TransitionAdminSandboxSessionServerInput
+		validated, err = openapi.ValidateStopAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID, key, body)
+		transition = validated.Body
+	} else {
+		var validated openapi.TransitionAdminSandboxSessionServerInput
+		validated, err = openapi.ValidateRebuildAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID, key, body)
+		transition = validated.Body
+	}
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	expectedResourceVersion, err := strconv.ParseInt(transition.ExpectedResourceVersion, 10, 64)
+	if err != nil || expectedResourceVersion < 1 {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	result, err := server.store.TransitionFoundationSandbox(request.Context(), tenantID, principal,
+		internalcoordination.FoundationSandboxLifecycleInput{
+			Scope:     internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID},
+			SandboxID: sandboxID, Action: action, ConfirmedSandboxID: transition.ConfirmedSandboxID,
+			ExpectedGeneration: transition.ExpectedGeneration, ExpectedResourceVersion: expectedResourceVersion,
+			ComputeDisposition: transition.ComputeDisposition, WorkspaceDisposition: transition.WorkspaceDisposition,
+			Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
+		})
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	value := sandboxLifecycleOperationResource(result)
+	body, err = platform.EncodeSandboxSessionLifecycleOperationResponseJSON(common.ResponseEnvelope[platform.SandboxSessionLifecycleOperation]{Value: value})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writeJSONResponse(writer, http.StatusAccepted, requestID, body)
+}
+
 func foundationMutationBody(writer http.ResponseWriter, request *http.Request) (string, []byte, bool) {
 	key, ok := exactSingleHeader(request.Header, "Idempotency-Key")
 	if !ok {
@@ -423,6 +472,34 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 	}}
 }
 
+func sandboxLifecycleOperationResource(operation internalcoordination.FoundationSandboxLifecycleOperation) platform.SandboxSessionLifecycleOperation {
+	step := "pending-controller"
+	switch operation.State {
+	case "running":
+		if operation.Action == "sandbox.stop" {
+			step = "deleting-compute"
+		} else {
+			step = "creating-compute"
+		}
+	case "reconciling":
+		step = "retrying"
+	case "succeeded":
+		step = "complete"
+	case "failed":
+		step = "failed"
+	}
+	return platform.SandboxSessionLifecycleOperation{
+		APIVersion: platform.APIVersion, Kind: "SandboxSessionLifecycleOperation",
+		OperationID: operation.OperationID, IdempotencyKey: operation.IdempotencyKey,
+		Action: operation.Action, SandboxID: operation.SandboxID, SandboxGeneration: operation.SandboxGeneration,
+		RequestedBy: operation.RequestedBy, RequestID: operation.RequestID,
+		RequestedAt: operation.RequestedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: operation.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		State: operation.State, CurrentStep: step, CleanupPhase: operation.CleanupPhase,
+		StableErrorCode: operation.StableErrorCode, ComputeDisposition: operation.ComputeDisposition,
+		WorkspaceDisposition: operation.WorkspaceDisposition,
+	}
+}
+
 func foundationPath(path string) (admin bool, tenantID, projectID, profileID string, version int64, action string, ok bool) {
 	prefix := "/v1/tenants/"
 	if strings.HasPrefix(path, "/v1/admin/tenants/") {
@@ -444,7 +521,13 @@ func foundationPath(path string) (admin bool, tenantID, projectID, profileID str
 		}
 	}
 	if admin && len(parts) == 5 && parts[1] == "projects" && parts[3] == "sandbox-sessions" && parts[4] != "" {
-		return true, parts[0], parts[2], parts[4], 0, "get-admin-sandbox", true
+		sandboxID, sandboxAction := parts[4], "get-admin-sandbox"
+		if value, found := strings.CutSuffix(sandboxID, ":stop"); found {
+			sandboxID, sandboxAction = value, internalcoordination.FoundationSandboxStop
+		} else if value, found := strings.CutSuffix(sandboxID, ":rebuild"); found {
+			sandboxID, sandboxAction = value, internalcoordination.FoundationSandboxRebuild
+		}
+		return true, parts[0], parts[2], sandboxID, 0, sandboxAction, sandboxID != ""
 	}
 	if !admin || len(parts) != 7 || parts[1] != "projects" || parts[3] != "runtime-profiles" || parts[4] == "" || parts[5] != "versions" {
 		return false, "", "", "", 0, "", false
@@ -480,6 +563,8 @@ func foundationPermission(admin bool, action, method string) (projectPermission,
 		return "projects.get", "sandboxes.list", true
 	case admin && action == "get-admin-sandbox" && method == http.MethodGet:
 		return "projects.get", "sandboxes.get", true
+	case admin && (action == internalcoordination.FoundationSandboxStop || action == internalcoordination.FoundationSandboxRebuild) && method == http.MethodPost:
+		return "projects.act", "sandboxes.act", true
 	default:
 		return "", "", false
 	}

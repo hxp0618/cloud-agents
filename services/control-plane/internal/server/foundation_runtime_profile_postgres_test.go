@@ -227,6 +227,98 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	t.Log("real Admin/User generated clients, HTTP403, RuntimeProfile lifecycle, Sandbox operational projection/redaction, RLS-backed durable acceptance, disable/replay and direct-authority denial passed; no Controller or Docker runtime claimed")
 }
 
+func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
+	action := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIFECYCLE_ACTION")
+	if action != "stop" && action != "rebuild" {
+		t.Skip("foundation Sandbox lifecycle action is not configured")
+	}
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
+	if runtimeURL == "" || ownerURL == "" {
+		t.Skip("isolated foundation Sandbox lifecycle PostgreSQL environment not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimePool.Close()
+	ownerConfig, err := pgxpool.ParseConfig(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerConfig.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner")
+		return err
+	}
+	owner, err := pgxpool.NewWithConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	verifier, adminToken, userToken := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
+	current, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-lifecycle-get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compute := "delete"
+	if action == "rebuild" {
+		compute = "create"
+	}
+	body := platform.SandboxSessionLifecycleRequest{
+		ExpectedGeneration: current.Value.Spec.Generation, ExpectedResourceVersion: current.Value.Metadata.ResourceVersion,
+		ConfirmedSandboxID: "sandbox", ComputeDisposition: compute, WorkspaceDisposition: "retain",
+	}
+	call := func(client *api.Client, requestID, key string, request platform.SandboxSessionLifecycleRequest) (api.SandboxSessionLifecycleOperationResult, error) {
+		if action == "stop" {
+			return client.StopAdminSandboxSession(ctx, "tenant", "project", "sandbox", requestID, key, request)
+		}
+		return client.RebuildAdminSandboxSession(ctx, "tenant", "project", "sandbox", requestID, key, request)
+	}
+	if _, err := call(user, "request-lifecycle-user-denied", "sandbox-lifecycle-user-key", body); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user lifecycle status=%d err=%v", clientStatus(err), err)
+	}
+	key := "sandbox-lifecycle-" + action + "-key"
+	operation, err := call(admin, "request-lifecycle-"+action, key, body)
+	if err != nil || operation.Value.Action != "sandbox."+action || operation.Value.State != "pending" ||
+		operation.Value.SandboxGeneration != current.Value.Spec.Generation+1 || operation.Value.WorkspaceDisposition != "retain" {
+		t.Fatalf("lifecycle operation=%+v err=%v", operation.Value, err)
+	}
+	replay, err := call(admin, "request-lifecycle-replay", key, body)
+	if err != nil || replay.Value.OperationID != operation.Value.OperationID {
+		t.Fatalf("lifecycle replay=%+v err=%v", replay.Value, err)
+	}
+	if _, err := call(admin, "request-lifecycle-stale", key+"-stale", body); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("stale lifecycle fence status=%d err=%v", clientStatus(err), err)
+	}
+	var activities, audits int
+	if err := owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM cloud_agents.foundation_sandbox_activity WHERE sandbox_uid='sandbox' AND action=$1),
+		(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE operation_id=$2 AND transition=$3)`,
+		"sandbox."+action, operation.Value.OperationID, "sandbox."+action+".accept").Scan(&activities, &audits); err != nil || activities != 1 || audits != 1 {
+		t.Fatalf("lifecycle durable activity=%d audit=%d err=%v", activities, audits, err)
+	}
+	encoded, _ := json.Marshal(map[string]any{
+		"action": action, "operationId": operation.Value.OperationID,
+		"generation": operation.Value.SandboxGeneration, "priorResourceVersion": body.ExpectedResourceVersion,
+		"ordinaryUserStatus": 403, "staleFenceStatus": 409, "workspaceDisposition": "retain",
+	})
+	t.Logf("FOUNDATION_LIFECYCLE_API=%s", encoded)
+}
+
 func assertFoundationPublicRedaction(t *testing.T, ctx context.Context, baseURL, token string) {
 	t.Helper()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/tenants/tenant/projects/project/runtime-profiles?pageSize=50", nil)
@@ -335,7 +427,7 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 		}
 		return protected + "." + payload + "." + base64.RawURLEncoding.EncodeToString(signature)
 	}
-	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.get sandboxes.list")
+	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list")
 	user := issue("foundation-user-token", "environment-profiles.list environments.create projects.act projects.get")
 	return verifier, admin, user
 }

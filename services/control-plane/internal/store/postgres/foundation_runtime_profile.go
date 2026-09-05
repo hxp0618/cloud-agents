@@ -411,13 +411,17 @@ func mapRuntimeProfileError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch {
+		case pgErr.Code == "23503" && pgErr.Message == "foundation sandbox was not found":
+			return internalcoordination.ErrFoundationSandboxNotFound
 		case pgErr.Code == "23503" && pgErr.Message == "runtime profile was not found":
 			return internalcoordination.ErrRuntimeProfileNotFound
 		case pgErr.Code == "23503":
 			return internalcoordination.ErrRuntimeProfileUnavailable
 		case pgErr.Code == "23505" && pgErr.Message == "runtime profile is not available":
 			return internalcoordination.ErrRuntimeProfileUnavailable
-		case pgErr.Code == "23505" && pgErr.Message == "foundation sandbox profile conflict":
+		case pgErr.Code == "23505" && (pgErr.Message == "foundation sandbox profile conflict" ||
+			pgErr.Message == "foundation sandbox transition conflict" ||
+			pgErr.Message == "foundation sandbox idempotency conflict"):
 			return internalcoordination.ErrFoundationSandboxConflict
 		case pgErr.Code == "23505":
 			return internalcoordination.ErrRuntimeProfileConflict

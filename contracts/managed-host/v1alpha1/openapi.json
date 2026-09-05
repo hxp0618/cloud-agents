@@ -1190,6 +1190,80 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}:stop": {
+      "post": {
+        "operationId": "adminStopSandboxSession",
+        "x-cloud-agents-required-scope": "sandboxes.act",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SandboxId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Durable stop operation; compute is deleted and Workspace data is retained",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}:rebuild": {
+      "post": {
+        "operationId": "adminRebuildSandboxSession",
+        "x-cloud-agents-required-scope": "sandboxes.act",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SandboxId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Durable rebuild operation using the retained Workspace volume",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "adminListEnvironmentProfiles",

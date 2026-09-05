@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -201,9 +201,9 @@ try {
         "--repository-root",
         root,
         "--manifest",
-        "services/control-plane/migrations/product/000055/manifest.json",
+        "services/control-plane/migrations/product/000056/manifest.json",
         "--selector",
-        "product-000055",
+        "product-000056",
       ],
       {
         encoding: "utf8",
@@ -212,7 +212,7 @@ try {
       },
     ),
   );
-  assert.equal(migration.schema_head, "000055");
+  assert.equal(migration.schema_head, "000056");
 
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -323,16 +323,53 @@ try {
   );
   const recoverReceipt = parseMarker(recoverOutput, "FOUNDATION_LIVE_RECOVER");
   assert.equal(recoverReceipt.runtimeId, prepareReceipt.runtimeId);
-  assert.equal(recoverReceipt.cleanup, "zero owned sandboxes and volumes");
+  assert.equal(
+    recoverReceipt.cleanup,
+    "failed runtime and volume removed; successful runtime retained for lifecycle",
+  );
+
+  const lifecycleAPI = (action) =>
+    parseMarker(
+      execFileSync(serverTestBinary, ["-test.run", "^TestFoundationSandboxLifecyclePostgres$", "-test.v"], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_FOUNDATION_LIFECYCLE_ACTION: action,
+        },
+        timeout: 120_000,
+      }),
+      "FOUNDATION_LIFECYCLE_API",
+    );
+  const lifecycleController = (phase, marker) =>
+    parseMarker(
+      execFileSync(controllerTestBinary, ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"], {
+        encoding: "utf8",
+        env: {
+          ...commonEnvironment,
+          CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: phase,
+          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prepareReceipt.runtimeId,
+          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: prepareReceipt.volumeName,
+          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: prepareReceipt.operationId,
+          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: prepareReceipt.specDigest,
+        },
+        timeout: 180_000,
+      }),
+      marker,
+    );
+  const stopAPIReceipt = lifecycleAPI("stop");
+  const stopReceipt = lifecycleController("stop", "FOUNDATION_LIVE_STOP");
+  assert.equal(stopReceipt.generation, stopAPIReceipt.generation);
+  assert.equal(stopReceipt.workspaceVolume, prepareReceipt.volumeName);
+  const rebuildAPIReceipt = lifecycleAPI("rebuild");
+  const rebuildReceipt = lifecycleController("rebuild", "FOUNDATION_LIVE_REBUILD");
+  assert.equal(rebuildReceipt.generation, rebuildAPIReceipt.generation);
+  assert.equal(rebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
   assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
   assert.equal(
-    docker(
-      "volume",
-      "ls",
-      "-q",
-      "--filter",
-      "label=cloud-agents.dev/resource=foundation-workspace",
-    ),
+    docker("volume", "ls", "-q", "--filter", "label=cloud-agents.dev/resource=foundation-workspace"),
     "",
   );
 
@@ -360,6 +397,8 @@ try {
     },
     prepare: prepareReceipt,
     recover: recoverReceipt,
+    stop: { api: stopAPIReceipt, controller: stopReceipt },
+    rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
     checks: [
       "public RuntimeProfile and Sandbox admission",
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
@@ -370,11 +409,14 @@ try {
       "exact runtime adoption without duplicate",
       "workspace bytes preserved across Controller restart",
       "real OpenSandbox Failed state and exact compensation",
-      "successful runtime cleanup retains volumes until exact test-owned cleanup",
+      "generated Admin stop/rebuild with ordinary-user 403, idempotent replay, stale fencing, Operation and Audit",
+      "stop deletes the exact runtime, releases its writer, and retains the physical Workspace volume",
+      "rebuild uses the same physical volume and preserves Workspace bytes",
+      "stale runtime generation and foreign physical volume ownership are rejected",
       "zero test-owned runtime containers and Workspace volumes",
     ],
     boundary:
-      "Local OrbStack Docker and disposable PostgreSQL only; no Admin Web, stop/rebuild lifecycle, deployment, image publication, Kubernetes or customer node",
+      "Local OrbStack Docker and disposable PostgreSQL only; no Admin Web, TTL, deployment, image publication, Kubernetes or customer node",
   };
   writeFileSync(
     resolve(evidenceDirectory, "evidence.json"),
@@ -444,7 +486,9 @@ try {
     if (
       info.Labels?.["cloud-agents.dev/tenant"] === "tenant" &&
       info.Labels?.["cloud-agents.dev/project"] === "project" &&
-      ["workspace", "workspace-terminal"].includes(info.Labels?.["cloud-agents.dev/workspace"])
+      ["workspace", "workspace-terminal", "workspace-foreign"].includes(
+        info.Labels?.["cloud-agents.dev/workspace"],
+      )
     ) {
       docker("volume", "rm", volume);
     }

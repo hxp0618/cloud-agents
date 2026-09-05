@@ -99,7 +99,53 @@ FROM (
     ORDER BY sandbox.sandbox_uid
     LIMIT $3
 ) AS sandbox_row`
+	transitionFoundationSandboxSQL = `SELECT operation_uid, idempotency_key, action, sandbox_uid,
+    sandbox_generation, requested_by, request_id, requested_at, updated_at, operation_state,
+    cleanup_phase, stable_error_code, compute_disposition, workspace_disposition
+FROM cloud_agents.transition_foundation_sandbox_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 )
+
+func (service *DurableCoordinationService) TransitionFoundationSandbox(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
+	input internalcoordination.FoundationSandboxLifecycleInput,
+) (internalcoordination.FoundationSandboxLifecycleOperation, error) {
+	if service == nil || service.runner == nil {
+		return internalcoordination.FoundationSandboxLifecycleOperation{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return internalcoordination.FoundationSandboxLifecycleOperation{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalcoordination.FoundationSandboxLifecycleDigest(input)
+	if err != nil {
+		return internalcoordination.FoundationSandboxLifecycleOperation{}, ErrCoordinationInvalidInput
+	}
+	var result internalcoordination.FoundationSandboxLifecycleOperation
+	err = service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true,
+		func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
+			var stableErrorCode *string
+			err := handle.transaction.queryRow(operationContext, transitionFoundationSandboxSQL,
+				input.Scope.ProjectID, input.SandboxID, input.ExpectedGeneration,
+				input.ExpectedResourceVersion, input.Action, input.ConfirmedSandboxID,
+				input.ComputeDisposition, input.WorkspaceDisposition, subjectDigest,
+				input.Mutation.IdempotencyKey, digest, input.Mutation.RequestID,
+			).Scan(&result.OperationID, &result.IdempotencyKey, &result.Action, &result.SandboxID,
+				&result.SandboxGeneration, &result.RequestedBy, &result.RequestID, &result.RequestedAt,
+				&result.UpdatedAt, &result.State, &result.CleanupPhase, &stableErrorCode,
+				&result.ComputeDisposition, &result.WorkspaceDisposition)
+			if err != nil {
+				return err
+			}
+			result.Scope = input.Scope
+			if stableErrorCode != nil {
+				result.StableErrorCode = *stableErrorCode
+			}
+			if result.Validate() != nil {
+				return ErrCoordinationResultDrift
+			}
+			return nil
+		})
+	return result, mapRuntimeProfileError(err)
+}
 
 func (service *DurableCoordinationService) GetAdminSandbox(
 	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID, sandboxID string,

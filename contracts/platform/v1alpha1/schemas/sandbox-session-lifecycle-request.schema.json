@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json",
+  "title": "SandboxSessionLifecycleRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "expectedGeneration",
+    "expectedResourceVersion",
+    "confirmedSandboxId",
+    "computeDisposition",
+    "workspaceDisposition"
+  ],
+  "properties": {
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "expectedResourceVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
+    "confirmedSandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "computeDisposition": { "enum": ["delete", "create"] },
+    "workspaceDisposition": { "const": "retain" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "The action path fixes computeDisposition: stop requires delete and rebuild requires create",
+    "The server compares confirmedSandboxId, generation and resourceVersion with locked authority before accepting the operation"
+  ]
+}

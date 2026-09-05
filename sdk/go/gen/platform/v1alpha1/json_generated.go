@@ -654,6 +654,32 @@ type SandboxSession struct {
 	DesiredState          string            `json:"desiredState"`
 	ObservedState         string            `json:"observedState"`
 }
+type SandboxSessionLifecycleRequest struct {
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ConfirmedSandboxID      string `json:"confirmedSandboxId"`
+	ComputeDisposition      string `json:"computeDisposition"`
+	WorkspaceDisposition    string `json:"workspaceDisposition"`
+}
+type SandboxSessionLifecycleOperation struct {
+	APIVersion           string `json:"apiVersion"`
+	Kind                 string `json:"kind"`
+	OperationID          string `json:"operationId"`
+	IdempotencyKey       string `json:"idempotencyKey"`
+	Action               string `json:"action"`
+	SandboxID            string `json:"sandboxId"`
+	SandboxGeneration    int64  `json:"sandboxGeneration"`
+	RequestedBy          string `json:"requestedBy"`
+	RequestID            string `json:"requestId"`
+	RequestedAt          string `json:"requestedAt"`
+	UpdatedAt            string `json:"updatedAt"`
+	State                string `json:"state"`
+	CurrentStep          string `json:"currentStep"`
+	CleanupPhase         string `json:"cleanupPhase"`
+	StableErrorCode      string `json:"stableErrorCode,omitempty"`
+	ComputeDisposition   string `json:"computeDisposition"`
+	WorkspaceDisposition string `json:"workspaceDisposition"`
+}
 type AdminSandboxSessionSpec struct {
 	ProjectRef             common.ProjectRef `json:"projectRef"`
 	OperationID            string            `json:"operationId"`
@@ -1040,6 +1066,7 @@ var adminSandboxSessionPageResponseShape = common.ObjectResponseShape(map[string
 var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape()})
 var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape()})
+var sandboxSessionLifecycleOperationResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "idempotencyKey": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "requestedBy": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "requestedAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "currentStep": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "computeDisposition": common.ScalarResponseShape(), "workspaceDisposition": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"deploymentTargets": common.ArrayResponseShape(resourceResponseShape("DeploymentTarget")), "nextPageToken": common.ScalarResponseShape(),
@@ -3484,6 +3511,31 @@ func EncodeSandboxSessionCreateRequestJSON(value SandboxSessionCreateRequest) ([
 	}
 	return raw, nil
 }
+func DecodeSandboxSessionLifecycleRequestJSON(data []byte) (SandboxSessionLifecycleRequest, error) {
+	allowed := []string{"expectedGeneration", "expectedResourceVersion", "confirmedSandboxId", "computeDisposition", "workspaceDisposition"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return SandboxSessionLifecycleRequest{}, err
+	}
+	var value SandboxSessionLifecycleRequest
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxSessionLifecycleRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	resourceVersion, err := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	if value.ExpectedGeneration < 1 || err != nil || resourceVersion < 1 || len(value.ExpectedResourceVersion) > 19 || common.ValidateIdentifier(value.ConfirmedSandboxID, "/confirmedSandboxId") != nil || value.ComputeDisposition != "delete" && value.ComputeDisposition != "create" || value.WorkspaceDisposition != "retain" {
+		return SandboxSessionLifecycleRequest{}, common.ContractError("INVALID_SANDBOX_LIFECYCLE_REQUEST", "")
+	}
+	return value, nil
+}
+func EncodeSandboxSessionLifecycleRequestJSON(value SandboxSessionLifecycleRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxSessionLifecycleRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeSandboxSessionJSON(data []byte) (SandboxSession, error) {
 	allowed := []string{"apiVersion", "kind", "projectRef", "operationId", "workspaceId", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "generation", "desiredState", "observedState"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed)
@@ -3534,6 +3586,48 @@ func EncodeSandboxSessionResponseJSON(value common.ResponseEnvelope[SandboxSessi
 		return nil, err
 	}
 	if _, err := DecodeSandboxSessionJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxSessionLifecycleOperationJSON(data []byte) (SandboxSessionLifecycleOperation, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "operationId", "idempotencyKey", "action", "sandboxId", "sandboxGeneration", "requestedBy", "requestId", "requestedAt", "updatedAt", "state", "currentStep", "cleanupPhase", "stableErrorCode", "computeDisposition", "workspaceDisposition"}, []string{"apiVersion", "kind", "operationId", "idempotencyKey", "action", "sandboxId", "sandboxGeneration", "requestedBy", "requestId", "requestedAt", "updatedAt", "state", "currentStep", "cleanupPhase", "computeDisposition", "workspaceDisposition"})
+	if err != nil {
+		return SandboxSessionLifecycleOperation{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var value SandboxSessionLifecycleOperation
+	if json.Unmarshal(raw, &value) != nil {
+		return SandboxSessionLifecycleOperation{}, common.ContractError("INVALID_SANDBOX_LIFECYCLE_OPERATION", "")
+	}
+	expectedCompute := "create"
+	if value.Action == "sandbox.stop" {
+		expectedCompute = "delete"
+	} else if value.Action != "sandbox.rebuild" {
+		return SandboxSessionLifecycleOperation{}, common.ContractError("INVALID_STATE", "/action")
+	}
+	if value.APIVersion != APIVersion || value.Kind != "SandboxSessionLifecycleOperation" || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 2 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "pending" && value.State != "running" && value.State != "reconciling" && value.State != "succeeded" && value.State != "failed" || value.CurrentStep != "pending-controller" && value.CurrentStep != "deleting-compute" && value.CurrentStep != "creating-compute" && value.CurrentStep != "retrying" && value.CurrentStep != "complete" && value.CurrentStep != "failed" || value.CleanupPhase != "none" && value.CleanupPhase != "complete" && value.CleanupPhase != "blocked" || value.State == "failed" && value.StableErrorCode == "" || value.State != "failed" && value.StableErrorCode != "" || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || value.ComputeDisposition != expectedCompute || value.WorkspaceDisposition != "retain" {
+		return SandboxSessionLifecycleOperation{}, common.ContractError("INVALID_SANDBOX_LIFECYCLE_OPERATION", "")
+	}
+	return value, nil
+}
+func DecodeSandboxSessionLifecycleOperationResponseJSON(data []byte) (common.ResponseEnvelope[SandboxSessionLifecycleOperation], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxSessionLifecycleOperationResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxSessionLifecycleOperation]{}, err
+	}
+	value, err := DecodeSandboxSessionLifecycleOperationJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxSessionLifecycleOperation]{}, err
+	}
+	return common.ResponseEnvelope[SandboxSessionLifecycleOperation]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeSandboxSessionLifecycleOperationResponseJSON(value common.ResponseEnvelope[SandboxSessionLifecycleOperation]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxSessionLifecycleOperationJSON(raw); err != nil {
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

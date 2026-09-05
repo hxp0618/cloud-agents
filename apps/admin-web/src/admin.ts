@@ -73,7 +73,39 @@ export type AdminClient = Pick<
   | "getAdminRuntimeProfile"
   | "listAdminSandboxSessions"
   | "getAdminSandboxSession"
+  | "stopAdminSandboxSession"
+  | "rebuildAdminSandboxSession"
 >;
+
+export type SandboxLifecycleAction = "stop" | "rebuild";
+
+export function availableSandboxLifecycleAction({
+  spec,
+}: AdminSandboxSession): SandboxLifecycleAction | null {
+  if (
+    spec.operationState !== "succeeded" ||
+    spec.cleanupPhase !== "complete" ||
+    spec.observedGeneration !== spec.generation ||
+    spec.workspaceObservedState !== "available" ||
+    spec.physicalVolumeId === undefined
+  )
+    return null;
+  if (
+    spec.desiredState === "running" &&
+    spec.observedState === "running" &&
+    !spec.writerReleased &&
+    spec.runtimeId !== undefined
+  )
+    return "stop";
+  if (
+    spec.desiredState === "stopped" &&
+    spec.observedState === "stopped" &&
+    spec.writerReleased &&
+    spec.runtimeId === undefined
+  )
+    return "rebuild";
+  return null;
+}
 
 export type SavedAdminConnection = Readonly<{
   endpoint: string;

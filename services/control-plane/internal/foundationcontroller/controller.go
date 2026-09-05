@@ -137,11 +137,36 @@ func (controller *Controller) executeWithRenewal(ctx context.Context, claim *pos
 }
 
 func (controller *Controller) execute(ctx context.Context, claim postgres.FoundationSandboxClaim) effectResult {
-	volumeName, err := controller.docker.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef,
-		dockertarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
-			TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID})
+	volume := dockertarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+		TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID}
+	if claim.Action == "sandbox.stop" {
+		volumeName, err := controller.docker.VerifyFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+		if err != nil || claim.PhysicalVolumeName == nil || volumeName != *claim.PhysicalVolumeName {
+			if err == nil {
+				err = dockertarget.ErrDeploymentConflict
+			}
+			return effectResult{err: err}
+		}
+		client, err := controller.opensandbox.Client(claim.CredentialRef)
+		if err != nil {
+			return effectResult{volumeName: volumeName, err: err}
+		}
+		identity := opensandbox.Identity{Tenant: claim.TenantID, Project: claim.ProjectID,
+			Workspace: claim.WorkspaceID, Sandbox: claim.SandboxID, Operation: *claim.RuntimeOperationID,
+			Generation: *claim.RuntimeGeneration, SpecDigest: *claim.RuntimeSpecDigest}
+		if err := client.Delete(ctx, identity, *claim.RuntimeID); err != nil {
+			return effectResult{runtimeID: *claim.RuntimeID, runtimeState: claim.RuntimeState,
+				volumeName: volumeName, err: err}
+		}
+		return effectResult{volumeName: volumeName, cleanupComplete: true}
+	}
+
+	volumeName, err := controller.docker.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
 	if err != nil {
 		return effectResult{err: err}
+	}
+	if claim.PhysicalVolumeName != nil && volumeName != *claim.PhysicalVolumeName {
+		return effectResult{err: dockertarget.ErrDeploymentConflict}
 	}
 	client, err := controller.opensandbox.Client(claim.CredentialRef)
 	if err != nil {

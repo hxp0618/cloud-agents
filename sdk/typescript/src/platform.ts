@@ -608,6 +608,38 @@ export type SandboxSession = Readonly<{
   desiredState: "running";
   observedState: "pending" | "running" | "unknown" | "failed" | "stopped";
 }>;
+export type SandboxSessionLifecycleRequest = Readonly<{
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  confirmedSandboxId: string;
+  computeDisposition: "delete" | "create";
+  workspaceDisposition: "retain";
+}>;
+export type SandboxSessionLifecycleOperation = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxSessionLifecycleOperation";
+  operationId: string;
+  idempotencyKey: string;
+  action: "sandbox.stop" | "sandbox.rebuild";
+  sandboxId: string;
+  sandboxGeneration: number;
+  requestedBy: `sha256:${string}`;
+  requestId: string;
+  requestedAt: string;
+  updatedAt: string;
+  state: "pending" | "running" | "reconciling" | "succeeded" | "failed";
+  currentStep:
+    | "pending-controller"
+    | "deleting-compute"
+    | "creating-compute"
+    | "retrying"
+    | "complete"
+    | "failed";
+  cleanupPhase: "none" | "complete" | "blocked";
+  stableErrorCode?: string;
+  computeDisposition: "delete" | "create";
+  workspaceDisposition: "retain";
+}>;
 export type AdminSandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "AdminSandboxSession";
@@ -1530,6 +1562,27 @@ const sandboxSessionResponseShape: ResponseShape = {
     generation: scalarResponseShape,
     desiredState: scalarResponseShape,
     observedState: scalarResponseShape,
+  },
+};
+const sandboxSessionLifecycleOperationResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    operationId: scalarResponseShape,
+    idempotencyKey: scalarResponseShape,
+    action: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    sandboxGeneration: scalarResponseShape,
+    requestedBy: scalarResponseShape,
+    requestId: scalarResponseShape,
+    requestedAt: scalarResponseShape,
+    updatedAt: scalarResponseShape,
+    state: scalarResponseShape,
+    currentStep: scalarResponseShape,
+    cleanupPhase: scalarResponseShape,
+    stableErrorCode: scalarResponseShape,
+    computeDisposition: scalarResponseShape,
+    workspaceDisposition: scalarResponseShape,
   },
 };
 const adminSandboxSessionResponseShape = resourceResponseShape({
@@ -2689,6 +2742,58 @@ export function decodeSandboxSessionCreateRequest(value: unknown): SandboxSessio
 }
 export function encodeSandboxSessionCreateRequest(value: SandboxSessionCreateRequest): string {
   return JSON.stringify(decodeSandboxSessionCreateRequest(value));
+}
+export function decodeSandboxSessionLifecycleRequest(
+  value: unknown,
+): SandboxSessionLifecycleRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "confirmedSandboxId",
+      "computeDisposition",
+      "workspaceDisposition",
+    ],
+    [
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "confirmedSandboxId",
+      "computeDisposition",
+      "workspaceDisposition",
+    ],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    confirmedSandboxId: identifier(source.confirmedSandboxId, "/confirmedSandboxId"),
+    computeDisposition: enumValue(
+      source.computeDisposition,
+      ["delete", "create"] as const,
+      "/computeDisposition",
+    ),
+    workspaceDisposition: enumValue(
+      source.workspaceDisposition,
+      ["retain"] as const,
+      "/workspaceDisposition",
+    ),
+  });
+}
+export function encodeSandboxSessionLifecycleRequest(
+  value: SandboxSessionLifecycleRequest,
+): string {
+  return JSON.stringify(decodeSandboxSessionLifecycleRequest(value));
 }
 export function decodeEnvironmentLeaseTerminateRequest(
   value: unknown,
@@ -6055,6 +6160,135 @@ export function parseRuntimeProfileSummaryPage(
 export function parseSandboxSession(text: string): ResponseEnvelope<SandboxSession> {
   return parseResponse(text, sandboxSessionResponseShape, decodeSandboxSession);
 }
+export function decodeSandboxSessionLifecycleOperation(
+  value: unknown,
+): SandboxSessionLifecycleOperation {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "operationId",
+      "idempotencyKey",
+      "action",
+      "sandboxId",
+      "sandboxGeneration",
+      "requestedBy",
+      "requestId",
+      "requestedAt",
+      "updatedAt",
+      "state",
+      "currentStep",
+      "cleanupPhase",
+      "stableErrorCode",
+      "computeDisposition",
+      "workspaceDisposition",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "operationId",
+      "idempotencyKey",
+      "action",
+      "sandboxId",
+      "sandboxGeneration",
+      "requestedBy",
+      "requestId",
+      "requestedAt",
+      "updatedAt",
+      "state",
+      "currentStep",
+      "cleanupPhase",
+      "computeDisposition",
+      "workspaceDisposition",
+    ],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "SandboxSessionLifecycleOperation"
+  )
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const idempotencyKey = boundedString(source.idempotencyKey, 16, 128, "/idempotencyKey");
+  if (!/^[A-Za-z0-9._~-]+$/u.test(idempotencyKey))
+    error("INVALID_IDEMPOTENCY_KEY", "/idempotencyKey");
+  const action = enumValue(source.action, ["sandbox.stop", "sandbox.rebuild"] as const, "/action");
+  const computeDisposition = enumValue(
+    source.computeDisposition,
+    ["delete", "create"] as const,
+    "/computeDisposition",
+  );
+  if (computeDisposition !== (action === "sandbox.stop" ? "delete" : "create"))
+    error("INVALID_SANDBOX_LIFECYCLE_OPERATION", "/computeDisposition");
+  const requestedAt = dateTime(source.requestedAt, "/requestedAt");
+  const updatedAt = dateTime(source.updatedAt, "/updatedAt");
+  if (Date.parse(updatedAt) < Date.parse(requestedAt))
+    error("INVALID_SANDBOX_LIFECYCLE_OPERATION", "/updatedAt");
+  const state = enumValue(
+    source.state,
+    ["pending", "running", "reconciling", "succeeded", "failed"] as const,
+    "/state",
+  );
+  const stableErrorCode =
+    source.stableErrorCode === undefined
+      ? undefined
+      : identifier(source.stableErrorCode, "/stableErrorCode");
+  if ((state === "failed") !== (stableErrorCode !== undefined))
+    error("INVALID_SANDBOX_LIFECYCLE_OPERATION", "/stableErrorCode");
+  const operation = {
+    apiVersion: platformApiVersion,
+    kind: "SandboxSessionLifecycleOperation" as const,
+    operationId: identifier(source.operationId, "/operationId"),
+    idempotencyKey,
+    action,
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    sandboxGeneration: integer(
+      source.sandboxGeneration,
+      2,
+      Number.MAX_SAFE_INTEGER,
+      "/sandboxGeneration",
+    ),
+    requestedBy: digest(source.requestedBy, "/requestedBy") as `sha256:${string}`,
+    requestId: identifier(source.requestId, "/requestId"),
+    requestedAt,
+    updatedAt,
+    state,
+    currentStep: enumValue(
+      source.currentStep,
+      [
+        "pending-controller",
+        "deleting-compute",
+        "creating-compute",
+        "retrying",
+        "complete",
+        "failed",
+      ] as const,
+      "/currentStep",
+    ),
+    cleanupPhase: enumValue(
+      source.cleanupPhase,
+      ["none", "complete", "blocked"] as const,
+      "/cleanupPhase",
+    ),
+    computeDisposition,
+    workspaceDisposition: enumValue(
+      source.workspaceDisposition,
+      ["retain"] as const,
+      "/workspaceDisposition",
+    ),
+  };
+  return Object.freeze(
+    stableErrorCode === undefined ? operation : { ...operation, stableErrorCode },
+  );
+}
+export function parseSandboxSessionLifecycleOperation(
+  text: string,
+): ResponseEnvelope<SandboxSessionLifecycleOperation> {
+  return parseResponse(
+    text,
+    sandboxSessionLifecycleOperationResponseShape,
+    decodeSandboxSessionLifecycleOperation,
+  );
+}
 export function parseAdminSandboxSession(text: string): ResponseEnvelope<AdminSandboxSession> {
   return parseResponse(text, adminSandboxSessionResponseShape, decodeAdminSandboxSession);
 }
@@ -8584,6 +8818,87 @@ export class Client {
       result.value.metadata.uid !== sandboxId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async stopAdminSandboxSession(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxSessionLifecycleRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxSessionLifecycleOperation>> {
+    return this.transitionAdminSandboxSession(
+      "stop",
+      "adminStopSandboxSession",
+      tenantId,
+      projectId,
+      sandboxId,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  async rebuildAdminSandboxSession(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxSessionLifecycleRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxSessionLifecycleOperation>> {
+    return this.transitionAdminSandboxSession(
+      "rebuild",
+      "adminRebuildSandboxSession",
+      tenantId,
+      projectId,
+      sandboxId,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  private async transitionAdminSandboxSession(
+    action: "stop" | "rebuild",
+    operation: string,
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxSessionLifecycleRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxSessionLifecycleOperation>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeSandboxSessionLifecycleRequest(body);
+    const expectedCompute = action === "stop" ? "delete" : "create";
+    if (checked.confirmedSandboxId !== sandboxId || checked.computeDisposition !== expectedCompute)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedSandboxId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}:${action}`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSandboxSessionLifecycleRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 202) throw await this.problem(operation, response);
+    const result = parseSandboxSessionLifecycleOperation(response.body);
+    if (
+      result.value.sandboxId !== sandboxId ||
+      result.value.action !== `sandbox.${action}` ||
+      result.value.sandboxGeneration !== checked.expectedGeneration + 1 ||
+      result.value.computeDisposition !== expectedCompute
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
     return result;
   }
   async listAdminEnvironmentProfiles(

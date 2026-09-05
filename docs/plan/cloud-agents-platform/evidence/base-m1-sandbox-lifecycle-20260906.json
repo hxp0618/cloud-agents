@@ -1,0 +1,104 @@
+{
+  "sourceBase": "5d7bff76b9ff82137a4a9f0898e0fd2844098cae",
+  "branch": "codex/cloud-agents-platform-p0",
+  "dirty": true,
+  "schemaHead": "000056",
+  "migrationCount": 56,
+  "productMigrationDigest": "sha256:0911945f728680634e23968fae1ab8d365897a084106fd0dce087b86c8f547f7",
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "architecture": "aarch64"
+  },
+  "candidate": {
+    "sourceRef": "207d94c7dc7735c143856fe5c6538b743e478786",
+    "serverImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "controller": {
+    "run": "foundation-controller-60a9de8c-8bd8-442c-9ed4-4c5bc403a2d1",
+    "originalRuntimeId": "6fcf3221-36e1-4307-9b21-b9bfa4592e55",
+    "rebuiltRuntimeId": "07c590e3-3373-48dc-88b3-411f0cd965b3",
+    "volumeName": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247",
+    "workspaceDigestBeforeStop": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "workspaceDigestAfterRebuild": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "stop": {
+      "generation": 2,
+      "runtimeDeleted": true,
+      "writerReleased": true,
+      "workspaceDisposition": "retain",
+      "ordinaryUserStatus": 403,
+      "staleFenceStatus": 409
+    },
+    "rebuild": {
+      "generation": 3,
+      "samePhysicalVolume": true,
+      "staleGenerationRejected": true,
+      "foreignVolumeOwnerRejected": true,
+      "ordinaryUserStatus": 403,
+      "staleFenceStatus": 409
+    },
+    "cleanup": "zero test-owned OpenSandbox containers and Workspace volumes"
+  },
+  "adminWeb": {
+    "run": "foundation-ui-1316c50d-d24e-407b-a311-caaada638185",
+    "appOrigin": "http://127.0.0.1:4186",
+    "realControlPlaneOrigin": "http://127.0.0.1:18086",
+    "stopOperationId": "op-cce409f5be289f810cb7ff5190d96af1",
+    "rebuildOperationId": "op-74ba5cd2550e1c6f17af20cccc5b17d8",
+    "sandboxAfterRebuildRequest": {
+      "generation": 3,
+      "observedGeneration": 2,
+      "desiredState": "running",
+      "observedState": "stopped",
+      "operationState": "pending",
+      "workspaceObservedState": "available",
+      "physicalVolumeId": "ca-ws-ui-retained"
+    },
+    "persistentFacts": [
+      "sandbox.stop and sandbox.rebuild activity rows",
+      "platform operations",
+      "outbox events",
+      "coordination audit accept facts"
+    ],
+    "ordinaryUserAdminStatus": 403,
+    "confirmationCaptures": [
+      "zh-CN dark stop",
+      "zh-CN dark rebuild",
+      "en-US light rebuild"
+    ],
+    "measuredViewport": "1280x720",
+    "measuredDialog": "512x576",
+    "measuredOverflow": false,
+    "missingMessageKeyVisible": false,
+    "cleanup": "Control Plane and Vite listeners closed; labeled PostgreSQL container removed"
+  },
+  "checks": [
+    "product-000055 to product-000056 upgrade, fresh install and no-op replay",
+    "generated Admin stop and rebuild API with expected generation, resourceVersion, exact confirmation and idempotency key",
+    "ordinary user receives server-side 403 for Admin Sandbox lifecycle API",
+    "durable lifecycle operation, outbox, finalizer and audit acceptance",
+    "stop deletes exact compute runtime and retains the physical Workspace volume",
+    "rebuild creates a new runtime using the same physical volume and preserved bytes",
+    "stale runtime generation and foreign physical volume ownership are rejected",
+    "Admin Web sends generated SDK requests and refreshes authority-backed Sandbox state",
+    "Admin Web 32 tests, typecheck and production build",
+    "generated TypeScript and Go SDK tests",
+    "locked contract standards validation with 156 schemas and 101 OpenAPI operations",
+    "zero test-owned runtime containers, Workspace volumes and UI-stack listeners"
+  ],
+  "contractGate": {
+    "schemas": 156,
+    "openapiDocuments": 2,
+    "openapiOperations": 101,
+    "officialCases": 383,
+    "officialAssertions": 1299,
+    "unitTests": 14,
+    "gateStatus": "ALL_GATES_OPEN",
+    "independentReview": "PENDING",
+    "notGateClosure": true
+  },
+  "boundary": "Local OrbStack Docker, disposable PostgreSQL, in-process Control Plane and local Admin Web only. TTL automation, deployment, image publication, Kubernetes and outbound customer nodes were not exercised. The visual slice covered three new lifecycle confirmation states, not the full BASE-ADMIN-V1 visual matrix."
+}

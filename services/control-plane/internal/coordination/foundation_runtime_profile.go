@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	RuntimeProfilePublish = "publish"
-	RuntimeProfileDisable = "disable"
+	RuntimeProfilePublish    = "publish"
+	RuntimeProfileDisable    = "disable"
+	FoundationSandboxStop    = "stop"
+	FoundationSandboxRebuild = "rebuild"
 )
 
 var (
@@ -78,6 +80,23 @@ type FoundationSandboxSnapshot struct {
 	RuntimeProfileID                    string
 	RuntimeProfileVersion, Generation   int64
 	DesiredState, ObservedState         string
+}
+
+type FoundationSandboxLifecycleInput struct {
+	Scope                                       FoundationScope
+	SandboxID, Action, ConfirmedSandboxID       string
+	ComputeDisposition, WorkspaceDisposition    string
+	ExpectedGeneration, ExpectedResourceVersion int64
+	Mutation                                    FoundationMutation
+}
+
+type FoundationSandboxLifecycleOperation struct {
+	Scope                                                        FoundationScope
+	OperationID, IdempotencyKey, Action, SandboxID               string
+	RequestedBy, RequestID, State, CleanupPhase, StableErrorCode string
+	ComputeDisposition, WorkspaceDisposition                     string
+	SandboxGeneration                                            int64
+	RequestedAt, UpdatedAt                                       time.Time
 }
 
 func (input RuntimeProfileCreateInput) Validate(tenantID string) error {
@@ -197,6 +216,74 @@ func (snapshot FoundationSandboxSnapshot) Validate() error {
 		snapshot.RuntimeProfileVersion > 2147483647 || snapshot.Generation < 1 || snapshot.DesiredState != "running" ||
 		(snapshot.ObservedState != "pending" && snapshot.ObservedState != "running" && snapshot.ObservedState != "unknown" &&
 			snapshot.ObservedState != "failed" && snapshot.ObservedState != "stopped") {
+		return ErrInvalidRuntimeProfile
+	}
+	return nil
+}
+
+func (input FoundationSandboxLifecycleInput) Validate(tenantID string) error {
+	expectedCompute := "create"
+	if input.Action == FoundationSandboxStop {
+		expectedCompute = "delete"
+	} else if input.Action != FoundationSandboxRebuild {
+		return ErrInvalidRuntimeProfile
+	}
+	if !validFoundationScope(input.Scope, tenantID) || !validIdentifier(input.SandboxID) ||
+		input.ConfirmedSandboxID != input.SandboxID || input.ExpectedGeneration < 1 ||
+		input.ExpectedResourceVersion < 1 || input.ComputeDisposition != expectedCompute ||
+		input.WorkspaceDisposition != "retain" || !validFoundationMutation(input.Mutation) {
+		return ErrInvalidRuntimeProfile
+	}
+	return nil
+}
+
+func FoundationSandboxLifecycleDigest(input FoundationSandboxLifecycleInput) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidRuntimeProfile
+	}
+	return foundationDigest(struct {
+		Operation, TenantID, ProjectID, SandboxID, ConfirmedSandboxID string
+		ComputeDisposition, WorkspaceDisposition                      string
+		ExpectedGeneration, ExpectedResourceVersion                   int64
+	}{"foundation-sandbox." + input.Action, input.Scope.TenantID, input.Scope.ProjectID,
+		input.SandboxID, input.ConfirmedSandboxID, input.ComputeDisposition,
+		input.WorkspaceDisposition, input.ExpectedGeneration, input.ExpectedResourceVersion})
+}
+
+func (operation FoundationSandboxLifecycleOperation) Validate() error {
+	if !validFoundationScope(operation.Scope, operation.Scope.TenantID) ||
+		!validIdentifier(operation.OperationID) || !runtimeProfileIdempotencyKey.MatchString(operation.IdempotencyKey) ||
+		!validIdentifier(operation.SandboxID) || !runtimeProfileDigestPattern.MatchString(operation.RequestedBy) ||
+		!validIdentifier(operation.RequestID) || operation.SandboxGeneration < 2 || operation.RequestedAt.IsZero() ||
+		operation.UpdatedAt.Before(operation.RequestedAt) || operation.WorkspaceDisposition != "retain" {
+		return ErrInvalidRuntimeProfile
+	}
+	if operation.Action == "sandbox.stop" {
+		if operation.ComputeDisposition != "delete" {
+			return ErrInvalidRuntimeProfile
+		}
+	} else if operation.Action == "sandbox.rebuild" {
+		if operation.ComputeDisposition != "create" {
+			return ErrInvalidRuntimeProfile
+		}
+	} else {
+		return ErrInvalidRuntimeProfile
+	}
+	switch operation.State {
+	case "pending", "running", "reconciling", "succeeded":
+		if operation.StableErrorCode != "" {
+			return ErrInvalidRuntimeProfile
+		}
+	case "failed":
+		if !validIdentifier(operation.StableErrorCode) {
+			return ErrInvalidRuntimeProfile
+		}
+	default:
+		return ErrInvalidRuntimeProfile
+	}
+	switch operation.CleanupPhase {
+	case "none", "complete", "blocked":
+	default:
 		return ErrInvalidRuntimeProfile
 	}
 	return nil

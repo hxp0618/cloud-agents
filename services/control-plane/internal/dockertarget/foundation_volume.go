@@ -53,6 +53,20 @@ func (input FoundationWorkspaceVolume) labels() map[string]string {
 func (directory *CredentialDirectory) EnsureFoundationWorkspaceVolume(
 	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceVolume,
 ) (string, error) {
+	return directory.foundationWorkspaceVolume(ctx, endpoint, credentialRef, input, true)
+}
+
+// VerifyFoundationWorkspaceVolume fails closed when retained data is absent or
+// its physical owner labels drift. Stop must never recreate an empty volume.
+func (directory *CredentialDirectory) VerifyFoundationWorkspaceVolume(
+	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceVolume,
+) (string, error) {
+	return directory.foundationWorkspaceVolume(ctx, endpoint, credentialRef, input, false)
+}
+
+func (directory *CredentialDirectory) foundationWorkspaceVolume(
+	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceVolume, create bool,
+) (string, error) {
 	if ctx == nil || !input.valid() {
 		return "", ErrDeploymentConfigInvalid
 	}
@@ -67,6 +81,9 @@ func (directory *CredentialDirectory) EnsureFoundationWorkspaceVolume(
 		return "", err
 	}
 	if !exists {
+		if !create {
+			return "", ErrDeploymentConflict
+		}
 		body := map[string]any{"Name": name, "Labels": input.labels()}
 		if err := dockerJSON(ctx, client, http.MethodPost, base+"/volumes/create", body, http.StatusCreated, &volume); err != nil {
 			volume, exists, err = inspectWorkspaceVolume(ctx, client, base, name)

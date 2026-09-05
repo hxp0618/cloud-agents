@@ -177,6 +177,7 @@ type RuntimeProfileResult = common.ResponseEnvelope[platform.RuntimeProfile]
 type RuntimeProfilePageResult = common.ResponseEnvelope[platform.RuntimeProfilePage]
 type RuntimeProfileSummaryPageResult = common.ResponseEnvelope[platform.RuntimeProfileSummaryPage]
 type SandboxSessionResult = common.ResponseEnvelope[platform.SandboxSession]
+type SandboxSessionLifecycleOperationResult = common.ResponseEnvelope[platform.SandboxSessionLifecycleOperation]
 type AdminSandboxSessionResult = common.ResponseEnvelope[platform.AdminSandboxSession]
 type AdminSandboxSessionPageResult = common.ResponseEnvelope[platform.AdminSandboxSessionPage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
@@ -1599,6 +1600,40 @@ func (client *Client) GetAdminSandboxSession(ctx context.Context, tenantID, proj
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != sandboxID {
 		return AdminSandboxSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) StopAdminSandboxSession(ctx context.Context, tenantID, projectID, sandboxID, requestID, idempotencyKey string, body platform.SandboxSessionLifecycleRequest) (SandboxSessionLifecycleOperationResult, error) {
+	return client.transitionAdminSandboxSession(ctx, "stop", "adminStopSandboxSession", tenantID, projectID, sandboxID, requestID, idempotencyKey, body)
+}
+func (client *Client) RebuildAdminSandboxSession(ctx context.Context, tenantID, projectID, sandboxID, requestID, idempotencyKey string, body platform.SandboxSessionLifecycleRequest) (SandboxSessionLifecycleOperationResult, error) {
+	return client.transitionAdminSandboxSession(ctx, "rebuild", "adminRebuildSandboxSession", tenantID, projectID, sandboxID, requestID, idempotencyKey, body)
+}
+func (client *Client) transitionAdminSandboxSession(ctx context.Context, action, operation, tenantID, projectID, sandboxID, requestID, idempotencyKey string, body platform.SandboxSessionLifecycleRequest) (SandboxSessionLifecycleOperationResult, error) {
+	bodyBytes, err := platform.EncodeSandboxSessionLifecycleRequestJSON(body)
+	if err != nil {
+		return SandboxSessionLifecycleOperationResult{}, err
+	}
+	if _, err := validateTransitionAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, action, requestID, idempotencyKey, bodyBytes); err != nil {
+		return SandboxSessionLifecycleOperationResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID + ":" + action, Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return SandboxSessionLifecycleOperationResult{}, err
+	}
+	if response.Status != 202 {
+		return SandboxSessionLifecycleOperationResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeSandboxSessionLifecycleOperationResponseJSON(response.Body)
+	if err != nil {
+		return SandboxSessionLifecycleOperationResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	expectedCompute := "create"
+	if action == "stop" {
+		expectedCompute = "delete"
+	}
+	if value.Value.SandboxID != sandboxID || value.Value.Action != "sandbox."+action || value.Value.SandboxGeneration != body.ExpectedGeneration+1 || value.Value.ComputeDisposition != expectedCompute {
+		return SandboxSessionLifecycleOperationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId")
 	}
 	return value, nil
 }
@@ -4681,6 +4716,45 @@ func ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID,
 		return GetAdminSandboxSessionServerInput{}, err
 	}
 	return GetAdminSandboxSessionServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID}, nil
+}
+
+type TransitionAdminSandboxSessionServerInput struct {
+	TenantID       string
+	ProjectID      string
+	SandboxID      string
+	Action         string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.SandboxSessionLifecycleRequest
+}
+
+func ValidateStopAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID, idempotencyKey string, body []byte) (TransitionAdminSandboxSessionServerInput, error) {
+	return validateTransitionAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, "stop", requestID, idempotencyKey, body)
+}
+func ValidateRebuildAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID, idempotencyKey string, body []byte) (TransitionAdminSandboxSessionServerInput, error) {
+	return validateTransitionAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, "rebuild", requestID, idempotencyKey, body)
+}
+func validateTransitionAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, action, requestID, idempotencyKey string, body []byte) (TransitionAdminSandboxSessionServerInput, error) {
+	if _, err := ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID); err != nil {
+		return TransitionAdminSandboxSessionServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return TransitionAdminSandboxSessionServerInput{}, err
+	}
+	value, err := platform.DecodeSandboxSessionLifecycleRequestJSON(body)
+	if err != nil {
+		return TransitionAdminSandboxSessionServerInput{}, err
+	}
+	expectedCompute := "create"
+	if action == "stop" {
+		expectedCompute = "delete"
+	} else if action != "rebuild" {
+		return TransitionAdminSandboxSessionServerInput{}, common.ContractError("INVALID_STATE", "/action")
+	}
+	if value.ConfirmedSandboxID != sandboxID || value.ComputeDisposition != expectedCompute {
+		return TransitionAdminSandboxSessionServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedSandboxId")
+	}
+	return TransitionAdminSandboxSessionServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, Action: action, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type CreateSandboxServerInput struct {

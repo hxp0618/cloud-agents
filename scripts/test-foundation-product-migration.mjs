@@ -164,19 +164,19 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
     "-test.v",
   );
   assert.ok(upgradeOutput.includes("--- PASS: TestFoundationProductUpgradePostgres"));
-  const fresh = migrate("000055", "foundation_fresh");
+  const fresh = migrate("000056", "foundation_fresh");
   assert.deepEqual(
     { applied: fresh.applied, no_op: fresh.no_op, schema_head: fresh.schema_head },
-    { applied: 55, no_op: false, schema_head: "000055" },
+    { applied: 56, no_op: false, schema_head: "000056" },
   );
-  const replay = migrate("000055", "foundation_fresh");
+  const replay = migrate("000056", "foundation_fresh");
   assert.deepEqual(
     { applied: replay.applied, no_op: replay.no_op, schema_head: replay.schema_head },
-    { applied: 0, no_op: true, schema_head: "000055" },
+    { applied: 0, no_op: true, schema_head: "000056" },
   );
   const schemaBundleDigest = JSON.parse(
     readFileSync(
-      resolve(root, "services/control-plane/migrations/product/000055/manifest.json"),
+      resolve(root, "services/control-plane/migrations/product/000056/manifest.json"),
       "utf8",
     ),
   ).schema_bundle_digest;
@@ -190,11 +190,11 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "55|000001|000055|2",
+    "56|000001|000056|2",
   );
   assert.equal(
     psql(
-      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000055';",
+      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000056';",
       "foundation_migration",
       "foundation_upgrade",
     )
@@ -212,20 +212,20 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "55|000001|000055|1",
+    "56|000001|000056|1",
   );
   assert.equal(
     psql(
       `SET ROLE cloud_agents_migration_owner;
 SELECT count(*) FROM pg_catalog.pg_class relation
 JOIN pg_catalog.pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
-WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity');`,
+WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity');`,
       "foundation_migration",
       "foundation_fresh",
     )
       .split("\n")
       .at(-1),
-    "5",
+    "6",
   );
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -294,15 +294,15 @@ INSERT INTO cloud_agents.deployment_targets (
     JSON.stringify({
       postgres: psql("SHOW server_version;"),
       architecture,
-      upgradeFrom: "000054",
-      upgradeTo: "000055",
+      upgradeFrom: "000055",
+      upgradeTo: "000056",
       fresh,
       replay,
       checks: [
-        "product-000054 fresh install",
-        "product-000054 to product-000055 exact upgrade",
-        "product-000055 no-op replay",
-        "55-row immutable ledger with two bundle digests",
+        "product-000055 fresh install",
+        "product-000055 to product-000056 exact upgrade",
+        "product-000056 no-op replay",
+        "56-row immutable ledger with two bundle digests",
         "foundation and runtime profile tables installed",
         "real Admin/User generated SDK and HTTP authorization",
         "RuntimeProfile create/publish/disable and public redaction",

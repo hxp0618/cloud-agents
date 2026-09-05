@@ -75,8 +75,18 @@ func TestEnsureFoundationWorkspaceVolumeRecoversAndGuardsOwnership(t *testing.T)
 	if creates != 1 || volume == nil || volume.Labels["cloud-agents.dev/workspace"] != input.WorkspaceID {
 		t.Fatalf("creates = %d, volume = %#v", creates, volume)
 	}
+	if actual, err := directory.VerifyFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); err != nil || actual != name {
+		t.Fatalf("verified volume = %q, error = %v", actual, err)
+	}
 	volume.Labels["cloud-agents.dev/workspace"] = "other"
 	if _, err := directory.EnsureFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); !errors.Is(err, ErrDeploymentConflict) {
 		t.Fatal(err)
+	}
+	if _, err := directory.VerifyFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); !errors.Is(err, ErrDeploymentConflict) {
+		t.Fatal(err)
+	}
+	volume = nil
+	if _, err := directory.VerifyFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); !errors.Is(err, ErrDeploymentConflict) || creates != 1 {
+		t.Fatalf("missing retained volume = %v, creates = %d", err, creates)
 	}
 }

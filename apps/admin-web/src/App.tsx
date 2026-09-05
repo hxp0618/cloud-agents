@@ -24,6 +24,7 @@ import {
   type ProjectLeaseQuotaSetRequest,
   type RuntimeProfile,
   type RuntimeProfileCreateRequest,
+  type SandboxSessionLifecycleRequest,
   type StoragePolicy,
   type StoragePolicySetRequest,
   type Worker,
@@ -36,6 +37,7 @@ import { SuccessToast } from "./SuccessToast";
 
 import {
   adminFailure,
+  availableSandboxLifecycleAction,
   pageAdminTargets,
   targetPageSizes,
   targetIdentifierPattern,
@@ -77,6 +79,7 @@ import {
   type AdminClient,
   type ClusterHostSummary,
   type SavedAdminConnection,
+  type SandboxLifecycleAction,
   type WorkerStatusFilter,
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
@@ -97,6 +100,7 @@ type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
+type OperationNotice = LocalizedMessage & Readonly<{ accepted?: boolean }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
 
@@ -267,6 +271,8 @@ const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.
   "target.cleanup": "operation.impact.cleanup",
   "target.upgrade": "operation.impact.upgrade",
   "target.rollback": "operation.impact.rollback",
+  "sandbox.stop": "operation.impact.sandboxStop",
+  "sandbox.rebuild": "operation.impact.sandboxRebuild",
 });
 
 const resourceMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -552,6 +558,8 @@ export function App() {
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
   const [runtimeProfileDetailOpen, setRuntimeProfileDetailOpen] = useState(false);
   const [sandboxDetailOpen, setSandboxDetailOpen] = useState(false);
+  const [sandboxLifecycleTransition, setSandboxLifecycleTransition] =
+    useState<SandboxLifecycleAction | null>(null);
   const [maintenanceDetailOpen, setMaintenanceDetailOpen] = useState(false);
   const [profileTransition, setProfileTransition] = useState<ProfileTransition | null>(null);
   const [runtimeProfileTransition, setRuntimeProfileTransition] =
@@ -560,7 +568,7 @@ export function App() {
   const [creatingRuntimeProfile, setCreatingRuntimeProfile] = useState(false);
   const [busy, setBusy] = useState<BusyOperation | null>(null);
   const [error, setError] = useState<ReturnType<typeof adminFailure> | null>(null);
-  const [notice, setNotice] = useState<LocalizedMessage | null>(null);
+  const [notice, setNotice] = useState<OperationNotice | null>(null);
   const [targetForm, setTargetForm] = useState({
     targetId: "",
     targetName: "",
@@ -947,6 +955,7 @@ export function App() {
     setProfileDetailOpen(false);
     setRuntimeProfileDetailOpen(false);
     setSandboxDetailOpen(false);
+    setSandboxLifecycleTransition(null);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
     setRuntimeProfileTransition(null);
@@ -1000,6 +1009,7 @@ export function App() {
     setProfileDetailOpen(false);
     setRuntimeProfileDetailOpen(false);
     setSandboxDetailOpen(false);
+    setSandboxLifecycleTransition(null);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
     setRuntimeProfileTransition(null);
@@ -1143,6 +1153,7 @@ export function App() {
     operationKey: string,
     message: LocalizedMessage,
     operation: (signal: AbortSignal) => Promise<void>,
+    accepted = false,
   ) {
     if (busyRef.current) return;
     operationTriggerRef.current =
@@ -1156,7 +1167,7 @@ export function App() {
     try {
       await operation(AbortSignal.any([controller.signal, AbortSignal.timeout(150_000)]));
       pendingKeysRef.current.delete(operationKey);
-      setNotice(message);
+      setNotice({ ...message, accepted });
     } catch (cause) {
       setError(adminFailure(cause));
     } finally {
@@ -1503,6 +1514,7 @@ export function App() {
 
   function selectSandbox(sandboxId: string) {
     setSandboxDetailOpen(true);
+    setSandboxLifecycleTransition(null);
     setSelectedSandboxId(sandboxId);
     if (client === null) return;
     void runOperation(
@@ -1522,6 +1534,64 @@ export function App() {
           ),
         );
       },
+    );
+  }
+
+  function transitionSandbox() {
+    if (client === null || selectedSandbox === undefined || sandboxLifecycleTransition === null)
+      return;
+    const sandbox = selectedSandbox;
+    const action = sandboxLifecycleTransition;
+    const body: SandboxSessionLifecycleRequest = {
+      expectedGeneration: sandbox.spec.generation,
+      expectedResourceVersion: sandbox.metadata.resourceVersion,
+      confirmedSandboxId: sandbox.metadata.uid,
+      computeDisposition: action === "stop" ? "delete" : "create",
+      workspaceDisposition: "retain",
+    };
+    const key = `sandbox:${action}:${sandbox.metadata.uid}:${sandbox.metadata.resourceVersion}`;
+    setSandboxLifecycleTransition(null);
+    void runOperation(
+      key,
+      {
+        key: action === "stop" ? "operation.stopSandbox" : "operation.rebuildSandbox",
+        values: { name: sandbox.metadata.name },
+      },
+      async (signal) => {
+        const args = [
+          connection.tenantId,
+          connection.projectId,
+          sandbox.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        ] as const;
+        const operation =
+          action === "stop"
+            ? await client.stopAdminSandboxSession(...args)
+            : await client.rebuildAdminSandboxSession(...args);
+        const [updated, loadedOperations] = await Promise.all([
+          client.getAdminSandboxSession(
+            connection.tenantId,
+            connection.projectId,
+            sandbox.metadata.uid,
+            newRequestId(),
+            signal,
+          ),
+          listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
+        ]);
+        setSandboxes((current) =>
+          Object.freeze(
+            current.map((item) =>
+              item.metadata.uid === sandbox.metadata.uid ? updated.value : item,
+            ),
+          ),
+        );
+        setMaintenanceOperations(loadedOperations);
+        setSelectedMaintenanceOperationId(operation.value.operationId);
+      },
+      true,
     );
   }
 
@@ -2476,7 +2546,7 @@ export function App() {
           {feedback}
           {notice !== null ? (
             <SuccessToast
-              message={t("notice.completed", {
+              message={t(notice.accepted ? "notice.accepted" : "notice.completed", {
                 operation: t(notice.key, notice.values),
               })}
               closeLabel={t("action.close")}
@@ -3423,19 +3493,54 @@ export function App() {
         <AdminSheet
           label={t("sheet.sandbox", { name: selectedSandbox.metadata.name })}
           feedback={feedback}
-          onClose={() => setSandboxDetailOpen(false)}
+          onClose={() => {
+            setSandboxDetailOpen(false);
+            setSandboxLifecycleTransition(null);
+          }}
         >
           <aside className="detail-panel" aria-label={t("sheet.selectedSandbox")}>
             <button
               className="sheet-close"
               type="button"
               aria-label={t("action.close")}
-              onClick={() => setSandboxDetailOpen(false)}
+              onClick={() => {
+                setSandboxDetailOpen(false);
+                setSandboxLifecycleTransition(null);
+              }}
             >
               ×
             </button>
-            <SandboxDetail sandbox={selectedSandbox} />
+            <SandboxDetail
+              sandbox={selectedSandbox}
+              disabled={busy !== null}
+              onTransition={setSandboxLifecycleTransition}
+            />
           </aside>
+        </AdminSheet>
+      ) : null}
+
+      {sandboxLifecycleTransition !== null && selectedSandbox !== undefined ? (
+        <AdminSheet
+          confirmation
+          feedback={feedback}
+          returnFocus={operationTriggerRef.current}
+          label={t("sheet.sandboxTransition", {
+            action: t(
+              sandboxLifecycleTransition === "stop"
+                ? "sandbox.lifecycle.stop"
+                : "sandbox.lifecycle.rebuild",
+            ),
+            name: selectedSandbox.metadata.name,
+          })}
+          onClose={() => setSandboxLifecycleTransition(null)}
+        >
+          <SandboxLifecycleConfirmation
+            sandbox={selectedSandbox}
+            action={sandboxLifecycleTransition}
+            disabled={busy !== null}
+            onClose={() => setSandboxLifecycleTransition(null)}
+            onConfirm={transitionSandbox}
+          />
         </AdminSheet>
       ) : null}
 
@@ -6524,8 +6629,17 @@ function RuntimeProfileDetail({
   );
 }
 
-function SandboxDetail({ sandbox }: Readonly<{ sandbox: AdminSandboxSession }>) {
+function SandboxDetail({
+  sandbox,
+  disabled,
+  onTransition,
+}: Readonly<{
+  sandbox: AdminSandboxSession;
+  disabled: boolean;
+  onTransition: (action: SandboxLifecycleAction) => void;
+}>) {
   const { t, number, dateTime } = useI18n();
+  const action = availableSandboxLifecycleAction(sandbox);
   return (
     <>
       <div className="detail-heading">
@@ -6620,8 +6734,133 @@ function SandboxDetail({ sandbox }: Readonly<{ sandbox: AdminSandboxSession }>) 
           </div>
         )}
       </dl>
+      {action === null ? null : (
+        <section className="action-block">
+          <h3>
+            {t(
+              action === "stop" ? "sandbox.lifecycle.stopTitle" : "sandbox.lifecycle.rebuildTitle",
+            )}
+          </h3>
+          <p>
+            {t(
+              action === "stop"
+                ? "sandbox.lifecycle.stopImpact"
+                : "sandbox.lifecycle.rebuildImpact",
+            )}
+          </p>
+          <button
+            className={`button ${action === "stop" ? "danger" : "primary"}`}
+            type="button"
+            disabled={disabled}
+            onClick={() => onTransition(action)}
+          >
+            {t(action === "stop" ? "sandbox.lifecycle.stop" : "sandbox.lifecycle.rebuild")}
+          </button>
+        </section>
+      )}
       <p className="boundary-note">{t("sandbox.boundary")}</p>
     </>
+  );
+}
+
+function SandboxLifecycleConfirmation({
+  sandbox,
+  action,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  sandbox: AdminSandboxSession;
+  action: SandboxLifecycleAction;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const { t, number } = useI18n();
+  const [confirmed, setConfirmed] = useState(false);
+  const stopping = action === "stop";
+  const actionLabel = t(stopping ? "sandbox.lifecycle.stop" : "sandbox.lifecycle.rebuild");
+  return (
+    <section className="dialog" aria-labelledby="sandbox-lifecycle-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">{t("sandbox.lifecycle.eyebrow")}</div>
+          <h2 id="sandbox-lifecycle-title">
+            {t("sandbox.lifecycle.title", { action: actionLabel })}
+          </h2>
+          <p>{sandbox.metadata.name}</p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className={`banner ${stopping ? "danger" : "running"}`} role="status">
+          {t(stopping ? "sandbox.lifecycle.stopImpact" : "sandbox.lifecycle.rebuildImpact")}
+        </div>
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>{t("sandbox.id")}</dt>
+            <dd className="mono">{sandbox.metadata.uid}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.lifecycle.expectedGeneration")}</dt>
+            <dd className="mono">{number(sandbox.spec.generation)}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.lifecycle.expectedResourceVersion")}</dt>
+            <dd className="mono">{sandbox.metadata.resourceVersion}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.lifecycle.compute")}</dt>
+            <dd>
+              {t(stopping ? "sandbox.lifecycle.computeDelete" : "sandbox.lifecycle.computeCreate")}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.lifecycle.workspace")}</dt>
+            <dd>{t("sandbox.lifecycle.workspaceRetain")}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.physicalVolume")}</dt>
+            <dd className="mono break">{sandbox.spec.physicalVolumeId}</dd>
+          </div>
+        </dl>
+        <label className="confirmation-check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+            disabled={disabled}
+            data-sheet-autofocus
+          />
+          <span>{t("sandbox.lifecycle.review")}</span>
+        </label>
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            {t("action.cancel")}
+          </button>
+          <button
+            className={`button ${stopping ? "danger" : "primary"}`}
+            type="submit"
+            disabled={disabled || !confirmed}
+          >
+            {t("sandbox.lifecycle.confirm", { action: actionLabel })}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 

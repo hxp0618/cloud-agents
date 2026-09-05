@@ -6,6 +6,7 @@ import {
 
 import {
   adminFailure,
+  availableSandboxLifecycleAction,
   pageAdminTargets,
   targetIdentifierPattern,
   filterAdminTargets,
@@ -38,6 +39,38 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("offers Sandbox lifecycle actions only from fully settled physical states", () => {
+    const sandbox = (spec: Record<string, unknown>) =>
+      ({
+        spec: {
+          operationState: "succeeded",
+          cleanupPhase: "complete",
+          generation: 4,
+          observedGeneration: 4,
+          workspaceObservedState: "available",
+          physicalVolumeId: "volume-1",
+          desiredState: "running",
+          observedState: "running",
+          writerReleased: false,
+          runtimeId: "runtime-1",
+          ...spec,
+        },
+      }) as Parameters<typeof availableSandboxLifecycleAction>[0];
+    expect(availableSandboxLifecycleAction(sandbox({}))).toBe("stop");
+    expect(
+      availableSandboxLifecycleAction(
+        sandbox({
+          desiredState: "stopped",
+          observedState: "stopped",
+          writerReleased: true,
+          runtimeId: undefined,
+        }),
+      ),
+    ).toBe("rebuild");
+    expect(availableSandboxLifecycleAction(sandbox({ operationState: "pending" }))).toBeNull();
+    expect(availableSandboxLifecycleAction(sandbox({ observedGeneration: 3 }))).toBeNull();
+    expect(availableSandboxLifecycleAction(sandbox({ physicalVolumeId: undefined }))).toBeNull();
+  });
   it("uses native identifier constraints matching the generated Target request contract", () => {
     const pattern = new RegExp(`^(?:${targetIdentifierPattern})$`, "v");
     for (const value of [
