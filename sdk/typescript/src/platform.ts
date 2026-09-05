@@ -594,6 +594,7 @@ export type SandboxSessionCreateRequest = Readonly<{
   sandboxId: string;
   runtimeProfileId: string;
   runtimeProfileVersion: number;
+  ttlSeconds: number;
 }>;
 export type SandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -607,6 +608,7 @@ export type SandboxSession = Readonly<{
   generation: number;
   desiredState: "running";
   observedState: "pending" | "running" | "unknown" | "failed" | "stopped";
+  expiresAt: string;
 }>;
 export type SandboxSessionLifecycleRequest = Readonly<{
   expectedGeneration: number;
@@ -663,6 +665,9 @@ export type AdminSandboxSession = Readonly<{
     desiredState: "running" | "stopped";
     observedState: "pending" | "running" | "unknown" | "failed" | "stopped";
     writerReleased: boolean;
+    ttlSeconds?: number;
+    expiresAt?: string;
+    lifecycleTrigger?: "manual" | "ttl";
     runtimeId?: string;
     runtimeState?:
       | "Pending"
@@ -1562,6 +1567,7 @@ const sandboxSessionResponseShape: ResponseShape = {
     generation: scalarResponseShape,
     desiredState: scalarResponseShape,
     observedState: scalarResponseShape,
+    expiresAt: scalarResponseShape,
   },
 };
 const sandboxSessionLifecycleOperationResponseShape: ResponseShape = {
@@ -1604,6 +1610,9 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
   desiredState: scalarResponseShape,
   observedState: scalarResponseShape,
   writerReleased: scalarResponseShape,
+  ttlSeconds: scalarResponseShape,
+  expiresAt: scalarResponseShape,
+  lifecycleTrigger: scalarResponseShape,
   runtimeId: scalarResponseShape,
   runtimeState: scalarResponseShape,
   stableErrorCode: scalarResponseShape,
@@ -2724,8 +2733,22 @@ export function encodeRuntimeProfileTransitionRequest(
 export function decodeSandboxSessionCreateRequest(value: unknown): SandboxSessionCreateRequest {
   const source = strictRecord(
     value,
-    ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"],
-    ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"],
+    [
+      "workspaceId",
+      "workspaceName",
+      "sandboxId",
+      "runtimeProfileId",
+      "runtimeProfileVersion",
+      "ttlSeconds",
+    ],
+    [
+      "workspaceId",
+      "workspaceName",
+      "sandboxId",
+      "runtimeProfileId",
+      "runtimeProfileVersion",
+      "ttlSeconds",
+    ],
   );
   return Object.freeze({
     workspaceId: identifier(source.workspaceId, "/workspaceId"),
@@ -2738,6 +2761,7 @@ export function decodeSandboxSessionCreateRequest(value: unknown): SandboxSessio
       2147483647,
       "/runtimeProfileVersion",
     ),
+    ttlSeconds: integer(source.ttlSeconds, 60, 86400, "/ttlSeconds"),
   });
 }
 export function encodeSandboxSessionCreateRequest(value: SandboxSessionCreateRequest): string {
@@ -4609,6 +4633,7 @@ export function decodeSandboxSession(value: unknown): SandboxSession {
       "generation",
       "desiredState",
       "observedState",
+      "expiresAt",
     ],
     [
       "apiVersion",
@@ -4622,6 +4647,7 @@ export function decodeSandboxSession(value: unknown): SandboxSession {
       "generation",
       "desiredState",
       "observedState",
+      "expiresAt",
     ],
   );
   if (
@@ -4651,6 +4677,7 @@ export function decodeSandboxSession(value: unknown): SandboxSession {
       ["pending", "running", "unknown", "failed", "stopped"] as const,
       "/observedState",
     ),
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
   });
 }
 export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
@@ -4675,6 +4702,9 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "desiredState",
     "observedState",
     "writerReleased",
+    "ttlSeconds",
+    "expiresAt",
+    "lifecycleTrigger",
     "runtimeId",
     "runtimeState",
     "stableErrorCode",
@@ -4687,6 +4717,9 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
       (field) =>
         ![
           "physicalVolumeId",
+          "ttlSeconds",
+          "expiresAt",
+          "lifecycleTrigger",
           "runtimeId",
           "runtimeState",
           "stableErrorCode",
@@ -4702,6 +4735,14 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     generation,
     "/spec/observedGeneration",
   );
+  const ttlSeconds =
+    spec.ttlSeconds === undefined
+      ? undefined
+      : integer(spec.ttlSeconds, 60, 86400, "/spec/ttlSeconds");
+  const expiresAt =
+    spec.expiresAt === undefined ? undefined : dateTime(spec.expiresAt, "/spec/expiresAt");
+  if ((ttlSeconds === undefined) !== (expiresAt === undefined))
+    error("INVALID_ADMIN_SANDBOX_SESSION", "/spec/expiresAt");
   const result = {
     projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
     operationId: identifier(spec.operationId, "/spec/operationId"),
@@ -4749,6 +4790,17 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
       "/spec/observedState",
     ),
     writerReleased: boolean(spec.writerReleased, "/spec/writerReleased"),
+    ...(ttlSeconds === undefined ? {} : { ttlSeconds }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(spec.lifecycleTrigger === undefined
+      ? {}
+      : {
+          lifecycleTrigger: enumValue(
+            spec.lifecycleTrigger,
+            ["manual", "ttl"] as const,
+            "/spec/lifecycleTrigger",
+          ),
+        }),
     ...(spec.physicalVolumeId === undefined
       ? {}
       : { physicalVolumeId: identifier(spec.physicalVolumeId, "/spec/physicalVolumeId") }),

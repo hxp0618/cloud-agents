@@ -439,7 +439,7 @@ func TestGeneratedOpenAPIClientFoundationRuntimeProfileAndSandbox(t *testing.T) 
 	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","targetId":"docker-primary","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)
 	adminPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfilePage","runtimeProfiles":[` + string(profile) + `]}`)
 	publicPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummaryPage","runtimeProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","name":"foundation","version":1,"description":"Retained no-agent workspace","status":"published","availability":"available","cpuMillis":500,"memoryBytes":536870912,"workspaceRetention":"retained"}]}`)
-	sandbox := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"SandboxSession","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"operationId":"operation-sandbox","workspaceId":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1,"generation":1,"desiredState":"running","observedState":"pending"}`)
+	sandbox := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"SandboxSession","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"operationId":"operation-sandbox","workspaceId":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1,"generation":1,"desiredState":"running","observedState":"pending","expiresAt":"2026-09-05T03:01:00Z"}`)
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = append(seen, request)
@@ -472,7 +472,7 @@ func TestGeneratedOpenAPIClientFoundationRuntimeProfileAndSandbox(t *testing.T) 
 	if page, err := client.ListRuntimeProfiles(context.Background(), "tenant-alpha", "project-alpha", "request-runtime-public-list", 0, ""); err != nil || len(page.Value.RuntimeProfiles) != 1 || page.Value.RuntimeProfiles[0].WorkspaceRetention != "retained" {
 		t.Fatalf("public RuntimeProfiles=%#v error=%v", page.Value, err)
 	}
-	request := platform.SandboxSessionCreateRequest{WorkspaceID: "workspace", WorkspaceName: "workspace", SandboxID: "sandbox", RuntimeProfileID: "foundation", RuntimeProfileVersion: 1}
+	request := platform.SandboxSessionCreateRequest{WorkspaceID: "workspace", WorkspaceName: "workspace", SandboxID: "sandbox", RuntimeProfileID: "foundation", RuntimeProfileVersion: 1, TTLSeconds: 60}
 	if result, err := client.CreateSandbox(context.Background(), "tenant-alpha", "project-alpha", "request-sandbox-create", "sandbox-create-key", request); err != nil || result.Value.OperationID != "operation-sandbox" {
 		t.Fatalf("Sandbox=%#v error=%v", result.Value, err)
 	}

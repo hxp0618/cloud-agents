@@ -79,7 +79,7 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 		}
 	}
 	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v1") ||
-		!strings.Contains(createFoundationSandboxSQL, "accept_foundation_sandbox_v1") {
+		!strings.Contains(createFoundationSandboxSQL, "accept_foundation_sandbox_v2") {
 		t.Fatal("runtime profile store is not bound to the migration authority")
 	}
 }

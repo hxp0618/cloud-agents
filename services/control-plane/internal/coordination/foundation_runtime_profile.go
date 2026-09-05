@@ -70,7 +70,7 @@ type FoundationSandboxCreateInput struct {
 	Scope                                 FoundationScope
 	WorkspaceID, WorkspaceName, SandboxID string
 	RuntimeProfileID                      string
-	RuntimeProfileVersion                 int64
+	RuntimeProfileVersion, TTLSeconds     int64
 	Mutation                              FoundationMutation
 }
 
@@ -79,7 +79,9 @@ type FoundationSandboxSnapshot struct {
 	OperationID, WorkspaceID, SandboxID string
 	RuntimeProfileID                    string
 	RuntimeProfileVersion, Generation   int64
+	TTLSeconds                          int64
 	DesiredState, ObservedState         string
+	ExpiresAt                           time.Time
 }
 
 type FoundationSandboxLifecycleInput struct {
@@ -192,13 +194,27 @@ func (input FoundationSandboxCreateInput) Validate(tenantID string) error {
 	if !validFoundationScope(input.Scope, tenantID) || !validIdentifier(input.WorkspaceID) ||
 		!validIdentifier(input.WorkspaceName) || !validIdentifier(input.SandboxID) ||
 		!validIdentifier(input.RuntimeProfileID) || input.RuntimeProfileVersion < 1 ||
-		input.RuntimeProfileVersion > 2147483647 || !validFoundationMutation(input.Mutation) {
+		input.RuntimeProfileVersion > 2147483647 || input.TTLSeconds < 60 || input.TTLSeconds > 86400 ||
+		!validFoundationMutation(input.Mutation) {
 		return ErrInvalidRuntimeProfile
 	}
 	return nil
 }
 
 func FoundationSandboxCreateDigest(input FoundationSandboxCreateInput) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidRuntimeProfile
+	}
+	return foundationDigest(struct {
+		Operation, TenantID, ProjectID, WorkspaceID, WorkspaceName, SandboxID, RuntimeProfileID string
+		RuntimeProfileVersion, TTLSeconds                                                       int64
+	}{"foundation-sandbox.create", input.Scope.TenantID, input.Scope.ProjectID, input.WorkspaceID,
+		input.WorkspaceName, input.SandboxID, input.RuntimeProfileID, input.RuntimeProfileVersion, input.TTLSeconds})
+}
+
+// FoundationSandboxCreateDigestV1 validates persisted pre-TTL create claims only.
+func FoundationSandboxCreateDigestV1(input FoundationSandboxCreateInput) (string, error) {
+	input.TTLSeconds = 60
 	if input.Validate(input.Scope.TenantID) != nil {
 		return "", ErrInvalidRuntimeProfile
 	}
@@ -214,6 +230,7 @@ func (snapshot FoundationSandboxSnapshot) Validate() error {
 		!validIdentifier(snapshot.WorkspaceID) || !validIdentifier(snapshot.SandboxID) ||
 		!validIdentifier(snapshot.RuntimeProfileID) || snapshot.RuntimeProfileVersion < 1 ||
 		snapshot.RuntimeProfileVersion > 2147483647 || snapshot.Generation < 1 || snapshot.DesiredState != "running" ||
+		snapshot.TTLSeconds < 60 || snapshot.TTLSeconds > 86400 || snapshot.ExpiresAt.IsZero() ||
 		(snapshot.ObservedState != "pending" && snapshot.ObservedState != "running" && snapshot.ObservedState != "unknown" &&
 			snapshot.ObservedState != "failed" && snapshot.ObservedState != "stopped") {
 		return ErrInvalidRuntimeProfile

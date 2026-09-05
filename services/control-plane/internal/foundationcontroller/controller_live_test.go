@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/coordination"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -43,7 +44,7 @@ type liveControllerEnvironment struct {
 
 func TestLiveFoundationControllerRestart(t *testing.T) {
 	phase := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PHASE")
-	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "rebuild" {
+	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
 		t.Skip("live foundation Controller phase is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
@@ -55,6 +56,10 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 	}
 	if phase == "recover" {
 		recoverLiveControllerRestart(t, ctx, environment)
+		return
+	}
+	if phase == "ttl" {
+		ttlLiveController(t, ctx, environment)
 		return
 	}
 	lifecycleLiveController(t, ctx, environment, phase)
@@ -183,7 +188,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	receipt, _ := json.Marshal(map[string]string{
 		"runtimeId": result.runtimeID, "volumeName": result.volumeName,
 		"proofDigest": hex.EncodeToString(proofDigest[:]), "operationId": claimed.Claim.OperationID,
-		"specDigest": claimed.Claim.SpecDigest,
+		"specDigest": claimed.Claim.SpecDigest, "expiresAt": claimed.Claim.ExpiresAt.UTC().Format(time.RFC3339Nano),
 	})
 	t.Logf("FOUNDATION_LIVE_PREPARE=%s", receipt)
 	// Intentionally exit without settlement: the next OS process must reap and adopt.
@@ -279,12 +284,25 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 		t.Logf("FOUNDATION_LIVE_STOP=%s", receipt)
 		return
 	}
+	expectedGeneration := int64(3)
+	if phase == "rebuild-final" {
+		expectedGeneration = 5
+	}
 	if current.observedState != "running" || current.writerReleased || current.runtimeID == "" ||
-		current.runtimeID == priorRuntime || current.generation != 3 {
+		current.runtimeID == priorRuntime || current.generation != expectedGeneration || current.ttlSeconds != 60 ||
+		current.expiresAt.IsZero() || current.lifecycleTrigger != "manual" {
 		t.Fatalf("rebuild settlement = %#v", current)
 	}
 	if output := liveCommand(t, ctx, environment, current.runtimeID, "sha256sum /workspace/controller-proof.txt"); !strings.Contains(output, expectedDigest) {
 		t.Fatalf("rebuilt workspace response = %s", output)
+	}
+	if phase == "rebuild" {
+		receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "runtimeId": current.runtimeID,
+			"operationId": current.operationID, "specDigest": current.specDigest,
+			"workspaceDigest": expectedDigest, "expiresAt": current.expiresAt.UTC().Format(time.RFC3339Nano),
+			"lifecycleTrigger": current.lifecycleTrigger, "cleanup": "runtime and retained Workspace remain for TTL"})
+		t.Logf("FOUNDATION_LIVE_REBUILD=%s", receipt)
+		return
 	}
 	currentIdentity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: current.workspaceID,
 		Sandbox: "sandbox", Operation: current.operationID, Generation: current.generation, SpecDigest: current.specDigest}
@@ -312,13 +330,72 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 	receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "runtimeId": current.runtimeID,
 		"priorRuntimeId": priorRuntime, "workspaceDigest": expectedDigest, "staleGenerationRejected": true,
 		"foreignVolumeOwnerRejected": true, "cleanup": "zero owned sandboxes and volumes"})
-	t.Logf("FOUNDATION_LIVE_REBUILD=%s", receipt)
+	t.Logf("FOUNDATION_LIVE_REBUILD_FINAL=%s", receipt)
+}
+
+func ttlLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+	t.Helper()
+	priorRuntime := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID")
+	priorOperationID := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID")
+	priorSpecDigest := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST")
+	expectedVolume := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME")
+	if priorRuntime == "" || priorOperationID == "" || priorSpecDigest == "" || expectedVolume == "" {
+		t.Fatal("TTL runtime receipt is missing")
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("TTL acceptance = %v / %v", worked, err)
+	}
+	accepted := readLiveSandbox(t, ctx, environment.owner, "sandbox")
+	if accepted.generation != 4 || accepted.observedState != "running" || accepted.lifecycleTrigger != "ttl" {
+		t.Fatalf("TTL acceptance = %#v", accepted)
+	}
+	expectedDigest, err := coordination.FoundationSandboxLifecycleDigest(coordination.FoundationSandboxLifecycleInput{
+		Scope:                   coordination.FoundationScope{TenantID: "tenant", ProjectID: "project"},
+		SandboxID:               "sandbox",
+		Action:                  coordination.FoundationSandboxStop,
+		ConfirmedSandboxID:      "sandbox",
+		ComputeDisposition:      "delete",
+		WorkspaceDisposition:    "retain",
+		ExpectedGeneration:      3,
+		ExpectedResourceVersion: accepted.resourceVersion,
+		Mutation:                coordination.FoundationMutation{RequestID: "ttl-check", IdempotencyKey: "foundation-ttl-check-key"},
+	})
+	if err != nil || accepted.specDigest != expectedDigest {
+		t.Fatalf("TTL request digest = %q / %q / %v", accepted.specDigest, expectedDigest, err)
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("TTL stop reconcile = %v / %v", worked, err)
+	}
+	current := readLiveSandbox(t, ctx, environment.owner, "sandbox")
+	if current.generation != 4 || current.observedState != "stopped" || !current.writerReleased ||
+		current.runtimeID != "" || current.volumeName != expectedVolume || current.lifecycleTrigger != "ttl" ||
+		current.expiresAt.After(time.Now().Add(time.Second)) {
+		t.Fatalf("TTL settlement = %#v", current)
+	}
+	oldIdentity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: current.workspaceID,
+		Sandbox: "sandbox", Operation: priorOperationID, Generation: 3, SpecDigest: priorSpecDigest}
+	if _, err := environment.sandbox.Find(ctx, oldIdentity); !errors.Is(err, opensandbox.ErrNotFound) {
+		t.Fatalf("expired runtime still exists: %v", err)
+	}
+	var ttlAudits int
+	if err := environment.owner.QueryRow(ctx, `SELECT count(*) FROM cloud_agents.coordination_audit_facts
+		WHERE tenant_id='tenant' AND operation_id=$1 AND transition='sandbox.ttl.accept'`, current.operationID).Scan(&ttlAudits); err != nil || ttlAudits != 1 {
+		t.Fatalf("TTL audit count=%d error=%v", ttlAudits, err)
+	}
+	receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "operationId": current.operationID,
+		"expiredRuntimeId": priorRuntime, "runtimeDeleted": true, "workspaceVolume": current.volumeName,
+		"writerReleased": current.writerReleased, "lifecycleTrigger": current.lifecycleTrigger,
+		"expiresAt": current.expiresAt.UTC().Format(time.RFC3339Nano), "requestDigestVerified": true, "ttlAuditFacts": ttlAudits})
+	t.Logf("FOUNDATION_LIVE_TTL=%s", receipt)
 }
 
 type liveSandboxRow struct {
 	workspaceID, operationID, specDigest, runtimeID, observedState string
 	volumeName, operationState, cleanupPhase, stableError          string
-	generation                                                     int64
+	lifecycleTrigger                                               string
+	generation, resourceVersion                                    int64
+	ttlSeconds                                                     int32
+	expiresAt                                                      time.Time
 	deliveryAttempts                                               int
 	writerReleased                                                 bool
 }
@@ -326,17 +403,20 @@ type liveSandboxRow struct {
 func readLiveSandbox(t *testing.T, ctx context.Context, owner *pgxpool.Pool, sandboxID string) liveSandboxRow {
 	t.Helper()
 	var row liveSandboxRow
-	err := owner.QueryRow(ctx, `SELECT s.workspace_uid,s.operation_id,s.generation,s.spec_digest,
+	err := owner.QueryRow(ctx, `SELECT s.workspace_uid,s.operation_id,s.generation,s.resource_version,s.spec_digest,
 		COALESCE(s.runtime_uid,''),s.observed_state,v.physical_volume_uid,o.state,o.cleanup_phase,
-		COALESCE(o.terminal_error_code,''),e.delivery_attempts,s.writer_released
+		COALESCE(o.terminal_error_code,''),e.delivery_attempts,s.writer_released,
+		COALESCE(a.lifecycle_trigger,''),COALESCE(s.ttl_seconds,0),s.expires_at
 		FROM cloud_agents.sandbox_sessions s
 		JOIN cloud_agents.workspace_volumes v USING (tenant_id,project_uid,workspace_uid)
 		JOIN cloud_agents.platform_operations o ON o.tenant_id=s.tenant_id AND o.operation_id=s.operation_id AND o.operation_generation=s.operation_generation
 		JOIN cloud_agents.outbox_events e ON e.tenant_id=s.tenant_id AND e.operation_id=s.operation_id AND e.operation_generation=s.operation_generation
+		LEFT JOIN cloud_agents.foundation_sandbox_activity a ON a.tenant_id=s.tenant_id AND a.operation_uid=s.operation_id AND a.sandbox_generation=s.operation_generation
 		WHERE s.tenant_id='tenant' AND s.sandbox_uid=$1`, sandboxID).Scan(
-		&row.workspaceID, &row.operationID, &row.generation, &row.specDigest, &row.runtimeID,
+		&row.workspaceID, &row.operationID, &row.generation, &row.resourceVersion, &row.specDigest, &row.runtimeID,
 		&row.observedState, &row.volumeName, &row.operationState, &row.cleanupPhase,
-		&row.stableError, &row.deliveryAttempts, &row.writerReleased)
+		&row.stableError, &row.deliveryAttempts, &row.writerReleased, &row.lifecycleTrigger,
+		&row.ttlSeconds, &row.expiresAt)
 	if err != nil {
 		t.Fatal(err)
 	}

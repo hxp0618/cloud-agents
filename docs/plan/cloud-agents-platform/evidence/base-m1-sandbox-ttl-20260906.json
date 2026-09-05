@@ -1,0 +1,46 @@
+{
+  "run": "foundation-controller-68dd88bb-3cc2-4328-8e42-b3a747cc0978",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "3cc5002a14b1c1eb5ed39b1a1f070e6cbb80da7f",
+    "dirty": true
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "productSchemaBundleDigest": "sha256:563f055691a573fb9fc882c0bc56c5ea7d74b7b477d01cebdfe69fbc31c9fa25",
+  "runtime": {
+    "serverImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "ttl": {
+    "seconds": 60,
+    "expiresAt": "2026-09-05T20:22:42.762284Z",
+    "operationId": "op-e5232ecd0672e8de6681a86914992cbf",
+    "generation": 4,
+    "lifecycleTrigger": "ttl",
+    "expiredRuntimeId": "09b0dccf-e52b-4c90-aa64-b817f13590b3",
+    "requestDigestVerified": true,
+    "runtimeDeleted": true,
+    "writerReleased": true,
+    "ttlAuditFacts": 1,
+    "workspaceVolume": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247"
+  },
+  "rebuildAfterExpiry": {
+    "operationId": "op-eb312f952577ff106b38783a91ede252",
+    "generation": 5,
+    "runtimeId": "476e8a25-99f5-4b71-8b7d-d07b2c06509c",
+    "workspaceDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "staleGenerationRejected": true,
+    "foreignVolumeOwnerRejected": true
+  },
+  "cleanup": {
+    "ownedRuntimeContainers": 0,
+    "ownedWorkspaceVolumes": 0,
+    "ownedHarnessContainers": 0
+  },
+  "boundary": "Local OrbStack Docker and disposable PostgreSQL only; no Admin Web browser, deployment, image publication, Kubernetes or customer node"
+}

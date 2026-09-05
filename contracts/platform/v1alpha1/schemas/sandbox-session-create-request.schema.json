@@ -4,16 +4,18 @@
   "title": "SandboxSessionCreateRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion"],
+  "required": ["workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "ttlSeconds"],
   "properties": {
     "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "workspaceName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "runtimeProfileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-    "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+    "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
   },
   "x-cloud-agents-semantic-constraints": [
     "the caller supplies only public resource identities and an immutable published RuntimeProfile version",
-    "Control Plane resolves Target, image, release and resource limits"
+    "Control Plane resolves Target, image, release and resource limits",
+    "ttlSeconds controls Sandbox compute only; Workspace data is retained after expiry"
   ]
 }

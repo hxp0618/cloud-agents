@@ -27,7 +27,7 @@ func TestRuntimeProfileAndSandboxInputsBindEveryPublicField(t *testing.T) {
 
 	sandbox := FoundationSandboxCreateInput{
 		Scope: FoundationScope{"tenant", "project"}, WorkspaceID: "workspace", WorkspaceName: "workspace",
-		SandboxID: "sandbox", RuntimeProfileID: "standard", RuntimeProfileVersion: 1,
+		SandboxID: "sandbox", RuntimeProfileID: "standard", RuntimeProfileVersion: 1, TTLSeconds: 60,
 		Mutation: FoundationMutation{"request-sandbox", "foundation-sandbox-key-1"},
 	}
 	sandboxDigest, err := FoundationSandboxCreateDigest(sandbox)
@@ -38,6 +38,12 @@ func TestRuntimeProfileAndSandboxInputsBindEveryPublicField(t *testing.T) {
 	changed, err = FoundationSandboxCreateDigest(sandbox)
 	if err != nil || changed == sandboxDigest {
 		t.Fatal("sandbox profile version was not bound")
+	}
+	sandbox.RuntimeProfileVersion--
+	sandbox.TTLSeconds++
+	changed, err = FoundationSandboxCreateDigest(sandbox)
+	if err != nil || changed == sandboxDigest {
+		t.Fatal("sandbox TTL was not bound")
 	}
 
 	now := time.Now().UTC()

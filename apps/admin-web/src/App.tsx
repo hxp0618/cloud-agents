@@ -6681,6 +6681,34 @@ function SandboxDetail({
           <dd className="mono">{sandbox.spec.targetId}</dd>
         </div>
         <div>
+          <dt>{t("sandbox.ttl")}</dt>
+          <dd>
+            {sandbox.spec.ttlSeconds === undefined
+              ? t("common.notAvailable")
+              : t("sandbox.ttlValue", { seconds: number(sandbox.spec.ttlSeconds) })}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.expiresAt")}</dt>
+          <dd>
+            {sandbox.spec.expiresAt === undefined
+              ? t("common.notAvailable")
+              : dateTime(sandbox.spec.expiresAt)}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.lifecycleTrigger")}</dt>
+          <dd>
+            {sandbox.spec.lifecycleTrigger === undefined
+              ? t("common.notAvailable")
+              : t(
+                  sandbox.spec.lifecycleTrigger === "ttl"
+                    ? "sandbox.lifecycleTrigger.ttl"
+                    : "sandbox.lifecycleTrigger.manual",
+                )}
+          </dd>
+        </div>
+        <div>
           <dt>{t("sandbox.operation")}</dt>
           <dd className="mono break">{sandbox.spec.operationId}</dd>
         </div>

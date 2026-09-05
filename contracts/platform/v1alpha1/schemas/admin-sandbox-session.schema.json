@@ -50,6 +50,9 @@
         "desiredState": { "enum": ["running", "stopped"] },
         "observedState": { "enum": ["pending", "running", "unknown", "failed", "stopped"] },
         "writerReleased": { "type": "boolean" },
+        "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 },
+        "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "lifecycleTrigger": { "enum": ["manual", "ttl"] },
         "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "runtimeState": { "enum": ["Pending", "Running", "Pausing", "Paused", "Resuming", "Stopping", "Terminated", "Failed"] },
         "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
@@ -59,6 +62,8 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "Admin projection contains lifecycle metadata only and never endpoint, credential, prompt, file or artifact content",
-    "physicalVolumeId is opaque and workspaceRetention is always retained in BASE-M1"
+    "physicalVolumeId is opaque and workspaceRetention is always retained in BASE-M1",
+    "ttlSeconds and expiresAt are absent only for resources accepted before TTL authority existed",
+    "lifecycleTrigger identifies durable manual or TTL acceptance without exposing user content"
   ]
 }

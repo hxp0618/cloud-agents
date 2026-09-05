@@ -273,7 +273,8 @@ func (server *FoundationHTTPServer) createSandbox(writer http.ResponseWriter, re
 		Scope:       internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID},
 		WorkspaceID: input.WorkspaceID, WorkspaceName: input.WorkspaceName, SandboxID: input.SandboxID,
 		RuntimeProfileID: input.RuntimeProfileID, RuntimeProfileVersion: input.RuntimeProfileVersion,
-		Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
+		TTLSeconds: input.TTLSeconds,
+		Mutation:   internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
 	})
 	if err != nil {
 		writeFoundationError(writer, err)
@@ -283,7 +284,8 @@ func (server *FoundationHTTPServer) createSandbox(writer http.ResponseWriter, re
 		ProjectRef:  common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
 		OperationID: result.OperationID, WorkspaceID: result.WorkspaceID, SandboxID: result.SandboxID,
 		RuntimeProfileID: result.RuntimeProfileID, RuntimeProfileVersion: result.RuntimeProfileVersion,
-		Generation: result.Generation, DesiredState: result.DesiredState, ObservedState: result.ObservedState}
+		Generation: result.Generation, DesiredState: result.DesiredState, ObservedState: result.ObservedState,
+		ExpiresAt: result.ExpiresAt.UTC().Format(time.RFC3339Nano)}
 	body, err = platform.EncodeSandboxSessionResponseJSON(common.ResponseEnvelope[platform.SandboxSession]{Value: value})
 	if err != nil {
 		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
@@ -443,7 +445,8 @@ func runtimeProfileSummaryResource(summary internalcoordination.RuntimeProfileSu
 }
 
 func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.AdminSandboxSession {
-	physicalVolumeID, runtimeID, stableErrorCode, observedAt := "", "", "", ""
+	physicalVolumeID, runtimeID, stableErrorCode, observedAt, expiresAt, lifecycleTrigger := "", "", "", "", "", ""
+	ttlSeconds := int64(0)
 	if snapshot.PhysicalVolumeID != nil {
 		physicalVolumeID = *snapshot.PhysicalVolumeID
 	}
@@ -455,6 +458,15 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 	}
 	if snapshot.ObservedAt != nil {
 		observedAt = snapshot.ObservedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if snapshot.TTLSeconds != nil {
+		ttlSeconds = int64(*snapshot.TTLSeconds)
+	}
+	if snapshot.ExpiresAt != nil {
+		expiresAt = snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	if snapshot.LifecycleTrigger != nil {
+		lifecycleTrigger = *snapshot.LifecycleTrigger
 	}
 	return platform.AdminSandboxSession{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "AdminSandboxSession", Metadata: common.ResourceMetadata{
 		UID: snapshot.SandboxID, Name: snapshot.SandboxID,
@@ -468,6 +480,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 		RuntimeProfileID: snapshot.RuntimeProfileID, RuntimeProfileVersion: snapshot.RuntimeProfileVersion,
 		TargetID: snapshot.TargetID, Generation: snapshot.Generation, ObservedGeneration: snapshot.ObservedGeneration,
 		DesiredState: snapshot.DesiredState, ObservedState: snapshot.ObservedState, WriterReleased: snapshot.WriterReleased,
+		TTLSeconds: ttlSeconds, ExpiresAt: expiresAt, LifecycleTrigger: lifecycleTrigger,
 		RuntimeID: runtimeID, RuntimeState: snapshot.RuntimeState, StableErrorCode: stableErrorCode, ObservedAt: observedAt,
 	}}
 }

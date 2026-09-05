@@ -187,7 +187,7 @@ func TestGeneratedRuntimeProfileKeepsAdminAndUserBoundaries(t *testing.T) {
 	if _, err := DecodeRuntimeProfileSummaryJSON(withTarget); err == nil {
 		t.Fatal("public RuntimeProfile summary accepted Admin Target authority")
 	}
-	request := []byte(`{"workspaceId":"workspace","workspaceName":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1}`)
+	request := []byte(`{"workspaceId":"workspace","workspaceName":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1,"ttlSeconds":60}`)
 	if value, err := DecodeSandboxSessionCreateRequestJSON(request); err != nil || value.RuntimeProfileID != "foundation" {
 		t.Fatalf("sandbox request=%#v error=%v", value, err)
 	}

@@ -4,7 +4,7 @@
   "title": "SandboxSession",
   "type": "object",
   "additionalProperties": false,
-  "required": ["apiVersion", "kind", "projectRef", "operationId", "workspaceId", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "generation", "desiredState", "observedState"],
+  "required": ["apiVersion", "kind", "projectRef", "operationId", "workspaceId", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "generation", "desiredState", "observedState", "expiresAt"],
   "properties": {
     "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
     "kind": { "const": "SandboxSession" },
@@ -16,10 +16,12 @@
     "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
     "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
     "desiredState": { "const": "running" },
-    "observedState": { "enum": ["pending", "running", "unknown", "failed", "stopped"] }
+    "observedState": { "enum": ["pending", "running", "unknown", "failed", "stopped"] },
+    "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
   },
   "x-cloud-agents-semantic-constraints": [
     "operationId is the durable asynchronous Operation accepted by Control Plane",
-    "Target, image, release, endpoint and credential data are absent"
+    "Target, image, release, endpoint and credential data are absent",
+    "expiresAt is computed by the database and stops compute without deleting Workspace data"
   ]
 }

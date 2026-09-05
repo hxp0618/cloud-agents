@@ -75,6 +75,16 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	if reaped.Found {
 		return true, nil
 	}
+	expired, err := controller.store.ExpireFoundationSandbox(ctx, subject, randomIdentifier("audit"))
+	if err != nil {
+		return false, err
+	}
+	if expired.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("foundation expiry outcome is unknown")
+	}
+	if expired.Found {
+		return true, nil
+	}
 	claimResult, err := controller.store.ClaimFoundationSandbox(ctx, postgres.FoundationSandboxClaimInput{
 		HolderID: controller.holder, HolderIncarnation: controller.incarnation,
 		ClaimToken: randomIdentifier("claim"), LeaseSeconds: int32(claimLease / time.Second),

@@ -109,8 +109,8 @@ FROM (
     LIMIT $3
 ) AS profile_row`
 	createFoundationSandboxSQL = `SELECT operation_uid, workspace_uid, sandbox_uid, profile_uid,
-    profile_version, generation, desired_state, observed_state
-FROM cloud_agents.accept_foundation_sandbox_v1($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+    profile_version, generation, desired_state, observed_state, ttl_seconds, expires_at
+FROM cloud_agents.accept_foundation_sandbox_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 )
 
 func (service *DurableCoordinationService) CreateRuntimeProfile(
@@ -248,10 +248,10 @@ func (service *DurableCoordinationService) CreateFoundationSandbox(
 	err = service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true, func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 		row := handle.transaction.queryRow(operationContext, createFoundationSandboxSQL, input.Scope.ProjectID,
 			input.WorkspaceID, input.WorkspaceName, input.SandboxID, input.RuntimeProfileID,
-			input.RuntimeProfileVersion, subjectDigest, input.Mutation.IdempotencyKey, digest)
+			input.RuntimeProfileVersion, subjectDigest, input.Mutation.IdempotencyKey, digest, input.TTLSeconds)
 		if err := row.Scan(&result.OperationID, &result.WorkspaceID, &result.SandboxID,
 			&result.RuntimeProfileID, &result.RuntimeProfileVersion, &result.Generation,
-			&result.DesiredState, &result.ObservedState); err != nil {
+			&result.DesiredState, &result.ObservedState, &result.TTLSeconds, &result.ExpiresAt); err != nil {
 			return err
 		}
 		result.Scope = input.Scope

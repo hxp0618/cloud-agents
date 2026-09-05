@@ -201,9 +201,9 @@ try {
         "--repository-root",
         root,
         "--manifest",
-        "services/control-plane/migrations/product/000056/manifest.json",
+        "services/control-plane/migrations/product/000057/manifest.json",
         "--selector",
-        "product-000056",
+        "product-000057",
       ],
       {
         encoding: "utf8",
@@ -212,7 +212,7 @@ try {
       },
     ),
   );
-  assert.equal(migration.schema_head, "000056");
+  assert.equal(migration.schema_head, "000057");
 
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -342,18 +342,18 @@ try {
       }),
       "FOUNDATION_LIFECYCLE_API",
     );
-  const lifecycleController = (phase, marker) =>
+  const lifecycleController = (phase, marker, prior = prepareReceipt) =>
     parseMarker(
       execFileSync(controllerTestBinary, ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"], {
         encoding: "utf8",
         env: {
           ...commonEnvironment,
           CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: phase,
-          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prepareReceipt.runtimeId,
+          CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prior.runtimeId,
           CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: prepareReceipt.volumeName,
           CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
-          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: prepareReceipt.operationId,
-          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: prepareReceipt.specDigest,
+          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: prior.operationId,
+          CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: prior.specDigest,
         },
         timeout: 180_000,
       }),
@@ -367,6 +367,31 @@ try {
   const rebuildReceipt = lifecycleController("rebuild", "FOUNDATION_LIVE_REBUILD");
   assert.equal(rebuildReceipt.generation, rebuildAPIReceipt.generation);
   assert.equal(rebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
+  assert.equal(rebuildReceipt.lifecycleTrigger, "manual");
+  assert.notEqual(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+  let expired = false;
+  for (let attempt = 0; attempt < 150; attempt++) {
+    if (
+      psql("SELECT expires_at <= clock_timestamp() FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND sandbox_uid='sandbox';") === "t"
+    ) {
+      expired = true;
+      break;
+    }
+    await delay(500);
+  }
+  assert.ok(expired, "database TTL did not elapse");
+  const ttlReceipt = lifecycleController("ttl", "FOUNDATION_LIVE_TTL", rebuildReceipt);
+  assert.equal(ttlReceipt.generation, 4);
+  assert.equal(ttlReceipt.lifecycleTrigger, "ttl");
+  assert.equal(ttlReceipt.workspaceVolume, prepareReceipt.volumeName);
+  const finalRebuildAPIReceipt = lifecycleAPI("rebuild");
+  const finalRebuildReceipt = lifecycleController(
+    "rebuild-final",
+    "FOUNDATION_LIVE_REBUILD_FINAL",
+    rebuildReceipt,
+  );
+  assert.equal(finalRebuildReceipt.generation, finalRebuildAPIReceipt.generation);
+  assert.equal(finalRebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
   assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
   assert.equal(
     docker("volume", "ls", "-q", "--filter", "label=cloud-agents.dev/resource=foundation-workspace"),
@@ -399,6 +424,8 @@ try {
     recover: recoverReceipt,
     stop: { api: stopAPIReceipt, controller: stopReceipt },
     rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
+    ttl: ttlReceipt,
+    finalRebuild: { api: finalRebuildAPIReceipt, controller: finalRebuildReceipt },
     checks: [
       "public RuntimeProfile and Sandbox admission",
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
@@ -412,11 +439,14 @@ try {
       "generated Admin stop/rebuild with ordinary-user 403, idempotent replay, stale fencing, Operation and Audit",
       "stop deletes the exact runtime, releases its writer, and retains the physical Workspace volume",
       "rebuild uses the same physical volume and preserves Workspace bytes",
+      "database-clock TTL accepts the same durable Stop authority and records its trigger and Audit",
+      "TTL stop deletes compute, releases its writer, and retains the physical Workspace volume",
+      "rebuild after TTL expiry restores the same Workspace bytes",
       "stale runtime generation and foreign physical volume ownership are rejected",
       "zero test-owned runtime containers and Workspace volumes",
     ],
     boundary:
-      "Local OrbStack Docker and disposable PostgreSQL only; no Admin Web, TTL, deployment, image publication, Kubernetes or customer node",
+      "Local OrbStack Docker and disposable PostgreSQL only; no Admin Web browser, deployment, image publication, Kubernetes or customer node",
   };
   writeFileSync(
     resolve(evidenceDirectory, "evidence.json"),

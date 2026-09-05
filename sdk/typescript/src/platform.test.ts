@@ -829,6 +829,7 @@ describe("generated platform JSON models", () => {
       generation: 1,
       desiredState: "running",
       observedState: "pending",
+      expiresAt: "2026-09-05T03:01:00Z",
     };
     expect(decodeRuntimeProfile(profile).spec.targetId).toBe("docker-primary");
     expect(parseRuntimeProfile(JSON.stringify(profile)).value.spec.status).toBe("draft");
@@ -902,6 +903,7 @@ describe("generated platform JSON models", () => {
         sandboxId: "sandbox",
         runtimeProfileId: "foundation",
         runtimeProfileVersion: 1,
+        ttlSeconds: 60,
       },
     );
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -149,10 +150,10 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 
 	sandboxRequest := platform.SandboxSessionCreateRequest{
 		WorkspaceID: "workspace", WorkspaceName: "workspace", SandboxID: "sandbox",
-		RuntimeProfileID: "profile", RuntimeProfileVersion: 1,
+		RuntimeProfileID: "profile", RuntimeProfileVersion: 1, TTLSeconds: 60,
 	}
 	sandbox, err := user.CreateSandbox(ctx, "tenant", "project", "request-sandbox", "sandbox-create-key", sandboxRequest)
-	if err != nil || sandbox.Value.ObservedState != "pending" || sandbox.Value.OperationID == "" {
+	if err != nil || sandbox.Value.ObservedState != "pending" || sandbox.Value.OperationID == "" || sandbox.Value.ExpiresAt == "" {
 		t.Fatalf("create sandbox: value=%+v err=%v", sandbox.Value, err)
 	}
 	terminalRequest := sandboxRequest
@@ -172,6 +173,11 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	adminSandboxes, err := admin.ListAdminSandboxSessions(ctx, "tenant", "project", "request-admin-sandboxes", 50, "")
 	if err != nil || len(adminSandboxes.Value.SandboxSessions) != 2 {
 		t.Fatalf("Admin sandbox list: value=%+v err=%v", adminSandboxes.Value, err)
+	}
+	for _, item := range adminSandboxes.Value.SandboxSessions {
+		if item.Spec.TTLSeconds != 60 || item.Spec.ExpiresAt == "" {
+			t.Fatalf("Admin sandbox TTL projection=%+v", item.Spec)
+		}
 	}
 	adminSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-admin-sandbox")
 	if err != nil || adminSandbox.Value.Spec.WorkspaceID != "workspace" || adminSandbox.Value.Spec.RuntimeProfileID != "profile" ||
@@ -291,7 +297,7 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	if _, err := call(user, "request-lifecycle-user-denied", "sandbox-lifecycle-user-key", body); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user lifecycle status=%d err=%v", clientStatus(err), err)
 	}
-	key := "sandbox-lifecycle-" + action + "-key"
+	key := fmt.Sprintf("sandbox-lifecycle-%s-g%d-key", action, current.Value.Spec.Generation+1)
 	operation, err := call(admin, "request-lifecycle-"+action, key, body)
 	if err != nil || operation.Value.Action != "sandbox."+action || operation.Value.State != "pending" ||
 		operation.Value.SandboxGeneration != current.Value.Spec.Generation+1 || operation.Value.WorkspaceDisposition != "retain" {
@@ -306,7 +312,7 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	}
 	var activities, audits int
 	if err := owner.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM cloud_agents.foundation_sandbox_activity WHERE sandbox_uid='sandbox' AND action=$1),
+		(SELECT count(*) FROM cloud_agents.foundation_sandbox_activity WHERE sandbox_uid='sandbox' AND action=$1 AND operation_uid=$2),
 		(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE operation_id=$2 AND transition=$3)`,
 		"sandbox."+action, operation.Value.OperationID, "sandbox."+action+".accept").Scan(&activities, &audits); err != nil || activities != 1 || audits != 1 {
 		t.Fatalf("lifecycle durable activity=%d audit=%d err=%v", activities, audits, err)

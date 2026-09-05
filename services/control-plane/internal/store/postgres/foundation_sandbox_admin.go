@@ -21,11 +21,13 @@ type AdminSandboxSnapshot struct {
 	DesiredState, ObservedState                           string
 	RuntimeState                                          string
 	PhysicalVolumeID, RuntimeID, StableErrorCode          *string
+	LifecycleTrigger                                      *string
+	TTLSeconds                                            *int32
 	RuntimeProfileVersion, Generation, ObservedGeneration int64
 	ResourceVersion                                       int64
 	WriterReleased                                        bool
 	CreatedAt, UpdatedAt                                  time.Time
-	ObservedAt                                            *time.Time
+	ObservedAt, ExpiresAt                                 *time.Time
 }
 
 type AdminSandboxPage struct {
@@ -54,6 +56,9 @@ type adminSandboxPageRow struct {
 	DesiredState           string     `json:"desired_state"`
 	ObservedState          string     `json:"observed_state"`
 	WriterReleased         bool       `json:"writer_released"`
+	TTLSeconds             *int32     `json:"ttl_seconds"`
+	ExpiresAt              *time.Time `json:"expires_at"`
+	LifecycleTrigger       *string    `json:"lifecycle_trigger"`
 	RuntimeID              *string    `json:"runtime_uid"`
 	RuntimeState           string     `json:"runtime_state"`
 	StableErrorCode        *string    `json:"stable_error_code"`
@@ -69,7 +74,8 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     volume.retention, volume.observed_state AS workspace_observed_state,
     sandbox.runtime_profile_uid, sandbox.runtime_profile_version, volume.target_uid,
     sandbox.generation, sandbox.observed_generation, sandbox.desired_state, sandbox.observed_state,
-    sandbox.writer_released, sandbox.runtime_uid, sandbox.runtime_state, sandbox.stable_error_code,
+    sandbox.writer_released, sandbox.ttl_seconds, sandbox.expires_at, activity.lifecycle_trigger,
+    sandbox.runtime_uid, sandbox.runtime_state, sandbox.stable_error_code,
     sandbox.resource_version, operation.created_at, operation.updated_at, sandbox.observed_at`
 
 var (
@@ -80,6 +86,9 @@ JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, wor
 JOIN cloud_agents.platform_operations AS operation
   ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
  AND operation.operation_generation = sandbox.operation_generation
+LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
+  ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
+ AND activity.sandbox_generation = sandbox.operation_generation
 WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
   AND sandbox.sandbox_uid = $2`
 	adminSandboxPageCursorSQL = `SELECT 1 FROM cloud_agents.sandbox_sessions
@@ -94,6 +103,9 @@ FROM (
     JOIN cloud_agents.platform_operations AS operation
       ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
      AND operation.operation_generation = sandbox.operation_generation
+    LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
+      ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
+     AND activity.sandbox_generation = sandbox.operation_generation
     WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
       AND sandbox.sandbox_uid > $2
     ORDER BY sandbox.sandbox_uid
@@ -102,7 +114,7 @@ FROM (
 	transitionFoundationSandboxSQL = `SELECT operation_uid, idempotency_key, action, sandbox_uid,
     sandbox_generation, requested_by, request_id, requested_at, updated_at, operation_state,
     cleanup_phase, stable_error_code, compute_disposition, workspace_disposition
-FROM cloud_agents.transition_foundation_sandbox_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
+FROM cloud_agents.transition_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 )
 
 func (service *DurableCoordinationService) TransitionFoundationSandbox(
@@ -219,7 +231,8 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 		&value.VolumeID, &value.PhysicalVolumeID, &value.WorkspaceRetention, &value.WorkspaceObservedState,
 		&value.RuntimeProfileID, &value.RuntimeProfileVersion, &value.TargetID, &value.Generation,
 		&value.ObservedGeneration, &value.DesiredState, &value.ObservedState, &value.WriterReleased,
-		&value.RuntimeID, &value.RuntimeState, &value.StableErrorCode, &value.ResourceVersion,
+		&value.TTLSeconds, &value.ExpiresAt, &value.LifecycleTrigger, &value.RuntimeID,
+		&value.RuntimeState, &value.StableErrorCode, &value.ResourceVersion,
 		&value.CreatedAt, &value.UpdatedAt, &value.ObservedAt)
 }
 
@@ -232,6 +245,7 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 		RuntimeProfileID: row.RuntimeProfileID, RuntimeProfileVersion: row.RuntimeProfileVersion,
 		TargetID: row.TargetID, Generation: row.Generation, ObservedGeneration: row.ObservedGeneration,
 		DesiredState: row.DesiredState, ObservedState: row.ObservedState, WriterReleased: row.WriterReleased,
+		TTLSeconds: row.TTLSeconds, ExpiresAt: row.ExpiresAt, LifecycleTrigger: row.LifecycleTrigger,
 		RuntimeID: row.RuntimeID, RuntimeState: row.RuntimeState, StableErrorCode: row.StableErrorCode,
 		ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		ObservedAt: row.ObservedAt,
@@ -253,6 +267,13 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 		if id != nil && !validMutationIdentifier(*id) {
 			return false
 		}
+	}
+	if (value.TTLSeconds == nil) != (value.ExpiresAt == nil) || value.TTLSeconds != nil &&
+		(*value.TTLSeconds < 60 || *value.TTLSeconds > 86400 || value.ExpiresAt.IsZero()) {
+		return false
+	}
+	if value.LifecycleTrigger != nil && *value.LifecycleTrigger != "manual" && *value.LifecycleTrigger != "ttl" {
+		return false
 	}
 	if value.RuntimeProfileVersion < 1 || value.RuntimeProfileVersion > 2147483647 || value.Generation < 1 ||
 		value.ObservedGeneration < 0 || value.ObservedGeneration > value.Generation || value.ResourceVersion < 0 ||

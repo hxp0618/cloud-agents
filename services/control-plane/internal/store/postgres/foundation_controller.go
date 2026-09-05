@@ -16,13 +16,16 @@ const (
     physical_volume_uid, target_uid, target_generation, target_endpoint, credential_ref, sandbox_uid,
     sandbox_generation, image_uri, runtime_profile_uid, runtime_profile_version,
     cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
-    runtime_generation, runtime_spec_digest
-FROM cloud_agents.claim_foundation_sandbox_v2($1,$2,$3,$4,$5,$6)`
+	runtime_generation, runtime_spec_digest, ttl_seconds, expires_at
+FROM cloud_agents.claim_foundation_sandbox_v3($1,$2,$3,$4,$5,$6)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
 	reapFoundationSandboxSQL = `SELECT tenant_id, event_id, outbox_state, delivery_attempts
 FROM cloud_agents.reap_foundation_sandbox_claim_v1($1,$2)`
+	expireFoundationSandboxSQL = `SELECT tenant_id, project_uid, sandbox_uid, expired_at,
+    operation_uid, sandbox_generation
+FROM cloud_agents.expire_foundation_sandbox_v1($1,$2)`
 )
 
 type FoundationSandboxClaimInput struct {
@@ -37,6 +40,8 @@ type FoundationSandboxClaim struct {
 	Action, ImageURI, SpecDigest, RuntimeState                            string
 	PhysicalVolumeName, RuntimeID, RuntimeOperationID, RuntimeSpecDigest  *string
 	RuntimeGeneration                                                     *int64
+	TTLSeconds                                                            *int32
+	ExpiresAt                                                             *time.Time
 	DeliveryAttempts                                                      int32
 	OperationGeneration, TargetGeneration, SandboxGeneration              int64
 	RuntimeProfileID                                                      string
@@ -74,6 +79,48 @@ type FoundationSandboxReapResult struct {
 	EventID          string
 	OutboxState      string
 	DeliveryAttempts int32
+}
+
+type FoundationSandboxExpiryResult struct {
+	DatabaseOutcome                DatabaseOutcome
+	Found                          bool
+	TenantID, ProjectID, SandboxID string
+	OperationID                    string
+	ExpiredAt                      time.Time
+	SandboxGeneration              int64
+}
+
+func (service *DurableCoordinationService) ExpireFoundationSandbox(ctx context.Context, subjectDigest, auditFactID string) (FoundationSandboxExpiryResult, error) {
+	if service == nil || service.runner == nil {
+		return FoundationSandboxExpiryResult{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validCoordinationDigest(subjectDigest) || !validMutationIdentifier(auditFactID) {
+		return FoundationSandboxExpiryResult{}, ErrCoordinationInvalidInput
+	}
+	result := FoundationSandboxExpiryResult{Found: true}
+	err := service.runner.withGlobalMutation(ctx, func(handle *tenantReadHandle) error {
+		err := handle.transaction.queryRow(ctx, expireFoundationSandboxSQL, subjectDigest, auditFactID).
+			Scan(&result.TenantID, &result.ProjectID, &result.SandboxID, &result.ExpiredAt,
+				&result.OperationID, &result.SandboxGeneration)
+		if errors.Is(err, pgx.ErrNoRows) {
+			result.Found = false
+			return nil
+		}
+		return err
+	})
+	if errors.Is(err, ErrMutationCommitUnknown) {
+		return FoundationSandboxExpiryResult{DatabaseOutcome: DatabaseUnknown}, nil
+	}
+	if err != nil {
+		return FoundationSandboxExpiryResult{}, mapCoordinationDatabaseError("expire foundation sandbox", err)
+	}
+	result.DatabaseOutcome = DatabaseCommitted
+	if result.Found && (!validMutationIdentifier(result.TenantID) || !validMutationIdentifier(result.ProjectID) ||
+		!validMutationIdentifier(result.SandboxID) || !validMutationIdentifier(result.OperationID) ||
+		result.ExpiredAt.IsZero() || result.SandboxGeneration < 2) {
+		return FoundationSandboxExpiryResult{}, ErrCoordinationResultDrift
+	}
+	return result, nil
 }
 
 func (service *DurableCoordinationService) ReapFoundationSandbox(ctx context.Context, subjectDigest, auditFactID string) (FoundationSandboxReapResult, error) {
@@ -131,7 +178,7 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 			&claim.ImageURI, &claim.RuntimeProfileID, &claim.RuntimeProfileVersion,
 			&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest, &claim.RuntimeID,
 			&claim.RuntimeState, &claim.RuntimeOperationID, &claim.RuntimeGeneration,
-			&claim.RuntimeSpecDigest)
+			&claim.RuntimeSpecDigest, &claim.TTLSeconds, &claim.ExpiresAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			result.Found = false
 			return nil
@@ -221,15 +268,23 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 	requestDigest := claim.SpecDigest
 	requestErr := error(nil)
 	if claim.Action == "sandbox.create" {
-		requestDigest, requestErr = coordination.FoundationSandboxCreateDigest(coordination.FoundationSandboxCreateInput{
+		input := coordination.FoundationSandboxCreateInput{
 			Scope:       coordination.FoundationScope{TenantID: claim.TenantID, ProjectID: claim.ProjectID},
 			WorkspaceID: claim.WorkspaceID, WorkspaceName: claim.WorkspaceName, SandboxID: claim.SandboxID,
 			RuntimeProfileID: claim.RuntimeProfileID, RuntimeProfileVersion: claim.RuntimeProfileVersion,
 			Mutation: coordination.FoundationMutation{RequestID: "claim", IdempotencyKey: "foundation-claim-check"},
-		})
+		}
+		if claim.TTLSeconds == nil {
+			requestDigest, requestErr = coordination.FoundationSandboxCreateDigestV1(input)
+		} else {
+			input.TTLSeconds = int64(*claim.TTLSeconds)
+			requestDigest, requestErr = coordination.FoundationSandboxCreateDigest(input)
+		}
 	}
 	endpoint, endpointErr := url.Parse(claim.TargetEndpoint)
 	validVolume := claim.PhysicalVolumeName == nil || validMutationIdentifier(*claim.PhysicalVolumeName)
+	validTTL := claim.TTLSeconds == nil && claim.ExpiresAt == nil || claim.TTLSeconds != nil && claim.ExpiresAt != nil &&
+		*claim.TTLSeconds >= 60 && *claim.TTLSeconds <= 86400 && !claim.ExpiresAt.IsZero()
 	validCurrentReceipt := claim.RuntimeID == nil && claim.RuntimeOperationID == nil &&
 		claim.RuntimeGeneration == nil && claim.RuntimeSpecDigest == nil ||
 		claim.RuntimeID != nil && claim.RuntimeOperationID != nil && claim.RuntimeGeneration != nil &&
@@ -244,7 +299,7 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 			validMutationIdentifier(*claim.PhysicalVolumeName) && validMutationIdentifier(*claim.RuntimeID) &&
 			validMutationIdentifier(*claim.RuntimeOperationID) && *claim.RuntimeGeneration > 0 &&
 			*claim.RuntimeGeneration < claim.SandboxGeneration && validCoordinationDigest(*claim.RuntimeSpecDigest)
-	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validActionReceipt &&
+	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validTTL && validActionReceipt &&
 		endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" &&
 		validMutationIdentifier(claim.EventID) && validMutationIdentifier(claim.OperationID) &&
 		validMutationIdentifier(claim.CredentialRef) && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 &&
