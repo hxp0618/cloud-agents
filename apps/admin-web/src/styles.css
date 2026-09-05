@@ -1189,6 +1189,78 @@ button.metric-card:hover {
   gap: 16px;
 }
 
+.resource-refresh {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.resource-snapshot:not([hidden]) {
+  display: contents;
+}
+
+.resource-skeleton {
+  min-width: 760px;
+}
+
+.resource-skeleton tbody tr {
+  cursor: default;
+}
+
+.resource-skeleton td {
+  height: 37px;
+}
+
+.skeleton {
+  display: block;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 80%;
+  height: 16px;
+  border-radius: 6px;
+  background: var(--muted);
+}
+
+[data-theme="dark"] .skeleton {
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 66.666667%;
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--muted-foreground) 0%, transparent) 10%,
+    color-mix(in oklch, var(--muted-foreground) 4%, transparent) 30%,
+    color-mix(in oklch, var(--muted-foreground) 9%, transparent) 50%,
+    color-mix(in oklch, var(--muted-foreground) 4%, transparent) 70%,
+    color-mix(in oklch, var(--muted-foreground) 0%, transparent) 90%,
+    transparent 100%
+  );
+  will-change: transform;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    display: none;
+  }
+}
+
 .resource-pagination,
 .pagination-summary,
 .pagination-navigation,

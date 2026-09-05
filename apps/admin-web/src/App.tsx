@@ -28,6 +28,7 @@ import {
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
+import { ResourceRefresh } from "./ResourceRefresh";
 
 import {
   adminFailure,
@@ -2409,38 +2410,57 @@ export function App() {
                   targets.list · {number(visibleTargets.length)}
                 </span>
               </div>
-              <PaginatedTargets
-                filterKey={JSON.stringify([query, targetKindFilter, targetPhaseFilter])}
-                targets={visibleTargets}
-                filtered={targetsFiltered}
-                selectedTargetId={selectedTargetId}
-                onSelect={selectTarget}
-                empty={
-                  <section className="empty-state" aria-labelledby="target-empty-title">
-                    <div className="empty-state-header">
-                      <span className="empty-state-icon" aria-hidden="true">
-                        <NavigationIcon name="targets" />
-                      </span>
-                      <h2 id="target-empty-title">
-                        {t(targetsFiltered ? "target.empty.filteredTitle" : "target.empty.title")}
-                      </h2>
-                      <p>
-                        {t(
-                          targetsFiltered ? "target.filter.noMatches" : "target.empty.description",
-                        )}
-                      </p>
-                    </div>
-                    <button
-                      className="button primary"
-                      type="button"
-                      disabled={busy !== null}
-                      onClick={targetsFiltered ? clearTargetFilters : () => setRegistering(true)}
-                    >
-                      {t(targetsFiltered ? "target.filter.clear" : "action.registerTarget")}
-                    </button>
-                  </section>
-                }
-              />
+              <ResourceRefresh
+                loading={busy?.message.key === "operation.refresh"}
+                label={t("page.targets.title")}
+                columns={(
+                  [
+                    "table.name",
+                    "table.kind",
+                    "table.status",
+                    "table.engineApi",
+                    "table.osArchitecture",
+                    "table.generation",
+                    "table.lastProbe",
+                    "table.actions",
+                  ] as const
+                ).map((key) => t(key))}
+              >
+                <PaginatedTargets
+                  filterKey={JSON.stringify([query, targetKindFilter, targetPhaseFilter])}
+                  targets={visibleTargets}
+                  filtered={targetsFiltered}
+                  selectedTargetId={selectedTargetId}
+                  onSelect={selectTarget}
+                  empty={
+                    <section className="empty-state" aria-labelledby="target-empty-title">
+                      <div className="empty-state-header">
+                        <span className="empty-state-icon" aria-hidden="true">
+                          <NavigationIcon name="targets" />
+                        </span>
+                        <h2 id="target-empty-title">
+                          {t(targetsFiltered ? "target.empty.filteredTitle" : "target.empty.title")}
+                        </h2>
+                        <p>
+                          {t(
+                            targetsFiltered
+                              ? "target.filter.noMatches"
+                              : "target.empty.description",
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        className="button primary"
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={targetsFiltered ? clearTargetFilters : () => setRegistering(true)}
+                      >
+                        {t(targetsFiltered ? "target.filter.clear" : "action.registerTarget")}
+                      </button>
+                    </section>
+                  }
+                />
+              </ResourceRefresh>
             </section>
           ) : page === "workers" ? (
             <section className="resource-list">
@@ -2942,19 +2962,34 @@ export function App() {
                   </div>
                 ) : null}
               </div>
-              <div className="panel target-list-panel">
-                <LeaseTable
-                  leases={visibleLeases}
-                  filtered={
-                    leaseAttentionOnly ||
-                    leasePhaseFilter !== "" ||
-                    leaseCleanupBlockedOnly ||
-                    query.trim() !== ""
-                  }
-                  selectedLeaseId={selectedLeaseId}
-                  onSelect={selectLease}
-                />
-              </div>
+              <ResourceRefresh
+                loading={busy?.message.key === "operation.refresh"}
+                label={t("page.leases.title")}
+                columns={(
+                  [
+                    "table.name",
+                    "table.observed",
+                    "table.cleanup",
+                    "table.generation",
+                    "table.expires",
+                    "table.actions",
+                  ] as const
+                ).map((key) => t(key))}
+              >
+                <div className="panel target-list-panel">
+                  <LeaseTable
+                    leases={visibleLeases}
+                    filtered={
+                      leaseAttentionOnly ||
+                      leasePhaseFilter !== "" ||
+                      leaseCleanupBlockedOnly ||
+                      query.trim() !== ""
+                    }
+                    selectedLeaseId={selectedLeaseId}
+                    onSelect={selectLease}
+                  />
+                </div>
+              </ResourceRefresh>
             </section>
           ) : (
             <section className="resource-list">
