@@ -1,5 +1,7 @@
 # Cloud Agents User Console
 
+This is the existing Agent application, not the generic infrastructure foundation. Keep its current flows compatible; new user-side CloudAgents features follow [BASE-READY](../../docs/plan/cloud-agents-platform/05-gates-and-acceptance.md). Long-lived Workspace/Sandbox/customer-node acceptance must work through API/CLI/SDK without a Provider Credential or AgentSession. Existing Agent E2E evidence remains scoped to its tested candidate.
+
 The console uses the generated TypeScript Platform SDK and keeps the bearer token in memory only.
 The Control Plane URL, tenant, project, selected published Profile, opaque environment/Session/Turn/
 Execution IDs, and event cursor are the only values restored from `sessionStorage`; current state and

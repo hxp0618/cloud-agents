@@ -1,5 +1,7 @@
 # Cloud Agents Admin Web
 
+Delivery follows the [foundation-first plan](../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md). Admin Web accompanies Workspace/Sandbox/customer-node slices; it is neither a standalone page-completion track nor the place to expose user files, terminals, conversations, credentials, or enrollment secrets. Existing Lease-backed Workers are not the future outbound RemoteWorker node fleet. Reuse these operational views as real foundation APIs arrive; do not advertise planned capabilities as implemented.
+
 Independent Vite + React console for Control Plane Admin API operations. It uses the generated Admin SDK for Deployment Targets, a combined Cluster/Host and Lease-backed Worker view, Environment Leases, immutable Environment Profiles, and project Maintenance Operations, and keeps the bearer token in memory.
 
 The interface supports `zh-CN` and `en-US` through its local typed message catalog and browser-native `Intl`. First visit follows the leading browser language (`zh*` selects `zh-CN`; everything else selects `en-US`), the account menu changes language immediately, and the selected locale survives refresh in `cloud-agents-admin-locale`. Invalid locale values fall back to `en-US`.

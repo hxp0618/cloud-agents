@@ -1,11 +1,11 @@
 # Cloud Agents 公共平台计划与追踪入口
 
-- 状态：APPROVED
+- 状态：产品边界/优先级已接受；详细技术拆解待实施验证
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4、A3 与 runner ledger/catalog preflight 固定 implementation/review package 已批准；当前源码 full normal `internal/migration` suite 已通过，full race、所有 immutable/aggregate Gate 与 `Runner.Run`/writer integration 仍 OPEN）；M1/P2–P6 PAUSED
+- 当前实施顺序：BASE-M0～M5 → BASE-READY → APP-M1；阶段状态只在 [06](06-status-tracker.md) 维护
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
-- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)
+- 当前产品决定：[ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md)；其他适用 ADR 从 [06 决策表](06-status-tracker.md) 定位
 
 ## 固定追踪根
 
@@ -15,11 +15,19 @@
 
 ## 一句话目标
 
-`hxp0618/cloud-agents` 成为一个可独立部署的完整公共 Cloud Agents 平台：同一公共仓同时拥有 Portable
-Runtime、Go Control Plane、Worker/Supervisor、公共协议与 SDK、生产数据模型、部署清单和 conformance；
-Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 Cloud Agent 控制面实现。
+`hxp0618/cloud-agents` 先成为可独立使用的长期云工作区、通用 Sandbox 与客户节点接入底座，Admin Web 配套交付；然后承载用户 CloudAgents。复用公共 Go Control Plane、Runtime、SDK、部署与 conformance，Synara/T3 作为后续消费者，不维护公共控制面的私有副本。
 
-## 当前执行边界
+## 当前主线与历史记录的边界
+
+先完成可独立使用的长期 Workspace、通用 Sandbox 和 outbound 客户节点底座，再接用户 CloudAgents。
+Admin Web 与每个 BASE 切片同步提供真实运维能力；不是先做完整管理页面再补基础设施。
+无 Agent 的验收范围见 [05](05-gates-and-acceptance.md)，实施细节见 [04](04-extraction-and-migration.md)。
+本次只整理文档并通过 worktree 合并；未运行底座 PoC、部署或关闭任何 Gate。
+
+## 2026-08 P0/P1 历史执行记录
+
+以下 fixed-ref 记录保留原授权边界和证据，不作为当前代码清单、全局暂停指令或新 BASE 工作顺序。
+后续明确授权按总入口识别；生产数据、部署发布、脏 worktree 删除和正式 Gate 的单独要求不变。
 
 用户已批准 ADR-0006～ADR-0019 与 D-001～D-043；P0 当前由 `G-INVENTORY` R3 和
 `G-BASELINE-P0` R4 关闭。Inventory R3 纠正 66 个 legacy helper/contract target 的公开 ABI 与 authority
@@ -77,7 +85,7 @@ Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 sou
 - 写入生产数据库，或发布 Go module、container image、Release，或执行部署；
 - 恢复真实 Provider E2E。
 
-当前代码现场：
+当时的代码现场（不是当前工作区库存）：
 
 | Surface            | Ref / state                                           | 边界                                  |
 | ------------------ | ----------------------------------------------------- | ------------------------------------- |
@@ -95,27 +103,23 @@ Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 sou
 | [`01-product-scope-and-authority.md`](01-product-scope-and-authority.md)     | 什么必须公共；Synara/T3/Runtime/Control Plane 分别拥有什么    |
 | [`02-target-architecture.md`](02-target-architecture.md)                     | 可独立部署平台的服务、API、状态机、数据和安全拓扑             |
 | [`03-public-repository-and-release.md`](03-public-repository-and-release.md) | 公共仓目录、Go/TS module、制品、部署 profile 和 release train |
-| [`04-extraction-and-migration.md`](04-extraction-and-migration.md)           | 现有 Go CP 如何分类、迁移、切换、回滚和删除重复来源           |
+| [`04-extraction-and-migration.md`](04-extraction-and-migration.md)           | BASE 主线、Admin 配套、旧平台兼容与后续迁移           |
 | [`05-gates-and-acceptance.md`](05-gates-and-acceptance.md)                   | 每阶段 Gate、same-bits、E2E、供应链与 exposure 口径           |
 | [`06-status-tracker.md`](06-status-tracker.md)                               | 决策、阶段状态、open question、DRI 和 evidence 追踪           |
+| [`07-admin-web-requirements-and-design.md`](07-admin-web-requirements-and-design.md) | User/Admin Web 边界、Admin Web 需求、交互与验收       |
 | [`evidence/README.md`](evidence/README.md)                                   | Gate evidence 目录与保存规则                                  |
 | [`templates/gate-closure-record.md`](templates/gate-closure-record.md)       | 统一 closure record 模板                                      |
 
 ## Source of truth 顺序
 
-发生冲突时按以下顺序解释：
-
-1. 已批准的 ADR-0006～ADR-0012；
-2. 本目录的 `01`–`06`；
-3. 总设计中标记为 2026-08-10 Revision 的章节；
-4. 总设计附录中的历史实现证据；
-5. 代码现状。
+发生冲突时遵循[总计划的 Source of truth 规则](../README.md#source-of-truth)，包括批准依据、
+后续明确授权和草案的适用边界。本页不另行维护 ADR 编号范围或解释顺序。
 
 代码现状不能反向修改 authority 或把未完成实现变成既定设计。
 
-## 产品形态
+## 既有消费者模式（底座领域模型见 01/02）
 
-公共平台支持三种明确模式：
+以下三种模式继续保留兼容；底座本身还须支持无 Agent 的 Workspace/Sandbox 使用：
 
 | 模式               | Control Plane authority                   | Turn/Workspace authority | 消费者                            |
 | ------------------ | ----------------------------------------- | ------------------------ | --------------------------------- |
@@ -125,10 +129,10 @@ Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 sou
 
 三种模式共享 Runtime/Provider 实现，但绝不共享或复制同一个 Turn/Workspace 的写入权威。
 
-## 里程碑总览
+## 历史 M1/P0～P6 里程碑摘要
 
-下表只是 [`06-status-tracker.md`](06-status-tracker.md) 的只读摘要；发生差异时以 `06` 为准，不在此表
-独立推进状态。
+下表保留旧里程碑及其 Gate 状态口径，不代表当前对应功能都尚未编写。新 BASE/APP 阶段只在
+[06](06-status-tracker.md) 的当前区块推进；历史 Gate 的关闭仍需要原证据与审批，不在本页独立推进。
 
 | 里程碑      | 目标                                                                | 当前状态    |
 | ----------- | ------------------------------------------------------------------- | ----------- |
@@ -145,9 +149,9 @@ Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 sou
 ## 跟踪规则
 
 - 计划状态的唯一可编辑来源是 [`06-status-tracker.md`](06-status-tracker.md)；本页总览只同步展示；
-- 每个实施项必须有 DRI、固定 ref、输入/输出、Gate、evidence 路径和回滚边界；
+- 既有正式 Gate 实施项保留 DRI、固定 ref、输入/输出、Gate、evidence 路径和回滚边界；BASE/APP 切片按 04/05 记录负责人、范围、检查、证据与恢复边界，不为普通切片另造 Gate；
 - 状态只允许 `DRAFT`、`PROPOSED`、`APPROVED`、`NOT STARTED`、`PAUSED`、`IN PROGRESS`、`BLOCKED`、
   `VERIFIED`、`INVALIDATED`、`RELEASED`、`RETIRED`；
-- `VERIFIED` 必须引用 closure record；`RELEASED` 必须引用 immutable artifact；
+- 正式 Gate 的 `VERIFIED` 必须引用其 closure record；BASE/APP 的 `VERIFIED` 引用满足该阶段退出条件的固定证据，不能自动关闭正式 Gate；`RELEASED` 必须引用 immutable artifact；
 - source、test、commit、push、prerelease、deployment、beta、GA 分开记录；
-- P0 之后的任何阶段仍须满足本目录 Entry/Gate，并由状态追踪显式推进；不得把 P0 批准外推为发布或部署授权。
+- 旧 P0～P6 继续满足其 Entry/Gate；新 BASE/APP 满足 04/05 对应退出条件，并由状态追踪显式推进。任何开发批准均不得外推为发布或部署授权。
