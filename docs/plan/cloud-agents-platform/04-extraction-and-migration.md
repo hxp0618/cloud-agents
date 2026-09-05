@@ -1,4 +1,99 @@
-# 04. Go Control Plane 提取与宿主迁移
+# 04. 底座实施顺序与既有平台迁移
+
+## 0. 当前实施顺序：底座先行
+
+[ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md) 确定底座优先、Admin Web 配套、
+用户 CloudAgents 后续接入。以下是实施拆解方案，不是本次已执行或全部获准执行的声明。
+阶段状态只维护在 [06](06-status-tracker.md)，整体底座就绪条件见 [05](05-gates-and-acceptance.md#0-底座就绪验收-base-ready)。
+
+### 0.1 依赖与配套交付
+
+| 顺序 | 底座切片 | 同阶段 Admin Web 配套 | 退出证据 |
+| --- | --- | --- | --- |
+| BASE-M0 | 领域/API 映射与固定版本执行 PoC | 复用 Target、Operation/Audit、版本和能力事实视图；无数据的能力不建空页面 | 无 Agent 的真实 create → ready → exec/file → stop/delete；重复请求、失败补偿及卷不误删验证 |
+| BASE-M1 | 长期 Workspace/Volume 与持久化生命周期调谐 | Workspace/Sandbox 分离列表；卷归属、保留规则、Operation/恢复状态 | 停止和重建保留代码；HTTP 断开、CP/Controller 重启后无需人工重发即可完成已接受操作 |
+| BASE-M2 | 通用 Exec/PTY/Files、Preview/SSH 与访问隔离 | Port/Grant 元数据、到期/撤销、网络策略执行状态 | 无 Agent 客户端可连接和重连；跨租户/路径穿越/任意跳转被拒绝，网络规则实际生效 |
+| BASE-M3 | 客户节点 RemoteWorker 接入 | 节点注册意图、owner、能力、心跳、Drain/Resume、版本与证书状态 | 仅 outbound/NAT 节点可承载同一 Workspace/Sandbox 流程；断连、重连、过期命令和旧 generation 正确处理 |
+| BASE-M4 | Kubernetes 路径、资源池/容量调度与隔离等级 | Region/Pool/Node、RuntimeProfile、资源配额和调度失败原因 | Docker/Kubernetes/客户节点能力矩阵；容量不足、owner/runtime/arch 不匹配拒绝；强隔离实证 |
+| BASE-M5 | 文件系统快照恢复、独立交付、计量与运维收口 | Snapshot/Restore、用量、失败积压、升级/回滚、恢复状态；配套页面整体回归 | 无 Agent 的完整底座矩阵、备份恢复/升级/故障演练与 Admin 验收；逐项通过 BASE-READY |
+| APP-M1 | 用户 CloudAgents 接入已就绪底座 | 沿用底座运维入口；不加入对话/源码查看 | Codex/Claude 真实 Turn、Approval、历史与 Artifact 在持久 Workspace 上完成，底座回归通过 |
+
+BASE-M0～M5 是当前工作顺序，不改名或重置旧 P0～P6、Portable Runtime M1、ADMIN-M* 的证据。
+先 Docker 单 Region 验证产品语义，再扩展客户节点和 Kubernetes；不把只有 Docker 的结果声称为全部路径完成。
+APP-M1 的新产品功能在 BASE-READY 后推进；已有 Agent 功能继续保留，必要的兼容/安全回归可以随底座进行。
+
+### 0.2 各阶段的最小闭环
+
+**BASE-M0：首先验证执行接缝。**
+
+- 固定当前 source/dirty、既有 API/schema 和 OpenSandbox 候选版本、许可及能力差异；
+  明确 Workspace、Sandbox、RemoteWorker 与旧 Lease/Worker/Profile 的映射，不按名字直接复用语义。
+- 只定义首条链路必需的契约与迁移方案，复用现有生成链；不先生成全部未来资源的空 CRUD。
+- 优先用 OpenSandbox adapter 验证真实 Docker Sandbox、Exec/Files、卷挂载和资源发现；
+  验证不安装 Provider 也可执行，以及幂等重放、部分创建和异常清理。结果决定执行器复用/替换范围。
+- 原 actuator 不删除，原 Lease 不迁移；新 PoC 只接触授权范围内的新测试资源。未通过则修复该接缝，
+  或据实提出替代方案，不以此为由自动重建整套 sandbox engine。
+
+**BASE-M1：先保证数据与操作不会随进程消失。**
+
+- 新 Workspace/Volume 独立持久化；stop/TTL 释放计算、保留卷；删除工作区走独立授权与保留规则。
+- 持久化 Operation/outbox 和 Controller 认领/重试真正接入部署路径；API 快速接受，状态可查询。
+- 验证断开客户端、创建中重启、receipt 丢失、重复命令、失败回收及旧 generation；不依赖人工重发完成。
+- 默认单写卷，测试旧写入者 fencing、同 Workspace 重建、越权挂载拒绝；升级复用卷不冒充任意跨节点迁移。
+- Admin 配套区分 Workspace、Sandbox 与旧 Lease，清楚显示哪些数据会保留；策略值必须与执行值一致。
+
+**BASE-M2：通用访问，而不是 Agent 工具的内部命令。**
+
+- API/SDK/CLI 提供受限 Exec、PTY session、文件读写和端口发布；验证输出/缓冲/文件大小上限、
+  reconnect cursor、路径/symlink 边界与内容访问所有权。
+- 交付可独立运行的 Access Gateway；Preview 默认私有，SSH 短期凭据与固定 Sandbox 路由，
+  expiry/revoke/generation rollover 后拒绝访问，不开放任意代理或客户主机 shell。
+- 网络策略下发到实际执行路径，验证受控 DNS、metadata/宿主机/控制面/其他租户阻断和允许的外部访问。
+- Admin 显示端点、Grant 和策略状态的脱敏元数据，不承载用户 Terminal/Files 内容；CLI/SDK 足以验证底座，
+  不以完整用户 CloudAgents 页面作为本阶段前提。
+
+**BASE-M3：主动连接的客户节点。**
+
+- 实现 enrollment/CSR/mTLS 身份签发、轮换/吊销、节点能力/容量/版本上报、owner 约束和反向命令/访问通道。
+- 至少一台仅允许 outbound 的真实测试节点完成创建、Exec/Files、连接、停止、重建；
+  测试 NAT、断线恢复、幂等 command、deadline、incarnation/generation fencing。
+- 离线停止新调度；重连先 reconcile，不盲目重放旧命令，也不因为离线删除 Workspace 或强挂卷。
+- 客户节点默认只承载其所属租户；记录宿主管理员可读取本机数据的信任边界，不承诺对宿主管理员保密。
+
+**BASE-M4：调度和执行矩阵。**
+
+- 用同一基础 API 完成 Kubernetes 路径；声明每个 backend 支持的存储、访问、runtime 和恢复能力，
+  不支持的组合在 admission 阶段拒绝，不退回另一安全等级。
+- 建立最小 Region/ResourcePool/Node 模型与容量预留：硬过滤 owner、region、runtime、arch、卷可达性、
+  节点健康、配额和 CPU/内存/存储；先用确定性选择，不先做成本预测和自动扩容。
+- 区分共享不可信租户、可信单租户和专用节点；至少验证一个可用的强隔离 runtime 路径及其工具链/网络
+  矩阵后，才能声称具备对应共享不可信租户能力。不能以设置 profile 名称代替实际隔离。
+- 单 Region 多池足以退出；多 Region active-active、跨 Region 卷迁移、Warm Pool 和直接 MicroVM 不在当前必需项。
+
+**BASE-M5：独立底座交付与恢复。**
+
+- Workspace 文件系统快照、manifest、恢复到新卷/新 Sandbox、数据校验和保留清理；Secret 不进入快照。
+  对无后端一致性快照能力的卷使用明确停写/离线快照，不冒充运行中一致性或内存恢复。
+- 全新 Compose/Helm 安装与客户节点 bootstrap 文档；模板、runtime/worker/gateway 制品版本固定，
+  支持声明的 N/N-1 升级、回滚、身份/证书轮换及可执行恢复 runbook。
+- 持久化 CPU/内存分配时长、卷占用和支持的网络用量事实，含长任务 checkpoint、离线对账与可审计修正；
+  不以 Prometheus 或 Provider token usage 作唯一事实源。完整价格、钱包和 invoice 后续实现。
+- 测试 CP/Controller/Gateway/节点故障、备份恢复、限流/背压、容量和有界 soak；记录实际 P50/P95 与
+  RPO/RTO，未经压测/演练不承诺 HTML 中的数字。根据适用风险执行既有安全/供应链检查。
+- 收齐各阶段 Admin API 权限、危险操作确认、Operation/Audit、双语、可访问性和 Daytona 固定视觉验收；
+  不能把历史截图或早期 Provider E2E 当作当前底座完整证明。
+
+### 0.3 执行与完成约束
+
+收到明确实施任务后，从最早未完成且在授权范围内的 BASE 切片推进；每次交付包含契约/后端、必要 SDK/CLI、
+相关 Admin 页面和真实验证，不先铺完整后台页面再补行为。安全独立的准备工作可并行，不能绕过依赖验收。
+单个 UI 视觉问题不阻止安全的后端工作，但对应配套页面和 BASE-READY 不能提前标为完成。
+
+用户批准的产品边界已经记录，不重复要求确认同一边界；实现授权仍以当前任务和已有同范围授权为准。
+需要新环境/凭据、改变数据保留、迁移现有卷或跨越单独批准要求时，只暂停受影响动作并说明需要什么，
+继续可独立完成的在范围内工作。所有生产写入、部署/发布、脏 worktree 删除和正式 Gate 要求保持不变。
+
+下文保留旧提取/cutover 方案供兼容与后续集成使用，不要求为新底座从头重做历史 inventory 或先完成真实 Agent/T3。
 
 ## 1. 迁移原则
 
@@ -54,7 +149,7 @@ Inventory seed（最终以逐文件 manifest 为准）：
 | Retire                    | Provider Host v1、旧 metadata import、被公共 API/SDK 替代的 HTTP surface、cutover 后重复 CP 实现                                                                                                                                           |
 | Greenfield public         | CloudEnvironmentLease/Generation、managed workload controller、volume/endpoint binding、pairing coordinator、lease grants/metering/cleanup                                                                                                 |
 
-## 3. 阶段
+## 3. 旧 P0～P6 阶段定义（历史 Gate/兼容映射，不再是当前实施顺序）
 
 ### P0：Freeze、inventory 与 characterization
 
