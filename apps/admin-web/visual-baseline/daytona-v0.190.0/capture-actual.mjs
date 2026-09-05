@@ -571,6 +571,19 @@ try {
     await verifyTargetFilters(name);
     await verifyModals(name);
     await verifyOverview(name);
+    const prefix = name.startsWith("zh-CN") ? "zh-CN-" : "";
+    const dimensions = name.slice(6);
+    await openTarget("visual-ssh");
+    await screenshot(`${prefix}detail-${dimensions}.png`);
+    await closeSheet();
+    await clickAt(".heading-actions .button.primary");
+    await waitFor(
+      "document.activeElement.matches('[data-sheet-autofocus]')",
+      "create form autofocus",
+    );
+    await screenshot(`${prefix}create-form-${dimensions}.png`);
+    await pressKey("Escape");
+    await waitFor("!document.querySelector('.admin-sheet')", "create Sheet Escape close");
   };
 
   const verifyOverview = async (name) => {
@@ -758,14 +771,17 @@ try {
     assert.equal(await evaluate("document.querySelectorAll('.target-table tbody tr').length"), 1);
     await clickAt(".target-filter-options:popover-open [data-value=unprobed]");
     await closeFilter();
-    await waitFor("document.querySelector('.table-empty') !== null", "empty filtered results");
+    await waitFor(
+      "document.querySelector('#target-empty-title') !== null",
+      "empty filtered results",
+    );
     assert.ok(
-      (await evaluate("document.querySelector('.table-empty').textContent")).includes(
+      (await evaluate("document.querySelector('#target-empty-title').textContent")).includes(
         name.startsWith("zh-CN") ? "没有匹配" : "No matching",
       ),
     );
     await screenshot(`${name}-filter-empty.png`);
-    await clickAt(".target-filters-clear");
+    await clickAt(".empty-state .button.primary");
     await waitFor(
       "document.querySelectorAll('.target-table tbody tr').length === 3",
       "clear target filters",
@@ -878,18 +894,6 @@ try {
   await click(".profile-menu summary");
   await clickAt(".page-heading h1");
   await waitFor("!document.querySelector('.profile-menu').open", "dropdown outside close");
-  await openTarget("visual-ssh");
-  await screenshot("detail-light-desktop.png");
-  await closeSheet();
-  await click(".heading-actions .button.primary");
-  await waitFor("document.querySelector('.resource-form') !== null", "create Sheet");
-  await waitFor(
-    "document.activeElement.matches('[data-sheet-autofocus]')",
-    "create form autofocus",
-  );
-  await screenshot("create-form-light-desktop.png");
-  await pressKey("Escape");
-  await waitFor("document.querySelector('.admin-sheet') === null", "Sheet Escape close");
 
   await click(".sidebar nav button[data-page=releases]");
   await click(".heading-actions .button.primary");
@@ -925,12 +929,6 @@ try {
   await verifyMobileKeyboard();
   await screenshot("navigation-dark-mobile.png");
   await closeNavigationBackdrop();
-  await openTarget("visual-ssh");
-  await screenshot("detail-dark-mobile.png");
-  await closeSheet();
-  await click(".heading-actions .button.primary");
-  await screenshot("create-form-dark-mobile.png");
-  await closeSheet();
   await setTheme("light");
   await screenshot("list-light-mobile.png");
   await verifyCommands("en-US-light-mobile");
@@ -965,12 +963,6 @@ try {
   await setTheme("light");
   await screenshot("zh-CN-list-light-desktop.png");
   await verifyCommands("zh-CN-light-desktop");
-  await openTarget("visual-ssh");
-  await screenshot("zh-CN-detail-light-desktop.png");
-  await closeSheet();
-  await click(".heading-actions .button.primary");
-  await screenshot("zh-CN-create-form-light-desktop.png");
-  await closeSheet();
   await setTheme("dark");
   await screenshot("zh-CN-list-dark-desktop.png");
   await verifyCommands("zh-CN-dark-desktop");
@@ -980,12 +972,6 @@ try {
   await verifyMobileKeyboard();
   await screenshot("zh-CN-navigation-dark-mobile.png");
   await closeNavigationBackdrop();
-  await openTarget("visual-ssh");
-  await screenshot("zh-CN-detail-dark-mobile.png");
-  await closeSheet();
-  await click(".heading-actions .button.primary");
-  await screenshot("zh-CN-create-form-dark-mobile.png");
-  await closeSheet();
   await setTheme("light");
   await screenshot("zh-CN-list-light-mobile.png");
   await verifyCommands("zh-CN-light-mobile");
@@ -1034,6 +1020,27 @@ try {
   assert.ok(deniedRequests.length > 0);
   assert.ok(deniedRequests.every((failure) => failure.status === 403));
   assert.deepEqual(mutationRequests, [], "visual checks must not submit lifecycle mutations");
+  for (const prefix of ["", "zh-CN-"]) {
+    for (const theme of ["light", "dark"]) {
+      for (const viewport of ["desktop", "mobile"]) {
+        for (const state of ["list", "detail", "create-form"]) {
+          const filename = `${prefix}${state}-${theme}-${viewport}.png`;
+          assert.equal(
+            layoutChecks.filter(
+              (check) =>
+                check.filename === filename &&
+                check.locale === (prefix ? "zh-CN" : "en-US") &&
+                check.theme === theme &&
+                check.viewport[0] === (viewport === "desktop" ? 1440 : 390) &&
+                check.viewport[1] === (viewport === "desktop" ? 900 : 844),
+            ).length,
+            1,
+            `Exactly one matching capture required for ${filename}`,
+          );
+        }
+      }
+    }
+  }
 
   const evidence = `${JSON.stringify(
     {
