@@ -109,8 +109,12 @@ CREATE POLICY workspace_volumes_owner ON cloud_agents.workspace_volumes TO cloud
 CREATE POLICY sandbox_sessions_runtime ON cloud_agents.sandbox_sessions TO cloud_agents_runtime
     USING (tenant_id = cloud_agents.require_tenant_id()) WITH CHECK (tenant_id = cloud_agents.require_tenant_id());
 CREATE POLICY sandbox_sessions_owner ON cloud_agents.sandbox_sessions TO cloud_agents_migration_owner USING (true) WITH CHECK (true);
-REVOKE ALL ON cloud_agents.workspaces, cloud_agents.workspace_volumes, cloud_agents.sandbox_sessions FROM PUBLIC;
-GRANT SELECT ON cloud_agents.workspaces, cloud_agents.workspace_volumes, cloud_agents.sandbox_sessions TO cloud_agents_runtime;
+REVOKE ALL ON TABLE cloud_agents.workspaces FROM PUBLIC;
+REVOKE ALL ON TABLE cloud_agents.workspace_volumes FROM PUBLIC;
+REVOKE ALL ON TABLE cloud_agents.sandbox_sessions FROM PUBLIC;
+GRANT SELECT ON TABLE cloud_agents.workspaces TO cloud_agents_runtime;
+GRANT SELECT ON TABLE cloud_agents.workspace_volumes TO cloud_agents_runtime;
+GRANT SELECT ON TABLE cloud_agents.sandbox_sessions TO cloud_agents_runtime;
 
 -- Trusted resolved-intent writer, not a public API: future HTTP must authorize and resolve a published RuntimeProfile.
 -- No network calls or physical side effects occur inside this transaction.

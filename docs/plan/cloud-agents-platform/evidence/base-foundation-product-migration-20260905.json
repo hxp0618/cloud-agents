@@ -1,0 +1,34 @@
+{
+  "sourceBase": "2f4e79641c9d6fe3cc4bea7e89dc1af48da78b75",
+  "branch": "codex/cloud-agents-platform-p0",
+  "backend": "orbstack",
+  "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+  "architecture": "aarch64",
+  "schemaHead": "000053",
+  "migrationCount": 53,
+  "schemaBundleDigest": "sha256:bd9a223aef3c0c25b305251f72f7d230039f408ac46a99a099c5bc5b9fd93605",
+  "manifestDigest": "sha256:31ea9f6e0d8a8313c375f4581b68f83a3fbf9a62a28aad46d6a2a6ea827fc795",
+  "migrationSQLDigest": "sha256:26d8176b0e2931530794a9629768e745aa12e994bf54f493eb82902b2e7a4d8c",
+  "catalogDigest": "sha256:d687bf00b8017bff5bf3ce11391bd3c81fd46aa457764192ed9e130d104fd359",
+  "upgrade": {
+    "from": "000052",
+    "to": "000053",
+    "applied": 1,
+    "ledgerRows": 53,
+    "ledgerBundleDigests": 2
+  },
+  "fresh": {
+    "schema_head": "000053",
+    "applied": 53,
+    "no_op": false,
+    "ledgerBundleDigests": 1
+  },
+  "replay": {
+    "schema_head": "000053",
+    "applied": 0,
+    "no_op": true
+  },
+  "installedRelations": ["workspaces", "workspace_volumes", "sandbox_sessions"],
+  "cleanup": "owned disposable PostgreSQL container and anonymous volume removed",
+  "boundary": "installer validation only; no application API, Controller, physical runtime or Admin acceptance"
+}

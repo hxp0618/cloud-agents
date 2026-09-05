@@ -3,6 +3,9 @@ package localmigration
 // productRunnerBindingSelector is the checked-in independent-product schema
 // successor. It is separate from the frozen D-053 localdev review binding.
 func productRunnerBindingSelector(version string) generatedRunnerBindingSelector {
+	if version == "000053" {
+		return productFoundationRunnerBinding
+	}
 	if version == "000052" {
 		return generatedRunnerBindingSelector{
 			selectorID: "product-000052", schemaHead: "000052",

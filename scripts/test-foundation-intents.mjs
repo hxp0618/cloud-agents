@@ -44,6 +44,19 @@ const rejects = (query, user, expected) => {
     (error) => String(error.stderr).includes(expected),
   );
 };
+const waitForPostgres = async (failure) => {
+  for (let n = 0; ; n++) {
+    try {
+      assert.equal(sql("SELECT 1"), "1");
+      await delay(100);
+      assert.equal(sql("SELECT 1"), "1");
+      return;
+    } catch {
+      if (n === 50) throw new Error(failure);
+      await delay(100);
+    }
+  }
+};
 let started = false;
 try {
   docker("image", "inspect", "postgres:17.6-bookworm");
@@ -62,15 +75,7 @@ try {
     "postgres:17.6-bookworm",
   );
   started = true;
-  for (let n = 0; ; n++) {
-    try {
-      docker("exec", name, "pg_isready", "-U", "postgres");
-      break;
-    } catch {
-      if (n === 50) throw new Error("PostgreSQL did not start");
-      await delay(100);
-    }
-  }
+  await waitForPostgres("PostgreSQL did not start");
   sql(readFileSync("services/control-plane/migrations/bootstrap/roles.sql", "utf8"));
   sql(
     "GRANT CREATE ON DATABASE postgres TO cloud_agents_migration_owner; CREATE ROLE foundation_runtime LOGIN INHERIT; GRANT cloud_agents_runtime TO foundation_runtime;",
@@ -171,15 +176,7 @@ try {
   );
   // Process loss/restart does not lose the accepted intent; no client resubmission.
   docker("restart", name);
-  for (let n = 0; ; n++) {
-    try {
-      docker("exec", name, "pg_isready", "-U", "postgres");
-      break;
-    } catch {
-      if (n === 50) throw new Error("PostgreSQL did not restart");
-      await delay(100);
-    }
-  }
+  await waitForPostgres("PostgreSQL did not restart");
   assert.equal(
     runtime("SELECT state FROM cloud_agents.platform_operations;").split("\n").at(-1),
     "pending",

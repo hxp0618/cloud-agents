@@ -61,9 +61,9 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
         {
           migrationId: "000039",
           statementIndex,
-        targetIdentity: "table:unquoted:cloud_agents/unquoted:deployment_target_activity",
-      },
-    ] as const,
+          targetIdentity: "table:unquoted:cloud_agents/unquoted:deployment_target_activity",
+        },
+      ] as const,
   ),
   [
     "sha256:aa036b711ccc543617c09fa52000d27a9613a2606236f40d647aeee1af2e0bbd",
@@ -343,6 +343,22 @@ export function classifyMigrationStatement(
     }
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
       if (
+        migrationId === "000053" &&
+        statement.index === 9 &&
+        statement.sha256 ===
+          "sha256:a8a54b811a2fe972cab8e4e340f2dbe5a66ef893c23b1bb4d08a02ed06897219" &&
+        tokens[3] === "SANDBOX_SESSIONS_SINGLE_WRITER" &&
+        tokens[4] === "ON"
+      ) {
+        requireCloudAgentsQualified(tokens, 5);
+        return classification(
+          "CREATE",
+          "INDEX",
+          qualifiedDerivedIdentity("index", tokens, 5, tokens[3]),
+          null,
+        );
+      }
+      if (
         migrationId === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.migrationId &&
         statement.index === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.statementIndex &&
         statement.sha256 === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.sha256 &&
@@ -404,6 +420,7 @@ export function classifyMigrationStatement(
         "000023",
         "000028",
         "000036",
+        "000053",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -545,6 +562,16 @@ export function classifyMigrationStatement(
           "000036",
           [
             "function:unquoted:cloud_agents/unquoted:register_deployment_target_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000053",
+          [
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
           ],
         ],
       ]).get(migrationId);

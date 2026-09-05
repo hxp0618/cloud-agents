@@ -11,8 +11,9 @@
 - 候选缺口已实证：相同创建输入产生两个 Sandbox；不存在的入口程序初始被接受为 Running，随后变为 Failed/exit 127。不能用创建响应替代 CP 幂等、Workspace 单写和就绪判断。当前仅技术 PoC，不是产品后端或 BASE-M0 联合验收。
 - Go 运行时回执接缝已新增：`internal/opensandbox` 按完整归属/generation/摘要发现已有物理对象，重复或冲突回执 fail closed，清理前复核回执；标准 HTTP 限制重定向、响应大小和错误内容。固定 Docker 实测 14 项含 Go 发现、重复拒绝、旧 generation 拒绝及清理重放，卷/Files 摘要保留；见 [Go 接缝证据](evidence/base-m0-go-receipts-20260905.md)。该包目前由真实 PoC 驱动，未接公共 API/Controller，不能证明 CP 自动恢复或 Admin 生命周期已交付。
 - 接入前修复公共 ID 兼容缺口：128 字符/含 `~` 的合法 Identifier 采用 v2 双半 SHA-256 标签，发现与清理仍核验完整归属，不缩短公共契约。真实候选 14 项通过，见 [ID 回执兼容证据](evidence/base-m0-public-id-receipts-20260905.md)。未接通产品持久化链；新编码不承担旧 PoC 对象迁移。
-- 首条持久化内核已落地：新 foundation profile 生成 Go/SQL 身份，000053 用独立 Workspace/Volume/Sandbox 表与既有 Operation/outbox/finalizer/Audit 原子接受意图。PostgreSQL 17.6 实测并发重放、冲突回滚、RLS、重启持久化和独占认领；Go 绑定完整解析后摘要。见 [内核证据与未覆盖项](evidence/base-foundation-intents-20260905.md)。SQL/数据库 fixture 不代表产品链路完成；000053 尚未接产品 migration manifest，HTTP/SDK/Controller/Admin 新路径仍未接通。
-- 下一项：接通首条链路的 RuntimeProfile 解析、公共生成契约及带权限的 Go store/API，补齐 000053 产品迁移包，再把 Go 回执接缝放入 durable claim 保护的 Controller 路径与 Admin 元数据闭环。旧 Project profile 的副作用限制未变；新意图目前只接受可信服务端解析输入，不能直接暴露给用户。不使用查找后直接 POST 或进程内锁冒充跨进程幂等。真实创建/adopt、就绪、补偿、物理 writer fencing 与 CP/Controller 自动恢复仍待完成。未迁移长期 Workspace/旧卷、接入客户节点或部署生产。
+- 首条持久化内核已落地：新 foundation profile 生成 Go/SQL 身份，000053 用独立 Workspace/Volume/Sandbox 表与既有 Operation/outbox/finalizer/Audit 原子接受意图。PostgreSQL 17.6 实测并发重放、冲突回滚、RLS、重启持久化和独占认领；Go 绑定完整解析后摘要。见 [内核证据与未覆盖项](evidence/base-foundation-intents-20260905.md)。SQL/数据库 fixture 不代表产品链路完成。
+- 000053 已纳入版本化产品安装链：真实 runner 从 product-000052 精确升级一条到 000053，当前产品 CLI 全新安装 53 条并在重放时 no-op；两条路径均核对账本和新表。生成器、DDL 白名单、runner/readiness、release tar 与 migrate Dockerfile 使用当前 000053，旧 000052 包保留。见 [产品迁移证据](evidence/base-foundation-product-migration-20260905.md)。未构建/发布镜像或部署；本机 `uv` 与仓库 pin 不符，因此不声称 umbrella contract suite 通过。
+- 下一项：接通首条链路的 RuntimeProfile 解析、公共生成契约及带权限的 Go store/API，再把 Go 回执接缝放入 durable claim 保护的 Controller 路径与 Admin 元数据闭环。旧 Project profile 的副作用限制未变；新意图目前只接受可信服务端解析输入，不能直接暴露给用户。不使用查找后直接 POST 或进程内锁冒充跨进程幂等。真实创建/adopt、就绪、补偿、物理 writer fencing 与 CP/Controller 自动恢复仍待完成。未迁移长期 Workspace/旧卷、接入客户节点或部署生产。
 - 本次未改既有 Agent/Lease/Profile/User Web 行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
