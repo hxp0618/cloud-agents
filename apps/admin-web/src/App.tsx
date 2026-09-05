@@ -56,6 +56,7 @@ import {
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
 import { AdminSidebar } from "./AdminSidebar";
+import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } from "./navigation";
 import {
   normalizeLocale,
   useI18n,
@@ -65,56 +66,12 @@ import {
 } from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type Page =
-  | "overview"
-  | "targets"
-  | "workers"
-  | "releases"
-  | "profiles"
-  | "storage"
-  | "network"
-  | "quotas"
-  | "leases"
-  | "maintenance";
 type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
-
-const navigationIconPaths: Record<Page | "sidebar", string> = {
-  overview: "M3 13h4l3-8 4 14 3-8h4",
-  targets: "M3 3h18v7H3zM3 14h18v7H3zM7 6h.01M7 17h.01",
-  leases: "M12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
-  workers: "M7 7h10v10H7zM10 1v6M14 1v6M10 17v6M14 17v6M1 10h6M1 14h6M17 10h6M17 14h6",
-  releases: "m3 7 9-4 9 4-9 4zM3 12l9 4 9-4M3 17l9 4 9-4",
-  profiles: "M4 3h16v18H4zM8 7h8M8 12h8M8 17h4",
-  storage: "M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01",
-  network: "M9 3h6v6H9zM2 15h6v6H2zM16 15h6v6h-6zM12 9v3M5 15v-3h14v3",
-  quotas: "M3 20V4M3 20h18M7 16v-4M12 16V8M17 16V5",
-  maintenance: "M20 11a8 8 0 1 0-2 7M20 4v7h-7",
-  sidebar: "M3 3h18v18H3zM9 3v18",
-};
-
-function NavigationIcon({ name }: { name: Page | "sidebar" }) {
-  return (
-    <svg
-      width={name === "sidebar" ? 20 : 16}
-      height={name === "sidebar" ? 20 : 16}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d={navigationIconPaths[name]} />
-    </svg>
-  );
-}
 
 const targetEndpointPlaceholder: Readonly<Record<TargetKind, string>> = Object.freeze({
   docker: "https://docker.example.test:2376",
@@ -450,6 +407,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
   const [connection, setConnection] = useState(initialConnection);
   const [token, setToken] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
@@ -729,7 +687,22 @@ export function App() {
         profileMenuRef.current.querySelector<HTMLElement>("summary")?.focus();
         return;
       }
-      if (event.key.toLocaleLowerCase() !== "b" || (!event.metaKey && !event.ctrlKey)) return;
+      if (
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        !document.querySelector(".app-shell")
+      )
+        return;
+      if (event.key.toLowerCase() === "k") {
+        if (
+          document.querySelector("dialog[open]:not(.mobile-nav-dialog):not(.navigation-commands)")
+        )
+          return;
+        event.preventDefault();
+        setCommandsOpen((open) => !open);
+        return;
+      }
+      if (event.key.toLowerCase() !== "b") return;
       if (document.querySelector("dialog[open]:not(.mobile-nav-dialog)")) return;
       event.preventDefault();
       if (window.matchMedia("(max-width: 767px)").matches) {
@@ -808,6 +781,7 @@ export function App() {
   }
 
   function navigate(nextPage: Page) {
+    setCommandsOpen(false);
     setPage(nextPage);
     setQuery("");
     setMobileNavOpen(false);
@@ -824,6 +798,7 @@ export function App() {
   }
 
   function disconnect() {
+    setCommandsOpen(false);
     requestRef.current?.abort();
     requestRef.current = null;
     setClient(null);
@@ -1879,6 +1854,13 @@ export function App() {
 
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
+      {commandsOpen ? (
+        <NavigationCommands
+          page={page}
+          onNavigate={navigate}
+          onClose={() => setCommandsOpen(false)}
+        />
+      ) : null}
       <AdminSidebar open={mobileNavOpen} onOpenChange={setMobileNavOpen} label={t("nav.resources")}>
         <div className="brand-lockup sidebar-brand">
           <span className="brand-mark" aria-hidden="true">
@@ -1899,103 +1881,22 @@ export function App() {
             <NavigationIcon name="sidebar" />
           </button>
         </div>
-        <nav aria-label={t("nav.resources")}>
-          <button
-            className={page === "overview" ? "active" : ""}
-            aria-current={page === "overview" ? "page" : undefined}
-            onClick={() => navigate("overview")}
-            title={t("nav.overview")}
-          >
-            <NavigationIcon name="overview" />{" "}
-            <span className="nav-label">{t("nav.overview")}</span>
-          </button>
-          <button
-            className={page === "targets" ? "active" : ""}
-            aria-current={page === "targets" ? "page" : undefined}
-            onClick={() => navigate("targets")}
-            title={t("nav.targets")}
-          >
-            <NavigationIcon name="targets" /> <span className="nav-label">{t("nav.targets")}</span>
-            <b>{number(targets.length)}</b>
-          </button>
-          <button
-            className={page === "leases" ? "active" : ""}
-            aria-current={page === "leases" ? "page" : undefined}
-            onClick={() => navigate("leases")}
-            title={t("nav.leases")}
-          >
-            <NavigationIcon name="leases" /> <span className="nav-label">{t("nav.leases")}</span>
-            <b>{number(leases.length)}</b>
-          </button>
-          <button
-            className={page === "workers" ? "active" : ""}
-            aria-current={page === "workers" ? "page" : undefined}
-            onClick={() => navigate("workers")}
-            title={t("nav.workers")}
-          >
-            <NavigationIcon name="workers" /> <span className="nav-label">{t("nav.workers")}</span>
-            <b>{number(workers.length)}</b>
-          </button>
-          <button
-            className={page === "releases" ? "active" : ""}
-            aria-current={page === "releases" ? "page" : undefined}
-            onClick={() => navigate("releases")}
-            title={t("nav.releases")}
-          >
-            <NavigationIcon name="releases" />{" "}
-            <span className="nav-label">{t("nav.releases")}</span>
-            <b>{number(releases.length)}</b>
-          </button>
-          <button
-            className={page === "profiles" ? "active" : ""}
-            aria-current={page === "profiles" ? "page" : undefined}
-            onClick={() => navigate("profiles")}
-            title={t("nav.profiles")}
-          >
-            <NavigationIcon name="profiles" />{" "}
-            <span className="nav-label">{t("nav.profiles")}</span>
-            <b>{number(profiles.length)}</b>
-          </button>
-          <button
-            className={page === "storage" ? "active" : ""}
-            aria-current={page === "storage" ? "page" : undefined}
-            onClick={() => navigate("storage")}
-            title={t("nav.storagePolicies")}
-          >
-            <NavigationIcon name="storage" />{" "}
-            <span className="nav-label">{t("nav.storagePolicies")}</span>
-            <b>{number(storagePolicies.length)}</b>
-          </button>
-          <button
-            className={page === "network" ? "active" : ""}
-            aria-current={page === "network" ? "page" : undefined}
-            onClick={() => navigate("network")}
-            title={t("nav.networkPolicies")}
-          >
-            <NavigationIcon name="network" />{" "}
-            <span className="nav-label">{t("nav.networkPolicies")}</span>
-            <b>{number(networkPolicies.length)}</b>
-          </button>
-          <button
-            className={page === "quotas" ? "active" : ""}
-            aria-current={page === "quotas" ? "page" : undefined}
-            onClick={() => navigate("quotas")}
-            title={t("nav.quotas")}
-          >
-            <NavigationIcon name="quotas" /> <span className="nav-label">{t("nav.quotas")}</span>
-            <b>{number(leaseQuota === undefined ? 0 : 1)}</b>
-          </button>
-          <button
-            className={page === "maintenance" ? "active" : ""}
-            aria-current={page === "maintenance" ? "page" : undefined}
-            onClick={() => navigate("maintenance")}
-            title={t("nav.maintenance")}
-          >
-            <NavigationIcon name="maintenance" />{" "}
-            <span className="nav-label">{t("nav.maintenance")}</span>
-            <b>{number(maintenanceOperations.length)}</b>
-          </button>
-        </nav>
+        <ResourceNavigation
+          page={page}
+          onNavigate={navigate}
+          onSearch={() => setCommandsOpen(true)}
+          counts={{
+            targets: targets.length,
+            leases: leases.length,
+            workers: workers.length,
+            releases: releases.length,
+            profiles: profiles.length,
+            storage: storagePolicies.length,
+            network: networkPolicies.length,
+            quotas: leaseQuota === undefined ? 0 : 1,
+            maintenance: maintenanceOperations.length,
+          }}
+        />
         <div className="sidebar-boundary">
           <small>{t("boundary.title")}</small>
           <p>{t("boundary.description")}</p>

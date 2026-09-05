@@ -68,6 +68,7 @@ try {
   const httpFailures = [];
   const layoutChecks = [];
   const formChecks = [];
+  const commandChecks = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
@@ -139,12 +140,24 @@ try {
     });
   const pressKey = async (key, code = key, modifiers = 0) => {
     const virtualKeyCode =
-      key === "Escape" ? 27 : key === "Tab" ? 9 : key.toUpperCase().charCodeAt(0);
+      { Escape: 27, Tab: 9, Enter: 13, ArrowUp: 38, ArrowDown: 40 }[key] ??
+      key.toUpperCase().charCodeAt(0);
     const params = { key, code, modifiers, windowsVirtualKeyCode: virtualKeyCode };
     await command("Input.dispatchKeyEvent", { type: "rawKeyDown", ...params });
     await command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
   };
   const clickAt = async (selector) => {
+    await waitFor(
+      `(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!element || element.matches(":disabled")) return false;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return false;
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return hit === element || element.contains(hit);
+    })()`,
+      `pointer target ${selector}`,
+    );
     const point = JSON.parse(
       await evaluate(
         `(() => { const rect = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return JSON.stringify(rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null); })()`,
@@ -230,8 +243,25 @@ try {
     }
   };
   const navigateTargets = async () => {
-    await click(".sidebar nav button:nth-child(2)");
-    await waitFor("document.querySelectorAll('tbody tr').length === 3", "three live targets");
+    await waitFor(
+      "innerWidth < 768 ? document.querySelector('.mobile-nav-dialog') !== null : document.querySelector('.mobile-nav-dialog') === null",
+      "responsive navigation mounted",
+    );
+    if (await evaluate("innerWidth < 768 && !document.querySelector('.mobile-nav-dialog')?.open")) {
+      await clickAt(".mobile-nav-trigger");
+      await waitFor(
+        "document.querySelector('.mobile-nav-dialog')?.open",
+        "navigation for target selection",
+      );
+    }
+    await evaluate(
+      "document.querySelector('.sidebar nav button[data-page=targets]').scrollIntoView({ block: 'nearest' })",
+    );
+    await clickAt(".sidebar nav button[data-page=targets]");
+    await waitFor(
+      "document.querySelector('.sidebar [data-page=targets]').getAttribute('aria-current') === 'page' && document.querySelectorAll('tbody tr').length === 3",
+      "three live targets",
+    );
   };
   const openTarget = async (name) => {
     const opened = await evaluate(
@@ -308,6 +338,88 @@ try {
     await waitFor("document.querySelector('.mobile-nav-dialog').open", "mobile sidebar shortcut");
   };
 
+  const verifyCommands = async (name) => {
+    await evaluate("document.querySelector('.heading-actions button').focus()");
+    await pressKey("k", "KeyK", 4);
+    await waitFor(
+      "document.querySelector('.navigation-commands')?.matches(':modal')",
+      "command modal",
+    );
+    await waitFor(
+      "document.activeElement === document.querySelector('.navigation-commands input')",
+      "command input focus",
+    );
+    await waitFor(
+      "document.querySelector('.command-surface').getAnimations().every(animation => animation.playState === 'finished')",
+      "command entrance settled",
+    );
+    const geometry = await evaluate(`(() => {
+      const dialog = document.querySelector(".navigation-commands");
+      return { width: dialog.getBoundingClientRect().width, inputHeight: dialog.querySelector("input").getBoundingClientRect().height, fontSize: getComputedStyle(dialog.querySelector("input")).fontSize, count: dialog.querySelectorAll("[role=option]").length, viewportWidth: innerWidth };
+    })()`);
+    assert.equal(geometry.width, geometry.viewportWidth < 768 ? 358 : 576);
+    assert.equal(geometry.inputHeight, 48);
+    assert.equal(geometry.fontSize, "14px");
+    assert.equal(geometry.count, 9);
+    assert.equal(await evaluate("document.querySelector('#command-targets') === null"), true);
+    await screenshot(`commands-${name}.png`);
+    await pressKey("ArrowUp");
+    await waitFor(
+      "document.querySelector('.navigation-commands input').getAttribute('aria-activedescendant') === 'command-maintenance'",
+      "command arrow wrap",
+    );
+    await pressKey("Escape");
+    await waitFor("!document.querySelector('.navigation-commands')", "command Escape close");
+    assert.equal(
+      await evaluate(
+        "document.activeElement === document.querySelector('.heading-actions button')",
+      ),
+      true,
+    );
+    await pressKey("k", "KeyK", 4);
+    await waitFor(
+      "document.querySelector('.navigation-commands')?.matches(':modal')",
+      "command reopen",
+    );
+    const search = async (value) => {
+      await evaluate(`(() => {
+        const input = document.querySelector(".navigation-commands input");
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(value)});
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      })()`);
+    };
+    await search("no-such-navigation-command");
+    await waitFor(
+      "document.querySelectorAll('.navigation-commands [role=option]').length === 0",
+      "empty commands",
+    );
+    await pressKey("Enter");
+    assert.equal(
+      await evaluate("document.querySelector('.navigation-commands').matches(':modal')"),
+      true,
+    );
+    await screenshot(`commands-empty-${name}.png`);
+    await search(name.startsWith("zh-CN") ? "维护操作" : "Maintenance Operations");
+    await waitFor(
+      "document.querySelectorAll('.navigation-commands [role=option]').length === 1",
+      "filtered command",
+    );
+    await pressKey("Enter");
+    await waitFor(
+      "!document.querySelector('.navigation-commands') && document.querySelector('.sidebar [data-page=maintenance]').getAttribute('aria-current') === 'page'",
+      "command route selection",
+    );
+    commandChecks.push({
+      name,
+      ...geometry,
+      arrowWrap: true,
+      escapeFocusRestore: true,
+      emptyEnterNoop: true,
+      realRouteSelection: true,
+    });
+    await navigateTargets();
+  };
+
   await command("Page.enable");
   await command("Network.enable");
   await command("Runtime.enable");
@@ -360,23 +472,24 @@ try {
   assert.equal(shortShell.contentScroll, true);
   assert.equal(shortShell.documentOverflow, false);
   await evaluate(
-    "document.querySelector('.sidebar nav button:last-child').scrollIntoView({ block: 'nearest' })",
+    "document.querySelector('.sidebar nav button[data-page=maintenance]').scrollIntoView({ block: 'nearest' })",
   );
-  await clickAt(".sidebar nav button:last-child");
+  await clickAt(".sidebar nav button[data-page=maintenance]");
   await waitFor(
-    "document.querySelector('.sidebar nav button:last-child').classList.contains('active')",
+    "document.querySelector('.sidebar nav button[data-page=maintenance]').classList.contains('active')",
     "short-window final navigation",
   );
   await screenshot("navigation-light-short-desktop.png");
   await evaluate(
-    "document.querySelector('.sidebar nav button:nth-child(2)').scrollIntoView({ block: 'nearest' })",
+    "document.querySelector('.sidebar nav button[data-page=targets]').scrollIntoView({ block: 'nearest' })",
   );
-  await clickAt(".sidebar nav button:nth-child(2)");
+  await clickAt(".sidebar nav button[data-page=targets]");
   await waitFor("document.querySelectorAll('tbody tr').length === 3", "short-window targets");
   await setViewport(1440, 900);
   await waitFor("innerHeight === 900", "desktop viewport restore");
   await evaluate("document.querySelector('.content').scrollTop = 0");
   await screenshot("list-light-desktop.png");
+  await verifyCommands("en-US-light-desktop");
   await pressKey("b", "KeyB", 4);
   await waitFor(
     "document.querySelector('.app-shell').classList.contains('sidebar-collapsed')",
@@ -415,7 +528,7 @@ try {
   await pressKey("Escape");
   await waitFor("document.querySelector('.admin-sheet') === null", "Sheet Escape close");
 
-  await click(".sidebar nav button:nth-child(5)");
+  await click(".sidebar nav button[data-page=releases]");
   await click(".heading-actions .button.primary");
   await waitFor(
     "document.querySelector('#register-release-title') !== null",
@@ -437,6 +550,7 @@ try {
 
   await setTheme("dark");
   await screenshot("list-dark-desktop.png");
+  await verifyCommands("en-US-dark-desktop");
   await pressKey("b", "KeyB", 4);
   await waitFor(
     "document.querySelector('.app-shell').classList.contains('sidebar-collapsed')",
@@ -444,6 +558,7 @@ try {
   );
   await setViewport(390, 844);
   await screenshot("list-dark-mobile.png");
+  await verifyCommands("en-US-dark-mobile");
   await verifyMobileKeyboard();
   await screenshot("navigation-dark-mobile.png");
   await closeNavigationBackdrop();
@@ -455,6 +570,7 @@ try {
   await closeSheet();
   await setTheme("light");
   await screenshot("list-light-mobile.png");
+  await verifyCommands("en-US-light-mobile");
   await verifyMobileKeyboard();
   assert.equal((await shellMetrics()).sidebar.width, 288);
   await screenshot("navigation-light-mobile.png");
@@ -485,6 +601,7 @@ try {
 
   await setTheme("light");
   await screenshot("zh-CN-list-light-desktop.png");
+  await verifyCommands("zh-CN-light-desktop");
   await openTarget("visual-ssh");
   await screenshot("zh-CN-detail-light-desktop.png");
   await closeSheet();
@@ -493,8 +610,10 @@ try {
   await closeSheet();
   await setTheme("dark");
   await screenshot("zh-CN-list-dark-desktop.png");
+  await verifyCommands("zh-CN-dark-desktop");
   await setViewport(390, 844);
   await screenshot("zh-CN-list-dark-mobile.png");
+  await verifyCommands("zh-CN-dark-mobile");
   await verifyMobileKeyboard();
   await screenshot("zh-CN-navigation-dark-mobile.png");
   await closeNavigationBackdrop();
@@ -506,6 +625,7 @@ try {
   await closeSheet();
   await setTheme("light");
   await screenshot("zh-CN-list-light-mobile.png");
+  await verifyCommands("zh-CN-light-mobile");
   await verifyMobileKeyboard();
   await screenshot("zh-CN-navigation-light-mobile.png");
   await closeNavigationBackdrop();
@@ -572,6 +692,7 @@ try {
       },
       layoutChecks,
       formChecks,
+      commandChecks,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {
         sidebarShortcut: true,
