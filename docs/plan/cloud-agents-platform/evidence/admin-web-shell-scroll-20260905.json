@@ -1,0 +1,542 @@
+{
+  "capturedAt": "2026-09-05T01:15:54.832Z",
+  "sourceBase": "04eef84b58009e910f564eb19209a7ecbd4d7ccc",
+  "referenceCommit": "01c502bb1f1ff8f2885d0cd490e043736083dca8",
+  "targetKinds": [
+    "docker",
+    "kubernetes",
+    "ssh"
+  ],
+  "targetState": "unprobed",
+  "requestOrigins": [
+    "http://127.0.0.1:4174"
+  ],
+  "locale": {
+    "immediateChineseTitle": "部署目标",
+    "persistedChinese": {
+      "locale": "zh-CN",
+      "saved": "zh-CN",
+      "title": "运维 Cloud Agents 基础设施",
+      "token": ""
+    },
+    "invalidFallback": {
+      "locale": "en-US",
+      "saved": "en-US",
+      "title": "Operate Cloud Agents infrastructure."
+    },
+    "connectedChinese": "zh-CN",
+    "savedChinese": "zh-CN",
+    "messageKeyVisible": false
+  },
+  "bearerPersisted": false,
+  "shellChecks": {
+    "desktopShell": {
+      "header": {
+        "width": 1184,
+        "height": 63,
+        "y": 0
+      },
+      "sidebar": {
+        "width": 256,
+        "height": 900,
+        "y": 0
+      },
+      "content": {
+        "width": 1184,
+        "height": 837,
+        "y": 63
+      },
+      "navScroll": false,
+      "contentScroll": false,
+      "documentOverflow": false,
+      "icons": [
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        }
+      ]
+    },
+    "shortShell": {
+      "header": {
+        "width": 1184,
+        "height": 63,
+        "y": 0
+      },
+      "sidebar": {
+        "width": 256,
+        "height": 360,
+        "y": 0
+      },
+      "content": {
+        "width": 1184,
+        "height": 297,
+        "y": 63
+      },
+      "navScroll": true,
+      "contentScroll": true,
+      "documentOverflow": false,
+      "icons": [
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        },
+        {
+          "width": 16,
+          "height": 16,
+          "stroke": "1.5"
+        }
+      ]
+    },
+    "shortWindowFinalNavigation": true
+  },
+  "layoutChecks": [
+    {
+      "filename": "navigation-light-short-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        1440,
+        360
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "list-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "list-light-desktop-collapsed.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "detail-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "create-form-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "list-dark-desktop.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "list-dark-mobile.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "detail-dark-mobile.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "create-form-dark-mobile.png",
+      "locale": "en-US",
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "list-light-mobile.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "navigation-light-mobile.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-light-desktop.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-detail-light-desktop.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-create-form-light-desktop.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-dark-desktop.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-dark-mobile.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-detail-dark-mobile.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-create-form-dark-mobile.png",
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-list-light-mobile.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "zh-CN-navigation-light-mobile.png",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": [
+        390,
+        844
+      ],
+      "documentWidth": [
+        390,
+        390
+      ],
+      "overflow": false
+    },
+    {
+      "filename": "permission-denied-light-desktop.png",
+      "locale": "en-US",
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "documentWidth": [
+        1440,
+        1440
+      ],
+      "overflow": false
+    }
+  ],
+  "interactions": {
+    "sidebarShortcut": true,
+    "dropdownEscapeClose": true,
+    "dropdownOutsideClose": true,
+    "sheetEscapeClose": true,
+    "createFormAutofocus": true,
+    "mobileNavigationOpenClose": true,
+    "localeImmediateSwitch": true,
+    "localeReloadRestore": true,
+    "invalidLocaleFallback": true
+  },
+  "adminHTTPFailures": [
+    {
+      "phase": "admin",
+      "status": 404,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-581bcc4efdcc3e6718f19255ae9b331c/lease-quota"
+    },
+    {
+      "phase": "admin",
+      "status": 404,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-581bcc4efdcc3e6718f19255ae9b331c/lease-quota/audit-events?pageSize=200"
+    },
+    {
+      "phase": "admin",
+      "status": 404,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-581bcc4efdcc3e6718f19255ae9b331c/lease-quota/audit-events?pageSize=200"
+    },
+    {
+      "phase": "admin",
+      "status": 404,
+      "url": "http://127.0.0.1:4174/v1/admin/tenants/tenant-local/projects/project-581bcc4efdcc3e6718f19255ae9b331c/lease-quota"
+    }
+  ],
+  "adminConsoleErrors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "adminConsoleWarnings": [],
+  "deniedRequestCount": 10,
+  "deniedStatuses": [
+    403
+  ],
+  "screenshotSHA256": {
+    "create-form-dark-mobile.png": "6d35157f0951e75a64ec778b44c7af85f630d2558dec64df0dfe74efdbec9ed0",
+    "create-form-light-desktop.png": "4593324b8731e1e278c41f8a55b57baffd7855ef449547514d9b7640c64701df",
+    "detail-dark-mobile.png": "a715f67d633ad31a60ad473618eb7bce4d006cbc477404da8b7bd54181e5d121",
+    "detail-light-desktop.png": "2e5a4f64266e280f706e4c83a2199616b879156c4299dbf618d21d204a180b72",
+    "list-dark-desktop.png": "9e11acb1f96976ca705c471255e0a7088f50a865405c811d72488df2b8617661",
+    "list-dark-mobile.png": "5ed9fca8ab703d594842de4a5e0471318c1d88d5787c6d3256f31b60abfd0595",
+    "list-light-desktop-collapsed.png": "d1d799c5ae5aa7f9c0d0b062909d2f76b49fbf170f4b6bcfa314528f35127ef8",
+    "list-light-desktop.png": "e4a0151f2e3ac93625c387e52264e786f77e681a08c057be8ef846c4250945cb",
+    "list-light-mobile.png": "4e1a3c78b8e273d6b9d114a738b6b31e6ab13579eb175575cf2f188e2f6c6f2b",
+    "navigation-light-mobile.png": "069954ff05609a3919c6ae268a50eeeb39b920ad3cc7a258d54381588837ec00",
+    "navigation-light-short-desktop.png": "905616f350f9c2fa17453cea58e28c0990da38fa70356e81f3a6da018c86b042",
+    "permission-denied-light-desktop.png": "04441ee1af5a36278d0a4ebc236bf924a1ab868bec173ac37135fe238e78416f",
+    "zh-CN-create-form-dark-mobile.png": "659e201e0fc072bd1292bcb0d640f0fd928ba1d807fc8149cf2e04a5ab30a9e6",
+    "zh-CN-create-form-light-desktop.png": "134ca78b7e99cfeadf100f36bff47a9312b654472ffd1b1addf9e6cb4383d387",
+    "zh-CN-detail-dark-mobile.png": "419cc8fef637a596198fde9099917c5664c52089035806862bf8b42d111414a4",
+    "zh-CN-detail-light-desktop.png": "9825d0b6af62703bd9ab91ce637d94430d068dbc7d18927ef87551957fde53c8",
+    "zh-CN-list-dark-desktop.png": "bba882f7ef32b3a2efe7419d17d5f01bd0a9ab0c56ae19839a9039f9cca0a398",
+    "zh-CN-list-dark-mobile.png": "84f03aa5c3623e3001cbfa443d24c73d935817ad3b9c24476ff1f49b4b10fc04",
+    "zh-CN-list-light-desktop.png": "1ab3efe2d0c8ff37bbe7522f82e518f9104ce2b69b5096d39321ca6ffcf67e81",
+    "zh-CN-list-light-mobile.png": "60b9b7ed6149485cb64aee131d414c33a8851737d7a3b0243e9241ad77aaa455",
+    "zh-CN-navigation-light-mobile.png": "7b33be2340a72ada8d0141435904aa8199c3de1f405b0d87d305b9294ea5a8da"
+  }
+}

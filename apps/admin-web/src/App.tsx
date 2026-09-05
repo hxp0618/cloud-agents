@@ -82,6 +82,39 @@ type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
 
+const navigationIconPaths: Record<Page | "sidebar", string> = {
+  overview: "M3 13h4l3-8 4 14 3-8h4",
+  targets: "M3 3h18v7H3zM3 14h18v7H3zM7 6h.01M7 17h.01",
+  leases: "M12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
+  workers: "M7 7h10v10H7zM10 1v6M14 1v6M10 17v6M14 17v6M1 10h6M1 14h6M17 10h6M17 14h6",
+  releases: "m3 7 9-4 9 4-9 4zM3 12l9 4 9-4M3 17l9 4 9-4",
+  profiles: "M4 3h16v18H4zM8 7h8M8 12h8M8 17h4",
+  storage: "M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01",
+  network: "M9 3h6v6H9zM2 15h6v6H2zM16 15h6v6h-6zM12 9v3M5 15v-3h14v3",
+  quotas: "M3 20V4M3 20h18M7 16v-4M12 16V8M17 16V5",
+  maintenance: "M20 11a8 8 0 1 0-2 7M20 4v7h-7",
+  sidebar: "M3 3h18v18H3zM9 3v18",
+};
+
+function NavigationIcon({ name }: { name: Page | "sidebar" }) {
+  return (
+    <svg
+      width={name === "sidebar" ? 20 : 16}
+      height={name === "sidebar" ? 20 : 16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={navigationIconPaths[name]} />
+    </svg>
+  );
+}
+
 const targetEndpointPlaceholder: Readonly<Record<TargetKind, string>> = Object.freeze({
   docker: "https://docker.example.test:2376",
   kubernetes: "https://kubernetes.example.test:6443",
@@ -1863,7 +1896,7 @@ export function App() {
             title={t("action.toggleSidebar")}
             onClick={() => setSidebarOpen((open) => !open)}
           >
-            ◧
+            <NavigationIcon name="sidebar" />
           </button>
         </div>
         <nav aria-label={t("nav.resources")}>
@@ -1872,14 +1905,15 @@ export function App() {
             onClick={() => navigate("overview")}
             title={t("nav.overview")}
           >
-            <span aria-hidden="true">⌁</span> <span className="nav-label">{t("nav.overview")}</span>
+            <NavigationIcon name="overview" />{" "}
+            <span className="nav-label">{t("nav.overview")}</span>
           </button>
           <button
             className={page === "targets" ? "active" : ""}
             onClick={() => navigate("targets")}
             title={t("nav.targets")}
           >
-            <span aria-hidden="true">◎</span> <span className="nav-label">{t("nav.targets")}</span>
+            <NavigationIcon name="targets" /> <span className="nav-label">{t("nav.targets")}</span>
             <b>{number(targets.length)}</b>
           </button>
           <button
@@ -1887,7 +1921,7 @@ export function App() {
             onClick={() => navigate("leases")}
             title={t("nav.leases")}
           >
-            <span aria-hidden="true">◇</span> <span className="nav-label">{t("nav.leases")}</span>
+            <NavigationIcon name="leases" /> <span className="nav-label">{t("nav.leases")}</span>
             <b>{number(leases.length)}</b>
           </button>
           <button
@@ -1895,7 +1929,7 @@ export function App() {
             onClick={() => navigate("workers")}
             title={t("nav.workers")}
           >
-            <span aria-hidden="true">◉</span> <span className="nav-label">{t("nav.workers")}</span>
+            <NavigationIcon name="workers" /> <span className="nav-label">{t("nav.workers")}</span>
             <b>{number(workers.length)}</b>
           </button>
           <button
@@ -1903,7 +1937,8 @@ export function App() {
             onClick={() => navigate("releases")}
             title={t("nav.releases")}
           >
-            <span aria-hidden="true">⬡</span> <span className="nav-label">{t("nav.releases")}</span>
+            <NavigationIcon name="releases" />{" "}
+            <span className="nav-label">{t("nav.releases")}</span>
             <b>{number(releases.length)}</b>
           </button>
           <button
@@ -1911,7 +1946,8 @@ export function App() {
             onClick={() => navigate("profiles")}
             title={t("nav.profiles")}
           >
-            <span aria-hidden="true">▣</span> <span className="nav-label">{t("nav.profiles")}</span>
+            <NavigationIcon name="profiles" />{" "}
+            <span className="nav-label">{t("nav.profiles")}</span>
             <b>{number(profiles.length)}</b>
           </button>
           <button
@@ -1919,7 +1955,7 @@ export function App() {
             onClick={() => navigate("storage")}
             title={t("nav.storagePolicies")}
           >
-            <span aria-hidden="true">▤</span>{" "}
+            <NavigationIcon name="storage" />{" "}
             <span className="nav-label">{t("nav.storagePolicies")}</span>
             <b>{number(storagePolicies.length)}</b>
           </button>
@@ -1928,7 +1964,7 @@ export function App() {
             onClick={() => navigate("network")}
             title={t("nav.networkPolicies")}
           >
-            <span aria-hidden="true">⇄</span>{" "}
+            <NavigationIcon name="network" />{" "}
             <span className="nav-label">{t("nav.networkPolicies")}</span>
             <b>{number(networkPolicies.length)}</b>
           </button>
@@ -1937,7 +1973,7 @@ export function App() {
             onClick={() => navigate("quotas")}
             title={t("nav.quotas")}
           >
-            <span aria-hidden="true">⊟</span> <span className="nav-label">{t("nav.quotas")}</span>
+            <NavigationIcon name="quotas" /> <span className="nav-label">{t("nav.quotas")}</span>
             <b>{number(leaseQuota === undefined ? 0 : 1)}</b>
           </button>
           <button
@@ -1945,7 +1981,7 @@ export function App() {
             onClick={() => navigate("maintenance")}
             title={t("nav.maintenance")}
           >
-            <span aria-hidden="true">↻</span>{" "}
+            <NavigationIcon name="maintenance" />{" "}
             <span className="nav-label">{t("nav.maintenance")}</span>
             <b>{number(maintenanceOperations.length)}</b>
           </button>
@@ -1965,7 +2001,7 @@ export function App() {
             aria-expanded={mobileNavOpen}
             onClick={() => setMobileNavOpen(true)}
           >
-            ◧
+            <NavigationIcon name="sidebar" />
           </button>
           <div className="breadcrumbs">
             <strong>{connection.projectId}</strong>

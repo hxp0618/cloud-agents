@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -162,6 +163,7 @@ try {
     });
   };
   const screenshot = async (filename) => {
+    await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
     await delay(250);
     layoutChecks.push(
       JSON.parse(
@@ -245,11 +247,64 @@ try {
   await navigateTargets();
 
   await setTheme("light");
+  const shellMetrics = () =>
+    evaluate(`(() => {
+      const rect = (selector) => { const r = document.querySelector(selector).getBoundingClientRect(); return { width: r.width, height: r.height, y: r.y }; };
+      const nav = document.querySelector(".sidebar nav");
+      const content = document.querySelector(".content");
+      return {
+        header: rect(".topbar"), sidebar: rect(".sidebar"), content: rect(".content"),
+        navScroll: nav.scrollHeight > nav.clientHeight,
+        contentScroll: content.scrollHeight > content.clientHeight,
+        documentOverflow: document.documentElement.scrollHeight > innerHeight || document.documentElement.scrollWidth > innerWidth,
+        icons: [...nav.querySelectorAll("svg")].map((icon) => ({ width: icon.getBoundingClientRect().width, height: icon.getBoundingClientRect().height, stroke: icon.getAttribute("stroke-width") }))
+      };
+    })()`);
+  const desktopShell = await shellMetrics();
+  assert.equal(desktopShell.header.height, 63);
+  assert.equal(desktopShell.sidebar.width, 256);
+  assert.equal(desktopShell.content.y, 63);
+  assert.equal(desktopShell.documentOverflow, false);
+  assert.equal(
+    desktopShell.icons.length,
+    await evaluate("document.querySelectorAll('.sidebar nav button').length"),
+  );
+  for (const icon of desktopShell.icons) {
+    assert.deepEqual(icon, { width: 16, height: 16, stroke: "1.5" });
+  }
+  await setViewport(1440, 360);
+  await waitFor("innerHeight === 360", "short viewport resize");
+  await waitFor("document.querySelector('.content').clientHeight <= 297", "short content layout");
+  const shortShell = await shellMetrics();
+  assert.equal(shortShell.navScroll, true);
+  assert.equal(shortShell.contentScroll, true);
+  assert.equal(shortShell.documentOverflow, false);
+  await evaluate(
+    "document.querySelector('.sidebar nav button:last-child').scrollIntoView({ block: 'nearest' })",
+  );
+  await clickAt(".sidebar nav button:last-child");
+  await waitFor(
+    "document.querySelector('.sidebar nav button:last-child').classList.contains('active')",
+    "short-window final navigation",
+  );
+  await screenshot("navigation-light-short-desktop.png");
+  await evaluate(
+    "document.querySelector('.sidebar nav button:nth-child(2)').scrollIntoView({ block: 'nearest' })",
+  );
+  await clickAt(".sidebar nav button:nth-child(2)");
+  await waitFor("document.querySelectorAll('tbody tr').length === 3", "short-window targets");
+  await setViewport(1440, 900);
+  await waitFor("innerHeight === 900", "desktop viewport restore");
+  await evaluate("document.querySelector('.content').scrollTop = 0");
   await screenshot("list-light-desktop.png");
   await pressKey("b", "KeyB", 4);
   await waitFor(
     "document.querySelector('.app-shell').classList.contains('sidebar-collapsed')",
     "sidebar collapse shortcut",
+  );
+  await waitFor(
+    "document.querySelector('.sidebar').getBoundingClientRect().width === 48",
+    "collapsed sidebar width",
   );
   await screenshot("list-light-desktop-collapsed.png");
   await pressKey("b", "KeyB", 4);
@@ -258,6 +313,10 @@ try {
     "sidebar expand shortcut",
   );
   await click(".profile-menu summary");
+  assert.equal(
+    await evaluate("document.querySelector('.dropdown-menu').getBoundingClientRect().width"),
+    256,
+  );
   await pressKey("Escape");
   await waitFor("!document.querySelector('.profile-menu').open", "dropdown Escape close");
   await click(".profile-menu summary");
@@ -289,6 +348,7 @@ try {
   await setTheme("light");
   await screenshot("list-light-mobile.png");
   await click(".mobile-nav-trigger");
+  assert.equal((await shellMetrics()).sidebar.width, 288);
   await screenshot("navigation-light-mobile.png");
   await click(".mobile-nav-backdrop");
   await waitFor(
@@ -370,6 +430,16 @@ try {
     "document.querySelector('[role=alert]').textContent.trim()",
   );
   await screenshot("permission-denied-light-desktop.png");
+  assert.equal(
+    layoutChecks.some((check) => check.overflow),
+    false,
+    "horizontal page overflow",
+  );
+  assert.equal(authority.messageKeyVisible, false, "untranslated message key");
+  assert.equal(persistedChinese.token, "", "bearer survived reload");
+  const deniedRequests = httpFailures.filter((failure) => failure.phase === "permission-denied");
+  assert.ok(deniedRequests.length > 0);
+  assert.ok(deniedRequests.every((failure) => failure.status === 403));
 
   const evidence = `${JSON.stringify(
     {
@@ -391,6 +461,7 @@ try {
         messageKeyVisible: authority.messageKeyVisible,
       },
       layoutChecks,
+      shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {
         sidebarShortcut: true,
         dropdownEscapeClose: true,
