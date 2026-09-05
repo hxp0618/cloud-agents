@@ -249,6 +249,9 @@ func TestAdminEnvironmentLeaseHTTPListsResourcesAndChecksAdminScope(t *testing.T
 		t.Fatalf("admin create status=%d calls=%d body=%s", created.Code, store.create, created.Body.String())
 	}
 	workers := request(http.MethodGet, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/workers?pageSize=1")
+	if workers.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("Worker health snapshots must not be cached")
+	}
 	if workers.Code != http.StatusOK || store.workers != 1 || len(verifier.requests) != 9 || verifier.requests[7].RequiredPermission != "workers.list" || !strings.Contains(workers.Body.String(), `"kind":"WorkerPage"`) || strings.Contains(workers.Body.String(), "providerCredentialRef") || strings.Contains(workers.Body.String(), "workerEndpoint") {
 		t.Fatalf("workers status=%d calls=%d requests=%#v body=%s", workers.Code, store.workers, verifier.requests, workers.Body.String())
 	}

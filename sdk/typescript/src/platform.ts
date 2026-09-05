@@ -294,6 +294,7 @@ export type Worker = Readonly<{
   kind: "Worker";
   metadata: ResourceMetadata;
   spec: Readonly<{
+    health?: WorkerHealthStatus;
     projectRef: NamespaceRef;
     leaseId: string;
     targetId: string;
@@ -1010,6 +1011,14 @@ const environmentLeaseUpgradePreviewResponseShape = resourceResponseShape({
   impactDigest: scalarResponseShape,
 });
 const workerResponseShape = resourceResponseShape({
+  health: {
+    fields: {
+      state: scalarResponseShape,
+      checkedAt: scalarResponseShape,
+      expiresAt: scalarResponseShape,
+      lastSuccessAt: scalarResponseShape,
+    },
+  },
   projectRef: referenceResponseShape,
   leaseId: scalarResponseShape,
   targetId: scalarResponseShape,
@@ -1515,6 +1524,45 @@ export type WorkerHealthObservation = Readonly<{
   state: "serving" | "unavailable";
   checkedAt: string;
 }>;
+export type WorkerHealthStatus = Readonly<{
+  state: "online" | "expired" | "unavailable";
+  checkedAt: string;
+  expiresAt: string;
+  lastSuccessAt?: string;
+}>;
+export function decodeWorkerHealthStatus(value: unknown): WorkerHealthStatus {
+  const source = strictRecord(
+    value,
+    ["state", "checkedAt", "expiresAt", "lastSuccessAt"],
+    ["state", "checkedAt", "expiresAt"],
+  );
+  const state = enumValue(
+    source.state,
+    ["online", "expired", "unavailable"] as const,
+    "/health/state",
+  );
+  const checkedAt = dateTime(source.checkedAt, "/health/checkedAt"),
+    expiresAt = dateTime(source.expiresAt, "/health/expiresAt");
+  const lastSuccessAt =
+    source.lastSuccessAt === undefined
+      ? undefined
+      : dateTime(source.lastSuccessAt, "/health/lastSuccessAt");
+  const lifetime = Date.parse(expiresAt) - Date.parse(checkedAt);
+  if (
+    lifetime <= 0 ||
+    lifetime > 60000 ||
+    (lastSuccessAt !== undefined && Date.parse(lastSuccessAt) > Date.parse(checkedAt)) ||
+    (state === "online" &&
+      (lastSuccessAt === undefined || Date.parse(lastSuccessAt) !== Date.parse(checkedAt)))
+  )
+    error("INVALID_WORKER_HEALTH", "/health");
+  return Object.freeze({
+    state,
+    checkedAt,
+    expiresAt,
+    ...(lastSuccessAt === undefined ? {} : { lastSuccessAt }),
+  });
+}
 const workerHealthKeys = [
   "apiVersion",
   "kind",
@@ -2948,6 +2996,7 @@ export function decodeWorker(value: unknown): Worker {
       "lastHealthAt",
       "readyAt",
       "stableErrorCode",
+      "health",
     ],
     [
       "projectRef",
@@ -2984,6 +3033,8 @@ export function decodeWorker(value: unknown): Worker {
       (cleanupPhase === "none" || cleanupPhase === "complete"))
   )
     error("INVALID_WORKER_STATE", "/spec/cleanupPhase");
+  if (spec.health !== undefined && state !== "ready")
+    error("INVALID_WORKER_HEALTH", "/spec/health");
   const hasSpiffeId = Object.hasOwn(spec, "workerSpiffeId");
   const hasServerName = Object.hasOwn(spec, "workerServerName");
   const hasLastHealth = Object.hasOwn(spec, "lastHealthAt");
@@ -3019,6 +3070,7 @@ export function decodeWorker(value: unknown): Worker {
       releaseDigest: digest(spec.releaseDigest, "/spec/releaseDigest") as `sha256:${string}`,
       state,
       cleanupPhase,
+      ...(spec.health === undefined ? {} : { health: decodeWorkerHealthStatus(spec.health) }),
       cpuLimitMillis: integer(spec.cpuLimitMillis, 100, 64000, "/spec/cpuLimitMillis"),
       memoryLimitBytes: integer(
         spec.memoryLimitBytes,

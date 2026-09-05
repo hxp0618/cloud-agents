@@ -174,6 +174,40 @@ export function leaseNeedsAttention({ spec }: EnvironmentLease): boolean {
   return spec.observedPhase === "failed" || spec.cleanupPhase === "blocked";
 }
 
+export type WorkerStatusFilter =
+  | ""
+  | "online"
+  | "expired"
+  | "unavailable"
+  | "not-observed"
+  | "failed";
+export function filterAdminWorkers(
+  workers: readonly Worker[],
+  query: string,
+  status: WorkerStatusFilter = "",
+): readonly Worker[] {
+  const search = query.trim().toLocaleLowerCase();
+  return workers.filter(
+    ({ metadata, spec }) =>
+      (status === "" ||
+        (status === "failed"
+          ? spec.state === "failed"
+          : status === "not-observed"
+            ? spec.health === undefined
+            : spec.health?.state === status)) &&
+      [
+        metadata.uid,
+        metadata.name,
+        spec.leaseId,
+        spec.targetId,
+        spec.targetKind,
+        spec.state,
+        spec.releaseDigest,
+        spec.health?.state ?? "not-observed",
+      ].some((value) => value.toLocaleLowerCase().includes(search)),
+  );
+}
+
 export function filterAdminMaintenanceOperations(
   operations: readonly MaintenanceOperation[],
   query: string,

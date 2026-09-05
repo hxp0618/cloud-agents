@@ -28,6 +28,7 @@
         "workerSpiffeId": { "type": "string", "pattern": "^spiffe://[^/?#[:space:]@]+/.+$", "maxLength": 2048 },
         "workerServerName": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^/@\\u0000-\\u001F\\u007F-\\u009F]+$" },
         "lastHealthAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "health": { "$ref": "worker-health-status.schema.json" },
         "readyAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "stableErrorCode": {
           "oneOf": [
@@ -42,6 +43,7 @@
     "metadata.uid equals spec.leaseId because one logical current Worker is projected per Environment Lease",
     "ready Workers carry workerSpiffeId, workerServerName, lastHealthAt, and readyAt",
     "lastHealthAt is the successful mTLS Worker health observation recorded by Lease deployment completion; it is not a synthetic periodic heartbeat",
+    "health is present only for ready Workers with a persisted periodic observation matching the current Lease generation and resource version; state is calculated using database time",
     "terminated Leases with complete cleanup do not produce a Worker",
     "endpoint, credential references, user content, Workspace paths, and Secret bytes are absent"
   ]

@@ -141,6 +141,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) listWorkers(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
+	writer.Header().Set("Cache-Control", "no-store")
 	pageSize, pageToken, ok := managedAgentPagination(request)
 	if !ok {
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
@@ -856,6 +857,13 @@ func writeAdminWorkerPage(writer http.ResponseWriter, requestID, tenantID, proje
 		}
 		if snapshot.ReadyAt != nil {
 			spec.ReadyAt = snapshot.ReadyAt.UTC().Format(time.RFC3339Nano)
+		}
+		if snapshot.Health != nil {
+			spec.Health = &platformv1alpha1.WorkerHealthStatus{State: snapshot.Health.State,
+				CheckedAt: snapshot.Health.CheckedAt.UTC().Format(time.RFC3339Nano), ExpiresAt: snapshot.Health.ExpiresAt.UTC().Format(time.RFC3339Nano)}
+			if snapshot.Health.LastSuccessAt != nil {
+				spec.Health.LastSuccessAt = snapshot.Health.LastSuccessAt.UTC().Format(time.RFC3339Nano)
+			}
 		}
 		workers = append(workers, platformv1alpha1.Worker{ResourceBase: platformv1alpha1.ResourceBase{
 			APIVersion: platformv1alpha1.APIVersion, Kind: "Worker",

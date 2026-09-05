@@ -34,6 +34,7 @@ import {
   filterAdminTargets,
   filterAdminMaintenanceOperations,
   filterAdminLeases,
+  filterAdminWorkers,
   leaseNeedsAttention,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
@@ -65,6 +66,7 @@ import {
   type AdminClient,
   type ClusterHostSummary,
   type SavedAdminConnection,
+  type WorkerStatusFilter,
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
 import { TargetFilters } from "./TargetFilters";
@@ -487,6 +489,7 @@ export function App() {
   >("");
   const [leaseCleanupBlockedOnly, setLeaseCleanupBlockedOnly] = useState(false);
   const [failedOperationsOnly, setFailedOperationsOnly] = useState(false);
+  const [workerStatusFilter, setWorkerStatusFilter] = useState<WorkerStatusFilter>("");
   const [targetPhaseFilter, setTargetPhaseFilter] = useState<
     readonly DeploymentTarget["spec"]["observedPhase"][]
   >([]);
@@ -602,7 +605,7 @@ export function App() {
   const attentionCount = targets.length - readyCount;
   const readyLeaseCount = leases.filter(({ spec }) => spec.observedPhase === "ready").length;
   const leaseAttentionCount = leases.filter(leaseNeedsAttention).length;
-  const readyWorkerCount = workers.filter(({ spec }) => spec.state === "ready").length;
+  const onlineWorkerCount = filterAdminWorkers(workers, "", "online").length;
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleTargets = filterAdminTargets(targets, query, targetKindFilter, targetPhaseFilter);
   const targetsFiltered =
@@ -614,20 +617,7 @@ export function App() {
     leasePhaseFilter,
     leaseCleanupBlockedOnly,
   );
-  const visibleWorkers =
-    normalizedQuery === ""
-      ? workers
-      : workers.filter(({ metadata, spec }) =>
-          [
-            metadata.uid,
-            metadata.name,
-            spec.leaseId,
-            spec.targetId,
-            spec.targetKind,
-            spec.state,
-            spec.releaseDigest,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
+  const visibleWorkers = filterAdminWorkers(workers, query, workerStatusFilter);
   const visibleReleases =
     normalizedQuery === ""
       ? releases
@@ -754,48 +744,71 @@ export function App() {
   );
 
   useEffect(() => {
-    if (
-      !connected ||
-      client === null ||
-      (!targets.some(({ spec }) => spec.observedPhase === "probing") &&
-        !leases.some(
-          ({ spec }) =>
-            spec.observedPhase === "provisioning" ||
-            spec.observedPhase === "terminating" ||
-            ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
-        ))
-    )
-      return;
+    const lifecyclePending =
+      targets.some(({ spec }) => spec.observedPhase === "probing") ||
+      leases.some(
+        ({ spec }) =>
+          spec.observedPhase === "provisioning" ||
+          spec.observedPhase === "terminating" ||
+          ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
+      );
+    const observeHealth =
+      (page === "workers" || page === "overview") &&
+      workers.some(({ spec }) => spec.state === "ready");
+    if (!connected || client === null || (!lifecyclePending && !observeHealth)) return;
     const controller = new AbortController();
-    const interval = window.setInterval(() => {
-      if (document.visibilityState !== "visible" || busyRef.current) return;
-      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-      void Promise.all([
-        loadTargetAuthority(client, connection, selectedTargetId, signal),
-        loadLeaseAuthority(client, connection, selectedLeaseId, signal),
-        listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
-      ])
-        .then(([loadedTargets, loadedLeases, loadedWorkers]) => {
-          setTargets(loadedTargets.targets);
-          setSelectedTargetId(loadedTargets.selectedTargetId);
-          setLeases(loadedLeases.leases);
-          setSelectedLeaseId(loadedLeases.selectedLeaseId);
-          setWorkers(loadedWorkers);
-          setSelectedWorkerId((current) =>
-            loadedWorkers.some(({ metadata }) => metadata.uid === current)
-              ? current
-              : (loadedWorkers[0]?.metadata.uid ?? ""),
-          );
-        })
-        .catch((cause: unknown) => {
-          if (!controller.signal.aborted) setError(adminFailure(cause));
-        });
-    }, 5_000);
+    let polling = false;
+    const interval = window.setInterval(
+      () => {
+        if (document.visibilityState !== "visible" || busyRef.current || polling) return;
+        polling = true;
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+        void Promise.all([
+          lifecyclePending
+            ? loadTargetAuthority(client, connection, selectedTargetId, signal)
+            : Promise.resolve({ targets, selectedTargetId }),
+          lifecyclePending
+            ? loadLeaseAuthority(client, connection, selectedLeaseId, signal)
+            : Promise.resolve({ leases, selectedLeaseId }),
+          listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
+        ])
+          .then(([loadedTargets, loadedLeases, loadedWorkers]) => {
+            if (controller.signal.aborted) return;
+            setTargets(loadedTargets.targets);
+            setSelectedTargetId(loadedTargets.selectedTargetId);
+            setLeases(loadedLeases.leases);
+            setSelectedLeaseId(loadedLeases.selectedLeaseId);
+            setWorkers(loadedWorkers);
+            setSelectedWorkerId((current) =>
+              loadedWorkers.some(({ metadata }) => metadata.uid === current)
+                ? current
+                : (loadedWorkers[0]?.metadata.uid ?? ""),
+            );
+          })
+          .catch((cause: unknown) => {
+            if (!controller.signal.aborted) setError(adminFailure(cause));
+          })
+          .finally(() => {
+            polling = false;
+          });
+      },
+      lifecyclePending ? 5_000 : 15_000,
+    );
     return () => {
       controller.abort();
       window.clearInterval(interval);
     };
-  }, [client, connected, connection, leases, selectedLeaseId, selectedTargetId, targets]);
+  }, [
+    client,
+    connected,
+    connection,
+    leases,
+    selectedLeaseId,
+    selectedTargetId,
+    targets,
+    workers,
+    page,
+  ]);
 
   function updateConnection(field: keyof SavedAdminConnection, value: string) {
     setConnection((current) => ({ ...current, [field]: value }));
@@ -812,6 +825,7 @@ export function App() {
     setLeasePhaseFilter("");
     setLeaseCleanupBlockedOnly(false);
     setFailedOperationsOnly(false);
+    setWorkerStatusFilter("");
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
@@ -2209,8 +2223,8 @@ export function App() {
                   <small>{t("overview.workers")}</small>
                   <strong>{number(workers.length)}</strong>
                   <span>
-                    {t("overview.readyWorkers", {
-                      count: number(readyWorkerCount),
+                    {t("overview.onlineWorkers", {
+                      count: number(onlineWorkerCount),
                     })}
                   </span>
                 </button>
@@ -2227,6 +2241,33 @@ export function App() {
                   <strong>{number(leaseAttentionCount)}</strong>
                   <span>{t("overview.leaseAttentionDescription")}</span>
                 </button>
+              </section>
+              <section className="panel overview-panel" aria-label={t("worker.periodicHealth")}>
+                <div className="panel-heading">
+                  <div>
+                    <h2>{t("worker.periodicHealth")}</h2>
+                    <p>{t("worker.periodicHealthBoundary")}</p>
+                  </div>
+                </div>
+                <div className="worker-state-summary">
+                  {(["online", "expired", "unavailable", "not-observed", "failed"] as const).map(
+                    (state) => (
+                      <button
+                        type="button"
+                        className="button outline"
+                        data-worker-state={state}
+                        key={state}
+                        onClick={() => {
+                          navigate("workers");
+                          setWorkerStatusFilter(state);
+                        }}
+                      >
+                        {t(`worker.health.${state}`)} ·{" "}
+                        {number(filterAdminWorkers(workers, "", state).length)}
+                      </button>
+                    ),
+                  )}
+                </div>
               </section>
               <section
                 className="panel overview-panel recent-failed-operations"
@@ -2382,6 +2423,22 @@ export function App() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
+                <select
+                  aria-label={t("worker.healthFilter")}
+                  value={workerStatusFilter}
+                  onChange={(event) =>
+                    setWorkerStatusFilter(event.target.value as WorkerStatusFilter)
+                  }
+                >
+                  <option value="">{t("worker.health.all")}</option>
+                  {(["online", "expired", "unavailable", "not-observed", "failed"] as const).map(
+                    (state) => (
+                      <option key={state} value={state}>
+                        {t(`worker.health.${state}`)}
+                      </option>
+                    ),
+                  )}
+                </select>
                 <span className="scope-chip">
                   targets.list · {number(visibleClusterHosts.length)}
                 </span>
@@ -2409,6 +2466,7 @@ export function App() {
                 </div>
                 <WorkerTable
                   workers={visibleWorkers}
+                  filtered={workerStatusFilter !== "" || query.trim() !== ""}
                   selectedWorkerId={selectedWorkerId}
                   onSelect={selectWorker}
                 />
@@ -4040,15 +4098,22 @@ function ClusterHostTable({
 
 function WorkerTable({
   workers,
+  filtered,
   selectedWorkerId,
   onSelect,
 }: Readonly<{
   workers: readonly Worker[];
+  filtered: boolean;
   selectedWorkerId: string;
   onSelect: (workerId: string) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
-  if (workers.length === 0) return <div className="table-empty">{t("table.empty.workers")}</div>;
+  if (workers.length === 0)
+    return (
+      <div className="table-empty">
+        {t(filtered ? "table.empty.filteredWorkers" : "table.empty.workers")}
+      </div>
+    );
   return (
     <div className="table-scroll">
       <table className="worker-table">
@@ -4059,7 +4124,7 @@ function WorkerTable({
             <th>{t("table.lease")}</th>
             <th>{t("table.release")}</th>
             <th>{t("table.generation")}</th>
-            <th>{t("table.lastHealth")}</th>
+            <th>{t("worker.periodicHealth")}</th>
             <th>{t("table.status")}</th>
             <th>{t("table.resourceLimits")}</th>
             <th>{t("table.started")}</th>
@@ -4091,9 +4156,10 @@ function WorkerTable({
               </td>
               <td className="mono">g{number(worker.spec.generation)}</td>
               <td>
-                {worker.spec.lastHealthAt === undefined
-                  ? t("common.notObserved")
-                  : dateTime(worker.spec.lastHealthAt)}
+                <WorkerHealthBadge worker={worker} />
+                {worker.spec.health !== undefined ? (
+                  <small className="table-subline">{dateTime(worker.spec.health.checkedAt)}</small>
+                ) : null}
               </td>
               <td>
                 <span className={`phase ${phaseTone(worker.spec.state)}`}>
@@ -4894,6 +4960,19 @@ function CleanupConfirmation({
   );
 }
 
+function WorkerHealthBadge({ worker }: Readonly<{ worker: Worker }>) {
+  const { t } = useI18n();
+  const state = worker.spec.health?.state ?? "not-observed";
+  return (
+    <span
+      className={`phase ${state === "online" ? "success" : state === "unavailable" ? "danger" : state === "expired" ? "running" : ""}`}
+    >
+      <i />
+      {t(`worker.health.${state}`)}
+    </span>
+  );
+}
+
 function WorkerHealthCheck({
   worker,
   client,
@@ -4986,6 +5065,32 @@ function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
         </div>
       </div>
       <dl className="detail-list">
+        <div>
+          <dt>{t("worker.periodicHealth")}</dt>
+          <dd>
+            <WorkerHealthBadge worker={worker} />
+          </dd>
+        </div>
+        {worker.spec.health !== undefined ? (
+          <>
+            <div>
+              <dt>{t("worker.healthCheckedAt")}</dt>
+              <dd>{dateTime(worker.spec.health.checkedAt)}</dd>
+            </div>
+            <div>
+              <dt>{t("worker.healthExpiresAt")}</dt>
+              <dd>{dateTime(worker.spec.health.expiresAt)}</dd>
+            </div>
+            <div>
+              <dt>{t("worker.healthLastSuccessAt")}</dt>
+              <dd>
+                {worker.spec.health.lastSuccessAt === undefined
+                  ? t("common.notObserved")
+                  : dateTime(worker.spec.health.lastSuccessAt)}
+              </dd>
+            </div>
+          </>
+        ) : null}
         <div>
           <dt>{t("worker.id")}</dt>
           <dd className="mono">{worker.metadata.uid}</dd>

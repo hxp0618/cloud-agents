@@ -6,6 +6,7 @@ import {
   filterAdminTargets,
   filterAdminMaintenanceOperations,
   filterAdminLeases,
+  filterAdminWorkers,
   leaseNeedsAttention,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
@@ -312,6 +313,31 @@ describe("Admin Web boundary", () => {
 
     await listAdminReleases(client, "tenant-alpha", "project-alpha", new AbortController().signal);
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("filters persisted Worker health separately from lifecycle failures without browser-clock guesses", () => {
+    const workers = ["online", "expired", "unavailable", undefined, undefined].map((health, i) => ({
+      metadata: { uid: `worker-${i}`, name: `worker-${i}` },
+      spec: {
+        leaseId: `worker-${i}`,
+        targetId: "docker-alpha",
+        targetKind: "docker",
+        releaseDigest: "sha256:test",
+        state: i === 4 ? "failed" : "ready",
+        ...(health ? { health: { state: health, checkedAt: "2000-01-01T00:00:00Z" } } : {}),
+      },
+    })) as unknown as Parameters<typeof filterAdminWorkers>[0];
+    expect(filterAdminWorkers(workers, "", "online").map((w) => w.metadata.uid)).toEqual([
+      "worker-0",
+    ]);
+    expect(filterAdminWorkers(workers, "", "expired")).toHaveLength(1);
+    expect(filterAdminWorkers(workers, "", "unavailable")).toHaveLength(1);
+    expect(filterAdminWorkers(workers, "", "not-observed")).toHaveLength(2);
+    expect(filterAdminWorkers(workers, "", "failed").map((w) => w.metadata.uid)).toEqual([
+      "worker-4",
+    ]);
+    expect(filterAdminWorkers(workers, " Docker-Alpha ", "online")).toHaveLength(1);
+    expect(filterAdminWorkers(workers, "worker-1", "online")).toHaveLength(0);
   });
 
   it("groups current Worker authority by its Deployment Target", () => {

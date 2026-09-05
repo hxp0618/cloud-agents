@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Client, decodeWorkerHealthObservation } from "./platform";
+import { Client, decodeWorkerHealthObservation, decodeWorkerHealthStatus } from "./platform";
 
 const observation = {
   apiVersion: "platform.cloud-agents.dev/v1alpha1",
@@ -14,6 +14,34 @@ const observation = {
 };
 
 describe("Admin Worker health observation", () => {
+  it("accepts only bounded, closed persisted health observations without inferring freshness locally", () => {
+    const health = {
+      state: "online",
+      checkedAt: "2026-09-05T12:00:00Z",
+      expiresAt: "2026-09-05T12:01:00Z",
+      lastSuccessAt: "2026-09-05T12:00:00Z",
+    };
+    for (const state of ["online", "unavailable", "expired"])
+      expect(decodeWorkerHealthStatus({ ...health, state }).state).toBe(state);
+    expect(
+      decodeWorkerHealthStatus({
+        state: "unavailable",
+        checkedAt: health.checkedAt,
+        expiresAt: health.expiresAt,
+      }).lastSuccessAt,
+    ).toBeUndefined();
+    for (const change of [
+      { state: "ready" },
+      { expiresAt: health.checkedAt },
+      { expiresAt: "2026-09-05T12:01:01Z" },
+      { checkedAt: "yesterday" },
+      { lastSuccessAt: "2026-09-05T12:00:01Z" },
+      { lastSuccessAt: undefined },
+      { endpoint: "https://secret.test" },
+    ]) {
+      expect(() => decodeWorkerHealthStatus({ ...health, ...change })).toThrow();
+    }
+  });
   it("validates authority, state, generation and closed payload", async () => {
     expect(decodeWorkerHealthObservation(observation).state).toBe("serving");
     for (const change of [

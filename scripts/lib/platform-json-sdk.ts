@@ -83,6 +83,7 @@ const PLATFORM_SCHEMAS = [
   "environment-profile.schema.json",
   "worker-page.schema.json",
   "worker-health-observation.schema.json",
+  "worker-health-status.schema.json",
   "worker-release-page.schema.json",
   "worker-release-register-request.schema.json",
   "worker-release.schema.json",

@@ -16,6 +16,40 @@ import (
 
 const APIVersion = "platform.cloud-agents.dev/v1alpha1"
 
+type WorkerHealthStatus struct {
+	State         string `json:"state"`
+	CheckedAt     string `json:"checkedAt"`
+	ExpiresAt     string `json:"expiresAt"`
+	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
+}
+
+func DecodeWorkerHealthStatusJSON(data []byte) (WorkerHealthStatus, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"state", "checkedAt", "expiresAt", "lastSuccessAt"}, []string{"state", "checkedAt", "expiresAt"})
+	if err != nil {
+		return WorkerHealthStatus{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	var value WorkerHealthStatus
+	if json.Unmarshal(raw, &value) != nil || value.State != "online" && value.State != "expired" && value.State != "unavailable" || common.ValidateDateTime(value.CheckedAt, "/health/checkedAt") != nil || common.ValidateDateTime(value.ExpiresAt, "/health/expiresAt") != nil {
+		return WorkerHealthStatus{}, common.ContractError("INVALID_WORKER_HEALTH", "/health")
+	}
+	checked, _ := time.Parse(time.RFC3339Nano, value.CheckedAt)
+	expires, _ := time.Parse(time.RFC3339Nano, value.ExpiresAt)
+	if !expires.After(checked) || expires.Sub(checked) > time.Minute {
+		return WorkerHealthStatus{}, common.ContractError("INVALID_WORKER_HEALTH", "/health")
+	}
+	success, successErr := time.Parse(time.RFC3339Nano, value.LastSuccessAt)
+	if _, present := fields["lastSuccessAt"]; present {
+		if common.ValidateDateTime(value.LastSuccessAt, "/health/lastSuccessAt") != nil || successErr != nil || success.After(checked) {
+			return WorkerHealthStatus{}, common.ContractError("INVALID_WORKER_HEALTH", "/health")
+		}
+	}
+	if value.State == "online" && (successErr != nil || !success.Equal(checked)) {
+		return WorkerHealthStatus{}, common.ContractError("INVALID_WORKER_HEALTH", "/health")
+	}
+	return value, nil
+}
+
 type WorkerHealthObservation struct {
 	APIVersion      string `json:"apiVersion"`
 	Kind            string `json:"kind"`
@@ -296,22 +330,23 @@ type EnvironmentLeaseUpgradePreview struct {
 	Spec EnvironmentLeaseUpgradePreviewSpec `json:"spec"`
 }
 type WorkerSpec struct {
-	ProjectRef       common.ProjectRef `json:"projectRef"`
-	LeaseID          string            `json:"leaseId"`
-	TargetID         string            `json:"targetId"`
-	TargetKind       string            `json:"targetKind"`
-	TargetGeneration int64             `json:"targetGeneration"`
-	Generation       int64             `json:"generation"`
-	ReleaseDigest    string            `json:"releaseDigest"`
-	State            string            `json:"state"`
-	CleanupPhase     string            `json:"cleanupPhase"`
-	CPULimitMillis   int64             `json:"cpuLimitMillis"`
-	MemoryLimitBytes int64             `json:"memoryLimitBytes"`
-	WorkerSPIFFEID   string            `json:"workerSpiffeId,omitempty"`
-	WorkerServerName string            `json:"workerServerName,omitempty"`
-	LastHealthAt     string            `json:"lastHealthAt,omitempty"`
-	ReadyAt          string            `json:"readyAt,omitempty"`
-	StableErrorCode  string            `json:"stableErrorCode"`
+	Health           *WorkerHealthStatus `json:"health,omitempty"`
+	ProjectRef       common.ProjectRef   `json:"projectRef"`
+	LeaseID          string              `json:"leaseId"`
+	TargetID         string              `json:"targetId"`
+	TargetKind       string              `json:"targetKind"`
+	TargetGeneration int64               `json:"targetGeneration"`
+	Generation       int64               `json:"generation"`
+	ReleaseDigest    string              `json:"releaseDigest"`
+	State            string              `json:"state"`
+	CleanupPhase     string              `json:"cleanupPhase"`
+	CPULimitMillis   int64               `json:"cpuLimitMillis"`
+	MemoryLimitBytes int64               `json:"memoryLimitBytes"`
+	WorkerSPIFFEID   string              `json:"workerSpiffeId,omitempty"`
+	WorkerServerName string              `json:"workerServerName,omitempty"`
+	LastHealthAt     string              `json:"lastHealthAt,omitempty"`
+	ReadyAt          string              `json:"readyAt,omitempty"`
+	StableErrorCode  string              `json:"stableErrorCode"`
 }
 type Worker struct {
 	ResourceBase
@@ -716,7 +751,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "EnvironmentLeaseUpgradePreview":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "action": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "currentReleaseDigest": common.ScalarResponseShape(), "targetReleaseDigest": common.ScalarResponseShape(), "rollbackReleaseDigest": common.ScalarResponseShape(), "rollbackGeneration": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "affectedTargets": common.ScalarResponseShape(), "affectedWorkers": common.ScalarResponseShape(), "affectedLeases": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape()}
 	case "Worker":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "leaseId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "lastHealthAt": common.ScalarResponseShape(), "readyAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"health": common.ObjectResponseShape(map[string]common.ResponseShape{"state": common.ScalarResponseShape(), "checkedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lastSuccessAt": common.ScalarResponseShape()}), "projectRef": resourceTenantRefResponseShape, "leaseId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "workerSpiffeId": common.ScalarResponseShape(), "workerServerName": common.ScalarResponseShape(), "lastHealthAt": common.ScalarResponseShape(), "readyAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}
 	case "WorkerRelease":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "imageRepository": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "platformVersion": common.ScalarResponseShape(), "runtimeVersion": common.ScalarResponseShape(), "codexVersion": common.ScalarResponseShape(), "claudeCodeVersion": common.ScalarResponseShape(), "architectures": common.ArrayResponseShape(common.ScalarResponseShape()), "status": common.ScalarResponseShape(), "verificationState": common.ScalarResponseShape(), "verificationEvidenceDigest": common.ScalarResponseShape(), "approvedAt": common.ScalarResponseShape()}
 	case "EnvironmentProfile":
@@ -1837,7 +1872,7 @@ func DecodeWorkerJSON(data []byte) (Worker, error) {
 	if err != nil {
 		return Worker{}, err
 	}
-	allowed := []string{"projectRef", "leaseId", "targetId", "targetKind", "targetGeneration", "generation", "releaseDigest", "state", "cleanupPhase", "cpuLimitMillis", "memoryLimitBytes", "workerSpiffeId", "workerServerName", "lastHealthAt", "readyAt", "stableErrorCode"}
+	allowed := []string{"projectRef", "leaseId", "targetId", "targetKind", "targetGeneration", "generation", "releaseDigest", "state", "cleanupPhase", "cpuLimitMillis", "memoryLimitBytes", "workerSpiffeId", "workerServerName", "lastHealthAt", "readyAt", "stableErrorCode", "health"}
 	required := []string{"projectRef", "leaseId", "targetId", "targetKind", "targetGeneration", "generation", "releaseDigest", "state", "cleanupPhase", "cpuLimitMillis", "memoryLimitBytes", "stableErrorCode"}
 	spec, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
@@ -1923,11 +1958,19 @@ func DecodeWorkerJSON(data []byte) (Worker, error) {
 	if state == "ready" && !readyFields || state != "ready" && (hasSPIFFEID || hasServerName || hasLastHealth || hasReadyAt) {
 		return Worker{}, common.ContractError("INVALID_WORKER_STATE", "/spec/state")
 	}
+	var health *WorkerHealthStatus
+	if raw, present := spec["health"]; present {
+		value, err := DecodeWorkerHealthStatusJSON(raw)
+		if err != nil || state != "ready" {
+			return Worker{}, common.ContractError("INVALID_WORKER_HEALTH", "/spec/health")
+		}
+		health = &value
+	}
 	stableErrorCode, err := fieldString(spec, "stableErrorCode", "/spec/stableErrorCode")
 	if err != nil || stableErrorCode != "" && common.ValidateIdentifier(stableErrorCode, "/spec/stableErrorCode") != nil || (state == "failed") != (stableErrorCode != "") {
 		return Worker{}, common.ContractError("INVALID_WORKER_STATE", "/spec/stableErrorCode")
 	}
-	return Worker{ResourceBase: base, Spec: WorkerSpec{ProjectRef: project, LeaseID: leaseID, TargetID: targetID, TargetKind: targetKind, TargetGeneration: targetGeneration, Generation: generation, ReleaseDigest: releaseDigest, State: state, CleanupPhase: cleanupPhase, CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes, WorkerSPIFFEID: workerSPIFFEID, WorkerServerName: workerServerName, LastHealthAt: lastHealthAt, ReadyAt: readyAt, StableErrorCode: stableErrorCode}}, nil
+	return Worker{ResourceBase: base, Spec: WorkerSpec{Health: health, ProjectRef: project, LeaseID: leaseID, TargetID: targetID, TargetKind: targetKind, TargetGeneration: targetGeneration, Generation: generation, ReleaseDigest: releaseDigest, State: state, CleanupPhase: cleanupPhase, CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes, WorkerSPIFFEID: workerSPIFFEID, WorkerServerName: workerServerName, LastHealthAt: lastHealthAt, ReadyAt: readyAt, StableErrorCode: stableErrorCode}}, nil
 }
 func DecodeWorkerResponseJSON(data []byte) (common.ResponseEnvelope[Worker], error) {
 	fields, sidecar, err := strictResource(data, "Worker")

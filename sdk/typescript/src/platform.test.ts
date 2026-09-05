@@ -288,6 +288,23 @@ describe("generated platform JSON models", () => {
     });
     expect(decodeWorkerPage(JSON.parse(page)).workers[0]?.spec.state).toBe("ready");
     expect(parseWorkerPage(page).value.nextPageToken).toBe("worker-page-token-2");
+    const persisted = JSON.parse(page);
+    persisted.workers[0].spec.health = {
+      state: "online",
+      checkedAt: "2026-09-05T12:00:00Z",
+      expiresAt: "2026-09-05T12:01:00Z",
+      lastSuccessAt: "2026-09-05T20:00:00+08:00",
+    };
+    expect(parseWorkerPage(JSON.stringify(persisted)).value.workers[0]?.spec.health?.state).toBe(
+      "online",
+    );
+    persisted.workers[0].spec.health.endpoint = "https://private.test";
+    expect(() => decodeWorkerPage(persisted)).toThrow();
+    delete persisted.workers[0].spec.health.endpoint;
+    persisted.workers[0].spec.state = "starting";
+    for (const key of ["workerSpiffeId", "workerServerName", "lastHealthAt", "readyAt"])
+      delete persisted.workers[0].spec[key];
+    expect(() => decodeWorkerPage(persisted)).toThrow();
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);

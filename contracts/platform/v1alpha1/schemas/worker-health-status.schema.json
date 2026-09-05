@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/worker-health-status.schema.json",
+  "title": "WorkerHealthStatus",
+  "description": "Persisted periodic Control Plane mTLS observation for the current Lease generation/resource version. Database time determines online, unavailable, or expired. Absence means not observed; deployment ready is not online. Freshness lasts at most 60 seconds and never exceeds Lease expiry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "checkedAt", "expiresAt"],
+  "properties": {
+    "state": { "enum": ["online", "unavailable", "expired"] },
+    "checkedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "lastSuccessAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "checkedAt < expiresAt <= checkedAt + 60 seconds, capped by the current Lease expiry",
+    "lastSuccessAt, when present, is no later than checkedAt; online requires equal instants",
+    "state is a database-time snapshot, never inferred from the browser clock or deployment phase"
+  ]
+}

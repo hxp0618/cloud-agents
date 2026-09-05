@@ -22,6 +22,7 @@ type ManagedHostEnvironmentLeasePage struct {
 }
 
 type AdminWorkerSnapshot struct {
+	Health           *AdminWorkerHealth
 	Scope            internalmanagedhost.Scope
 	WorkerID         string
 	WorkerName       string
@@ -48,6 +49,13 @@ type AdminWorkerSnapshot struct {
 type AdminWorkerPage struct {
 	Workers      []AdminWorkerSnapshot
 	NextWorkerID string
+}
+
+type AdminWorkerHealth struct {
+	State         string     `json:"state"`
+	CheckedAt     time.Time  `json:"checkedAt"`
+	ExpiresAt     time.Time  `json:"expiresAt"`
+	LastSuccessAt *time.Time `json:"lastSuccessAt"`
 }
 
 type AdminEnvironmentLeaseUpgradeStart struct {
@@ -88,30 +96,31 @@ type managedHostEnvironmentLeasePageRow struct {
 }
 
 type adminWorkerPageRow struct {
-	TenantID              string    `json:"tenant_id"`
-	ProjectID             string    `json:"project_uid"`
-	LeaseID               string    `json:"lease_uid"`
-	LeaseName             string    `json:"lease_name"`
-	TargetID              string    `json:"deployment_target_uid"`
-	TargetKind            string    `json:"target_kind"`
-	TargetGeneration      int64     `json:"deployment_target_generation"`
-	Generation            int64     `json:"generation"`
-	DesiredPhase          string    `json:"desired_phase"`
-	ReleaseDigest         string    `json:"release_digest"`
-	ObservedPhase         string    `json:"observed_phase"`
-	CleanupPhase          string    `json:"cleanup_phase"`
-	EnvironmentID         string    `json:"environment_id"`
-	ProviderCredentialRef string    `json:"provider_credential_ref"`
-	CPULimitMillis        int64     `json:"cpu_limit_millis"`
-	MemoryLimitBytes      int64     `json:"memory_limit_bytes"`
-	WorkerEndpoint        string    `json:"worker_endpoint"`
-	WorkerSPIFFEID        string    `json:"worker_spiffe_id"`
-	WorkerServerName      string    `json:"worker_server_name"`
-	StableErrorCode       string    `json:"stable_error_code"`
-	ExpiresAt             time.Time `json:"expires_at"`
-	ResourceVersion       int64     `json:"resource_version"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	Health                *AdminWorkerHealth `json:"health"`
+	TenantID              string             `json:"tenant_id"`
+	ProjectID             string             `json:"project_uid"`
+	LeaseID               string             `json:"lease_uid"`
+	LeaseName             string             `json:"lease_name"`
+	TargetID              string             `json:"deployment_target_uid"`
+	TargetKind            string             `json:"target_kind"`
+	TargetGeneration      int64              `json:"deployment_target_generation"`
+	Generation            int64              `json:"generation"`
+	DesiredPhase          string             `json:"desired_phase"`
+	ReleaseDigest         string             `json:"release_digest"`
+	ObservedPhase         string             `json:"observed_phase"`
+	CleanupPhase          string             `json:"cleanup_phase"`
+	EnvironmentID         string             `json:"environment_id"`
+	ProviderCredentialRef string             `json:"provider_credential_ref"`
+	CPULimitMillis        int64              `json:"cpu_limit_millis"`
+	MemoryLimitBytes      int64              `json:"memory_limit_bytes"`
+	WorkerEndpoint        string             `json:"worker_endpoint"`
+	WorkerSPIFFEID        string             `json:"worker_spiffe_id"`
+	WorkerServerName      string             `json:"worker_server_name"`
+	StableErrorCode       string             `json:"stable_error_code"`
+	ExpiresAt             time.Time          `json:"expires_at"`
+	ResourceVersion       int64              `json:"resource_version"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 const (
@@ -181,7 +190,16 @@ FROM (
         lease.cleanup_phase, lease.environment_id, lease.provider_credential_ref,
         lease.cpu_limit_millis, lease.memory_limit_bytes, lease.worker_endpoint,
         lease.worker_spiffe_id, lease.worker_server_name, lease.stable_error_code,
-        lease.expires_at, lease.resource_version, lease.created_at, lease.updated_at
+        lease.expires_at, lease.resource_version, lease.created_at, lease.updated_at,
+        CASE WHEN lease.observed_phase = 'ready' AND lease.worker_health_generation = lease.generation
+            AND lease.worker_health_resource_version = lease.resource_version THEN
+            pg_catalog.jsonb_build_object(
+                'state', CASE WHEN LEAST(lease.worker_health_checked_at + interval '60 seconds', lease.expires_at) <= pg_catalog.statement_timestamp() THEN 'expired'
+                    WHEN lease.worker_health_succeeded THEN 'online' ELSE 'unavailable' END,
+                'checkedAt', lease.worker_health_checked_at,
+                'expiresAt', LEAST(lease.worker_health_checked_at + interval '60 seconds', lease.expires_at),
+                'lastSuccessAt', lease.worker_health_success_at)
+            ELSE NULL END AS health
     FROM cloud_agents.managed_host_environment_leases AS lease
     JOIN cloud_agents.deployment_targets AS target
         ON target.tenant_id = lease.tenant_id
@@ -758,6 +776,16 @@ func decodeAdminWorkerPageRows(raw []byte, tenantID, projectID string, limit int
 			observedAt := row.UpdatedAt
 			worker.WorkerSPIFFEID, worker.WorkerServerName = row.WorkerSPIFFEID, row.WorkerServerName
 			worker.LastHealthAt, worker.ReadyAt = &observedAt, &observedAt
+		}
+		if row.Health != nil {
+			health := row.Health
+			if state != "ready" || health.CheckedAt.IsZero() || !health.ExpiresAt.After(health.CheckedAt) || health.ExpiresAt.Sub(health.CheckedAt) > time.Minute ||
+				health.State != "online" && health.State != "unavailable" && health.State != "expired" ||
+				health.LastSuccessAt != nil && health.LastSuccessAt.After(health.CheckedAt) ||
+				health.State == "online" && (health.LastSuccessAt == nil || !health.LastSuccessAt.Equal(health.CheckedAt)) {
+				return AdminWorkerPage{}, ErrCoordinationResultDrift
+			}
+			worker.Health = health
 		}
 		workers = append(workers, worker)
 	}

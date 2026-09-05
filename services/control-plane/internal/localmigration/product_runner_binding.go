@@ -3,6 +3,18 @@ package localmigration
 // productRunnerBindingSelector is the checked-in independent-product schema
 // successor. It is separate from the frozen D-053 localdev review binding.
 func productRunnerBindingSelector(version string) generatedRunnerBindingSelector {
+	if version == "000050" {
+		return generatedRunnerBindingSelector{
+			selectorID: "product-000050", schemaHead: "000050",
+			manifestPath:      "services/control-plane/migrations/product/000050/manifest.json",
+			manifestSizeBytes: 117423, manifestRawDigest: "sha256:dee134a4ecb4b558c89861e95d75efed4f67e5ea1667820322e34bcd2e7bd537",
+			manifestDigest:        "sha256:d97f64022aa681199d31a4f3c988eb055ac999620948a284b4c2351a5110ffd0",
+			schemaBundlePath:      "services/control-plane/migrations/product/000050/schema-bundle.json",
+			schemaBundleSizeBytes: 79342, schemaBundleRawDigest: "sha256:1a176f485bef8600d928a8c4533b427e3b2ebc8db8f14acc203d118830a0d591",
+			schemaBundleDigest: "sha256:ef7b544d14b80b7e43ca9c8c569202149c5e5fa24742a8b46d22b70a6a0840d0",
+			migrationCount:     50,
+		}
+	}
 	if version == "000015" {
 		return generatedRunnerBindingSelector{
 			selectorID: "product-000015", schemaHead: "000015",
@@ -392,13 +404,13 @@ func productRunnerBindingSelector(version string) generatedRunnerBindingSelector
 	if version == "000049" {
 		return generatedRunnerBindingSelector{
 			selectorID: "product-000049", schemaHead: "000049",
-			manifestPath: "services/control-plane/migrations/product/000049/manifest.json",
+			manifestPath:      "services/control-plane/migrations/product/000049/manifest.json",
 			manifestSizeBytes: 115156, manifestRawDigest: "sha256:4b2fad9a57e20203b5f7da23b640190ce41709ec6c801efd5da06ac6ed51386d",
-			manifestDigest: "sha256:83c066d9ad6684bb8cbcc05781fda50be0dff47425ffd7b015afec034b8ba823",
-			schemaBundlePath: "services/control-plane/migrations/product/000049/schema-bundle.json",
+			manifestDigest:        "sha256:83c066d9ad6684bb8cbcc05781fda50be0dff47425ffd7b015afec034b8ba823",
+			schemaBundlePath:      "services/control-plane/migrations/product/000049/schema-bundle.json",
 			schemaBundleSizeBytes: 77808, schemaBundleRawDigest: "sha256:c1897b24e48f3f4303e64474e0820c0e6efa8c4169370a4ca53a0ba806d6c72e",
 			schemaBundleDigest: "sha256:7a5651a487bf3636328fad27588fe0668c11f782bb5be771fbe0e16a4b3bd8c2",
-			migrationCount: 49,
+			migrationCount:     49,
 		}
 	}
 	if version == "000048" {

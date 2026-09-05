@@ -74,6 +74,32 @@ func TestDecodeAdminWorkerPageRowsProjectsLeaseBackedWorkers(t *testing.T) {
 		}
 	}
 	failed := row("lease-beta")
+	healthy := row("lease-alpha")
+	healthy.Health = &AdminWorkerHealth{State: "online", CheckedAt: now, ExpiresAt: now.Add(time.Minute), LastSuccessAt: &now}
+	for _, health := range []*AdminWorkerHealth{
+		healthy.Health,
+		{State: "unavailable", CheckedAt: now, ExpiresAt: now.Add(time.Second)},
+		{State: "expired", CheckedAt: now, ExpiresAt: now.Add(time.Minute)},
+	} {
+		healthy.Health = health
+		raw, _ := json.Marshal([]adminWorkerPageRow{healthy})
+		page, err := decodeAdminWorkerPageRows(raw, "tenant-alpha", "project-alpha", 1)
+		if err != nil || page.Workers[0].Health == nil || page.Workers[0].Health.State != health.State {
+			t.Fatalf("health projection: %v", err)
+		}
+	}
+	for _, health := range []*AdminWorkerHealth{
+		{State: "online", CheckedAt: now, ExpiresAt: now.Add(time.Minute)},
+		{State: "ready", CheckedAt: now, ExpiresAt: now.Add(time.Minute)},
+		{State: "unavailable", CheckedAt: now, ExpiresAt: now},
+		{State: "expired", CheckedAt: now, ExpiresAt: now.Add(61 * time.Second)},
+	} {
+		healthy.Health = health
+		raw, _ := json.Marshal([]adminWorkerPageRow{healthy})
+		if _, err := decodeAdminWorkerPageRows(raw, "tenant-alpha", "project-alpha", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+			t.Fatalf("accepted health drift: %v", err)
+		}
+	}
 	failed.ObservedPhase = "failed"
 	failed.WorkerEndpoint, failed.WorkerSPIFFEID, failed.WorkerServerName = "", "", ""
 	failed.StableErrorCode = "docker-worker-unavailable"

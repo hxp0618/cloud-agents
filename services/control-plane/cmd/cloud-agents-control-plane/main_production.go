@@ -34,6 +34,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerhealth"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -200,6 +201,13 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("worker CA configuration is invalid")
 	}
 	var workerSupervisor *workerclient.Supervisor
+	healthContext, cancelHealth := context.WithCancel(ctx)
+	healthDone := make(chan struct{})
+	go func() {
+		defer close(healthDone)
+		workerhealth.Run(healthContext, pool, workerClientCertificate, workerCAs, logger)
+	}()
+	defer func() { cancelHealth(); <-healthDone }()
 	if config.workerEndpoint != "" {
 		workerIdentity, identityErr := productionWorkerIdentity(config.workerSPIFFE)
 		if identityErr != nil {
