@@ -474,6 +474,8 @@ func writeEnvironmentProfileError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, http.StatusConflict, "profile_transition_conflict")
 	case errors.Is(err, postgres.ErrEnvironmentProfileStoragePolicyUnavailable):
 		writePublicProblem(writer, http.StatusConflict, "storage_policy_unavailable")
+	case errors.Is(err, postgres.ErrEnvironmentProfileNetworkPolicyUnavailable):
+		writePublicProblem(writer, http.StatusConflict, "network_policy_unavailable")
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 	default:

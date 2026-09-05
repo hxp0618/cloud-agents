@@ -28,6 +28,8 @@ import {
   decodeProjectCreateRequest,
   decodeProjectLeaseQuota,
   decodeProjectLeaseQuotaSummary,
+  decodeNetworkPolicy,
+  decodeNetworkPolicyPage,
   decodeStoragePolicy,
   decodeStoragePolicyPage,
   decodeUserEnvironment,
@@ -60,6 +62,8 @@ import {
   parseProjectCreateRequest,
   parseProjectLeaseQuota,
   parseProjectLeaseQuotaSummary,
+  parseNetworkPolicy,
+  parseNetworkPolicyPage,
   parseStoragePolicy,
   parseStoragePolicyPage,
   parseUserEnvironment,
@@ -717,6 +721,7 @@ describe("generated platform JSON models", () => {
       cpuLimitMillis: 2000,
       memoryLimitBytes: 4294967296,
       storageSummary: "20 GiB managed workspace",
+      networkSummary: "Public internet access",
     };
     const page = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
@@ -844,6 +849,62 @@ describe("generated platform JSON models", () => {
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard",
       "PUT /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard/audit-events?pageSize=1",
+    ]);
+  });
+  it("manages Network Policies without resolving opaque references", async () => {
+    const policy = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "NetworkPolicy",
+      metadata: {
+        uid: "network-public",
+        name: "network-public",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-05T04:00:00Z",
+        updatedAt: "2026-09-05T04:00:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        userSummary: "Public internet access",
+        defaultEgress: "public",
+        ingressEnabled: false,
+        previewEnabled: false,
+      },
+    };
+    const page = {
+      apiVersion: policy.apiVersion,
+      kind: "NetworkPolicyPage",
+      networkPolicies: [policy],
+    };
+    expect(decodeNetworkPolicy(policy).spec.defaultEgress).toBe("public");
+    expect(decodeNetworkPolicyPage(page).networkPolicies).toHaveLength(1);
+    expect(parseNetworkPolicy(JSON.stringify(policy)).value.metadata.uid).toBe("network-public");
+    expect(parseNetworkPolicyPage(JSON.stringify(page)).value.networkPolicies).toHaveLength(1);
+    expect(() => decodeNetworkPolicy({ ...policy, spec: { ...policy.spec, endpoint: "tcp://host" } })).toThrow();
+
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      if (request.path.endsWith("/audit-events?pageSize=1")) return { status: 200, headers: {}, body: JSON.stringify({ apiVersion: policy.apiVersion, kind: "AdminAuditEventPage", events: [] }) };
+      if (request.path.endsWith("/network-policies?pageSize=1")) return { status: 200, headers: {}, body: JSON.stringify(page) };
+      return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(policy) };
+    });
+    await client.listAdminNetworkPolicies("tenant-alpha", "project-alpha", "request-network-list", 1);
+    await client.getAdminNetworkPolicy("tenant-alpha", "project-alpha", "network-public", "request-network-get");
+    await client.setAdminNetworkPolicy("tenant-alpha", "project-alpha", "network-public", "request-network-set", "network-set-key-0001", {
+      expectedResourceVersion: "0",
+      policyName: "network-public",
+      userSummary: "Public internet access",
+      defaultEgress: "public",
+      ingressEnabled: false,
+      previewEnabled: false,
+    });
+    await client.listAdminNetworkPolicyAuditEvents("tenant-alpha", "project-alpha", "network-public", "request-network-audit", 1);
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies?pageSize=1",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-public",
+      "PUT /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-public",
+      "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-public/audit-events?pageSize=1",
     ]);
   });
   it("creates and reads an environment using only immutable Profile identity", async () => {

@@ -67,6 +67,7 @@ type publishedEnvironmentProfilePageRow struct {
 	CPULimitMillis    int64    `json:"cpu_limit_millis"`
 	MemoryLimitBytes  int64    `json:"memory_limit_bytes"`
 	StorageSummary    string   `json:"storage_summary"`
+	NetworkSummary    string   `json:"network_summary"`
 }
 
 type environmentProfileAuditPageRow struct {
@@ -90,9 +91,9 @@ const environmentProfileColumns = `profile_version_uid, profile_uid, profile_nam
 
 var (
 	createEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
-FROM cloud_agents.create_environment_profile_draft_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+FROM cloud_agents.create_environment_profile_draft_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
 	transitionEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
-FROM cloud_agents.transition_environment_profile_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.transition_environment_profile_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getEnvironmentProfileSQL = `SELECT ` + environmentProfileColumns + `
 FROM cloud_agents.environment_profiles
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
@@ -130,6 +131,15 @@ WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_u
         SELECT 1 FROM cloud_agents.storage_policies AS policy
         WHERE policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
             AND policy.policy_uid = profile.storage_policy_ref
+    )
+    AND EXISTS (
+        SELECT 1 FROM cloud_agents.network_policies AS policy
+        WHERE policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
+            AND policy.policy_uid = profile.network_policy_ref
+            AND policy.default_egress = 'public'
+            AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
+            AND policy.proxy_policy_ref IS NULL
+            AND NOT policy.ingress_enabled AND NOT policy.preview_enabled
     )`
 	listPublishedEnvironmentProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
     ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
@@ -137,13 +147,20 @@ FROM (
     SELECT profile.tenant_id, profile.project_uid, profile.profile_version_uid,
         profile.profile_uid, profile.profile_name, profile.profile_version, profile.description,
         profile.provider_kinds, profile.cpu_limit_millis, profile.memory_limit_bytes,
-        policy.user_summary AS storage_summary
+        policy.user_summary AS storage_summary, network.user_summary AS network_summary
     FROM cloud_agents.environment_profiles AS profile
     JOIN cloud_agents.storage_policies AS policy
       ON policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
      AND policy.policy_uid = profile.storage_policy_ref
+    JOIN cloud_agents.network_policies AS network
+      ON network.tenant_id = profile.tenant_id AND network.project_uid = profile.project_uid
+     AND network.policy_uid = profile.network_policy_ref
     WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_uid = $1
         AND profile.profile_version_uid > $2 AND profile.status = 'published'
+        AND network.default_egress = 'public'
+        AND network.allowlist_policy_ref IS NULL AND network.dns_policy_ref IS NULL
+        AND network.proxy_policy_ref IS NULL
+        AND NOT network.ingress_enabled AND NOT network.preview_enabled
         AND EXISTS (
             SELECT 1 FROM cloud_agents.deployment_targets AS target
             WHERE target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
@@ -471,6 +488,7 @@ func decodePublishedEnvironmentProfilePageRows(raw []byte, tenantID, projectID s
 			Version: row.Version, Description: row.Description, ProviderKinds: row.ProviderKinds,
 			CPULimitMillis: row.CPULimitMillis, MemoryLimitBytes: row.MemoryLimitBytes,
 			StorageSummary: row.StorageSummary,
+			NetworkSummary: row.NetworkSummary,
 		}
 		if row.TenantID != tenantID || row.ProjectID != projectID || summary.Validate() != nil {
 			return PublishedEnvironmentProfilePage{}, ErrCoordinationResultDrift
@@ -548,6 +566,9 @@ func environmentProfileSnapshot(row environmentProfilePageRow, tenantID, project
 func mapEnvironmentProfileError(err error) error {
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {
+		if postgresError.Code == "23503" && postgresError.Message == "network policy is not available" {
+			return ErrEnvironmentProfileNetworkPolicyUnavailable
+		}
 		if postgresError.Code == "23503" && postgresError.Message == "storage policy is not available" {
 			return ErrEnvironmentProfileStoragePolicyUnavailable
 		}
@@ -582,3 +603,4 @@ var ErrEnvironmentProfileIdempotencyConflict = errors.New("environment profile i
 var ErrEnvironmentProfileVersionConflict = errors.New("environment profile version conflicts")
 var ErrEnvironmentProfileTransitionConflict = errors.New("environment profile transition conflicts")
 var ErrEnvironmentProfileStoragePolicyUnavailable = errors.New("environment profile storage policy is unavailable")
+var ErrEnvironmentProfileNetworkPolicyUnavailable = errors.New("environment profile network policy is unavailable")

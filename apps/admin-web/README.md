@@ -10,3 +10,7 @@ CLOUD_AGENTS_CONTROL_PLANE_URL=http://127.0.0.1:8080 bun --filter @cloud-agents/
 ```
 
 Open `http://127.0.0.1:4174`, enter the tenant/project IDs, and paste the token written by the local Control Plane `--local-admin-token-file` option. The ordinary `--local-token-file` token is expected to receive HTTP 403 from these routes. Neither token nor infrastructure credential bytes are persisted in browser storage.
+
+Network Policies use the generated SDK and PostgreSQL authority (`network-policies.list/get/update` and `audit.list`). Saves require an idempotency key and expected resource version; any Profile reference makes the policy immutable. Create a new policy ID for changes. The Profile editor selects existing policies, and User Web receives only `networkSummary`, never network references or endpoints.
+
+Execution boundary: only public egress with no allowlist/DNS/proxy reference and disabled ingress/preview is currently deployable. Other policy configurations can be stored and bound to drafts, but publication and new environment creation fail closed until target adapters implement their semantics. Policy CRUD is not evidence of enforced network isolation.

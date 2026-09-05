@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/network-policy-page.schema.json",
+  "title": "NetworkPolicyPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "networkPolicies"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "NetworkPolicyPage" },
+    "networkPolicies": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "./network-policy.schema.json" }
+    },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

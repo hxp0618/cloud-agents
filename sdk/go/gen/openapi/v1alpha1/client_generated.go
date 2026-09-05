@@ -99,6 +99,8 @@ type ProjectLeaseQuotaResult = common.ResponseEnvelope[platform.ProjectLeaseQuot
 type ProjectLeaseQuotaSummaryResult = common.ResponseEnvelope[platform.ProjectLeaseQuotaSummary]
 type StoragePolicyResult = common.ResponseEnvelope[platform.StoragePolicy]
 type StoragePolicyPageResult = common.ResponseEnvelope[platform.StoragePolicyPage]
+type NetworkPolicyResult = common.ResponseEnvelope[platform.NetworkPolicy]
+type NetworkPolicyPageResult = common.ResponseEnvelope[platform.NetworkPolicyPage]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -1158,6 +1160,141 @@ func (client *Client) ListAdminStoragePolicyAuditEvents(ctx context.Context, ten
 	}
 	for _, event := range value.Value.Events {
 		if event.ResourceKind != "StoragePolicy" || event.ResourceID != storagePolicyID {
+			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminNetworkPolicies(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (NetworkPolicyPageResult, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, "", requestID); err != nil {
+		return NetworkPolicyPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return NetworkPolicyPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return NetworkPolicyPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/network-policies"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return NetworkPolicyPageResult{}, err
+	}
+	if response.Status != 200 {
+		return NetworkPolicyPageResult{}, client.problemError("adminListNetworkPolicies", response)
+	}
+	value, err := platform.DecodeNetworkPolicyPageResponseJSON(response.Body)
+	if err != nil {
+		return NetworkPolicyPageResult{}, &ClientError{Operation: "adminListNetworkPolicies", Status: response.Status, Cause: err}
+	}
+	for _, policy := range value.Value.NetworkPolicies {
+		if policy.Metadata.TenantRef.ID != tenantID || policy.Spec.ProjectRef.ID != projectID {
+			return NetworkPolicyPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/networkPolicies")
+		}
+	}
+	return value, nil
+}
+func (client *Client) GetAdminNetworkPolicy(ctx context.Context, tenantID, projectID, networkPolicyID, requestID string) (NetworkPolicyResult, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID); err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/network-policies/" + networkPolicyID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	if response.Status != 200 {
+		return NetworkPolicyResult{}, client.problemError("adminGetNetworkPolicy", response)
+	}
+	value, err := platform.DecodeNetworkPolicyResponseJSON(response.Body)
+	if err != nil {
+		return NetworkPolicyResult{}, &ClientError{Operation: "adminGetNetworkPolicy", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != networkPolicyID || value.Value.Spec.ProjectRef.ID != projectID {
+		return NetworkPolicyResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) SetAdminNetworkPolicy(ctx context.Context, tenantID, projectID, networkPolicyID, requestID, idempotencyKey string, body platform.NetworkPolicySetRequest) (NetworkPolicyResult, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID); err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	bodyBytes, err := platform.EncodeNetworkPolicySetRequestJSON(body)
+	if err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "PUT", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/network-policies/" + networkPolicyID, Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	if response.Status != 200 {
+		return NetworkPolicyResult{}, client.problemError("adminSetNetworkPolicy", response)
+	}
+	value, err := platform.DecodeNetworkPolicyResponseJSON(response.Body)
+	if err != nil {
+		return NetworkPolicyResult{}, &ClientError{Operation: "adminSetNetworkPolicy", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return NetworkPolicyResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != networkPolicyID || value.Value.Metadata.Name != body.PolicyName || value.Value.Spec.ProjectRef.ID != projectID {
+		return NetworkPolicyResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminNetworkPolicyAuditEvents(ctx context.Context, tenantID, projectID, networkPolicyID, requestID string, pageSize int, pageToken string) (AdminAuditEventPageResult, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID); err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return AdminAuditEventPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return AdminAuditEventPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/network-policies/" + networkPolicyID + "/audit-events"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return AdminAuditEventPageResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminAuditEventPageResult{}, client.problemError("adminListNetworkPolicyAuditEvents", response)
+	}
+	value, err := platform.DecodeAdminAuditEventPageResponseJSON(response.Body)
+	if err != nil {
+		return AdminAuditEventPageResult{}, &ClientError{Operation: "adminListNetworkPolicyAuditEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range value.Value.Events {
+		if event.ResourceKind != "NetworkPolicy" || event.ResourceID != networkPolicyID {
 			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
 		}
 	}
@@ -3898,6 +4035,99 @@ func validateStoragePolicyPath(tenantID, projectID, storagePolicyID, requestID s
 	}
 	if storagePolicyID != "" {
 		return common.ValidateIdentifier(storagePolicyID, "/storagePolicyId")
+	}
+	return nil
+}
+
+type ListAdminNetworkPoliciesServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminNetworkPoliciesServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminNetworkPoliciesServerInput, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, "", requestID); err != nil {
+		return ListAdminNetworkPoliciesServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminNetworkPoliciesServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminNetworkPoliciesServerInput{}, err
+		}
+	}
+	return ListAdminNetworkPoliciesServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type GetAdminNetworkPolicyServerInput struct {
+	TenantID        string
+	ProjectID       string
+	NetworkPolicyID string
+	RequestID       string
+}
+
+func ValidateGetAdminNetworkPolicyServerRequest(tenantID, projectID, networkPolicyID, requestID string) (GetAdminNetworkPolicyServerInput, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID); err != nil {
+		return GetAdminNetworkPolicyServerInput{}, err
+	}
+	return GetAdminNetworkPolicyServerInput{TenantID: tenantID, ProjectID: projectID, NetworkPolicyID: networkPolicyID, RequestID: requestID}, nil
+}
+
+type SetAdminNetworkPolicyServerInput struct {
+	TenantID        string
+	ProjectID       string
+	NetworkPolicyID string
+	RequestID       string
+	IdempotencyKey  string
+	Body            platform.NetworkPolicySetRequest
+}
+
+func ValidateSetAdminNetworkPolicyServerRequest(tenantID, projectID, networkPolicyID, requestID, idempotencyKey string, body []byte) (SetAdminNetworkPolicyServerInput, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID); err != nil {
+		return SetAdminNetworkPolicyServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return SetAdminNetworkPolicyServerInput{}, err
+	}
+	value, err := platform.DecodeNetworkPolicySetRequestJSON(body)
+	if err != nil {
+		return SetAdminNetworkPolicyServerInput{}, err
+	}
+	return SetAdminNetworkPolicyServerInput{TenantID: tenantID, ProjectID: projectID, NetworkPolicyID: networkPolicyID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type ListAdminNetworkPolicyAuditEventsServerInput struct {
+	TenantID        string
+	ProjectID       string
+	NetworkPolicyID string
+	RequestID       string
+	PageSize        int
+	PageToken       string
+}
+
+func ValidateListAdminNetworkPolicyAuditEventsServerRequest(tenantID, projectID, networkPolicyID, requestID string, pageSize int, pageToken string) (ListAdminNetworkPolicyAuditEventsServerInput, error) {
+	if err := validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID); err != nil {
+		return ListAdminNetworkPolicyAuditEventsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminNetworkPolicyAuditEventsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminNetworkPolicyAuditEventsServerInput{}, err
+		}
+	}
+	return ListAdminNetworkPolicyAuditEventsServerInput{TenantID: tenantID, ProjectID: projectID, NetworkPolicyID: networkPolicyID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+func validateNetworkPolicyPath(tenantID, projectID, networkPolicyID, requestID string) error {
+	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {
+		return err
+	}
+	if networkPolicyID != "" {
+		return common.ValidateIdentifier(networkPolicyID, "/networkPolicyId")
 	}
 	return nil
 }

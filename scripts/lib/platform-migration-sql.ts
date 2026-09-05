@@ -73,6 +73,14 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
       targetIdentity: "table:unquoted:cloud_agents/unquoted:storage_policies",
     },
   ],
+  [
+    "sha256:3a9b180bb586922b93e98af61b86107220bfca748908e78c460eb81e6bc33339",
+    {
+      migrationId: "000049",
+      statementIndex: 1,
+      targetIdentity: "table:unquoted:cloud_agents/unquoted:network_policies",
+    },
+  ],
 ]);
 const DURABLE_COORDINATION_OPERATION_EFFECT_INDEX = {
   migrationId: "000007",

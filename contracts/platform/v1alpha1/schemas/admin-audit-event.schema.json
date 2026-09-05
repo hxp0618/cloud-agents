@@ -24,9 +24,9 @@
     "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "actor": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "action": {
-      "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "target.upgrade", "target.rollback", "profile.create", "profile.publish", "profile.disable", "quota.set", "storage-policy.set"]
+      "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "target.upgrade", "target.rollback", "profile.create", "profile.publish", "profile.disable", "quota.set", "storage-policy.set", "network-policy.set"]
     },
-    "resourceKind": { "enum": ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota", "StoragePolicy"] },
+    "resourceKind": { "enum": ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota", "StoragePolicy", "NetworkPolicy"] },
     "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "resourceGeneration": { "type": "integer", "minimum": 1 },
     "result": { "enum": ["requested", "succeeded", "failed"] },

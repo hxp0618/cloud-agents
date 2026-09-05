@@ -8,6 +8,7 @@ import {
   listAdminLeases,
   listAdminProfiles,
   listAdminStoragePolicies,
+  listAdminNetworkPolicies,
   listAdminStoragePolicyAuditEvents,
   listAdminReleases,
   listAdminMaintenanceOperations,
@@ -304,6 +305,31 @@ describe("Admin Web boundary", () => {
       "audit:storage-standard:first",
       "audit:storage-standard:next-audit-page",
     ]);
+  });
+
+  it("stops repeated network-policy cursors instead of looping forever", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminNetworkPolicies: async (
+        _tenant: string,
+        _project: string,
+        _request: string,
+        _size: number,
+        cursor?: string,
+      ) => {
+        tokens.push(cursor);
+        return { value: { networkPolicies: [], nextPageToken: "repeated" } };
+      },
+    } as unknown as AdminClient;
+    await expect(
+      listAdminNetworkPolicies(
+        client,
+        "tenant-alpha",
+        "project-alpha",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow();
+    expect(tokens).toEqual([undefined, "repeated"]);
   });
 
   it("loads project Lease quota from Admin API and treats no policy as optional", async () => {

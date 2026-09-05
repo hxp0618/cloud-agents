@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/network-policy-set-request.schema.json",
+  "title": "NetworkPolicySetRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"],
+  "properties": {
+    "expectedResourceVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
+    "policyName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "userSummary": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "defaultEgress": { "enum": ["public", "restricted", "deny"] },
+    "allowlistPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "ingressEnabled": { "type": "boolean" },
+    "previewEnabled": { "type": "boolean" },
+    "dnsPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "proxyPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "expectedResourceVersion 0 creates a policy and a positive value updates that exact version",
+    "a policy referenced by any Environment Profile is immutable and changes require a new policy id",
+    "allowlistPolicyRef, dnsPolicyRef, and proxyPolicyRef are opaque references and never contain endpoint or secret bytes",
+    "the User API receives only the administrator-authored userSummary"
+  ]
+}

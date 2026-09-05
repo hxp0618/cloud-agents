@@ -91,6 +91,7 @@ type Summary struct {
 	CPULimitMillis    int64
 	MemoryLimitBytes  int64
 	StorageSummary    string
+	NetworkSummary    string
 }
 
 type AuditEvent struct {
@@ -206,7 +207,7 @@ func (summary Summary) Validate() error {
 		invalidDescription(summary.Description) || !validProviderKinds(summary.ProviderKinds) ||
 		summary.CPULimitMillis < 100 || summary.CPULimitMillis > 64000 ||
 		summary.MemoryLimitBytes < 134217728 || summary.MemoryLimitBytes > 1099511627776 ||
-		invalidSummary(summary.StorageSummary) {
+		invalidSummary(summary.StorageSummary) || invalidSummary(summary.NetworkSummary) {
 		return ErrInvalidInput
 	}
 	return nil

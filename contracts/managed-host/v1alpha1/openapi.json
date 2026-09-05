@@ -607,6 +607,107 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/network-policies": {
+      "get": {
+        "operationId": "adminListNetworkPolicies",
+        "x-cloud-agents-required-scope": "network-policies.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project Network Policies",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/network-policy-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/network-policies/{networkPolicyId}": {
+      "get": {
+        "operationId": "adminGetNetworkPolicy",
+        "x-cloud-agents-required-scope": "network-policies.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/NetworkPolicyId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/NetworkPolicy" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "put": {
+        "operationId": "adminSetNetworkPolicy",
+        "x-cloud-agents-required-scope": "network-policies.update",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/NetworkPolicyId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/network-policy-set-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/NetworkPolicy" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/network-policies/{networkPolicyId}/audit-events": {
+      "get": {
+        "operationId": "adminListNetworkPolicyAuditEvents",
+        "x-cloud-agents-required-scope": "audit.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/NetworkPolicyId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted Network Policy audit events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/lease-quota": {
       "get": {
         "operationId": "adminGetProjectLeaseQuota",
@@ -1493,6 +1594,12 @@
         "required": true,
         "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
       },
+      "NetworkPolicyId": {
+        "name": "networkPolicyId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
       "TargetId": {
         "name": "targetId",
         "in": "path",
@@ -1594,6 +1701,18 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy.schema.json" }
+          }
+        }
+      },
+      "NetworkPolicy": {
+        "description": "Project Network Policy",
+        "headers": {
+          "X-Request-ID": { "$ref": "#/components/headers/RequestId" },
+          "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/network-policy.schema.json" }
           }
         }
       },

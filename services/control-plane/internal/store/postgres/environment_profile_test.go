@@ -47,6 +47,7 @@ func TestPublishedEnvironmentProfileRowsAreSchedulableAndRedacted(t *testing.T) 
 			ProfileID: profileID, ProfileName: profileID, Version: 1, Description: "Standard workspace",
 			ProviderKinds: []string{"codex", "claudeAgent"}, CPULimitMillis: 2000, MemoryLimitBytes: 4294967296,
 			StorageSummary: "20 GiB managed workspace",
+			NetworkSummary: "Public internet access",
 		}
 	}
 	raw, err := json.Marshal([]publishedEnvironmentProfilePageRow{
@@ -64,16 +65,23 @@ func TestPublishedEnvironmentProfileRowsAreSchedulableAndRedacted(t *testing.T) 
 		t.Fatalf("cross-project page error = %v", err)
 	}
 	for _, query := range []string{publishedEnvironmentProfilePageCursorIdentitySQL, listPublishedEnvironmentProfilesSQL} {
+		for _, fence := range []string{"default_egress = 'public'", "allowlist_policy_ref IS NULL", "dns_policy_ref IS NULL", "proxy_policy_ref IS NULL", "ingress_enabled", "preview_enabled"} {
+			if !strings.Contains(query, fence) {
+				t.Fatalf("published profile query is missing network execution fence %s", fence)
+			}
+		}
 		if !strings.Contains(query, "cloud_agents.require_tenant_id()") ||
 			!strings.Contains(query, "profile.status = 'published'") ||
 			!strings.Contains(query, "target.observed_phase = 'ready'") ||
 			!strings.Contains(query, "cloud_agents.worker_releases") ||
-			!strings.Contains(query, "cloud_agents.storage_policies") {
+			!strings.Contains(query, "cloud_agents.storage_policies") ||
+			!strings.Contains(query, "cloud_agents.network_policies") {
 			t.Fatalf("published profile query lacks authority or schedulability predicate: %s", query)
 		}
 	}
-	for _, forbidden := range []string{"credential_ref", "network_policy_ref", "endpoint"} {
-		if strings.Contains(listPublishedEnvironmentProfilesSQL, forbidden) {
+	projection := strings.Split(strings.Split(listPublishedEnvironmentProfilesSQL, "SELECT profile.tenant_id")[1], "FROM cloud_agents.environment_profiles")[0]
+	for _, forbidden := range []string{"credential_ref", "network_policy_ref", "storage_policy_ref", "endpoint"} {
+		if strings.Contains(projection, forbidden) {
 			t.Fatalf("published profile query projects %q", forbidden)
 		}
 	}
@@ -107,8 +115,8 @@ func TestEnvironmentProfileProjectionAndConflictMapping(t *testing.T) {
 	if err := mapEnvironmentProfileError(&pgconn.PgError{Code: "23503", Message: "storage policy is not available"}); !errors.Is(err, ErrEnvironmentProfileStoragePolicyUnavailable) {
 		t.Fatalf("missing storage policy mapped to %v", err)
 	}
-	if !strings.Contains(createEnvironmentProfileSQL, "create_environment_profile_draft_v3") ||
-		!strings.Contains(transitionEnvironmentProfileSQL, "transition_environment_profile_v3") ||
+	if !strings.Contains(createEnvironmentProfileSQL, "create_environment_profile_draft_v4") ||
+		!strings.Contains(transitionEnvironmentProfileSQL, "transition_environment_profile_v4") ||
 		!strings.Contains(listEnvironmentProfilesSQL, "cloud_agents.require_tenant_id()") {
 		t.Fatal("environment profile store is not bound to migration and tenant authority")
 	}

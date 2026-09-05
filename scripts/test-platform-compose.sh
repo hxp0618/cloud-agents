@@ -250,7 +250,7 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
+  "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
   "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
@@ -868,6 +868,74 @@ if [ "$user_admin_storage_status" -ne 403 ] || \
   echo "Compose ordinary User token was not denied by the Storage Policy Admin API" >&2
   exit 1
 fi
+network_policy_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-compose"
+network_policy_file="$smoke_directory/network-policy.json"
+network_policy_body='{"expectedResourceVersion":"0","policyName":"network-compose","userSummary":"Public internet access","defaultEgress":"public","ingressEnabled":false,"previewEnabled":false}'
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$network_policy_path" \
+  compose-smoke-network-policy --header "Idempotency-Key: compose-smoke-network-policy" \
+  --data "$network_policy_body" >"$network_policy_file"
+CLOUD_AGENTS_COMPOSE_NETWORK_FILE="$network_policy_file" CLOUD_AGENTS_COMPOSE_PROJECT_ID="$project_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_NETWORK_FILE, "utf8"));
+if (value.kind !== "NetworkPolicy" || value.metadata?.uid !== "network-compose" ||
+    value.metadata?.resourceVersion !== "1" || value.spec?.projectRef?.id !== process.env.CLOUD_AGENTS_COMPOSE_PROJECT_ID ||
+    value.spec?.defaultEgress !== "public" || value.spec?.ingressEnabled !== false ||
+    value.spec?.previewEnabled !== false || value.spec?.userSummary !== "Public internet access") {
+  throw new Error("Admin API did not persist the Network Policy authority");
+}
+NODE
+network_policy_replay_file="$smoke_directory/network-policy-replay.json"
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$network_policy_path" \
+  compose-smoke-network-policy-replay --header "Idempotency-Key: compose-smoke-network-policy" \
+  --data "$network_policy_body" >"$network_policy_replay_file"
+cmp "$network_policy_file" "$network_policy_replay_file"
+network_policy_conflict_file="$smoke_directory/network-policy-conflict.json"
+network_policy_conflict_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/admin-curl.conf" --request PUT \
+  --header "X-Request-ID: compose-smoke-network-policy-conflict" \
+  --header "Idempotency-Key: compose-smoke-network-policy-conflict" \
+  --header "Content-Type: application/json" --data "$network_policy_body" \
+  --output "$network_policy_conflict_file" --write-out '%{http_code}' \
+  "https://$endpoint$network_policy_path")
+if [ "$network_policy_conflict_status" -ne 409 ] || \
+  ! grep -q '"code":"NETWORK_POLICY_RESOURCE_VERSION_CONFLICT"' "$network_policy_conflict_file"; then
+  echo "Compose stale Network Policy resource version was not rejected" >&2
+  exit 1
+fi
+network_policy_list_file="$smoke_directory/network-policy-list.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies?pageSize=200" \
+  compose-smoke-network-policy-list >"$network_policy_list_file"
+CLOUD_AGENTS_COMPOSE_NETWORK_FILE="$network_policy_list_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_NETWORK_FILE, "utf8"));
+if (value.kind !== "NetworkPolicyPage" || value.networkPolicies?.length !== 1 ||
+    value.networkPolicies[0]?.metadata?.uid !== "network-compose") {
+  throw new Error("Admin API Network Policy catalog drifted");
+}
+NODE
+network_policy_audit_file="$smoke_directory/network-policy-audit.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET "$network_policy_path/audit-events?pageSize=200" \
+  compose-smoke-network-policy-audit >"$network_policy_audit_file"
+CLOUD_AGENTS_COMPOSE_NETWORK_FILE="$network_policy_audit_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_NETWORK_FILE, "utf8"));
+if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 1 ||
+    value.events[0]?.action !== "network-policy.set" || value.events[0]?.resourceKind !== "NetworkPolicy") {
+  throw new Error("Admin API Network Policy audit drifted");
+}
+NODE
+user_admin_network_file="$smoke_directory/user-admin-network-denied.json"
+user_admin_network_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-user-admin-network-denied" \
+  --output "$user_admin_network_file" --write-out '%{http_code}' \
+  "https://$endpoint$network_policy_path")
+if [ "$user_admin_network_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_network_file"; then
+  echo "Compose ordinary User token was not denied by the Network Policy Admin API" >&2
+  exit 1
+fi
 unapproved_profile_file="$smoke_directory/unapproved-profile.json"
 unapproved_profile_body='{"profileId":"unapproved-profile","profileName":"unapproved-profile","version":1,"description":"Unapproved release must be rejected","providerKinds":["codex"],"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","targetRefs":["docker-compose-target"],"providerCredentialRef":"provider-unapproved"}'
 unapproved_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
@@ -902,6 +970,37 @@ if (value.kind !== "EnvironmentProfile" || value.spec?.profileId !== process.env
 process.stdout.write(value.metadata.resourceVersion);
 NODE
 )
+# Non-default policies can be saved but must never deploy with silently ignored restrictions.
+network_deny_body='{"expectedResourceVersion":"0","policyName":"network-deny","userSummary":"No internet access","defaultEgress":"deny","ingressEnabled":false,"previewEnabled":false}'
+control_plane_api "$smoke_directory/admin-curl.conf" PUT \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-deny" \
+  compose-smoke-network-deny --header "Idempotency-Key: compose-smoke-network-deny" \
+  --data "$network_deny_body" >"$smoke_directory/network-deny.json"
+network_deny_profile_body=$(CLOUD_AGENTS_COMPOSE_PROFILE_BODY="$profile_create_body" node <<'NODE'
+const value = JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_BODY);
+value.profileId = "network-deny-profile";
+value.profileName = "network-deny-profile";
+value.networkPolicyRef = "network-deny";
+process.stdout.write(JSON.stringify(value));
+NODE
+)
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles" \
+  compose-smoke-network-deny-profile --header "Idempotency-Key: compose-smoke-network-deny-profile" \
+  --data "$network_deny_profile_body" >"$smoke_directory/network-deny-profile.json"
+network_deny_publish_file="$smoke_directory/network-deny-publish.json"
+network_deny_publish_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/admin-curl.conf" --request POST \
+  --header "X-Request-ID: compose-smoke-network-deny-publish" \
+  --header "Idempotency-Key: compose-smoke-network-deny-publish" \
+  --header "Content-Type: application/json" --data '{"expectedResourceVersion":"1"}' \
+  --output "$network_deny_publish_file" --write-out '%{http_code}' \
+  "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles/network-deny-profile/versions/1:publish")
+if [ "$network_deny_publish_status" -ne 409 ] || \
+  ! grep -q '"code":"NETWORK_POLICY_UNAVAILABLE"' "$network_deny_publish_file"; then
+  echo "Compose unsupported network enforcement did not fail closed at publication" >&2
+  exit 1
+fi
 profile_publish_file="$smoke_directory/profile-publish.json"
 control_plane_api "$smoke_directory/admin-curl.conf" POST \
   "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles/$profile_id/versions/1:publish" \
@@ -938,10 +1037,10 @@ const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
 const profile = value.environmentProfiles?.find((item) => item.profileId === process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID);
 const expectedKeys = ["apiVersion", "availability", "cpuLimitMillis", "description", "kind", "memoryLimitBytes",
-  "name", "profileId", "projectRef", "providerKinds", "status", "storageSummary", "version"].sort();
+  "name", "networkSummary", "profileId", "projectRef", "providerKinds", "status", "storageSummary", "version"].sort();
 if (!profile || profile.kind !== "EnvironmentProfileSummary" || profile.version !== 1 ||
     profile.status !== "published" || profile.availability !== "available" ||
-    profile.storageSummary !== "20 GiB managed workspace") {
+    profile.storageSummary !== "20 GiB managed workspace" || profile.networkSummary !== "Public internet access") {
   throw new Error("User API did not return the published Profile summary");
 }
 const actualKeys = Object.keys(profile).sort();
@@ -965,6 +1064,20 @@ if [ "$storage_policy_referenced_status" -ne 409 ] || \
   exit 1
 fi
 
+network_policy_referenced_file="$smoke_directory/network-policy-referenced.json"
+network_policy_referenced_body='{"expectedResourceVersion":"1","policyName":"network-compose","userSummary":"Restricted access","defaultEgress":"restricted","ingressEnabled":false,"previewEnabled":false}'
+network_policy_referenced_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/admin-curl.conf" --request PUT \
+  --header "X-Request-ID: compose-smoke-network-policy-referenced" \
+  --header "Idempotency-Key: compose-smoke-network-policy-referenced" \
+  --header "Content-Type: application/json" --data "$network_policy_referenced_body" \
+  --output "$network_policy_referenced_file" --write-out '%{http_code}' \
+  "https://$endpoint$network_policy_path")
+if [ "$network_policy_referenced_status" -ne 409 ] || \
+  ! grep -q '"code":"NETWORK_POLICY_REFERENCED"' "$network_policy_referenced_file"; then
+  echo "Compose mutated a Network Policy already referenced by a Profile" >&2
+  exit 1
+fi
 quota_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/lease-quota"
 quota_create_file="$smoke_directory/quota-create.json"
 quota_create_body='{"expectedResourceVersion":"0","maxConcurrentLeases":1,"maxCpuMillis":1000,"maxMemoryBytes":536870912,"maxLeaseTtlSeconds":3600}'

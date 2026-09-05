@@ -27,7 +27,7 @@ func (fake *publishedEnvironmentProfileStoreFake) ListPublishedEnvironmentProfil
 			Scope:             internalenvironmentprofile.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
 			ProfileVersionUID: "ep-alpha-v1", ProfileID: "profile-alpha", ProfileName: "profile-alpha",
 			Version: 1, Description: "Codex and Claude development", ProviderKinds: []string{"codex", "claudeAgent"},
-			CPULimitMillis: 2000, MemoryLimitBytes: 4294967296, StorageSummary: "20 GiB managed workspace",
+			CPULimitMillis: 2000, MemoryLimitBytes: 4294967296, StorageSummary: "20 GiB managed workspace", NetworkSummary: "Public internet access",
 		}},
 		NextProfileVersionID: "ep-alpha-v1",
 	}, nil

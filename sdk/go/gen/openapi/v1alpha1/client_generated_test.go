@@ -271,7 +271,7 @@ func TestGeneratedOpenAPIClientListsAdminWorkers(t *testing.T) {
 }
 
 func TestGeneratedOpenAPIClientListsPublishedEnvironmentProfiles(t *testing.T) {
-	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummaryPage","environmentProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296,"storageSummary":"20 GiB managed workspace"}]}`)
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummaryPage","environmentProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296,"storageSummary":"20 GiB managed workspace","networkSummary":"Public internet access"}]}`)
 	var seen Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = request
@@ -364,6 +364,45 @@ func TestGeneratedOpenAPIClientManagesStoragePolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(seen) != 4 || seen[2].Method != "PUT" || seen[3].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/storage-policies/storage-standard/audit-events?pageSize=1" {
+		t.Fatalf("requests=%#v", seen)
+	}
+}
+
+func TestGeneratedOpenAPIClientManagesNetworkPolicies(t *testing.T) {
+	policyBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicy","metadata":{"uid":"network-public","name":"network-public","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T04:00:00Z","updatedAt":"2026-09-05T04:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"Public internet access","defaultEgress":"public","ingressEnabled":false,"previewEnabled":false}}`)
+	pageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicyPage","networkPolicies":[` + string(policyBody) + `]}`)
+	auditBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"AdminAuditEventPage","events":[]}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		if strings.Contains(request.Path, "/audit-events") {
+			return Response{Status: 200, Body: auditBody}, nil
+		}
+		if strings.HasSuffix(request.Path, "/network-policies?pageSize=1") {
+			return Response{Status: 200, Body: pageBody}, nil
+		}
+		return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "1"}, Body: policyBody}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.ListAdminNetworkPolicies(ctx, "tenant-alpha", "project-alpha", "request-network-list", 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetAdminNetworkPolicy(ctx, "tenant-alpha", "project-alpha", "network-public", "request-network-get"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SetAdminNetworkPolicy(ctx, "tenant-alpha", "project-alpha", "network-public", "request-network-set", "network-set-key-0001", platform.NetworkPolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "network-public", UserSummary: "Public internet access",
+		DefaultEgress: "public", IngressEnabled: false, PreviewEnabled: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListAdminNetworkPolicyAuditEvents(ctx, "tenant-alpha", "project-alpha", "network-public", "request-network-audit", 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 4 || seen[2].Method != "PUT" || seen[3].Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-public/audit-events?pageSize=1" {
 		t.Fatalf("requests=%#v", seen)
 	}
 }

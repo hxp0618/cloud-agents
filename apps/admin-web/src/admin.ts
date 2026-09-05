@@ -15,6 +15,7 @@ import {
   type MaintenanceOperation,
   type ProjectLeaseQuota,
   type StoragePolicy,
+  type NetworkPolicy,
   type Worker,
   type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -56,6 +57,10 @@ export type AdminClient = Pick<
   | "getAdminStoragePolicy"
   | "setAdminStoragePolicy"
   | "listAdminStoragePolicyAuditEvents"
+  | "listAdminNetworkPolicies"
+  | "getAdminNetworkPolicy"
+  | "setAdminNetworkPolicy"
+  | "listAdminNetworkPolicyAuditEvents"
 >;
 
 export type SavedAdminConnection = Readonly<{
@@ -435,7 +440,76 @@ export function replaceStoragePolicy(
     ),
   );
 }
+export async function listAdminNetworkPolicies(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly NetworkPolicy[]> {
+  const policies: NetworkPolicy[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminNetworkPolicies(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    policies.push(...page.value.networkPolicies);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.networkPolicyPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    policies.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
 
+export async function listAdminNetworkPolicyAuditEvents(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  policyId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  const events: AdminAuditEvent[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminNetworkPolicyAuditEvents(
+      tenantId,
+      projectId,
+      policyId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    events.push(...page.value.events);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.auditPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(events);
+}
+
+export function replaceNetworkPolicy(
+  policies: readonly NetworkPolicy[],
+  policy: NetworkPolicy,
+): readonly NetworkPolicy[] {
+  return Object.freeze(
+    [...policies.filter(({ metadata }) => metadata.uid !== policy.metadata.uid), policy].toSorted(
+      (left, right) => left.metadata.name.localeCompare(right.metadata.name),
+    ),
+  );
+}
 export async function loadAdminProjectLeaseQuota(
   client: AdminClient,
   tenantId: string,

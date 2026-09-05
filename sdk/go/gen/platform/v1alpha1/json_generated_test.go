@@ -161,7 +161,7 @@ func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
 }
 
 func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testing.T) {
-	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296,"storageSummary":"20 GiB managed workspace"}`)
+	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"development","name":"development","version":1,"description":"Daily coding workspace","status":"published","availability":"available","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":2000,"memoryLimitBytes":4294967296,"storageSummary":"20 GiB managed workspace","networkSummary":"Public internet access"}`)
 	decoded, err := DecodeEnvironmentProfileSummaryJSON(summary)
 	if err != nil || decoded.Status != "published" || decoded.Availability != "available" {
 		t.Fatalf("summary=%#v error=%v", decoded, err)
@@ -181,6 +181,18 @@ func TestGeneratedStoragePolicyContractKeepsSupportedLifecycle(t *testing.T) {
 	unsupported := bytes.Replace(policy, []byte(`"retentionSeconds":0`), []byte(`"retentionSeconds":3600`), 1)
 	if _, err := DecodeStoragePolicyResponseJSON(unsupported); err == nil {
 		t.Fatal("unsupported delayed retention accepted")
+	}
+}
+
+func TestGeneratedNetworkPolicyContractKeepsOpaqueReferences(t *testing.T) {
+	policy := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicy","metadata":{"uid":"network-restricted","name":"network-restricted","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T04:00:00Z","updatedAt":"2026-09-05T04:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"Approved destinations only","defaultEgress":"restricted","allowlistPolicyRef":"allowlist-standard","ingressEnabled":false,"previewEnabled":false,"dnsPolicyRef":"dns-standard","proxyPolicyRef":"proxy-standard"}}`)
+	decoded, err := DecodeNetworkPolicyResponseJSON(policy)
+	if err != nil || decoded.Value.Spec.DefaultEgress != "restricted" || decoded.Value.Spec.AllowlistPolicyRef != "allowlist-standard" {
+		t.Fatalf("policy=%#v error=%v", decoded, err)
+	}
+	withEndpoint := bytes.Replace(policy, []byte(`"proxyPolicyRef":"proxy-standard"`), []byte(`"proxyPolicyRef":"proxy-standard","endpoint":"tcp://host"`), 1)
+	if _, err := DecodeNetworkPolicyJSON(withEndpoint); err == nil {
+		t.Fatal("network policy accepted an endpoint")
 	}
 }
 

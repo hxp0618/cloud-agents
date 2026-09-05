@@ -11,6 +11,7 @@ import {
   type EnvironmentProfile,
   type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
+  type NetworkPolicy,
   type ProjectLeaseQuota,
   type ProjectLeaseQuotaSetRequest,
   type StoragePolicy,
@@ -28,6 +29,7 @@ import {
   listAdminMaintenanceOperations,
   listAdminProjectLeaseQuotaAuditEvents,
   listAdminStoragePolicies,
+  listAdminNetworkPolicies,
   listAdminStoragePolicyAuditEvents,
   listAdminProfileAuditEvents,
   listAdminProfiles,
@@ -52,6 +54,7 @@ import {
   type ClusterHostSummary,
   type SavedAdminConnection,
 } from "./admin";
+import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
 import {
   normalizeLocale,
   useI18n,
@@ -68,6 +71,7 @@ type Page =
   | "releases"
   | "profiles"
   | "storage"
+  | "network"
   | "quotas"
   | "leases"
   | "maintenance";
@@ -203,6 +207,7 @@ const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "profile.disable": "audit.profileDisable",
   "quota.set": "audit.quotaSet",
   "storage-policy.set": "audit.storagePolicySet",
+  "network-policy.set": "audit.networkPolicySet",
 });
 
 const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -439,6 +444,8 @@ export function App() {
   const [storagePolicies, setStoragePolicies] = useState<readonly StoragePolicy[]>(
     Object.freeze([]),
   );
+  const [networkPolicies, setNetworkPolicies] = useState<readonly NetworkPolicy[]>([]);
+  const [networkEditorEpoch, setNetworkEditorEpoch] = useState(0);
   const [selectedStoragePolicyId, setSelectedStoragePolicyId] = useState("");
   const [storagePolicyAudit, setStoragePolicyAudit] = useState<readonly AdminAuditEvent[]>(
     Object.freeze([]),
@@ -800,6 +807,8 @@ export function App() {
     setSelectedProfileVersionId("");
     setProfileAudit(Object.freeze([]));
     setStoragePolicies(Object.freeze([]));
+    setNetworkPolicies([]);
+    setNetworkEditorEpoch((current) => current + 1);
     setSelectedStoragePolicyId("");
     setStoragePolicyAudit(Object.freeze([]));
     setStoragePolicyForm(storagePolicyFormFrom());
@@ -853,6 +862,7 @@ export function App() {
         loadedReleases,
         loadedProfiles,
         loadedStoragePolicies,
+        loadedNetworkPolicies,
         loadedQuota,
         loadedQuotaAudit,
         loadedMaintenanceOperations,
@@ -863,6 +873,12 @@ export function App() {
         listAdminReleases(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
         loadProfileAuthority(nextClient, nextConnection, selectedProfileVersionId, signal),
         listAdminStoragePolicies(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
+        listAdminNetworkPolicies(
           nextClient,
           nextConnection.tenantId,
           nextConnection.projectId,
@@ -902,6 +918,7 @@ export function App() {
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setProfileAudit(Object.freeze([]));
       setStoragePolicies(loadedStoragePolicies);
+      setNetworkPolicies(loadedNetworkPolicies);
       setSelectedStoragePolicyId(loadedStoragePolicies[0]?.metadata.uid ?? "");
       setStoragePolicyAudit(Object.freeze([]));
       setStoragePolicyForm(storagePolicyFormFrom(loadedStoragePolicies[0]));
@@ -981,6 +998,7 @@ export function App() {
         loadedReleases,
         loadedProfiles,
         loadedStoragePolicies,
+        loadedNetworkPolicies,
         loadedQuota,
         loadedQuotaAudit,
         loadedMaintenanceOperations,
@@ -991,6 +1009,7 @@ export function App() {
         listAdminReleases(client, connection.tenantId, connection.projectId, signal),
         loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
         listAdminStoragePolicies(client, connection.tenantId, connection.projectId, signal),
+        listAdminNetworkPolicies(client, connection.tenantId, connection.projectId, signal),
         loadAdminProjectLeaseQuota(client, connection.tenantId, connection.projectId, signal),
         listAdminProjectLeaseQuotaAuditEvents(
           client,
@@ -1014,6 +1033,7 @@ export function App() {
       setProfiles(loadedProfiles.profiles);
       setSelectedProfileVersionId(loadedProfiles.selectedProfileVersionId);
       setStoragePolicies(loadedStoragePolicies);
+      setNetworkPolicies(loadedNetworkPolicies);
       setSelectedStoragePolicyId((current) =>
         loadedStoragePolicies.some(({ metadata }) => metadata.uid === current)
           ? current
@@ -1904,6 +1924,15 @@ export function App() {
             <b>{number(storagePolicies.length)}</b>
           </button>
           <button
+            className={page === "network" ? "active" : ""}
+            onClick={() => navigate("network")}
+            title={t("nav.networkPolicies")}
+          >
+            <span aria-hidden="true">⇄</span>{" "}
+            <span className="nav-label">{t("nav.networkPolicies")}</span>
+            <b>{number(networkPolicies.length)}</b>
+          </button>
+          <button
             className={page === "quotas" ? "active" : ""}
             onClick={() => navigate("quotas")}
             title={t("nav.quotas")}
@@ -1998,11 +2027,13 @@ export function App() {
                           ? t("page.profiles.title")
                           : page === "storage"
                             ? t("page.storagePolicies.title")
-                            : page === "quotas"
-                              ? t("page.quotas.title")
-                              : page === "leases"
-                                ? t("page.leases.title")
-                                : t("page.maintenance.title")}
+                            : page === "network"
+                              ? t("page.networkPolicies.title")
+                              : page === "quotas"
+                                ? t("page.quotas.title")
+                                : page === "leases"
+                                  ? t("page.leases.title")
+                                  : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
@@ -2017,11 +2048,13 @@ export function App() {
                           ? t("page.profiles.description")
                           : page === "storage"
                             ? t("page.storagePolicies.description")
-                            : page === "quotas"
-                              ? t("page.quotas.description")
-                              : page === "leases"
-                                ? t("page.leases.description")
-                                : t("page.maintenance.description")}
+                            : page === "network"
+                              ? t("page.networkPolicies.description")
+                              : page === "quotas"
+                                ? t("page.quotas.description")
+                                : page === "leases"
+                                  ? t("page.leases.description")
+                                  : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -2051,12 +2084,28 @@ export function App() {
                       ...current,
                       storagePolicyRef:
                         current.storagePolicyRef || storagePolicies[0]?.metadata.uid || "",
+                      networkPolicyRef:
+                        current.networkPolicyRef || networkPolicies[0]?.metadata.uid || "",
                     }));
                     setCreatingProfile(true);
                   }}
-                  disabled={busy !== null || releases.length === 0 || storagePolicies.length === 0}
+                  disabled={
+                    busy !== null ||
+                    releases.length === 0 ||
+                    storagePolicies.length === 0 ||
+                    networkPolicies.length === 0
+                  }
                 >
                   {t("action.createProfile")}
+                </button>
+              ) : page === "network" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => setNetworkEditorEpoch((current) => current + 1)}
+                >
+                  {t("action.newNetworkPolicy")}
                 </button>
               ) : page === "storage" ? (
                 <button
@@ -2285,6 +2334,20 @@ export function App() {
                 />
               </div>
             </section>
+          ) : page === "network" && client !== null ? (
+            <NetworkPolicyPanel
+              key={networkEditorEpoch}
+              client={client}
+              connection={connection}
+              policies={networkPolicies}
+              profiles={profiles}
+              query={query}
+              busy={busy !== null}
+              onQuery={setQuery}
+              onChange={setNetworkPolicies}
+              run={runOperation}
+              idempotencyKey={idempotencyKey}
+            />
           ) : page === "storage" ? (
             <section className="resource-list">
               <div className="list-toolbar">
@@ -3291,7 +3354,7 @@ export function App() {
               </label>
               <label>
                 <span>{t("profile.networkPolicyRef")}</span>
-                <input
+                <select
                   value={profileForm.networkPolicyRef}
                   onChange={(event) =>
                     setProfileForm({
@@ -3299,11 +3362,16 @@ export function App() {
                       networkPolicyRef: event.target.value,
                     })
                   }
-                  placeholder="network-egress"
-                  maxLength={128}
                   required
-                  spellCheck={false}
-                />
+                >
+                  <option value="">{t("profile.selectNetworkPolicy")}</option>
+                  {networkPolicies.map((policy) => (
+                    <option key={policy.metadata.uid} value={policy.metadata.uid}>
+                      {policy.metadata.name} · {policy.spec.userSummary}
+                    </option>
+                  ))}
+                </select>
+                <small>{t("profile.networkPolicyHelp")}</small>
               </label>
               <label>
                 <span>{t("profile.releaseDigest")}</span>

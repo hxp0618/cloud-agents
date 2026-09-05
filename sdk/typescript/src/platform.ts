@@ -421,6 +421,38 @@ export type StoragePolicyPage = Readonly<{
   storagePolicies: readonly StoragePolicy[];
   nextPageToken?: string;
 }>;
+export type NetworkPolicySetRequest = Readonly<{
+  expectedResourceVersion: string;
+  policyName: string;
+  userSummary: string;
+  defaultEgress: "public" | "restricted" | "deny";
+  allowlistPolicyRef?: string;
+  ingressEnabled: boolean;
+  previewEnabled: boolean;
+  dnsPolicyRef?: string;
+  proxyPolicyRef?: string;
+}>;
+export type NetworkPolicy = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "NetworkPolicy";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    userSummary: string;
+    defaultEgress: "public" | "restricted" | "deny";
+    allowlistPolicyRef?: string;
+    ingressEnabled: boolean;
+    previewEnabled: boolean;
+    dnsPolicyRef?: string;
+    proxyPolicyRef?: string;
+  }>;
+}>;
+export type NetworkPolicyPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "NetworkPolicyPage";
+  networkPolicies: readonly NetworkPolicy[];
+  nextPageToken?: string;
+}>;
 export type EnvironmentProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
@@ -478,6 +510,7 @@ export type EnvironmentProfileSummary = Readonly<{
   cpuLimitMillis: number;
   memoryLimitBytes: number;
   storageSummary: string;
+  networkSummary: string;
 }>;
 export type EnvironmentProfileSummaryPage = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -591,8 +624,14 @@ export type AdminAuditEvent = Readonly<{
     | "profile.publish"
     | "profile.disable"
     | "quota.set"
-    | "storage-policy.set";
-  resourceKind: "DeploymentTarget" | "EnvironmentProfile" | "ProjectLeaseQuota" | "StoragePolicy";
+    | "storage-policy.set"
+    | "network-policy.set";
+  resourceKind:
+    | "DeploymentTarget"
+    | "EnvironmentProfile"
+    | "ProjectLeaseQuota"
+    | "StoragePolicy"
+    | "NetworkPolicy";
   resourceId: string;
   resourceGeneration: number;
   result: "requested" | "succeeded" | "failed";
@@ -1074,6 +1113,24 @@ const storagePolicyPageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const networkPolicyResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  userSummary: scalarResponseShape,
+  defaultEgress: scalarResponseShape,
+  allowlistPolicyRef: scalarResponseShape,
+  ingressEnabled: scalarResponseShape,
+  previewEnabled: scalarResponseShape,
+  dnsPolicyRef: scalarResponseShape,
+  proxyPolicyRef: scalarResponseShape,
+});
+const networkPolicyPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    networkPolicies: { item: networkPolicyResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
 const environmentProfileResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   profileId: scalarResponseShape,
@@ -1114,6 +1171,7 @@ const environmentProfileSummaryResponseShape: ResponseShape = {
     cpuLimitMillis: scalarResponseShape,
     memoryLimitBytes: scalarResponseShape,
     storageSummary: scalarResponseShape,
+    networkSummary: scalarResponseShape,
   },
 };
 const environmentProfileSummaryPageResponseShape: ResponseShape = {
@@ -3350,6 +3408,117 @@ export function decodeStoragePolicyPage(value: unknown): StoragePolicyPage {
       : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
   );
 }
+function networkPolicySpec(source: Record<string, unknown>, path: string) {
+  return Object.freeze({
+    userSummary: policySummary(source.userSummary, `${path}/userSummary`),
+    defaultEgress: enumValue(
+      source.defaultEgress,
+      ["public", "restricted", "deny"] as const,
+      `${path}/defaultEgress`,
+    ),
+    ...(source.allowlistPolicyRef === undefined
+      ? {}
+      : {
+          allowlistPolicyRef: identifier(source.allowlistPolicyRef, `${path}/allowlistPolicyRef`),
+        }),
+    ingressEnabled: boolean(source.ingressEnabled, `${path}/ingressEnabled`),
+    previewEnabled: boolean(source.previewEnabled, `${path}/previewEnabled`),
+    ...(source.dnsPolicyRef === undefined
+      ? {}
+      : { dnsPolicyRef: identifier(source.dnsPolicyRef, `${path}/dnsPolicyRef`) }),
+    ...(source.proxyPolicyRef === undefined
+      ? {}
+      : { proxyPolicyRef: identifier(source.proxyPolicyRef, `${path}/proxyPolicyRef`) }),
+  });
+}
+export function decodeNetworkPolicySetRequest(value: unknown): NetworkPolicySetRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedResourceVersion",
+      "policyName",
+      "userSummary",
+      "defaultEgress",
+      "allowlistPolicyRef",
+      "ingressEnabled",
+      "previewEnabled",
+      "dnsPolicyRef",
+      "proxyPolicyRef",
+    ],
+    [
+      "expectedResourceVersion",
+      "policyName",
+      "userSummary",
+      "defaultEgress",
+      "ingressEnabled",
+      "previewEnabled",
+    ],
+  );
+  if (
+    typeof source.expectedResourceVersion !== "string" ||
+    !/^(?:0|[1-9][0-9]{0,18})$/u.test(source.expectedResourceVersion)
+  )
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion: source.expectedResourceVersion as string,
+    policyName: identifier(source.policyName, "/policyName"),
+    ...networkPolicySpec(source, ""),
+  });
+}
+export function encodeNetworkPolicySetRequest(value: NetworkPolicySetRequest): string {
+  return JSON.stringify(decodeNetworkPolicySetRequest(value));
+}
+export function decodeNetworkPolicy(value: unknown): NetworkPolicy {
+  const source = record(value);
+  const root = base(source, "NetworkPolicy");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "userSummary",
+      "defaultEgress",
+      "allowlistPolicyRef",
+      "ingressEnabled",
+      "previewEnabled",
+      "dnsPolicyRef",
+      "proxyPolicyRef",
+    ],
+    ["projectRef", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"],
+    "/spec",
+  );
+  return Object.freeze({
+    ...root,
+    kind: "NetworkPolicy" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      ...networkPolicySpec(spec, "/spec"),
+    }),
+  });
+}
+export function decodeNetworkPolicyPage(value: unknown): NetworkPolicyPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "networkPolicies", "nextPageToken"],
+    ["apiVersion", "kind", "networkPolicies"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "NetworkPolicyPage" ||
+    !Array.isArray(source.networkPolicies) ||
+    source.networkPolicies.length > 200
+  )
+    error("INVALID_NETWORK_POLICY_PAGE", "/networkPolicies");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "NetworkPolicyPage" as const,
+    networkPolicies: Object.freeze((source.networkPolicies as unknown[]).map(decodeNetworkPolicy)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
 export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
   const source = record(value);
   const root = base(source, "EnvironmentProfile");
@@ -3472,6 +3641,7 @@ export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProf
       "cpuLimitMillis",
       "memoryLimitBytes",
       "storageSummary",
+      "networkSummary",
     ],
     [
       "apiVersion",
@@ -3487,6 +3657,7 @@ export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProf
       "cpuLimitMillis",
       "memoryLimitBytes",
       "storageSummary",
+      "networkSummary",
     ],
   );
   if (source.apiVersion !== platformApiVersion || source.kind !== "EnvironmentProfileSummary")
@@ -3512,6 +3683,7 @@ export function decodeEnvironmentProfileSummary(value: unknown): EnvironmentProf
       "/memoryLimitBytes",
     ),
     storageSummary: policySummary(source.storageSummary, "/storageSummary"),
+    networkSummary: policySummary(source.networkSummary, "/networkSummary"),
   });
 }
 export function decodeEnvironmentProfileSummaryPage(value: unknown): EnvironmentProfileSummaryPage {
@@ -3905,12 +4077,19 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "profile.disable",
         "quota.set",
         "storage-policy.set",
+        "network-policy.set",
       ] as const,
       "/action",
     ),
     resourceKind: enumValue(
       source.resourceKind,
-      ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota", "StoragePolicy"] as const,
+      [
+        "DeploymentTarget",
+        "EnvironmentProfile",
+        "ProjectLeaseQuota",
+        "StoragePolicy",
+        "NetworkPolicy",
+      ] as const,
       "/resourceKind",
     ),
     resourceId: identifier(source.resourceId, "/resourceId"),
@@ -4887,6 +5066,12 @@ export function parseStoragePolicy(text: string): ResponseEnvelope<StoragePolicy
 }
 export function parseStoragePolicyPage(text: string): ResponseEnvelope<StoragePolicyPage> {
   return parseResponse(text, storagePolicyPageResponseShape, decodeStoragePolicyPage);
+}
+export function parseNetworkPolicy(text: string): ResponseEnvelope<NetworkPolicy> {
+  return parseResponse(text, networkPolicyResponseShape, decodeNetworkPolicy);
+}
+export function parseNetworkPolicyPage(text: string): ResponseEnvelope<NetworkPolicyPage> {
+  return parseResponse(text, networkPolicyPageResponseShape, decodeNetworkPolicyPage);
 }
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
@@ -6669,6 +6854,135 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
     return result;
   }
+  async listAdminNetworkPolicies(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<NetworkPolicyPage>> {
+    validateNetworkPolicyPath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/network-policies${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListNetworkPolicies", response);
+    const result = parseNetworkPolicyPage(response.body);
+    if (
+      result.value.networkPolicies.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/networkPolicies");
+    return result;
+  }
+  async getAdminNetworkPolicy(
+    tenantId: string,
+    projectId: string,
+    networkPolicyId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<NetworkPolicy>> {
+    validateNetworkPolicyPath(tenantId, projectId, networkPolicyId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/network-policies/${networkPolicyId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetNetworkPolicy", response);
+    const result = parseNetworkPolicy(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== networkPolicyId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async setAdminNetworkPolicy(
+    tenantId: string,
+    projectId: string,
+    networkPolicyId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: NetworkPolicySetRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<NetworkPolicy>> {
+    validateNetworkPolicyPath(tenantId, projectId, networkPolicyId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeNetworkPolicySetRequest(body);
+    const response = await this.call(
+      {
+        method: "PUT",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/network-policies/${networkPolicyId}`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeNetworkPolicySetRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminSetNetworkPolicy", response);
+    const result = parseNetworkPolicy(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== networkPolicyId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminNetworkPolicyAuditEvents(
+    tenantId: string,
+    projectId: string,
+    networkPolicyId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminAuditEventPage>> {
+    validateNetworkPolicyPath(tenantId, projectId, networkPolicyId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/network-policies/${networkPolicyId}/audit-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListNetworkPolicyAuditEvents", response);
+    const result = parseAdminAuditEventPage(response.body);
+    if (
+      result.value.events.some(
+        (event) => event.resourceKind !== "NetworkPolicy" || event.resourceId !== networkPolicyId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
+  }
   async getAdminEnvironmentLease(
     tenantId: string,
     projectId: string,
@@ -7795,6 +8109,16 @@ function validateStoragePolicyPath(
   validatePath(tenantId, requestId);
   identifier(projectId, "/projectId");
   if (storagePolicyId !== undefined) identifier(storagePolicyId, "/storagePolicyId");
+}
+function validateNetworkPolicyPath(
+  tenantId: string,
+  projectId: string,
+  networkPolicyId: string | undefined,
+  requestId: string,
+): void {
+  validatePath(tenantId, requestId);
+  identifier(projectId, "/projectId");
+  if (networkPolicyId !== undefined) identifier(networkPolicyId, "/networkPolicyId");
 }
 function validateEnvironmentProfilePath(
   tenantId: string,

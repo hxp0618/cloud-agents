@@ -471,6 +471,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local project lease quota HTTP server is unavailable")
 	}
+	networkPolicyHTTPServer, err := server.NewNetworkPolicyHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local network policy HTTP server is unavailable")
+	}
 	storagePolicyHTTPServer, err := server.NewStoragePolicyHTTPServer(verifierAdapter, coordinationService)
 	if err != nil {
 		return errors.New("local storage policy HTTP server is unavailable")
@@ -481,6 +485,10 @@ func run(ctx context.Context, args []string) error {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesNetworkPolicyPath(request.URL.Path) {
+			networkPolicyHTTPServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesStoragePolicyPath(request.URL.Path) {
 			storagePolicyHTTPServer.ServeHTTP(writer, request)
 			return

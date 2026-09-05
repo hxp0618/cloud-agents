@@ -381,6 +381,37 @@ type StoragePolicyPage struct {
 	StoragePolicies []StoragePolicy `json:"storagePolicies"`
 	NextPageToken   string          `json:"nextPageToken,omitempty"`
 }
+type NetworkPolicySetRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	PolicyName              string `json:"policyName"`
+	UserSummary             string `json:"userSummary"`
+	DefaultEgress           string `json:"defaultEgress"`
+	AllowlistPolicyRef      string `json:"allowlistPolicyRef,omitempty"`
+	IngressEnabled          bool   `json:"ingressEnabled"`
+	PreviewEnabled          bool   `json:"previewEnabled"`
+	DNSPolicyRef            string `json:"dnsPolicyRef,omitempty"`
+	ProxyPolicyRef          string `json:"proxyPolicyRef,omitempty"`
+}
+type NetworkPolicySpec struct {
+	ProjectRef         common.ProjectRef `json:"projectRef"`
+	UserSummary        string            `json:"userSummary"`
+	DefaultEgress      string            `json:"defaultEgress"`
+	AllowlistPolicyRef string            `json:"allowlistPolicyRef,omitempty"`
+	IngressEnabled     bool              `json:"ingressEnabled"`
+	PreviewEnabled     bool              `json:"previewEnabled"`
+	DNSPolicyRef       string            `json:"dnsPolicyRef,omitempty"`
+	ProxyPolicyRef     string            `json:"proxyPolicyRef,omitempty"`
+}
+type NetworkPolicy struct {
+	ResourceBase
+	Spec NetworkPolicySpec `json:"spec"`
+}
+type NetworkPolicyPage struct {
+	APIVersion      string          `json:"apiVersion"`
+	Kind            string          `json:"kind"`
+	NetworkPolicies []NetworkPolicy `json:"networkPolicies"`
+	NextPageToken   string          `json:"nextPageToken,omitempty"`
+}
 type EnvironmentProfileCreateRequest struct {
 	ProfileID             string   `json:"profileId"`
 	ProfileName           string   `json:"profileName"`
@@ -439,6 +470,7 @@ type EnvironmentProfileSummary struct {
 	CPULimitMillis   int64             `json:"cpuLimitMillis"`
 	MemoryLimitBytes int64             `json:"memoryLimitBytes"`
 	StorageSummary   string            `json:"storageSummary"`
+	NetworkSummary   string            `json:"networkSummary"`
 }
 type EnvironmentProfileSummaryPage struct {
 	APIVersion          string                      `json:"apiVersion"`
@@ -644,6 +676,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
+	case "NetworkPolicy":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "schedulingState": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
@@ -698,11 +732,12 @@ var projectLeaseQuotaResponseShape = common.ObjectResponseShape(map[string]commo
 })
 var projectLeaseQuotaSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "maxConcurrentLeases": common.ScalarResponseShape(), "activeLeases": common.ScalarResponseShape(), "maxCpuMillis": common.ScalarResponseShape(), "usedCpuMillis": common.ScalarResponseShape(), "maxMemoryBytes": common.ScalarResponseShape(), "usedMemoryBytes": common.ScalarResponseShape(), "maxLeaseTtlSeconds": common.ScalarResponseShape()})
 var storagePolicyPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "storagePolicies": common.ArrayResponseShape(resourceResponseShape("StoragePolicy")), "nextPageToken": common.ScalarResponseShape()})
+var networkPolicyPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "networkPolicies": common.ArrayResponseShape(resourceResponseShape("NetworkPolicy")), "nextPageToken": common.ScalarResponseShape()})
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
 })
-var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storageSummary": common.ScalarResponseShape()})
+var environmentProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storageSummary": common.ScalarResponseShape(), "networkSummary": common.ScalarResponseShape()})
 var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "environmentProfiles": common.ArrayResponseShape(environmentProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var userEnvironmentResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "environmentId": common.ScalarResponseShape(), "profileId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
@@ -2311,6 +2346,163 @@ func EncodeStoragePolicyPageResponseJSON(value common.ResponseEnvelope[StoragePo
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
+func validateNetworkPolicyValues(userSummary, defaultEgress string, ingressEnabled, previewEnabled bool, allowlistPolicyRef, dnsPolicyRef, proxyPolicyRef, path string) error {
+	if common.ValidateString(userSummary, 1, 256, path+"/userSummary") != nil || strings.IndexFunc(userSummary, func(value rune) bool { return value < 32 || value == 127 }) >= 0 {
+		return common.ContractError("INVALID_POLICY_SUMMARY", path+"/userSummary")
+	}
+	if defaultEgress != "public" && defaultEgress != "restricted" && defaultEgress != "deny" {
+		return common.ContractError("INVALID_NETWORK_POLICY", path+"/defaultEgress")
+	}
+	for field, value := range map[string]string{"allowlistPolicyRef": allowlistPolicyRef, "dnsPolicyRef": dnsPolicyRef, "proxyPolicyRef": proxyPolicyRef} {
+		if value != "" {
+			if err := common.ValidateIdentifier(value, path+"/"+field); err != nil {
+				return err
+			}
+		}
+	}
+	_ = ingressEnabled
+	_ = previewEnabled
+	return nil
+}
+func validateNetworkPolicyRefFields(fields map[string]json.RawMessage, allowlistPolicyRef, dnsPolicyRef, proxyPolicyRef, path string) error {
+	for field, value := range map[string]string{"allowlistPolicyRef": allowlistPolicyRef, "dnsPolicyRef": dnsPolicyRef, "proxyPolicyRef": proxyPolicyRef} {
+		if _, exists := fields[field]; exists {
+			if err := common.ValidateIdentifier(value, path+"/"+field); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func DecodeNetworkPolicySetRequestJSON(data []byte) (NetworkPolicySetRequest, error) {
+	allowed := []string{"expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "allowlistPolicyRef", "ingressEnabled", "previewEnabled", "dnsPolicyRef", "proxyPolicyRef"}
+	required := []string{"expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"}
+	fields, err := common.DecodeStrictObject(data, allowed, required)
+	if err != nil {
+		return NetworkPolicySetRequest{}, err
+	}
+	var value NetworkPolicySetRequest
+	if json.Unmarshal(data, &value) != nil {
+		return NetworkPolicySetRequest{}, common.ContractError("INVALID_NETWORK_POLICY", "")
+	}
+	resourceVersion, err := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	if err != nil || resourceVersion < 0 || common.ValidateIdentifier(value.PolicyName, "/policyName") != nil {
+		return NetworkPolicySetRequest{}, common.ContractError("INVALID_NETWORK_POLICY", "")
+	}
+	if err := validateNetworkPolicyValues(value.UserSummary, value.DefaultEgress, value.IngressEnabled, value.PreviewEnabled, value.AllowlistPolicyRef, value.DNSPolicyRef, value.ProxyPolicyRef, ""); err != nil {
+		return NetworkPolicySetRequest{}, err
+	}
+	if err := validateNetworkPolicyRefFields(fields, value.AllowlistPolicyRef, value.DNSPolicyRef, value.ProxyPolicyRef, ""); err != nil {
+		return NetworkPolicySetRequest{}, err
+	}
+	return value, nil
+}
+func EncodeNetworkPolicySetRequestJSON(value NetworkPolicySetRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeNetworkPolicySetRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeNetworkPolicyJSON(data []byte) (NetworkPolicy, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return NetworkPolicy{}, err
+	}
+	base, err := checkResourceBase(fields, "NetworkPolicy")
+	if err != nil {
+		return NetworkPolicy{}, err
+	}
+	allowed := []string{"projectRef", "userSummary", "defaultEgress", "allowlistPolicyRef", "ingressEnabled", "previewEnabled", "dnsPolicyRef", "proxyPolicyRef"}
+	required := []string{"projectRef", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"}
+	specFields, err := strictSpec(fields["spec"], allowed, required)
+	if err != nil {
+		return NetworkPolicy{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return NetworkPolicy{}, err
+	}
+	var spec NetworkPolicySpec
+	if json.Unmarshal(fields["spec"], &spec) != nil {
+		return NetworkPolicy{}, common.ContractError("INVALID_NETWORK_POLICY", "/spec")
+	}
+	spec.ProjectRef = project
+	if err := validateNetworkPolicyValues(spec.UserSummary, spec.DefaultEgress, spec.IngressEnabled, spec.PreviewEnabled, spec.AllowlistPolicyRef, spec.DNSPolicyRef, spec.ProxyPolicyRef, "/spec"); err != nil {
+		return NetworkPolicy{}, err
+	}
+	if err := validateNetworkPolicyRefFields(specFields, spec.AllowlistPolicyRef, spec.DNSPolicyRef, spec.ProxyPolicyRef, "/spec"); err != nil {
+		return NetworkPolicy{}, err
+	}
+	return NetworkPolicy{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeNetworkPolicyResponseJSON(data []byte) (common.ResponseEnvelope[NetworkPolicy], error) {
+	fields, sidecar, err := strictResource(data, "NetworkPolicy")
+	if err != nil {
+		return common.ResponseEnvelope[NetworkPolicy]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeNetworkPolicyJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[NetworkPolicy]{}, err
+	}
+	return common.ResponseEnvelope[NetworkPolicy]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeNetworkPolicyResponseJSON(value common.ResponseEnvelope[NetworkPolicy]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeNetworkPolicyPageJSON(data []byte) (NetworkPolicyPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "networkPolicies", "nextPageToken"}, []string{"apiVersion", "kind", "networkPolicies"})
+	if err != nil {
+		return NetworkPolicyPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return NetworkPolicyPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "NetworkPolicyPage" {
+		return NetworkPolicyPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var rawValues []json.RawMessage
+	if json.Unmarshal(fields["networkPolicies"], &rawValues) != nil || rawValues == nil || len(rawValues) > 200 {
+		return NetworkPolicyPage{}, common.ContractError("INVALID_NETWORK_POLICY_PAGE", "/networkPolicies")
+	}
+	values := make([]NetworkPolicy, 0, len(rawValues))
+	for index, raw := range rawValues {
+		value, decodeErr := DecodeNetworkPolicyJSON(raw)
+		if decodeErr != nil {
+			return NetworkPolicyPage{}, common.ContractError("INVALID_NETWORK_POLICY", "/networkPolicies/"+itoa(index))
+		}
+		values = append(values, value)
+	}
+	page := NetworkPolicyPage{APIVersion: apiVersion, Kind: kind, NetworkPolicies: values}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return NetworkPolicyPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeNetworkPolicyPageResponseJSON(data []byte) (common.ResponseEnvelope[NetworkPolicyPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, networkPolicyPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[NetworkPolicyPage]{}, err
+	}
+	value, err := DecodeNetworkPolicyPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[NetworkPolicyPage]{}, err
+	}
+	return common.ResponseEnvelope[NetworkPolicyPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeNetworkPolicyPageResponseJSON(value common.ResponseEnvelope[NetworkPolicyPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
 func validateEnvironmentProfileSummaryValues(profileID string, version int64, description string, providerKinds []string, cpuLimitMillis, memoryLimitBytes int64, path string) error {
 	if err := common.ValidateIdentifier(profileID, path+"/profileId"); err != nil {
 		return err
@@ -2529,7 +2721,7 @@ func EncodeEnvironmentProfilePageResponseJSON(value common.ResponseEnvelope[Envi
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func DecodeEnvironmentProfileSummaryJSON(data []byte) (EnvironmentProfileSummary, error) {
-	allowed := []string{"apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storageSummary"}
+	allowed := []string{"apiVersion", "kind", "projectRef", "profileId", "name", "version", "description", "status", "availability", "providerKinds", "cpuLimitMillis", "memoryLimitBytes", "storageSummary", "networkSummary"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed)
 	if err != nil {
 		return EnvironmentProfileSummary{}, err
@@ -2557,6 +2749,9 @@ func DecodeEnvironmentProfileSummaryJSON(data []byte) (EnvironmentProfileSummary
 	}
 	if common.ValidateString(value.StorageSummary, 1, 256, "/storageSummary") != nil || strings.IndexFunc(value.StorageSummary, func(character rune) bool { return character < 32 || character == 127 }) >= 0 {
 		return EnvironmentProfileSummary{}, common.ContractError("INVALID_POLICY_SUMMARY", "/storageSummary")
+	}
+	if common.ValidateString(value.NetworkSummary, 1, 256, "/networkSummary") != nil || strings.IndexFunc(value.NetworkSummary, func(character rune) bool { return character < 32 || character == 127 }) >= 0 {
+		return EnvironmentProfileSummary{}, common.ContractError("INVALID_POLICY_SUMMARY", "/networkSummary")
 	}
 	return value, nil
 }
@@ -3067,7 +3262,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" && value.Action != "network-policy.set" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" && value.ResourceKind != "NetworkPolicy" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil
