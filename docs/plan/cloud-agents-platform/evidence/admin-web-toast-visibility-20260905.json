@@ -1,0 +1,103 @@
+{
+  "sourceBase": "1cdfe04d",
+  "rawEvidence": "/tmp/cloud-agents-visibility.3K8kMl/verified/visibility-evidence.json",
+  "sha256": "f7126f6e8f957769a0038874b1e651564a9b46eb3c9724222ae704579ea258c5",
+  "checks": [
+    {
+      "locale": "en-US",
+      "theme": "light",
+      "width": 1440,
+      "hiddenMs": 4508,
+      "resumedMs": 3860,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "en-US",
+      "theme": "light",
+      "width": 390,
+      "hiddenMs": 4514,
+      "resumedMs": 3877,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "en-US",
+      "theme": "dark",
+      "width": 1440,
+      "hiddenMs": 4513,
+      "resumedMs": 3892,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "en-US",
+      "theme": "dark",
+      "width": 390,
+      "hiddenMs": 4514,
+      "resumedMs": 3882,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1440,
+      "hiddenMs": 4510,
+      "resumedMs": 3863,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 390,
+      "hiddenMs": 4514,
+      "resumedMs": 3865,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 1440,
+      "hiddenMs": 4510,
+      "resumedMs": 3886,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 390,
+      "hiddenMs": 4516,
+      "resumedMs": 3853,
+      "visibilityEvents": ["hidden", "visible"],
+      "nativeHidden": true,
+      "survivedBackground": true,
+      "expiredAfterResume": true
+    }
+  ],
+  "exceptions": [],
+  "origins": ["http://127.0.0.1:4174"],
+  "mutations": [],
+  "httpFailures": {
+    "/v1/admin/tenants/tenant-local/projects/project-0257bffc23da554ce1cb2e6607707bb5/lease-quota/audit-events": 16,
+    "/v1/admin/tenants/tenant-local/projects/project-0257bffc23da554ce1cb2e6607707bb5/lease-quota": 16
+  },
+  "scope": "Native browser background pause after real Admin refresh; not Provider or infrastructure E2E"
+}
