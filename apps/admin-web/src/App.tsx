@@ -1048,6 +1048,12 @@ export function App() {
     );
   }
 
+  function clearTargetFilters() {
+    setQuery("");
+    setTargetKindFilter([]);
+    setTargetPhaseFilter([]);
+  }
+
   function refresh() {
     if (client === null) return;
     void runOperation("refresh", { key: "operation.refresh" }, async (signal) => {
@@ -2394,11 +2400,7 @@ export function App() {
                   className="button outline target-filters-clear"
                   type="button"
                   disabled={!targetsFiltered}
-                  onClick={() => {
-                    setQuery("");
-                    setTargetKindFilter([]);
-                    setTargetPhaseFilter([]);
-                  }}
+                  onClick={clearTargetFilters}
                 >
                   {t("target.filter.clear")}
                 </button>
@@ -2412,6 +2414,31 @@ export function App() {
                 filtered={targetsFiltered}
                 selectedTargetId={selectedTargetId}
                 onSelect={selectTarget}
+                empty={
+                  <section className="empty-state" aria-labelledby="target-empty-title">
+                    <div className="empty-state-header">
+                      <span className="empty-state-icon" aria-hidden="true">
+                        <NavigationIcon name="targets" />
+                      </span>
+                      <h2 id="target-empty-title">
+                        {t(targetsFiltered ? "target.empty.filteredTitle" : "target.empty.title")}
+                      </h2>
+                      <p>
+                        {t(
+                          targetsFiltered ? "target.filter.noMatches" : "target.empty.description",
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      className="button primary"
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={targetsFiltered ? clearTargetFilters : () => setRegistering(true)}
+                    >
+                      {t(targetsFiltered ? "target.filter.clear" : "action.registerTarget")}
+                    </button>
+                  </section>
+                }
               />
             </section>
           ) : page === "workers" ? (
@@ -3841,12 +3868,14 @@ function PaginatedTargets({
   filtered,
   selectedTargetId,
   onSelect,
+  empty,
 }: Readonly<{
   filterKey: string;
   targets: readonly DeploymentTarget[];
   filtered: boolean;
   selectedTargetId: string;
   onSelect: (id: string) => void;
+  empty: ReactNode;
 }>) {
   const { t, number } = useI18n();
   const [size, setSize] = useState(25);
@@ -3860,6 +3889,7 @@ function PaginatedTargets({
   if (position.filterKey !== filterKey || position.index !== page.index)
     setPosition({ filterKey, index: page.index });
   const changePage = (index: number) => setPosition({ filterKey, index });
+  if (targets.length === 0) return empty;
   return (
     <>
       <div className="panel target-list-panel">

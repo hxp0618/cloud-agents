@@ -1679,28 +1679,52 @@ td > button small {
 }
 
 .empty-state {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
   min-height: 240px;
-  place-content: center;
-  padding: 48px 24px;
+  min-width: 0;
+  padding: 48px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--muted) 40%, transparent);
+  text-wrap: balance;
 }
 
-.empty-state > span {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 24px;
+.empty-state-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 384px;
+  gap: 8px;
+}
+
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
 .empty-state h2 {
-  margin-bottom: 6px;
+  margin: 0;
   color: var(--foreground);
   font-size: 14px;
   font-weight: 500;
+  line-height: 20px;
+  letter-spacing: -0.025em;
 }
 
 .empty-state p {
   margin: 0;
   font-size: 14px;
+  line-height: 1.625;
 }
 
 .admin-sheet {
