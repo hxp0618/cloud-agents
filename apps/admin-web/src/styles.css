@@ -1186,14 +1186,230 @@ label > small {
   flex: 1 1 240px;
 }
 
-.target-toolbar select {
-  width: auto;
-  min-width: 140px;
-  max-width: 100%;
+.target-filters-clear:disabled {
+  display: none;
 }
 
 .target-toolbar .scope-chip {
   margin-left: auto;
+}
+
+.target-filter-menu,
+.target-filter-options {
+  position: fixed;
+  inset: auto;
+  width: min(160px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  margin: 0;
+  padding: 4px;
+  color: var(--popover-foreground);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 10%),
+    0 2px 4px -2px rgb(0 0 0 / 10%);
+  overflow: auto;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.target-filter-menu:popover-open,
+.target-filter-options:popover-open {
+  animation: filter-menu-enter 200ms ease-out;
+}
+
+@keyframes filter-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.target-filter-options {
+  width: min(256px, calc(100vw - 16px));
+  padding: 0;
+}
+
+.target-filter-options.chip-options {
+  width: min(288px, calc(100vw - 16px));
+}
+
+.target-filter-category {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 14px;
+}
+
+.filter-submenu-arrow {
+  margin-left: auto;
+}
+
+.target-filter-category:hover,
+.target-filter-category:focus-visible,
+.target-filter-category[aria-expanded="true"],
+.target-filter-option[data-active="true"] {
+  color: var(--accent-foreground);
+  background: var(--accent);
+}
+
+.target-filter-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.target-filter-search > svg {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.target-toolbar .target-filter-search input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+  padding: 12px 0;
+  font-size: 14px;
+  line-height: 20px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+.target-filter-search:focus-within {
+  border-bottom-color: var(--ring);
+}
+
+.target-filter-search button {
+  padding: 0 8px;
+  height: 32px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  background: transparent;
+  border: 0;
+}
+
+.target-filter-list {
+  max-height: 300px;
+  overflow: auto;
+  padding: 4px;
+}
+
+.target-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: default;
+  user-select: none;
+}
+
+.filter-checkbox {
+  display: flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  opacity: 0.5;
+}
+
+.filter-checkbox:not(.checked) svg {
+  visibility: hidden;
+}
+.filter-checkbox.checked {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  opacity: 1;
+}
+
+.target-filter-empty {
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.target-filter-chips {
+  display: flex;
+  flex-basis: 100%;
+  min-width: 0;
+  order: 2;
+  height: 32px;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.target-filter-chip {
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--muted) 80%, transparent);
+}
+
+.target-filter-chip:hover {
+  background: color-mix(in oklch, var(--muted) 50%, transparent);
+}
+
+.target-filter-chip-label,
+.target-filter-chip-clear {
+  height: 22px;
+  padding: 0 8px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  font-size: 14px;
+}
+
+.target-filter-chip-label {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-filter-chip-label strong {
+  color: var(--primary);
+  font-weight: 500;
+}
+.target-filter-chip-clear {
+  width: 20px;
+  padding: 0;
+}
+
+@media (max-width: 420px) {
+  .target-filters-trigger > span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .target-filter-menu:popover-open,
+  .target-filter-options:popover-open {
+    animation: none;
+  }
 }
 
 .target-table {
@@ -1954,7 +2170,13 @@ td > button small {
   }
 
   .target-toolbar input {
-    flex-basis: auto;
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  .target-toolbar {
+    align-items: center;
+    flex-direction: row;
   }
 
   .list-toolbar .scope-chip {

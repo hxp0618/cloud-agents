@@ -42,14 +42,23 @@ describe("Admin Web boundary", () => {
         credentialRef: "private-credential",
       },
     })) as unknown as Parameters<typeof filterAdminTargets>[0];
-    expect(filterAdminTargets(targets, "", "", "")).toEqual(targets);
-    expect(filterAdminTargets(targets, " HOST ", "docker", "ready")).toEqual([targets[0]]);
-    expect(filterAdminTargets(targets, "target-1", "", "unprobed")).toEqual([targets[1]]);
-    expect(filterAdminTargets(targets, "", "docker", "unprobed")).toEqual([]);
+    expect(filterAdminTargets(targets, "", [], [])).toEqual(targets);
+    expect(filterAdminTargets(targets, " HOST ", ["docker"], ["ready"])).toEqual([targets[0]]);
+    expect(filterAdminTargets(targets, "target-1", [], ["unprobed"])).toEqual([targets[1]]);
+    expect(filterAdminTargets(targets, "", ["docker"], ["unprobed"])).toEqual([]);
+    expect(filterAdminTargets(targets, "", ["docker", "ssh"], [])).toEqual([
+      targets[0],
+      targets[2],
+    ]);
+    expect(filterAdminTargets(targets, "", ["docker", "ssh"], ["ready", "unprobed"])).toEqual([
+      targets[0],
+      targets[2],
+    ]);
+    expect(filterAdminTargets(targets, "", ["docker", "ssh"], ["unprobed"])).toEqual([targets[2]]);
     for (const fact of ["29.4.0", "1.54", "LINUX", "arm64"])
-      expect(filterAdminTargets(targets, fact, "", "")).toEqual([targets[0]]);
+      expect(filterAdminTargets(targets, fact, [], [])).toEqual([targets[0]]);
     for (const secret of ["private-endpoint", "private-credential"])
-      expect(filterAdminTargets(targets, secret, "", "")).toEqual([]);
+      expect(filterAdminTargets(targets, secret, [], [])).toEqual([]);
     expect(targets).toHaveLength(3);
   });
   it("shows only validated stable error codes and localized messages, never raw diagnostics", () => {

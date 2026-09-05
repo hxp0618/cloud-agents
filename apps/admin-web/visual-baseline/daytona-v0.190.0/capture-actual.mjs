@@ -129,7 +129,9 @@ try {
       if (await evaluate(expression)) return;
       await delay(50);
     }
-    throw new Error(`Timed out waiting for ${label}`);
+    throw new Error(
+      `Timed out waiting for ${label}: ${JSON.stringify(await evaluate("({ focus: {tag: document.activeElement?.tagName, class: document.activeElement?.className}, popovers: [...document.querySelectorAll('[popover]')].map(element => ({class: element.className, open: element.matches(':popover-open')})) })"))}`,
+    );
   };
   const click = async (selector) => {
     const clicked = await evaluate(
@@ -563,26 +565,67 @@ try {
   };
 
   const verifyTargetFilters = async (name) => {
-    const change = async (selector, value, type) => {
+    const change = async (selector, value) => {
       await evaluate(`(() => {
         const element = document.querySelector(${JSON.stringify(selector)});
-        Object.getOwnPropertyDescriptor(${type}.prototype, 'value').set.call(element, ${JSON.stringify(value)});
-        element.dispatchEvent(new Event(${type === "HTMLInputElement" ? "'input'" : "'change'"}, { bubbles: true }));
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, ${JSON.stringify(value)});
+        element.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
     };
-    await change(".target-toolbar select:first-of-type", "docker", "HTMLSelectElement");
+    const openFilter = async (filter) => {
+      await clickAt(".target-filters-trigger");
+      await waitFor(
+        "document.activeElement.matches('.target-filter-category')",
+        "filter menu focus",
+      );
+      if (filter === "phase") await pressKey("ArrowDown");
+      await pressKey("ArrowRight");
+      await waitFor(
+        "document.querySelector('.target-filter-options:popover-open input') === document.activeElement && document.activeElement.getAttribute('aria-expanded') === 'true'",
+        "submenu search focus",
+      );
+    };
+    const closeFilter = async () => {
+      await pressKey("Escape");
+      await waitFor(
+        "!document.querySelector('.target-filter-options:popover-open')",
+        "submenu Escape",
+      );
+      assert.equal(
+        await evaluate("document.querySelector('.target-filter-menu').matches(':popover-open')"),
+        true,
+      );
+      await pressKey("Escape");
+      await waitFor(
+        "document.activeElement.matches('.target-filters-trigger')",
+        "filter trigger focus restore",
+      );
+    };
+    await openFilter("kind");
+    await pressKey("Enter");
     await waitFor(
       "document.querySelectorAll('.target-table tbody tr').length === 1",
       "kind filter",
     );
-    assert.equal(
-      await evaluate(
-        "document.querySelector('.target-table tbody').textContent.includes('visual-docker')",
-      ),
-      true,
+    await clickAt(".target-filter-options:popover-open [data-value=ssh]");
+    await waitFor(
+      "document.querySelectorAll('.target-table tbody tr').length === 2",
+      "multi-kind union",
     );
-    await change(".target-toolbar select:last-of-type", "unprobed", "HTMLSelectElement");
-    await change(".target-toolbar input", " VISUAL-DOCKER ", "HTMLInputElement");
+    await waitFor(
+      "[...document.querySelectorAll('.target-filter-options:popover-open [aria-selected=true] .filter-checkbox')].length === 2 && [...document.querySelectorAll('.target-filter-options:popover-open [aria-selected=true] .filter-checkbox')].every(element => getComputedStyle(element).opacity === '1' && getComputedStyle(element.querySelector('svg')).visibility === 'visible')",
+      "checked visual state",
+    );
+    await screenshot(`${name}-filter-menu.png`);
+    await change(".target-filter-options:popover-open input", "no-such-option");
+    await waitFor(
+      "document.querySelectorAll('.target-filter-options:popover-open [role=option]').length === 0",
+      "empty options",
+    );
+    await pressKey("Enter");
+    assert.equal(await evaluate("document.querySelectorAll('.target-table tbody tr').length"), 2);
+    await closeFilter();
+    await change(".target-toolbar > input", " VISUAL-DOCKER ");
     await waitFor(
       "document.querySelectorAll('.target-table tbody tr').length === 1",
       "combined filters",
@@ -603,7 +646,12 @@ try {
       await evaluate("document.querySelector('.table-scroll').scrollLeft = 0");
     }
     await screenshot(`${name}-filtered.png`);
-    await change(".target-toolbar select:last-of-type", "ready", "HTMLSelectElement");
+    await openFilter("phase");
+    await clickAt(".target-filter-options:popover-open [data-value=unprobed]");
+    await clickAt(".target-filter-options:popover-open [data-value=ready]");
+    assert.equal(await evaluate("document.querySelectorAll('.target-table tbody tr').length"), 1);
+    await clickAt(".target-filter-options:popover-open [data-value=unprobed]");
+    await closeFilter();
     await waitFor("document.querySelector('.table-empty') !== null", "empty filtered results");
     assert.ok(
       (await evaluate("document.querySelector('.table-empty').textContent")).includes(
@@ -611,15 +659,18 @@ try {
       ),
     );
     await screenshot(`${name}-filter-empty.png`);
-    await clickAt(".target-toolbar button");
+    await clickAt(".target-filters-clear");
     await waitFor(
       "document.querySelectorAll('.target-table tbody tr').length === 3",
       "clear target filters",
     );
-    assert.equal(await evaluate("document.querySelector('.target-toolbar button').disabled"), true);
+    assert.equal(await evaluate("document.querySelector('.target-filters-clear').disabled"), true);
     targetFilterChecks.push({
       name,
       combinedFilter: true,
+      multiSelect: true,
+      nestedEscape: true,
+      noOptionsEnterNoop: true,
       noMatches: true,
       clearRestored: 3,
       missingProbeFacts: facts,

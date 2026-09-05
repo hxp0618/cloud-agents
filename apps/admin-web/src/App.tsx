@@ -63,6 +63,7 @@ import {
   type SavedAdminConnection,
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
+import { TargetFilters } from "./TargetFilters";
 import { AdminSidebar } from "./AdminSidebar";
 import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } from "./navigation";
 import {
@@ -475,10 +476,10 @@ export function App() {
   const [selectedMaintenanceOperationId, setSelectedMaintenanceOperationId] = useState("");
   const [page, setPage] = useState<Page>("overview");
   const [query, setQuery] = useState("");
-  const [targetKindFilter, setTargetKindFilter] = useState<TargetKind | "">("");
+  const [targetKindFilter, setTargetKindFilter] = useState<readonly TargetKind[]>([]);
   const [targetPhaseFilter, setTargetPhaseFilter] = useState<
-    DeploymentTarget["spec"]["observedPhase"] | ""
-  >("");
+    readonly DeploymentTarget["spec"]["observedPhase"][]
+  >([]);
   const [targetDetailOpen, setTargetDetailOpen] = useState(false);
   const [cleanupConfirmationOpen, setCleanupConfirmationOpen] = useState(false);
   const [schedulingConfirmationOpen, setSchedulingConfirmationOpen] = useState(false);
@@ -595,7 +596,7 @@ export function App() {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleTargets = filterAdminTargets(targets, query, targetKindFilter, targetPhaseFilter);
   const targetsFiltered =
-    query.trim() !== "" || targetKindFilter !== "" || targetPhaseFilter !== "";
+    query.trim() !== "" || targetKindFilter.length > 0 || targetPhaseFilter.length > 0;
   const visibleLeases =
     normalizedQuery === ""
       ? leases
@@ -804,8 +805,8 @@ export function App() {
     setCommandsOpen(false);
     setPage(nextPage);
     setQuery("");
-    setTargetKindFilter("");
-    setTargetPhaseFilter("");
+    setTargetKindFilter([]);
+    setTargetPhaseFilter([]);
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
@@ -2238,40 +2239,20 @@ export function App() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <select
-                  aria-label={t("target.filter.kind")}
-                  value={targetKindFilter}
-                  onChange={(event) => setTargetKindFilter(event.target.value as TargetKind | "")}
-                >
-                  <option value="">{t("target.filter.allKinds")}</option>
-                  {(["docker", "kubernetes", "ssh"] as const).map((kind) => (
-                    <option key={kind} value={kind}>
-                      {targetKindLabel(kind, t)}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label={t("target.filter.phase")}
-                  value={targetPhaseFilter}
-                  onChange={(event) =>
-                    setTargetPhaseFilter(event.target.value as typeof targetPhaseFilter)
-                  }
-                >
-                  <option value="">{t("target.filter.allPhases")}</option>
-                  {(["unprobed", "probing", "ready", "unavailable"] as const).map((phase) => (
-                    <option key={phase} value={phase}>
-                      {phaseLabel(phase, t)}
-                    </option>
-                  ))}
-                </select>
+                <TargetFilters
+                  kinds={targetKindFilter}
+                  phases={targetPhaseFilter}
+                  onKinds={setTargetKindFilter}
+                  onPhases={setTargetPhaseFilter}
+                />
                 <button
-                  className="button outline"
+                  className="button outline target-filters-clear"
                   type="button"
                   disabled={!targetsFiltered}
                   onClick={() => {
                     setQuery("");
-                    setTargetKindFilter("");
-                    setTargetPhaseFilter("");
+                    setTargetKindFilter([]);
+                    setTargetPhaseFilter([]);
                   }}
                 >
                   {t("target.filter.clear")}

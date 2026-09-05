@@ -147,14 +147,14 @@ export function newIdempotencyKey(): string {
 export function filterAdminTargets(
   targets: readonly DeploymentTarget[],
   query: string,
-  kind: DeploymentTarget["spec"]["targetKind"] | "",
-  phase: DeploymentTarget["spec"]["observedPhase"] | "",
+  kinds: readonly DeploymentTarget["spec"]["targetKind"][],
+  phases: readonly DeploymentTarget["spec"]["observedPhase"][],
 ): readonly DeploymentTarget[] {
   const search = query.trim().toLocaleLowerCase();
   return targets.filter(
     ({ metadata, spec }) =>
-      (kind === "" || spec.targetKind === kind) &&
-      (phase === "" || spec.observedPhase === phase) &&
+      (kinds.length === 0 || kinds.includes(spec.targetKind)) &&
+      (phases.length === 0 || phases.includes(spec.observedPhase)) &&
       [
         metadata.uid,
         metadata.name,
