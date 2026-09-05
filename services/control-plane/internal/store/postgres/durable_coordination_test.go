@@ -154,6 +154,29 @@ func TestDurableCoordinationClaimSettlementStaysClosed(t *testing.T) {
 	}
 }
 
+func TestCoordinationCommitConflictPreservesRejection(t *testing.T) {
+	for _, code := range []string{"40001", "23505"} {
+		raw := &pgconn.PgError{Code: code, Message: "private database diagnostic"}
+		for _, err := range []error{raw, mapMutationDatabaseError("commit tenant mutation transaction", raw)} {
+			for _, mapped := range []error{mapCoordinationDatabaseError("operation", err), mapDeploymentTargetError(err)} {
+				if !errors.Is(mapped, ErrCoordinationRejected) {
+					t.Fatalf("%s rejection mapped to %v", code, mapped)
+				}
+			}
+		}
+	}
+	// A lost commit acknowledgement remains unknown, even if another wrapped
+	// error is a conflict. Never invite blind replay of an uncertain commit.
+	unknown := errors.Join(ErrMutationCommitUnknown, ErrMutationConflict)
+	if err := mapCoordinationDatabaseError("operation", unknown); !errors.Is(err, ErrCoordinationCommitUnknown) || errors.Is(err, ErrCoordinationRejected) {
+		t.Fatalf("unknown outcome = %v", err)
+	}
+	unrelated := errors.New("unrelated failure")
+	if err := mapCoordinationDatabaseError("operation", unrelated); !errors.Is(err, unrelated) || errors.Is(err, ErrCoordinationRejected) {
+		t.Fatalf("unrelated outcome = %v", err)
+	}
+}
+
 func TestDurableCoordinationCompletionHasClosedCommitOutcomes(t *testing.T) {
 	success := IdempotencySuccessInput{
 		Profile: coordination.ManagedAgentCreateProject(), Request: coordinationProjectRequest(),

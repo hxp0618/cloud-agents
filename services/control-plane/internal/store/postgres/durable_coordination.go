@@ -835,6 +835,10 @@ func mapCoordinationDatabaseError(operation string, err error) error {
 	if errors.Is(err, ErrMutationCommitUnknown) {
 		return ErrCoordinationCommitUnknown
 	}
+	// The transaction runner has already normalized confirmed commit conflicts.
+	if errors.Is(err, ErrMutationConflict) {
+		return fmt.Errorf("%w: %s", ErrCoordinationRejected, operation)
+	}
 	var postgresError *pgconn.PgError
 	if !errors.As(err, &postgresError) {
 		return fmt.Errorf("%s: %w", operation, err)
