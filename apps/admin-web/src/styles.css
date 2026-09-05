@@ -1627,14 +1627,16 @@ th {
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 34px;
+  height: 32px;
   padding: 0 12px;
   color: var(--muted-foreground);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   font-weight: 500;
+  line-height: 16px;
   text-align: left;
   text-transform: uppercase;
+  white-space: nowrap;
   background: var(--table-header);
   border-bottom: 1px solid var(--border);
 }

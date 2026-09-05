@@ -67,6 +67,7 @@ try {
   const consoleWarnings = [];
   const httpFailures = [];
   const layoutChecks = [];
+  const tableHeaderChecks = [];
   const formChecks = [];
   const commandChecks = [];
   const modalChecks = [];
@@ -189,6 +190,16 @@ try {
   const screenshot = async (filename) => {
     await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
     await delay(250);
+    const headers = await evaluate(
+      `([...document.querySelectorAll('th')].filter(header => header.getBoundingClientRect().width > 0).map(header => { const style = getComputedStyle(header); return { height: header.getBoundingClientRect().height, fontSize: style.fontSize, lineHeight: style.lineHeight, whiteSpace: style.whiteSpace }; }))`,
+    );
+    for (const header of headers) {
+      assert.equal(header.height, 32, `${filename}: pinned table header height`);
+      assert.equal(header.fontSize, "12px");
+      assert.equal(header.lineHeight, "16px");
+      assert.equal(header.whiteSpace, "nowrap", `${filename}: do not wrap resource headings`);
+    }
+    tableHeaderChecks.push({ filename, headers });
     const formCheck = await evaluate(`(() => {
       const form = document.querySelector(".admin-sheet:not(.confirmation-dialog) .resource-form");
       const footer = form?.querySelector(".dialog-actions");
@@ -1075,6 +1086,7 @@ try {
         messageKeyVisible: authority.messageKeyVisible,
       },
       layoutChecks,
+      tableHeaderChecks,
       formChecks,
       commandChecks,
       modalChecks,
