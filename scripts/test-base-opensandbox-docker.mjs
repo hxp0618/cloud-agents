@@ -55,7 +55,18 @@ const spec = (operation) => ({
   entrypoint: ["sleep", "infinity"],
   timeout: 600,
   resourceLimits: { cpu: "500m", memory: "512Mi" },
-  metadata: { "cloud-agents-poc": run, operation },
+  metadata: {
+    "cloud-agents-poc": run,
+    operation,
+    "cloud-agents-tenant": "tenant-poc",
+    "cloud-agents-project": "project-poc",
+    "cloud-agents-workspace": volume,
+    "cloud-agents-sandbox": run,
+    "cloud-agents-operation": operation,
+    "cloud-agents-generation": "1",
+    "cloud-agents-spec-sha256-a": "a".repeat(32),
+    "cloud-agents-spec-sha256-b": "a".repeat(32),
+  },
   volumes: [
     {
       name: "workspace",
@@ -64,6 +75,43 @@ const spec = (operation) => ({
     },
   ],
 });
+const goReceipt = (operation, runtimeID, state, duplicate = false, remove = false) => {
+  const result = execFileSync(
+    "go",
+    [
+      "test",
+      "./services/control-plane/internal/opensandbox",
+      "-run",
+      "^TestLiveDiscovery$",
+      "-count=1",
+      "-v",
+    ],
+    {
+      encoding: "utf8",
+      timeout: 120000,
+      env: {
+        ...process.env,
+        CA_BASE_ENDPOINT: base,
+        CA_BASE_KEY: apiKey,
+        CA_BASE_RUN: run,
+        CA_BASE_VOLUME: volume,
+        CA_BASE_OPERATION: operation,
+        CA_BASE_RUNTIME_ID: runtimeID,
+        CA_BASE_STATE: state,
+        CA_BASE_DUPLICATE: duplicate ? "yes" : "no",
+        CA_BASE_DELETE: remove ? "yes" : "no",
+      },
+    },
+  );
+  assert.ok(result.includes("--- PASS: TestLiveDiscovery"));
+  checks.push({
+    name: "Go receipt discovery and ownership guard",
+    operation,
+    duplicateRejected: duplicate,
+    cleanupReplayed: remove,
+    state,
+  });
+};
 const create = async (operation) => {
   const result = await request("/v1/sandboxes", "POST", spec(operation), 202);
   for (let i = 0; i < 100; i++) {
@@ -130,8 +178,10 @@ try {
     name: "missing volume rejected without compute allocation or deleting owned volume",
   });
   const first = await create("create-1");
+  goReceipt("create-1", first, "Running");
   const duplicate = await create("create-1");
   assert.notEqual(duplicate, first);
+  goReceipt("create-1", first, "Running", true);
   await request(`/v1/sandboxes/${duplicate}`, "DELETE", undefined, 204);
   checks.push({
     name: "native replay creates duplicate: CP idempotency and single-writer authority required",
@@ -147,7 +197,7 @@ try {
   assert.ok(written.includes(digest), written);
   checks.push({ name: "no-Agent create ready exec write", digest });
   // Kill compute through the candidate, then verify the separately owned volume survives.
-  await request(`/v1/sandboxes/${first}`, "DELETE", undefined, 204);
+  goReceipt("create-1", first, "Running", false, true);
   docker("volume", "inspect", volume);
   await request(`/v1/sandboxes/${first}`, "GET", undefined, 404);
   const second = await create("create-2");
@@ -167,7 +217,7 @@ try {
   const found = await request("/v1/sandboxes");
   assert.ok(JSON.stringify(found).includes(second));
   checks.push({ name: "candidate resource discovery", id: second });
-  await request(`/v1/sandboxes/${second}`, "DELETE", undefined, 204);
+  goReceipt("create-2", second, "Running", false, true);
   docker("volume", "inspect", volume);
   const broken = spec("start-failure");
   broken.entrypoint = ["/definitely-not-a-program"];
@@ -179,7 +229,8 @@ try {
     initial: acceptedBroken.status,
     observed: brokenState.status,
   });
-  await request(`/v1/sandboxes/${acceptedBroken.id}`, "DELETE", undefined, 204);
+  assert.equal(brokenState.status.state, "Failed");
+  goReceipt("start-failure", acceptedBroken.id, "Failed", false, true);
   assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
   docker("volume", "inspect", volume);
   checks.push({ name: "explicit cleanup of invalid-entrypoint sandbox retains workspace" });

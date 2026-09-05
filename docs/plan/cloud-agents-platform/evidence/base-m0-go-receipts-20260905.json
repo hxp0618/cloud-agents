@@ -1,0 +1,92 @@
+{
+  "run": "base-m0-c9151a80-9253-46ab-8b84-55b8ea357ea6",
+  "serverImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+  "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+  "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+  "backend": "orbstack",
+  "checks": [
+    {
+      "name": "missing API key denied",
+      "status": 401
+    },
+    {
+      "name": "missing volume rejected without compute allocation or deleting owned volume"
+    },
+    {
+      "name": "Go receipt discovery and ownership guard",
+      "operation": "create-1",
+      "duplicateRejected": false,
+      "cleanupReplayed": false,
+      "state": "Running"
+    },
+    {
+      "name": "Go receipt discovery and ownership guard",
+      "operation": "create-1",
+      "duplicateRejected": true,
+      "cleanupReplayed": false,
+      "state": "Running"
+    },
+    {
+      "name": "native replay creates duplicate: CP idempotency and single-writer authority required",
+      "first": "b8974eec-860c-4a07-834c-20d9e297979d",
+      "duplicate": "6518bb19-8833-4a2d-a015-79a14f60835a"
+    },
+    {
+      "name": "no-Agent create ready exec write",
+      "digest": "c8b8d69e3366a13ee75907c6db430b45543b2d6d72eb5254e037e219cbccbeac"
+    },
+    {
+      "name": "Go receipt discovery and ownership guard",
+      "operation": "create-1",
+      "duplicateRejected": false,
+      "cleanupReplayed": true,
+      "state": "Running"
+    },
+    {
+      "name": "delete compute and rebuild retains workspace",
+      "digest": "c8b8d69e3366a13ee75907c6db430b45543b2d6d72eb5254e037e219cbccbeac"
+    },
+    {
+      "name": "Files API reads restored bytes",
+      "digest": "c8b8d69e3366a13ee75907c6db430b45543b2d6d72eb5254e037e219cbccbeac"
+    },
+    {
+      "name": "candidate resource discovery",
+      "id": "4ce593b6-a89f-472d-8e88-33b5ea9d9002"
+    },
+    {
+      "name": "Go receipt discovery and ownership guard",
+      "operation": "create-2",
+      "duplicateRejected": false,
+      "cleanupReplayed": true,
+      "state": "Running"
+    },
+    {
+      "name": "invalid entrypoint accepted: candidate Running alone is not workload readiness",
+      "initial": {
+        "state": "Running",
+        "reason": "CONTAINER_RUNNING",
+        "message": "Sandbox container started successfully.",
+        "lastTransitionAt": "2026-09-05T13:03:53.715033Z"
+      },
+      "observed": {
+        "state": "Failed",
+        "reason": "CONTAINER_EXITED_ERROR",
+        "message": "Sandbox container exited with code 127.",
+        "lastTransitionAt": "2026-09-05T13:03:53.875682Z"
+      }
+    },
+    {
+      "name": "Go receipt discovery and ownership guard",
+      "operation": "start-failure",
+      "duplicateRejected": false,
+      "cleanupReplayed": true,
+      "state": "Failed"
+    },
+    {
+      "name": "explicit cleanup of invalid-entrypoint sandbox retains workspace"
+    }
+  ],
+  "cleanup": "zero owned containers and volumes",
+  "boundary": "Candidate PoC only; no CP authority, Admin lifecycle, idempotency/fencing or multi-tenant qualification"
+}
