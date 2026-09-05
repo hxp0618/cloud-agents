@@ -2,11 +2,11 @@
 
 ## 0. 底座就绪验收 BASE-READY
 
-依据 [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md)，底座先于用户 CloudAgents 交付。
+依据 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md)，第一阶段是基础设施＋完整 Admin Web，两者共同通过 BASE-READY 后再交付用户 CloudAgents 对话。
 BASE-READY 是本次提出的底座产品就绪检查，不是新增审批工具、历史 Gate 重命名或发布批准。
 实施顺序见 [04](04-extraction-and-migration.md#0-当前实施顺序底座先行)；实际状态在 [06](06-status-tracker.md) 登记。
 
-必须在不安装 Agent、不提供 Codex/Claude 凭据的条件下证明：
+no-Agent 指不依赖用户对话、Coding Agent Runtime 或 Codex/Claude 凭据，不指没有 Admin Web；RemoteWorker/SandboxAgent 等基础设施进程不在此处排除的 Coding Agent 范围。下面十二项必须同时满足；其中 11/12 与后端条目同为必需条件，CLI/SDK 实测不能替代管理页面验收：
 
 1. 独立 API/SDK/CLI 创建 Workspace 和 Sandbox，真实 Exec/PTY/Files 可用；用户 CloudAgents、Synara/T3
    均不是底座安装或验收前提。
@@ -28,9 +28,9 @@ BASE-READY 是本次提出的底座产品就绪检查，不是新增审批工具
    N/N-1 升级回滚、节点故障恢复和孤儿资源清理有可复现记录，不声称未验证的进程内存或跨 Region 恢复。
 10. 基础用量事实、长运行 checkpoint、离线对账、修正审计可核对；健康、调谐积压、容量、失败与告警可观察，
     有实际延迟/soak/恢复测量和 runbook，不将工程目标直接写成 SLO 承诺。
-11. Admin Web 对本阶段真实资源提供必要运维操作及 Operation/Audit；管理员不读取用户内容，
+11. Admin Web 对本阶段真实资源提供完整的配置、监控、维护、失败恢复及 Operation/Audit；管理员不读取用户内容，
     普通用户不能调用 Admin API；危险操作保留影响范围、资源名称和 generation 确认。
-12. Admin 配套页面完成 [07](07-admin-web-requirements-and-design.md) 的双语、可访问性、视觉与身份部署隔离；
+12. Admin 必交付页面完成 [07 的 BASE-ADMIN-V1](07-admin-web-requirements-and-design.md#base-admin-v1) 全部条件，包括双语、可访问性、视觉与身份部署隔离；
     用户侧 Agent 流程留在 APP-M1 验收，不把其尚未接入当作通用底座失败。
 
 每项记录 source/dirty、backend/runtime/制品版本、输入、命令、实际结果和恢复边界。复用已有检查和证据路径，
@@ -44,7 +44,11 @@ BASE-M5 只有逐项满足以上条件才能标为就绪；未完成项保持开
 若以后发布独立底座 channel，其适用验收与曝光范围须显式记录并取得原有发布批准；本次不创建或批准该 channel。
 APP-M1 再执行 Managed Agent 的真实 Codex/Claude 与交互/历史/Artifact 验收，后续消费者各自关闭适用 Gate。
 
+原 Admin M1～M4 任务另按 [ADMIN-WEB-V1](07-admin-web-requirements-and-design.md#admin-web-v1) 验收；其中既有 Agent 的真实 Codex/Claude E2E 仍是原任务必需项，不因 BASE 的 no-Agent 范围而豁免。ADMIN-WEB-V1 与 BASE-READY 不互相替代，也不互为启动或完成的通用前置条件；只有明确迁移后的任务才改用 BASE 范围。
+
 ## 1. Gate 总表
+
+以下保留旧完整 Platform/消费者的正式 Gate 定义与批准要求，仅在执行对应 Gate 或该范围变更时适用；不是所有 BASE 日常工作必须先关闭的清单。BASE 联合交付的完成条件由上节定义，不新增一轮泛化审批，也不降低这里任何正式 closure 条件。
 
 | Gate                 | 阻塞                | 退出证据                                                                                                                             |
 | -------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |

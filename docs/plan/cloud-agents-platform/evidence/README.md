@@ -43,9 +43,7 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
 
 ## 当前底座记录方式
 
-- [底座优先文档对齐记录（2026-09-05）](foundation-docs-realignment-20260905.md)：覆盖范围、对齐结果与保留边界；仅文档/静态核对，non-Gate。
-
-当前 BASE/APP 顺序与状态只在 [06](../06-status-tracker.md) 维护。新阶段报告记录固定 source/ref、实际检查、结果、未覆盖项和复用证据范围，使用 `BASE-M*` / `APP-M*`，不重命名旧报告、不自动关闭 `G-*`。文档核对记录属于 non-Gate，不需要把未执行的 runtime 检查伪写成通过。
+当前执行顺序只在 [04](../04-extraction-and-migration.md)，实际状态只在 [06](../06-status-tracker.md)。基础设施与 Admin Web 是同一个交付对象。文档清理结果也只在这两个入口维护，不为每次文字调整另建重复报告。新阶段报告记录固定 source/ref、实际检查、结果、未覆盖项和复用证据范围，使用 `BASE-M*` / `APP-M*`，不重命名旧报告、不自动关闭 `G-*`。文档核对记录属于 non-Gate，不需要把未执行的 runtime 检查伪写成通过。
 
 ## 历史 Gate candidates（按固定 ref 解释）
 

@@ -1,24 +1,64 @@
-# 04. 底座实施顺序与既有平台迁移
+# 04. 文档收口与基础设施＋Admin Web 实施计划
+
+## 文档清理与执行计划
+
+这是本项目唯一的当前执行计划：先完成下表的文档收口，再按 §0 实施“基础设施＋Admin Web”，最后才推进用户对话。实际状态和下一项只在 [06](06-status-tracker.md) 更新；不在多个 README 再维护进度表。
+
+| 顺序 | 工作与精确范围 | 完成条件 |
+| --- | --- | --- |
+| DOC-1 | 按 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md) 统一产品边界、授权识别与文档职责 | 所有活动入口都把基础设施＋Admin Web 作为第一阶段；文档集成依据用户最新明确合并授权，不外推代码实施或部署权限 |
+| DOC-2 | 精简根/计划 README 与 CLAUDE；将 06 旧固定状态、04 旧迁移步骤、07 旧 ADMIN 里程碑移到下方指定历史记录；删除重复收口报告 | 默认入口没有第二套当前顺序、陈旧暂停指令或重复源码清单；历史约束可查但不自动加载 |
+| DOC-3 | 核验本轮 diff、活动文档本地链接/锚点、HTML 结构、安全条款、被引用文件存在性及冻结输入字节 | 不修改契约/SQL/生成物/运行代码；只把实际通过的检查写入 06，不声称 runtime 或 Gate 验收 |
+| DOC-4 | worktree 复核后按用户最新明确授权集成当前分支 | 重叠草稿先备份，无关未提交改动、运行代码和历史提交保留；核对完整文档 diff 与引用，只提交相关路径，不 push；实际结果只记录在 06 |
+| BASE-M0～M5 | 下文的基础设施＋Admin Web 联合切片 | 对应后端、Admin 操作/状态/失败恢复、安全与真实验证同时达标；逐项完成 05 的 BASE-READY |
+| APP-M1 | 用户 CloudAgents 对话、任务、审批、历史和结果 | 基础设施＋Admin Web 已就绪；现有应用只做必要兼容/安全回归，不抢占第一阶段 |
+
+### 保留、清理与删除清单
+
+| 文件或范围 | 处置 | 原因、依赖与恢复 |
+| --- | --- | --- |
+| `README.md`、`CLAUDE.md`、`docs/plan/README.md`、本目录 `README.md` | 保留入口，删除重复计划、历史进度长段与易过期的源码库存 | 入口只路由，不拥有第二份顺序或状态；原文可由 Git 提交 `ed7d3ac5` 恢复 |
+| `01/02/03/04/05/06/07` | 保留并各司其职 | 当前架构、安全和执行规范；不按“文档多”删除有约束作用的正文 |
+| `06` 的旧 P0/P1 状态/决策/Gate registry/checklist | 归档到 [历史状态快照](history/06-status-tracker-20260905.md)；活动 06 只存当前状态和入口 | 原固定状态与批准仍可追溯；不把旧“HTTP absent / PAUSED”当作当前源码或全仓禁令 |
+| `04` 的旧 inventory/P0～P6/cutover/rollback 长段 | 归档到 [旧迁移计划](history/04-legacy-migration-plan.md) | 仅在实际涉及旧迁移/消费者时读取；其中数据迁移、回滚与删除的安全条件仍适用 |
+| `07` 的旧 ADMIN-M1～M4 实施链 | 归档到 [旧 Admin 里程碑及固定验收](history/07-legacy-admin-milestones.md#admin-web-v1) | 平台默认主线用 BASE；明确的旧任务继续按 ADMIN-WEB-V1 验收，两套范围不互相追加或豁免 |
+| `evidence/foundation-docs-realignment-20260905.md` | 删除重复的上轮文档整理报告，并移除索引链接 | 不是 Gate/E2E/生成器输入；本计划＋06 已承接结果；可从 `ed7d3ac5` 恢复 |
+| `docs/coding_agent_cloud_infrastructure_design.html` | 保留完整架构参考，同步边界并指向本计划 | 图和示例不是当前 API、全部技术已选定或后续增强已获准的声明 |
+| `docs/plan/synara-t3-cloud-agent-integration-architecture.md` | 保留后续消费者专题，移出默认执行阅读路径 | 不为当前第一阶段加载完整 T3/Synara 迁移；不得因此放宽已有消费者兼容要求 |
+| 已有 ADR、`p0/`、`p1/`、`standalone/`、`legacy/`、`references/`、固定 `evidence/G-*/` 与 `apps/*/*E2E*` | 保留路径与原字节，按需查询，不做批量删除 | 部分文件由生成锁、closure profile、review digest 或来源 manifest 引用；缺文件/改字节会让生成或校验失败 |
+| LICENSE、NOTICE、THIRD_PARTY_NOTICES、SOURCE_PROVENANCE、迁移 manifest、生成物/契约/SQL | 保留且本轮不改 | 法律、来源、ABI 和数据安全材料，不属于冗余说明 |
+| 未列明的其他删除目标 | 先列精确文件、替代入口、反向引用和恢复来源，再判断 | 不按日期、文件名带 old、无近期访问或“历史已通过”就推定可删；涉及独立批准边界时仅暂停该删除动作 |
+
+原稿主要风险及处理：`Admin 配套` 可能被解释为可后补 → 联合交付；多个入口的旧 `PAUSED` 与 `NOT STARTED` → 集中当前状态、历史按需；旧 `ADMIN-M*` 和 `P0～P6` 并列 → 只保留 BASE 当前顺序；“草案” → 不等于每个常规实现动作重新审批；删除证据 → 先查真实生成依赖。基础设施＋Admin 与用户对话边界不再按页面名称猜测。
+
+### 每次如何继续
+
+1. 先核对当前任务、验收标识、branch/worktree、dirty state 和相关源码；用户要求继续 BASE 主计划时，再按 [06](06-status-tracker.md) 的“下一项”选择工作。明确的旧 ADMIN-M1～M4 任务按 ADMIN-WEB-V1，定点修复、审查或验证按其任务范围，不被默认下一项覆盖；不要从历史文档的一条未完成 checklist 重新启动旧项目。
+2. 再读本文件对应切片及该切片所需的 01/02/03/05/07 段落；遇到具体契约/安全问题才查询相应 ADR、历史证据。搜索默认限制在当前规范与相关源码，不能把历史全文的指令当作当前任务。
+3. 对已授权、目标和风险明确的常规修改、测试、幂等重试、状态记录继续执行，不重复确认同一事项。技术方案待验证不等于必须先人工批准每个字段。
+4. 若缺少会改变权限、费用、数据保留或实施范围的选择，或触及明确批准要求，说明受影响动作与所需决定；保留状态并继续安全独立的已授权工作。不得默认生产写入、部署发布、迁移旧卷、读取用户内容或删除脏 worktree。
+5. 单项任务按其明确范围、相关验证和结果记录判断完成；声明基础设施能力或 BASE 阶段完成时，才须同时满足对应后端与 Admin 闭环。单项任务完成不代表阶段通过，不能仅列待办、隐藏按钮或留下 Mock 就宣称能力已交付。无关旧 Gate 开放不反向阻塞当前切片，但对应正式 Gate 的证据/签署绝不免除。
+
+文档收口的可验证目标是单一顺序、明确权限、真实状态、有效引用和无冻结输入破坏；它不能保证未知环境故障或所有未来任务绝不出错。新冲突按总入口规则定位到具体范围处理，不扩大为全项目停工。
 
 ## 0. 当前实施顺序：底座先行
 
-[ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md) 确定底座优先、Admin Web 配套、
-用户 CloudAgents 后续接入。以下是实施拆解方案，不是本次已执行或全部获准执行的声明。
-阶段状态只维护在 [06](06-status-tracker.md)，整体底座就绪条件见 [05](05-gates-and-acceptance.md#0-底座就绪验收-base-ready)。
+[ADR-0032 / D-055](../adr/0032-infrastructure-admin-delivery-and-document-routing.md) 明确第一阶段完整交付基础设施＋Admin Web，第二阶段才是用户 CloudAgents 对话。下面 BASE 不是纯后端轨道：面向管理员的能力必须有对应可用管理页面与实测。以下是实施方案，不是已执行或所有生产动作已获准的声明。
+阶段状态只维护在 [06](06-status-tracker.md)，整体底座就绪条件是 [05 的 BASE-READY](05-gates-and-acceptance.md#0-底座就绪验收-base-ready) 与 [07 的 BASE-ADMIN-V1](07-admin-web-requirements-and-design.md#base-admin-v1)，不再使用没有任务范围的“第 15 节全部标准”。
 
-### 0.1 依赖与配套交付
+### 0.1 基础设施与 Admin 联合切片
 
-| 顺序 | 底座切片 | 同阶段 Admin Web 配套 | 退出证据 |
+| 顺序 | 底座切片 | 同阶段必交付 Admin Web | 退出证据 |
 | --- | --- | --- | --- |
 | BASE-M0 | 领域/API 映射与固定版本执行 PoC | 复用 Target、Operation/Audit、版本和能力事实视图；无数据的能力不建空页面 | 无 Agent 的真实 create → ready → exec/file → stop/delete；重复请求、失败补偿及卷不误删验证 |
 | BASE-M1 | 长期 Workspace/Volume 与持久化生命周期调谐 | Workspace/Sandbox 分离列表；卷归属、保留规则、Operation/恢复状态 | 停止和重建保留代码；HTTP 断开、CP/Controller 重启后无需人工重发即可完成已接受操作 |
 | BASE-M2 | 通用 Exec/PTY/Files、Preview/SSH 与访问隔离 | Port/Grant 元数据、到期/撤销、网络策略执行状态 | 无 Agent 客户端可连接和重连；跨租户/路径穿越/任意跳转被拒绝，网络规则实际生效 |
 | BASE-M3 | 客户节点 RemoteWorker 接入 | 节点注册意图、owner、能力、心跳、Drain/Resume、版本与证书状态 | 仅 outbound/NAT 节点可承载同一 Workspace/Sandbox 流程；断连、重连、过期命令和旧 generation 正确处理 |
 | BASE-M4 | Kubernetes 路径、资源池/容量调度与隔离等级 | Region/Pool/Node、RuntimeProfile、资源配额和调度失败原因 | Docker/Kubernetes/客户节点能力矩阵；容量不足、owner/runtime/arch 不匹配拒绝；强隔离实证 |
-| BASE-M5 | 文件系统快照恢复、独立交付、计量与运维收口 | Snapshot/Restore、用量、失败积压、升级/回滚、恢复状态；配套页面整体回归 | 无 Agent 的完整底座矩阵、备份恢复/升级/故障演练与 Admin 验收；逐项通过 BASE-READY |
+| BASE-M5 | 文件系统快照恢复、独立交付、计量与运维收口 | Snapshot/Restore、用量、失败积压、升级/回滚、恢复状态；管理页面整体回归 | 无 Agent 的完整底座矩阵、备份恢复/升级/故障演练与 Admin 验收；逐项通过 BASE-READY |
 | APP-M1 | 用户 CloudAgents 接入已就绪底座 | 沿用底座运维入口；不加入对话/源码查看 | Codex/Claude 真实 Turn、Approval、历史与 Artifact 在持久 Workspace 上完成，底座回归通过 |
 
-BASE-M0～M5 是当前工作顺序，不改名或重置旧 P0～P6、Portable Runtime M1、ADMIN-M* 的证据。
+BASE-M0～M5 共同组成第一阶段，不改名或重置旧 P0～P6、Portable Runtime M1、ADMIN-M* 的证据。M0 的执行候选 PoC 是技术验证，不宣告产品能力交付；从 M1 起每个面向管理员的能力都以真实后端＋Admin 流程作为同一个完成单元。
 先 Docker 单 Region 验证产品语义，再扩展客户节点和 Kubernetes；不把只有 Docker 的结果声称为全部路径完成。
 APP-M1 的新产品功能在 BASE-READY 后推进；已有 Agent 功能继续保留，必要的兼容/安全回归可以随底座进行。
 
@@ -40,7 +80,7 @@ APP-M1 的新产品功能在 BASE-READY 后推进；已有 Agent 功能继续保
 - 持久化 Operation/outbox 和 Controller 认领/重试真正接入部署路径；API 快速接受，状态可查询。
 - 验证断开客户端、创建中重启、receipt 丢失、重复命令、失败回收及旧 generation；不依赖人工重发完成。
 - 默认单写卷，测试旧写入者 fencing、同 Workspace 重建、越权挂载拒绝；升级复用卷不冒充任意跨节点迁移。
-- Admin 配套区分 Workspace、Sandbox 与旧 Lease，清楚显示哪些数据会保留；策略值必须与执行值一致。
+- Admin 必须区分 Workspace、Sandbox 与旧 Lease，清楚显示哪些数据会保留；策略值必须与执行值一致。
 
 **BASE-M2：通用访问，而不是 Agent 工具的内部命令。**
 
@@ -80,265 +120,58 @@ APP-M1 的新产品功能在 BASE-READY 后推进；已有 Agent 功能继续保
   不以 Prometheus 或 Provider token usage 作唯一事实源。完整价格、钱包和 invoice 后续实现。
 - 测试 CP/Controller/Gateway/节点故障、备份恢复、限流/背压、容量和有界 soak；记录实际 P50/P95 与
   RPO/RTO，未经压测/演练不承诺 HTML 中的数字。根据适用风险执行既有安全/供应链检查。
-- 收齐各阶段 Admin API 权限、危险操作确认、Operation/Audit、双语、可访问性和 Daytona 固定视觉验收；
+- 收齐各阶段已交付的 Admin API 权限、危险操作确认、Operation/Audit、双语、可访问性和 Daytona 固定视觉验收；
   不能把历史截图或早期 Provider E2E 当作当前底座完整证明。
 
 ### 0.3 执行与完成约束
 
-收到明确实施任务后，从最早未完成且在授权范围内的 BASE 切片推进；每次交付包含契约/后端、必要 SDK/CLI、
-相关 Admin 页面和真实验证，不先铺完整后台页面再补行为。安全独立的准备工作可并行，不能绕过依赖验收。
-单个 UI 视觉问题不阻止安全的后端工作，但对应配套页面和 BASE-READY 不能提前标为完成。
+收到继续实施主计划的任务后，从最早未完成且在授权范围内的 BASE 切片推进。明确指定的后端、UI、契约、文档修复或审查/验证，按该任务范围完成，不自动扩成整个阶段；仍须验证其实际影响，不能据此豁免已受影响的 Admin 流程。
+只有声明基础设施能力或 BASE 阶段完成时，才要求契约/后端、必要 SDK/CLI、相关 Admin 页面和真实验证共同满足；单项任务完成不代表阶段通过。后台可运行但管理闭环缺失，或页面可展示但依赖 Mock，均不能标记该能力完成。允许在同一联合切片内并行开发后端与页面，以及提前做安全独立的准备工作；不能把未完成的 Admin 工作整体移到下一阶段，也不能绕过依赖验收。
 
 用户批准的产品边界已经记录，不重复要求确认同一边界；实现授权仍以当前任务和已有同范围授权为准。
 需要新环境/凭据、改变数据保留、迁移现有卷或跨越单独批准要求时，只暂停受影响动作并说明需要什么，
 继续可独立完成的在范围内工作。所有生产写入、部署/发布、脏 worktree 删除和正式 Gate 要求保持不变。
 
-下文保留旧提取/cutover 方案供兼容与后续集成使用，不要求为新底座从头重做历史 inventory 或先完成真实 Agent/T3。
+下文提供旧提取/cutover 方案的按需入口，供兼容与后续集成使用，不要求为新底座从头重做历史 inventory 或先完成真实 Agent/T3。
 
-## 1. 迁移原则
+### 主执行任务迁移提示词
 
-- 先 inventory 和 characterization，后搬代码；
-- 按能力迁移，不按目录整仓复制；
-- 只把逐 blob 固定、复核并按目标语义重写后的内容提交到新的公共历史；禁止 subtree/filter-repo/cherry-pick
-  等方式把 Synara Git 历史 graft 到公共仓；
-- secret triage 标记为 `REWRITE_REQUIRED_BEFORE_PUBLICATION` 的来源只能作为行为 oracle，静态测试私钥必须
-  删除或改为运行时生成后再进入公共提交；
-- 公共 schema/API 先于数据库和实现；
-- 新旧 authority 不双写；
-- 活动资源由创建它的 writer drain 到终态；
-- 每个公共能力切换后，Synara 中的重复可编辑实现必须删除或变为 client/projection；
-- 所有阶段都可回滚，但回滚不能更换活动 Session/Lease 的 writer。
+以下是把原 Admin M1～M4 任务改为当前 BASE 主线的替换输入，**会扩大原任务的交付范围**。仅在用户明确将它应用于目标任务时生效；保存或读取本文不自动发送消息、更新 Goal、开始实现或恢复已撤销的合并授权。尚未迁移的原任务继续使用 ADMIN-WEB-V1，未完成项不能被标为已验收。
 
-## 2. Inventory 输出
-
-先固定 `source_ref/source_commit/tree_hash`，再对该 ref 的完整传递构建/部署输入建立 manifest。114 个 Go
-package、994 个 Go 文件、168 个 migration 和 8 个 binary 只是 2026-08-10 的观测值，不是 Gate 的硬编码
-范围；还必须覆盖 SQL/schema、Dockerfile、Helm/Compose、scripts、generated assets、fixtures 和 release
-metadata：
+以下提示词用于本轮文档集成后承接主执行任务；文档和代码均取自当前项目，避免继续依赖临时 worktree。先核对 06 的集成记录及 07 的两个验收标识；提示词本身不授权额外合并，也不自动迁移旧任务。
 
 ```text
-source_sha
-source_tree_hash
-path
-tree_hash
-package
-capability
-current_dependencies
-data_tables
-authority
-classification = move | rewrite-public | adapter | synara-only | retire
-target_path
-license/provenance
-characterization_tests
-cutover_gate
+将本任务从原 ADMIN-M1～M4 范围明确迁移为基础设施＋Admin Web 的 BASE 主线。
+
+代码工作目录：/Users/huang/devel/project/huang/business/cloud-agents
+工作分支：使用当前 codex/cloud-agents-platform-p0，不创建新分支，不覆盖或提交无关 dirty work。
+本次文档来源：/Users/huang/devel/project/huang/business/cloud-agents/docs/plan/cloud-agents-platform
+使用该来源的 04 实施计划、05 BASE-READY、07 BASE-ADMIN-V1；不要混用其他 checkout 的旧同名文档。
+实施状态只记录在该项目的 docs/plan/cloud-agents-platform/06-status-tracker.md，标注所用文档版本和验收标识，不在其他 worktree 复制进度表。
+
+目标：完成长期 Workspace、通用 Sandbox、outbound 客户节点接入及完整 Admin Web。
+执行顺序：只按 04 的 BASE-M0～M5；默认完成终点为 BASE-READY 与 BASE-ADMIN-V1 全部通过。
+保留已有 Agent/Lease/Profile/User Web 兼容性，复用已有 Admin 实现与仍有效的证据，不重新从零实现。
+原 ADMIN-M1～M4 状态按原范围保留；没有完成的旧验收不能因迁移被标为通过。
+新底座不依赖 Coding Agent Runtime 或 Provider 凭据；真实 Codex/Claude 可作既有兼容回归，
+新用户 CloudAgents 的完整接入归 APP-M1，不把它作为 BASE 完成条件，也不在本任务自动扩展应用新功能。
+
+继续遵守原 Daytona v0.190.0 固定 1:1、Vite/React/TypeScript、原生 CSS、生成 SDK要求，
+以及 zh-CN/en-US 全覆盖、即时切换、持久化、Intl、fallback、双主题/桌面移动视觉与可访问性要求。
+不引入原提示词禁止的框架、第三种语言或不必要依赖；不扩展到 Synara/T3、Billing、Wallet、Marketplace。
+User/Admin API 和身份分离，普通用户 Token 调用 Admin API 返回 403；Admin 不读取用户内容或 Secret。
+保留所有危险操作的权限、影响清单、资源名称/generation 确认、Operation 和 Audit。
+
+每次恢复核对 cwd、branch、HEAD、dirty/staged、后端/API/SDK 与证据，从最早未完成且已授权的 BASE 切片推进。
+完成必要 contract、后端、SDK、Admin 流程和真实验证，不用 Mock、空页面、构建或 Helm lint 冒充完成。
+只提交本切片相关文件，自动继续下一项范围内工作；定点修复完成不代表整个阶段通过。
+沿用原任务仍有效的同动作、同对象、同环境授权；迁移范围不扩大其资源或权限。
+新环境/真实客户节点、凭据、费用、数据保留/旧卷迁移或破坏性操作需要新决定时，只暂停受影响动作，
+请求具体授权并继续安全独立的已授权工作；同范围验证和幂等重试不重复确认。
+生产写入、部署发布、脏 worktree 删除、正式 Gate 仍保留明确审批要求。
+不要 push、发布镜像或创建 Release，不自动合并文档或修改其他任务，除非用户另行明确授权。
 ```
 
-分类粒度至少到文件/能力；`agentd`、execution targets、enterprise identity、usage、KMS、retention 等混合
-package 不能整包贴标签。先重点审计：sessions、executions、agentd、worker protocol、workspace/materialization、artifacts、credentials/
-broker、provider host、idempotency/outbox、worker releases/targets、projects/tenancy/auth。
+## 1. 兼容、迁移与回滚的按需入口
 
-Inventory seed（最终以逐文件 manifest 为准）：
-
-| 分类                      | 候选能力                                                                                                                                                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Move                      | problem/validation/secretguard、databasetime、fair queue、workertiming、limits、attestation、git policy、provider catalog 等低依赖机制                                                                                                     |
-| Rewrite public            | database/persistence/httpapi、tenant/identity/auth/project/service account、session/execution/event/idempotency/outbox、artifact/credential、agentd/provider proxy、target/placement/quota/routing、worker release/observability/retention |
-| Adapter                   | local/container/Kubernetes/SSH actuator、filesystem/PVC/S3、OIDC、local/Vault/KMS、OTLP、ingress/DNS/TLS、Cocoon/gVisor                                                                                                                    |
-| Synara-only               | commercial plan/invoice/internal cost、support access、desktop product integration、Stage 6 approval/governance registry、Synara UI/projection/private infra config                                                                        |
-| Deferred public extension | SAML/SCIM、legal hold/privacy export、advanced retention、多云 enterprise adapters                                                                                                                                                         |
-| Retire                    | Provider Host v1、旧 metadata import、被公共 API/SDK 替代的 HTTP surface、cutover 后重复 CP 实现                                                                                                                                           |
-| Greenfield public         | CloudEnvironmentLease/Generation、managed workload controller、volume/endpoint binding、pairing coordinator、lease grants/metering/cleanup                                                                                                 |
-
-## 3. 旧 P0～P6 阶段定义（历史 Gate/兼容映射，不再是当前实施顺序）
-
-### P0：Freeze、inventory 与 characterization
-
-- 冻结源 SHA、remote、dirty/worktree；
-- 生成完整分类 manifest；
-- 保存 legacy Synara managed-agent、T3 embedded Runtime 和可复用机制（allocation/fencing/workspace/broker/
-  release/pairing）的 happy/failure/restart characterization；
-- Managed Host 是 greenfield：只建立 spec、negative fixtures 和 public reference-host baseline，不伪造
-  “重构前 managed-host”证据；
-- 决定公共/adapter/Synara-only owner；
-- 完成 license/secret provenance。
-
-### P1：Contracts、SDK 与公共 foundation
-
-- Tenant/Organization/Project/Membership/basic RBAC；
-- Managed Agent、Managed Host、Worker、Platform Adapter contracts；
-- 独立 versioned Contracts、TS/Go SDK、stable errors、watch cursor；SDK exact pin contract digest；
-- Postgres schema/migration、idempotency、outbox、leader/reconciler；
-- durable PlatformOperation/Attempt/Receipt/Finalizer；
-- provider catalog/capability/release/attestation、admission/fairness/quota/backpressure；
-- service account/workload identity、OIDC/local auth、rate limit 与 audit/usage facts。
-
-P1 的数据与传输 foundation 按 [ADR-0007](../adr/0007-p1-contract-data-toolchain-foundation.md) 冻结：
-
-- Postgres CI compatibility matrix 固定覆盖 major `15`、`16`、`17`；每个 job 必须进一步固定 patch version
-  与 OCI image digest，closure record 同时记录 server version、image digest 和 client/toolchain version，禁止仅使用
-  `postgres:15` 等可漂移 tag 作为证据；
-- Go persistence 固定使用 `pgx/v5`、`pgxpool` 与显式手写 SQL；禁止 GORM、ORM schema generation、
-  `AutoMigrate`，也禁止沿用 Synara migration 编号或把 legacy migration 作为公共 schema authority；
-- management/agent/host JSON API 以 JSON Schema 数据模型和 OpenAPI 路由映射为 authority；Worker/Platform
-  Adapter wire 以 Proto + Connect/gRPC mapping 为 authority。两条传输面各自从唯一 authority 生成
-  golden/negative fixtures；仅对显式共享语义类型增加跨面 mapping fixture，不允许 SDK 或 server 手写出第二套
-  wire model；
-- 数据隔离采用 composite tenant foreign key 加 `ENABLE ROW LEVEL SECURITY` / `FORCE ROW LEVEL SECURITY`。
-  runtime role 必须是非表 owner、没有 `BYPASSRLS`，每个事务通过 `SET LOCAL` 写入并验证 tenant context；
-  migration owner 与 runtime role 分离，只有经 ADR 与测试批准的 global table allowlist 可以不带 tenant RLS；
-- live-instance compatibility 不能依赖临时进程列表：实例版本、schema range、最后 heartbeat 和 drain 状态进入
-  durable registry。contract migration 前必须证明所有 live instances 位于 N/N-1 支持窗口；unknown、
-  stale-but-not-expired，以及 expired 但尚无同 incarnation/generation fencing + termination + revoke +
-  claim/leader release durable retirement receipt 的实例一律 fail closed。只有完整 retirement receipt 才能把过期
-  registration 从 live set 排除。
-
-公共 migration 使用全新 `expand -> backfill -> contract` lineage，不复制 Synara migration 编号；baseline 分域至少覆盖：tenant/org/project/
-membership、idempotency/outbox/leader/operation receipt、managed-agent session/turn/execution/event/interaction、
-worker identity/generation/release/attestation、workspace/materialization/checkpoint/cleanup、artifact、credential/
-broker、target/quota/usage、managed-host lease/workload/volume/endpoint、adapter registry/finalizer、platform
-manifest/compatibility。
-
-每个 lineage entry 必须固定 migration ID、前置 migration、内容 checksum、阶段、最小/最大兼容 binary、重入语义
-和 rollback 边界；执行器先取得 Postgres advisory lock，再核对数据库 ledger checksum，checksum 漂移、未知 migration
-或越过未完成阶段均 fail closed。backfill 必须使用 durable cursor、固定 batch boundary 和 reconciliation report，
-不能把一次性脚本或 CI 成功当成完成状态。
-
-### P2：Managed Agent Plane
-
-- Session/Turn/Execution；
-- Worker claim/generation/fencing；
-- Workspace/materialization/checkpoint primitive；
-- Artifact 与 Credential Broker；
-- Provider Runtime/Runtime Event projection；
-- durable command/interaction/receipt/event sequence/resume cursor；
-- Workspace source/repository revision/Git credential policy；
-- Worker identity/incarnation/revocation/tombstone/storage scrub、retention/orphan cleanup；
-- crash/replay/retry/stop/recovery。
-
-### P3：Managed Host Plane（greenfield core）
-
-- CloudEnvironmentLease/Generation；
-- ProjectSource/WorkspaceSource、quota/admission/TTL 与 watch cursor；
-- reference host workload/volume/state；
-- signed `HostWorkloadDescriptor` contract、allowlist 与 compatibility；
-- host bootstrap/admin contract：health/version/createPairingLink/revoke link/session/drain；
-- workspace、host state、Runtime state 三类 volume binding；
-- TLS/ingress/relay endpoint provision/revoke/drain；
-- pairing issuance 的 durable record 只存 opaque ref/generation/scope/expiry/status，不存 URL/token/hash；
-  一次性 secret 只走 no-store ephemeral claim response，丢失后 revoke + remint；
-- lease-scoped BrokerPolicy 与多 Provider grant；
-- Adapter registration/capability/trust root/workload identity；
-- usage/metering facts、partial allocation/orphan discovery/compensating cleanup；
-- durable operation/attempt/receipt/finalizer 和可发现资源标签；
-- endpoint/pairing/proof session；
-- broker/attestation/metering；
-- create/ready/terminate；suspend/resume 延后。
-
-P3 只关闭 generic `G-MANAGED-HOST`；真实 T3 artifact、pairing/revoke、checkpoint/reconnect 在 P6 关闭
-`G-T3-INTEGRATION`，不得形成循环依赖。
-
-### P4：Standalone deployment
-
-- public CP/Worker images；
-- Compose real Turn；
-- Helm install/upgrade/rollback；
-- local/Kubernetes/OIDC/S3 adapters；
-- basic retention/cleanup、envelope encryption/key rotation、OTLP health/metrics/tracing/DLQ alert；
-- backup/restore、HA、capacity/SLO、incident runbook。
-
-P4 Standalone 默认包含 Managed Agent 与 reference Managed Host；真实 T3 profile 不是 Standalone 安装前提。
-
-### P5：Synara cutover
-
-- Synara 新增公共 SDK client/projection；
-- shadow compare public CP 与 legacy CP；
-- 按新 Tenant/Project 或 workload cohort 选择 single writer；
-- 新 Session/Turn 路由公共 managed-agent；
-- 活动 legacy Session 由 legacy writer drain；
-- 删除已替代的公共能力源码，保留限期 read/migration compatibility；
-- 企业 Billing/SAML/SCIM/compliance 通过公共 extension surface 接入。
-
-### P6：T3Code 接入
-
-- embedded 继续消费 Runtime，无 CP 强依赖；
-- managed UI/management client 消费 Managed Host SDK；
-- 新 `ManagedConnectionTarget`，direct/relay proof-bound exchange；
-- 从 T3 repo 产出公开可获取、签名且 allowlist 的 T3 image/bundle + `HostWorkloadDescriptor`；
-- T3 server 与 Runtime 同 Workspace；
-- crash/reconnect/checkpoint/revert/soak E2E。
-
-## 4. 数据切换
-
-公共 CP 使用独立 schema/database namespace，不复用 Synara `agent_executions` 作为内部表。
-
-| 数据                                                    | 单一 writer                         |
-| ------------------------------------------------------- | ----------------------------------- |
-| 公共 Tenant/Organization/Project/Session/Turn/Execution | Public CP                           |
-| CloudEnvironmentLease/Generation/outbox                 | Public CP                           |
-| actual workload/route/volume/grant                      | 对应 public/built-in adapter system |
-| binding/receipt/accepted observation                    | Public CP                           |
-| T3 Thread/Turn/SQLite/Git                               | T3 server                           |
-| Synara enterprise billing/invoice/compliance            | Synara                              |
-
-迁移规则：
-
-- projection 使用 `source_event_id + resource_version` 去重；
-- side effect 携带 `aggregateId + generation + operationId + fencingToken + releaseDigest`；
-- adapter 只返回 observation/receipt，CP 决定状态转换；
-- writer selector 对聚合生命周期 sticky；
-- shadow 写隔离 schema/metrics，不拥有 side-effect credential；
-- failback 只停止创建新聚合，活动聚合由原 writer drain；
-- 禁止 reverse replication 写 authority 表；
-- expand/contract migration 支持 N/N-1 rolling upgrade。
-
-### 4.1 Migration ledger 与历史读取
-
-- 所有 legacy/public aggregate 使用 namespace-qualified ID，不假设旧 UUID 全局无冲突；
-- migration ledger 记录 aggregate kind、legacy/public ID、source version、writer epoch、cutover/drain/EOL 状态；
-- read router 按 ledger 读取 public 或 legacy 历史，禁止通过“读不到就双写补一份”；
-- audit/retention/export 在兼容期能跨 public/legacy 汇总，并标明 source/writer；
-- legacy writer 在最后活动聚合 drain 前继续接受安全修复，但不增加新功能；
-- 每个 cohort 有 decommission deadline、延期 owner 和数据删除/保留批准。
-
-### 4.2 数据库迁移与 rollback
-
-- 只采用 forward-only `expand -> resumable backfill -> code cutover -> contract`；
-- 每个 migration 有 immutable checksum、Postgres advisory lock、schema compatibility range 和重复执行语义；
-- backfill 按 durable cursor/batch 可暂停恢复，并有 mismatch/reconciliation report；
-- tenant-owned tables 使用 composite tenant FK，并同时启用 `ENABLE ROW LEVEL SECURITY` 与
-  `FORCE ROW LEVEL SECURITY`；runtime role 非 owner 且无 `BYPASSRLS`，事务必须以 `SET LOCAL` 设置 tenant
-  context，缺失、非法或跨 tenant context 时 fail closed；
-- migration owner 与 runtime role 分离；不受 tenant RLS 的 global tables 必须进入固定 allowlist，并有逐表 authority
-  与隔离测试；
-- durable live-instance registry 记录 binary、contract、schema range、heartbeat 与 drain state；contract preflight 要求
-  所有 live instance 满足 N/N-1 compatibility；unknown、stale-but-not-expired，以及 expired 但没有同
-  incarnation/generation retirement receipt 的实例阻止迁移。retirement receipt 必须证明 fencing/termination、
-  endpoint/credential revoke 与 claim/leader release；
-- Release manifest 固定最低可回滚 binary/schema 版本；contract 前验证旧 binary 已退出支持窗口；
-- irreversible migration 必须有 freeze/批准、PITR restore point 和 restore drill；P1 只验收本地 logical
-  backup/restore、checksum/advisory-lock 行为与 N/N-1 compatibility，部署级 PITR restore point、PITR drill、HA
-  和故障切换到 P4 才能关闭；P1 仍须实现 fail-closed preflight contract，使部署执行在没有匹配 release/schema
-  digest 的 restore point 与有效 restore-drill record 时拒绝进入 irreversible/contract 阶段；
-- rollback 通常回滚 binary/traffic 并保留 expanded schema，不假装存在安全 down migration。
-
-## 5. 迁移到公共仓后的删除规则
-
-某能力只有满足以下条件才从 Synara 删除：
-
-1. 公共源码/测试/SDK/Release 已固定；
-2. Synara client/adapter 使用公共 API；
-3. shadow/canary/cutover/failback 通过；
-4. 活动 legacy 数据已 drain 或进入明确兼容期限；
-5. data retention/DR/audit 已批准；
-6. 删除后全仓搜索无第二个可编辑实现。
-
-删除的是重复公共实现，不是 Synara 企业扩展和历史数据读取义务。
-
-## 6. 回滚
-
-- Runtime 与 Platform 分开回滚；
-- 公共 CP rollback 必须保持 schema N/N-1、outbox cursor 和 active generation 可读；
-- 新 Session/Lease admission 可停止，活动聚合不得换 writer；
-- endpoint/grant/workload 先 revoke/drain，再降级/卸载；
-- failed cleanup 继续 reconciliation，不能因 rollback 丢 finalizer；
-- 每个阶段维护明确 RPO/RTO、backup/restore 和数据修复 runbook。
+已有 Agent/Lease 调用方继续兼容；Workspace 数据归属和旧卷采用不能由文档更名隐式改变。实际涉及旧数据迁移、消费者 cutover 或破坏性回收时，读取 [旧迁移/回滚安全要求](history/04-legacy-migration-plan.md)，核验授权、恢复点、N/N-1 与单一 writer，再执行该范围任务。不要为了新的 BASE 工作重新运行旧 P0 inventory 或提前实施 Synara/T3。
