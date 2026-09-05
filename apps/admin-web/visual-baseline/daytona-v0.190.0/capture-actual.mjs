@@ -138,7 +138,8 @@ try {
       mobile: width < 600,
     });
   const pressKey = async (key, code = key, modifiers = 0) => {
-    const virtualKeyCode = key === "Escape" ? 27 : key.toUpperCase().charCodeAt(0);
+    const virtualKeyCode =
+      key === "Escape" ? 27 : key === "Tab" ? 9 : key.toUpperCase().charCodeAt(0);
     const params = { key, code, modifiers, windowsVirtualKeyCode: virtualKeyCode };
     await command("Input.dispatchKeyEvent", { type: "rawKeyDown", ...params });
     await command("Input.dispatchKeyEvent", { type: "keyUp", ...params });
@@ -242,6 +243,69 @@ try {
   const closeSheet = async () => {
     await click(".admin-sheet .sheet-close, .admin-sheet .icon-button");
     await waitFor("document.querySelector('.admin-sheet') === null", "Sheet close");
+  };
+  const closeNavigationBackdrop = async () => {
+    const point = await evaluate("({ x: innerWidth - 10, y: innerHeight / 2 })");
+    await command("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
+    await command("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
+    await waitFor(
+      "!document.querySelector('.mobile-nav-dialog').open",
+      "mobile navigation backdrop close",
+    );
+  };
+  const verifyMobileKeyboard = async () => {
+    assert.equal(
+      await evaluate("document.querySelector('.sidebar').getBoundingClientRect().width"),
+      0,
+    );
+    await clickAt(".mobile-nav-trigger");
+    await waitFor(
+      "document.querySelector('.mobile-nav-dialog')?.matches(':modal')",
+      "native modal navigation",
+    );
+    await waitFor(
+      "document.activeElement === document.querySelector('.sidebar nav button.active')",
+      "active navigation focus",
+    );
+    assert.equal(
+      await evaluate(
+        "getComputedStyle(document.querySelector('.sidebar .brand-mark')).display !== 'none'",
+      ),
+      true,
+    );
+    assert.equal(
+      await evaluate(
+        "getComputedStyle(document.querySelector('.mobile-nav-dialog'), '::backdrop').animationDuration",
+      ),
+      "1e-05s",
+    );
+    for (let index = 0; index < 12; index += 1) {
+      await pressKey("Tab");
+      assert.equal(
+        await evaluate(
+          "document.activeElement === document.body || document.querySelector('.mobile-nav-dialog').contains(document.activeElement)",
+        ),
+        true,
+      );
+    }
+    await pressKey("Escape");
+    await waitFor("!document.querySelector('.mobile-nav-dialog').open", "mobile Escape close");
+    await waitFor(
+      "document.activeElement === document.querySelector('.mobile-nav-trigger')",
+      "mobile trigger focus restore",
+    );
+    await pressKey("b", "KeyB", 4);
+    await waitFor("document.querySelector('.mobile-nav-dialog').open", "mobile sidebar shortcut");
   };
 
   await command("Page.enable");
@@ -373,8 +437,16 @@ try {
 
   await setTheme("dark");
   await screenshot("list-dark-desktop.png");
+  await pressKey("b", "KeyB", 4);
+  await waitFor(
+    "document.querySelector('.app-shell').classList.contains('sidebar-collapsed')",
+    "collapse before mobile breakpoint",
+  );
   await setViewport(390, 844);
   await screenshot("list-dark-mobile.png");
+  await verifyMobileKeyboard();
+  await screenshot("navigation-dark-mobile.png");
+  await closeNavigationBackdrop();
   await openTarget("visual-ssh");
   await screenshot("detail-dark-mobile.png");
   await closeSheet();
@@ -383,16 +455,15 @@ try {
   await closeSheet();
   await setTheme("light");
   await screenshot("list-light-mobile.png");
-  await click(".mobile-nav-trigger");
+  await verifyMobileKeyboard();
   assert.equal((await shellMetrics()).sidebar.width, 288);
   await screenshot("navigation-light-mobile.png");
-  await click(".mobile-nav-backdrop");
-  await waitFor(
-    "!document.querySelector('.sidebar').classList.contains('mobile-open')",
-    "mobile navigation close",
-  );
+  await closeNavigationBackdrop();
+  await waitFor("!document.querySelector('.mobile-nav-dialog').open", "mobile navigation close");
 
   await setViewport(1440, 900);
+  await waitFor("!document.querySelector('.mobile-nav-dialog')", "restore desktop navigation");
+  await pressKey("b", "KeyB", 4);
   await setLocale("zh-CN");
   const immediateChineseTitle = await evaluate(
     "document.querySelector('.page-heading h1').textContent.trim()",
@@ -424,6 +495,9 @@ try {
   await screenshot("zh-CN-list-dark-desktop.png");
   await setViewport(390, 844);
   await screenshot("zh-CN-list-dark-mobile.png");
+  await verifyMobileKeyboard();
+  await screenshot("zh-CN-navigation-dark-mobile.png");
+  await closeNavigationBackdrop();
   await openTarget("visual-ssh");
   await screenshot("zh-CN-detail-dark-mobile.png");
   await closeSheet();
@@ -432,11 +506,11 @@ try {
   await closeSheet();
   await setTheme("light");
   await screenshot("zh-CN-list-light-mobile.png");
-  await click(".mobile-nav-trigger");
+  await verifyMobileKeyboard();
   await screenshot("zh-CN-navigation-light-mobile.png");
-  await click(".mobile-nav-backdrop");
+  await closeNavigationBackdrop();
   await waitFor(
-    "!document.querySelector('.sidebar').classList.contains('mobile-open')",
+    "!document.querySelector('.mobile-nav-dialog').open",
     "Chinese mobile navigation close",
   );
 
@@ -506,6 +580,8 @@ try {
         sheetEscapeClose: true,
         createFormAutofocus: true,
         mobileNavigationOpenClose: true,
+        mobileModalKeyboard: true,
+        mobileCollapsedDesktopTransition: true,
         localeImmediateSwitch: true,
         localeReloadRestore: true,
         invalidLocaleFallback: true,

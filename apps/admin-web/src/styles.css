@@ -536,31 +536,32 @@ label > small {
   line-height: 1.45;
 }
 
-.sidebar-collapsed .sidebar-brand {
-  justify-content: center;
-  padding-inline: 8px;
+@media (min-width: 768px) {
+  .sidebar-collapsed .sidebar-brand {
+    justify-content: center;
+    padding-inline: 8px;
+  }
+
+  .sidebar-collapsed .sidebar-brand .brand-mark,
+  .sidebar-collapsed .sidebar-brand > span:nth-child(2),
+  .sidebar-collapsed .nav-label,
+  .sidebar-collapsed .sidebar nav button b,
+  .sidebar-collapsed .sidebar-boundary {
+    display: none;
+  }
+
+  .sidebar-collapsed .sidebar-trigger {
+    margin: 0;
+  }
+
+  .sidebar-collapsed .sidebar nav button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding-inline: 0;
+  }
 }
 
-.sidebar-collapsed .sidebar-brand .brand-mark,
-.sidebar-collapsed .sidebar-brand > span:nth-child(2),
-.sidebar-collapsed .nav-label,
-.sidebar-collapsed .sidebar nav button b,
-.sidebar-collapsed .sidebar-boundary {
-  display: none;
-}
-
-.sidebar-collapsed .sidebar-trigger {
-  margin: 0;
-}
-
-.sidebar-collapsed .sidebar nav button {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  padding-inline: 0;
-}
-
-.mobile-nav-trigger,
-.mobile-nav-backdrop {
+.mobile-nav-trigger {
   display: none;
 }
 
@@ -1471,16 +1472,32 @@ td > button small {
     display: block;
   }
 
-  .sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 50;
+  .mobile-nav-dialog {
+    inset: 0;
     width: 288px;
-    transform: translateX(-100%);
+    max-width: 100vw;
+    height: 100svh;
+    max-height: none;
+    margin: 0 auto 0 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--sidebar-background);
+    border: 0;
   }
 
-  .sidebar.mobile-open {
-    transform: translateX(0);
+  .mobile-nav-dialog::backdrop {
+    background: rgb(0 0 0 / 50%);
+    animation: fade-in 250ms ease-out;
+  }
+
+  .mobile-nav-dialog[open] {
+    animation: navigation-in 250ms ease-out;
+  }
+
+  .mobile-nav-dialog .sidebar {
+    position: static;
+    width: 100%;
+    height: 100%;
   }
 
   .sidebar-brand .brand-mark,
@@ -1506,21 +1523,6 @@ td > button small {
 
   .mobile-nav-trigger {
     display: inline-grid;
-  }
-
-  .mobile-nav-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    background: rgb(0 0 0 / 50%);
-    border: 0;
-  }
-
-  .mobile-nav-backdrop.open {
-    display: block;
   }
 
   .topbar {
@@ -1593,10 +1595,17 @@ td > button small {
   }
 }
 
+@keyframes navigation-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  *::backdrop {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

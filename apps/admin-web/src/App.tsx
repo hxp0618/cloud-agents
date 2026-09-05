@@ -55,6 +55,7 @@ import {
   type SavedAdminConnection,
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
+import { AdminSidebar } from "./AdminSidebar";
 import {
   normalizeLocale,
   useI18n,
@@ -729,8 +730,13 @@ export function App() {
         return;
       }
       if (event.key.toLocaleLowerCase() !== "b" || (!event.metaKey && !event.ctrlKey)) return;
+      if (document.querySelector("dialog[open]:not(.mobile-nav-dialog)")) return;
       event.preventDefault();
-      setSidebarOpen((open) => !open);
+      if (window.matchMedia("(max-width: 767px)").matches) {
+        setMobileNavOpen((open) => !open);
+      } else {
+        setSidebarOpen((open) => !open);
+      }
     };
     const closeProfileMenu = (event: PointerEvent) => {
       const menu = profileMenuRef.current;
@@ -1873,13 +1879,7 @@ export function App() {
 
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
-      <button
-        className={`mobile-nav-backdrop${mobileNavOpen ? " open" : ""}`}
-        type="button"
-        aria-label={t("action.closeNavigation")}
-        onClick={() => setMobileNavOpen(false)}
-      />
-      <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
+      <AdminSidebar open={mobileNavOpen} onOpenChange={setMobileNavOpen} label={t("nav.resources")}>
         <div className="brand-lockup sidebar-brand">
           <span className="brand-mark" aria-hidden="true">
             CA
@@ -1902,6 +1902,7 @@ export function App() {
         <nav aria-label={t("nav.resources")}>
           <button
             className={page === "overview" ? "active" : ""}
+            aria-current={page === "overview" ? "page" : undefined}
             onClick={() => navigate("overview")}
             title={t("nav.overview")}
           >
@@ -1910,6 +1911,7 @@ export function App() {
           </button>
           <button
             className={page === "targets" ? "active" : ""}
+            aria-current={page === "targets" ? "page" : undefined}
             onClick={() => navigate("targets")}
             title={t("nav.targets")}
           >
@@ -1918,6 +1920,7 @@ export function App() {
           </button>
           <button
             className={page === "leases" ? "active" : ""}
+            aria-current={page === "leases" ? "page" : undefined}
             onClick={() => navigate("leases")}
             title={t("nav.leases")}
           >
@@ -1926,6 +1929,7 @@ export function App() {
           </button>
           <button
             className={page === "workers" ? "active" : ""}
+            aria-current={page === "workers" ? "page" : undefined}
             onClick={() => navigate("workers")}
             title={t("nav.workers")}
           >
@@ -1934,6 +1938,7 @@ export function App() {
           </button>
           <button
             className={page === "releases" ? "active" : ""}
+            aria-current={page === "releases" ? "page" : undefined}
             onClick={() => navigate("releases")}
             title={t("nav.releases")}
           >
@@ -1943,6 +1948,7 @@ export function App() {
           </button>
           <button
             className={page === "profiles" ? "active" : ""}
+            aria-current={page === "profiles" ? "page" : undefined}
             onClick={() => navigate("profiles")}
             title={t("nav.profiles")}
           >
@@ -1952,6 +1958,7 @@ export function App() {
           </button>
           <button
             className={page === "storage" ? "active" : ""}
+            aria-current={page === "storage" ? "page" : undefined}
             onClick={() => navigate("storage")}
             title={t("nav.storagePolicies")}
           >
@@ -1961,6 +1968,7 @@ export function App() {
           </button>
           <button
             className={page === "network" ? "active" : ""}
+            aria-current={page === "network" ? "page" : undefined}
             onClick={() => navigate("network")}
             title={t("nav.networkPolicies")}
           >
@@ -1970,6 +1978,7 @@ export function App() {
           </button>
           <button
             className={page === "quotas" ? "active" : ""}
+            aria-current={page === "quotas" ? "page" : undefined}
             onClick={() => navigate("quotas")}
             title={t("nav.quotas")}
           >
@@ -1978,6 +1987,7 @@ export function App() {
           </button>
           <button
             className={page === "maintenance" ? "active" : ""}
+            aria-current={page === "maintenance" ? "page" : undefined}
             onClick={() => navigate("maintenance")}
             title={t("nav.maintenance")}
           >
@@ -1990,7 +2000,7 @@ export function App() {
           <small>{t("boundary.title")}</small>
           <p>{t("boundary.description")}</p>
         </div>
-      </aside>
+      </AdminSidebar>
 
       <section className="app-main">
         <header className="topbar">
