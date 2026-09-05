@@ -1188,6 +1188,56 @@ button.metric-card:hover {
   gap: 16px;
 }
 
+.resource-pagination,
+.pagination-summary,
+.pagination-navigation,
+.pagination-buttons {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.resource-pagination {
+  width: 100%;
+  justify-content: space-between;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.pagination-summary select {
+  width: 140px;
+}
+
+.pagination-navigation > span {
+  font-weight: 500;
+}
+
+.pagination-buttons {
+  gap: 8px;
+}
+
+.pagination-buttons .button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1023px) {
+  .pagination-buttons .pagination-first,
+  .pagination-buttons .pagination-last {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .resource-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .list-toolbar {
   display: flex;
   align-items: center;

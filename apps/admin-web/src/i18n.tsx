@@ -4,6 +4,15 @@ export const supportedLocales = ["zh-CN", "en-US"] as const;
 export type Locale = (typeof supportedLocales)[number];
 
 const enUS = {
+  "pagination.label": "Deployment target pagination",
+  "pagination.size": "Targets per page",
+  "pagination.perPage": "{count} per page",
+  "pagination.total": "{count} total targets",
+  "pagination.page": "Page {page} of {pages}",
+  "pagination.first": "Go to first page",
+  "pagination.previous": "Go to previous page",
+  "pagination.next": "Go to next page",
+  "pagination.last": "Go to last page",
   "document.title": "Cloud Agents Admin",
   "brand.adminConsole": "Admin Console",
   "connection.context": "Control Plane · Admin API",
@@ -615,6 +624,15 @@ const enUS = {
 export type MessageKey = keyof typeof enUS;
 
 const zhCN = {
+  "pagination.label": "部署目标分页",
+  "pagination.size": "每页目标数量",
+  "pagination.perPage": "每页 {count} 条",
+  "pagination.total": "共 {count} 个目标",
+  "pagination.page": "第 {page} 页，共 {pages} 页",
+  "pagination.first": "跳转到首页",
+  "pagination.previous": "上一页",
+  "pagination.next": "下一页",
+  "pagination.last": "跳转到末页",
   "document.title": "Cloud Agents 管理控制台",
   "brand.adminConsole": "管理控制台",
   "connection.context": "控制平面 · 管理员 API",

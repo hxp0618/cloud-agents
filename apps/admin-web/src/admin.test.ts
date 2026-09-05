@@ -3,6 +3,7 @@ import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   adminFailure,
+  pageAdminTargets,
   filterAdminTargets,
   filterAdminMaintenanceOperations,
   filterAdminLeases,
@@ -631,6 +632,23 @@ describe("Admin Web boundary", () => {
       new AbortController().signal,
     );
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("pages the complete filtered Target snapshot without dropping or duplicating rows", () => {
+    const targets = Array.from({ length: 61 }, (_, index) => ({
+      metadata: { uid: `target-${index}` },
+    })) as unknown as Parameters<typeof pageAdminTargets>[0];
+    const pages = [0, 1, 2].map((index) => pageAdminTargets(targets, index, 25));
+    expect(pages.flatMap((page) => page.items)).toEqual(targets);
+    expect(pages.map((page) => page.items.length)).toEqual([25, 25, 11]);
+    expect(pageAdminTargets(targets, 99, 25).index).toBe(2);
+    expect(pageAdminTargets(targets, -1, 25).index).toBe(0);
+    expect(pageAdminTargets(targets, NaN, 0).size).toBe(25);
+    expect(pageAdminTargets(targets.slice(0, 3), 2, 25).items).toEqual(targets.slice(0, 3));
+    expect(pageAdminTargets([], 5, 10)).toEqual({ index: 0, count: 1, size: 10, items: [] });
+    for (const size of [10, 25, 50, 100, 200])
+      expect(pageAdminTargets(targets, 0, size).items.length).toBe(Math.min(size, targets.length));
+    expect(targets).toHaveLength(61);
   });
 
   it("persists context but never bearer or target credentials", () => {

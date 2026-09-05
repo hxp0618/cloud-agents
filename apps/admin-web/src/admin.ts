@@ -291,6 +291,22 @@ export function leaseReleaseRequestFromPreview(
   });
 }
 
+export const targetPageSizes = [10, 25, 50, 100, 200] as const;
+
+export function pageAdminTargets(
+  targets: readonly DeploymentTarget[],
+  requestedPage: number,
+  pageSize: number,
+) {
+  const size = targetPageSizes.find((value) => value === pageSize) ?? 25;
+  const count = Math.max(1, Math.ceil(targets.length / size));
+  const index = Math.min(
+    count - 1,
+    Math.max(0, Number.isFinite(requestedPage) ? Math.floor(requestedPage) : 0),
+  );
+  return { index, count, size, items: targets.slice(index * size, (index + 1) * size) };
+}
+
 export async function listAdminTargets(
   client: AdminClient,
   tenantId: string,

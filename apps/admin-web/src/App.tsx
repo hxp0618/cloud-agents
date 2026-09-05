@@ -31,6 +31,8 @@ import {
 
 import {
   adminFailure,
+  pageAdminTargets,
+  targetPageSizes,
   filterAdminTargets,
   filterAdminMaintenanceOperations,
   filterAdminLeases,
@@ -2404,14 +2406,13 @@ export function App() {
                   targets.list · {number(visibleTargets.length)}
                 </span>
               </div>
-              <div className="panel target-list-panel">
-                <TargetTable
-                  targets={visibleTargets}
-                  filtered={targetsFiltered}
-                  selectedTargetId={selectedTargetId}
-                  onSelect={selectTarget}
-                />
-              </div>
+              <PaginatedTargets
+                filterKey={JSON.stringify([query, targetKindFilter, targetPhaseFilter])}
+                targets={visibleTargets}
+                filtered={targetsFiltered}
+                selectedTargetId={selectedTargetId}
+                onSelect={selectTarget}
+              />
             </section>
           ) : page === "workers" ? (
             <section className="resource-list">
@@ -3831,6 +3832,108 @@ export function App() {
         </AdminSheet>
       ) : null}
     </div>
+  );
+}
+
+function PaginatedTargets({
+  filterKey,
+  targets,
+  filtered,
+  selectedTargetId,
+  onSelect,
+}: Readonly<{
+  filterKey: string;
+  targets: readonly DeploymentTarget[];
+  filtered: boolean;
+  selectedTargetId: string;
+  onSelect: (id: string) => void;
+}>) {
+  const { t, number } = useI18n();
+  const [size, setSize] = useState(25);
+  const [position, setPosition] = useState({ filterKey, index: 0 });
+  const page = pageAdminTargets(
+    targets,
+    position.filterKey === filterKey ? position.index : 0,
+    size,
+  );
+  // Keep the stored position in range when filters or a refreshed resource snapshot shrink it.
+  if (position.filterKey !== filterKey || position.index !== page.index)
+    setPosition({ filterKey, index: page.index });
+  const changePage = (index: number) => setPosition({ filterKey, index });
+  return (
+    <>
+      <div className="panel target-list-panel">
+        <TargetTable
+          targets={page.items}
+          filtered={filtered}
+          selectedTargetId={selectedTargetId}
+          onSelect={onSelect}
+        />
+      </div>
+      <nav className="resource-pagination" aria-label={t("pagination.label")}>
+        <div className="pagination-summary">
+          <select
+            aria-label={t("pagination.size")}
+            value={size}
+            onChange={(event) => {
+              setSize(Number(event.target.value));
+              changePage(0);
+            }}
+          >
+            {targetPageSizes.map((value) => (
+              <option key={value} value={value}>
+                {t("pagination.perPage", { count: number(value) })}
+              </option>
+            ))}
+          </select>
+          <span>{t("pagination.total", { count: number(targets.length) })}</span>
+        </div>
+        <div className="pagination-navigation">
+          <span role="status">
+            {t("pagination.page", { page: number(page.index + 1), pages: number(page.count) })}
+          </span>
+          <div className="pagination-buttons">
+            {(
+              [
+                ["first", 0, page.index === 0, "M11 6l-6 6 6 6M19 6l-6 6 6 6"],
+                ["previous", page.index - 1, page.index === 0, "M15 6l-6 6 6 6"],
+                ["next", page.index + 1, page.index === page.count - 1, "M9 6l6 6-6 6"],
+                [
+                  "last",
+                  page.count - 1,
+                  page.index === page.count - 1,
+                  "M5 6l6 6-6 6M13 6l6 6-6 6",
+                ],
+              ] as const
+            ).map(([action, index, disabled, path]) => (
+              <button
+                key={action}
+                type="button"
+                className={`button outline pagination-${action}`}
+                aria-label={t(`pagination.${action}`)}
+                title={t(`pagination.${action}`)}
+                disabled={disabled}
+                onClick={() => changePage(index)}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d={path} />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
+      </nav>
+    </>
   );
 }
 
