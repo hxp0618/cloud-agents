@@ -1,0 +1,710 @@
+{
+  "base": "c3fec3bd81ee18210efc0d69dff983342aa46fcd",
+  "project": "project-fdc0883c0a4bf471b490dc3ef13868c8",
+  "results": [
+    {
+      "id": "real-docker-en-us",
+      "kind": "docker",
+      "locale": "en-US",
+      "phase": "ready",
+      "generation": 1,
+      "resourceVersion": "3",
+      "apiVersion": "1.54",
+      "engineVersion": "29.4.0",
+      "userGetStatus": 403,
+      "operations": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-52799c29d42f40a3cb251c5492118dc4",
+          "idempotencyKey": "admin-5da80c73-6ea2-4065-a9d6-f9ab90cdc719",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-en-us",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-fe2bdb6d-14ec-41a3-bbf0-771ef1184dd2",
+          "requestedAt": "2026-09-05T06:26:46.450956Z",
+          "updatedAt": "2026-09-05T06:26:46.478122Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Probe deployment target connectivity and capabilities",
+          "retryable": false
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-c8687b64499314cf7f938bd76546b118",
+          "idempotencyKey": "admin-55f1c944-bf67-4620-b8d7-e87004bfa483",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-en-us",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-0046b1bb-422c-42fd-9fca-cb56a5855ada",
+          "requestedAt": "2026-09-05T06:26:46.334088Z",
+          "updatedAt": "2026-09-05T06:26:46.334088Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Register deployment target",
+          "retryable": false
+        }
+      ],
+      "audit": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-52799c29d42f40a3cb251c5492118dc4-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-en-us",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:46.478122Z",
+          "requestId": "admin-fe2bdb6d-14ec-41a3-bbf0-771ef1184dd2",
+          "operationId": "op-52799c29d42f40a3cb251c5492118dc4"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-52799c29d42f40a3cb251c5492118dc4-requested",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-en-us",
+          "resourceGeneration": 1,
+          "result": "requested",
+          "occurredAt": "2026-09-05T06:26:46.450956Z",
+          "requestId": "admin-fe2bdb6d-14ec-41a3-bbf0-771ef1184dd2",
+          "operationId": "op-52799c29d42f40a3cb251c5492118dc4"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-c8687b64499314cf7f938bd76546b118-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-en-us",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:46.334088Z",
+          "requestId": "admin-0046b1bb-422c-42fd-9fca-cb56a5855ada",
+          "operationId": "op-c8687b64499314cf7f938bd76546b118"
+        }
+      ]
+    },
+    {
+      "id": "real-kubernetes-en-us",
+      "kind": "kubernetes",
+      "locale": "en-US",
+      "phase": "ready",
+      "generation": 1,
+      "resourceVersion": "3",
+      "apiVersion": "1.35",
+      "engineVersion": "v1.35.6+orb1",
+      "userGetStatus": 403,
+      "operations": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-1280f2cf9dac1f784c542060d37e1aa0",
+          "idempotencyKey": "admin-653ce489-4860-41c2-9126-8bb48bc02f8f",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-en-us",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-6cb3b9bc-d916-4031-8add-1714b53ceb5b",
+          "requestedAt": "2026-09-05T06:26:46.850126Z",
+          "updatedAt": "2026-09-05T06:26:46.871052Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Probe deployment target connectivity and capabilities",
+          "retryable": false
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-a3d723d5962a3fe67b19b64c9e02b93c",
+          "idempotencyKey": "admin-23216a3b-e2c3-4460-ba73-046d9a04f231",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-en-us",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-7364638e-1a9a-4d31-b1e8-55482bbdf756",
+          "requestedAt": "2026-09-05T06:26:46.734415Z",
+          "updatedAt": "2026-09-05T06:26:46.734415Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Register deployment target",
+          "retryable": false
+        }
+      ],
+      "audit": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-1280f2cf9dac1f784c542060d37e1aa0-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-en-us",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:46.871052Z",
+          "requestId": "admin-6cb3b9bc-d916-4031-8add-1714b53ceb5b",
+          "operationId": "op-1280f2cf9dac1f784c542060d37e1aa0"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-1280f2cf9dac1f784c542060d37e1aa0-requested",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-en-us",
+          "resourceGeneration": 1,
+          "result": "requested",
+          "occurredAt": "2026-09-05T06:26:46.850126Z",
+          "requestId": "admin-6cb3b9bc-d916-4031-8add-1714b53ceb5b",
+          "operationId": "op-1280f2cf9dac1f784c542060d37e1aa0"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-a3d723d5962a3fe67b19b64c9e02b93c-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-en-us",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:46.734415Z",
+          "requestId": "admin-7364638e-1a9a-4d31-b1e8-55482bbdf756",
+          "operationId": "op-a3d723d5962a3fe67b19b64c9e02b93c"
+        }
+      ]
+    },
+    {
+      "id": "real-ssh-en-us",
+      "kind": "ssh",
+      "locale": "en-US",
+      "phase": "ready",
+      "generation": 1,
+      "resourceVersion": "3",
+      "apiVersion": "2.0",
+      "engineVersion": "OpenSSH_10.0",
+      "userGetStatus": 403,
+      "operations": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-4e903ed45bb3021b54094716573030e7",
+          "idempotencyKey": "admin-e949be3a-7337-4002-aefe-579ebb8424df",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-en-us",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-d4302a3d-bea1-4acd-8e0f-794149c41005",
+          "requestedAt": "2026-09-05T06:26:47.300826Z",
+          "updatedAt": "2026-09-05T06:26:47.405286Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Probe deployment target connectivity and capabilities",
+          "retryable": false
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-1218b2d8a34e0f44cf1ab9e3f3b77f12",
+          "idempotencyKey": "admin-21f82e6c-194c-4f25-a580-73b32aac4f92",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-en-us",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-493e8adc-c9ef-4ca1-8488-88837fe2cfb8",
+          "requestedAt": "2026-09-05T06:26:47.183731Z",
+          "updatedAt": "2026-09-05T06:26:47.183731Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Register deployment target",
+          "retryable": false
+        }
+      ],
+      "audit": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-4e903ed45bb3021b54094716573030e7-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-en-us",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:47.405286Z",
+          "requestId": "admin-d4302a3d-bea1-4acd-8e0f-794149c41005",
+          "operationId": "op-4e903ed45bb3021b54094716573030e7"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-4e903ed45bb3021b54094716573030e7-requested",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-en-us",
+          "resourceGeneration": 1,
+          "result": "requested",
+          "occurredAt": "2026-09-05T06:26:47.300826Z",
+          "requestId": "admin-d4302a3d-bea1-4acd-8e0f-794149c41005",
+          "operationId": "op-4e903ed45bb3021b54094716573030e7"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-1218b2d8a34e0f44cf1ab9e3f3b77f12-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-en-us",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:47.183731Z",
+          "requestId": "admin-493e8adc-c9ef-4ca1-8488-88837fe2cfb8",
+          "operationId": "op-1218b2d8a34e0f44cf1ab9e3f3b77f12"
+        }
+      ]
+    },
+    {
+      "id": "real-docker-zh-cn",
+      "kind": "docker",
+      "locale": "zh-CN",
+      "phase": "ready",
+      "generation": 1,
+      "resourceVersion": "3",
+      "apiVersion": "1.54",
+      "engineVersion": "29.4.0",
+      "userGetStatus": 403,
+      "operations": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-5fa17c962d3e531563028afa0d638a94",
+          "idempotencyKey": "admin-adc935f5-a81b-48c7-b2ae-dd70533f6f6b",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-zh-cn",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-e3934c63-8f00-4c7b-a77a-c7762e453e34",
+          "requestedAt": "2026-09-05T06:26:47.934352Z",
+          "updatedAt": "2026-09-05T06:26:47.956627Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Probe deployment target connectivity and capabilities",
+          "retryable": false
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-45c923d5eb310de5883289f75de72ab7",
+          "idempotencyKey": "admin-68b35421-7ef9-4a4f-ad4b-92e5e0f6064e",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-zh-cn",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-322fb031-fc9a-458a-8bb9-d40502f13e7a",
+          "requestedAt": "2026-09-05T06:26:47.834397Z",
+          "updatedAt": "2026-09-05T06:26:47.834397Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Register deployment target",
+          "retryable": false
+        }
+      ],
+      "audit": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-5fa17c962d3e531563028afa0d638a94-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-zh-cn",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:47.956627Z",
+          "requestId": "admin-e3934c63-8f00-4c7b-a77a-c7762e453e34",
+          "operationId": "op-5fa17c962d3e531563028afa0d638a94"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-5fa17c962d3e531563028afa0d638a94-requested",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-zh-cn",
+          "resourceGeneration": 1,
+          "result": "requested",
+          "occurredAt": "2026-09-05T06:26:47.934352Z",
+          "requestId": "admin-e3934c63-8f00-4c7b-a77a-c7762e453e34",
+          "operationId": "op-5fa17c962d3e531563028afa0d638a94"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-45c923d5eb310de5883289f75de72ab7-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-docker-zh-cn",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:47.834397Z",
+          "requestId": "admin-322fb031-fc9a-458a-8bb9-d40502f13e7a",
+          "operationId": "op-45c923d5eb310de5883289f75de72ab7"
+        }
+      ]
+    },
+    {
+      "id": "real-kubernetes-zh-cn",
+      "kind": "kubernetes",
+      "locale": "zh-CN",
+      "phase": "ready",
+      "generation": 1,
+      "resourceVersion": "3",
+      "apiVersion": "1.35",
+      "engineVersion": "v1.35.6+orb1",
+      "userGetStatus": 403,
+      "operations": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-ee49cf37eb8e3462d60011b9f78777d7",
+          "idempotencyKey": "admin-0bb43dcc-6096-4a92-b477-57e3fdbbd7c1",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-zh-cn",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-a66096a0-4078-46f9-bb9f-792f9fde8e22",
+          "requestedAt": "2026-09-05T06:26:48.349592Z",
+          "updatedAt": "2026-09-05T06:26:48.367505Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Probe deployment target connectivity and capabilities",
+          "retryable": false
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-add6c506ecb592c4e48d204aff0c3565",
+          "idempotencyKey": "admin-58a8a692-abf9-4e5d-ab06-109bcccd523c",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-zh-cn",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-014245ab-87a3-426f-aa46-afd77f3b8b14",
+          "requestedAt": "2026-09-05T06:26:48.233923Z",
+          "updatedAt": "2026-09-05T06:26:48.233923Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Register deployment target",
+          "retryable": false
+        }
+      ],
+      "audit": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-ee49cf37eb8e3462d60011b9f78777d7-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-zh-cn",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:48.367505Z",
+          "requestId": "admin-a66096a0-4078-46f9-bb9f-792f9fde8e22",
+          "operationId": "op-ee49cf37eb8e3462d60011b9f78777d7"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-ee49cf37eb8e3462d60011b9f78777d7-requested",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-zh-cn",
+          "resourceGeneration": 1,
+          "result": "requested",
+          "occurredAt": "2026-09-05T06:26:48.349592Z",
+          "requestId": "admin-a66096a0-4078-46f9-bb9f-792f9fde8e22",
+          "operationId": "op-ee49cf37eb8e3462d60011b9f78777d7"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-add6c506ecb592c4e48d204aff0c3565-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-kubernetes-zh-cn",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:48.233923Z",
+          "requestId": "admin-014245ab-87a3-426f-aa46-afd77f3b8b14",
+          "operationId": "op-add6c506ecb592c4e48d204aff0c3565"
+        }
+      ]
+    },
+    {
+      "id": "real-ssh-zh-cn",
+      "kind": "ssh",
+      "locale": "zh-CN",
+      "phase": "ready",
+      "generation": 1,
+      "resourceVersion": "3",
+      "apiVersion": "2.0",
+      "engineVersion": "OpenSSH_10.0",
+      "userGetStatus": 403,
+      "operations": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-e2a6eec174d5d4b3c53e76fccb17f6f7",
+          "idempotencyKey": "admin-baf24704-a40c-42b0-9178-cda38263b323",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-zh-cn",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-b56018c9-259b-4425-8b4c-7f61d0884d3a",
+          "requestedAt": "2026-09-05T06:26:48.719318Z",
+          "updatedAt": "2026-09-05T06:26:48.817336Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Probe deployment target connectivity and capabilities",
+          "retryable": false
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "MaintenanceOperation",
+          "operationId": "op-a5f44cd78eb561637952fabdb92d4cd9",
+          "idempotencyKey": "admin-817563c0-0184-4148-837b-77c85c5779fb",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-zh-cn",
+          "resourceGeneration": 1,
+          "requestedBy": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "requestId": "admin-b0c9b73f-f486-4b0b-ad8a-86d2bb2cbfa4",
+          "requestedAt": "2026-09-05T06:26:48.567075Z",
+          "updatedAt": "2026-09-05T06:26:48.567075Z",
+          "state": "succeeded",
+          "currentStep": "complete",
+          "impactSummary": "Register deployment target",
+          "retryable": false
+        }
+      ],
+      "audit": [
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-e2a6eec174d5d4b3c53e76fccb17f6f7-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-zh-cn",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:48.817336Z",
+          "requestId": "admin-b56018c9-259b-4425-8b4c-7f61d0884d3a",
+          "operationId": "op-e2a6eec174d5d4b3c53e76fccb17f6f7"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-e2a6eec174d5d4b3c53e76fccb17f6f7-requested",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.probe",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-zh-cn",
+          "resourceGeneration": 1,
+          "result": "requested",
+          "occurredAt": "2026-09-05T06:26:48.719318Z",
+          "requestId": "admin-b56018c9-259b-4425-8b4c-7f61d0884d3a",
+          "operationId": "op-e2a6eec174d5d4b3c53e76fccb17f6f7"
+        },
+        {
+          "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+          "kind": "AdminAuditEvent",
+          "eventId": "op-a5f44cd78eb561637952fabdb92d4cd9-succeeded",
+          "actor": "sha256:0df123b94786d2df8e48f454f2ab64ef4d77ef7fe17151237a4ec879263068e5",
+          "action": "target.register",
+          "resourceKind": "DeploymentTarget",
+          "resourceId": "real-ssh-zh-cn",
+          "resourceGeneration": 1,
+          "result": "succeeded",
+          "occurredAt": "2026-09-05T06:26:48.567075Z",
+          "requestId": "admin-b0c9b73f-f486-4b0b-ad8a-86d2bb2cbfa4",
+          "operationId": "op-a5f44cd78eb561637952fabdb92d4cd9"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "locale": "en-US",
+      "theme": "light",
+      "width": 1440,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "en-US",
+      "theme": "light",
+      "width": 390,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "en-US",
+      "theme": "dark",
+      "width": 1440,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "en-US",
+      "theme": "dark",
+      "width": 390,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1440,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 390,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 1440,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    },
+    {
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 390,
+      "readyTargets": 6,
+      "keyboardFocusRestored": true,
+      "noDocumentOverflow": true
+    }
+  ],
+  "errors": [],
+  "warnings": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "responses": [
+    {
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/lease-quota/audit-events",
+      "status": 404
+    },
+    {
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/lease-quota",
+      "status": 404
+    }
+  ],
+  "mutations": [
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets/real-docker-en-us:probe",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets/real-kubernetes-en-us:probe",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets/real-ssh-en-us:probe",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets/real-docker-zh-cn:probe",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets/real-kubernetes-zh-cn:probe",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets",
+      "origin": "http://127.0.0.1:4174"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/tenants/tenant-local/projects/project-fdc0883c0a4bf471b490dc3ef13868c8/deployment-targets/real-ssh-zh-cn:probe",
+      "origin": "http://127.0.0.1:4174"
+    }
+  ],
+  "localePersists": true,
+  "noStoredBearer": true,
+  "boundary": "Real browser registration/Probe through CP to Docker mTLS gateway, Kubernetes discovery API, and isolated OpenSSH. No Worker deployment or Provider Turn."
+}
