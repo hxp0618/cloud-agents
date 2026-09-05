@@ -1656,6 +1656,94 @@ td > button small {
   border-top: 1px solid var(--border);
 }
 
+.admin-sheet.confirmation-dialog {
+  inset: 50% auto auto 50%;
+  width: min(512px, calc(100vw - 32px));
+  height: auto;
+  max-height: 80dvh;
+  margin: 0;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 10%),
+    0 4px 6px -4px rgb(0 0 0 / 10%);
+  transform: translate(-50%, -50%);
+  animation: confirmation-in 200ms ease-out;
+}
+
+.confirmation-dialog::backdrop {
+  animation-duration: 200ms;
+}
+
+.confirmation-dialog > .dialog {
+  max-height: calc(80dvh - 50px);
+  height: auto;
+  gap: 16px;
+  overflow: visible;
+}
+
+.confirmation-dialog .panel-heading {
+  min-height: 0;
+  padding: 0 24px 0 0;
+  border: 0;
+}
+
+.confirmation-dialog .panel-heading h2 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.confirmation-dialog p,
+.confirmation-dialog .confirmation-check {
+  font-size: 14px;
+}
+
+.confirmation-dialog .panel-heading p {
+  margin-top: 8px;
+}
+
+.confirmation-dialog .panel-heading .icon-button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}
+
+.confirmation-dialog .resource-form {
+  flex: 0 1 auto;
+  padding: 3px;
+}
+
+.confirmation-dialog .dialog-actions {
+  bottom: -3px;
+  margin: 0 -3px -3px;
+  padding: 16px 3px 3px;
+  border: 0;
+}
+
+@keyframes confirmation-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+
+@media (max-width: 639px) {
+  .confirmation-dialog .panel-heading {
+    text-align: center;
+  }
+
+  .confirmation-dialog .panel-heading > div {
+    width: 100%;
+  }
+
+  .confirmation-dialog .dialog-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+
 @media (max-width: 1000px) {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

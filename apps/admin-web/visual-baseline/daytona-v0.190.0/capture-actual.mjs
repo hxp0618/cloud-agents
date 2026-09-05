@@ -69,11 +69,16 @@ try {
   const layoutChecks = [];
   const formChecks = [];
   const commandChecks = [];
+  const modalChecks = [];
+  const mutationRequests = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
     if (message.method === "Network.requestWillBeSent") {
       const requestURL = new URL(message.params.request.url);
+      if (requestURL.pathname.startsWith("/v1/admin/") && message.params.request.method !== "GET") {
+        mutationRequests.push({ method: message.params.request.method, path: requestURL.pathname });
+      }
       if (requestURL.protocol === "http:" || requestURL.protocol === "https:") {
         requestOrigins.add(requestURL.origin);
       }
@@ -181,7 +186,7 @@ try {
     await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
     await delay(250);
     const formCheck = await evaluate(`(() => {
-      const form = document.querySelector(".admin-sheet .resource-form");
+      const form = document.querySelector(".admin-sheet:not(.confirmation-dialog) .resource-form");
       const footer = form?.querySelector(".dialog-actions");
       if (!footer) return null;
       const rect = footer.getBoundingClientRect();
@@ -264,10 +269,15 @@ try {
     );
   };
   const openTarget = async (name) => {
-    const opened = await evaluate(
-      `(() => { const row = [...document.querySelectorAll('tbody tr')].find((candidate) => candidate.textContent.includes(${JSON.stringify(name)})); const button = row?.querySelector('.row-action'); if (!button) return false; button.click(); return true; })()`,
+    const index = await evaluate(
+      `[...document.querySelectorAll('tbody tr')].findIndex(row => row.textContent.includes(${JSON.stringify(name)}))`,
     );
-    if (!opened) throw new Error(`Missing target row: ${name}`);
+    if (index < 0) throw new Error(`Missing target row: ${name}`);
+    const selector = `tbody tr:nth-child(${index + 1}) .row-action`;
+    await evaluate(
+      `document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: 'nearest' })`,
+    );
+    await clickAt(selector);
     await waitFor("document.querySelector('.admin-sheet') !== null", "target detail Sheet");
   };
   const closeSheet = async () => {
@@ -336,6 +346,92 @@ try {
     );
     await pressKey("b", "KeyB", 4);
     await waitFor("document.querySelector('.mobile-nav-dialog').open", "mobile sidebar shortcut");
+  };
+
+  const verifyModals = async (name) => {
+    await clickAt(".heading-actions .primary");
+    await waitFor(
+      "document.activeElement.matches('[data-sheet-autofocus]')",
+      "registration autofocus",
+    );
+    await pressKey("Escape");
+    await waitFor("!document.querySelector('.admin-sheet')", "registration close");
+    assert.equal(
+      await evaluate(
+        "document.activeElement === document.querySelector('.heading-actions .primary')",
+      ),
+      true,
+    );
+    await openTarget("visual-docker");
+    const trigger = ".detail-panel .action-block:nth-child(1 of .action-block) button";
+    await evaluate(
+      `document.querySelector(${JSON.stringify(trigger)}).scrollIntoView({ block: 'nearest' })`,
+    );
+    await clickAt(trigger);
+    await waitFor(
+      "document.querySelector('.confirmation-dialog')?.matches(':modal')",
+      "confirmation modal",
+    );
+    await waitFor(
+      "document.querySelector('.confirmation-dialog').getAnimations().every(animation => animation.playState === 'finished')",
+      "confirmation entrance settled",
+    );
+    await waitFor(
+      "!document.querySelector('.confirmation-dialog input').disabled",
+      "preview operation complete",
+    );
+    const geometry = await evaluate(`(() => {
+        const dialog = document.querySelector('.confirmation-dialog'), rect = dialog.getBoundingClientRect();
+        return {width:rect.width, height:rect.height, x:rect.x, y:rect.y, viewportWidth:innerWidth, viewportHeight:innerHeight, radius:getComputedStyle(dialog).borderRadius, padding:getComputedStyle(dialog).padding, titleSize:getComputedStyle(dialog.querySelector('h2')).fontSize};
+      })()`);
+    assert.equal(geometry.width, Math.min(512, geometry.viewportWidth - 32));
+    assert.ok(Math.abs(geometry.x + geometry.width / 2 - geometry.viewportWidth / 2) < 1);
+    assert.ok(Math.abs(geometry.y + geometry.height / 2 - geometry.viewportHeight / 2) < 1);
+    assert.ok(geometry.height <= geometry.viewportHeight * 0.8 + 1);
+    assert.equal(geometry.radius, "8px");
+    assert.equal(geometry.padding, "24px");
+    assert.equal(geometry.titleSize, "18px");
+    assert.equal(
+      await evaluate("document.querySelector('.confirmation-dialog [type=submit]').disabled"),
+      true,
+    );
+    await clickAt(".confirmation-dialog input[type=checkbox]");
+    await waitFor(
+      "!document.querySelector('.confirmation-dialog [type=submit]').disabled",
+      "review gate enabled",
+    );
+    // Only preview and inspect the gate; never submit a lifecycle mutation.
+    await screenshot(`confirmation-drain-${name}.png`);
+    for (let tab = 0; tab < 8; tab++) {
+      await pressKey("Tab");
+      assert.equal(
+        await evaluate(
+          "document.activeElement === document.body || document.querySelector('.confirmation-dialog').contains(document.activeElement)",
+        ),
+        true,
+      );
+    }
+    await pressKey("Escape");
+    await waitFor("!document.querySelector('.confirmation-dialog')", "confirmation Escape close");
+    assert.equal(
+      await evaluate(
+        `document.activeElement === document.querySelector(${JSON.stringify(trigger)})`,
+      ),
+      true,
+    );
+    assert.equal(await evaluate("document.querySelector('.admin-sheet').matches(':modal')"), true);
+    modalChecks.push({
+      name,
+      kind: "drain",
+      ...geometry,
+      registrationFocusRestore: true,
+      nestedFocusRestore: true,
+      reviewGate: true,
+      keyboardContained: true,
+    });
+    await pressKey("Escape");
+    await waitFor("!document.querySelector('.admin-sheet')", "detail Escape close");
+    assert.equal(await evaluate("document.activeElement.matches('tbody .row-action')"), true);
   };
 
   const verifyCommands = async (name) => {
@@ -418,6 +514,7 @@ try {
       realRouteSelection: true,
     });
     await navigateTargets();
+    await verifyModals(name);
   };
 
   await command("Page.enable");
@@ -670,6 +767,7 @@ try {
   const deniedRequests = httpFailures.filter((failure) => failure.phase === "permission-denied");
   assert.ok(deniedRequests.length > 0);
   assert.ok(deniedRequests.every((failure) => failure.status === 403));
+  assert.deepEqual(mutationRequests, [], "visual checks must not submit lifecycle mutations");
 
   const evidence = `${JSON.stringify(
     {
@@ -693,6 +791,8 @@ try {
       layoutChecks,
       formChecks,
       commandChecks,
+      modalChecks,
+      mutationRequests,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {
         sidebarShortcut: true,

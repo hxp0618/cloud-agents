@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   createHTTPClient,
   type AdminAuditEvent,
@@ -257,10 +264,19 @@ function AdminSheet({
   label,
   onClose,
   children,
-}: Readonly<{ label: string; onClose: () => void; children: ReactNode }>) {
+  confirmation = false,
+  returnFocus,
+}: Readonly<{
+  label: string;
+  onClose: () => void;
+  children: ReactNode;
+  confirmation?: boolean;
+  returnFocus?: HTMLElement | null;
+}>) {
   const ref = useRef<HTMLDialogElement>(null);
+  const triggerRef = useRef(returnFocus);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = ref.current;
     if (dialog === null) return;
     if (!dialog.open) {
@@ -268,14 +284,17 @@ function AdminSheet({
       dialog.querySelector<HTMLElement>("[data-sheet-autofocus]")?.focus();
     }
     return () => {
+      // Close before DOM removal so native focus restoration can return to the trigger.
       if (dialog.open) dialog.close();
+      // Async previews disable their trigger before opening, so the native dialog cannot capture it.
+      if (triggerRef.current?.isConnected) triggerRef.current.focus();
     };
   }, []);
 
   return (
     <dialog
       ref={ref}
-      className="admin-sheet"
+      className={`admin-sheet${confirmation ? " confirmation-dialog" : ""}`}
       aria-label={label}
       onCancel={(event) => {
         event.preventDefault();
@@ -505,6 +524,7 @@ export function App() {
   const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
+  const operationTriggerRef = useRef<HTMLElement | null>(null);
   const pendingKeysRef = useRef(new Map<string, string>());
   const profileMenuRef = useRef<HTMLDetailsElement>(null);
 
@@ -967,6 +987,8 @@ export function App() {
     operation: (signal: AbortSignal) => Promise<void>,
   ) {
     if (busyRef.current) return;
+    operationTriggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     busyRef.current = true;
     setBusy({ message });
     setError(null);
@@ -2725,6 +2747,8 @@ export function App() {
       selectedSchedulingPreview !== null ? (
         <AdminSheet
           label={t("sheet.scheduling", { name: selectedTarget.metadata.name })}
+          confirmation
+          returnFocus={operationTriggerRef.current}
           onClose={() => setSchedulingConfirmationOpen(false)}
         >
           <SchedulingConfirmation
@@ -2742,6 +2766,8 @@ export function App() {
       selectedCleanupPreview !== null ? (
         <AdminSheet
           label={t("sheet.cleanup", { name: selectedTarget.metadata.name })}
+          confirmation
+          returnFocus={operationTriggerRef.current}
           onClose={() => setCleanupConfirmationOpen(false)}
         >
           <CleanupConfirmation
@@ -2793,6 +2819,8 @@ export function App() {
       selectedLeaseReleasePreview !== null ? (
         <AdminSheet
           label={t("sheet.leaseRelease", { name: selectedLease.metadata.name })}
+          confirmation
+          returnFocus={operationTriggerRef.current}
           onClose={() => setLeaseReleaseConfirmationOpen(false)}
         >
           <LeaseReleaseConfirmation
@@ -2877,6 +2905,7 @@ export function App() {
 
       {profileTransition !== null && selectedProfile !== undefined ? (
         <AdminSheet
+          confirmation
           label={t("sheet.profileTransition", {
             action: t(
               profileTransition === "publish"
