@@ -31,6 +31,8 @@ import {
 import {
   adminFailure,
   filterAdminTargets,
+  filterAdminLeases,
+  leaseNeedsAttention,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminLeases,
@@ -477,6 +479,7 @@ export function App() {
   const [page, setPage] = useState<Page>("overview");
   const [query, setQuery] = useState("");
   const [targetKindFilter, setTargetKindFilter] = useState<readonly TargetKind[]>([]);
+  const [leaseAttentionOnly, setLeaseAttentionOnly] = useState(false);
   const [targetPhaseFilter, setTargetPhaseFilter] = useState<
     readonly DeploymentTarget["spec"]["observedPhase"][]
   >([]);
@@ -584,31 +587,20 @@ export function App() {
     ({ operationId }) => operationId === selectedMaintenanceOperationId,
   );
   const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
+  const probingCount = targets.filter(({ spec }) => spec.observedPhase === "probing").length;
+  const unprobedCount = targets.filter(({ spec }) => spec.observedPhase === "unprobed").length;
   const unavailableCount = targets.filter(
     ({ spec }) => spec.observedPhase === "unavailable",
   ).length;
   const attentionCount = targets.length - readyCount;
   const readyLeaseCount = leases.filter(({ spec }) => spec.observedPhase === "ready").length;
-  const leaseAttentionCount = leases.filter(
-    ({ spec }) => spec.observedPhase === "failed" || spec.cleanupPhase === "blocked",
-  ).length;
+  const leaseAttentionCount = leases.filter(leaseNeedsAttention).length;
   const readyWorkerCount = workers.filter(({ spec }) => spec.state === "ready").length;
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleTargets = filterAdminTargets(targets, query, targetKindFilter, targetPhaseFilter);
   const targetsFiltered =
     query.trim() !== "" || targetKindFilter.length > 0 || targetPhaseFilter.length > 0;
-  const visibleLeases =
-    normalizedQuery === ""
-      ? leases
-      : leases.filter(({ metadata, spec }) =>
-          [
-            metadata.uid,
-            metadata.name,
-            spec.environmentId,
-            spec.observedPhase,
-            spec.cleanupPhase,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
+  const visibleLeases = filterAdminLeases(leases, query, leaseAttentionOnly);
   const visibleWorkers =
     normalizedQuery === ""
       ? workers
@@ -807,6 +799,7 @@ export function App() {
     setQuery("");
     setTargetKindFilter([]);
     setTargetPhaseFilter([]);
+    setLeaseAttentionOnly(false);
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
     setCleanupConfirmationOpen(false);
@@ -2151,22 +2144,42 @@ export function App() {
           {page === "overview" ? (
             <>
               <section className="metric-grid" aria-label={t("overview.label")}>
-                <article className="metric-card">
+                <button
+                  type="button"
+                  className="metric-card"
+                  data-metric="targets"
+                  onClick={() => navigate("targets")}
+                >
                   <small>{t("overview.totalTargets")}</small>
                   <strong>{number(targets.length)}</strong>
                   <span>{t("overview.targetKinds")}</span>
-                </article>
-                <article className="metric-card warning-accent">
+                </button>
+                <button
+                  type="button"
+                  className="metric-card warning-accent"
+                  data-metric="target-attention"
+                  onClick={() => {
+                    navigate("targets");
+                    setTargetPhaseFilter(["unprobed", "probing", "unavailable"]);
+                  }}
+                >
                   <small>{t("overview.targetAttention")}</small>
                   <strong>{number(attentionCount)}</strong>
                   <span>
                     {t("overview.targetSummary", {
                       ready: number(readyCount),
+                      probing: number(probingCount),
+                      unprobed: number(unprobedCount),
                       unavailable: number(unavailableCount),
                     })}
                   </span>
-                </article>
-                <article className="metric-card success-accent">
+                </button>
+                <button
+                  type="button"
+                  className="metric-card success-accent"
+                  data-metric="leases"
+                  onClick={() => navigate("leases")}
+                >
                   <small>{t("overview.environmentLeases")}</small>
                   <strong>{number(leases.length)}</strong>
                   <span>
@@ -2174,8 +2187,13 @@ export function App() {
                       count: number(readyLeaseCount),
                     })}
                   </span>
-                </article>
-                <article className="metric-card success-accent">
+                </button>
+                <button
+                  type="button"
+                  className="metric-card success-accent"
+                  data-metric="workers"
+                  onClick={() => navigate("workers")}
+                >
                   <small>{t("overview.workers")}</small>
                   <strong>{number(workers.length)}</strong>
                   <span>
@@ -2183,12 +2201,20 @@ export function App() {
                       count: number(readyWorkerCount),
                     })}
                   </span>
-                </article>
-                <article className="metric-card warning-accent">
+                </button>
+                <button
+                  type="button"
+                  className="metric-card warning-accent"
+                  data-metric="lease-attention"
+                  onClick={() => {
+                    navigate("leases");
+                    setLeaseAttentionOnly(true);
+                  }}
+                >
                   <small>{t("overview.leaseAttention")}</small>
                   <strong>{number(leaseAttentionCount)}</strong>
                   <span>{t("overview.leaseAttentionDescription")}</span>
-                </article>
+                </button>
               </section>
               <section className="panel overview-panel">
                 <div className="panel-heading">
@@ -2717,11 +2743,23 @@ export function App() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">leases.list · {number(visibleLeases.length)}</span>
+                <button
+                  className="button outline lease-attention-filter"
+                  type="button"
+                  aria-pressed={leaseAttentionOnly}
+                  onClick={() => setLeaseAttentionOnly((current) => !current)}
+                  title={t("overview.leaseAttentionDescription")}
+                >
+                  {t("overview.leaseAttention")}
+                </button>
+                <span className="scope-chip" role="status">
+                  leases.list · {number(visibleLeases.length)}
+                </span>
               </div>
               <div className="panel target-list-panel">
                 <LeaseTable
                   leases={visibleLeases}
+                  filtered={leaseAttentionOnly || query.trim() !== ""}
                   selectedLeaseId={selectedLeaseId}
                   onSelect={selectLease}
                 />
@@ -3707,15 +3745,22 @@ function TargetTable({
 
 function LeaseTable({
   leases,
+  filtered = false,
   selectedLeaseId,
   onSelect,
 }: Readonly<{
   leases: readonly EnvironmentLease[];
+  filtered?: boolean;
   selectedLeaseId: string;
   onSelect: (leaseId: string) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
-  if (leases.length === 0) return <div className="table-empty">{t("table.empty.leases")}</div>;
+  if (leases.length === 0)
+    return (
+      <div className="table-empty">
+        {t(filtered ? "lease.filter.noMatches" : "table.empty.leases")}
+      </div>
+    );
   return (
     <div className="table-scroll">
       <table>

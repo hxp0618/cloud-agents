@@ -4,6 +4,8 @@ import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import {
   adminFailure,
   filterAdminTargets,
+  filterAdminLeases,
+  leaseNeedsAttention,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminProjectLeaseQuotaAuditEvents,
@@ -27,6 +29,32 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("uses the same failed-or-blocked lease predicate for overview counts and filtered search", () => {
+    const leases = [
+      ["ready", "pending"],
+      ["failed", "pending"],
+      ["terminating", "blocked"],
+      ["failed", "blocked"],
+      ["terminated", "complete"],
+    ].map(([observedPhase, cleanupPhase], index) => ({
+      metadata: { uid: `lease-${index}`, name: `Lease ${index}` },
+      spec: {
+        observedPhase,
+        cleanupPhase,
+        environmentId: `env-${index}`,
+        providerCredentialRef: "private-credential",
+      },
+    })) as unknown as Parameters<typeof filterAdminLeases>[0];
+    const attention = leases.filter(leaseNeedsAttention);
+    expect(attention).toEqual([leases[1], leases[2], leases[3]]);
+    expect(filterAdminLeases(leases, "", true)).toEqual(attention);
+    expect(filterAdminLeases(leases, " FAILED ", true)).toEqual([leases[1], leases[3]]);
+    expect(filterAdminLeases(leases, "env-2", true)).toEqual([leases[2]]);
+    expect(filterAdminLeases(leases, "lease-0", true)).toEqual([]);
+    expect(filterAdminLeases(leases, "lease-0", false)).toEqual([leases[0]]);
+    expect(filterAdminLeases(leases, "", false)).toEqual(leases);
+    expect(filterAdminLeases(leases, "private-credential", false)).toEqual([]);
+  });
   it("combines target search, kind and phase without searching endpoint or credentials", () => {
     const targets = (["docker", "kubernetes", "ssh"] as const).map((targetKind, index) => ({
       metadata: { uid: `target-${index}`, name: `Host ${targetKind}` },

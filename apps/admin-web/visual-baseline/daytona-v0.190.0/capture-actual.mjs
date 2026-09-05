@@ -71,6 +71,7 @@ try {
   const commandChecks = [];
   const modalChecks = [];
   const targetFilterChecks = [];
+  const overviewChecks = [];
   const mutationRequests = [];
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
@@ -250,7 +251,7 @@ try {
       await click(".profile-menu summary");
     }
   };
-  const navigateTargets = async () => {
+  const navigatePage = async (page) => {
     await waitFor(
       "innerWidth < 768 ? document.querySelector('.mobile-nav-dialog') !== null : document.querySelector('.mobile-nav-dialog') === null",
       "responsive navigation mounted",
@@ -263,9 +264,16 @@ try {
       );
     }
     await evaluate(
-      "document.querySelector('.sidebar nav button[data-page=targets]').scrollIntoView({ block: 'nearest' })",
+      `document.querySelector('.sidebar nav button[data-page=${page}]').scrollIntoView({ block: 'nearest' })`,
     );
-    await clickAt(".sidebar nav button[data-page=targets]");
+    await clickAt(`.sidebar nav button[data-page=${page}]`);
+    await waitFor(
+      `document.querySelector('.sidebar [data-page=${page}]').getAttribute('aria-current') === 'page'`,
+      `${page} navigation`,
+    );
+  };
+  const navigateTargets = async () => {
+    await navigatePage("targets");
     await waitFor(
       "document.querySelector('.sidebar [data-page=targets]').getAttribute('aria-current') === 'page' && document.querySelectorAll('tbody tr').length === 3",
       "three live targets",
@@ -562,6 +570,104 @@ try {
     await navigateTargets();
     await verifyTargetFilters(name);
     await verifyModals(name);
+    await verifyOverview(name);
+  };
+
+  const verifyOverview = async (name) => {
+    const metrics = [
+      ["targets", "targets"],
+      ["target-attention", "targets"],
+      ["leases", "leases"],
+      ["workers", "workers"],
+      ["lease-attention", "leases"],
+    ];
+    const counts = {};
+    for (const [metric, destination] of metrics) {
+      await navigatePage("overview");
+      const selector = `[data-metric=${metric}]`;
+      await evaluate(
+        `document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block: 'center'})`,
+      );
+      counts[metric] = await evaluate(`document.querySelector('${selector} strong').textContent`);
+      // Use a real keyboard activation, not a DOM click, for the metric-to-list transition.
+      await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
+      await command("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+        text: "\r",
+      });
+      await command("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+      });
+      await waitFor(
+        `document.querySelector('.sidebar [data-page=${destination}]').getAttribute('aria-current') === 'page'`,
+        `${metric} destination`,
+      );
+      assert.equal(await evaluate(`document.querySelector('.list-toolbar input').value`), "");
+      assert.ok(
+        await evaluate(
+          `[...document.querySelectorAll('.list-toolbar .scope-chip')].some(e => e.textContent.trim() === '${destination}.list · ${counts[metric]}')`,
+        ),
+      );
+      if (metric === "target-attention") {
+        assert.equal(
+          await evaluate(
+            "document.querySelectorAll('.target-filter-chips [data-filter=phase]').length",
+          ),
+          1,
+        );
+        await click(".target-filter-chips [data-filter=phase] .target-filter-chip-label");
+        await waitFor(
+          "document.querySelector('.chip-options:popover-open') !== null",
+          "overview target filter",
+        );
+        assert.deepEqual(
+          await evaluate(
+            "[...document.querySelectorAll('.chip-options [aria-selected=true]')].map(e => e.dataset.value)",
+          ),
+          ["unprobed", "probing", "unavailable"],
+        );
+        await pressKey("Escape");
+        await click(".target-filters-clear");
+      }
+      if (destination === "leases") {
+        assert.equal(
+          await evaluate(
+            "document.querySelector('.lease-attention-filter').getAttribute('aria-pressed')",
+          ),
+          String(metric === "lease-attention"),
+        );
+      }
+      if (metric === "lease-attention") {
+        await screenshot(`${name}-lease-attention.png`);
+        await click(".lease-attention-filter");
+        await waitFor(
+          "document.querySelector('.lease-attention-filter').getAttribute('aria-pressed') === 'false'",
+          "clear lease attention",
+        );
+        assert.ok(
+          await evaluate(
+            `document.querySelector('.list-toolbar .scope-chip').textContent.trim() === 'leases.list · ${counts.leases}'`,
+          ),
+        );
+      }
+    }
+    await navigatePage("overview");
+    await evaluate("document.querySelector('.content').scrollTop = 0");
+    await screenshot(`${name}-overview.png`);
+    overviewChecks.push({
+      name,
+      counts,
+      keyboardNavigation: true,
+      targetPhaseFilter: true,
+      leaseAttentionClear: true,
+    });
+    await navigateTargets();
   };
 
   const verifyTargetFilters = async (name) => {
@@ -953,6 +1059,7 @@ try {
       commandChecks,
       modalChecks,
       targetFilterChecks,
+      overviewChecks,
       mutationRequests,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {

@@ -169,6 +169,29 @@ export function filterAdminTargets(
   );
 }
 
+export function leaseNeedsAttention({ spec }: EnvironmentLease): boolean {
+  return spec.observedPhase === "failed" || spec.cleanupPhase === "blocked";
+}
+
+export function filterAdminLeases(
+  leases: readonly EnvironmentLease[],
+  query: string,
+  attentionOnly: boolean,
+): readonly EnvironmentLease[] {
+  const search = query.trim().toLocaleLowerCase();
+  return leases.filter(
+    (lease) =>
+      (!attentionOnly || leaseNeedsAttention(lease)) &&
+      [
+        lease.metadata.uid,
+        lease.metadata.name,
+        lease.spec.environmentId,
+        lease.spec.observedPhase,
+        lease.spec.cleanupPhase,
+      ].some((value) => value.toLocaleLowerCase().includes(search)),
+  );
+}
+
 export function cleanupRequestFromPreview(
   preview: DeploymentTargetCleanupPreview,
 ): DeploymentTargetCleanupRequest {
