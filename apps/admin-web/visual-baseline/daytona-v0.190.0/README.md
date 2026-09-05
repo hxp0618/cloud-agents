@@ -7,8 +7,44 @@ because the Storybook composition omitted the production SidebarInset overflow c
 At a 390×844 device viewport the layout expanded to 613×1327 and the Sheet started at x=223.
 Do not use these images as accepted mobile geometry. The default Storybook outer padding
 also differs from the production shell. See the [reproduction and current component check](../../../../docs/plan/cloud-agents-platform/evidence/admin-web-mobile-sheet-actions-20260905.md).
-Historical images and hashes remain unchanged; corrected full-page references and a complete
-automatic visual comparison are still required.
+Historical images and hashes remain unchanged. Use the corrected set below for new checks;
+a complete Cloud Agents-to-reference visual comparison is still required.
+
+## Reproducible corrected reference set
+
+`reference-corrected/` contains 36 captures: list, detail, create form, confirmation, dropdown,
+empty, loading, error and permission-denied × light/dark × 1440×900/390×844. Its
+`reference-evidence.json` records every PNG hash, geometry, source commit, composition hash,
+browser version and browser errors/warnings. These are neutral **upstream component** scenes,
+not Cloud Agents resource fixtures or proof of backend/API behavior.
+
+`reference-composition.stories.tsx` is our reference-only composition, importing the real
+upstream UI components. It is outside Admin Web's TypeScript source include and is not
+imported into the application. Upstream dependencies belong only in an external checkout;
+do not install Storybook, Tailwind or Radix into Cloud Agents.
+
+To reproduce, prepare an external checkout at the exact commit below, install its own locked
+dependencies with `corepack yarn install --immutable --mode=skip-build`, and copy this
+composition to its `apps/dashboard/src/components/ui/stories/visual-baseline.stories.tsx`.
+Start its Storybook from that checkout:
+
+```sh
+STORYBOOK_DISABLE_TELEMETRY=1 NX_DAEMON=false corepack yarn storybook dev \
+  -p 6006 --host 127.0.0.1 --no-open --config-dir apps/dashboard/.storybook
+```
+
+From Cloud Agents, using an already-installed Playwright module:
+
+```sh
+node apps/admin-web/visual-baseline/daytona-v0.190.0/capture-reference.mjs \
+  /path/to/daytona-checkout /path/to/new-reference-output /path/to/playwright/index.mjs
+```
+
+The command refuses a different upstream commit, tracked source changes, a mismatched
+composition or an existing output directory. It waits for rendered content, fonts and finite
+animations, verifies actual viewport/document bounds and Sheet/footer geometry, and captures
+with consistent GPU flags. It does not silently overwrite or approve a baseline. Inspect the
+images and compare against matching **live** Admin Web states before claiming conformance.
 
 ## Provenance
 
