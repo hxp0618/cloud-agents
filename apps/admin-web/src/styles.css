@@ -139,7 +139,7 @@ input:focus-visible,
 select:focus-visible,
 summary:focus-visible {
   outline: 3px solid color-mix(in oklch, var(--ring) 50%, transparent);
-  outline-offset: 1px;
+  outline-offset: 0;
   border-color: var(--ring);
 }
 
@@ -744,6 +744,7 @@ label > small {
   font-size: 14px;
   font-weight: 500;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dropdown-context small {
@@ -751,6 +752,7 @@ label > small {
   color: var(--muted-foreground);
   font-size: 12px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .locale-picker {
