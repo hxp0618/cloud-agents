@@ -551,10 +551,23 @@ export function App() {
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const operationTriggerRef = useRef<HTMLElement | null>(null);
+  const cancelledFeedbackRef = useRef<HTMLElement | null>(null);
   const pendingKeysRef = useRef(new Map<string, string>());
   const profileMenuRef = useRef<HTMLDetailsElement>(null);
 
   const connected = status === "connected" && client !== null;
+  useLayoutEffect(() => {
+    if (busy !== null) return;
+    const feedback = cancelledFeedbackRef.current;
+    cancelledFeedbackRef.current = null;
+    // Focus the cancellation result in the initiating surface, not an inert background Sheet.
+    if (
+      feedback?.isConnected &&
+      (document.activeElement === document.body || feedback.contains(document.activeElement))
+    ) {
+      feedback.querySelector<HTMLElement>('[role="alert"]')?.focus();
+    }
+  }, [busy]);
   const selectedTarget = targets.find(({ metadata }) => metadata.uid === selectedTargetId);
   const selectedCleanupPreview =
     selectedTarget !== undefined &&
@@ -1913,13 +1926,19 @@ export function App() {
           <div className="banner running" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
             <span>{t(busy.message.key, busy.message.values)}…</span>
-            <button type="button" onClick={() => requestRef.current?.abort()}>
+            <button
+              type="button"
+              onClick={(event) => {
+                cancelledFeedbackRef.current = event.currentTarget.closest(".operation-feedback");
+                requestRef.current?.abort();
+              }}
+            >
               {t("action.cancelWait")}
             </button>
           </div>
         ) : null}
         {error !== null ? (
-          <div className="banner danger" role="alert">
+          <div className="banner danger" role="alert" tabIndex={-1}>
             <svg
               width="16"
               height="16"

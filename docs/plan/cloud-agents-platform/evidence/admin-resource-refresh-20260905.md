@@ -74,3 +74,11 @@ full pinned visual/interaction acceptance. This check does not qualify M2-M4,
 OIDC deployment isolation, any Docker/Kubernetes/SSH deployment or cleanup,
 Codex/Claude Turn, or the overall Goal. No new credentials or permission for
 pre-existing resources were required.
+
+Follow-up: the shared cancellation focus issue was corrected and checked in
+`admin-cancel-wait-focus-20260905.md`. At the end of that slice, Vite65665 and
+owning dev script65473 were stopped. Script shutdown removed container
+`cloud-agents-dev-501-65473` and `.tmp/cloud-agents-dev.4Z0cTM`, including the
+one temporary Target/database and ephemeral tokens; these disposable records
+were not backed up. Ports4174/18085/18095 have no listeners, owned browser tab6
+was closed and viewport reset. No pre-existing resources were removed.
