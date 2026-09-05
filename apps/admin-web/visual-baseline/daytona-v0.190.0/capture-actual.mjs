@@ -194,7 +194,7 @@ try {
       const footer = form?.querySelector(".dialog-actions");
       if (!footer) return null;
       const rect = footer.getBoundingClientRect();
-      return { footerBottom: rect.bottom, footerTop: rect.top, viewportHeight: innerHeight, formScrollable: form.scrollHeight > form.clientHeight };
+      return { footerBottom: rect.bottom, footerTop: rect.top, viewportHeight: innerHeight, viewportWidth: innerWidth, formScrollable: form.scrollHeight > form.clientHeight, direction: getComputedStyle(footer).flexDirection, contentWidth: footer.clientWidth - parseFloat(getComputedStyle(footer).paddingLeft) - parseFloat(getComputedStyle(footer).paddingRight), buttons: [...footer.querySelectorAll('button')].map(button => { const bounds = button.getBoundingClientRect(); return { y: bounds.y, width: bounds.width, bottom: bounds.bottom }; }) };
     })()`);
     if (formCheck !== null) {
       assert.ok(
@@ -202,6 +202,19 @@ try {
         "Sheet footer must reach viewport bottom",
       );
       assert.ok(formCheck.footerTop >= 0, "Sheet actions must remain visible");
+      assert.equal(formCheck.buttons.length, 2);
+      assert.equal(formCheck.direction, formCheck.viewportWidth < 640 ? "column-reverse" : "row");
+      if (formCheck.viewportWidth < 640) {
+        assert.ok(formCheck.buttons[0].y > formCheck.buttons[1].bottom, "Cancel below primary");
+        for (const button of formCheck.buttons) {
+          assert.ok(
+            Math.abs(button.width - formCheck.contentWidth) < 1,
+            "Full-width mobile action",
+          );
+        }
+      } else {
+        assert.equal(formCheck.buttons[0].y, formCheck.buttons[1].y, "Desktop actions stay inline");
+      }
       formChecks.push({ filename, ...formCheck });
     }
     layoutChecks.push(

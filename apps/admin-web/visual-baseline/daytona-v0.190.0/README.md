@@ -2,6 +2,14 @@
 
 This directory pins the visual reference for Cloud Agents Admin Web. It is evidence for appearance and interaction only; it does not prove Admin API authority, runtime behavior, or Cloud Agents visual conformance.
 
+Known reference defect (verified 2026-09-05): the historical mobile Sheet PNGs are clipped
+because the Storybook composition omitted the production SidebarInset overflow constraint.
+At a 390×844 device viewport the layout expanded to 613×1327 and the Sheet started at x=223.
+Do not use these images as accepted mobile geometry. The default Storybook outer padding
+also differs from the production shell. See the [reproduction and current component check](../../../../docs/plan/cloud-agents-platform/evidence/admin-web-mobile-sheet-actions-20260905.md).
+Historical images and hashes remain unchanged; corrected full-page references and a complete
+automatic visual comparison are still required.
+
 ## Provenance
 
 - Upstream repository: `https://github.com/daytonaio/daytona.git`
@@ -63,7 +71,7 @@ Reproduce against a running local stack and Admin Web:
 
 ```sh
 node apps/admin-web/visual-baseline/daytona-v0.190.0/capture-actual.mjs \
-  apps/admin-web/visual-baseline/daytona-v0.190.0/actual \
+  /path/to/new-output \
   /path/to/admin-token /path/to/user-token PROJECT_ID
 ```
 

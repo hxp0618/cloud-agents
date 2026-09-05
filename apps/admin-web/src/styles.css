@@ -2223,7 +2223,7 @@ td > button small {
     width: 100%;
   }
 
-  .confirmation-dialog .dialog-actions {
+  .admin-sheet .dialog-actions {
     flex-direction: column-reverse;
     align-items: stretch;
   }
@@ -2365,7 +2365,6 @@ td > button small {
 
   .admin-sheet {
     width: 100vw;
-    border-left: 0;
   }
 
   .detail-list > div {
