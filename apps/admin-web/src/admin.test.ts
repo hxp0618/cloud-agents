@@ -93,6 +93,12 @@ describe("Admin Web boundary", () => {
     expect(filterAdminLeases(leases, "lease-0", false)).toEqual([leases[0]]);
     expect(filterAdminLeases(leases, "", false)).toEqual(leases);
     expect(filterAdminLeases(leases, "private-credential", false)).toEqual([]);
+    expect(filterAdminLeases(leases, "", false, "failed")).toEqual([leases[1], leases[3]]);
+    expect(filterAdminLeases(leases, "", false, "", true)).toEqual([leases[2], leases[3]]);
+    expect(filterAdminLeases(leases, "", false, "failed", true)).toEqual([leases[3]]);
+    expect(filterAdminLeases(leases, "env-2", true, "terminating", true)).toEqual([leases[2]]);
+    expect(filterAdminLeases(leases, "env-0", false, "failed")).toEqual([]);
+    expect(filterAdminLeases(leases, "", true, "ready")).toEqual([]);
   });
   it("combines target search, kind and phase without searching endpoint or credentials", () => {
     const targets = (["docker", "kubernetes", "ssh"] as const).map((targetKind, index) => ({

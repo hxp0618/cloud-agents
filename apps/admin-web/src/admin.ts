@@ -205,11 +205,15 @@ export function filterAdminLeases(
   leases: readonly EnvironmentLease[],
   query: string,
   attentionOnly: boolean,
+  observedPhase: EnvironmentLease["spec"]["observedPhase"] | "" = "",
+  cleanupBlockedOnly = false,
 ): readonly EnvironmentLease[] {
   const search = query.trim().toLocaleLowerCase();
   return leases.filter(
     (lease) =>
       (!attentionOnly || leaseNeedsAttention(lease)) &&
+      (observedPhase === "" || lease.spec.observedPhase === observedPhase) &&
+      (!cleanupBlockedOnly || lease.spec.cleanupPhase === "blocked") &&
       [
         lease.metadata.uid,
         lease.metadata.name,

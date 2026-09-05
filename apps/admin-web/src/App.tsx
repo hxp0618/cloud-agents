@@ -481,6 +481,10 @@ export function App() {
   const [query, setQuery] = useState("");
   const [targetKindFilter, setTargetKindFilter] = useState<readonly TargetKind[]>([]);
   const [leaseAttentionOnly, setLeaseAttentionOnly] = useState(false);
+  const [leasePhaseFilter, setLeasePhaseFilter] = useState<
+    EnvironmentLease["spec"]["observedPhase"] | ""
+  >("");
+  const [leaseCleanupBlockedOnly, setLeaseCleanupBlockedOnly] = useState(false);
   const [failedOperationsOnly, setFailedOperationsOnly] = useState(false);
   const [targetPhaseFilter, setTargetPhaseFilter] = useState<
     readonly DeploymentTarget["spec"]["observedPhase"][]
@@ -602,7 +606,13 @@ export function App() {
   const visibleTargets = filterAdminTargets(targets, query, targetKindFilter, targetPhaseFilter);
   const targetsFiltered =
     query.trim() !== "" || targetKindFilter.length > 0 || targetPhaseFilter.length > 0;
-  const visibleLeases = filterAdminLeases(leases, query, leaseAttentionOnly);
+  const visibleLeases = filterAdminLeases(
+    leases,
+    query,
+    leaseAttentionOnly,
+    leasePhaseFilter,
+    leaseCleanupBlockedOnly,
+  );
   const visibleWorkers =
     normalizedQuery === ""
       ? workers
@@ -798,6 +808,8 @@ export function App() {
     setTargetKindFilter([]);
     setTargetPhaseFilter([]);
     setLeaseAttentionOnly(false);
+    setLeasePhaseFilter("");
+    setLeaseCleanupBlockedOnly(false);
     setFailedOperationsOnly(false);
     setMobileNavOpen(false);
     setTargetDetailOpen(false);
@@ -2273,6 +2285,41 @@ export function App() {
                     {t("overview.viewLeases")}
                   </button>
                 </div>
+                <div
+                  className="lease-state-summary"
+                  role="group"
+                  aria-label={t("overview.leaseStates")}
+                >
+                  {(["provisioning", "ready", "terminating", "terminated", "failed"] as const).map(
+                    (phase) => (
+                      <button
+                        key={phase}
+                        className="button outline"
+                        type="button"
+                        data-lease-state={phase}
+                        onClick={() => {
+                          navigate("leases");
+                          setLeasePhaseFilter(phase);
+                        }}
+                      >
+                        {phaseLabel(phase, t)} ·{" "}
+                        {number(filterAdminLeases(leases, "", false, phase).length)}
+                      </button>
+                    ),
+                  )}
+                  <button
+                    className="button outline"
+                    type="button"
+                    data-lease-state="cleanup-blocked"
+                    onClick={() => {
+                      navigate("leases");
+                      setLeaseCleanupBlockedOnly(true);
+                    }}
+                  >
+                    {t("overview.cleanupBlocked")} ·{" "}
+                    {number(filterAdminLeases(leases, "", false, "", true).length)}
+                  </button>
+                </div>
                 <LeaseTable
                   leases={leases.slice(0, 6)}
                   selectedLeaseId={selectedLeaseId}
@@ -2783,11 +2830,39 @@ export function App() {
                 <span className="scope-chip" role="status">
                   leases.list · {number(visibleLeases.length)}
                 </span>
+                {leasePhaseFilter !== "" || leaseCleanupBlockedOnly ? (
+                  <div
+                    className="lease-active-state"
+                    role="group"
+                    aria-label={t("overview.leaseStates")}
+                  >
+                    <span className="scope-chip">
+                      {leaseCleanupBlockedOnly
+                        ? t("overview.cleanupBlocked")
+                        : `${t("table.observed")}: ${phaseLabel(leasePhaseFilter, t)}`}
+                    </span>
+                    <button
+                      className="button outline"
+                      type="button"
+                      onClick={() => {
+                        setLeasePhaseFilter("");
+                        setLeaseCleanupBlockedOnly(false);
+                      }}
+                    >
+                      {t("lease.clearState")}
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div className="panel target-list-panel">
                 <LeaseTable
                   leases={visibleLeases}
-                  filtered={leaseAttentionOnly || query.trim() !== ""}
+                  filtered={
+                    leaseAttentionOnly ||
+                    leasePhaseFilter !== "" ||
+                    leaseCleanupBlockedOnly ||
+                    query.trim() !== ""
+                  }
                   selectedLeaseId={selectedLeaseId}
                   onSelect={selectLease}
                 />
