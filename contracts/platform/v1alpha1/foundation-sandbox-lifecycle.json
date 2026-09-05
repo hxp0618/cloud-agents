@@ -1,0 +1,16 @@
+{
+  "formatVersion": "cloud-agents-foundation-coordination/v1",
+  "profileId": "foundationSandboxLifecycle/v1alpha1",
+  "operationId": "foundationSandboxLifecycle",
+  "resourceKind": "sandboxSession",
+  "outboxEventClass": "operation_effect",
+  "externalSideEffect": "runtime_adapter_under_durable_claim",
+  "idempotencyScope": ["tenant", "subject", "profile", "key"],
+  "requiredFinalizers": ["sandbox-compute"],
+  "volumeRetention": "retain_on_compute_cleanup",
+  "writerAdmission": "one_active_sandbox_per_workspace_until_fenced",
+  "requestDigest": "sha256_of_canonical_resolved_intent",
+  "canonicalization": "RFC8785_ASCII_safe_integers",
+  "resolvedFields": ["cpuMillis", "imageURI", "memoryBytes", "profileId", "project", "sandbox", "target", "tenant", "volume", "workspace", "workspaceName"],
+  "receiptEncoding": "cloud-agents-receipt-version-2"
+}
