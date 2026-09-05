@@ -30,8 +30,13 @@ their validated semantic values; unknown fields are rejected before canonicaliza
 and compares all retries for an idempotency key before any side effect. This keeps a renewed transport/fencing secret
 out of durable idempotency state while still binding lease generation and operation intent.
 
-## Descriptor and role status
+## Descriptor status
 
-The original P1-A source/fixture slice was `NOT_GENERATED`; that is historical, not current repository status. Generated Worker Proto/Connect code now exists under [`sdk/go/gen/cloudagents/worker/v1alpha1`](../../../sdk/go/gen/cloudagents/worker/v1alpha1). `fixtures/descriptor.golden.json` remains an expected shape, not a generated binary descriptor. Reproducible generation and full compatibility/Gate closure still require the locked generator and fixed-candidate evidence; code presence alone does not close `G-CONTRACT`.
+`NOT_GENERATED`: the authoring environment did not contain pinned `protoc` or `buf` binaries. No generated source or
+binary descriptor is checked in by this slice. `fixtures/descriptor.golden.json` is the expected descriptor shape for
+the later generator-lock task; it is not represented as generated evidence. That task must compile these sources,
+compare the descriptor to the expectation, record the exact generator identity and digest, and require a clean
+regeneration diff before `G-CONTRACT` can close.
 
-The separate Runtime streaming surface lives under [`../runtime/v1alpha1`](../runtime/v1alpha1). Neither existing protocol should be relabeled as outbound RemoteWorker enrollment/control without a versioned contract decision. The [foundation architecture](../../../docs/plan/cloud-agents-platform/02-target-architecture.md) separates these roles while preserving their current identity, bounds and fencing requirements.
+This source/fixture bootstrap is explicitly **not Gate closure** and is not descriptor, generated SDK, compatibility or
+release evidence.

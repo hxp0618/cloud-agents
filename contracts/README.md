@@ -3,8 +3,6 @@
 This tree is the P1 public contract authority established by ADR-0007. It is separate from the existing Portable
 Runtime v2 wire and from every Synara/T3 legacy contract oracle.
 
-Current scope follows [ADR-0031](../docs/plan/adr/0031-foundation-first-cloud-workspace-platform.md): add versioned Workspace/Sandbox/customer-node contracts as foundation slices are implemented, without silently changing existing Lease/Agent semantics. JSON Schema/OpenAPI/Proto remain the authorities; new prose and HTML examples are not generated API promises. Current routes are defined in the OpenAPI sources, not in the historical one-operation bootstrap below.
-
 ## Authority map
 
 | Surface                                   | Editable authority         | Derived artifacts                                   |
@@ -17,9 +15,9 @@ OpenAPI owns routes, methods, security, parameters, headers, status codes, media
 reference external JSON Schema files for data models. Proto owns its RPC messages and services; JSON fixture files next
 to Proto sources are conformance vectors, not a second transport.
 
-## Historical P1 bootstrap idempotency profiles
+## Idempotency digest authority
 
-The initial P1 v1alpha1 bootstrap profile covered exactly one idempotent HTTP mutation (not the full current API):
+P1 v1alpha1 currently exposes exactly one idempotent HTTP mutation:
 `managedAgentCreateProject`. Its canonical request intent is the strict-schema-validated
 `ManagedAgentCreateProjectIdempotencyProjection`: the exact OpenAPI `operationId`, authoritative path `tenantId`, and
 strict `ProjectCreateRequest` body. Every transport header value—including required `Idempotency-Key` and
@@ -47,9 +45,7 @@ and exact operation → SQL-function → typed-service identities. The v2 Slice 
 post-`000010` writer and Go consumer are not implemented, HTTP/P2 is absent, provider/external side effects are
 forbidden, production database writes are not authorized, and every Gate remains open.
 
-## Historical P1-A bootstrap status
-
-The following snapshot describes its original slice only. Current generated SDK/Proto/HTTP code exists; do not interpret the snapshot's missing-code or no-side-effect statements as current repository-wide restrictions. Fixed profiles retain their own constraints, and formal Gate status remains in [06](../docs/plan/cloud-agents-platform/06-status-tracker.md).
+## P1-A bootstrap status
 
 - JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 51 fixture
   cases pass the independently reviewed `Ajv2020` plus in-repo semantic bootstrap path. Mutation inputs reject unknown

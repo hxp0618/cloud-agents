@@ -37,8 +37,12 @@ bound to a fresh, unexpired negotiation, `CAPABILITY_ADAPTER_REGISTRATION`, the 
 the mTLS-authenticated adapter client. A mismatched digest, adapter or client identity returns no receipt and performs
 no registration mutation.
 
-## Descriptor status and foundation reuse
+## Descriptor status
 
-The initial P1-A slice was `NOT_GENERATED`; current generated Proto/Connect code exists under [`sdk/go/gen/cloudagents/platformadapter/v1alpha1`](../../../sdk/go/gen/cloudagents/platformadapter/v1alpha1). `fixtures/descriptor.golden.json` is still an expected shape, not compiled descriptor evidence. Locked generation, compatibility, and fixed-candidate review remain required for `G-CONTRACT`; generated code alone closes no Gate.
+`NOT_GENERATED`: the authoring environment did not contain pinned `protoc` or `buf` binaries. No generated source or
+binary descriptor is claimed. `fixtures/descriptor.golden.json` records the expected descriptor shape for the later
+generator-lock task, which must compile, digest, compare, and clean-regenerate this contract before `G-CONTRACT` can
+close.
 
-This out-of-process extension protocol is not automatically the internal SandboxRuntime/OpenSandbox adapter or outbound customer-node protocol. Reuse only after mapping the actual roles and authority in the [foundation architecture](../../../docs/plan/cloud-agents-platform/02-target-architecture.md); do not expand this frozen wire's side-effect scope through prose.
+This source/fixture bootstrap is explicitly **not Gate closure** and is not descriptor, generated SDK, compatibility or
+release evidence.

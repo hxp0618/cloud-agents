@@ -5,8 +5,6 @@ Agents Control Plane. The workspace package stays private to prevent accidental
 registry publication; platform releases contain an installable public package
 with the release version.
 
-The [foundation-first plan](../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md) adds Workspace/Sandbox/customer-node APIs through versioned source contracts when implemented. Design examples are not SDK availability; retain existing Agent/Lease clients and generate new surfaces instead of hand-writing parallel DTOs.
-
 The current output contains generated common identity models, generated JSON
 contract models and clients, plus generated proto3 messages and ConnectRPC
 service descriptors. The JSON clients include `createHTTPClient(baseURL,

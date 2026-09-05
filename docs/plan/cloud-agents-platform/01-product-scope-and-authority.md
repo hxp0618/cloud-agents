@@ -2,32 +2,8 @@
 
 ## 1. 决策
 
-按 [ADR-0031 / D-054](../adr/0031-foundation-first-cloud-workspace-platform.md)，当前优先完成
-**长期云工作区＋通用 Sandbox 基础设施＋客户节点接入平台**，底座就绪后继续用户侧 CloudAgents。
-Admin Web 是底座各阶段的配套运维入口，不是另一条替代底座验收的主线。
-
-### 1.1 两层产品边界
-
-| 层 | 拥有的能力 | 不应依赖 |
-| --- | --- | --- |
-| 基础设施底座 | Tenant/Org/Project/RBAC；Workspace/Volume/Snapshot；Sandbox 生命周期、Exec/PTY/Files/Ports；节点注册、调度、策略、访问、计量和恢复 | Agent Provider、Prompt、Turn、Synara/T3 私有服务 |
-| 用户 CloudAgents | AgentSession/Turn/Execution、Approval/User Input、会话历史、Provider cursor、Artifact 和 Agent Checkpoint | 底座私有 Go 包、Docker/Kubernetes API 或节点凭据 |
-| Admin Web 配套 | Workspace/Sandbox/节点/策略/Operation/Audit 运维元数据和授权操作 | 用户对话、源代码或 Secret bytes 的读取权限 |
-
-底座管理长期 Workspace 身份、Volume 绑定、文件系统快照及保留规则；应用在授权的数据通道内修改文件，
-自己管理对话与 Agent Checkpoint。物理快照不声称保存 Provider 会话状态。默认同一 Workspace 同时只允许
-一个可写 Sandbox，防止多个执行实例无约束地写同一卷。
-
-底座可在不安装 Codex/Claude、不提供 Provider 凭据的情况下完成创建、连接、停止、重建和恢复。
-普通用户可通过 Workspace API/CLI 使用自己的工作区；完整 CloudAgents User Web 后续接入。
-这不赋予管理员读取用户内容的权限。
-
-### 1.2 兼容与最终范围
-
-已有 Agent Runtime/API 保留，当前只做安全、兼容和必要适配，不以新增对话功能推动底座里程碑。
-下列三种运行模式及其 owner 表保留为消费/兼容边界，不再是底座领域模型或当前阶段排序。
-T3 自己的逻辑 Workspace/Git/Checkpoint authority 不等于底座新建的物理 Workspace/Volume authority，
-二者只能显式引用映射，不能双写同一聚合。公共仓最终仍须独立部署，并提供：
+Cloud Agents 是完整平台，不只是 Provider Runtime 包。公共仓最终必须能在没有 Synara 私有服务的情况下
+直接部署，并提供：
 
 - Tenant/Organization/Project/basic RBAC 与标准 OIDC/JWT 接入；
 - Managed Agent 的 Session/Turn/Execution；

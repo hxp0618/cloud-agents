@@ -1,7 +1,5 @@
 # Release candidate boundary
 
-This page describes the TS Agent Runtime candidate, not completion of the new infrastructure foundation. [BASE-READY](plan/cloud-agents-platform/05-gates-and-acceptance.md) requires independent no-Agent infrastructure evidence; user CloudAgents consumes that foundation later. These Runtime gates remain mandatory for their own candidate scope and are not blanket prerequisites for documentation or each foundation development slice.
-
 The RC versions are `@cloud-agents/cloud-agent-runtime@0.2.0-rc.1` and `0.1.0-rc.1` for the other six packages. All internal edges are exact peer pins so hosts can install the coordinated GitHub tarball closure without an npm publication or an exotic-subdependency override.
 
 The Runtime, Provider, Distribution, and Testkit packages intentionally retain dual ESM/CJS output for the compatibility window. Their build commands allow tsdown's generic "prefer ESM" warning while the external pack/install smoke verifies both formats.

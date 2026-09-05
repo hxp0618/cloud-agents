@@ -1,10 +1,4 @@
-# Supervisor client
-
-Current code also provides [`NewMTLS`](mtls_client.go), plus [`BindRuntime` / `OpenRuntimeSession`](runtime.go) over the authenticated Worker transport. These are the existing CP-to-execution-Worker path, not the new customer's outbound RemoteWorker connection. See the [foundation roles](../../../docs/plan/cloud-agents-platform/02-target-architecture.md) before reusing their identities or lifecycle.
-
-## Historical P1-B admission profiles
-
-The statements below apply to the original generic/local admission profiles, not every constructor or current runtime capability in this package.
+# Supervisor P1-B admission client
 
 This package is the Supervisor-side consumer of the generated
 `WorkerExecutionService` Proto/Connect contract. It implements two bounded
@@ -27,7 +21,7 @@ v1.0 binding profiles:
 
 The generic caller supplies an already configured generated Connect client. The
 local constructor instead accepts only a Worker-minted opaque handle; it never
-accepts a URL, endpoint, selector, or caller capability list. These original admission profiles do
+accepts a URL, endpoint, selector, or caller capability list. This package does
 not construct a listener, TLS/mTLS configuration, database lease, provider
 call, workspace/credential/artifact writer, or durable receipt. The transport
 remains the authority for the authenticated client identity. No production

@@ -1,10 +1,4 @@
-# Cloud Agents execution Worker
-
-The module now includes the production mTLS entry point in [`cmd/cloud-agents-worker`](cmd/cloud-agents-worker/README.md), an Agent Runtime process bridge, and the Supervisor client. The existing Control Plane dials this Lease-bound execution Worker; it is not the outbound node-level RemoteWorker in the [foundation-first architecture](../../docs/plan/cloud-agents-platform/02-target-architecture.md). Preserve this compatibility path while adding that separate role.
-
-The following section documents the original bounded kernel and its profiles, not the entire module's current capabilities or deployment authority.
-
-## Historical P1-A contract runtime kernel
+# Worker P1-A contract runtime kernel
 
 This module provides a transport-neutral, in-memory implementation of the
 generated `WorkerExecutionService` contract. It supports strict v1.0
@@ -38,7 +32,7 @@ Supervisor client remains unchanged in this slice.
 
 `NewHandler` exposes the generated Connect HTTP handler with 1 MiB read/send
 limits. It is a decoded handler seam for in-process integration only: this
-kernel seam does not itself provide an HTTP server, TLS/mTLS listener, or claim that
+package does not provide an HTTP server, TLS/mTLS listener, or claim that
 pre-decode limits are enforced by a network edge. Callers must provide an
 explicit `IdentityProvider`; the default rejects requests without a transport
 identity. Request-carried `expected_*` identities are peer constraints, never

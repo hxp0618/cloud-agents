@@ -1,93 +1,6 @@
 # 02. 目标架构
 
-## 0. 当前目标：基础设施底座与应用分层
-
-产品边界与优先级依据 [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md)。本节是据此整理的
-目标方案，不是当前实现声明；原有 Agent/Host 协议、安全和消费者兼容要求仍保留。
-
-### 0.1 逻辑结构与最小部署
-
-```text
-用户 CloudAgents（后续）       Workspace CLI/SDK/通用客户端       Admin Web（阶段配套）
-         └──────────────────────────┬─────────────────────────────┘
-                         公共基础设施 API / 专用 Admin API
-                                    │
-                 Go Control Plane + PostgreSQL（唯一控制状态 writer）
-                 Workspace / Sandbox / Operation / Policy / Placement
-                                    │
-                       Controller：持久化任务与状态调谐
-                                    │
-             单 Region 执行与访问层（区域边界保留，先不拆业务微服务）
-               ├── Runtime Adapter → OpenSandbox 候选 → Docker / Kubernetes
-               ├── Access Gateway → PTY / Files / Preview / SSH
-               └── Worker Gateway ← 客户节点主动连接的 RemoteWorker
-                                          └── 本地受控执行器 → Sandbox
-```
-
-Control Plane 先复用当前 Go 模块做模块化单体；Controller 必须能脱离请求、独立恢复，不要求先拆独立仓库。
-高带宽 Access/Worker Gateway 按访问阶段交付可独立运行的进程；单 Region 可同机部署。
-图是职责和信任边界，不要求每个框一个微服务。底座部署不要求启动 Agent Runtime。
-
-### 0.2 聚合、归属与生命周期
-
-| 对象 | 生命周期/authority | 关键关系 |
-| --- | --- | --- |
-| Workspace | 长期；CP 管理元数据与删除意图 | tenant/project、Volume、模板/仓库引用、保留策略、允许 region |
-| Volume / WorkspaceSnapshot | 独立于计算实例；CP 写绑定，存储 adapter 写物理资源 | workspaceId、backendRef、容量、快照 manifest/digest、保留期 |
-| SandboxSession | 一次可替换运行；CP 写 desired/observed/generation | workspaceId、runtimeProfile、placement、operation、endpoint 引用 |
-| Region / ResourcePool / DeploymentTarget | 调度与物理接入范围 | ownership、位置、runtime/arch/capacity；Kubernetes 保留自身节点调度 |
-| RemoteWorker | 客户或平台节点上的长期 Agent | ownerScope、节点身份/证书、incarnation、能力、心跳、drain 状态 |
-| SandboxAgent / 执行 Worker | Sandbox 内的受控命令和文件服务 | 不作为 RemoteWorker；Agent Runtime 可选安装 |
-| Operation / UsageEvent | durable；CP 校验后持久化 | 幂等键、对象/generation、receipt、重试、不可变用量事实 |
-| AgentSession / Turn / Execution | 上层应用 authority | 引用 Workspace/Sandbox，不拥有物理卷的销毁权 |
-
-`infraProvider` 表示资源归属/来源，`isolationRuntime` 表示 runc/gVisor/Kata 等隔离方式，
-`agentProvider` 才表示 Codex/Claude。现有 `EnvironmentProfile.providerKinds` 属于第三类，不能改名冒充
-前两类。基础 RuntimeProfile 不要求 providerCredentialRef；Agent 专属默认值通过上层模板/绑定组合。
-
-停止 Sandbox、TTL 到期或清理计算残留，只回收计算与访问授权；默认保留 Workspace/Volume。
-Workspace 删除是独立的、带授权与影响范围的操作；快照保留/删除规则须单列。暂停仅在 runtime 已验证支持时
-开放，不把停止后重建声称为进程内存无损恢复。默认一个 Workspace 只有一个 writable attachment，
-按 generation fencing；跨节点重挂必须先证明旧写入者失效，不能仅凭心跳超时强挂。
-
-### 0.3 调谐和单一副作用 owner
-
-创建/变更 API 在事务中写入 desired state、Operation 和待执行事实后返回 `202 + operationId`；
-Controller 认领任务，调用 adapter，验证 observation/receipt 后推进状态，使用有界退避、重试和告警。
-浏览器关闭、请求断开或 CP/Controller 重启都不撤销已接受的用户意图；取消须是显式操作。
-外部资源仍携带 tenant/project/workspace/sandbox/generation/operation/release 的归属信息。
-
-CP 负责产品意图与恢复；OpenSandbox/底层 runtime 负责物理执行，二者不争抢同一物理对象的写入权。
-复用现有幂等、outbox、租约认领、fencing 和 receipt 机制，先接通真实循环，不重建第二套任务内核。
-Resource health observer 只提供观察，不替代生命周期调谐、到期回收与 orphan adoption。
-
-### 0.4 Runtime、节点接入与访问安全
-
-- OpenSandbox 是优先验证候选。BASE-M0 固定版本并验证生命周期、Exec/Files、卷挂载、标签/引用恢复，
-  不假定上游已满足本平台的持久性、多租户和凭据语义。旧直连 actuator 保留兼容；同一对象不同时交两套执行器管理。
-- RemoteWorker 使用一次性短期 enrollment、CSR、短期 mTLS 证书和主动 outbound 长连接。
-  注册令牌由授权 CLI 的独立 `no-store` 一次性交付通道领取，不因增加节点注册而让 Admin Web 读取 Secret bytes。
-  命令绑定 ownerScope、sandbox/generation、commandId、deadline；断线后先对账，不盲目重放。
-- 离线节点停止新调度，既有 workload 按明确 lease/expiry 策略处理；失联不等于已销毁，不触发 Workspace 删除。
-  未 fence 的旧节点恢复不能覆盖新 generation；支持 drain、证书轮换/吊销和节点版本兼容检查。
-- 用户 PTY/Files/Preview/SSH 通过 Access Gateway 校验 tenant/project/workspace/sandbox/generation 与短期 grant。
-  不接受用户指定任意跳转目标；Preview 默认私有；SSH 使用短期凭据而非客户主机长期 SSH 登录。
-- 网络策略必须在执行环境实际生效：受控 DNS、metadata/宿主机/控制面/跨租户阻断、出网规则及撤销。
-  policy CRUD、单独 mTLS 或 container non-root 不构成完整隔离证据；不支持的策略和 runtime tier 必须 fail closed。
-- User/Admin API 使用独立 audience/scope；RemoteWorker、Gateway、actuator 身份不能替代用户或管理员身份。
-  Admin 只看运维元数据，不看用户内容；数据接口返回内容必须经过用户所有权与路径边界检查。
-
-### 0.5 现有实现的承接边界
-
-现有 Lease-backed Worker、HTTP 内同步 actuator、Agent Profile、健康观察和 JWKS 接入均作为可复用的当前基础，
-不把它们改名宣称为新模型已完成。以新 API/schema 的兼容扩展接入 Workspace/Sandbox，保留旧调用方和活动 Lease。
-旧 Lease 的卷仍按其原语义处理；向长期 Workspace 转换须有显式 adopt/migration 操作、归属核验与恢复方案，
-不能因本次文档调整就自动改 TTL、保留策略、绑定或删除任何现有数据。
-
-实施顺序见 [04 的 BASE-M0～M5](04-extraction-and-migration.md#0-当前实施顺序底座先行)，
-不再按下文旧消费者拓扑的出现顺序决定优先级。
-
-## 1. 既有消费者与兼容拓扑
+## 1. 总体拓扑
 
 ```mermaid
 flowchart TB
@@ -148,7 +61,7 @@ JSON Schema 不从 OpenAPI 或语言类型生成；OpenAPI bundle 解析并校�
 命令必须读取仓内 generator lock，产物 manifest 绑定输入 digest、generator name/version/image-or-binary
 digest、参数和输出 digest；CI 在 clean tree 重生成并要求 byte-identical。
 
-## 2. 既有 Control Plane 的两条消费者业务平面（兼容保留）
+## 2. Control Plane 的两条业务平面
 
 ### 2.1 Managed Agent API
 
@@ -178,7 +91,7 @@ digest、参数和输出 digest；CI 在 clean tree 重生成并要求 byte-iden
 
 该平面只供给环境。T3 Turn、Git 和 checkpoint 仍由 lease 内 T3 server 处理。
 
-## 3. 既有 Agent/Host 服务职责（兼容与复用）
+## 3. 核心服务
 
 | 服务/组件                       | 职责                                                     | 持久化                                                 |
 | ------------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
@@ -189,7 +102,7 @@ digest、参数和输出 digest；CI 在 clean tree 重生成并要求 byte-iden
 | `cloud-agent-cli`               | bootstrap、admin、diagnostic、upgrade/rollback           | local config only                                      |
 | SDKs                            | TS/Go API client、watch cursor、stable errors            | consumer owned                                         |
 
-## 4. 既有 Agent/Host 数据聚合（新底座聚合见 0.2）
+## 4. 公共数据聚合
 
 ```text
 PlatformTenant / PlatformOrganization / PlatformProject / Membership
@@ -360,7 +273,6 @@ session issuance 原子完成，并发 consume 只能一个成功。原始 secre
 
 ## 11. 管理体验边界
 
-底座提供完整 API、generated SDK、CLI bootstrap/admin/diagnostic 和可重放示例，不依赖用户 CloudAgents
-或 Synara/T3 才能操作。Admin Web 不再整体延后：按 [07](07-admin-web-requirements-and-design.md)
-随各 BASE 阶段提供真实资源、Operation、策略和审计视图。用户内容只能由有权用户通过数据接口访问。
-阶段后端开发不等待整套视觉页面，但底座配套交付必须完成对应 Admin 安全、操作和视觉验收。
+首个 Platform RC 必须提供完整 API、generated SDK、`cloud-agent-cli` bootstrap/admin/diagnostic 和可重放
+示例。公共管理 Web UI 明确列为 Deferred UI track，不阻塞首个 API-first RC；Synara/T3 可以作为首批 UI
+consumer，但不能成为独立部署的安装前提。

@@ -1,49 +1,5 @@
 # 05. Gate 与验收
 
-## 0. 底座就绪验收 BASE-READY
-
-依据 [ADR-0031](../adr/0031-foundation-first-cloud-workspace-platform.md)，底座先于用户 CloudAgents 交付。
-BASE-READY 是本次提出的底座产品就绪检查，不是新增审批工具、历史 Gate 重命名或发布批准。
-实施顺序见 [04](04-extraction-and-migration.md#0-当前实施顺序底座先行)；实际状态在 [06](06-status-tracker.md) 登记。
-
-必须在不安装 Agent、不提供 Codex/Claude 凭据的条件下证明：
-
-1. 独立 API/SDK/CLI 创建 Workspace 和 Sandbox，真实 Exec/PTY/Files 可用；用户 CloudAgents、Synara/T3
-   均不是底座安装或验收前提。
-2. 停止、TTL 到期或替换 Sandbox 后 Workspace/Volume 保留；重新启动可读回测试文件及摘要。
-   删除工作区是独立授权动作，按声明的快照/保留规则执行，不误删其他 Workspace 或用户已有资源。
-3. API 接受后即使 HTTP 断连、CP/Controller 重启、receipt 丢失，持久化 Operation 仍能自动恢复到明确终态；
-   相同幂等键不重复创建，部分分配被 adopt/补偿，失败清理保留 finalizer 并可观察。
-4. Workspace 单写与 generation fencing、卷归属、挂载授权、旧节点重连和过期命令负向矩阵通过；
-   不能只凭健康超时强制把未 fence 的卷交给新 writer。
-5. Preview 私有默认、PTY/Files 可重连、SSH 短期授权；跨租户、路径/symlink 逃逸、任意目标代理、
-   过期/吊销/旧 generation 访问均被拒绝，Gateway 重启恢复行为与缓冲上限有实测。
-6. 客户节点只通过 outbound 接入，完成注册/轮换/Drain/断线/重连/对账；平台无客户公网入站 SSH 依赖。
-   节点只接收 ownerScope 允许的任务，离线不误删数据。
-7. Docker、Kubernetes、客户节点各有真实执行与恢复证据；能力矩阵包含 runtime/arch/存储/网络限制，
-   不支持组合拒绝，不以 Probe、Mock 或单一路径替代全部矩阵。
-8. 身份/RLS/RBAC、容量与配额准入、受控 DNS、metadata/宿主/控制面/跨租户网络隔离实际生效；
-   共享不可信租户必须有对应强隔离实证，不能用可信 runc 路径冒充。Secret 不进页面、日志、receipt 或快照。
-9. Workspace 文件系统快照恢复到新 Volume/Sandbox 并核对数据；数据库备份恢复、证书轮换、
-   N/N-1 升级回滚、节点故障恢复和孤儿资源清理有可复现记录，不声称未验证的进程内存或跨 Region 恢复。
-10. 基础用量事实、长运行 checkpoint、离线对账、修正审计可核对；健康、调谐积压、容量、失败与告警可观察，
-    有实际延迟/soak/恢复测量和 runbook，不将工程目标直接写成 SLO 承诺。
-11. Admin Web 对本阶段真实资源提供必要运维操作及 Operation/Audit；管理员不读取用户内容，
-    普通用户不能调用 Admin API；危险操作保留影响范围、资源名称和 generation 确认。
-12. Admin 配套页面完成 [07](07-admin-web-requirements-and-design.md) 的双语、可访问性、视觉与身份部署隔离；
-    用户侧 Agent 流程留在 APP-M1 验收，不把其尚未接入当作通用底座失败。
-
-每项记录 source/dirty、backend/runtime/制品版本、输入、命令、实际结果和恢复边界。复用已有检查和证据路径，
-仅重验被改动影响的结论，不为每个切片先建设新的证据生成器。证据在执行后如实记录，不能要求先有通过报告再开始实现。
-BASE-M5 只有逐项满足以上条件才能标为就绪；未完成项保持开放，不降为隐藏按钮或文档占位。
-
-### 0.1 与旧 Gate、Release 的关系
-
-下文旧 P0～P6/Platform RC 的 record、签署、审批、安全和发布条件保持不变，不因底座优先而自动关闭或降低。
-底座本地就绪不要求先完成 Synara/T3 或真实 Agent E2E，但也不代表通过仍包含这些条件的旧完整 Platform RC。
-若以后发布独立底座 channel，其适用验收与曝光范围须显式记录并取得原有发布批准；本次不创建或批准该 channel。
-APP-M1 再执行 Managed Agent 的真实 Codex/Claude 与交互/历史/Artifact 验收，后续消费者各自关闭适用 Gate。
-
 ## 1. Gate 总表
 
 | Gate                 | 阻塞                | 退出证据                                                                                                                             |

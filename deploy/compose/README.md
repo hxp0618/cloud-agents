@@ -1,7 +1,5 @@
 # Independent Cloud Agents Compose deployment
 
-This runbook describes the existing Agent/Lease deployment and its actual bootstrap commands. The [foundation-first delivery plan](../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md) additionally requires a no-Agent installation with independent Workspace persistence, Sandbox access and customer-node support; that target is not implemented by merely following this runbook. Do not silently change old Lease cleanup/volume semantics or imply that a successful stack startup proves BASE-READY. Deployment and production database authorization remain separate from editing this document.
-
 Extract `cloud-agents-deployment-000049.tar` into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.

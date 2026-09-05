@@ -1,13 +1,5 @@
 # Cloud Agents 公共平台与 Synara × T3 集成设计
 
-## 当前适用范围（2026-09-05）
-
-本文保留 Runtime 与 Synara/T3 的消费者集成设计及固定版本证据；它不再定义当前底座建设顺序。当前主线以 [ADR-0031](adr/0031-foundation-first-cloud-workspace-platform.md) 和 [04](cloud-agents-platform/04-extraction-and-migration.md) 为准：长期 Workspace + 通用 Sandbox + outbound 客户节点，Admin Web 随底座配套，BASE-READY 后再做用户 CloudAgents；Synara/T3 保留为后续消费者，不作为底座验收前置。
-
-本文原有“当前”“唯一近程交付”“PAUSED”、包名和源码清单均对应下面记录的历史 ref，不是今天的实现库存或全局暂停指令。旧 Gate、外部发布与数据迁移的批准条件保留；逻辑 Workspace/Checkpoint owner 仍由宿主维护，底座的物理 Volume 生命周期需按新模型显式衔接，不能双 writer。本文不授权跨仓实施或修改 Synara/T3。
-
-### 历史基线元数据
-
 - 设计状态：APPROVED（ADR-0006 于 2026-08-10 获用户批准）
 - 实施状态：PLATFORM P0 VERIFIED；P1 IN PROGRESS（Decision Freeze / Contract Kernel）；M1/P2–P6 PAUSED
 - 发布状态：PUBLIC SOURCE + IMMUTABLE PRERELEASE；NOT NPM / NOT DEPLOYED / NOT M1 ACCEPTED
@@ -103,9 +95,9 @@ T3 构建/薄 fork
 └── @synara/cloud-agent-distribution # 固定 Runtime + Provider 包版本和 digest
 ```
 
-### 0.1 历史消费者交付目标与路径
+### 0.1 收拢后的唯一目标与主路径
 
-**该历史集成范围的目标**：保持 Codex/Claude 七个 app-neutral Runtime 包和 embedded M1 结果，同时把 Cloud Agents
+**唯一目标**：保持 Codex/Claude 七个 app-neutral Runtime 包和 embedded M1 结果，同时把 Cloud Agents
 扩展成可以无 Synara 私有依赖直接部署的公共平台。公共 Go Control Plane 提供 managed-agent 与
 managed-host 两条 authority plane；Synara/T3 分别通过公共 SDK/API 接入，完整 T3 server 仍与 Runtime/
 Workspace/Git/Terminal/checkpoint 位于同一 lease。
@@ -147,7 +139,10 @@ exposure 决策，不能反向阻塞架构验证。
 关闭对应工程 Gate、可提交发布评审的 candidate；**exposure** 是经产品/运维批准后向指定用户范围提供支持，
 公开 npm/Registry 只是 exposure channel 之一。工程里程碑完成、RC 形成和公开 exposure 不互相冒充。
 
-跨文档冲突按 [总计划入口](README.md) 的 source-of-truth 规则处理；ADR-0031 仅 supersede 其明确列出的产品边界/优先级。本集成范围内部继续按适用 ADR → 第 22 节原确认决策 → 第 4/17/19 节目标/门禁 → 附录 A 时点证据解释。附录 A 只能证明对应 ref 的历史状态，不能修改当前目标、扩大授权或提升发布状态。
+文档发生冲突时按以下顺序解释：ADR-0006、ADR-0007 与
+[`Cloud Agents 公共平台计划目录`](cloud-agents-platform/README.md) →
+本节与第 22 节的确认决策 → 第 4/17/19 节的目标和门禁 → 附录 A 的时点证据。附录 A 只能证明当前
+进度，不能修改目标或提升发布状态。
 
 ### 0.2 本次 T3 Code 实仓复核带来的修正
 
@@ -1883,7 +1878,7 @@ Child reaper 不能只看 foreground Turn。存在后台 subagent、workflow、w
 event 或 text-generation operation 时都视为 live；只有 Runtime 明确 quiesced、binding/receipt/cursor 已持久化
 后才能 LRU 回收。T3 基线本身仍在修复 background subagent reaper 语义，因此该 surface 必须列为 P1 漂移。
 
-## 17. 历史集成迁移阶段（不替代 BASE 顺序）
+## 17. 代码迁移与实施阶段
 
 阶段编号描述工程依赖，不代表已经完成。2026-08-10 Platform P0 已完成独立复核；P1 已进入 Decision Freeze / Contract Kernel，但实现
 尚未开始，M1 与 P2–P6 仍暂停。
@@ -2531,7 +2526,7 @@ attestation 的信任边界。任何实现若要改变其中一项，必须在�
 生效日期，并在 G-ARCH closure record 中引用。普通实现缺陷修复或不改变上述 surface 的约束澄清可以直接
 更新本文，但不能用“实现已经如此”反向修改 authority；无法确定是否改变 ABI 时按需要 ADR 处理。
 
-## 23. 历史 M1 近程交付范围
+## 23. M1 当前唯一近程交付
 
 M1 的近程交付固定为**七个发布包加一个 T3 integration slice**：
 

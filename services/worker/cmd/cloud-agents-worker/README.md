@@ -1,10 +1,6 @@
-# cloud-agents-worker
+# cloud-agents-worker (localdev)
 
-The default `!localdev` entry point is the production mTLS Worker server; see the [existing Compose deployment](../../../../deploy/compose/README.md) for its deployment-owned credentials and configuration. It is a Lease-bound execution Worker reached by the Control Plane, not an outbound customer-node RemoteWorker. The [foundation plan](../../../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md) keeps those roles distinct.
-
-## Local development
-
-The loopback token-based entry point below is compiled only with `-tags localdev`:
+This command is compiled only with `-tags localdev`:
 
 ```sh
 cd services/worker

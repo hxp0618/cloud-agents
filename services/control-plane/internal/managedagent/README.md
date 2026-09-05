@@ -1,10 +1,4 @@
-# Managed Agent application lifecycle
-
-Current code includes the durable Runtime execution path in [`durable_runtime_execution.go`](durable_runtime_execution.go), in addition to the original in-memory kernel below. Managed Agent owns application Session/Turn/Execution, not the independent long-lived Workspace/Volume lifetime introduced by the [foundation-first design](../../../../docs/plan/cloud-agents-platform/02-target-architecture.md). Keep existing behavior compatible; new user CloudAgents work follows BASE-READY.
-
-## Historical P1 lifecycle kernel
-
-The no-database/no-HTTP statements in this section describe that bounded kernel slice, not the package or platform as a whole.
+# Managed Agent lifecycle P1 kernel
 
 This package is the first bounded Control Plane seam for the public Managed
 Agent authority. It implements a versioned, transport-neutral Session → Turn →

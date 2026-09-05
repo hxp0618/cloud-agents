@@ -29,27 +29,14 @@ evidence/
 跨阶段 Gate 在对应目录下保存 phase record，例如 `G-AUTHORITY/P1/`、`G-SECURITY/P6/`；目录根部只保存
 aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDATED`，不得覆盖或删除历史证据。
 
-每条正式 Gate closure record 使用 [`../templates/gate-closure-record.md`](../templates/gate-closure-record.md)，并在
+每条 evidence 使用 [`../templates/gate-closure-record.md`](../templates/gate-closure-record.md)，并在
 [`../06-status-tracker.md`](../06-status-tracker.md) 登记状态与链接。
-
-应用 E2E 报告保留在对应 `apps/*` 目录，包含 commit SHA、资源 ID 和实际观察到的 phase transition；
-本目录或状态追踪通过链接索引，不复制原始报告，也不要求普通应用报告套用 Gate closure 模板。
-验收计划先于执行记录，实际结果、证据索引与 closure record 在验证后记录；应用报告不能自动关闭 Gate，
-正式 closure 仍须满足对应 Gate 的全部证据和审批要求。
 
 当前 Platform P0 phase 由 `G-INVENTORY` R3 与 `G-BASELINE-P0` R4 关闭；aggregate `G-BASELINE` 仍等待
 `G-BASELINE-M1`，所有 P1-P6 aggregate/phase Gate 仍保持 open、in progress 或 not started。不得用 P0、M1
 Runtime 历史证据或本地候选替代后续 immutable closure。
 
-## 当前底座记录方式
-
-- [底座优先文档对齐记录（2026-09-05）](foundation-docs-realignment-20260905.md)：覆盖范围、对齐结果与保留边界；仅文档/静态核对，non-Gate。
-
-当前 BASE/APP 顺序与状态只在 [06](../06-status-tracker.md) 维护。新阶段报告记录固定 source/ref、实际检查、结果、未覆盖项和复用证据范围，使用 `BASE-M*` / `APP-M*`，不重命名旧报告、不自动关闭 `G-*`。文档核对记录属于 non-Gate，不需要把未执行的 runtime 检查伪写成通过。
-
-## 历史 Gate candidates（按固定 ref 解释）
-
-下列条目的 “current-source” 指其记录当时的候选；不是当前 HEAD 的实现清单或新的执行阻塞条件。保留原结论与正式 Gate 状态。
+## Current candidates
 
 - [`CAG-G-BASELINE-P0-20260823-R4`](G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md)：current verified P0
   phase record；supersedes audit-semantics-invalid R3 while retaining the unchanged behavior evidence and all M1/

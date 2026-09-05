@@ -1,9 +1,8 @@
 # Cloud Agents 计划与证据总入口
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
-- Plan status：原计划与 ADR-0031 产品边界/优先级已批准；新技术拆解为实施方案，不宣称逐项已验收
-- 当前主线：底座 BASE-M0～M5 → BASE-READY → 用户 CloudAgents APP-M1；Admin Web 随底座配套
-- 当前决策与阶段状态：只在 [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md) 维护；旧 P0～P6/Runtime/Gate 历史不代表新底座已实现
+- Plan status：APPROVED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。ADR-0024/D-048 接受软件关机/崩溃机制替代物理硬断电，并按 2026-08-24 owner 口径将普通 `poweroff`/`reboot` 计为项目“掉电恢复”；记录仍须如实标为 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 SSD/controller cache-loss；ADR-0025/D-049 的 offline JWT access-token verifier ordered Slices A–C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review commit `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`，五个 RBAC 与三个 JWT-user durable 路径只接受 callback-scoped `*VerifiedPrincipal`；ADR-0028/D-051 的 bounded generator-supply v1 fixed candidate/review 已完成；ADR-0029/D-052 接受 closure-v3 + supply-v2 + detached binding registry 的 ordered Slices A–H，一次 successor native replay，所有 Gate 保持 OPEN；production trust provisioning 与 HTTP/OIDC/JWKS 仍未实现，`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 仍因 current-source phase records 与剩余退出标准未全部闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -14,35 +13,29 @@
 本目录是 Cloud Agents Runtime、公共 Go Control Plane、Worker/Supervisor、Synara/T3 consumer 集成计划与
 Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划副本推进公共平台状态。
 
-本节是解释顺序的唯一维护入口；其他文档引用本节，不另行复制 ADR 编号范围或优先级。
+解释顺序：
 
-1. 与当前事项相关、已批准且未被取代的 ADR；从
-   [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md) 的决策记录定位并核对原始批准依据。
-   后续决策只在明确取代的范围内覆盖前项，原有 ordered slices、local-only、non-Gate 等限制仍按各 ADR 执行；
-2. [`cloud-agents-platform/01`–`07`](cloud-agents-platform/README.md) 中已批准的适用内容；
-3. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
-4. `legacy/` 历史计划；
-5. `references/` 冻结参考合同；
-6. 代码现状。
-
-以上是规范与授权的解释顺序，不是实现事实的证据排序。判断“目前实现了什么”须检查当前源码与固定版本实测；目标文档不能证明功能存在，旧缺失记录不能否定后续已实现的代码。
-
-草案不会因被索引、被其他文档引用或已有实现就变成已批准；代码与历史输入也不能反向授予实施权限。
-本页及子计划的状态、执行边界摘要须与 `06-status-tracker.md` 和对应批准记录核对，不覆盖后续明确授权。
-遇到暂停或未授权记录时，先核对当前任务、已有会话授权和后续批准记录；同一动作与范围已经明确获准且
-仍有效时，不重复请求确认。范围、目标环境改变或存在单独审批检查点时，仍须满足相应批准要求；
-不能把继续开发的授权外推为生产数据库写入、部署发布、删除脏 worktree 或 Gate closure 的授权。
-
-## 当前产品与实施入口
-
-[ADR-0031 / D-054](adr/0031-foundation-first-cloud-workspace-platform.md) 记录用户已明确的产品边界：
-长期云工作区、通用 Sandbox、客户节点接入优先；Admin Web 配套；用户 CloudAgents 后续消费底座。
-[04](cloud-agents-platform/04-extraction-and-migration.md) 维护唯一实施顺序，
-[05](cloud-agents-platform/05-gates-and-acceptance.md) 定义无 Agent 的 BASE-READY 验收。
-现有 Runtime、Managed Agent/Host API 和活动 Lease 保留兼容，不因文档调整改变数据或运行状态。
-
-本次授权包括当前仓文档整理、独立 worktree 的文档提交与合并回当前分支；不含代码实现、跨仓改动、
-生产数据、部署或发布。后续明确实现任务仍按上节识别同范围授权，不重复确认已经确定的产品边界。
+1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
+   [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)；
+2. 已接受、仅授权 ordered local slices 的
+   [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)；
+3. 已接受、仅授权 ordered local Slices A-G 的
+   [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)；
+4. 已接受、限定 P1 durability evidence/RC acceptance 的
+   [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)；
+5. 已接受、仅授权 offline identity-verifier ordered local Slices A-C 的
+   [`ADR-0025`](adr/0025-p1-offline-jwt-access-token-verifier-contract.md)；
+6. 已接受、限定 fixed-corpus evidence semantics 的
+   [`ADR-0026`](adr/0026-p1-json-schema-official-suite-evidence-closure.md)；
+7. 已接受、限定 bounded local generator-supply profile implementation/review 的
+   [`ADR-0028`](adr/0028-p1-generator-supply-profile.md)；
+8. 已接受、限定 closure/supply successor ordered Slices A-H 的
+   [`ADR-0029`](adr/0029-p1-contract-closure-successor-supply-rebind.md)；
+9. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
+10. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
+11. `legacy/` 历史计划；
+12. `references/` 冻结参考合同；
+13. 代码现状。
 
 ## 当前计划
 
@@ -52,11 +45,9 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`01-product-scope-and-authority.md`](cloud-agents-platform/01-product-scope-and-authority.md)           | 产品范围与单一 authority                         |
 | [`02-target-architecture.md`](cloud-agents-platform/02-target-architecture.md)                           | Control Plane/Worker/Runtime 目标架构            |
 | [`03-public-repository-and-release.md`](cloud-agents-platform/03-public-repository-and-release.md)       | 公共仓、module、制品与 release train             |
-| [`04-extraction-and-migration.md`](cloud-agents-platform/04-extraction-and-migration.md)                 | BASE 实施顺序、既有 API/数据迁移与后续 cutover                  |
+| [`04-extraction-and-migration.md`](cloud-agents-platform/04-extraction-and-migration.md)                 | Go CP inventory、迁移与 cutover                  |
 | [`05-gates-and-acceptance.md`](cloud-agents-platform/05-gates-and-acceptance.md)                         | Gate、same-bits、安全与验收                      |
 | [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md)                                     | 决策、阶段、record 与暂停现场                    |
-| [`07-admin-web-requirements-and-design.md`](cloud-agents-platform/07-admin-web-requirements-and-design.md) | 底座配套 Admin Web、安全交互与旧 UI 兼容 |
-| [`ADR-0031`](adr/0031-foundation-first-cloud-workspace-platform.md) | 底座先行决策及明确取代范围 |
 | [`p0/README.md`](p0/README.md)                                                                           | P0 freeze、inventory、baseline 与 provenance     |
 | [`p1/README.md`](p1/README.md)                                                                           | P1 foundation 与 dependency review 证据          |
 | [`synara-t3-cloud-agent-integration-architecture.md`](synara-t3-cloud-agent-integration-architecture.md) | Runtime + Platform + 双宿主总设计                |
@@ -94,11 +85,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 - 迁移时未复制 Stage 4–8 报告、私有环境配置或其他 Synara 产品文档；历史计划中的此类引用固定到来源
   commit 的 GitHub URL。
 
-## 既有 P0/P1 批准记录与明确授权边界
-
-以下是 2026-08 各固定 slice 的历史批准与限制，不是当前功能清单或当前工作排序。
-其批准不会被本次文档重排扩大；其旧“未实现/暂停”摘要也不能否认后续源码与明确同范围授权。
-当前产品顺序及新底座未完成项以 D-054 和 06 的当前区块为准；原始验收文件保持不变。
+## 执行边界
 
 P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R4 两个 independently reviewed closure record 完成；
 P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 catalog contract 与 impl-2 data/read evaluator 已分别由
@@ -214,9 +201,4 @@ SDK、数据模型、authority 与安全基础，以及 source modules/本地 ep
 - 部署、Beta、GA；
 - 删除任何脏 worktree。
 
-新范围和架构 decision 在实施前记录；验收计划在执行前记录；实际结果、状态、evidence index 与 closure
-record 在对应实施或验证后如实记录，不预先宣称通过。已有实施项内的常规进展沿用其授权范围与记录，
-不因补记状态或证据而重新申请同一授权。
-
-应用 E2E 报告保留在对应应用目录，本计划通过链接索引，不复制原始报告。正式 Gate closure 按
-[`evidence 规范`](cloud-agents-platform/evidence/README.md) 单独登记；应用报告不自动构成 Gate closure。
+所有新 decision、状态、evidence index 与 closure record 必须先进入本目录，再更新实现。
