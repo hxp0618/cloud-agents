@@ -7,6 +7,7 @@ import {
   createHTTPClient,
   encodeDeploymentTargetRegisterRequest,
   type DeploymentTargetRegisterRequest,
+  type AdminDeniedWriteEvent,
 } from "../sdk/typescript/src/platform";
 
 // Probe only: supply real target endpoints and server-mounted credential references, never secret bytes.
@@ -28,6 +29,7 @@ const requestId = () => `probe-check-${randomUUID()}`;
 const signal = () => AbortSignal.timeout(30_000);
 const results: object[] = [];
 const denied: string[] = [];
+const deniedWrites: AdminDeniedWriteEvent[] = [];
 mkdirSync(output, { mode: 0o700 }); // Refuse to overwrite an earlier run.
 const save = (complete: boolean) =>
   writeFileSync(
@@ -40,6 +42,7 @@ const save = (complete: boolean) =>
         project,
         results,
         denied,
+        deniedWrites,
         boundary:
           "Real transport Probe acceptance only; no Worker deployment, lifecycle cleanup or Provider Turn qualification.",
       },
@@ -60,16 +63,42 @@ for (const body of bodies) {
 
 for (const body of bodies) {
   const id = body.targetId;
-  const forbid = async (name: string, action: () => Promise<unknown>) => {
+  const forbid = async (name: string, action: (correlation: string) => Promise<unknown>) => {
+    const correlation = requestId();
     await assert.rejects(
-      action,
+      () => action(correlation),
       (error: unknown) => error instanceof ClientError && error.status === 403,
       name,
     );
     denied.push(`${id}:${name}:403`);
+    if (name === "register" || name === "probe") {
+      const page = (
+        await admin.listAdminDeniedWriteEvents(
+          tenant,
+          project,
+          requestId(),
+          200,
+          undefined,
+          signal(),
+        )
+      ).value;
+      const events = page.events.filter((event) => event.requestId === correlation);
+      assert.equal(events.length, 1, "Denied write must have a correlated Audit event");
+      const event = events[0];
+      assert.equal(
+        event.action,
+        name === "register" ? "adminRegisterDeploymentTarget" : "adminProbeDeploymentTarget",
+      );
+      assert.equal(event.result, "denied");
+      assert.equal(event.stableErrorCode, "AUTHORIZATION_DENIED");
+      assert.match(event.actor, /^sha256:[0-9a-f]{64}$/);
+      if (name === "probe") assert.equal(event.resourceId, id);
+      assert.ok(!("operationId" in event) && !("resourceGeneration" in event));
+      deniedWrites.push(event);
+    }
   };
-  await forbid("register", () =>
-    user.registerAdminDeploymentTarget(tenant, project, requestId(), randomUUID(), body, signal()),
+  await forbid("register", (correlation) =>
+    user.registerAdminDeploymentTarget(tenant, project, correlation, randomUUID(), body, signal()),
   );
   const registrationKey = randomUUID();
   const registered = (
@@ -96,12 +125,12 @@ for (const body of bodies) {
     ).value,
     registered,
   );
-  await forbid("probe", () =>
+  await forbid("probe", (correlation) =>
     user.probeAdminDeploymentTarget(
       tenant,
       project,
       id,
-      requestId(),
+      correlation,
       randomUUID(),
       { expectedGeneration: registered.spec.generation },
       signal(),
