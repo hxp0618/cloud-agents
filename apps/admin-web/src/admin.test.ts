@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ClientError } from "@cloud-agents/cloud-agent-platform-sdk/platform";
+import {
+  ClientError,
+  encodeDeploymentTargetRegisterRequest,
+} from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   adminFailure,
   pageAdminTargets,
+  targetIdentifierPattern,
   filterAdminTargets,
   filterAdminMaintenanceOperations,
   filterAdminLeases,
@@ -32,6 +36,42 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("uses native identifier constraints matching the generated Target request contract", () => {
+    const pattern = new RegExp(`^(?:${targetIdentifierPattern})$`, "v");
+    for (const value of [
+      "a",
+      "9",
+      "A.b_c~d-e9",
+      "a".repeat(128),
+      "",
+      "a".repeat(129),
+      "has space",
+      " leading",
+      "trailing ",
+      "-name",
+      "name-",
+      "name\n",
+      "中文",
+      "name/part",
+    ]) {
+      for (const field of ["targetId", "targetName"] as const) {
+        let accepted = true;
+        try {
+          encodeDeploymentTargetRegisterRequest({
+            targetId: "target-valid",
+            targetName: "target-valid",
+            targetKind: "docker",
+            endpoint: "https://127.0.0.1:1",
+            credentialRef: "unused",
+            [field]: value,
+          });
+        } catch {
+          accepted = false;
+        }
+        expect(pattern.test(value)).toBe(accepted);
+      }
+    }
+  });
   it("filters exact failed state and sorts by actual update instant without mutating the snapshot", () => {
     const operations = [
       { operationId: "b", state: "failed", updatedAt: "2026-09-05T10:00:00+08:00" },

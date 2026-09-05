@@ -33,6 +33,7 @@ import {
   adminFailure,
   pageAdminTargets,
   targetPageSizes,
+  targetIdentifierPattern,
   filterAdminTargets,
   filterAdminMaintenanceOperations,
   filterAdminLeases,
@@ -3761,6 +3762,12 @@ export function App() {
                   <span>{t("target.id")}</span>
                   <input
                     value={targetForm.targetId}
+                    pattern={targetIdentifierPattern}
+                    aria-describedby="target-identifier-hint"
+                    onInvalid={(event) =>
+                      event.currentTarget.setCustomValidity(t("target.identifierHint"))
+                    }
+                    onInput={(event) => event.currentTarget.setCustomValidity("")}
                     onChange={(event) =>
                       setTargetForm({
                         ...targetForm,
@@ -3779,6 +3786,12 @@ export function App() {
                   <span>{t("target.displayName")}</span>
                   <input
                     value={targetForm.targetName}
+                    pattern={targetIdentifierPattern}
+                    aria-describedby="target-identifier-hint"
+                    onInvalid={(event) =>
+                      event.currentTarget.setCustomValidity(t("target.identifierHint"))
+                    }
+                    onInput={(event) => event.currentTarget.setCustomValidity("")}
                     onChange={(event) =>
                       setTargetForm({
                         ...targetForm,
@@ -3791,6 +3804,9 @@ export function App() {
                   />
                 </label>
               </div>
+              <p id="target-identifier-hint" className="field-help">
+                {t("target.identifierHint")}
+              </p>
               <label>
                 <span>{t("target.kind")}</span>
                 <select

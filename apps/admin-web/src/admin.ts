@@ -292,6 +292,8 @@ export function leaseReleaseRequestFromPreview(
 }
 
 export const targetPageSizes = [10, 25, 50, 100, 200] as const;
+// HTML pattern uses the v flag; escape the hyphen while matching SDK identifiers.
+export const targetIdentifierPattern = String.raw`[A-Za-z0-9](?:[A-Za-z0-9._~\-]{0,126}[A-Za-z0-9])?`;
 
 export function pageAdminTargets(
   targets: readonly DeploymentTarget[],

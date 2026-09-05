@@ -250,7 +250,8 @@ label {
   font-weight: 500;
 }
 
-label > small {
+label > small,
+.resource-form > .field-help {
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 400;

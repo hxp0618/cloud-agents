@@ -321,7 +321,9 @@ const enUS = {
   "target.register.description":
     "References resolve server-side; credential bytes never enter the browser.",
   "target.id": "Target ID",
-  "target.displayName": "Display name",
+  "target.displayName": "Target name",
+  "target.identifierHint":
+    "ID and name: 1–128 ASCII letters or digits, with . _ ~ - allowed inside. Start and end with a letter or digit; spaces are not allowed.",
   "target.kind": "Target kind",
   "target.kind.docker": "Docker API",
   "target.kind.kubernetes": "Kubernetes API",
@@ -924,7 +926,9 @@ const zhCN = {
   "target.register.eyebrow": "目标注册",
   "target.register.description": "引用由服务端解析；凭据原文不会进入浏览器。",
   "target.id": "目标 ID",
-  "target.displayName": "显示名称",
+  "target.displayName": "目标名称",
+  "target.identifierHint":
+    "ID 和名称须为 1–128 位英文字母或数字，中间可含 . _ ~ -，首尾须为字母或数字，不允许空格。",
   "target.kind": "目标类型",
   "target.kind.docker": "Docker API",
   "target.kind.kubernetes": "Kubernetes API",
