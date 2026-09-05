@@ -413,6 +413,10 @@ try {
     );
     await openTarget("visual-docker");
     const trigger = ".detail-panel .action-block:nth-child(1 of .action-block) button";
+    await waitFor(
+      `document.querySelector(${JSON.stringify(trigger)}) !== null`,
+      "target lifecycle action rendered",
+    );
     await evaluate(
       `document.querySelector(${JSON.stringify(trigger)}).scrollIntoView({ block: 'nearest' })`,
     );

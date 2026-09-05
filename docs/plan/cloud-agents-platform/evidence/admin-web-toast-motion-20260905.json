@@ -1,0 +1,339 @@
+{
+  "sourceBase": "a6f3811d0c186aa3ee7b16eba06055b4683fd70f",
+  "capturedAt": "2026-09-05T11:24:21.996Z",
+  "projectId": "project-3265d24b3c8b21337dd6b0ce2709ab80",
+  "manifestSHA256": "0631ad26f923b43b5aa06732d5bc7a9256c965dceccbf734ff84a9de0df76903",
+  "layoutStates": 113,
+  "toastChecks": [
+    {
+      "name": "en-US-light-desktop",
+      "width": 356,
+      "right": 32,
+      "bottom": 32,
+      "fontSize": "13px",
+      "message": "Authority refresh completed.",
+      "tableY": 238,
+      "viewport": 1440,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "en-US-dark-desktop",
+      "width": 356,
+      "right": 32,
+      "bottom": 32,
+      "fontSize": "13px",
+      "message": "Authority refresh completed.",
+      "tableY": 238,
+      "viewport": 1440,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "en-US-dark-mobile",
+      "width": 358,
+      "right": 16,
+      "bottom": 16,
+      "fontSize": "13px",
+      "message": "Authority refresh completed.",
+      "tableY": 301,
+      "viewport": 390,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "en-US-light-mobile",
+      "width": 358,
+      "right": 16,
+      "bottom": 16,
+      "fontSize": "13px",
+      "message": "Authority refresh completed.",
+      "tableY": 301,
+      "viewport": 390,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "zh-CN-light-desktop",
+      "width": 356,
+      "right": 32,
+      "bottom": 32,
+      "fontSize": "13px",
+      "message": "权威状态刷新已完成。",
+      "tableY": 238,
+      "viewport": 1440,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "zh-CN-dark-desktop",
+      "width": 356,
+      "right": 32,
+      "bottom": 32,
+      "fontSize": "13px",
+      "message": "权威状态刷新已完成。",
+      "tableY": 238,
+      "viewport": 1440,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "zh-CN-dark-mobile",
+      "width": 358,
+      "right": 16,
+      "bottom": 16,
+      "fontSize": "13px",
+      "message": "权威状态刷新已完成。",
+      "tableY": 280,
+      "viewport": 390,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    },
+    {
+      "name": "zh-CN-light-mobile",
+      "width": 358,
+      "right": 16,
+      "bottom": 16,
+      "fontSize": "13px",
+      "message": "权威状态刷新已完成。",
+      "tableY": 280,
+      "viewport": 390,
+      "focusPause": true,
+      "keyboardDismiss": true,
+      "automaticExpiry": true
+    }
+  ],
+  "modalCheckCount": 8,
+  "requestOrigins": ["http://127.0.0.1:4174"],
+  "mutationRequests": [],
+  "bearerPersisted": false,
+  "httpFailureCounts": {
+    "404": 36,
+    "503": 8
+  },
+  "denied403": 10,
+  "motion": {
+    "checks": [
+      {
+        "locale": "en-US",
+        "theme": "light",
+        "width": 1440,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 311
+      },
+      {
+        "locale": "en-US",
+        "theme": "light",
+        "width": 1440,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 62
+      },
+      {
+        "locale": "en-US",
+        "theme": "light",
+        "width": 390,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 313
+      },
+      {
+        "locale": "en-US",
+        "theme": "light",
+        "width": 390,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 55
+      },
+      {
+        "locale": "en-US",
+        "theme": "dark",
+        "width": 1440,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 309
+      },
+      {
+        "locale": "en-US",
+        "theme": "dark",
+        "width": 1440,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 62
+      },
+      {
+        "locale": "en-US",
+        "theme": "dark",
+        "width": 390,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 311
+      },
+      {
+        "locale": "en-US",
+        "theme": "dark",
+        "width": 390,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 55
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "light",
+        "width": 1440,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 316
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "light",
+        "width": 1440,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 61
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "light",
+        "width": 390,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 310
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "light",
+        "width": 390,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 55
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "dark",
+        "width": 1440,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 311
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "dark",
+        "width": 1440,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 62
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "dark",
+        "width": 390,
+        "reducedMotion": "no-preference",
+        "animations": [
+          {
+            "property": "opacity",
+            "duration": 400
+          },
+          {
+            "property": "transform",
+            "duration": 400
+          }
+        ],
+        "exitElapsedMs": 310
+      },
+      {
+        "locale": "zh-CN",
+        "theme": "dark",
+        "width": 390,
+        "reducedMotion": "reduce",
+        "animations": [],
+        "exitElapsedMs": 56
+      }
+    ],
+    "errors": [],
+    "scope": "Real Admin refresh Toast motion; not infrastructure or Provider E2E"
+  },
+  "backgroundVisibilityQualified": false,
+  "pixelMismatchCounts": {
+    "en-US/light/desktop": 1,
+    "en-US/light/mobile": 0,
+    "en-US/dark/desktop": 0,
+    "en-US/dark/mobile": 0,
+    "zh-CN/light/desktop": 1,
+    "zh-CN/light/mobile": 0,
+    "zh-CN/dark/desktop": 0,
+    "zh-CN/dark/mobile": 0
+  }
+}

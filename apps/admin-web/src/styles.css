@@ -1002,6 +1002,27 @@ label > small,
   gap: 6px;
 }
 
+.success-toast[data-leaving="true"] {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .success-toast {
+    transition:
+      transform 400ms,
+      opacity 400ms;
+  }
+
+  @starting-style {
+    .success-toast:popover-open {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+  }
+}
+
 .toast-icon {
   color: var(--success);
   flex: 0 0 16px;

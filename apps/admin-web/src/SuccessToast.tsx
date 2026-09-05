@@ -18,6 +18,7 @@ export function SuccessToast({
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(document.hidden);
+  const [leaving, setLeaving] = useState(false);
   const dismiss = useEffectEvent(onDismiss);
   const [container, setContainer] = useState<Element>(document.body);
 
@@ -45,20 +46,29 @@ export function SuccessToast({
     return () => document.removeEventListener("visibilitychange", changed);
   }, []);
   useEffect(() => {
-    if (hovered || focused || hidden) return;
+    if (!leaving) return;
+    const timer = window.setTimeout(
+      () => dismiss(),
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 200,
+    );
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  useEffect(() => {
+    if (leaving || hovered || focused || hidden) return;
     const started = performance.now();
-    const timer = window.setTimeout(() => dismiss(), remaining.current);
+    const timer = window.setTimeout(() => setLeaving(true), remaining.current);
     return () => {
       window.clearTimeout(timer);
       remaining.current = Math.max(0, remaining.current - (performance.now() - started));
     };
-  }, [hovered, focused, hidden]);
+  }, [leaving, hovered, focused, hidden]);
 
   return createPortal(
     <div
       ref={element}
       popover="manual"
       className="success-toast"
+      data-leaving={leaving}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -86,7 +96,7 @@ export function SuccessToast({
           const previous = previousFocus.current;
           if (previous instanceof HTMLElement && previous.isConnected)
             previous.focus({ preventScroll: true });
-          onDismiss();
+          setLeaving(true);
         }}
       >
         <svg
