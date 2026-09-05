@@ -8,6 +8,26 @@ import { classifyMigrationStatement, splitPostgresStatements } from "./platform-
 const root = resolve(import.meta.dirname, "../..");
 
 describe("postgresql-lex-v1 bootstrap", () => {
+  it("pins only the three new-work admission triggers in migration 000051", () => {
+    for (const relation of ["sessions", "turns", "executions"]) {
+      const event = relation === "executions" ? "INSERT OR UPDATE OF state" : "INSERT";
+      const sql = `CREATE TRIGGER managed_agent_${relation}_target_admission BEFORE ${event} ON cloud_agents.managed_agent_${relation} FOR EACH ROW EXECUTE FUNCTION cloud_agents.guard_managed_agent_target_admission_v1();`;
+      const classify = (source: string, version = "000051") =>
+        classifyMigrationStatement(
+          splitPostgresStatements(new TextEncoder().encode(source))[0]!,
+          version,
+        );
+      expect(classify(sql).object_kind).toBe("TRIGGER");
+      expect(() => classify(sql, "000050")).toThrow();
+      for (const changed of [
+        sql.replace("BEFORE", "AFTER"),
+        sql.replace(event, "DELETE"),
+        sql.replace("guard_managed_agent_target_admission_v1", "other_function"),
+        sql.replace(`ON cloud_agents.managed_agent_${relation}`, "ON cloud_agents.projects"),
+      ])
+        expect(() => classify(changed)).toThrow();
+    }
+  });
   it("splits and classifies every current exact SQL statement", () => {
     const counts: number[] = [];
     for (const [index, file] of [

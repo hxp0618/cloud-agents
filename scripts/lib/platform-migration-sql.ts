@@ -233,6 +233,52 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     if (tokens[1] === "TRIGGER") {
+      if (migrationId === "000051") {
+        const relations: Readonly<Record<string, string>> = {
+          MANAGED_AGENT_SESSIONS_TARGET_ADMISSION: "MANAGED_AGENT_SESSIONS",
+          MANAGED_AGENT_TURNS_TARGET_ADMISSION: "MANAGED_AGENT_TURNS",
+          MANAGED_AGENT_EXECUTIONS_TARGET_ADMISSION: "MANAGED_AGENT_EXECUTIONS",
+        };
+        const relation = relations[tokens[2] ?? ""];
+        if (!relation) reject(tokens);
+        const event =
+          relation === "MANAGED_AGENT_EXECUTIONS"
+            ? ["INSERT", "OR", "UPDATE", "OF", "STATE"]
+            : ["INSERT"];
+        const expected = [
+          "CREATE",
+          "TRIGGER",
+          tokens[2]!,
+          "BEFORE",
+          ...event,
+          "ON",
+          "CLOUD_AGENTS",
+          ".",
+          relation,
+          "FOR",
+          "EACH",
+          "ROW",
+          "EXECUTE",
+          "FUNCTION",
+          "CLOUD_AGENTS",
+          ".",
+          "GUARD_MANAGED_AGENT_TARGET_ADMISSION_V1",
+          "(",
+          ")",
+          ";",
+        ];
+        if (
+          tokens.length !== expected.length ||
+          tokens.some((token, index) => token !== expected[index])
+        )
+          reject(tokens);
+        return classification(
+          "CREATE",
+          "TRIGGER",
+          qualifiedDerivedIdentity("trigger", tokens, expected.indexOf("ON") + 1, tokens[2]!),
+          null,
+        );
+      }
       const expected =
         migrationId === "000046"
           ? [

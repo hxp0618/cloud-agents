@@ -160,8 +160,8 @@ const enUS = {
   "operation.impact.register": "Registers this deployment target in Control Plane.",
   "operation.impact.probe": "Checks target connectivity and records observed runtime facts.",
   "operation.impact.drain":
-    "Stops new Lease placement while existing Leases and Workers continue running.",
-  "operation.impact.resume": "Allows new Lease placement on this deployment target.",
+    "Stops new Lease, Session, Turn and Execution admission. Running tasks may finish; existing Leases are retained.",
+  "operation.impact.resume": "Allows new Lease and task admission on this deployment target.",
   "operation.impact.cleanup":
     "Deletes only the platform-owned resources confirmed by the cleanup preview.",
   "operation.impact.upgrade": "Replaces one Lease-backed Worker with an approved release.",
@@ -413,7 +413,7 @@ const enUS = {
   "detail.runProbe": "Run probe",
   "detail.schedulingTitle": "Lease scheduling",
   "detail.schedulingDescription":
-    "Drain blocks new Lease placement without terminating existing Leases; resume enables placement again.",
+    "Drain blocks new Lease, Session, Turn and Execution admission. Running tasks may finish; resume enables admission again.",
   "detail.previewDrain": "Preview drain",
   "detail.previewResume": "Preview resume",
   "detail.operations": "Operations",
@@ -426,9 +426,9 @@ const enUS = {
   "detail.previewCleanup": "Preview cleanup",
   "scheduling.confirmTitle": "Confirm scheduling change",
   "scheduling.drainSummary":
-    "New Lease placement will stop. {leases} active Leases will continue running.",
+    "New Lease, Session, Turn and Execution admission will stop. Running tasks may finish; {leases} active Leases are retained.",
   "scheduling.resumeSummary":
-    "New Lease placement will resume. {leases} active Leases are currently running.",
+    "New Lease and task admission will resume. {leases} active Leases are currently retained.",
   "scheduling.none": "No active Leases are currently bound to this target.",
   "scheduling.review": "I reviewed the scheduling state, fences, and active Lease impact.",
   "scheduling.confirmDrain": "Confirm drain",
@@ -759,8 +759,8 @@ const zhCN = {
   "operation.rollbackLease": "回滚 {name}",
   "operation.impact.register": "在控制平面中注册此部署目标。",
   "operation.impact.probe": "检查目标连通性并记录运行时观测信息。",
-  "operation.impact.drain": "停止新租约调度，现有租约和工作节点继续运行。",
-  "operation.impact.resume": "允许将新租约调度到此部署目标。",
+  "operation.impact.drain": "停止接收新租约、会话、轮次和执行；运行中的任务可完成，现有租约保留。",
+  "operation.impact.resume": "允许在此部署目标上接收新租约和任务。",
   "operation.impact.cleanup": "仅删除清理预览中已确认的平台自有资源。",
   "operation.impact.upgrade": "使用已批准发布版本替换一个租约 Worker。",
   "operation.impact.rollback": "将一个租约 Worker 恢复到已记录的上一发布版本。",
@@ -1002,7 +1002,7 @@ const zhCN = {
   "detail.runProbe": "执行探测",
   "detail.schedulingTitle": "租约调度",
   "detail.schedulingDescription":
-    "停止调度会阻止新租约进入，但不终止现有租约；恢复后重新允许调度。",
+    "停止调度会阻止新租约、会话、轮次和执行进入。运行中的任务可完成；恢复后重新允许接收。",
   "detail.previewDrain": "预览停止调度",
   "detail.previewResume": "预览恢复调度",
   "detail.operations": "运维操作",
@@ -1013,8 +1013,9 @@ const zhCN = {
   "detail.cleanupImpactDescription": "读取此目标上的平台自有资源，不执行删除。",
   "detail.previewCleanup": "预览清理",
   "scheduling.confirmTitle": "确认调度变更",
-  "scheduling.drainSummary": "将停止新租约调度；当前 {leases} 个活动租约会继续运行。",
-  "scheduling.resumeSummary": "将恢复新租约调度；当前有 {leases} 个活动租约。",
+  "scheduling.drainSummary":
+    "将停止接收新租约、会话、轮次和执行；运行中的任务可完成，保留 {leases} 个活动租约。",
+  "scheduling.resumeSummary": "将恢复接收新租约和任务；当前保留 {leases} 个活动租约。",
   "scheduling.none": "此目标当前没有活动租约。",
   "scheduling.review": "我已核对调度状态、并发围栏和活动租约影响。",
   "scheduling.confirmDrain": "确认停止调度",

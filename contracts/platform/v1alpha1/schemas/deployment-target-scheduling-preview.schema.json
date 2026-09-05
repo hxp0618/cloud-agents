@@ -40,6 +40,7 @@
   "x-cloud-agents-semantic-constraints": [
     "metadata identifies the Deployment Target and carries its current resourceVersion",
     "desiredState is the opposite of currentState",
+    "drained stops new Lease, Session, Turn and Execution admission on the Target; already-running work may finish, existing resources are not terminated, and resume reopens admission",
     "activeLeases contains the complete server-authoritative desired-active Lease impact in stable leaseId order",
     "expectedGeneration, expectedResourceVersion and impactDigest are the confirmation fences for the transition"
   ]

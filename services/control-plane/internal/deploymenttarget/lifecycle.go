@@ -211,9 +211,9 @@ func SchedulingImpactSummary(desiredState string, activeLeaseCount int) (string,
 		return "", ErrInvalidInput
 	}
 	if desiredState == "active" {
-		return "Resumed target; new lease scheduling is enabled", nil
+		return "Resumed target; new lease and task admission is enabled", nil
 	}
-	return "Drained target; " + strconv.Itoa(activeLeaseCount) + " active leases remain running", nil
+	return "Drained target; new lease/session/turn/execution admission stopped; " + strconv.Itoa(activeLeaseCount) + " active leases retained, running tasks may finish", nil
 }
 
 func (completion ProbeCompletion) Validate(tenantID string) error {

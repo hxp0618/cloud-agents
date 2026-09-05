@@ -78,7 +78,7 @@ func TestDeploymentTargetSchedulingPreviewBindsImpactWithoutStoppingLeases(t *te
 	if err != nil || other == preview.ImpactDigest {
 		t.Fatalf("scheduling digest did not bind state: %q %q / %v", preview.ImpactDigest, other, err)
 	}
-	if summary, err := SchedulingImpactSummary("drained", len(leases)); err != nil || !strings.Contains(summary, "1 active leases remain running") {
+	if summary, err := SchedulingImpactSummary("drained", len(leases)); err != nil || !strings.Contains(summary, "new lease/session/turn/execution admission stopped") || !strings.Contains(summary, "1 active leases retained, running tasks may finish") {
 		t.Fatalf("impact summary = %q / %v", summary, err)
 	}
 }

@@ -136,13 +136,13 @@ func TestLoadAndVerifyIndependentProductSessionManifest(t *testing.T) {
 
 func TestLoadAndVerifyLatestIndependentProductManifest(t *testing.T) {
 	config := testConfig(t)
-	config.ManifestSelector = "product-000050"
-	config.ManifestPath = "services/control-plane/migrations/product/000050/manifest.json"
+	config.ManifestSelector = "product-000051"
+	config.ManifestPath = "services/control-plane/migrations/product/000051/manifest.json"
 	bundle, err := loadAndVerify(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.manifest.SchemaBundle.SchemaHead != "000050" || len(bundle.manifest.SchemaBundle.Migrations) != 50 {
+	if bundle.manifest.SchemaBundle.SchemaHead != "000051" || len(bundle.manifest.SchemaBundle.Migrations) != 51 {
 		t.Fatalf("unexpected latest product manifest: head=%s migrations=%d", bundle.manifest.SchemaBundle.SchemaHead, len(bundle.manifest.SchemaBundle.Migrations))
 	}
 }
@@ -264,13 +264,14 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 		{head: "000048", length: 48},
 		{head: "000049", length: 49},
 		{head: "000050", length: 50},
+		{head: "000051", length: 51},
 	} {
 		length, ok := supportedManifestLength(test.head)
 		if !ok || length != test.length {
 			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
 		}
 	}
-	if length, ok := supportedManifestLength("000051"); ok || length != 0 {
+	if length, ok := supportedManifestLength("000052"); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
 	}
 }
