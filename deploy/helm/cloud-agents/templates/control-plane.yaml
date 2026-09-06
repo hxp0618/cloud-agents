@@ -79,6 +79,14 @@ spec:
             - name: CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY
               value: /run/cloud-agents/ssh-target-credentials
             {{- end }}
+            {{- if .Values.remoteWorker.certificateAuthoritySecretName }}
+            - name: CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT
+              value: /run/cloud-agents/remote-worker-ca/ca.crt
+            - name: CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY
+              value: /run/cloud-agents/remote-worker-ca/ca.key
+            - name: CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN
+              value: {{ .Values.remoteWorker.trustDomain | quote }}
+            {{- end }}
             - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
               value: /workspace
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
@@ -139,6 +147,11 @@ spec:
               mountPath: /run/cloud-agents/ssh-target-credentials
               readOnly: true
             {{- end }}
+            {{- if .Values.remoteWorker.certificateAuthoritySecretName }}
+            - name: remote-worker-ca
+              mountPath: /run/cloud-agents/remote-worker-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: auth
           secret:
@@ -167,4 +180,14 @@ spec:
         - name: ssh-target-credentials
           secret:
             secretName: {{ .Values.deploymentTargets.sshCredentialSecretName }}
+        {{- end }}
+        {{- if .Values.remoteWorker.certificateAuthoritySecretName }}
+        - name: remote-worker-ca
+          secret:
+            secretName: {{ .Values.remoteWorker.certificateAuthoritySecretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: ca.key
+                path: ca.key
         {{- end }}

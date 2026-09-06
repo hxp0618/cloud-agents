@@ -37,6 +37,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
+	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -500,7 +501,11 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local network policy HTTP server is unavailable")
 	}
-	remoteWorkerEnrollmentHTTPServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifierAdapter, coordinationService)
+	remoteWorkerCertificateAuthority, err := internalremoteworker.NewEphemeralCertificateAuthority("cloud-agents.local")
+	if err != nil {
+		return errors.New("local RemoteWorker certificate authority is unavailable")
+	}
+	remoteWorkerEnrollmentHTTPServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifierAdapter, coordinationService, remoteWorkerCertificateAuthority)
 	if err != nil {
 		return errors.New("local RemoteWorker enrollment HTTP server is unavailable")
 	}

@@ -2,6 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +63,11 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewRemoteWorkerEnrollmentHTTPServer(verifier, store)
+	authority, err := internalremoteworker.NewEphemeralCertificateAuthority("remote-worker.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewRemoteWorkerEnrollmentHTTPServer(verifier, store, authority)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,33 +119,80 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 		t.Fatalf("Admin enrollment audit: value=%+v err=%v", audit.Value, err)
 	}
 
-	revoke := platform.RemoteWorkerEnrollmentRevokeRequest{ExpectedResourceVersion: "2", ConfirmedEnrollmentID: create.EnrollmentID}
-	revoked, err := admin.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-revoke", "remote-enroll-revoke-key-1", revoke)
-	if err != nil || revoked.Value.Spec.State != internalremoteworker.StateRevoked || revoked.Value.Metadata.ResourceVersion != "3" {
-		t.Fatalf("revoke enrollment: value=%+v err=%v", revoked.Value, err)
+	csrPEM, privateKey := remoteWorkerCertificateRequest(t, create.EnrollmentID)
+	certificateClient, err := api.NewRemoteWorkerBootstrapHTTPClientWithClient(httpServer.URL, secret, httpServer.Client())
+	if err != nil {
+		t.Fatal(err)
 	}
-	revoked, err = admin.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-revoke-replay", "remote-enroll-revoke-key-1", revoke)
-	if err != nil || revoked.Value.Metadata.ResourceVersion != "3" {
-		t.Fatalf("revoke replay: value=%+v err=%v", revoked.Value, err)
+	certificateRequest := platform.RemoteWorkerCertificateIssueRequest{ExpectedResourceVersion: "2", ConfirmedEnrollmentID: create.EnrollmentID, IncarnationID: "incarnation-remote-1", CertificateSigningRequestPEM: csrPEM}
+	issued, err := certificateClient.IssueRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-issue", "remote-cert-issue-key-1", certificateRequest)
+	if err != nil || issued.Value.WorkerID != create.WorkerID || issued.Value.SPIFFEID != "spiffe://remote-worker.test/remote-worker/tenant/project/enrollment-remote-1/incarnation-remote-1" {
+		t.Fatalf("issue certificate: value=%+v err=%v", issued.Value, err)
 	}
+	if _, err := tls.X509KeyPair([]byte(issued.Value.CertificateChainPEM), privateKey); err != nil {
+		t.Fatalf("issued certificate/private key mismatch: %v", err)
+	}
+	replayedCertificate, err := certificateClient.IssueRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-replay", "remote-cert-issue-key-1", certificateRequest)
+	if err != nil || replayedCertificate.Value.CertificateChainPEM != issued.Value.CertificateChainPEM {
+		t.Fatalf("certificate replay: value=%+v err=%v", replayedCertificate.Value, err)
+	}
+	wrongSecretClient, _ := api.NewRemoteWorkerBootstrapHTTPClientWithClient(httpServer.URL, "carw1_"+strings.Repeat("A", 43), httpServer.Client())
+	if _, err := wrongSecretClient.IssueRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-wrong-secret", "remote-cert-wrong-key-1", certificateRequest); clientStatus(err) != http.StatusUnauthorized {
+		t.Fatalf("wrong enrollment secret status=%d err=%v", clientStatus(err), err)
+	}
+	current, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-get-issued")
+	if err != nil || current.Value.Spec.State != internalremoteworker.StateEnrolled || current.Value.Metadata.ResourceVersion != "3" || current.Value.Spec.CertificateSHA256 != issued.Value.CertificateSHA256 || current.Value.Spec.CertificateExpiresAt != issued.Value.ExpiresAt || current.Value.Spec.IncarnationID != certificateRequest.IncarnationID {
+		t.Fatalf("Admin issued enrollment metadata: value=%+v err=%v", current.Value, err)
+	}
+	assertRemoteWorkerAdminRedaction(t, ctx, httpServer, tokens[0], create.EnrollmentID, secret)
 	audit, err = admin.ListAdminRemoteWorkerEnrollmentAuditEvents(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-audit-final", 50, "")
 	if err != nil || len(audit.Value.Events) != 3 {
 		t.Fatalf("final enrollment audit: value=%+v err=%v", audit.Value, err)
 	}
+	revokeCreate := platform.RemoteWorkerEnrollmentCreateRequest{EnrollmentID: "enrollment-revoke-1", WorkerID: "worker-revoke-1", WorkerName: "customer-revoke-1", TTLSeconds: 600}
+	if _, err := admin.CreateAdminRemoteWorkerEnrollment(ctx, "tenant", "project", "request-revoke-create", "remote-revoke-create-key-1", revokeCreate); err != nil {
+		t.Fatalf("create revocable enrollment: %v", err)
+	}
+	revoke := platform.RemoteWorkerEnrollmentRevokeRequest{ExpectedResourceVersion: "1", ConfirmedEnrollmentID: revokeCreate.EnrollmentID}
+	revoked, err := admin.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", revokeCreate.EnrollmentID, "request-enrollment-revoke", "remote-enroll-revoke-key-1", revoke)
+	if err != nil || revoked.Value.Spec.State != internalremoteworker.StateRevoked || revoked.Value.Metadata.ResourceVersion != "2" {
+		t.Fatalf("revoke enrollment: value=%+v err=%v", revoked.Value, err)
+	}
+	revoked, err = admin.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", revokeCreate.EnrollmentID, "request-enrollment-revoke-replay", "remote-enroll-revoke-key-1", revoke)
+	if err != nil || revoked.Value.Metadata.ResourceVersion != "2" {
+		t.Fatalf("revoke replay: value=%+v err=%v", revoked.Value, err)
+	}
 
 	expectedDigest, _ := internalremoteworker.SecretDigest(secret)
-	var persistedDigest, enrollmentJSON, activityJSON string
-	if err := owner.QueryRow(ctx, `SELECT secret_digest, to_jsonb(enrollment)::text,
+	var persistedDigest, enrollmentJSON, activityJSON, certificateChain string
+	if err := owner.QueryRow(ctx, `SELECT secret_digest, certificate_chain_pem, to_jsonb(enrollment)::text,
 		(SELECT jsonb_agg(activity)::text FROM cloud_agents.remote_worker_enrollment_activity AS activity
 		 WHERE activity.tenant_id=enrollment.tenant_id AND activity.project_uid=enrollment.project_uid AND activity.enrollment_uid=enrollment.enrollment_uid)
 		FROM cloud_agents.remote_worker_enrollments AS enrollment
-		WHERE tenant_id='tenant' AND project_uid='project' AND enrollment_uid=$1`, create.EnrollmentID).Scan(&persistedDigest, &enrollmentJSON, &activityJSON); err != nil {
+		WHERE tenant_id='tenant' AND project_uid='project' AND enrollment_uid=$1`, create.EnrollmentID).Scan(&persistedDigest, &certificateChain, &enrollmentJSON, &activityJSON); err != nil {
 		t.Fatal(err)
 	}
-	if persistedDigest != expectedDigest || strings.Contains(enrollmentJSON, secret) || strings.Contains(activityJSON, secret) {
+	if persistedDigest != expectedDigest || certificateChain != issued.Value.CertificateChainPEM || strings.Contains(enrollmentJSON, secret) || strings.Contains(activityJSON, secret) {
 		t.Fatal("one-time enrollment secret persisted outside its digest")
 	}
-	t.Log("real Admin/bootstrap generated clients, HTTP 403 scope separation, no-store one-time secret, non-replay, RLS-backed lifecycle and durable redacted audit passed; no CSR, mTLS identity or customer-node connection claimed")
+	t.Log("real Admin/bootstrap generated clients, HTTP scope separation, no-store secret/CSR exchange, signed short-lived mTLS identity, exact certificate replay, RLS-backed persistence and redacted Admin audit passed; no outbound customer-node connection claimed")
+}
+
+func remoteWorkerCertificateRequest(t *testing.T, enrollmentID string) (string, []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: enrollmentID}}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyRaw, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr})), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyRaw})
 }
 
 func assertRemoteWorkerAdminRedaction(t *testing.T, ctx context.Context, server *httptest.Server, adminToken, enrollmentID, secret string) {
@@ -154,7 +212,7 @@ func assertRemoteWorkerAdminRedaction(t *testing.T, ctx context.Context, server 
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("Admin redaction response status=%d err=%v", response.StatusCode, err)
 	}
-	for _, forbidden := range []string{"enrollmentSecret", "secretDigest", "secret_digest", secret} {
+	for _, forbidden := range []string{"enrollmentSecret", "secretDigest", "secret_digest", "certificateChainPem", "certificate_chain_pem", secret} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("Admin enrollment response disclosed %q", forbidden)
 		}

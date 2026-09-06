@@ -106,6 +106,41 @@
         }
       }
     },
+    "remoteWorker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["certificateAuthoritySecretName", "trustDomain"],
+      "properties": {
+        "certificateAuthoritySecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "trustDomain": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^$|^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "certificateAuthoritySecretName": { "const": "" },
+            "trustDomain": { "const": "" }
+          }
+        },
+        {
+          "properties": {
+            "certificateAuthoritySecretName": {
+              "minLength": 1
+            },
+            "trustDomain": {
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
     "worker": {
       "type": "object",
       "properties": {

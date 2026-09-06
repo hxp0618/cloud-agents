@@ -811,6 +811,36 @@
         }
       }
     },
+    "/v1/remote-worker-bootstrap/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:issueCertificate": {
+      "post": {
+        "operationId": "remoteWorkerIssueCertificate",
+        "security": [{ "RemoteWorkerEnrollmentSecret": [] }],
+        "x-cloud-agents-coordination": "secret-authenticated-csr-exchange",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/RemoteWorkerCertificate" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/network-policies": {
       "get": {
         "operationId": "adminListNetworkPolicies",
@@ -2438,6 +2468,11 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "RemoteWorkerEnrollmentSecret": {
+        "type": "http",
+        "scheme": "RemoteWorkerEnrollment",
+        "description": "One-time carw1_ enrollment secret; accepted only by the CSR exchange route"
       }
     },
     "parameters": {
@@ -2668,6 +2703,19 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret.schema.json" }
+          }
+        }
+      },
+      "RemoteWorkerCertificate": {
+        "description": "Short-lived RemoteWorker mTLS certificate chain",
+        "headers": {
+          "X-Request-ID": { "$ref": "#/components/headers/RequestId" },
+          "Cache-Control": { "required": true, "schema": { "const": "no-store" } },
+          "Pragma": { "required": true, "schema": { "const": "no-cache" } }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate.schema.json" }
           }
         }
       },

@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
@@ -28,6 +29,23 @@ func NewHTTPClient(baseURL, bearerToken string) (*Client, error) {
 // NewHTTPClientWithClient creates the public SDK client with a caller-provided
 // HTTP client. Redirects remain disabled so bearer credentials cannot leak.
 func NewHTTPClientWithClient(baseURL, bearerToken string, client *http.Client) (*Client, error) {
+	return newAuthorizedHTTPClient(baseURL, "Bearer "+bearerToken, bearerToken, client)
+}
+
+// NewRemoteWorkerBootstrapHTTPClient creates a client authenticated only by a
+// one-time enrollment secret. The server accepts it solely on bootstrap routes.
+func NewRemoteWorkerBootstrapHTTPClient(baseURL, enrollmentSecret string) (*Client, error) {
+	return NewRemoteWorkerBootstrapHTTPClientWithClient(baseURL, enrollmentSecret, &http.Client{})
+}
+
+func NewRemoteWorkerBootstrapHTTPClientWithClient(baseURL, enrollmentSecret string, client *http.Client) (*Client, error) {
+	if !validEnrollmentSecret(enrollmentSecret) {
+		return nil, ErrInvalidHTTPClientConfig
+	}
+	return newAuthorizedHTTPClient(baseURL, "RemoteWorkerEnrollment "+enrollmentSecret, enrollmentSecret, client)
+}
+
+func newAuthorizedHTTPClient(baseURL, authorization, credential string, client *http.Client) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" || strings.HasSuffix(parsed.Path, "/") || client == nil {
 		return nil, ErrInvalidHTTPClientConfig
@@ -38,18 +56,18 @@ func NewHTTPClientWithClient(baseURL, bearerToken string, client *http.Client) (
 			return nil, ErrInvalidHTTPClientConfig
 		}
 	}
-	if strings.TrimSpace(bearerToken) != bearerToken || bearerToken == "" || strings.ContainsAny(bearerToken, " \t\r\n") {
+	if strings.TrimSpace(credential) != credential || credential == "" || strings.ContainsAny(credential, " \t\r\n") {
 		return nil, ErrInvalidHTTPClientConfig
 	}
 	clientCopy := *client
 	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return NewClient(httpTransport{baseURL: strings.TrimSuffix(baseURL, "/"), bearerToken: bearerToken, client: &clientCopy})
+	return NewClient(httpTransport{baseURL: strings.TrimSuffix(baseURL, "/"), authorization: authorization, client: &clientCopy})
 }
 
 type httpTransport struct {
-	baseURL     string
-	bearerToken string
-	client      *http.Client
+	baseURL       string
+	authorization string
+	client        *http.Client
 }
 
 func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Response, error) {
@@ -66,7 +84,7 @@ func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Re
 	if len(input.Body) != 0 {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	request.Header.Set("Authorization", "Bearer "+transport.bearerToken)
+	request.Header.Set("Authorization", transport.authorization)
 	response, err := transport.client.Do(request)
 	if err != nil {
 		return Response{}, err
@@ -90,4 +108,12 @@ func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Re
 		}
 	}
 	return Response{Status: response.StatusCode, Headers: headers, Body: body}, nil
+}
+
+func validEnrollmentSecret(secret string) bool {
+	if !strings.HasPrefix(secret, "carw1_") || len(secret) != 49 {
+		return false
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(secret[6:])
+	return err == nil && len(raw) == 32
 }

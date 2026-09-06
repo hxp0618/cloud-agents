@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -43,19 +44,37 @@ type TransitionInput struct {
 	Mutation                Mutation
 }
 
+type CertificatePersistenceInput struct {
+	Scope                   Scope
+	EnrollmentID            string
+	ExpectedResourceVersion int64
+	ConfirmedEnrollmentID   string
+	SecretDigest            string
+	ActorDigest             string
+	Certificate             Certificate
+	Mutation                Mutation
+}
+
 type Snapshot struct {
-	Scope           Scope
-	EnrollmentID    string
-	WorkerID        string
-	WorkerName      string
-	State           string
-	ResourceVersion int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ExpiresAt       time.Time
-	SecretClaimedAt *time.Time
-	EnrolledAt      *time.Time
-	RevokedAt       *time.Time
+	Scope                Scope
+	EnrollmentID         string
+	WorkerID             string
+	WorkerName           string
+	State                string
+	ResourceVersion      int64
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ExpiresAt            time.Time
+	SecretClaimedAt      *time.Time
+	EnrolledAt           *time.Time
+	RevokedAt            *time.Time
+	IncarnationID        string
+	SPIFFEID             string
+	CertificateSHA256    string
+	CertificateChainPEM  string
+	CertificateSerial    string
+	CertificateNotBefore *time.Time
+	CertificateNotAfter  *time.Time
 }
 
 type AuditEvent struct {
@@ -103,6 +122,26 @@ func TransitionMutationDigest(action string, input TransitionInput) (string, err
 	return mutationDigest("remote-worker-enrollment."+action, input.Scope, input.EnrollmentID, input.ExpectedResourceVersion, input.ConfirmedEnrollmentID)
 }
 
+func CertificateMutationDigest(input CertificatePersistenceInput) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidInput
+	}
+	return mutationDigest("remote-worker-enrollment.issue-certificate", input.Scope, input.EnrollmentID, input.ExpectedResourceVersion, input.ConfirmedEnrollmentID, input.SecretDigest, input.ActorDigest, input.Certificate.CSRSHA256, input.Certificate.IncarnationID, input.Certificate.SPIFFEID)
+}
+
+func (input CertificatePersistenceInput) Validate(tenantID string) error {
+	certificate := input.Certificate
+	if invalidIdentifier(tenantID) || input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) || invalidIdentifier(input.EnrollmentID) || input.ConfirmedEnrollmentID != input.EnrollmentID || input.ExpectedResourceVersion < 1 || !digest(input.SecretDigest) || !digest(input.ActorDigest) || !digest(certificate.CSRSHA256) || invalidIdentifier(certificate.IncarnationID) || certificate.SPIFFEID == "" || certificate.ChainPEM == "" || len(certificate.ChainPEM) > 32768 || !digest(certificate.SHA256) || certificate.Serial == "" || certificate.NotBefore.IsZero() || !certificate.NotAfter.After(certificate.NotBefore) || invalidMutation(input.Mutation) {
+		return ErrInvalidInput
+	}
+	identity, err := url.Parse(certificate.SPIFFEID)
+	expectedPath := "/remote-worker/" + input.Scope.TenantID + "/" + input.Scope.ProjectID + "/" + input.EnrollmentID + "/" + certificate.IncarnationID
+	if err != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path != expectedPath || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
 func NewEnrollmentSecret() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -146,7 +185,9 @@ func (snapshot Snapshot) Validate() error {
 			return ErrInvalidInput
 		}
 	case StateEnrolled:
-		if snapshot.SecretClaimedAt == nil || snapshot.EnrolledAt == nil || snapshot.RevokedAt != nil {
+		identity, err := url.Parse(snapshot.SPIFFEID)
+		expectedPath := "/remote-worker/" + snapshot.Scope.TenantID + "/" + snapshot.Scope.ProjectID + "/" + snapshot.EnrollmentID + "/" + snapshot.IncarnationID
+		if snapshot.SecretClaimedAt == nil || snapshot.EnrolledAt == nil || snapshot.RevokedAt != nil || invalidIdentifier(snapshot.IncarnationID) || err != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path != expectedPath || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" || !digest(snapshot.CertificateSHA256) || snapshot.CertificateChainPEM == "" || snapshot.CertificateSerial == "" || snapshot.CertificateNotBefore == nil || snapshot.CertificateNotAfter == nil || !snapshot.CertificateNotAfter.After(*snapshot.CertificateNotBefore) || snapshot.CertificateNotBefore.After(*snapshot.EnrolledAt) || !snapshot.CertificateNotAfter.After(snapshot.UpdatedAt) {
 			return ErrInvalidInput
 		}
 	case StateRevoked:
@@ -160,13 +201,16 @@ func (snapshot Snapshot) Validate() error {
 	default:
 		return ErrInvalidInput
 	}
+	if snapshot.State != StateEnrolled && (snapshot.IncarnationID != "" || snapshot.SPIFFEID != "" || snapshot.CertificateSHA256 != "" || snapshot.CertificateChainPEM != "" || snapshot.CertificateSerial != "" || snapshot.CertificateNotBefore != nil || snapshot.CertificateNotAfter != nil) {
+		return ErrInvalidInput
+	}
 	return nil
 }
 
 func (event AuditEvent) Validate() error {
 	if invalidIdentifier(event.Scope.TenantID) || invalidIdentifier(event.Scope.ProjectID) || invalidIdentifier(event.EventID) ||
 		invalidIdentifier(event.OperationID) || !digest(event.Actor) ||
-		event.Action != "remote-worker-enrollment.create" && event.Action != "remote-worker-enrollment.claim-secret" && event.Action != "remote-worker-enrollment.revoke" ||
+		event.Action != "remote-worker-enrollment.create" && event.Action != "remote-worker-enrollment.claim-secret" && event.Action != "remote-worker-enrollment.issue-certificate" && event.Action != "remote-worker-enrollment.revoke" ||
 		invalidIdentifier(event.EnrollmentID) || event.EnrollmentResourceVersion < 1 || event.Result != "succeeded" ||
 		invalidIdentifier(event.RequestID) || event.OccurredAt.IsZero() {
 		return ErrInvalidInput

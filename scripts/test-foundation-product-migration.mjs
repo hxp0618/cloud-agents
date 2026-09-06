@@ -322,10 +322,11 @@ INSERT INTO cloud_agents.deployment_targets (
         "legacy project dispatcher cannot claim foundation operation effects",
         "ordinary user Admin 403 and direct intent bypass denial",
         "RemoteWorker Admin/bootstrap 403 separation and non-replayable no-store enrollment secret",
-        "RemoteWorker enrollment lifecycle, redacted Admin projection and durable audit",
+        "RemoteWorker CSR validation, 15-minute mTLS client identity, exact certificate replay and durable audit",
+        "RemoteWorker Admin projection exposes certificate metadata without secret or certificate bytes",
       ],
       boundary:
-        "Disposable PostgreSQL and in-process Control Plane HTTP validation; ready Target is a SQL fixture and no Controller or Docker Sandbox is started",
+        "Disposable PostgreSQL and in-process Control Plane HTTP validation; no outbound customer node, Controller or Docker Sandbox is started",
     }) + "\n",
   );
 } finally {

@@ -615,14 +615,13 @@ export function classifyMigrationStatement(
         ["ENABLE", "ROW", "LEVEL", "SECURITY"],
         ["FORCE", "ROW", "LEVEL", "SECURITY"],
       ].some((candidate) => candidate.join("\0") === subcommand.join("\0"));
-      const addConstraint =
-        subcommand[0] === "ADD" &&
-        subcommand[1] === "CONSTRAINT" &&
-        !hasTopLevelComma(subcommand.slice(2));
-      const addColumn =
-        subcommand[0] === "ADD" &&
-        subcommand[1] === "COLUMN" &&
-        !hasTopLevelComma(subcommand.slice(2));
+      const additiveCommands = splitTopLevelCommands(subcommand);
+      const additive =
+        additiveCommands.length > 0 &&
+        additiveCommands.every(
+          (command) =>
+            command[0] === "ADD" && (command[1] === "COLUMN" || command[1] === "CONSTRAINT"),
+        );
       const targetIdentity = qualifiedIdentity("table", tokens, 2);
       const dropResourceKindConstraint =
         (migrationId === "000003" || migrationId === "000055") &&
@@ -687,6 +686,12 @@ export function classifyMigrationStatement(
         targetIdentity === "table:unquoted:cloud_agents/unquoted:environment_profile_activity" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILE_ACTIVITY_ACTION"].join("\0");
+      const dropRemoteWorkerEnrollmentActivityConstraint =
+        migrationId === "000063" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:remote_worker_enrollment_activity" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "REMOTE_WORKER_ENROLLMENT_ACTIVITY_ACTION_CHECK"].join("\0");
       const dropAdminDeniedWriteConstraint =
         new Set(["000054", "000056", "000058", "000062"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:admin_denied_writes" &&
@@ -712,14 +717,14 @@ export function classifyMigrationStatement(
         subcommand[1] === "CONSTRAINT";
       if (
         !exact &&
-        !addConstraint &&
-        !addColumn &&
+        !additive &&
         !dropResourceKindConstraint &&
         !dropAuditFactConstraint &&
         !dropCoordinationRegistryConstraint &&
         !dropDeploymentTargetConstraint &&
         !dropDeploymentTargetActivityConstraint &&
         !dropEnvironmentProfileActivityConstraint &&
+        !dropRemoteWorkerEnrollmentActivityConstraint &&
         !dropAdminDeniedWriteConstraint &&
         !dropFoundationObservationConstraint &&
         !dropSandboxAccessConstraint
@@ -1146,14 +1151,24 @@ function matchingCloseParenthesis(tokens: ReadonlyArray<string>, open: number): 
   return -1;
 }
 
-function hasTopLevelComma(tokens: ReadonlyArray<string>): boolean {
+function splitTopLevelCommands(
+  tokens: ReadonlyArray<string>,
+): ReadonlyArray<ReadonlyArray<string>> {
+  const result: string[][] = [];
   let depth = 0;
-  for (const token of tokens) {
+  let start = 0;
+  for (let index = 0; index <= tokens.length; index += 1) {
+    const token = tokens[index];
     if (token === "(") depth += 1;
     else if (token === ")") depth -= 1;
-    else if (token === "," && depth === 0) return true;
+    if (depth < 0) return [];
+    if ((token === "," && depth === 0) || index === tokens.length) {
+      if (index === start) return [];
+      result.push(tokens.slice(start, index));
+      start = index + 1;
+    }
   }
-  return false;
+  return depth === 0 ? result : [];
 }
 
 function findTopLevelToken(tokens: ReadonlyArray<string>, expected: string, start: number): number {

@@ -25,18 +25,21 @@ type remoteWorkerEnrollmentStore interface {
 	GetRemoteWorkerEnrollment(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalremoteworker.Snapshot, error)
 	ListRemoteWorkerEnrollments(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RemoteWorkerEnrollmentPage, error)
 	ListRemoteWorkerEnrollmentAuditEvents(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.RemoteWorkerEnrollmentAuditPage, error)
+	AuthenticateRemoteWorkerCertificate(context.Context, string, string, string, string, int64) error
+	IssueRemoteWorkerCertificate(context.Context, string, internalremoteworker.CertificatePersistenceInput) (internalremoteworker.Snapshot, error)
 }
 
 type RemoteWorkerEnrollmentHTTPServer struct {
-	verifier AccessTokenVerifier
-	store    remoteWorkerEnrollmentStore
+	verifier  AccessTokenVerifier
+	store     remoteWorkerEnrollmentStore
+	authority *internalremoteworker.CertificateAuthority
 }
 
-func NewRemoteWorkerEnrollmentHTTPServer(verifier AccessTokenVerifier, store remoteWorkerEnrollmentStore) (*RemoteWorkerEnrollmentHTTPServer, error) {
+func NewRemoteWorkerEnrollmentHTTPServer(verifier AccessTokenVerifier, store remoteWorkerEnrollmentStore, authority *internalremoteworker.CertificateAuthority) (*RemoteWorkerEnrollmentHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("remote worker enrollment HTTP server configuration is invalid")
 	}
-	return &RemoteWorkerEnrollmentHTTPServer{verifier: verifier, store: store}, nil
+	return &RemoteWorkerEnrollmentHTTPServer{verifier: verifier, store: store, authority: authority}, nil
 }
 
 func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -48,6 +51,19 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 	tenantID, projectID, enrollmentID, action, ok := remoteWorkerEnrollmentPath(request.URL.Path)
 	if !ok {
 		writePublicProblem(writer, 404, "route_not_found")
+		return
+	}
+	if action == "issue-certificate" {
+		if request.Method != http.MethodPost {
+			writePublicProblem(writer, 405, "method_not_allowed")
+			return
+		}
+		requestID, requestOK := exactSingleHeader(request.Header, "X-Request-ID")
+		if !requestOK {
+			writePublicProblem(writer, 400, "invalid_request")
+			return
+		}
+		server.issueCertificate(writer, request, tenantID, projectID, enrollmentID, requestID)
 		return
 	}
 	projectPermission, enrollmentPermission, allowed := remoteWorkerEnrollmentPermission(action, request.Method)
@@ -243,6 +259,91 @@ func (server *RemoteWorkerEnrollmentHTTPServer) claimSecret(writer http.Response
 	writeJSONResponse(writer, 200, requestID, body)
 }
 
+func (server *RemoteWorkerEnrollmentHTTPServer) issueCertificate(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string) {
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	secret, ok := remoteWorkerEnrollmentAuthorization(authorization)
+	if !ok {
+		writePublicProblem(writer, 401, "authentication_failed")
+		return
+	}
+	key, body, ok := remoteWorkerEnrollmentMutationRequest(writer, request)
+	if !ok {
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateIssueRemoteWorkerCertificateServerRequest(tenantID, projectID, enrollmentID, requestID, key, body)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	version, err := strconv.ParseInt(validated.Body.ExpectedResourceVersion, 10, 64)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	secretDigest, err := internalremoteworker.SecretDigest(secret)
+	if err != nil {
+		writePublicProblem(writer, 401, "authentication_failed")
+		return
+	}
+	if err := server.store.AuthenticateRemoteWorkerCertificate(request.Context(), tenantID, projectID, enrollmentID, secretDigest, version); err != nil {
+		if errors.Is(err, postgres.ErrRemoteWorkerEnrollmentAuthentication) {
+			writePublicProblem(writer, 401, "authentication_failed")
+		} else {
+			writePublicProblem(writer, 500, "internal_error")
+		}
+		return
+	}
+	if server.authority == nil {
+		writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
+		return
+	}
+	certificate, err := server.authority.Issue(internalremoteworker.CertificateInput{Scope: internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}, EnrollmentID: enrollmentID, IncarnationID: validated.Body.IncarnationID, CSRPEM: validated.Body.CertificateSigningRequestPEM})
+	if err != nil {
+		switch {
+		case errors.Is(err, internalremoteworker.ErrInvalidCertificateRequest):
+			writePublicProblem(writer, 400, "invalid_remote_worker_certificate_request")
+		case errors.Is(err, internalremoteworker.ErrCertificateAuthorityUnavailable):
+			writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
+		default:
+			writePublicProblem(writer, 500, "internal_error")
+		}
+		return
+	}
+	actorDigest, err := internalremoteworker.BootstrapActorDigest(secretDigest)
+	if err != nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	value, err := server.store.IssueRemoteWorkerCertificate(request.Context(), tenantID, internalremoteworker.CertificatePersistenceInput{
+		Scope: internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}, EnrollmentID: enrollmentID,
+		ExpectedResourceVersion: version, ConfirmedEnrollmentID: validated.Body.ConfirmedEnrollmentID,
+		SecretDigest: secretDigest, ActorDigest: actorDigest, Certificate: certificate,
+		Mutation: internalremoteworker.Mutation{RequestID: requestID, IdempotencyKey: key},
+	})
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	if value.EnrolledAt == nil || value.CertificateNotAfter == nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	responseBody, err := platformv1alpha1.EncodeRemoteWorkerCertificateResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.RemoteWorkerCertificate]{Value: platformv1alpha1.RemoteWorkerCertificate{
+		APIVersion: platformv1alpha1.APIVersion, Kind: "RemoteWorkerCertificate",
+		ProjectRef:   commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
+		EnrollmentID: enrollmentID, WorkerID: value.WorkerID, IncarnationID: value.IncarnationID,
+		SPIFFEID: value.SPIFFEID, CertificateChainPEM: value.CertificateChainPEM, CertificateSHA256: value.CertificateSHA256,
+		IssuedAt: value.EnrolledAt.UTC().Format(time.RFC3339Nano), ExpiresAt: value.CertificateNotAfter.UTC().Format(time.RFC3339Nano),
+	}})
+	if err != nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Pragma", "no-cache")
+	writeJSONResponse(writer, 200, requestID, responseBody)
+}
+
 func (server *RemoteWorkerEnrollmentHTTPServer) listAuditEvents(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string, principal *authn.VerifiedPrincipal) {
 	pageSize, pageToken, ok := managedAgentPagination(request)
 	validated, err := openapiv1alpha1.ValidateListAdminRemoteWorkerEnrollmentAuditEventsServerRequest(tenantID, projectID, enrollmentID, requestID, pageSize, pageToken)
@@ -312,7 +413,7 @@ func remoteWorkerEnrollmentResource(value internalremoteworker.Snapshot) platfor
 	return platformv1alpha1.RemoteWorkerEnrollment{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "RemoteWorkerEnrollment", Metadata: commonv1alpha1.ResourceMetadata{
 		UID: value.EnrollmentID, Name: value.WorkerName, TenantRef: commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: value.Scope.TenantID},
 		ResourceVersion: strconv.FormatInt(value.ResourceVersion, 10), CreatedAt: value.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: value.UpdatedAt.UTC().Format(time.RFC3339Nano),
-	}}, Spec: platformv1alpha1.RemoteWorkerEnrollmentSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: value.Scope.ProjectID}, WorkerID: value.WorkerID, State: value.State, ExpiresAt: value.ExpiresAt.UTC().Format(time.RFC3339Nano), SecretClaimedAt: format(value.SecretClaimedAt), EnrolledAt: format(value.EnrolledAt), RevokedAt: format(value.RevokedAt)}}
+	}}, Spec: platformv1alpha1.RemoteWorkerEnrollmentSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: value.Scope.ProjectID}, WorkerID: value.WorkerID, State: value.State, ExpiresAt: value.ExpiresAt.UTC().Format(time.RFC3339Nano), SecretClaimedAt: format(value.SecretClaimedAt), EnrolledAt: format(value.EnrolledAt), RevokedAt: format(value.RevokedAt), IncarnationID: value.IncarnationID, SPIFFEID: value.SPIFFEID, CertificateSHA256: value.CertificateSHA256, CertificateExpiresAt: format(value.CertificateNotAfter)}}
 }
 
 func writeRemoteWorkerEnrollment(writer http.ResponseWriter, status int, requestID string, value internalremoteworker.Snapshot) {
@@ -344,6 +445,9 @@ func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID,
 		if strings.HasSuffix(parts[4], ":claimSecret") && prefix != adminEnvironmentProfileRoutePrefix {
 			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":claimSecret"), "claim-secret", true
 		}
+		if strings.HasSuffix(parts[4], ":issueCertificate") && prefix != adminEnvironmentProfileRoutePrefix {
+			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":issueCertificate"), "issue-certificate", true
+		}
 		if prefix == adminEnvironmentProfileRoutePrefix {
 			return parts[0], parts[2], parts[4], "get", true
 		}
@@ -352,6 +456,16 @@ func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID,
 		return parts[0], parts[2], parts[4], "audit-events", true
 	}
 	return "", "", "", "", false
+}
+
+func remoteWorkerEnrollmentAuthorization(value string) (string, bool) {
+	const prefix = "RemoteWorkerEnrollment "
+	if !strings.HasPrefix(value, prefix) || strings.ContainsAny(value, "\r\n") {
+		return "", false
+	}
+	secret := strings.TrimPrefix(value, prefix)
+	_, err := internalremoteworker.SecretDigest(secret)
+	return secret, err == nil
 }
 
 func remoteWorkerEnrollmentPermission(action, method string) (string, string, bool) {
@@ -414,6 +528,8 @@ func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, 409, "remote_worker_enrollment_resource_version_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentSecretUnavailable):
 		writePublicProblem(writer, 409, "remote_worker_enrollment_secret_unavailable")
+	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentAuthentication):
+		writePublicProblem(writer, 401, "authentication_failed")
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
 		writePublicProblem(writer, 400, "invalid_request")
 	default:

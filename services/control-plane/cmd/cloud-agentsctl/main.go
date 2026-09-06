@@ -22,28 +22,29 @@ import (
 )
 
 type globalOptions struct {
-	endpoint       string
-	caFile         string
-	token          string
-	tokenFile      string
-	tenant         string
-	organization   string
-	project        string
-	membership     string
-	role           string
-	roleBinding    string
-	session        string
-	turn           string
-	execution      string
-	sandbox        string
-	grant          string
-	ptySession     string
-	lease          string
-	target         string
-	enrollment     string
-	requestID      string
-	idempotencyKey string
-	timeout        time.Duration
+	endpoint             string
+	caFile               string
+	token                string
+	tokenFile            string
+	tenant               string
+	organization         string
+	project              string
+	membership           string
+	role                 string
+	roleBinding          string
+	session              string
+	turn                 string
+	execution            string
+	sandbox              string
+	grant                string
+	ptySession           string
+	lease                string
+	target               string
+	enrollment           string
+	enrollmentSecretFile string
+	requestID            string
+	idempotencyKey       string
+	timeout              time.Duration
 }
 
 const (
@@ -76,13 +77,18 @@ func run(args []string, stdout io.Writer) error {
 		return err
 	}
 	localTargetPreflight := command == "target" && action == "preflight"
+	remoteWorkerCertificateIssue := command == "remote-worker-enrollment" && action == "issue-certificate"
 	var client *openapi.Client
 	if !actionHelpRequested(actionArgs) && !localTargetPreflight {
 		token := options.token
-		if options.tokenFile != "" {
-			file, openErr := os.Open(options.tokenFile)
+		credentialFile := options.tokenFile
+		if remoteWorkerCertificateIssue {
+			credentialFile = options.enrollmentSecretFile
+		}
+		if credentialFile != "" {
+			file, openErr := os.Open(credentialFile)
 			if openErr != nil {
-				return errors.New("cannot read bearer token file")
+				return errors.New("cannot read credential file")
 			}
 			contents, readErr := io.ReadAll(io.LimitReader(file, maxBearerTokenFileBytes+1))
 			closeErr := file.Close()
@@ -91,7 +97,7 @@ func run(args []string, stdout io.Writer) error {
 			}
 			token = strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r")
 		}
-		client, err = newHTTPClient(options, token)
+		client, err = newHTTPClient(options, token, remoteWorkerCertificateIssue)
 	}
 	if err != nil {
 		return err
@@ -150,6 +156,38 @@ func run(args []string, stdout io.Writer) error {
 			err = errors.New("--expected-resource-version must be greater than zero")
 		} else if err == nil {
 			value, err = client.ClaimRemoteWorkerEnrollmentSecret(ctx, options.tenant, options.project, options.enrollment, options.requestID, options.idempotencyKey, platform.RemoteWorkerEnrollmentSecretClaimRequest{ExpectedResourceVersion: strconv.FormatInt(expectedResourceVersion, 10), ConfirmedEnrollmentID: options.enrollment})
+		}
+	case "remote-worker-enrollment issue-certificate":
+		var expectedResourceVersion int64
+		var incarnationID, identityFile string
+		if err = parseActionFlags("remote-worker-enrollment issue-certificate", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&expectedResourceVersion, "expected-resource-version", 0, "enrollment resource version")
+			set.StringVar(&incarnationID, "incarnation", "", "unique RemoteWorker process incarnation")
+			set.StringVar(&identityFile, "identity-file", "", "new 0600 PEM identity file")
+		}); err == nil && expectedResourceVersion < 1 {
+			err = errors.New("--expected-resource-version must be greater than zero")
+		} else if err == nil {
+			identity, reserveErr := reserveRemoteWorkerIdentityFile(identityFile)
+			if reserveErr != nil {
+				err = reserveErr
+			} else {
+				completed := false
+				defer func() {
+					_ = identity.Close()
+					if !completed {
+						_ = os.Remove(identityFile)
+					}
+				}()
+				request, privateKey, requestErr := newRemoteWorkerCertificateRequest(options.enrollment, incarnationID, expectedResourceVersion)
+				if requestErr != nil {
+					err = requestErr
+				} else if result, issueErr := client.IssueRemoteWorkerCertificate(ctx, options.tenant, options.project, options.enrollment, options.requestID, options.idempotencyKey, request); issueErr != nil {
+					err = issueErr
+				} else if err = writeRemoteWorkerIdentityFile(identity, privateKey, result.Value); err == nil {
+					completed = true
+					value = result
+				}
+			}
 		}
 	case "tenant get":
 		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
@@ -668,9 +706,13 @@ func run(args []string, stdout io.Writer) error {
 	return json.NewEncoder(stdout).Encode(responseValue(value))
 }
 
-func newHTTPClient(options globalOptions, token string) (*openapi.Client, error) {
+func newHTTPClient(options globalOptions, token string, remoteWorkerBootstrap bool) (*openapi.Client, error) {
+	create := openapi.NewHTTPClientWithClient
+	if remoteWorkerBootstrap {
+		create = openapi.NewRemoteWorkerBootstrapHTTPClientWithClient
+	}
 	if options.caFile == "" {
-		client, err := openapi.NewHTTPClient(options.endpoint, token)
+		client, err := create(options.endpoint, token, &http.Client{})
 		if err != nil {
 			return nil, errors.New("invalid endpoint or bearer token")
 		}
@@ -691,7 +733,7 @@ func newHTTPClient(options globalOptions, token string) (*openapi.Client, error)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{RootCAs: roots}
-	client, err := openapi.NewHTTPClientWithClient(options.endpoint, token, &http.Client{Transport: transport})
+	client, err := create(options.endpoint, token, &http.Client{Transport: transport})
 	if err != nil {
 		return nil, errors.New("invalid endpoint or bearer token")
 	}
@@ -721,6 +763,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
 	set.StringVar(&options.target, "target", "", "deployment target identifier")
 	set.StringVar(&options.enrollment, "enrollment", "", "RemoteWorker enrollment identifier")
+	set.StringVar(&options.enrollmentSecretFile, "enrollment-secret-file", "", "file containing the one-time RemoteWorker enrollment secret")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
 	set.StringVar(&options.idempotencyKey, "idempotency-key", "", "idempotency key")
 	set.DurationVar(&options.timeout, "timeout", defaultRequestTimeout, "request timeout")
@@ -750,13 +793,17 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 			return globalOptions{}, "", "", nil, fmt.Errorf("--%s is required", name)
 		}
 	}
-	if options.token == "" && options.tokenFile == "" {
+	remoteWorkerCertificateIssue := command == "remote-worker-enrollment" && action == "issue-certificate"
+	if remoteWorkerCertificateIssue {
+		if options.enrollmentSecretFile == "" || options.token != "" || options.tokenFile != "" {
+			return globalOptions{}, "", "", nil, errors.New("--enrollment-secret-file is required alone for certificate issuance")
+		}
+	} else if options.token == "" && options.tokenFile == "" {
 		return globalOptions{}, "", "", nil, errors.New("--token or --token-file is required")
-	}
-	if options.token != "" && options.tokenFile != "" {
+	} else if options.token != "" && options.tokenFile != "" {
 		return globalOptions{}, "", "", nil, errors.New("--token and --token-file are mutually exclusive")
 	}
-	if strings.TrimSpace(options.token) != options.token || strings.TrimSpace(options.tokenFile) != options.tokenFile {
+	if strings.TrimSpace(options.token) != options.token || strings.TrimSpace(options.tokenFile) != options.tokenFile || strings.TrimSpace(options.enrollmentSecretFile) != options.enrollmentSecretFile {
 		return globalOptions{}, "", "", nil, errors.New("bearer token input is invalid")
 	}
 	if strings.TrimSpace(options.caFile) != options.caFile {
@@ -942,7 +989,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "remote-worker-enrollment issue-certificate", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
 		return true
 	default:
 		return false
@@ -996,7 +1043,7 @@ const help = usage + `
 
 resources and actions:
   target preflight|register|get|probe|cleanup
-  remote-worker-enrollment claim-secret
+  remote-worker-enrollment claim-secret|issue-certificate
   tenant get
   organization get|list|create
   project get|list|create

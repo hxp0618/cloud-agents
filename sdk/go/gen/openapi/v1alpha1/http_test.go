@@ -52,6 +52,29 @@ func TestHTTPClientUsesProvidedHTTPClient(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerBootstrapHTTPClientUsesEnrollmentScheme(t *testing.T) {
+	secret := "carw1_" + strings.Repeat("A", 43)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "RemoteWorkerEnrollment "+secret {
+			t.Fatalf("authorization=%q", request.Header.Get("Authorization"))
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client, err := NewRemoteWorkerBootstrapHTTPClient(server.URL, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, err := client.roundTrip(context.Background(), Request{Method: http.MethodGet, Path: "/bootstrap"}); err != nil || response.Status != http.StatusNoContent {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+	for _, invalid := range []string{"", "token-alpha", "carw1_" + strings.Repeat("A", 42), "carw1_" + strings.Repeat("x", 43), "carw1_" + strings.Repeat("!", 43)} {
+		if client, err := NewRemoteWorkerBootstrapHTTPClient(server.URL, invalid); client != nil || err == nil {
+			t.Fatalf("invalid enrollment secret accepted: %q", invalid)
+		}
+	}
+}
+
 func TestHTTPClientSendsJSONContentTypeForRequestBodies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost || request.Header.Get("Content-Type") != "application/json" {

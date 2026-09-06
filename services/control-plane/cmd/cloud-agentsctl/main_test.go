@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 )
 
 func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
@@ -126,7 +128,7 @@ func TestRunClaimsRemoteWorkerEnrollmentSecretThroughBootstrapRoute(t *testing.T
 		writer.Header().Set("Cache-Control", "no-store")
 		writer.Header().Set("Pragma", "no-cache")
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RemoteWorkerEnrollmentSecret","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"enrollmentId":"enrollment-alpha","enrollmentSecret":"carw1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","expiresAt":"2026-09-06T12:15:00Z"}`))
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RemoteWorkerEnrollmentSecret","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"enrollmentId":"enrollment-alpha","enrollmentSecret":"carw1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2026-09-06T12:15:00Z"}`))
 	}))
 	defer server.Close()
 
@@ -138,6 +140,46 @@ func TestRunClaimsRemoteWorkerEnrollmentSecretThroughBootstrapRoute(t *testing.T
 	}, &stdout)
 	if err != nil || !strings.Contains(stdout.String(), `"enrollmentSecret":"carw1_`) || strings.Contains(stdout.String(), "bootstrap-token-alpha") {
 		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
+func TestRemoteWorkerIdentityFileContainsGeneratedKeyAndCertificate(t *testing.T) {
+	request, privateKey, err := newRemoteWorkerCertificateRequest("enrollment-alpha", "incarnation-alpha", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := internalremoteworker.NewEphemeralCertificateAuthority("remote-worker.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, err := authority.Issue(internalremoteworker.CertificateInput{
+		Scope:        internalremoteworker.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
+		EnrollmentID: "enrollment-alpha", IncarnationID: request.IncarnationID, CSRPEM: request.CertificateSigningRequestPEM,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "remote-worker-identity.pem")
+	certificate := platform.RemoteWorkerCertificate{CertificateChainPEM: issued.ChainPEM}
+	file, err := reserveRemoteWorkerIdentityFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRemoteWorkerIdentityFile(file, privateKey, certificate); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("identity mode=%v", info.Mode().Perm())
+	}
+	if _, err := tls.LoadX509KeyPair(path, path); err != nil {
+		t.Fatalf("identity file cannot be loaded: %v", err)
+	}
+	if _, err := reserveRemoteWorkerIdentityFile(path); err == nil {
+		t.Fatal("existing identity file was overwritten")
 	}
 }
 

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   Client,
   createHTTPClient,
+  createRemoteWorkerBootstrapHTTPClient,
   decodeAdminAuditEventPage,
   decodeDeploymentTargetCleanupPreview,
   decodeDeploymentTargetPage,
@@ -2523,6 +2524,72 @@ describe("generated platform client", () => {
       expect(() => createHTTPClient(undefined as unknown as string, "token-alpha")).toThrow(
         TypeError,
       );
+    } finally {
+      await new Promise<void>((resolveClose) => fixture.close(() => resolveClose()));
+    }
+  });
+
+  it("issues a RemoteWorker certificate with enrollment auth", async () => {
+    const secret = `carw1_${"A".repeat(43)}`;
+    let authorization = "";
+    let requestBody = "";
+    const fixture = createServer(async (request, response) => {
+      authorization = request.headers.authorization ?? "";
+      for await (const chunk of request) requestBody += chunk.toString();
+      response.setHeader("Content-Type", "application/json");
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Pragma", "no-cache");
+      response.end(
+        JSON.stringify({
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "RemoteWorkerCertificate",
+          projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+          enrollmentId: "enrollment-alpha",
+          workerId: "worker-alpha",
+          incarnationId: "incarnation-alpha",
+          spiffeId:
+            "spiffe://remote-worker.test/remote-worker/tenant-alpha/project-alpha/enrollment-alpha/incarnation-alpha",
+          certificateChainPem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+          certificateSha256: `sha256:${"a".repeat(64)}`,
+          issuedAt: "2026-09-06T12:00:00Z",
+          expiresAt: "2026-09-06T12:15:00Z",
+        }),
+      );
+    });
+    await new Promise<void>((resolveListen, reject) => {
+      fixture.once("error", reject);
+      fixture.listen(0, "127.0.0.1", resolveListen);
+    });
+    try {
+      const address = fixture.address();
+      if (address === null || typeof address === "string") throw new Error("fixture did not bind");
+      const client = createRemoteWorkerBootstrapHTTPClient(
+        `http://127.0.0.1:${address.port}`,
+        secret,
+      );
+      const result = await client.issueRemoteWorkerCertificate(
+        "tenant-alpha",
+        "project-alpha",
+        "enrollment-alpha",
+        "request-alpha",
+        "remote-cert-issue-key-1",
+        {
+          expectedResourceVersion: "2",
+          confirmedEnrollmentId: "enrollment-alpha",
+          incarnationId: "incarnation-alpha",
+          certificateSigningRequestPem:
+            "-----BEGIN CERTIFICATE REQUEST-----\ntest\n-----END CERTIFICATE REQUEST-----\n",
+        },
+      );
+      expect(result.value.workerId).toBe("worker-alpha");
+      expect(authorization).toBe(`RemoteWorkerEnrollment ${secret}`);
+      expect(JSON.parse(requestBody)).toMatchObject({
+        expectedResourceVersion: "2",
+        incarnationId: "incarnation-alpha",
+      });
+      expect(() =>
+        createRemoteWorkerBootstrapHTTPClient(`http://127.0.0.1:${address.port}`, "invalid"),
+      ).toThrow(TypeError);
     } finally {
       await new Promise<void>((resolveClose) => fixture.close(() => resolveClose()));
     }

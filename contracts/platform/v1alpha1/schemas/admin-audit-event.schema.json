@@ -24,7 +24,7 @@
     "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "actor": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "action": {
-      "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "target.upgrade", "target.rollback", "profile.create", "profile.publish", "profile.disable", "quota.set", "storage-policy.set", "network-policy.set", "remote-worker-enrollment.create", "remote-worker-enrollment.claim-secret", "remote-worker-enrollment.revoke"]
+      "enum": ["target.register", "target.probe", "target.drain", "target.resume", "target.cleanup", "target.upgrade", "target.rollback", "profile.create", "profile.publish", "profile.disable", "quota.set", "storage-policy.set", "network-policy.set", "remote-worker-enrollment.create", "remote-worker-enrollment.claim-secret", "remote-worker-enrollment.issue-certificate", "remote-worker-enrollment.revoke"]
     },
     "resourceKind": { "enum": ["DeploymentTarget", "EnvironmentProfile", "ProjectLeaseQuota", "StoragePolicy", "NetworkPolicy", "RemoteWorkerEnrollment"] },
     "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },

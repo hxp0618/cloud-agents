@@ -172,6 +172,7 @@ type NetworkPolicyPageResult = common.ResponseEnvelope[platform.NetworkPolicyPag
 type RemoteWorkerEnrollmentResult = common.ResponseEnvelope[platform.RemoteWorkerEnrollment]
 type RemoteWorkerEnrollmentPageResult = common.ResponseEnvelope[platform.RemoteWorkerEnrollmentPage]
 type RemoteWorkerEnrollmentSecretResult = common.ResponseEnvelope[platform.RemoteWorkerEnrollmentSecret]
+type RemoteWorkerCertificateResult = common.ResponseEnvelope[platform.RemoteWorkerCertificate]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -1403,6 +1404,36 @@ func (client *Client) ClaimRemoteWorkerEnrollmentSecret(ctx context.Context, ten
 	}
 	if value.Value.ProjectRef.ID != projectID || value.Value.EnrollmentID != enrollmentID || body.ConfirmedEnrollmentID != enrollmentID {
 		return RemoteWorkerEnrollmentSecretResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId")
+	}
+	return value, nil
+}
+func (client *Client) IssueRemoteWorkerCertificate(ctx context.Context, tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body platform.RemoteWorkerCertificateIssueRequest) (RemoteWorkerCertificateResult, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	bodyBytes, err := platform.EncodeRemoteWorkerCertificateIssueRequestJSON(body)
+	if err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/remote-worker-bootstrap/tenants/" + tenantID + "/projects/" + projectID + "/remote-worker-enrollments/" + enrollmentID + ":issueCertificate", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	if response.Status != 200 {
+		return RemoteWorkerCertificateResult{}, client.problemError("remoteWorkerIssueCertificate", response)
+	}
+	if response.Headers["Cache-Control"] != "no-store" || response.Headers["Pragma"] != "no-cache" {
+		return RemoteWorkerCertificateResult{}, common.ContractError("CERTIFICATE_CACHE_POLICY_MISMATCH", "/headers")
+	}
+	value, err := platform.DecodeRemoteWorkerCertificateResponseJSON(response.Body)
+	if err != nil {
+		return RemoteWorkerCertificateResult{}, &ClientError{Operation: "remoteWorkerIssueCertificate", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.EnrollmentID != enrollmentID || value.Value.IncarnationID != body.IncarnationID || body.ConfirmedEnrollmentID != enrollmentID {
+		return RemoteWorkerCertificateResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId")
 	}
 	return value, nil
 }
@@ -4974,6 +5005,32 @@ func ValidateClaimRemoteWorkerEnrollmentSecretServerRequest(tenantID, projectID,
 		return ClaimRemoteWorkerEnrollmentSecretServerInput{}, err
 	}
 	return ClaimRemoteWorkerEnrollmentSecretServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type IssueRemoteWorkerCertificateServerInput struct {
+	TenantID       string
+	ProjectID      string
+	EnrollmentID   string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.RemoteWorkerCertificateIssueRequest
+}
+
+func ValidateIssueRemoteWorkerCertificateServerRequest(tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body []byte) (IssueRemoteWorkerCertificateServerInput, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return IssueRemoteWorkerCertificateServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return IssueRemoteWorkerCertificateServerInput{}, err
+	}
+	value, err := platform.DecodeRemoteWorkerCertificateIssueRequestJSON(body)
+	if err != nil {
+		return IssueRemoteWorkerCertificateServerInput{}, err
+	}
+	if value.ConfirmedEnrollmentID != enrollmentID {
+		return IssueRemoteWorkerCertificateServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId")
+	}
+	return IssueRemoteWorkerCertificateServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type ListAdminRemoteWorkerEnrollmentAuditEventsServerInput struct {

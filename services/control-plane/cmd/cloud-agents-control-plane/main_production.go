@@ -33,6 +33,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
+	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -42,53 +43,59 @@ import (
 )
 
 const (
-	productionDatabaseEnvironment              = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
-	productionAuthConfigEnvironment            = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
-	productionWorkerEndpointEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
-	productionWorkerSPIFFEEnvironment          = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
-	productionWorkerClientCertEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
-	productionWorkerClientKeyEnvironment       = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
-	productionWorkerCAEnvironment              = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
-	productionWorkspaceEnvironment             = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
-	productionDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
-	productionKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
-	productionSSHCredentialsEnvironment        = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
-	productionAccessGrantKeyEnvironment        = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
-	productionAdmissionLeaseEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
-	productionAdmissionGenerationEnvironment   = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
-	productionAdmissionTokenEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
-	maxAuthConfigBytes                         = 1 << 20
-	maxProductionCABytes                       = 1 << 20
-	productionRuntimeMaxDuration               = 5 * time.Minute
-	productionHTTPWriteGrace                   = 15 * time.Second
-	productionJWKSFetchTimeout                 = 5 * time.Second
-	maxJWKSResponseBytes                       = 1 << 20
-	defaultProductionMaxConcurrentRequests     = 128
-	maximumProductionMaxConcurrentRequests     = 10_000
+	productionDatabaseEnvironment                = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+	productionAuthConfigEnvironment              = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
+	productionWorkerEndpointEnvironment          = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
+	productionWorkerSPIFFEEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
+	productionWorkerClientCertEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
+	productionWorkerClientKeyEnvironment         = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
+	productionWorkerCAEnvironment                = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
+	productionWorkspaceEnvironment               = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	productionDockerCredentialsEnvironment       = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
+	productionKubernetesCredentialsEnvironment   = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
+	productionSSHCredentialsEnvironment          = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
+	productionAccessGrantKeyEnvironment          = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
+	productionRemoteWorkerCACertEnvironment      = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT"
+	productionRemoteWorkerCAKeyEnvironment       = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY"
+	productionRemoteWorkerTrustDomainEnvironment = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN"
+	productionAdmissionLeaseEnvironment          = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
+	productionAdmissionGenerationEnvironment     = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
+	productionAdmissionTokenEnvironment          = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
+	maxAuthConfigBytes                           = 1 << 20
+	maxProductionCABytes                         = 1 << 20
+	productionRuntimeMaxDuration                 = 5 * time.Minute
+	productionHTTPWriteGrace                     = 15 * time.Second
+	productionJWKSFetchTimeout                   = 5 * time.Second
+	maxJWKSResponseBytes                         = 1 << 20
+	defaultProductionMaxConcurrentRequests       = 128
+	maximumProductionMaxConcurrentRequests       = 10_000
 )
 
 var version = "dev"
 
 type productionConfig struct {
-	listen                string
-	database              string
-	authPath              string
-	tlsCert               string
-	tlsKey                string
-	workerEndpoint        string
-	workerSPIFFE          string
-	workerClientCert      string
-	workerClientKey       string
-	workerCA              string
-	workspaceDirectory    string
-	dockerCredentials     string
-	kubernetesCredentials string
-	sshCredentials        string
-	accessGrantKey        string
-	admissionLeaseID      string
-	admissionGeneration   uint64
-	admissionToken        []byte
-	maxConcurrentRequests int
+	listen                  string
+	database                string
+	authPath                string
+	tlsCert                 string
+	tlsKey                  string
+	workerEndpoint          string
+	workerSPIFFE            string
+	workerClientCert        string
+	workerClientKey         string
+	workerCA                string
+	workspaceDirectory      string
+	dockerCredentials       string
+	kubernetesCredentials   string
+	sshCredentials          string
+	accessGrantKey          string
+	remoteWorkerCACert      string
+	remoteWorkerCAKey       string
+	remoteWorkerTrustDomain string
+	admissionLeaseID        string
+	admissionGeneration     uint64
+	admissionToken          []byte
+	maxConcurrentRequests   int
 }
 
 type authConfigFile struct {
@@ -308,7 +315,22 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("network policy HTTP server is unavailable")
 	}
-	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifier, coordinationService)
+	var remoteWorkerCertificateAuthority *internalremoteworker.CertificateAuthority
+	if config.remoteWorkerCACert != "" {
+		certificatePEM, readErr := readProductionFile(config.remoteWorkerCACert, maxProductionCABytes)
+		if readErr != nil {
+			return errors.New("RemoteWorker CA certificate is invalid")
+		}
+		privateKeyPEM, readErr := readProductionFile(config.remoteWorkerCAKey, maxProductionCABytes)
+		if readErr != nil {
+			return errors.New("RemoteWorker CA private key is invalid")
+		}
+		remoteWorkerCertificateAuthority, err = internalremoteworker.NewCertificateAuthority(certificatePEM, privateKeyPEM, config.remoteWorkerTrustDomain)
+		if err != nil {
+			return errors.New("RemoteWorker certificate authority is invalid")
+		}
+	}
+	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifier, coordinationService, remoteWorkerCertificateAuthority)
 	if err != nil {
 		return errors.New("RemoteWorker enrollment HTTP server is unavailable")
 	}
@@ -545,6 +567,9 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
 	accessGrantKey := set.String("access-grant-key-file", "", "shared 32-64 byte Sandbox access Grant key file")
+	remoteWorkerCACert := set.String("remote-worker-ca-cert", "", "RemoteWorker enrollment CA certificate path")
+	remoteWorkerCAKey := set.String("remote-worker-ca-key", "", "RemoteWorker enrollment CA private key path")
+	remoteWorkerTrustDomain := set.String("remote-worker-trust-domain", "", "RemoteWorker SPIFFE trust domain")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
@@ -575,8 +600,11 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
 	fill(sshCredentials, productionSSHCredentialsEnvironment)
 	fill(accessGrantKey, productionAccessGrantKeyEnvironment)
+	fill(remoteWorkerCACert, productionRemoteWorkerCACertEnvironment)
+	fill(remoteWorkerCAKey, productionRemoteWorkerCAKeyEnvironment)
+	fill(remoteWorkerTrustDomain, productionRemoteWorkerTrustDomainEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey {
+	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -602,10 +630,14 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	if (staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0)) || len(admissionToken) > 1<<20 {
 		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
 	}
+	remoteWorkerAuthorityConfigured := *remoteWorkerCACert != "" || *remoteWorkerCAKey != "" || *remoteWorkerTrustDomain != ""
+	if remoteWorkerAuthorityConfigured && (*remoteWorkerCACert == "" || *remoteWorkerCAKey == "" || *remoteWorkerTrustDomain == "") {
+		return productionConfig{}, errors.New("RemoteWorker certificate authority configuration must be complete")
+	}
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 
@@ -618,13 +650,8 @@ func productionWorkerIdentity(value string) (*workerv1alpha1.WorkloadIdentity, e
 }
 
 func readProductionCAPool(path string) (*x509.CertPool, error) {
-	file, err := os.Open(path)
+	contents, err := readProductionFile(path, maxProductionCABytes)
 	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	contents, err := io.ReadAll(io.LimitReader(file, maxProductionCABytes+1))
-	if err != nil || len(contents) > maxProductionCABytes {
 		return nil, errors.New("invalid CA bundle")
 	}
 	pool := x509.NewCertPool()
@@ -632,6 +659,19 @@ func readProductionCAPool(path string) (*x509.CertPool, error) {
 		return nil, errors.New("invalid CA bundle")
 	}
 	return pool, nil
+}
+
+func readProductionFile(path string, maximum int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	contents, err := io.ReadAll(io.LimitReader(file, maximum+1))
+	if err != nil || int64(len(contents)) > maximum {
+		return nil, errors.New("file exceeds limit")
+	}
+	return contents, nil
 }
 
 func loadConfiguredVerifier(path string) (*authn.ConfiguredVerifier, error) {

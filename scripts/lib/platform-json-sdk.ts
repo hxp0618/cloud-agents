@@ -115,6 +115,8 @@ const PLATFORM_SCHEMAS = [
   "project-page.schema.json",
   "project.schema.json",
   "rbac-mutation-result.schema.json",
+  "remote-worker-certificate-issue-request.schema.json",
+  "remote-worker-certificate.schema.json",
   "remote-worker-enrollment-create-request.schema.json",
   "remote-worker-enrollment-page.schema.json",
   "remote-worker-enrollment-revoke-request.schema.json",
@@ -398,6 +400,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedHostTerminateEnvironmentLease",
     "managedHostUpgradeEnvironmentLease",
     "remoteWorkerClaimEnrollmentSecret",
+    "remoteWorkerIssueCertificate",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {
     throw new Error(`OpenAPI operation set changed: ${operations.join(",")}`);

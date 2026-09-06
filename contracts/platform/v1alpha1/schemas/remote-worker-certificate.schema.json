@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-certificate.schema.json",
+  "title": "RemoteWorkerCertificate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "spiffeId", "certificateChainPem", "certificateSha256", "issuedAt", "expiresAt"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "RemoteWorkerCertificate" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "enrollmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "incarnationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "spiffeId": { "type": "string", "format": "uri", "pattern": "^spiffe://" },
+    "certificateChainPem": { "type": "string", "minLength": 1, "maxLength": 32768 },
+    "certificateSha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "this no-store response contains public certificate bytes only; the private key remains node-local",
+    "an idempotent retry returns the originally persisted public certificate chain"
+  ]
+}

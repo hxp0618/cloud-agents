@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json",
+  "title": "RemoteWorkerCertificateIssueRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion", "confirmedEnrollmentId", "incarnationId", "certificateSigningRequestPem"],
+  "properties": {
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "confirmedEnrollmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "incarnationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "certificateSigningRequestPem": { "type": "string", "minLength": 1, "maxLength": 32768 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the CSR signature is valid and its private key never leaves the RemoteWorker",
+    "the Control Plane ignores requested subject and SAN values and binds the issued SPIFFE identity to the enrollment owner"
+  ]
+}

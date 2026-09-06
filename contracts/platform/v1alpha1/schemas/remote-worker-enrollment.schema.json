@@ -20,12 +20,17 @@
         "expiresAt": { "type": "string", "format": "date-time" },
         "secretClaimedAt": { "type": "string", "format": "date-time" },
         "enrolledAt": { "type": "string", "format": "date-time" },
-        "revokedAt": { "type": "string", "format": "date-time" }
+        "revokedAt": { "type": "string", "format": "date-time" },
+        "incarnationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "spiffeId": { "type": "string", "format": "uri", "pattern": "^spiffe://" },
+        "certificateSha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "certificateExpiresAt": { "type": "string", "format": "date-time" }
       }
     }
   },
   "x-cloud-agents-semantic-constraints": [
     "expired is derived from the database clock for pending or secret-issued enrollment intents",
-    "the resource never exposes enrollment secret or digest bytes"
+    "the resource never exposes enrollment secret, secret digest, CSR, or certificate bytes",
+    "incarnationId, spiffeId, certificateSha256, and certificateExpiresAt are present together only after certificate issuance"
   ]
 }

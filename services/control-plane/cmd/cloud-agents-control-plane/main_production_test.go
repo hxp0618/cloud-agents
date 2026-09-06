@@ -22,21 +22,24 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 		t.Fatal("expected required production configuration error")
 	}
 	values := map[string]string{
-		productionDatabaseEnvironment:              "postgres://runtime@db/cloud_agents",
-		productionAuthConfigEnvironment:            "/etc/cloud-agents/auth.json",
-		productionWorkerEndpointEnvironment:        "https://worker:8091",
-		productionWorkerSPIFFEEnvironment:          "spiffe://cloud-agents.test/worker",
-		productionWorkerClientCertEnvironment:      "/etc/cloud-agents/worker-client.crt",
-		productionWorkerClientKeyEnvironment:       "/etc/cloud-agents/worker-client.key",
-		productionWorkerCAEnvironment:              "/etc/cloud-agents/worker-ca.crt",
-		productionWorkspaceEnvironment:             "/workspace",
-		productionDockerCredentialsEnvironment:     "/etc/cloud-agents/docker-targets",
-		productionKubernetesCredentialsEnvironment: "/etc/cloud-agents/kubernetes-targets",
-		productionSSHCredentialsEnvironment:        "/etc/cloud-agents/ssh-targets",
-		productionAccessGrantKeyEnvironment:        "/etc/cloud-agents/access-grant.key",
-		productionAdmissionLeaseEnvironment:        "runtime-lease",
-		productionAdmissionGenerationEnvironment:   "7",
-		productionAdmissionTokenEnvironment:        "runtime-token",
+		productionDatabaseEnvironment:                "postgres://runtime@db/cloud_agents",
+		productionAuthConfigEnvironment:              "/etc/cloud-agents/auth.json",
+		productionWorkerEndpointEnvironment:          "https://worker:8091",
+		productionWorkerSPIFFEEnvironment:            "spiffe://cloud-agents.test/worker",
+		productionWorkerClientCertEnvironment:        "/etc/cloud-agents/worker-client.crt",
+		productionWorkerClientKeyEnvironment:         "/etc/cloud-agents/worker-client.key",
+		productionWorkerCAEnvironment:                "/etc/cloud-agents/worker-ca.crt",
+		productionWorkspaceEnvironment:               "/workspace",
+		productionDockerCredentialsEnvironment:       "/etc/cloud-agents/docker-targets",
+		productionKubernetesCredentialsEnvironment:   "/etc/cloud-agents/kubernetes-targets",
+		productionSSHCredentialsEnvironment:          "/etc/cloud-agents/ssh-targets",
+		productionAccessGrantKeyEnvironment:          "/etc/cloud-agents/access-grant.key",
+		productionRemoteWorkerCACertEnvironment:      "/etc/cloud-agents/remote-worker-ca.crt",
+		productionRemoteWorkerCAKeyEnvironment:       "/etc/cloud-agents/remote-worker-ca.key",
+		productionRemoteWorkerTrustDomainEnvironment: "remote-worker.test",
+		productionAdmissionLeaseEnvironment:          "runtime-lease",
+		productionAdmissionGenerationEnvironment:     "7",
+		productionAdmissionTokenEnvironment:          "runtime-token",
 	}
 	args := []string{"--listen", "127.0.0.1:9443", "--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}
 	getenv := func(name string) string { return values[name] }
@@ -44,7 +47,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.accessGrantKey != "/etc/cloud-agents/access-grant.key" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
+	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.accessGrantKey != "/etc/cloud-agents/access-grant.key" || config.remoteWorkerCACert != "/etc/cloud-agents/remote-worker-ca.crt" || config.remoteWorkerCAKey != "/etc/cloud-agents/remote-worker-ca.key" || config.remoteWorkerTrustDomain != "remote-worker.test" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
 		t.Fatalf("config = %#v", config)
 	}
 	for _, invalid := range []string{"0", "10001"} {
@@ -61,6 +64,15 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	}
 	if _, err := parseProductionConfig(append(append([]string{}, args...), "--ssh-credentials-directory", " /tmp/ssh-targets"), getenv); err == nil {
 		t.Fatal("accepted invalid SSH credential directory")
+	}
+	partialRemoteWorker := func(name string) string {
+		if name == productionRemoteWorkerCAKeyEnvironment {
+			return ""
+		}
+		return values[name]
+	}
+	if _, err := parseProductionConfig(args, partialRemoteWorker); err == nil {
+		t.Fatal("accepted partial RemoteWorker certificate authority configuration")
 	}
 }
 

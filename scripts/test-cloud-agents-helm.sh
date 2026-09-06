@@ -30,6 +30,14 @@ for image in control-plane worker migrate; do
   grep -Fq "image: \"cloud-agents/$image@$digest\"" "$rendered"
 done
 
+helm template cloud-agents "$chart" \
+  --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca \
+  --set-string remoteWorker.trustDomain=remote-worker.example >"$rendered"
+grep -Fq "name: CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT" "$rendered"
+grep -Fq "value: /run/cloud-agents/remote-worker-ca/ca.key" "$rendered"
+grep -Fq "value: \"remote-worker.example\"" "$rendered"
+grep -Fq "secretName: cloud-agents-remote-worker-ca" "$rendered"
+
 if helm template cloud-agents "$chart" --set-string images.worker.digest=sha256:invalid >/dev/null 2>&1; then
   echo "invalid OCI image digest passed Helm values validation" >&2
   exit 1
@@ -40,5 +48,9 @@ if helm template cloud-agents "$chart" --set runtime.maxSessions=0 >/dev/null 2>
 fi
 if helm template cloud-agents "$chart" --set controlPlane.maxConcurrentRequests=0 >/dev/null 2>&1; then
   echo "invalid Control Plane max concurrent requests passed Helm values validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca >/dev/null 2>&1; then
+  echo "partial RemoteWorker certificate authority passed Helm values validation" >&2
   exit 1
 fi

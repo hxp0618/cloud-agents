@@ -104,7 +104,7 @@ func EncodeWorkerHealthObservationResponseJSON(value common.ResponseEnvelope[Wor
 var (
 	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
 	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	enrollmentSecretPattern      = regexp.MustCompile(`^carw1_[A-Za-z0-9_-]{43}$`)
+	enrollmentSecretPattern      = regexp.MustCompile(`^carw1_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$`)
 	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
 	sshUsernamePattern           = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$`)
 	fileVersionPattern           = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
@@ -518,18 +518,28 @@ type RemoteWorkerEnrollmentSecretClaimRequest struct {
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
 	ConfirmedEnrollmentID   string `json:"confirmedEnrollmentId"`
 }
+type RemoteWorkerCertificateIssueRequest struct {
+	ExpectedResourceVersion      string `json:"expectedResourceVersion"`
+	ConfirmedEnrollmentID        string `json:"confirmedEnrollmentId"`
+	IncarnationID                string `json:"incarnationId"`
+	CertificateSigningRequestPEM string `json:"certificateSigningRequestPem"`
+}
 type RemoteWorkerEnrollmentRevokeRequest struct {
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
 	ConfirmedEnrollmentID   string `json:"confirmedEnrollmentId"`
 }
 type RemoteWorkerEnrollmentSpec struct {
-	ProjectRef      common.ProjectRef `json:"projectRef"`
-	WorkerID        string            `json:"workerId"`
-	State           string            `json:"state"`
-	ExpiresAt       string            `json:"expiresAt"`
-	SecretClaimedAt string            `json:"secretClaimedAt,omitempty"`
-	EnrolledAt      string            `json:"enrolledAt,omitempty"`
-	RevokedAt       string            `json:"revokedAt,omitempty"`
+	ProjectRef           common.ProjectRef `json:"projectRef"`
+	WorkerID             string            `json:"workerId"`
+	State                string            `json:"state"`
+	ExpiresAt            string            `json:"expiresAt"`
+	SecretClaimedAt      string            `json:"secretClaimedAt,omitempty"`
+	EnrolledAt           string            `json:"enrolledAt,omitempty"`
+	RevokedAt            string            `json:"revokedAt,omitempty"`
+	IncarnationID        string            `json:"incarnationId,omitempty"`
+	SPIFFEID             string            `json:"spiffeId,omitempty"`
+	CertificateSHA256    string            `json:"certificateSha256,omitempty"`
+	CertificateExpiresAt string            `json:"certificateExpiresAt,omitempty"`
 }
 type RemoteWorkerEnrollment struct {
 	ResourceBase
@@ -548,6 +558,19 @@ type RemoteWorkerEnrollmentSecret struct {
 	EnrollmentID     string            `json:"enrollmentId"`
 	EnrollmentSecret string            `json:"enrollmentSecret"`
 	ExpiresAt        string            `json:"expiresAt"`
+}
+type RemoteWorkerCertificate struct {
+	APIVersion          string            `json:"apiVersion"`
+	Kind                string            `json:"kind"`
+	ProjectRef          common.ProjectRef `json:"projectRef"`
+	EnrollmentID        string            `json:"enrollmentId"`
+	WorkerID            string            `json:"workerId"`
+	IncarnationID       string            `json:"incarnationId"`
+	SPIFFEID            string            `json:"spiffeId"`
+	CertificateChainPEM string            `json:"certificateChainPem"`
+	CertificateSHA256   string            `json:"certificateSha256"`
+	IssuedAt            string            `json:"issuedAt"`
+	ExpiresAt           string            `json:"expiresAt"`
 }
 type EnvironmentProfileCreateRequest struct {
 	ProfileID             string   `json:"profileId"`
@@ -1248,6 +1271,7 @@ var storagePolicyPageResponseShape = common.ObjectResponseShape(map[string]commo
 var networkPolicyPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "networkPolicies": common.ArrayResponseShape(resourceResponseShape("NetworkPolicy")), "nextPageToken": common.ScalarResponseShape()})
 var remoteWorkerEnrollmentPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "remoteWorkerEnrollments": common.ArrayResponseShape(resourceResponseShape("RemoteWorkerEnrollment")), "nextPageToken": common.ScalarResponseShape()})
 var remoteWorkerEnrollmentSecretResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "enrollmentSecret": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
+var remoteWorkerCertificateResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateChainPem": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "issuedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
@@ -3117,6 +3141,28 @@ func EncodeRemoteWorkerEnrollmentSecretClaimRequestJSON(value RemoteWorkerEnroll
 	}
 	return raw, nil
 }
+func DecodeRemoteWorkerCertificateIssueRequestJSON(data []byte) (RemoteWorkerCertificateIssueRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedResourceVersion", "confirmedEnrollmentId", "incarnationId", "certificateSigningRequestPem"}, []string{"expectedResourceVersion", "confirmedEnrollmentId", "incarnationId", "certificateSigningRequestPem"})
+	if err != nil {
+		return RemoteWorkerCertificateIssueRequest{}, err
+	}
+	var value RemoteWorkerCertificateIssueRequest
+	if json.Unmarshal(data, &value) != nil || common.ValidateResourceVersion(value.ExpectedResourceVersion, "/expectedResourceVersion") != nil || common.ValidateIdentifier(value.ConfirmedEnrollmentID, "/confirmedEnrollmentId") != nil || common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || common.ValidateString(value.CertificateSigningRequestPEM, 1, 32768, "/certificateSigningRequestPem") != nil {
+		return RemoteWorkerCertificateIssueRequest{}, common.ContractError("INVALID_REMOTE_WORKER_CERTIFICATE_REQUEST", "")
+	}
+	_ = fields
+	return value, nil
+}
+func EncodeRemoteWorkerCertificateIssueRequestJSON(value RemoteWorkerCertificateIssueRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeRemoteWorkerCertificateIssueRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeRemoteWorkerEnrollmentRevokeRequestJSON(data []byte) (RemoteWorkerEnrollmentRevokeRequest, error) {
 	version, confirmed, err := decodeRemoteWorkerEnrollmentTransition(data)
 	return RemoteWorkerEnrollmentRevokeRequest{ExpectedResourceVersion: version, ConfirmedEnrollmentID: confirmed}, err
@@ -3140,7 +3186,7 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 	if err != nil {
 		return RemoteWorkerEnrollment{}, err
 	}
-	allowed := []string{"projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt"}
+	allowed := []string{"projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt", "incarnationId", "spiffeId", "certificateSha256", "certificateExpiresAt"}
 	specFields, err := strictSpec(fields["spec"], allowed, allowed[:4])
 	if err != nil {
 		return RemoteWorkerEnrollment{}, err
@@ -3174,7 +3220,11 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 	enrolled, enrolledOK := timeValue("enrolledAt", spec.EnrolledAt)
 	_, revokedOK := timeValue("revokedAt", spec.RevokedAt)
 	claimedPresent, enrolledPresent, revokedPresent := spec.SecretClaimedAt != "", spec.EnrolledAt != "", spec.RevokedAt != ""
-	if !claimedOK || !enrolledOK || !revokedOK || claimedPresent && !claimed.Before(expires) || enrolledPresent && (enrolled.Before(claimed) || !enrolled.Before(expires)) || spec.State == "pending" && (claimedPresent || enrolledPresent || revokedPresent) || spec.State == "secret-issued" && (!claimedPresent || enrolledPresent || revokedPresent) || spec.State == "enrolled" && (!claimedPresent || !enrolledPresent || revokedPresent) || spec.State == "revoked" && (enrolledPresent || !revokedPresent) || spec.State == "expired" && (enrolledPresent || revokedPresent) {
+	certificateFieldsPresent := spec.IncarnationID != "" || spec.SPIFFEID != "" || spec.CertificateSHA256 != "" || spec.CertificateExpiresAt != ""
+	identity, identityErr := url.Parse(spec.SPIFFEID)
+	certificateExpiry, certificateExpiryErr := time.Parse(time.RFC3339Nano, spec.CertificateExpiresAt)
+	validCertificateFields := common.ValidateIdentifier(spec.IncarnationID, "/spec/incarnationId") == nil && identityErr == nil && identity.Scheme == "spiffe" && identity.Host != "" && identity.Path != "" && identity.User == nil && identity.RawQuery == "" && identity.Fragment == "" && digestPattern.MatchString(spec.CertificateSHA256) && certificateExpiryErr == nil && certificateExpiry.After(updated)
+	if !claimedOK || !enrolledOK || !revokedOK || claimedPresent && !claimed.Before(expires) || enrolledPresent && (enrolled.Before(claimed) || !enrolled.Before(expires)) || spec.State == "pending" && (claimedPresent || enrolledPresent || revokedPresent) || spec.State == "secret-issued" && (!claimedPresent || enrolledPresent || revokedPresent) || spec.State == "enrolled" && (!claimedPresent || !enrolledPresent || revokedPresent) || spec.State == "revoked" && (enrolledPresent || !revokedPresent) || spec.State == "expired" && (enrolledPresent || revokedPresent) || spec.State == "enrolled" != certificateFieldsPresent || certificateFieldsPresent && !validCertificateFields {
 		return RemoteWorkerEnrollment{}, common.ContractError("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state")
 	}
 	return RemoteWorkerEnrollment{ResourceBase: base, Spec: spec}, nil
@@ -3269,6 +3319,41 @@ func DecodeRemoteWorkerEnrollmentSecretResponseJSON(data []byte) (common.Respons
 	return common.ResponseEnvelope[RemoteWorkerEnrollmentSecret]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeRemoteWorkerEnrollmentSecretResponseJSON(value common.ResponseEnvelope[RemoteWorkerEnrollmentSecret]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeRemoteWorkerCertificateJSON(data []byte) (RemoteWorkerCertificate, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "spiffeId", "certificateChainPem", "certificateSha256", "issuedAt", "expiresAt"}, []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "spiffeId", "certificateChainPem", "certificateSha256", "issuedAt", "expiresAt"})
+	if err != nil {
+		return RemoteWorkerCertificate{}, err
+	}
+	var value RemoteWorkerCertificate
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "RemoteWorkerCertificate" || common.ValidateIdentifier(value.EnrollmentID, "/enrollmentId") != nil || common.ValidateIdentifier(value.WorkerID, "/workerId") != nil || common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || common.ValidateString(value.CertificateChainPEM, 1, 32768, "/certificateChainPem") != nil || !digestPattern.MatchString(value.CertificateSHA256) || common.ValidateDateTime(value.IssuedAt, "/issuedAt") != nil || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+		return RemoteWorkerCertificate{}, common.ContractError("INVALID_REMOTE_WORKER_CERTIFICATE", "")
+	}
+	identity, parseErr := url.Parse(value.SPIFFEID)
+	issued, issuedErr := time.Parse(time.RFC3339Nano, value.IssuedAt)
+	expires, expiresErr := time.Parse(time.RFC3339Nano, value.ExpiresAt)
+	if parseErr != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path == "" || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" || issuedErr != nil || expiresErr != nil || !expires.After(issued) {
+		return RemoteWorkerCertificate{}, common.ContractError("INVALID_REMOTE_WORKER_CERTIFICATE", "/spiffeId")
+	}
+	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return RemoteWorkerCertificate{}, err
+	}
+	return value, nil
+}
+func DecodeRemoteWorkerCertificateResponseJSON(data []byte) (common.ResponseEnvelope[RemoteWorkerCertificate], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, remoteWorkerCertificateResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[RemoteWorkerCertificate]{}, err
+	}
+	value, err := DecodeRemoteWorkerCertificateJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[RemoteWorkerCertificate]{}, err
+	}
+	return common.ResponseEnvelope[RemoteWorkerCertificate]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeRemoteWorkerCertificateResponseJSON(value common.ResponseEnvelope[RemoteWorkerCertificate]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
@@ -5098,7 +5183,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" && value.Action != "network-policy.set" && value.Action != "remote-worker-enrollment.create" && value.Action != "remote-worker-enrollment.claim-secret" && value.Action != "remote-worker-enrollment.revoke" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" && value.ResourceKind != "NetworkPolicy" && value.ResourceKind != "RemoteWorkerEnrollment" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" && value.Action != "network-policy.set" && value.Action != "remote-worker-enrollment.create" && value.Action != "remote-worker-enrollment.claim-secret" && value.Action != "remote-worker-enrollment.issue-certificate" && value.Action != "remote-worker-enrollment.revoke" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" && value.ResourceKind != "NetworkPolicy" && value.ResourceKind != "RemoteWorkerEnrollment" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

@@ -24,7 +24,8 @@
 - BASE-M2 短期 SSH 垂直切片已接通：同一 generation-bound Grant 返回固定 tenant/project/Grant username，短期 token 作为 password；独立 Access Gateway 以部署 host key 提供真实 SSH 协议，只允许一个固定 Sandbox `/workspace` session，拒绝 direct-tcpip、environment 和任意客户主机 shell。真实 SSH 执行、Gateway 重启重连、错误 password、跨 tenant、旧 generation、过期/吊销和活跃 transport 吊销关闭均通过；Admin 只显示 PTY/SSH 会话计数且原始响应不含 username、token、命令或输出。见 [短期 SSH 与 Admin 诊断证据](evidence/base-m2-sandbox-ssh-20260906.md)。
 - BASE-M2 网络策略执行垂直切片已接通：product-000061 将规范化 direct allow targets 绑定到 no-Agent RuntimeProfile，Controller 下发后通过认证 sidecar 核对 exact policy 与 `dns+nft` 才结算。真实受限 Sandbox 只连通指定 sink，其他 Sandbox、Docker host/Control Plane 与 metadata IP 均阻断；`previewEnabled=false` 时新端口注册返回 403。Admin API/Web 管理 direct targets 并显示 Profile binding 与 Sandbox enforcement，不向 User API 暴露基础设施 authority；普通用户 Admin API 仍为 403。见 [网络策略执行与 Admin 证据](evidence/base-m2-sandbox-network-policy-20260906.md)。结合 Exec、PTY、Files、Preview、SSH 与 Gateway 证据，BASE-M2 当前固定范围已覆盖。
 - BASE-M3 enrollment 垂直切片已接通：product-000062 持久化短期 RemoteWorker 注册意图、一次性 Secret 摘要、resourceVersion、幂等和 Audit；Admin API/Web 只管理元数据和撤销，独立 `remote-worker-bootstrap.act` CLI 路由一次领取 Secret 后拒绝重放。PostgreSQL 17.6 实测普通用户 Admin 403、Admin 领取 403、bootstrap Admin 读取拒绝、`no-store`、数据库无 Secret 原文及 create/claim/revoke Audit；见 [enrollment authority 证据](evidence/base-m3-remote-worker-enrollment-20260906.md)。尚无 CSR、mTLS 节点身份或 outbound 客户节点连接，因此 BASE-M3 保持进行中。
-- 下一项：以该 enrollment authority 为根完成 CSR 校验与短期 mTLS 节点身份签发、轮换和吊销，不复用用户/Admin bearer 作为节点身份。
+- BASE-M3 首条节点身份签发已接通：product-000063 以独立 enrollment Secret 鉴权，校验节点 CSR 后签发 15 分钟、server-owned SPIFFE SAN 的 mTLS client certificate；PostgreSQL 17.6 实测 000062→000063、全新安装/no-op、证书与本地私钥匹配、原响应精确重放、错误 Secret 401、Audit 和 Admin 元数据脱敏。生产 Control Plane/Helm 已支持配对 CA Secret 与 trust domain，CLI 在请求前预留新 0600 identity file；见 [CSR 与短期节点身份证据](evidence/base-m3-remote-worker-certificate-20260906.md)。尚无轮换/活动证书吊销或 outbound 客户节点连接。
+- 下一项：补齐活动 RemoteWorker 身份轮换/吊销 authority 与 Admin 闭环，再接 outbound 通道、心跳、重连、generation fencing 和 Drain/Resume。
 - 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -48,7 +49,7 @@
 | BASE-M0    | VERIFIED    | 固定候选、no-Agent Docker PoC、产品执行接缝、幂等 adopt、失败补偿及对应 Admin 运维投影已有固定证据；不表示底座产品已就绪 |
 | BASE-M1    | VERIFIED    | 真实长期卷、跨进程恢复、失败补偿、手动与 TTL Stop/Rebuild、单写 fencing、Operation/Audit 和 Admin 保留/到期反馈已实测 |
 | BASE-M2    | VERIFIED    | bounded Exec、PTY/Files/private Preview/short-lived SSH、Grant/Gateway、实际网络隔离及对应 Admin 管理已有真实本地 Docker/PostgreSQL 证据 |
-| BASE-M3    | IN PROGRESS | enrollment authority 和 Admin 元数据闭环已实测；尚缺 CSR/mTLS、outbound 重连/fencing、节点健康与 Drain/Resume |
+| BASE-M3    | IN PROGRESS | enrollment 与首条短期 mTLS 节点身份签发/Admin 元数据闭环已实测；尚缺轮换/吊销、outbound 重连/fencing、节点健康与 Drain/Resume |
 | BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |
 | BASE-M5    | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收                                    |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |

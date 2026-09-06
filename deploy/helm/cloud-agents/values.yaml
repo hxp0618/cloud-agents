@@ -62,6 +62,10 @@ deploymentTargets:
   kubernetesCredentialSecretName: ""
   sshCredentialSecretName: ""
 
+remoteWorker:
+  certificateAuthoritySecretName: ""
+  trustDomain: ""
+
 worker:
   replicas: 1
   service:

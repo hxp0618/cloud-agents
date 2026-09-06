@@ -466,6 +466,12 @@ export type RemoteWorkerEnrollmentSecretClaimRequest = Readonly<{
   expectedResourceVersion: string;
   confirmedEnrollmentId: string;
 }>;
+export type RemoteWorkerCertificateIssueRequest = Readonly<{
+  expectedResourceVersion: string;
+  confirmedEnrollmentId: string;
+  incarnationId: string;
+  certificateSigningRequestPem: string;
+}>;
 export type RemoteWorkerEnrollmentRevokeRequest = Readonly<{
   expectedResourceVersion: string;
   confirmedEnrollmentId: string;
@@ -482,6 +488,10 @@ export type RemoteWorkerEnrollment = Readonly<{
     secretClaimedAt?: string;
     enrolledAt?: string;
     revokedAt?: string;
+    incarnationId?: string;
+    spiffeId?: string;
+    certificateSha256?: `sha256:${string}`;
+    certificateExpiresAt?: string;
   }>;
 }>;
 export type RemoteWorkerEnrollmentPage = Readonly<{
@@ -496,6 +506,19 @@ export type RemoteWorkerEnrollmentSecret = Readonly<{
   projectRef: NamespaceRef;
   enrollmentId: string;
   enrollmentSecret: `carw1_${string}`;
+  expiresAt: string;
+}>;
+export type RemoteWorkerCertificate = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RemoteWorkerCertificate";
+  projectRef: NamespaceRef;
+  enrollmentId: string;
+  workerId: string;
+  incarnationId: string;
+  spiffeId: string;
+  certificateChainPem: string;
+  certificateSha256: `sha256:${string}`;
+  issuedAt: string;
   expiresAt: string;
 }>;
 export type EnvironmentProfileCreateRequest = Readonly<{
@@ -958,6 +981,7 @@ export type AdminAuditEvent = Readonly<{
     | "network-policy.set"
     | "remote-worker-enrollment.create"
     | "remote-worker-enrollment.claim-secret"
+    | "remote-worker-enrollment.issue-certificate"
     | "remote-worker-enrollment.revoke";
   resourceKind:
     | "DeploymentTarget"
@@ -1629,6 +1653,10 @@ const remoteWorkerEnrollmentResponseShape = resourceResponseShape({
   secretClaimedAt: scalarResponseShape,
   enrolledAt: scalarResponseShape,
   revokedAt: scalarResponseShape,
+  incarnationId: scalarResponseShape,
+  spiffeId: scalarResponseShape,
+  certificateSha256: scalarResponseShape,
+  certificateExpiresAt: scalarResponseShape,
 });
 const remoteWorkerEnrollmentPageResponseShape: ResponseShape = {
   fields: {
@@ -1645,6 +1673,21 @@ const remoteWorkerEnrollmentSecretResponseShape: ResponseShape = {
     projectRef: referenceResponseShape,
     enrollmentId: scalarResponseShape,
     enrollmentSecret: scalarResponseShape,
+    expiresAt: scalarResponseShape,
+  },
+};
+const remoteWorkerCertificateResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    enrollmentId: scalarResponseShape,
+    workerId: scalarResponseShape,
+    incarnationId: scalarResponseShape,
+    spiffeId: scalarResponseShape,
+    certificateChainPem: scalarResponseShape,
+    certificateSha256: scalarResponseShape,
+    issuedAt: scalarResponseShape,
     expiresAt: scalarResponseShape,
   },
 };
@@ -5203,6 +5246,47 @@ export function encodeRemoteWorkerEnrollmentSecretClaimRequest(
 ): string {
   return JSON.stringify(decodeRemoteWorkerEnrollmentSecretClaimRequest(value));
 }
+export function decodeRemoteWorkerCertificateIssueRequest(
+  value: unknown,
+): RemoteWorkerCertificateIssueRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedResourceVersion",
+      "confirmedEnrollmentId",
+      "incarnationId",
+      "certificateSigningRequestPem",
+    ],
+    [
+      "expectedResourceVersion",
+      "confirmedEnrollmentId",
+      "incarnationId",
+      "certificateSigningRequestPem",
+    ],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion,
+    confirmedEnrollmentId: identifier(source.confirmedEnrollmentId, "/confirmedEnrollmentId"),
+    incarnationId: identifier(source.incarnationId, "/incarnationId"),
+    certificateSigningRequestPem: boundedString(
+      source.certificateSigningRequestPem,
+      1,
+      32768,
+      "/certificateSigningRequestPem",
+    ),
+  });
+}
+export function encodeRemoteWorkerCertificateIssueRequest(
+  value: RemoteWorkerCertificateIssueRequest,
+): string {
+  return JSON.stringify(decodeRemoteWorkerCertificateIssueRequest(value));
+}
 export function decodeRemoteWorkerEnrollmentRevokeRequest(
   value: unknown,
 ): RemoteWorkerEnrollmentRevokeRequest {
@@ -5218,7 +5302,19 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     root = base(source, "RemoteWorkerEnrollment");
   const spec = strictRecord(
     source.spec,
-    ["projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt"],
+    [
+      "projectRef",
+      "workerId",
+      "state",
+      "expiresAt",
+      "secretClaimedAt",
+      "enrolledAt",
+      "revokedAt",
+      "incarnationId",
+      "spiffeId",
+      "certificateSha256",
+      "certificateExpiresAt",
+    ],
     ["projectRef", "workerId", "state", "expiresAt"],
     "/spec",
   );
@@ -5242,6 +5338,11 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
       (Date.parse(instant) < createdAt || Date.parse(instant) > updatedAt)
     )
       error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state");
+  const hasCertificate =
+    spec.incarnationId !== undefined ||
+    spec.spiffeId !== undefined ||
+    spec.certificateSha256 !== undefined ||
+    spec.certificateExpiresAt !== undefined;
   if (
     expires <= createdAt ||
     (secretClaimedAt !== undefined && Date.parse(secretClaimedAt) >= expires) ||
@@ -5256,9 +5357,23 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     (state === "enrolled" &&
       (secretClaimedAt === undefined || enrolledAt === undefined || revokedAt !== undefined)) ||
     (state === "revoked" && (enrolledAt !== undefined || revokedAt === undefined)) ||
-    (state === "expired" && (enrolledAt !== undefined || revokedAt !== undefined))
+    (state === "expired" && (enrolledAt !== undefined || revokedAt !== undefined)) ||
+    (state === "enrolled") !== hasCertificate
   )
     error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state");
+  const certificate = !hasCertificate
+    ? {}
+    : {
+        incarnationId: identifier(spec.incarnationId, "/spec/incarnationId"),
+        spiffeId: spiffeIdentity(spec.spiffeId, "/spec/spiffeId"),
+        certificateSha256: digest(
+          spec.certificateSha256,
+          "/spec/certificateSha256",
+        ) as `sha256:${string}`,
+        certificateExpiresAt: dateTime(spec.certificateExpiresAt, "/spec/certificateExpiresAt"),
+      };
+  if (hasCertificate && Date.parse(certificate.certificateExpiresAt!) <= updatedAt)
+    error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/certificateExpiresAt");
   return Object.freeze({
     ...root,
     kind: "RemoteWorkerEnrollment" as const,
@@ -5270,6 +5385,7 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
       ...(secretClaimedAt === undefined ? {} : { secretClaimedAt }),
       ...(enrolledAt === undefined ? {} : { enrolledAt }),
       ...(revokedAt === undefined ? {} : { revokedAt }),
+      ...certificate,
     }),
   });
 }
@@ -5308,7 +5424,7 @@ export function decodeRemoteWorkerEnrollmentSecret(value: unknown): RemoteWorker
   if (source.apiVersion !== platformApiVersion || source.kind !== "RemoteWorkerEnrollmentSecret")
     error("RESOURCE_KIND_MISMATCH", "/kind");
   const enrollmentSecret = string(source.enrollmentSecret, "/enrollmentSecret");
-  if (!/^carw1_[A-Za-z0-9_-]{43}$/u.test(enrollmentSecret))
+  if (!/^carw1_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u.test(enrollmentSecret))
     error("INVALID_REMOTE_WORKER_ENROLLMENT_SECRET", "/enrollmentSecret");
   return Object.freeze({
     apiVersion: platformApiVersion,
@@ -5317,6 +5433,81 @@ export function decodeRemoteWorkerEnrollmentSecret(value: unknown): RemoteWorker
     enrollmentId: identifier(source.enrollmentId, "/enrollmentId"),
     enrollmentSecret: enrollmentSecret as `carw1_${string}`,
     expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+function spiffeIdentity(value: unknown, path: string): string {
+  const identity = absoluteURI(value, path);
+  let parsed: URL;
+  try {
+    parsed = new URL(identity);
+  } catch {
+    return error("INVALID_REMOTE_WORKER_IDENTITY", path);
+  }
+  if (
+    parsed.protocol !== "spiffe:" ||
+    parsed.hostname === "" ||
+    parsed.pathname === "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  )
+    error("INVALID_REMOTE_WORKER_IDENTITY", path);
+  return identity;
+}
+export function decodeRemoteWorkerCertificate(value: unknown): RemoteWorkerCertificate {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "enrollmentId",
+      "workerId",
+      "incarnationId",
+      "spiffeId",
+      "certificateChainPem",
+      "certificateSha256",
+      "issuedAt",
+      "expiresAt",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "enrollmentId",
+      "workerId",
+      "incarnationId",
+      "spiffeId",
+      "certificateChainPem",
+      "certificateSha256",
+      "issuedAt",
+      "expiresAt",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "RemoteWorkerCertificate")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const issuedAt = dateTime(source.issuedAt, "/issuedAt"),
+    expiresAt = dateTime(source.expiresAt, "/expiresAt");
+  if (Date.parse(expiresAt) <= Date.parse(issuedAt))
+    error("INVALID_REMOTE_WORKER_CERTIFICATE", "/expiresAt");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "RemoteWorkerCertificate",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    enrollmentId: identifier(source.enrollmentId, "/enrollmentId"),
+    workerId: identifier(source.workerId, "/workerId"),
+    incarnationId: identifier(source.incarnationId, "/incarnationId"),
+    spiffeId: spiffeIdentity(source.spiffeId, "/spiffeId"),
+    certificateChainPem: boundedString(
+      source.certificateChainPem,
+      1,
+      32768,
+      "/certificateChainPem",
+    ),
+    certificateSha256: digest(source.certificateSha256, "/certificateSha256") as `sha256:${string}`,
+    issuedAt,
+    expiresAt,
   });
 }
 export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
@@ -6323,6 +6514,7 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "network-policy.set",
         "remote-worker-enrollment.create",
         "remote-worker-enrollment.claim-secret",
+        "remote-worker-enrollment.issue-certificate",
         "remote-worker-enrollment.revoke",
       ] as const,
       "/action",
@@ -7343,6 +7535,11 @@ export function parseRemoteWorkerEnrollmentSecret(
     decodeRemoteWorkerEnrollmentSecret,
   );
 }
+export function parseRemoteWorkerCertificate(
+  text: string,
+): ResponseEnvelope<RemoteWorkerCertificate> {
+  return parseResponse(text, remoteWorkerCertificateResponseShape, decodeRemoteWorkerCertificate);
+}
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
 }
@@ -7755,7 +7952,26 @@ export type FixtureTransport = (
 const maxHTTPResponseBytes = 2 * 1024 * 1024;
 const maxManagedAgentArtifactBytes = 16 * 1024 * 1024;
 export function createHTTPClient(baseURL: string, bearerToken: string): Client {
-  if (typeof baseURL !== "string" || typeof bearerToken !== "string")
+  return createAuthorizedHTTPClient(baseURL, `Bearer ${bearerToken}`, bearerToken);
+}
+export function createRemoteWorkerBootstrapHTTPClient(
+  baseURL: string,
+  enrollmentSecret: string,
+): Client {
+  if (!/^carw1_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u.test(enrollmentSecret))
+    throw new TypeError("invalid RemoteWorker bootstrap HTTP client configuration");
+  return createAuthorizedHTTPClient(
+    baseURL,
+    `RemoteWorkerEnrollment ${enrollmentSecret}`,
+    enrollmentSecret,
+  );
+}
+function createAuthorizedHTTPClient(
+  baseURL: string,
+  authorization: string,
+  credential: string,
+): Client {
+  if (typeof baseURL !== "string" || typeof credential !== "string")
     throw new TypeError("invalid Cloud Agents HTTP client configuration");
   let endpoint: URL;
   try {
@@ -7775,9 +7991,9 @@ export function createHTTPClient(baseURL: string, bearerToken: string): Client {
     endpoint.search !== "" ||
     endpoint.hash !== "" ||
     baseURL.endsWith("/") ||
-    bearerToken === "" ||
-    bearerToken.trim() !== bearerToken ||
-    /\s/u.test(bearerToken) ||
+    credential === "" ||
+    credential.trim() !== credential ||
+    /\s/u.test(credential) ||
     typeof globalThis.fetch !== "function"
   )
     throw new TypeError("invalid Cloud Agents HTTP client configuration");
@@ -7785,7 +8001,7 @@ export function createHTTPClient(baseURL: string, bearerToken: string): Client {
     if (!request.path.startsWith("/") || /[\r\n]/u.test(request.path))
       throw new TypeError("invalid Cloud Agents HTTP request");
     const headers = new Headers(request.headers);
-    headers.set("Authorization", `Bearer ${bearerToken}`);
+    headers.set("Authorization", authorization);
     if (request.body !== undefined) headers.set("Content-Type", "application/json");
     const response = await globalThis.fetch(baseURL + request.path, {
       method: request.method,
@@ -9541,6 +9757,41 @@ export class Client {
     if (
       result.value.projectRef.id !== projectId ||
       result.value.enrollmentId !== enrollmentId ||
+      checked.confirmedEnrollmentId !== enrollmentId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId");
+    return result;
+  }
+  async issueRemoteWorkerCertificate(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RemoteWorkerCertificateIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerCertificate>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRemoteWorkerCertificateIssueRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/remote-worker-bootstrap/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:issueCertificate`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRemoteWorkerCertificateIssueRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("remoteWorkerIssueCertificate", response);
+    if (response.headers["cache-control"] !== "no-store" || response.headers.pragma !== "no-cache")
+      error("CERTIFICATE_CACHE_POLICY_MISMATCH", "/headers");
+    const result = parseRemoteWorkerCertificate(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.enrollmentId !== enrollmentId ||
+      result.value.incarnationId !== checked.incarnationId ||
       checked.confirmedEnrollmentId !== enrollmentId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId");
