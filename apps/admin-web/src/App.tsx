@@ -87,6 +87,7 @@ import {
 } from "./admin";
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
 import { DeniedWritePanel } from "./DeniedWritePanel";
+import { RemoteWorkerEnrollmentPanel } from "./RemoteWorkerEnrollmentPanel";
 import { TargetFilters } from "./TargetFilters";
 import { AdminSidebar } from "./AdminSidebar";
 import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } from "./navigation";
@@ -2470,6 +2471,8 @@ export function App() {
                   ? t("page.overview.title")
                   : page === "targets"
                     ? t("page.targets.title")
+                    : page === "remoteWorkers"
+                      ? t("page.remoteWorkers.title")
                     : page === "sandboxes"
                       ? t("page.sandboxes.title")
                       : page === "workers"
@@ -2495,6 +2498,8 @@ export function App() {
                   ? t("page.overview.description")
                   : page === "targets"
                     ? t("page.targets.description")
+                    : page === "remoteWorkers"
+                      ? t("page.remoteWorkers.description")
                     : page === "sandboxes"
                       ? t("page.sandboxes.description")
                       : page === "workers"
@@ -2941,6 +2946,8 @@ export function App() {
                 />
               </ResourceRefresh>
             </section>
+          ) : page === "remoteWorkers" && client !== null ? (
+            <RemoteWorkerEnrollmentPanel client={client} connection={connection} />
           ) : page === "workers" ? (
             <section className="resource-list">
               <div className="list-toolbar">

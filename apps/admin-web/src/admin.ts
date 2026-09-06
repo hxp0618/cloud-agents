@@ -20,6 +20,7 @@ import {
   type RuntimeProfile,
   type StoragePolicy,
   type NetworkPolicy,
+  type RemoteWorkerEnrollment,
   type Worker,
   type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -67,6 +68,11 @@ export type AdminClient = Pick<
   | "getAdminNetworkPolicy"
   | "setAdminNetworkPolicy"
   | "listAdminNetworkPolicyAuditEvents"
+  | "listAdminRemoteWorkerEnrollments"
+  | "createAdminRemoteWorkerEnrollment"
+  | "getAdminRemoteWorkerEnrollment"
+  | "revokeAdminRemoteWorkerEnrollment"
+  | "listAdminRemoteWorkerEnrollmentAuditEvents"
   | "listAdminRuntimeProfiles"
   | "createAdminRuntimeProfile"
   | "publishAdminRuntimeProfile"
@@ -442,6 +448,76 @@ export async function listAdminWorkers(
   return Object.freeze(
     workers.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
   );
+}
+
+export async function listAdminRemoteWorkerEnrollments(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly RemoteWorkerEnrollment[]> {
+  const enrollments: RemoteWorkerEnrollment[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminRemoteWorkerEnrollments(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    enrollments.push(...page.value.remoteWorkerEnrollments);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.remoteWorkerEnrollmentPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    enrollments.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export function replaceRemoteWorkerEnrollment(
+  enrollments: readonly RemoteWorkerEnrollment[],
+  enrollment: RemoteWorkerEnrollment,
+): readonly RemoteWorkerEnrollment[] {
+  return Object.freeze(
+    [...enrollments.filter(({ metadata }) => metadata.uid !== enrollment.metadata.uid), enrollment]
+      .toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export async function listAdminRemoteWorkerEnrollmentAuditEvents(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  enrollmentId: string,
+  signal: AbortSignal,
+): Promise<readonly AdminAuditEvent[]> {
+  const events: AdminAuditEvent[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminRemoteWorkerEnrollmentAuditEvents(
+      tenantId,
+      projectId,
+      enrollmentId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    events.push(...page.value.events);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.remoteWorkerEnrollmentAuditPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(events);
 }
 
 export async function listAdminReleases(

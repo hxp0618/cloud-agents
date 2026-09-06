@@ -688,7 +688,7 @@ export function classifyMigrationStatement(
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILE_ACTIVITY_ACTION"].join("\0");
       const dropAdminDeniedWriteConstraint =
-        new Set(["000054", "000056", "000058"]).has(migrationId) &&
+        new Set(["000054", "000056", "000058", "000062"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:admin_denied_writes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ADMIN_DENIED_WRITES_ACTION_CHECK"].join("\0");

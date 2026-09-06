@@ -192,6 +192,7 @@ done
   --database-url "$runtime_database_url" \
   --local-token-file "$state_directory/control-plane.token" \
   --local-admin-token-file "$state_directory/control-plane-admin.token" \
+  --local-remote-worker-bootstrap-token-file "$state_directory/remote-worker-bootstrap.token" \
   --local-tenant-id tenant-local \
   --local-subject user-local \
   --worker-endpoint "http://$worker_listen" \
@@ -200,7 +201,7 @@ done
 control_plane_pid=$!
 
 for attempt in {1..120}; do
-  if [[ -f $state_directory/control-plane.token && -f $state_directory/control-plane-admin.token ]] && \
+  if [[ -f $state_directory/control-plane.token && -f $state_directory/control-plane-admin.token && -f $state_directory/remote-worker-bootstrap.token ]] && \
     curl -fsS "http://$control_plane_listen/readyz" >"$state_directory/control-plane-readiness.json" 2>/dev/null; then
     break
   fi
@@ -222,6 +223,7 @@ echo "Tenant: tenant-local"
 echo "Organization: organization-local"
 echo "Token file: $state_directory/control-plane.token"
 echo "Admin token file: $state_directory/control-plane-admin.token"
+echo "RemoteWorker bootstrap token file: $state_directory/remote-worker-bootstrap.token"
 printf 'CLI: %q --endpoint %q --token-file %q --tenant tenant-local --request-id REQUEST_ID\n' \
   "$state_directory/bin/cloud-agentsctl" "http://$control_plane_listen" "$state_directory/control-plane.token"
 echo "Press Ctrl-C to stop."

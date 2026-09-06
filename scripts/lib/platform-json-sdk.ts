@@ -115,6 +115,12 @@ const PLATFORM_SCHEMAS = [
   "project-page.schema.json",
   "project.schema.json",
   "rbac-mutation-result.schema.json",
+  "remote-worker-enrollment-create-request.schema.json",
+  "remote-worker-enrollment-page.schema.json",
+  "remote-worker-enrollment-revoke-request.schema.json",
+  "remote-worker-enrollment-secret-claim-request.schema.json",
+  "remote-worker-enrollment-secret.schema.json",
+  "remote-worker-enrollment.schema.json",
   "role-binding-create-request.schema.json",
   "role-binding-page.schema.json",
   "role-binding.schema.json",
@@ -274,6 +280,7 @@ function validateJSONSDKAuthority(root: string): void {
   const expected = [
     "adminCleanupDeploymentTarget",
     "adminCreateEnvironmentProfile",
+    "adminCreateRemoteWorkerEnrollment",
     "adminCreateRuntimeProfile",
     "adminDisableEnvironmentProfile",
     "adminDisableRuntimeProfile",
@@ -282,6 +289,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminGetEnvironmentProfile",
     "adminGetNetworkPolicy",
     "adminGetProjectLeaseQuota",
+    "adminGetRemoteWorkerEnrollment",
     "adminGetRuntimeProfile",
     "adminGetSandboxSession",
     "adminGetStoragePolicy",
@@ -297,6 +305,8 @@ function validateJSONSDKAuthority(root: string): void {
     "adminListNetworkPolicies",
     "adminListNetworkPolicyAuditEvents",
     "adminListProjectLeaseQuotaAuditEvents",
+    "adminListRemoteWorkerEnrollmentAuditEvents",
+    "adminListRemoteWorkerEnrollments",
     "adminListRuntimeProfiles",
     "adminListSandboxAccessGrants",
     "adminListSandboxSessions",
@@ -314,6 +324,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminRebuildSandboxSession",
     "adminRegisterDeploymentTarget",
     "adminRegisterWorkerRelease",
+    "adminRevokeRemoteWorkerEnrollment",
     "adminRevokeSandboxAccessGrant",
     "adminRollbackEnvironmentLease",
     "adminSetNetworkPolicy",
@@ -386,6 +397,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedHostRegisterDeploymentTarget",
     "managedHostTerminateEnvironmentLease",
     "managedHostUpgradeEnvironmentLease",
+    "remoteWorkerClaimEnrollmentSecret",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {
     throw new Error(`OpenAPI operation set changed: ${operations.join(",")}`);

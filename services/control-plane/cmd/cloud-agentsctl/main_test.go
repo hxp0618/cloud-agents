@@ -112,6 +112,35 @@ func TestRunRegistersDeploymentTargetThroughControlPlane(t *testing.T) {
 	}
 }
 
+func TestRunClaimsRemoteWorkerEnrollmentSecretThroughBootstrapRoute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/remote-worker-bootstrap/tenants/tenant-alpha/projects/project-alpha/remote-worker-enrollments/enrollment-alpha:claimSecret" ||
+			request.Header.Get("Authorization") != "Bearer bootstrap-token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" ||
+			request.Header.Get("Idempotency-Key") != "enrollment-claim-key-alpha" || string(body) != `{"expectedResourceVersion":"1","confirmedEnrollmentId":"enrollment-alpha"}` {
+			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.Path, request.Header, body)
+		}
+		writer.Header().Set("Cache-Control", "no-store")
+		writer.Header().Set("Pragma", "no-cache")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RemoteWorkerEnrollmentSecret","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"enrollmentId":"enrollment-alpha","enrollmentSecret":"carw1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","expiresAt":"2026-09-06T12:15:00Z"}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "bootstrap-token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
+		"--enrollment", "enrollment-alpha", "--request-id", "request-alpha", "--idempotency-key", "enrollment-claim-key-alpha",
+		"remote-worker-enrollment", "claim-secret", "--expected-resource-version", "1",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"enrollmentSecret":"carw1_`) || strings.Contains(stdout.String(), "bootstrap-token-alpha") {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunExecutesSandboxThroughControlPlane(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)

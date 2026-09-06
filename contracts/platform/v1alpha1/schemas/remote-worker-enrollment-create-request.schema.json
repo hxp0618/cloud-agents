@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-enrollment-create-request.schema.json",
+  "title": "RemoteWorkerEnrollmentCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["enrollmentId", "workerId", "workerName", "ttlSeconds"],
+  "properties": {
+    "enrollmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workerName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "ttlSeconds": { "type": "integer", "minimum": 300, "maximum": 3600 }
+  }
+}

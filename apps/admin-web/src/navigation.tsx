@@ -4,6 +4,7 @@ import { useI18n, type MessageKey, type Translate } from "./i18n";
 export const navigationPages = [
   { id: "overview", label: "nav.overview", group: "nav.group.resources" },
   { id: "targets", label: "nav.targets", group: "nav.group.resources" },
+  { id: "remoteWorkers", label: "nav.remoteWorkers", group: "nav.group.resources" },
   { id: "sandboxes", label: "nav.sandboxes", group: "nav.group.resources" },
   { id: "leases", label: "nav.leases", group: "nav.group.resources" },
   { id: "workers", label: "nav.workers", group: "nav.group.resources" },
@@ -20,6 +21,7 @@ export type Page = (typeof navigationPages)[number]["id"];
 const navigationIconPaths: Record<Page | "sidebar" | "search" | "arrow", string> = {
   overview: "M3 13h4l3-8 4 14 3-8h4",
   targets: "M3 3h18v7H3zM3 14h18v7H3zM7 6h.01M7 17h.01",
+  remoteWorkers: "M4 8h16M4 16h16M8 4v4M16 4v4M8 16v4M16 16v4",
   sandboxes: "M4 6 12 2l8 4-8 4zM4 6v12l8 4 8-4V6M12 10v12",
   leases: "M12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
   workers: "M7 7h10v10H7zM10 1v6M14 1v6M10 17v6M14 17v6M1 10h6M1 14h6M17 10h6M17 14h6",

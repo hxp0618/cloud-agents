@@ -161,6 +161,7 @@ func TestWriteLocalTokenFileIs0600AndExclusive(t *testing.T) {
 func TestRefreshLocalTokenFileAtomicallyReplacesToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	adminPath := filepath.Join(t.TempDir(), "admin-token")
+	bootstrapPath := filepath.Join(t.TempDir(), "bootstrap-token")
 	verifier, err := authn.NewLocalVerifier(authn.LocalVerifierConfig{})
 	if err != nil {
 		t.Fatal(err)
@@ -181,9 +182,16 @@ func TestRefreshLocalTokenFileAtomicallyReplacesToken(t *testing.T) {
 	if err := writeLocalTokenFile(adminPath, adminInitial); err != nil {
 		t.Fatal(err)
 	}
+	bootstrapInitial, err := verifier.IssueRemoteWorkerBootstrapToken(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLocalTokenFile(bootstrapPath, bootstrapInitial); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	errorsChannel := refreshLocalTokenFiles(ctx, verifier, claims, path, adminPath, time.Millisecond)
+	errorsChannel := refreshLocalTokenFiles(ctx, verifier, claims, path, adminPath, bootstrapPath, time.Millisecond)
 	deadline := time.Now().Add(time.Second)
 	for {
 		contents, readErr := os.ReadFile(path)
@@ -191,7 +199,8 @@ func TestRefreshLocalTokenFileAtomicallyReplacesToken(t *testing.T) {
 			t.Fatal(readErr)
 		}
 		adminContents, adminReadErr := os.ReadFile(adminPath)
-		if string(contents) != initial+"\n" && adminReadErr == nil && string(adminContents) != adminInitial+"\n" {
+		bootstrapContents, bootstrapReadErr := os.ReadFile(bootstrapPath)
+		if string(contents) != initial+"\n" && adminReadErr == nil && string(adminContents) != adminInitial+"\n" && bootstrapReadErr == nil && string(bootstrapContents) != bootstrapInitial+"\n" {
 			info, statErr := os.Stat(path)
 			if statErr != nil {
 				t.Fatal(statErr)

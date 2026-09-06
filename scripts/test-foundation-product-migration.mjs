@@ -226,13 +226,13 @@ FROM cloud_agents.schema_migrations;`,
       `SET ROLE cloud_agents_migration_owner;
 SELECT count(*) FROM pg_catalog.pg_class relation
 JOIN pg_catalog.pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
-WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies');`,
+WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies','remote_worker_enrollments','remote_worker_enrollment_activity');`,
       "foundation_migration",
       "foundation_fresh",
     )
       .split("\n")
       .at(-1),
-    "7",
+    "9",
   );
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -271,19 +271,23 @@ INSERT INTO cloud_agents.deployment_targets (
     "foundation_migration",
     "foundation_fresh",
   );
-  const serverOutput = docker(
-    "exec",
-    "-e",
-    "CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL=postgres://foundation_runtime@127.0.0.1/foundation_fresh?sslmode=disable",
-    "-e",
-    "CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL=postgres://foundation_migration@127.0.0.1/foundation_fresh?sslmode=disable",
-    name,
-    "/tmp/server.test",
-    "-test.run",
-    "^TestFoundationRuntimeProfilePostgres$",
-    "-test.v",
-  );
+  const runServerTest = (testName) =>
+    docker(
+      "exec",
+      "-e",
+      "CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL=postgres://foundation_runtime@127.0.0.1/foundation_fresh?sslmode=disable",
+      "-e",
+      "CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL=postgres://foundation_migration@127.0.0.1/foundation_fresh?sslmode=disable",
+      name,
+      "/tmp/server.test",
+      "-test.run",
+      `^${testName}$`,
+      "-test.v",
+    );
+  const serverOutput = runServerTest("TestFoundationRuntimeProfilePostgres");
   assert.ok(serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"));
+  const enrollmentOutput = runServerTest("TestRemoteWorkerEnrollmentPostgres");
+  assert.ok(enrollmentOutput.includes("--- PASS: TestRemoteWorkerEnrollmentPostgres"));
   const controllerOutput = docker(
     "exec",
     "-e",
@@ -310,13 +314,15 @@ INSERT INTO cloud_agents.deployment_targets (
         `product-${previousHead} to product-${currentHead} exact upgrade`,
         `product-${currentHead} no-op replay`,
         `${migrationCount}-row immutable ledger with two bundle digests`,
-        "foundation and runtime profile tables installed",
+        "foundation, runtime profile and RemoteWorker enrollment tables installed",
         "real Admin/User generated SDK and HTTP authorization",
         "RuntimeProfile create/publish/disable and public redaction",
         "durable Sandbox Operation/outbox acceptance and replay",
         "Controller claim renewal, retry, expired-claim recovery, terminal exhaustion and settlement",
         "legacy project dispatcher cannot claim foundation operation effects",
         "ordinary user Admin 403 and direct intent bypass denial",
+        "RemoteWorker Admin/bootstrap 403 separation and non-replayable no-store enrollment secret",
+        "RemoteWorker enrollment lifecycle, redacted Admin projection and durable audit",
       ],
       boundary:
         "Disposable PostgreSQL and in-process Control Plane HTTP validation; ready Target is a SQL fixture and no Controller or Docker Sandbox is started",

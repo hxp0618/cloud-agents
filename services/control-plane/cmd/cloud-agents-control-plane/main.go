@@ -239,19 +239,20 @@ JOIN pg_catalog.pg_namespace AS target_namespace
 WHERE login_role.rolname = session_user`
 
 type controlPlaneConfig struct {
-	listen                string
-	databaseURL           string
-	localTokenFile        string
-	localAdminTokenFile   string
-	localTenantID         string
-	localSubject          string
-	workerEndpoint        string
-	workerTokenFile       string
-	workspaceDirectory    string
-	dockerCredentials     string
-	kubernetesCredentials string
-	sshCredentials        string
-	accessGrantKey        string
+	listen                              string
+	databaseURL                         string
+	localTokenFile                      string
+	localAdminTokenFile                 string
+	localRemoteWorkerBootstrapTokenFile string
+	localTenantID                       string
+	localSubject                        string
+	workerEndpoint                      string
+	workerTokenFile                     string
+	workspaceDirectory                  string
+	dockerCredentials                   string
+	kubernetesCredentials               string
+	sshCredentials                      string
+	accessGrantKey                      string
 }
 
 type localRuntimeWorkerHealth struct {
@@ -305,7 +306,7 @@ func run(ctx context.Context, args []string) error {
 	if config.databaseURL == "" {
 		return errMissingDatabaseURL
 	}
-	if config.localTokenFile == "" || config.localAdminTokenFile == "" || config.localTokenFile == config.localAdminTokenFile {
+	if config.localTokenFile == "" || config.localAdminTokenFile == "" || config.localRemoteWorkerBootstrapTokenFile == "" {
 		return errInvalidTokenFilePath
 	}
 
@@ -358,8 +359,16 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(config.localAdminTokenFile) }()
+	bootstrapToken, issueBootstrapErr := verifier.IssueRemoteWorkerBootstrapToken(authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject})
+	if issueBootstrapErr != nil {
+		return errors.New("local RemoteWorker bootstrap token issuance failed")
+	}
+	if err := writeLocalTokenFile(config.localRemoteWorkerBootstrapTokenFile, bootstrapToken); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(config.localRemoteWorkerBootstrapTokenFile) }()
 	refreshContext, stopTokenRefresh := context.WithCancel(ctx)
-	tokenRefreshErrors := refreshLocalTokenFiles(refreshContext, verifier, authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject}, config.localTokenFile, config.localAdminTokenFile, localTokenRefreshInterval)
+	tokenRefreshErrors := refreshLocalTokenFiles(refreshContext, verifier, authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject}, config.localTokenFile, config.localAdminTokenFile, config.localRemoteWorkerBootstrapTokenFile, localTokenRefreshInterval)
 	defer func() {
 		stopTokenRefresh()
 		for range tokenRefreshErrors {
@@ -491,6 +500,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local network policy HTTP server is unavailable")
 	}
+	remoteWorkerEnrollmentHTTPServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifierAdapter, coordinationService)
+	if err != nil {
+		return errors.New("local RemoteWorker enrollment HTTP server is unavailable")
+	}
 	storagePolicyHTTPServer, err := server.NewStoragePolicyHTTPServer(verifierAdapter, coordinationService)
 	if err != nil {
 		return errors.New("local storage policy HTTP server is unavailable")
@@ -511,6 +524,10 @@ func run(ctx context.Context, args []string) error {
 		}
 		if server.HandlesNetworkPolicyPath(request.URL.Path) {
 			networkPolicyHTTPServer.ServeHTTP(writer, request)
+			return
+		}
+		if server.HandlesRemoteWorkerEnrollmentPath(request.URL.Path) {
+			remoteWorkerEnrollmentHTTPServer.ServeHTTP(writer, request)
 			return
 		}
 		if server.HandlesStoragePolicyPath(request.URL.Path) {
@@ -535,6 +552,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		adminDeploymentTargetHTTPServer.ServeHTTP(writer, request)
 	})))
+	mux.Handle("/v1/remote-worker-bootstrap/", remoteWorkerEnrollmentHTTPServer)
 	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
 	mux.Handle(server.RoleCollectionRoute, roleHTTPServer)
@@ -706,6 +724,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	databaseURL := set.String("database-url", "", "task-local PostgreSQL URL")
 	localTokenFile := set.String("local-token-file", "", "write one ephemeral local bearer token to this 0600 file")
 	localAdminTokenFile := set.String("local-admin-token-file", "", "write one ephemeral local admin bearer token to this 0600 file")
+	localRemoteWorkerBootstrapTokenFile := set.String("local-remote-worker-bootstrap-token-file", "", "write one ephemeral local RemoteWorker bootstrap bearer token to this 0600 file")
 	localTenantID := set.String("local-tenant-id", "tenant-coordination-normal", "tenant for the optional local token")
 	localSubject := set.String("local-subject", "user-admin", "subject for the optional local token")
 	workerEndpoint := set.String("worker-endpoint", "", "loopback HTTP endpoint of the localdev Worker")
@@ -748,26 +767,29 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	}
 	if (*localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator)))) ||
 		(*localAdminTokenFile != "" && (strings.TrimSpace(*localAdminTokenFile) != *localAdminTokenFile || strings.HasSuffix(*localAdminTokenFile, string(os.PathSeparator)))) ||
-		(*localTokenFile != "" && *localTokenFile == *localAdminTokenFile) {
+		(*localRemoteWorkerBootstrapTokenFile != "" && (strings.TrimSpace(*localRemoteWorkerBootstrapTokenFile) != *localRemoteWorkerBootstrapTokenFile || strings.HasSuffix(*localRemoteWorkerBootstrapTokenFile, string(os.PathSeparator)))) ||
+		(*localTokenFile != "" && (*localTokenFile == *localAdminTokenFile || *localTokenFile == *localRemoteWorkerBootstrapTokenFile)) ||
+		(*localAdminTokenFile != "" && *localAdminTokenFile == *localRemoteWorkerBootstrapTokenFile) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
 	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || strings.TrimSpace(resolvedSSHCredentials) != resolvedSSHCredentials || strings.TrimSpace(resolvedAccessGrantKey) != resolvedAccessGrantKey || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
 		return controlPlaneConfig{}, errInvalidRuntimeConfig
 	}
 	return controlPlaneConfig{
-		listen:                *listen,
-		databaseURL:           resolvedDatabaseURL,
-		localTokenFile:        *localTokenFile,
-		localAdminTokenFile:   *localAdminTokenFile,
-		localTenantID:         *localTenantID,
-		localSubject:          *localSubject,
-		workerEndpoint:        resolvedWorkerEndpoint,
-		workerTokenFile:       resolvedWorkerTokenFile,
-		workspaceDirectory:    resolvedWorkspaceDirectory,
-		dockerCredentials:     resolvedDockerCredentials,
-		kubernetesCredentials: resolvedKubernetesCredentials,
-		sshCredentials:        resolvedSSHCredentials,
-		accessGrantKey:        resolvedAccessGrantKey,
+		listen:                              *listen,
+		databaseURL:                         resolvedDatabaseURL,
+		localTokenFile:                      *localTokenFile,
+		localAdminTokenFile:                 *localAdminTokenFile,
+		localRemoteWorkerBootstrapTokenFile: *localRemoteWorkerBootstrapTokenFile,
+		localTenantID:                       *localTenantID,
+		localSubject:                        *localSubject,
+		workerEndpoint:                      resolvedWorkerEndpoint,
+		workerTokenFile:                     resolvedWorkerTokenFile,
+		workspaceDirectory:                  resolvedWorkspaceDirectory,
+		dockerCredentials:                   resolvedDockerCredentials,
+		kubernetesCredentials:               resolvedKubernetesCredentials,
+		sshCredentials:                      resolvedSSHCredentials,
+		accessGrantKey:                      resolvedAccessGrantKey,
 	}, nil
 }
 
@@ -996,7 +1018,7 @@ func replaceLocalTokenFile(path, token string) error {
 	return nil
 }
 
-func refreshLocalTokenFiles(ctx context.Context, verifier *authn.LocalVerifier, claims authn.LocalTokenClaims, userPath, adminPath string, interval time.Duration) <-chan error {
+func refreshLocalTokenFiles(ctx context.Context, verifier *authn.LocalVerifier, claims authn.LocalTokenClaims, userPath, adminPath, bootstrapPath string, interval time.Duration) <-chan error {
 	errorsChannel := make(chan error, 1)
 	go func() {
 		defer close(errorsChannel)
@@ -1020,6 +1042,12 @@ func refreshLocalTokenFiles(ctx context.Context, verifier *authn.LocalVerifier, 
 				}
 				if err == nil {
 					err = replaceLocalTokenFile(adminPath, token)
+				}
+				if err == nil {
+					token, err = verifier.IssueRemoteWorkerBootstrapToken(claims)
+				}
+				if err == nil {
+					err = replaceLocalTokenFile(bootstrapPath, token)
 				}
 				if err != nil {
 					errorsChannel <- errors.New("local token refresh failed")

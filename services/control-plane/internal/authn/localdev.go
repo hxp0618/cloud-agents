@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	localIssuer          = "https://local.invalid/cloud-agents/authn"
-	localAudience        = "https://local.invalid/cloud-agents/control-plane"
-	localKeyID           = "local-ephemeral-rs256"
-	localClientID        = "local-control-plane"
-	localPermission      = "environment-profiles.list environment-quotas.get environments.create environments.get memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list sandboxes.update tenants.get"
-	localAdminPermission = "audit.list environments.create environments.get leases.act leases.get leases.list memberships.create memberships.delete memberships.get memberships.list memberships.update network-policies.get network-policies.list network-policies.update operations.list organizations.create organizations.get organizations.list profiles.act profiles.create profiles.get profiles.list projects.act projects.create projects.get projects.list quotas.get quotas.update releases.create releases.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list sandboxes.act sandboxes.get sandboxes.list storage-policies.get storage-policies.list storage-policies.update targets.act targets.create targets.get targets.list tenants.get workers.list"
-	localTokenTTL        = 5 * time.Minute
+	localIssuer                          = "https://local.invalid/cloud-agents/authn"
+	localAudience                        = "https://local.invalid/cloud-agents/control-plane"
+	localKeyID                           = "local-ephemeral-rs256"
+	localClientID                        = "local-control-plane"
+	localPermission                      = "environment-profiles.list environment-quotas.get environments.create environments.get memberships.create memberships.delete memberships.get memberships.list memberships.update organizations.create organizations.get organizations.list projects.act projects.create projects.get projects.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list sandboxes.update tenants.get"
+	localAdminPermission                 = "audit.list environments.create environments.get leases.act leases.get leases.list memberships.create memberships.delete memberships.get memberships.list memberships.update network-policies.get network-policies.list network-policies.update operations.list organizations.create organizations.get organizations.list profiles.act profiles.create profiles.get profiles.list projects.act projects.create projects.get projects.list quotas.get quotas.update releases.create releases.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list role-bindings.bind role-bindings.delete role-bindings.get role-bindings.list roles.get roles.list sandboxes.act sandboxes.get sandboxes.list storage-policies.get storage-policies.list storage-policies.update targets.act targets.create targets.get targets.list tenants.get workers.list"
+	localRemoteWorkerBootstrapPermission = "projects.act remote-worker-bootstrap.act"
+	localTokenTTL                        = 5 * time.Minute
 )
 
 // LocalVerifierConfig configures the explicitly local-only verifier. The
@@ -107,6 +108,12 @@ func (verifier *LocalVerifier) IssueToken(claims LocalTokenClaims) (string, erro
 // IssueAdminToken signs a local bearer with the additional Admin API scopes.
 func (verifier *LocalVerifier) IssueAdminToken(claims LocalTokenClaims) (string, error) {
 	return verifier.issueToken(claims, localAdminPermission)
+}
+
+// IssueRemoteWorkerBootstrapToken signs a local bearer that can only claim a
+// one-time RemoteWorker enrollment secret.
+func (verifier *LocalVerifier) IssueRemoteWorkerBootstrapToken(claims LocalTokenClaims) (string, error) {
+	return verifier.issueToken(claims, localRemoteWorkerBootstrapPermission)
 }
 
 func (verifier *LocalVerifier) issueToken(claims LocalTokenClaims, permission string) (string, error) {

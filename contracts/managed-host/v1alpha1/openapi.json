@@ -649,6 +649,168 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments": {
+      "get": {
+        "operationId": "adminListRemoteWorkerEnrollments",
+        "x-cloud-agents-required-scope": "remote-worker-enrollments.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Remote Worker enrollment intents",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateRemoteWorkerEnrollment",
+        "x-cloud-agents-required-scope": "remote-worker-enrollments.create",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-create-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "$ref": "#/components/responses/RemoteWorkerEnrollment" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}": {
+      "get": {
+        "operationId": "adminGetRemoteWorkerEnrollment",
+        "x-cloud-agents-required-scope": "remote-worker-enrollments.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/RemoteWorkerEnrollment" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:revoke": {
+      "post": {
+        "operationId": "adminRevokeRemoteWorkerEnrollment",
+        "x-cloud-agents-required-scope": "remote-worker-enrollments.act",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-revoke-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/RemoteWorkerEnrollment" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}/audit-events": {
+      "get": {
+        "operationId": "adminListRemoteWorkerEnrollmentAuditEvents",
+        "x-cloud-agents-required-scope": "audit.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted Remote Worker enrollment audit events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/remote-worker-bootstrap/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:claimSecret": {
+      "post": {
+        "operationId": "remoteWorkerClaimEnrollmentSecret",
+        "x-cloud-agents-required-scope": "remote-worker-bootstrap.act",
+        "x-cloud-agents-coordination": "one-time-secret",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret-claim-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/RemoteWorkerEnrollmentSecret" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/network-policies": {
       "get": {
         "operationId": "adminListNetworkPolicies",
@@ -2357,6 +2519,12 @@
         "required": true,
         "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
       },
+      "RemoteWorkerEnrollmentId": {
+        "name": "remoteWorkerEnrollmentId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
       "NetworkPolicyId": {
         "name": "networkPolicyId",
         "in": "path",
@@ -2475,6 +2643,31 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy.schema.json" }
+          }
+        }
+      },
+      "RemoteWorkerEnrollment": {
+        "description": "Redacted Remote Worker enrollment intent",
+        "headers": {
+          "X-Request-ID": { "$ref": "#/components/headers/RequestId" },
+          "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment.schema.json" }
+          }
+        }
+      },
+      "RemoteWorkerEnrollmentSecret": {
+        "description": "One-time Remote Worker enrollment secret",
+        "headers": {
+          "X-Request-ID": { "$ref": "#/components/headers/RequestId" },
+          "Cache-Control": { "required": true, "schema": { "const": "no-store" } },
+          "Pragma": { "required": true, "schema": { "const": "no-cache" } }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret.schema.json" }
           }
         }
       },

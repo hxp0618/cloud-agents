@@ -528,6 +528,14 @@ func pgErrorCode(err error) string {
 }
 
 func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, string, string) {
+	verifier, tokens := foundationVerifierAndScopedTokens(t,
+		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list network-policies.update",
+		"environment-profiles.list environments.create projects.act projects.get sandboxes.update",
+	)
+	return verifier, tokens[0], tokens[1]
+}
+
+func foundationVerifierAndScopedTokens(t *testing.T, scopes ...string) (*authn.ConfiguredVerifier, []string) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -571,7 +579,9 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 		}
 		return protected + "." + payload + "." + base64.RawURLEncoding.EncodeToString(signature)
 	}
-	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list network-policies.update")
-	user := issue("foundation-user-token", "environment-profiles.list environments.create projects.act projects.get sandboxes.update")
-	return verifier, admin, user
+	tokens := make([]string, 0, len(scopes))
+	for index, scope := range scopes {
+		tokens = append(tokens, issue(fmt.Sprintf("foundation-token-%d", index), scope))
+	}
+	return verifier, tokens
 }

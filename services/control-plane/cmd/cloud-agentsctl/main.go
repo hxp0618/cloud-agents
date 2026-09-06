@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ type globalOptions struct {
 	ptySession     string
 	lease          string
 	target         string
+	enrollment     string
 	requestID      string
 	idempotencyKey string
 	timeout        time.Duration
@@ -139,6 +141,15 @@ func run(args []string, stdout io.Writer) error {
 			err = errors.New("--expected-generation must be greater than zero")
 		} else if err == nil {
 			value, err = client.CleanupDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
+		}
+	case "remote-worker-enrollment claim-secret":
+		var expectedResourceVersion int64
+		if err = parseActionFlags("remote-worker-enrollment claim-secret", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&expectedResourceVersion, "expected-resource-version", 0, "enrollment resource version")
+		}); err == nil && expectedResourceVersion < 1 {
+			err = errors.New("--expected-resource-version must be greater than zero")
+		} else if err == nil {
+			value, err = client.ClaimRemoteWorkerEnrollmentSecret(ctx, options.tenant, options.project, options.enrollment, options.requestID, options.idempotencyKey, platform.RemoteWorkerEnrollmentSecretClaimRequest{ExpectedResourceVersion: strconv.FormatInt(expectedResourceVersion, 10), ConfirmedEnrollmentID: options.enrollment})
 		}
 	case "tenant get":
 		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
@@ -709,6 +720,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.ptySession, "pty-session", "", "PTY session identifier")
 	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
 	set.StringVar(&options.target, "target", "", "deployment target identifier")
+	set.StringVar(&options.enrollment, "enrollment", "", "RemoteWorker enrollment identifier")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
 	set.StringVar(&options.idempotencyKey, "idempotency-key", "", "idempotency key")
 	set.DurationVar(&options.timeout, "timeout", defaultRequestTimeout, "request timeout")
@@ -788,6 +800,9 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if requiresTarget(command, action) && options.target == "" {
 		return globalOptions{}, "", "", nil, errors.New("--target is required")
+	}
+	if command == "remote-worker-enrollment" && options.enrollment == "" {
+		return globalOptions{}, "", "", nil, errors.New("--enrollment is required")
 	}
 	if requiresIdempotency(command, action) && options.idempotencyKey == "" {
 		return globalOptions{}, "", "", nil, errors.New("--idempotency-key is required")
@@ -927,7 +942,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
 		return true
 	default:
 		return false
@@ -935,7 +950,7 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "sandbox" || command == "pty" || command == "files" || command == "preview" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
+	return command == "target" && action != "preflight" || command == "remote-worker-enrollment" || command == "project" && action == "get" || command == "sandbox" || command == "pty" || command == "files" || command == "preview" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool {
 	return command == "organization" && action != "list" || command == "project" && action == "list"
@@ -970,7 +985,7 @@ func requiresTarget(command, action string) bool {
 	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"
 }
 func requiresIdempotency(command, action string) bool {
-	return (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate" || action == "upgrade"))
+	return command == "remote-worker-enrollment" || (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate" || action == "upgrade"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
@@ -981,6 +996,7 @@ const help = usage + `
 
 resources and actions:
   target preflight|register|get|probe|cleanup
+  remote-worker-enrollment claim-secret
   tenant get
   organization get|list|create
   project get|list|create

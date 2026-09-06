@@ -135,7 +135,7 @@ func TestLocalVerifierSeparatesAdminScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, permission := range []string{"audit.list", "leases.act", "leases.get", "leases.list", "network-policies.get", "network-policies.list", "network-policies.update", "operations.list", "profiles.act", "profiles.create", "profiles.get", "profiles.list", "quotas.get", "quotas.update", "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.list", "workers.list"} {
+	for _, permission := range []string{"audit.list", "leases.act", "leases.get", "leases.list", "network-policies.get", "network-policies.list", "network-policies.update", "operations.list", "profiles.act", "profiles.create", "profiles.get", "profiles.list", "quotas.get", "quotas.update", "releases.create", "releases.list", "remote-worker-enrollments.act", "remote-worker-enrollments.create", "remote-worker-enrollments.get", "remote-worker-enrollments.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.list", "workers.list"} {
 		request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: permission}
 		if _, err := verifier.Verify(userToken, request); errorCategory(err) != errorScopeMismatch {
 			t.Fatalf("user token %s error=%v", permission, err)
@@ -147,6 +147,21 @@ func TestLocalVerifierSeparatesAdminScopes(t *testing.T) {
 	request := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "sandboxes.update"}
 	if _, err := verifier.Verify(adminToken, request); errorCategory(err) != errorScopeMismatch {
 		t.Fatalf("admin token unexpectedly gained user content access: %v", err)
+	}
+	bootstrapToken, err := verifier.IssueRemoteWorkerBootstrapToken(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapRequest := LocalVerificationRequest{TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "remote-worker-bootstrap.act"}
+	if _, err := verifier.Verify(bootstrapToken, bootstrapRequest); err != nil {
+		t.Fatalf("bootstrap token verification failed: %v", err)
+	}
+	if _, err := verifier.Verify(adminToken, bootstrapRequest); errorCategory(err) != errorScopeMismatch {
+		t.Fatalf("admin token gained bootstrap secret access: %v", err)
+	}
+	bootstrapRequest.RequiredPermission = "remote-worker-enrollments.get"
+	if _, err := verifier.Verify(bootstrapToken, bootstrapRequest); errorCategory(err) != errorScopeMismatch {
+		t.Fatalf("bootstrap token gained Admin read access: %v", err)
 	}
 }
 

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-enrollment-revoke-request.schema.json",
+  "title": "RemoteWorkerEnrollmentRevokeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedResourceVersion", "confirmedEnrollmentId"],
+  "properties": {
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "confirmedEnrollmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

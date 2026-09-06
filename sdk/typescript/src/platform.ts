@@ -456,6 +456,48 @@ export type NetworkPolicyPage = Readonly<{
   networkPolicies: readonly NetworkPolicy[];
   nextPageToken?: string;
 }>;
+export type RemoteWorkerEnrollmentCreateRequest = Readonly<{
+  enrollmentId: string;
+  workerId: string;
+  workerName: string;
+  ttlSeconds: number;
+}>;
+export type RemoteWorkerEnrollmentSecretClaimRequest = Readonly<{
+  expectedResourceVersion: string;
+  confirmedEnrollmentId: string;
+}>;
+export type RemoteWorkerEnrollmentRevokeRequest = Readonly<{
+  expectedResourceVersion: string;
+  confirmedEnrollmentId: string;
+}>;
+export type RemoteWorkerEnrollment = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RemoteWorkerEnrollment";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    workerId: string;
+    state: "pending" | "secret-issued" | "enrolled" | "revoked" | "expired";
+    expiresAt: string;
+    secretClaimedAt?: string;
+    enrolledAt?: string;
+    revokedAt?: string;
+  }>;
+}>;
+export type RemoteWorkerEnrollmentPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RemoteWorkerEnrollmentPage";
+  remoteWorkerEnrollments: readonly RemoteWorkerEnrollment[];
+  nextPageToken?: string;
+}>;
+export type RemoteWorkerEnrollmentSecret = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RemoteWorkerEnrollmentSecret";
+  projectRef: NamespaceRef;
+  enrollmentId: string;
+  enrollmentSecret: `carw1_${string}`;
+  expiresAt: string;
+}>;
 export type EnvironmentProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
@@ -913,13 +955,17 @@ export type AdminAuditEvent = Readonly<{
     | "profile.disable"
     | "quota.set"
     | "storage-policy.set"
-    | "network-policy.set";
+    | "network-policy.set"
+    | "remote-worker-enrollment.create"
+    | "remote-worker-enrollment.claim-secret"
+    | "remote-worker-enrollment.revoke";
   resourceKind:
     | "DeploymentTarget"
     | "EnvironmentProfile"
     | "ProjectLeaseQuota"
     | "StoragePolicy"
-    | "NetworkPolicy";
+    | "NetworkPolicy"
+    | "RemoteWorkerEnrollment";
   resourceId: string;
   resourceGeneration: number;
   result: "requested" | "succeeded" | "failed";
@@ -1573,6 +1619,33 @@ const networkPolicyPageResponseShape: ResponseShape = {
     kind: scalarResponseShape,
     networkPolicies: { item: networkPolicyResponseShape },
     nextPageToken: scalarResponseShape,
+  },
+};
+const remoteWorkerEnrollmentResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  workerId: scalarResponseShape,
+  state: scalarResponseShape,
+  expiresAt: scalarResponseShape,
+  secretClaimedAt: scalarResponseShape,
+  enrolledAt: scalarResponseShape,
+  revokedAt: scalarResponseShape,
+});
+const remoteWorkerEnrollmentPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    remoteWorkerEnrollments: { item: remoteWorkerEnrollmentResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const remoteWorkerEnrollmentSecretResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    enrollmentId: scalarResponseShape,
+    enrollmentSecret: scalarResponseShape,
+    expiresAt: scalarResponseShape,
   },
 };
 const environmentProfileResponseShape = resourceResponseShape({
@@ -5081,6 +5154,171 @@ export function decodeNetworkPolicyPage(value: unknown): NetworkPolicyPage {
       : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
   );
 }
+export function decodeRemoteWorkerEnrollmentCreateRequest(
+  value: unknown,
+): RemoteWorkerEnrollmentCreateRequest {
+  const source = strictRecord(
+    value,
+    ["enrollmentId", "workerId", "workerName", "ttlSeconds"],
+    ["enrollmentId", "workerId", "workerName", "ttlSeconds"],
+  );
+  return Object.freeze({
+    enrollmentId: identifier(source.enrollmentId, "/enrollmentId"),
+    workerId: identifier(source.workerId, "/workerId"),
+    workerName: identifier(source.workerName, "/workerName"),
+    ttlSeconds: integer(source.ttlSeconds, 300, 3600, "/ttlSeconds"),
+  });
+}
+export function encodeRemoteWorkerEnrollmentCreateRequest(
+  value: RemoteWorkerEnrollmentCreateRequest,
+): string {
+  return JSON.stringify(decodeRemoteWorkerEnrollmentCreateRequest(value));
+}
+function remoteWorkerEnrollmentTransition(
+  value: unknown,
+): Readonly<{ expectedResourceVersion: string; confirmedEnrollmentId: string }> {
+  const source = strictRecord(
+    value,
+    ["expectedResourceVersion", "confirmedEnrollmentId"],
+    ["expectedResourceVersion", "confirmedEnrollmentId"],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion,
+    confirmedEnrollmentId: identifier(source.confirmedEnrollmentId, "/confirmedEnrollmentId"),
+  });
+}
+export function decodeRemoteWorkerEnrollmentSecretClaimRequest(
+  value: unknown,
+): RemoteWorkerEnrollmentSecretClaimRequest {
+  return remoteWorkerEnrollmentTransition(value);
+}
+export function encodeRemoteWorkerEnrollmentSecretClaimRequest(
+  value: RemoteWorkerEnrollmentSecretClaimRequest,
+): string {
+  return JSON.stringify(decodeRemoteWorkerEnrollmentSecretClaimRequest(value));
+}
+export function decodeRemoteWorkerEnrollmentRevokeRequest(
+  value: unknown,
+): RemoteWorkerEnrollmentRevokeRequest {
+  return remoteWorkerEnrollmentTransition(value);
+}
+export function encodeRemoteWorkerEnrollmentRevokeRequest(
+  value: RemoteWorkerEnrollmentRevokeRequest,
+): string {
+  return JSON.stringify(decodeRemoteWorkerEnrollmentRevokeRequest(value));
+}
+export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnrollment {
+  const source = record(value),
+    root = base(source, "RemoteWorkerEnrollment");
+  const spec = strictRecord(
+    source.spec,
+    ["projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt"],
+    ["projectRef", "workerId", "state", "expiresAt"],
+    "/spec",
+  );
+  const state = enumValue(
+    spec.state,
+    ["pending", "secret-issued", "enrolled", "revoked", "expired"] as const,
+    "/spec/state",
+  );
+  const expiresAt = dateTime(spec.expiresAt, "/spec/expiresAt"),
+    createdAt = Date.parse(root.metadata.createdAt),
+    updatedAt = Date.parse(root.metadata.updatedAt ?? root.metadata.createdAt),
+    expires = Date.parse(expiresAt);
+  const optionalTime = (name: "secretClaimedAt" | "enrolledAt" | "revokedAt") =>
+    spec[name] === undefined ? undefined : dateTime(spec[name], `/spec/${name}`);
+  const secretClaimedAt = optionalTime("secretClaimedAt"),
+    enrolledAt = optionalTime("enrolledAt"),
+    revokedAt = optionalTime("revokedAt");
+  for (const instant of [secretClaimedAt, enrolledAt, revokedAt])
+    if (
+      instant !== undefined &&
+      (Date.parse(instant) < createdAt || Date.parse(instant) > updatedAt)
+    )
+      error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state");
+  if (
+    expires <= createdAt ||
+    (secretClaimedAt !== undefined && Date.parse(secretClaimedAt) >= expires) ||
+    (enrolledAt !== undefined &&
+      (secretClaimedAt === undefined ||
+        Date.parse(enrolledAt) < Date.parse(secretClaimedAt) ||
+        Date.parse(enrolledAt) >= expires)) ||
+    (state === "pending" &&
+      (secretClaimedAt !== undefined || enrolledAt !== undefined || revokedAt !== undefined)) ||
+    (state === "secret-issued" &&
+      (secretClaimedAt === undefined || enrolledAt !== undefined || revokedAt !== undefined)) ||
+    (state === "enrolled" &&
+      (secretClaimedAt === undefined || enrolledAt === undefined || revokedAt !== undefined)) ||
+    (state === "revoked" && (enrolledAt !== undefined || revokedAt === undefined)) ||
+    (state === "expired" && (enrolledAt !== undefined || revokedAt !== undefined))
+  )
+    error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state");
+  return Object.freeze({
+    ...root,
+    kind: "RemoteWorkerEnrollment" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      workerId: identifier(spec.workerId, "/spec/workerId"),
+      state,
+      expiresAt,
+      ...(secretClaimedAt === undefined ? {} : { secretClaimedAt }),
+      ...(enrolledAt === undefined ? {} : { enrolledAt }),
+      ...(revokedAt === undefined ? {} : { revokedAt }),
+    }),
+  });
+}
+export function decodeRemoteWorkerEnrollmentPage(value: unknown): RemoteWorkerEnrollmentPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "remoteWorkerEnrollments", "nextPageToken"],
+    ["apiVersion", "kind", "remoteWorkerEnrollments"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "RemoteWorkerEnrollmentPage" ||
+    !Array.isArray(source.remoteWorkerEnrollments) ||
+    source.remoteWorkerEnrollments.length > 200
+  )
+    error("INVALID_REMOTE_WORKER_ENROLLMENT_PAGE", "/remoteWorkerEnrollments");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "RemoteWorkerEnrollmentPage" as const,
+    remoteWorkerEnrollments: Object.freeze(
+      (source.remoteWorkerEnrollments as unknown[]).map(decodeRemoteWorkerEnrollment),
+    ),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeRemoteWorkerEnrollmentSecret(value: unknown): RemoteWorkerEnrollmentSecret {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "projectRef", "enrollmentId", "enrollmentSecret", "expiresAt"],
+    ["apiVersion", "kind", "projectRef", "enrollmentId", "enrollmentSecret", "expiresAt"],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "RemoteWorkerEnrollmentSecret")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const enrollmentSecret = string(source.enrollmentSecret, "/enrollmentSecret");
+  if (!/^carw1_[A-Za-z0-9_-]{43}$/u.test(enrollmentSecret))
+    error("INVALID_REMOTE_WORKER_ENROLLMENT_SECRET", "/enrollmentSecret");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "RemoteWorkerEnrollmentSecret",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    enrollmentId: identifier(source.enrollmentId, "/enrollmentId"),
+    enrollmentSecret: enrollmentSecret as `carw1_${string}`,
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
 export function decodeEnvironmentProfile(value: unknown): EnvironmentProfile {
   const source = record(value);
   const root = base(source, "EnvironmentProfile");
@@ -6083,6 +6321,9 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "quota.set",
         "storage-policy.set",
         "network-policy.set",
+        "remote-worker-enrollment.create",
+        "remote-worker-enrollment.claim-secret",
+        "remote-worker-enrollment.revoke",
       ] as const,
       "/action",
     ),
@@ -6094,6 +6335,7 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "ProjectLeaseQuota",
         "StoragePolicy",
         "NetworkPolicy",
+        "RemoteWorkerEnrollment",
       ] as const,
       "/resourceKind",
     ),
@@ -7077,6 +7319,29 @@ export function parseNetworkPolicy(text: string): ResponseEnvelope<NetworkPolicy
 }
 export function parseNetworkPolicyPage(text: string): ResponseEnvelope<NetworkPolicyPage> {
   return parseResponse(text, networkPolicyPageResponseShape, decodeNetworkPolicyPage);
+}
+export function parseRemoteWorkerEnrollment(
+  text: string,
+): ResponseEnvelope<RemoteWorkerEnrollment> {
+  return parseResponse(text, remoteWorkerEnrollmentResponseShape, decodeRemoteWorkerEnrollment);
+}
+export function parseRemoteWorkerEnrollmentPage(
+  text: string,
+): ResponseEnvelope<RemoteWorkerEnrollmentPage> {
+  return parseResponse(
+    text,
+    remoteWorkerEnrollmentPageResponseShape,
+    decodeRemoteWorkerEnrollmentPage,
+  );
+}
+export function parseRemoteWorkerEnrollmentSecret(
+  text: string,
+): ResponseEnvelope<RemoteWorkerEnrollmentSecret> {
+  return parseResponse(
+    text,
+    remoteWorkerEnrollmentSecretResponseShape,
+    decodeRemoteWorkerEnrollmentSecret,
+  );
 }
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
@@ -9107,6 +9372,211 @@ export class Client {
     if (
       result.value.events.some(
         (event) => event.resourceKind !== "StoragePolicy" || event.resourceId !== storagePolicyId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
+  }
+  async listAdminRemoteWorkerEnrollments(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerEnrollmentPage>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListRemoteWorkerEnrollments", response);
+    const result = parseRemoteWorkerEnrollmentPage(response.body);
+    if (
+      result.value.remoteWorkerEnrollments.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/remoteWorkerEnrollments");
+    return result;
+  }
+  async createAdminRemoteWorkerEnrollment(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RemoteWorkerEnrollmentCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerEnrollment>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRemoteWorkerEnrollmentCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRemoteWorkerEnrollmentCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201)
+      throw await this.problem("adminCreateRemoteWorkerEnrollment", response);
+    const result = parseRemoteWorkerEnrollment(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== checked.enrollmentId ||
+      result.value.metadata.name !== checked.workerName ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.workerId !== checked.workerId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async getAdminRemoteWorkerEnrollment(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerEnrollment>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminGetRemoteWorkerEnrollment", response);
+    const result = parseRemoteWorkerEnrollment(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== enrollmentId ||
+      result.value.spec.projectRef.id !== projectId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async revokeAdminRemoteWorkerEnrollment(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RemoteWorkerEnrollmentRevokeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerEnrollment>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRemoteWorkerEnrollmentRevokeRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:revoke`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRemoteWorkerEnrollmentRevokeRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminRevokeRemoteWorkerEnrollment", response);
+    const result = parseRemoteWorkerEnrollment(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== enrollmentId ||
+      result.value.spec.projectRef.id !== projectId ||
+      checked.confirmedEnrollmentId !== enrollmentId ||
+      result.value.spec.state !== "revoked"
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async claimRemoteWorkerEnrollmentSecret(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RemoteWorkerEnrollmentSecretClaimRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerEnrollmentSecret>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRemoteWorkerEnrollmentSecretClaimRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/remote-worker-bootstrap/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:claimSecret`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRemoteWorkerEnrollmentSecretClaimRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("remoteWorkerClaimEnrollmentSecret", response);
+    if (response.headers["cache-control"] !== "no-store" || response.headers.pragma !== "no-cache")
+      error("SECRET_CACHE_POLICY_MISMATCH", "/headers");
+    const result = parseRemoteWorkerEnrollmentSecret(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.enrollmentId !== enrollmentId ||
+      checked.confirmedEnrollmentId !== enrollmentId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId");
+    return result;
+  }
+  async listAdminRemoteWorkerEnrollmentAuditEvents(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminAuditEventPage>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}/audit-events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListRemoteWorkerEnrollmentAuditEvents", response);
+    const result = parseAdminAuditEventPage(response.body);
+    if (
+      result.value.events.some(
+        (event) =>
+          event.resourceKind !== "RemoteWorkerEnrollment" || event.resourceId !== enrollmentId,
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
@@ -11151,6 +11621,16 @@ function validateNetworkPolicyPath(
   validatePath(tenantId, requestId);
   identifier(projectId, "/projectId");
   if (networkPolicyId !== undefined) identifier(networkPolicyId, "/networkPolicyId");
+}
+function validateRemoteWorkerEnrollmentPath(
+  tenantId: string,
+  projectId: string,
+  enrollmentId: string | undefined,
+  requestId: string,
+): void {
+  validatePath(tenantId, requestId);
+  identifier(projectId, "/projectId");
+  if (enrollmentId !== undefined) identifier(enrollmentId, "/enrollmentId");
 }
 function validateEnvironmentProfilePath(
   tenantId: string,

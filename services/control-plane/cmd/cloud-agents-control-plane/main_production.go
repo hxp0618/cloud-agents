@@ -308,6 +308,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("network policy HTTP server is unavailable")
 	}
+	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("RemoteWorker enrollment HTTP server is unavailable")
+	}
 	storagePolicyServer, err := server.NewStoragePolicyHTTPServer(verifier, coordinationService)
 	if err != nil {
 		return errors.New("storage policy HTTP server is unavailable")
@@ -370,6 +374,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			networkPolicyServer.ServeHTTP(writer, request)
 			return
 		}
+		if server.HandlesRemoteWorkerEnrollmentPath(request.URL.Path) {
+			remoteWorkerEnrollmentServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesStoragePolicyPath(request.URL.Path) {
 			storagePolicyServer.ServeHTTP(writer, request)
 			return
@@ -392,6 +400,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		adminDeploymentTargetServer.ServeHTTP(writer, request)
 	})))
+	mux.Handle("/v1/remote-worker-bootstrap/", remoteWorkerEnrollmentServer)
 	mux.Handle(server.OrganizationCollectionRoute, organizationServer)
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleCollectionRoute, roleServer)

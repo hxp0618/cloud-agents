@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-enrollment.schema.json",
+  "title": "RemoteWorkerEnrollment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "RemoteWorkerEnrollment" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "workerId", "state", "expiresAt"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "state": { "enum": ["pending", "secret-issued", "enrolled", "revoked", "expired"] },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "secretClaimedAt": { "type": "string", "format": "date-time" },
+        "enrolledAt": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "expired is derived from the database clock for pending or secret-issued enrollment intents",
+    "the resource never exposes enrollment secret or digest bytes"
+  ]
+}
