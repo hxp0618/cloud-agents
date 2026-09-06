@@ -161,10 +161,16 @@ func (server *FoundationHTTPServer) issueSandboxAccessGrant(writer http.Response
 		writeFoundationError(writer, err)
 		return
 	}
+	sshUsername, err := accessgrant.SSHUsername(tenantID, projectID, result.GrantID)
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
 	value := platform.SandboxAccessGrant{APIVersion: platform.APIVersion, Kind: "SandboxAccessGrant",
 		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
 		GrantID:    result.GrantID, SandboxID: result.SandboxID, Generation: result.Generation,
-		AccessKind: result.AccessKind, AccessToken: token, ExpiresAt: result.ExpiresAt.UTC().Format(time.RFC3339Nano)}
+		AccessKind: result.AccessKind, AccessToken: token, SSHUsername: sshUsername,
+		ExpiresAt: result.ExpiresAt.UTC().Format(time.RFC3339Nano)}
 	body, err = platform.EncodeSandboxAccessGrantResponseJSON(common.ResponseEnvelope[platform.SandboxAccessGrant]{Value: value})
 	if err != nil {
 		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")

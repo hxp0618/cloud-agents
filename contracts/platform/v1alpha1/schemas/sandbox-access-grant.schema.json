@@ -4,7 +4,7 @@
   "title": "SandboxAccessGrant",
   "type": "object",
   "additionalProperties": false,
-  "required": ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "expiresAt"],
+  "required": ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "sshUsername", "expiresAt"],
   "properties": {
     "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
     "kind": { "const": "SandboxAccessGrant" },
@@ -14,10 +14,12 @@
     "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
     "accessKind": { "const": "sandbox" },
     "accessToken": { "type": "string", "pattern": "^cag1_[A-Za-z0-9_-]{43}$" },
+    "sshUsername": { "type": "string", "maxLength": 386, "pattern": "^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$" },
     "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
   },
   "x-cloud-agents-semantic-constraints": [
-    "accessToken is a short-lived bearer credential returned only by the user grant API",
+    "accessToken is a short-lived bearer and SSH password credential returned only by the user grant API",
+    "sshUsername fixes SSH access to the tenant, project and Grant; the Gateway independently revalidates the exact Sandbox generation",
     "no Target endpoint, runtime receipt or infrastructure credential is exposed"
   ]
 }

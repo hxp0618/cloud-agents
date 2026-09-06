@@ -456,6 +456,16 @@ try {
   assert.equal(ptyReceipt.previewRevokedPortStatus, 404);
   assert.equal(ptyReceipt.previewRevokedGrantStatus, 403);
   assert.equal(ptyReceipt.previewExpiredGrantStatus, 403);
+  assert.equal(ptyReceipt.sshFixedRoute, true);
+  assert.equal(ptyReceipt.sshWrongPasswordDenied, true);
+  assert.equal(ptyReceipt.sshCrossTenantDenied, true);
+  assert.equal(ptyReceipt.sshForwardingDenied, true);
+  assert.equal(ptyReceipt.sshEnvironmentDenied, true);
+  assert.equal(ptyReceipt.sshGatewayRestart, true);
+  assert.equal(ptyReceipt.sshActiveConnectionRevoked, true);
+  assert.equal(ptyReceipt.sshRevokedDenied, true);
+  assert.equal(ptyReceipt.sshExpiredDenied, true);
+  assert.equal(ptyReceipt.sshOldGenerationDenied, true);
   assert.ok(ptyReceipt.boundedOutputOffset >= 1_100_000);
   assert.ok(ptyReceipt.boundedReplayOffset > 0);
   assert.ok(ptyReceipt.boundedReplayBytes <= 1 << 20);
@@ -549,7 +559,7 @@ try {
       "Admin token, stale generation, and combined output above 1 MiB are denied with 403, 409, and 413",
       "Product Exec response omits endpoint, runtime identifier, and credential references",
       "short-lived Sandbox Grant is idempotent, generation-bound, database persisted, expiring, and revocable",
-      "standalone Access Gateway allows only fixed PTY, Files, and private Preview routes and denies wrong-token and cross-tenant requests",
+      "standalone Access Gateway allows only fixed PTY, Files, private Preview, and SSH Sandbox routes and denies wrong-token and cross-tenant requests",
       "PTY survives Gateway restart and reconnects from an absolute cursor without output loss",
       "fixed candidate replay buffer remains bounded to 1 MiB after more than 1.1 MiB output",
       "Files writes, lists, and reads two version-bound pages across Gateway restart inside /workspace",
@@ -557,8 +567,11 @@ try {
       "private Preview registers one explicit non-internal port and proxies only the fixed candidate server route",
       "Preview strips Grant and Cookie headers, survives Gateway restart, and rejects unregistered and internal ports",
       "Preview port revoke closes an active response; port, Grant, and expiry revocation reject subsequent access",
+      "real SSH protocol authenticates with the short-lived Grant, pins the server host key, and runs only in the fixed /workspace Sandbox route",
+      "SSH rejects direct-tcpip forwarding, environment mutation, wrong password, cross-tenant identity, expiry, revoke, and old generation",
+      "SSH reconnects after Gateway restart and Grant revoke closes an active transport",
       "revocation closes an active PTY connection and rejects reconnects; expired Grants reject new sessions",
-      "Admin Grant metadata includes PTY, file, and active Preview port diagnostics but excludes tokens, terminal/file/Preview content, paths, endpoints, proxy paths, and credential references",
+      "Admin Grant metadata includes PTY/SSH, file, and active Preview port diagnostics but excludes tokens, SSH usernames, terminal/file/Preview content, paths, endpoints, proxy paths, and credential references",
       "database-clock TTL accepts the same durable Stop authority and records its trigger and Audit",
       "TTL stop deletes compute, releases its writer, and retains the physical Workspace volume",
       "rebuild after TTL expiry restores the same Workspace bytes",

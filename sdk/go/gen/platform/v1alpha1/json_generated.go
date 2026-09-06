@@ -104,6 +104,7 @@ var (
 	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
 	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
+	sshUsernamePattern           = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$`)
 	fileVersionPattern           = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
 	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
 	previewProxyPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
@@ -683,6 +684,7 @@ type SandboxAccessGrant struct {
 	Generation  int64             `json:"generation"`
 	AccessKind  string            `json:"accessKind"`
 	AccessToken string            `json:"accessToken"`
+	SSHUsername string            `json:"sshUsername"`
 	ExpiresAt   string            `json:"expiresAt"`
 }
 type AdminSandboxAccessGrantSpec struct {
@@ -1205,7 +1207,7 @@ var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]c
 var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var sandboxExecResultResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "exitCode": common.ScalarResponseShape(), "stdout": common.ScalarResponseShape(), "stderr": common.ScalarResponseShape(), "executionTimeMillis": common.ScalarResponseShape()})
-var sandboxAccessGrantResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "accessToken": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
+var sandboxAccessGrantResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "accessToken": common.ScalarResponseShape(), "sshUsername": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var adminSandboxAccessGrantPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "accessGrants": common.ArrayResponseShape(resourceResponseShape("AdminSandboxAccessGrant")), "nextPageToken": common.ScalarResponseShape()})
 var sandboxPTYSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "outputOffset": common.ScalarResponseShape(), "webSocketPath": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape()})
 var sandboxPreviewPortResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "port": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "proxyPath": common.ScalarResponseShape(), "registeredAt": common.ScalarResponseShape()})
@@ -3778,12 +3780,12 @@ func EncodeSandboxAccessGrantRevokeRequestJSON(value SandboxAccessGrantRevokeReq
 	return raw, nil
 }
 func DecodeSandboxAccessGrantJSON(data []byte) (SandboxAccessGrant, error) {
-	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "expiresAt"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "expiresAt"})
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "sshUsername", "expiresAt"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "accessKind", "accessToken", "sshUsername", "expiresAt"})
 	if err != nil {
 		return SandboxAccessGrant{}, err
 	}
 	var value SandboxAccessGrant
-	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxAccessGrant" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.AccessKind != "sandbox" || !accessTokenPattern.MatchString(value.AccessToken) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxAccessGrant" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.AccessKind != "sandbox" || !accessTokenPattern.MatchString(value.AccessToken) || !sshUsernamePattern.MatchString(value.SSHUsername) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
 		return SandboxAccessGrant{}, common.ContractError("INVALID_SANDBOX_ACCESS_GRANT", "")
 	}
 	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])

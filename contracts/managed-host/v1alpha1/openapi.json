@@ -971,7 +971,7 @@
         },
         "responses": {
           "201": {
-            "description": "Short-lived PTY, Files and private Preview grant for the exact authorized Sandbox generation",
+            "description": "Short-lived PTY, Files, private Preview and SSH grant for the exact authorized Sandbox generation",
             "content": {
               "application/json": {
                 "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant.schema.json" }

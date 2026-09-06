@@ -97,6 +97,7 @@ type ExecResult struct {
 type PTYInput struct {
 	Identity  Identity
 	RuntimeID string
+	Command   string
 }
 
 type PTYObservation struct {
@@ -117,7 +118,8 @@ type FileRead struct {
 }
 
 func (input PTYInput) valid() bool {
-	return input.Identity.valid() && identifier.MatchString(input.RuntimeID)
+	return input.Identity.valid() && identifier.MatchString(input.RuntimeID) &&
+		(input.Command == "" || len(input.Command) <= 8192 && utf8.ValidString(input.Command) && !strings.ContainsRune(input.Command, 0))
 }
 
 func (input ExecInput) valid() bool {
@@ -500,9 +502,15 @@ func (c *Client) CreatePTY(ctx context.Context, input PTYInput) (PTYObservation,
 	if err != nil {
 		return PTYObservation{}, err
 	}
-	body := bytes.NewBufferString(`{"cwd":"/workspace"}`)
+	body, err := json.Marshal(struct {
+		CWD     string `json:"cwd"`
+		Command string `json:"command,omitempty"`
+	}{CWD: "/workspace", Command: input.Command})
+	if err != nil {
+		return PTYObservation{}, ErrInvalid
+	}
 	execdPath(target, "/pty")
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), body)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
 	if err != nil {
 		return PTYObservation{}, ErrUnavailable
 	}

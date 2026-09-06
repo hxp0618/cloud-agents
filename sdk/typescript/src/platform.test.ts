@@ -144,7 +144,7 @@ describe("generated platform JSON models", () => {
     ).toThrow("INVALID_SANDBOX_EXEC_RESULT");
   });
 
-  it("uses fixed Grant, PTY, Files, and Preview routes without exposing infrastructure authority", async () => {
+  it("uses fixed Grant, PTY, Files, Preview, and SSH credentials without exposing infrastructure authority", async () => {
     const projectRef = { namespace: "cloud-agents", kind: "project", id: "project-alpha" } as const;
     const tenantRef = { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" } as const;
     const grant = {
@@ -156,6 +156,7 @@ describe("generated platform JSON models", () => {
       generation: 3,
       accessKind: "sandbox",
       accessToken: `cag1_${"x".repeat(43)}`,
+      sshUsername: "tenant-alpha:project-alpha:grant-alpha",
       expiresAt: "2026-09-06T00:05:00Z",
     } as const;
     const session = {

@@ -1,0 +1,69 @@
+{
+  "slice": "BASE-M2 short-lived Sandbox SSH",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "headBeforeCommit": "4cc6b304bb22e099a0928b4d0a8d168eb663ffdb",
+    "dirtyDuringRun": true,
+    "preservedUnrelatedDirty": [
+      ".gitignore",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "docs/img.png",
+      "docs/plan/cloud-agents-platform/04-extraction-and-migration.md",
+      "docs/plan/cloud-agents-platform/06-status-tracker.md unrelated hunks",
+      "go.work.sum"
+    ]
+  },
+  "contract": {
+    "authority": "generation-bound short-lived Sandbox Access Grant",
+    "username": "tenant:project:grant",
+    "password": "existing short-lived accessToken",
+    "hostKey": "deployment-owned pinned SSH host key",
+    "route": "one SSH session channel to the exact authorized OpenSandbox runtime and /workspace",
+    "deniedChannels": ["direct-tcpip", "tcpip-forward", "agent-forwarding", "X11", "subsystem"],
+    "publicResult": "SSH username and Grant credential only; no Target, OpenSandbox or customer-host endpoint"
+  },
+  "runtimeEvidence": "base-m2-sandbox-ssh-20260906-runtime/evidence.json",
+  "runtime": {
+    "run": "foundation-controller-d74b6a40-aaf2-4b37-978d-04aeedb9218c",
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "candidateSourceRef": "207d94c7dc7735c143856fe5c6538b743e478786",
+    "generation": 3,
+    "workspace": "/workspace",
+    "fixedRoute": true,
+    "wrongPasswordDenied": true,
+    "crossTenantDenied": true,
+    "directTcpipDenied": true,
+    "environmentMutationDenied": true,
+    "gatewayRestart": true,
+    "activeTransportClosedAfterRevoke": true,
+    "revokedDenied": true,
+    "expiredDenied": true,
+    "oldGenerationDenied": true,
+    "adminResponseRedacted": true
+  },
+  "verification": {
+    "generatedSDK": "current",
+    "contractStandards": "169 schemas, 114 OpenAPI operations and 14 Python tests pass with pinned toolchain",
+    "contractCoordinationOwners": "known owners excluded; unknown annotation test fails closed",
+    "migrationBundle": "current; product-000060 unchanged and PostgreSQL fresh/upgrade/replay pass",
+    "goFocusedTests": "pass",
+    "goRace": "pass",
+    "goVet": "pass",
+    "goFullSuite": "all packages except internal/migration pass; internal/migration still expects 11 schema migrations while the checked-in bundle has 13, reports an existing sealed-session spread from runner_ledger_recovery_abort_terminal.go, then reaches the 10 minute package timeout",
+    "typescriptSDKTests": "46 pass",
+    "adminWebTests": "32 pass",
+    "userWebTests": "23 pass",
+    "sdkAdminAndUserBuilds": "pass with existing Admin chunk-size warning",
+    "format": "pass",
+    "rootLint": "pre-existing capture-worker-health.mjs no-console failure outside this slice"
+  },
+  "cleanup": {
+    "testOwnedRuntimeContainers": 0,
+    "testOwnedWorkspaceVolumes": 0,
+    "harnessContainers": 0
+  },
+  "boundary": "Real local OrbStack Docker, OpenSandbox, SSH protocol listener, Access Gateway, Control Plane and disposable PostgreSQL only. The SSH client is golang.org/x/crypto/ssh with a pinned generated Ed25519 host key. No browser visual matrix, deployment, publication, Kubernetes or customer node was used. Actual Network Policy execution remains incomplete."
+}

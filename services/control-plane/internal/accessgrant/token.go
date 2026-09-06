@@ -9,9 +9,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 )
 
 var ErrInvalidKey = errors.New("sandbox access grant key is invalid")
+
+var identifier = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
 
 type Codec struct{ key []byte }
 
@@ -57,4 +61,19 @@ func (codec *Codec) Token(grantID string) (string, error) {
 func Digest(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func SSHUsername(tenant, project, grant string) (string, error) {
+	if !identifier.MatchString(tenant) || !identifier.MatchString(project) || !identifier.MatchString(grant) {
+		return "", ErrInvalidKey
+	}
+	return tenant + ":" + project + ":" + grant, nil
+}
+
+func ParseSSHUsername(value string) (tenant, project, grant string, ok bool) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 || !identifier.MatchString(parts[0]) || !identifier.MatchString(parts[1]) || !identifier.MatchString(parts[2]) {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
 }

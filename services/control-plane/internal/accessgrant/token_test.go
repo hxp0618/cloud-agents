@@ -46,3 +46,19 @@ func TestLoadRejectsSymlink(t *testing.T) {
 		t.Fatalf("public key file mode error = %v", err)
 	}
 }
+
+func TestSSHUsernameRoundTrip(t *testing.T) {
+	username, err := SSHUsername("tenant-a", "project-a", "grant-a")
+	if err != nil || username != "tenant-a:project-a:grant-a" {
+		t.Fatalf("SSH username = %q, %v", username, err)
+	}
+	tenant, project, grant, ok := ParseSSHUsername(username)
+	if !ok || tenant != "tenant-a" || project != "project-a" || grant != "grant-a" {
+		t.Fatalf("SSH username did not round trip")
+	}
+	for _, invalid := range []string{"tenant:project", "tenant:project:grant:extra", "tenant:project:bad grant", ":project:grant"} {
+		if _, _, _, ok := ParseSSHUsername(invalid); ok {
+			t.Fatalf("accepted invalid SSH username %q", invalid)
+		}
+	}
+}

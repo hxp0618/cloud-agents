@@ -630,6 +630,7 @@ export type SandboxAccessGrant = Readonly<{
   generation: number;
   accessKind: "sandbox";
   accessToken: string;
+  sshUsername: string;
   expiresAt: string;
 }>;
 export type AdminSandboxAccessGrantSpec = Readonly<{
@@ -1716,6 +1717,7 @@ const sandboxAccessGrantResponseShape: ResponseShape = {
     generation: scalarResponseShape,
     accessKind: scalarResponseShape,
     accessToken: scalarResponseShape,
+    sshUsername: scalarResponseShape,
     expiresAt: scalarResponseShape,
   },
 };
@@ -3186,6 +3188,7 @@ export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
       "generation",
       "accessKind",
       "accessToken",
+      "sshUsername",
       "expiresAt",
     ],
     [
@@ -3197,6 +3200,7 @@ export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
       "generation",
       "accessKind",
       "accessToken",
+      "sshUsername",
       "expiresAt",
     ],
   );
@@ -3204,6 +3208,9 @@ export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
     error("RESOURCE_KIND_MISMATCH", "/kind");
   const accessToken = string(source.accessToken, "/accessToken");
   if (!/^cag1_[A-Za-z0-9_-]{43}$/u.test(accessToken)) error("INVALID_ACCESS_TOKEN", "/accessToken");
+  const sshUsername = string(source.sshUsername, "/sshUsername");
+  if (!/^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$/u.test(sshUsername))
+    error("INVALID_SSH_USERNAME", "/sshUsername");
   return Object.freeze({
     apiVersion: platformApiVersion,
     kind: "SandboxAccessGrant",
@@ -3213,6 +3220,7 @@ export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
     generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
     accessKind: enumValue(source.accessKind, ["sandbox"] as const, "/accessKind"),
     accessToken,
+    sshUsername,
     expiresAt: dateTime(source.expiresAt, "/expiresAt"),
   });
 }

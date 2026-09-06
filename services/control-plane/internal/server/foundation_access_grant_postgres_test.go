@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,6 +28,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/ssh"
 )
 
 func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
@@ -81,7 +85,8 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		t.Fatalf("Admin token Product Grant status=%d err=%v", clientStatus(err), err)
 	}
 	grant, err := user.CreateSandboxAccessGrant(ctx, "tenant", "project", "sandbox", "request-grant-create", "grant-primary-key-0001", request)
-	if err != nil || grant.Value.AccessToken == "" || grant.Value.Generation != current.Value.Spec.Generation {
+	if err != nil || grant.Value.AccessToken == "" || grant.Value.Generation != current.Value.Spec.Generation ||
+		grant.Value.SSHUsername != "tenant:project:"+grant.Value.GrantID {
 		t.Fatalf("issue Grant failed: %v", err)
 	}
 	replay, err := user.CreateSandboxAccessGrant(ctx, "tenant", "project", "sandbox", "request-grant-replay", "grant-primary-key-0001", request)
@@ -359,11 +364,82 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		t.Fatal("re-register Preview failed", err)
 	}
 
+	_, hostPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostSigner, err := ssh.NewSignerFromKey(hostPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshAddress, stopSSH := startSSHGateway(t, ctx, gatewayStore, credentials, hostSigner)
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, wrongToken, hostSigner)); err == nil {
+		t.Fatal("wrong SSH Grant password was accepted")
+	}
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig("other-tenant:project:"+grant.Value.GrantID, grant.Value.AccessToken, hostSigner)); err == nil {
+		t.Fatal("cross-tenant SSH username was accepted")
+	}
+	sshClient, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
+	if err != nil {
+		t.Fatal("SSH Grant authentication failed", err)
+	}
+	if forwarded, err := sshClient.Dial("tcp", "127.0.0.1:22"); err == nil {
+		_ = forwarded.Close()
+		t.Fatal("SSH direct-tcpip forwarding was accepted")
+	}
+	sshSession, err := sshClient.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sshSession.Setenv("CAG_SHOULD_NOT_EXIST", "true"); err == nil {
+		t.Fatal("SSH environment mutation was accepted")
+	}
+	if err := sshSession.RequestPty("xterm-256color", 40, 120, ssh.TerminalModes{}); err != nil {
+		t.Fatal("SSH PTY request failed", err)
+	}
+	sshOutput, err := sshSession.CombinedOutput(`printf 'CAG_SSH_DIR=%s\n' "$PWD"`)
+	_ = sshClient.Close()
+	if err != nil || !strings.Contains(string(sshOutput), "CAG_SSH_DIR=/workspace") {
+		t.Fatalf("SSH fixed Sandbox command output=%q err=%v", sshOutput, err)
+	}
+	stopSSH()
+	sshAddress, stopSSH = startSSHGateway(t, ctx, gatewayStore, credentials, hostSigner)
+	defer stopSSH()
+	sshClient, err = ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
+	if err != nil {
+		t.Fatal("SSH Grant did not survive Gateway restart", err)
+	}
+	sshSession, err = sshClient.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshOutput, err = sshSession.CombinedOutput(`printf 'CAG_SSH_RESTART=%s\n' "$PWD"`)
+	_ = sshClient.Close()
+	if err != nil || !strings.Contains(string(sshOutput), "CAG_SSH_RESTART=/workspace") {
+		t.Fatalf("SSH Gateway restart output=%q err=%v", sshOutput, err)
+	}
+	revokedSSHClient, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokedSSHSession, err := revokedSSHClient.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokedSSHOutput, err := revokedSSHSession.StdoutPipe()
+	if err != nil || revokedSSHSession.Start(`printf 'CAG_SSH_REVOKE_READY\n'; sleep 30`) != nil {
+		t.Fatal("active SSH revoke session failed to start", err)
+	}
+	revokeMarker := make([]byte, len("CAG_SSH_REVOKE_READY\n"))
+	if _, err := io.ReadFull(revokedSSHOutput, revokeMarker); err != nil || string(revokeMarker) != "CAG_SSH_REVOKE_READY\n" {
+		t.Fatalf("active SSH marker=%q err=%v", revokeMarker, err)
+	}
+
 	if _, err := user.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-user-admin", 50, ""); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user Admin Grant status=%d err=%v", clientStatus(err), err)
 	}
 	page, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-admin-list", 50, "")
-	if err != nil || len(page.Value.AccessGrants) != 1 || page.Value.AccessGrants[0].Spec.PTYSessionCount != 1 ||
+	if err != nil || len(page.Value.AccessGrants) != 1 || page.Value.AccessGrants[0].Spec.PTYSessionCount != 4 ||
 		page.Value.AccessGrants[0].Spec.FileAccessCount != 7 || page.Value.AccessGrants[0].Spec.FileFailureCount != 2 ||
 		len(page.Value.AccessGrants[0].Spec.PreviewPorts) != 1 || page.Value.AccessGrants[0].Spec.PreviewPorts[0] != 3000 ||
 		page.Value.AccessGrants[0].Spec.LastFileAction != "read" || page.Value.AccessGrants[0].Spec.LastFileStatus != "failed" ||
@@ -383,6 +459,17 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if _, err := admin.RevokeAdminSandboxAccessGrant(ctx, "tenant", "project", "sandbox", grant.Value.GrantID, "request-grant-revoke-replay", "grant-revoke-key-0001", revokeRequest); err != nil {
 		t.Fatalf("revoke replay failed: %v", err)
 	}
+	sshRevoked := make(chan error, 1)
+	go func() { sshRevoked <- revokedSSHSession.Wait() }()
+	select {
+	case <-sshRevoked:
+	case <-time.After(4 * time.Second):
+		t.Fatal("active SSH transport remained open after Grant revoke")
+	}
+	_ = revokedSSHClient.Close()
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner)); err == nil {
+		t.Fatal("revoked SSH Grant was accepted")
+	}
 	waitPTYClosed(t, connection)
 	if _, err := grantClient.GetPTYSession(ctx, "tenant", "project", grant.Value.GrantID, session.Value.SessionID, "request-pty-revoked"); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("revoked Grant status=%d err=%v", clientStatus(err), err)
@@ -400,10 +487,22 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register expiring Preview failed: %v", err)
 	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.sandbox_access_grants SET sandbox_generation=sandbox_generation+1 WHERE tenant_id='tenant' AND project_uid='project' AND grant_uid=$1`, expiring.Value.GrantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig(expiring.Value.SSHUsername, expiring.Value.AccessToken, hostSigner)); err == nil {
+		t.Fatal("old-generation SSH Grant was accepted")
+	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.sandbox_access_grants SET sandbox_generation=$2 WHERE tenant_id='tenant' AND project_uid='project' AND grant_uid=$1`, expiring.Value.GrantID, current.Value.Spec.Generation); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.sandbox_access_grants SET expires_at=created_at+interval '1 millisecond' WHERE tenant_id='tenant' AND project_uid='project' AND grant_uid=$1`, expiring.Value.GrantID); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Millisecond)
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig(expiring.Value.SSHUsername, expiring.Value.AccessToken, hostSigner)); err == nil {
+		t.Fatal("expired SSH Grant was accepted")
+	}
 	expiredClient, _ := api.NewHTTPClientWithClient(gateway.URL, expiring.Value.AccessToken, gateway.Client())
 	if _, err := expiredClient.CreatePTYSession(ctx, "tenant", "project", expiring.Value.GrantID, "request-pty-expired"); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("expired Grant status=%d err=%v", clientStatus(err), err)
@@ -431,7 +530,11 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		"boundedReplayBytes": bounded.replayBytes, "adminStatus": 200, "userAdminStatus": 403,
 		"wrongTokenStatus": 403, "crossTenantStatus": 403, "revokedStatus": 403,
 		"expiredStatus": 403, "activeConnectionRevoked": true, "adminContentRedacted": true,
-		"activityIssued": issued, "activityRevoked": revokedCount,
+		"sshFixedRoute": true, "sshWrongPasswordDenied": true, "sshCrossTenantDenied": true,
+		"sshForwardingDenied": true, "sshEnvironmentDenied": true, "sshGatewayRestart": true,
+		"sshActiveConnectionRevoked": true, "sshRevokedDenied": true, "sshExpiredDenied": true,
+		"sshOldGenerationDenied": true,
+		"activityIssued":         issued, "activityRevoked": revokedCount,
 		"fileWriteBytes": len(fileContent), "filePages": 2, "fileGatewayRestart": true,
 		"fileWrongTokenStatus": 403, "fileCrossTenantStatus": 403, "fileTraversalStatus": 400,
 		"fileSymlinkStatus": 409, "fileOversizedStatus": 413, "fileDeletedStatus": 404,
@@ -541,9 +644,43 @@ func assertAdminGrantRedaction(t *testing.T, ctx context.Context, baseURL, admin
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("Admin Grant response status=%d err=%v", response.StatusCode, err)
 	}
-	for _, forbidden := range []string{grantToken, "accessToken", "CAG_PTY", "credentialRef", "providerCredentialRef", "endpoint", "proxyPath", "cag-files.txt", "cag-files-link", "cag-preview", "contentBase64Url"} {
+	for _, forbidden := range []string{grantToken, "accessToken", "sshUsername", "CAG_PTY", "CAG_SSH", "credentialRef", "providerCredentialRef", "endpoint", "proxyPath", "cag-files.txt", "cag-files-link", "cag-preview", "contentBase64Url"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("Admin Grant response disclosed %q", forbidden)
+		}
+	}
+}
+
+func sshClientConfig(username, password string, signer ssh.Signer) *ssh.ClientConfig {
+	return &ssh.ClientConfig{
+		User: username, Auth: []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()), Timeout: 5 * time.Second,
+	}
+}
+
+func startSSHGateway(t *testing.T, parent context.Context, store *postgres.AccessGatewayStore, credentials *opensandbox.CredentialDirectory, signer ssh.Signer) (string, func()) {
+	t.Helper()
+	handler, err := accessgateway.New(store, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan error, 1)
+	go func() { done <- handler.ServeSSH(ctx, listener, signer) }()
+	return listener.Addr().String(), func() {
+		cancel()
+		_ = listener.Close()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("SSH Gateway stop: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("SSH Gateway did not stop")
 		}
 	}
 }
