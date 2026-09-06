@@ -188,6 +188,22 @@ describe("durable coordination generated contract registry", () => {
     );
   });
 
+  it("does not treat an unknown coordination annotation as an idempotency owner", () => {
+    const root = temporaryContractRoot();
+    const openapiPath = resolve(root, "contracts/managed-host/v1alpha1/openapi.json");
+    const openapi = readJson(openapiPath);
+    const paths = openapi.paths as Record<string, JsonRecord>;
+    const operation = paths[
+      "/v1/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}/access-grants"
+    ]?.post as JsonRecord;
+    operation["x-cloud-agents-coordination"] = "durable-access-grant-typo";
+    writeJson(openapiPath, openapi);
+    expectCoordinationError(
+      () => buildDurableCoordinationRegistry(root),
+      "COORDINATION_REGISTRY_BINDING_MISMATCH",
+    );
+  });
+
   it("rejects any mutation of the generated registry", () => {
     const generated = buildDurableCoordinationRegistry(repositoryRoot) as JsonRecord & {
       profiles: Array<{ spec: JsonRecord }>;

@@ -1524,6 +1524,7 @@
       "post": {
         "operationId": "adminRevokeSandboxAccessGrant",
         "x-cloud-agents-required-scope": "sandboxes.act",
+        "x-cloud-agents-coordination": "durable-access-grant",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -1562,6 +1563,7 @@
       "post": {
         "operationId": "adminStopSandboxSession",
         "x-cloud-agents-required-scope": "sandboxes.act",
+        "x-cloud-agents-coordination": "durable-operation",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -1599,6 +1601,7 @@
       "post": {
         "operationId": "adminRebuildSandboxSession",
         "x-cloud-agents-required-scope": "sandboxes.act",
+        "x-cloud-agents-coordination": "durable-operation",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
