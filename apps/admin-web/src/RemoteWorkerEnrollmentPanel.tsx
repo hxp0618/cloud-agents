@@ -442,6 +442,10 @@ export function RemoteWorkerEnrollmentPanel({
               <dd className="mono">{selected.spec.workerId}</dd>
             </div>
             <div>
+              <dt>{t("remoteWorkerEnrollment.targetId")}</dt>
+              <dd className="mono break">{selected.spec.targetId}</dd>
+            </div>
+            <div>
               <dt>{t("remoteWorkerEnrollment.state")}</dt>
               <dd>{t(enrollmentStateKey(selected))}</dd>
             </div>

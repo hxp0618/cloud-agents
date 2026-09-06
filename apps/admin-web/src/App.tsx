@@ -100,7 +100,8 @@ import {
 } from "./i18n";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type TargetKind = DeploymentTargetRegisterRequest["targetKind"];
+type TargetKind = DeploymentTarget["spec"]["targetKind"];
+type RegisterTargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -108,7 +109,7 @@ type OperationNotice = LocalizedMessage & Readonly<{ accepted?: boolean }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
 
-const targetEndpointPlaceholder: Readonly<Record<TargetKind, string>> = Object.freeze({
+const targetEndpointPlaceholder: Readonly<Record<RegisterTargetKind, string>> = Object.freeze({
   docker: "https://docker.example.test:2376",
   kubernetes: "https://kubernetes.example.test:6443",
   ssh: "ssh://worker.example.test:22",
@@ -328,6 +329,7 @@ function resourceLabel(kind: string, t: Translate): string {
 function targetKindLabel(kind: TargetKind, t: Translate): string {
   if (kind === "kubernetes") return t("target.kind.kubernetes");
   if (kind === "ssh") return t("target.kind.ssh");
+  if (kind === "remote-worker") return t("target.kind.remoteWorker");
   return t("target.kind.docker");
 }
 
@@ -600,7 +602,7 @@ export function App() {
   const [targetForm, setTargetForm] = useState({
     targetId: "",
     targetName: "",
-    targetKind: "docker" as TargetKind,
+    targetKind: "docker" as RegisterTargetKind,
     endpoint: "",
     credentialRef: "",
   });
@@ -4719,7 +4721,7 @@ export function App() {
                   onChange={(event) =>
                     setTargetForm({
                       ...targetForm,
-                      targetKind: event.target.value as TargetKind,
+                      targetKind: event.target.value as RegisterTargetKind,
                     })
                   }
                 >
@@ -5819,6 +5821,9 @@ function TargetDetail({
           </div>
         ) : null}
       </dl>
+      {target.spec.targetKind === "remote-worker" ? (
+        <p className="cluster-boundary">{t("detail.remoteWorkerManaged")}</p>
+      ) : null}
       <section className="action-block">
         <div>
           <h3>{t("detail.schedulingTitle")}</h3>
@@ -5828,7 +5833,7 @@ function TargetDetail({
           className="button ghost"
           type="button"
           onClick={onPreviewScheduling}
-          disabled={disabled}
+          disabled={disabled || target.spec.targetKind === "remote-worker"}
         >
           {t(
             target.spec.schedulingState === "active"
@@ -5850,7 +5855,11 @@ function TargetDetail({
           className="button primary"
           type="button"
           onClick={onProbe}
-          disabled={disabled || target.spec.observedPhase === "probing"}
+          disabled={
+            disabled ||
+            target.spec.targetKind === "remote-worker" ||
+            target.spec.observedPhase === "probing"
+          }
         >
           {t("detail.runProbe")}
         </button>
@@ -5923,7 +5932,7 @@ function TargetDetail({
           className="button ghost"
           type="button"
           onClick={onPreviewCleanup}
-          disabled={disabled}
+          disabled={disabled || target.spec.targetKind === "remote-worker"}
         >
           {t("detail.previewCleanup")}
         </button>

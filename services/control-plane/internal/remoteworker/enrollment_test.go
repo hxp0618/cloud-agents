@@ -18,6 +18,7 @@ func TestEnrollmentSecretAndLifecycle(t *testing.T) {
 	claimed := now.Add(time.Second)
 	snapshot := Snapshot{
 		Scope: Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, EnrollmentID: "enrollment-alpha",
+		TargetID: TargetID(Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "enrollment-alpha"),
 		WorkerID: "worker-alpha", WorkerName: "worker-alpha", State: StateSecretIssued, ResourceVersion: 2,
 		CreatedAt: now, UpdatedAt: claimed, ExpiresAt: now.Add(5 * time.Minute), SecretClaimedAt: &claimed,
 	}

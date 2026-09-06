@@ -16,8 +16,8 @@
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
-        "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
-        "endpoint": { "type": "string", "format": "uri", "pattern": "^(?:https|ssh)://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
+        "targetKind": { "enum": ["docker", "kubernetes", "ssh", "remote-worker"] },
+        "endpoint": { "type": "string", "format": "uri", "pattern": "^(?:https|ssh|remote-worker)://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
         "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "schedulingState": { "enum": ["active", "drained"] },
         "observedPhase": { "enum": ["unprobed", "probing", "ready", "unavailable"] },
@@ -42,6 +42,7 @@
     "credentialRef names a deployment-owned credential and never contains credential bytes",
     "drained prevents new Environment Lease scheduling without terminating existing Leases or changing target generation",
     "targetKind selects only the target-specific probe and actuator; Agent execution remains on the shared Worker and Runtime protocol",
-    "docker and kubernetes targets use an https endpoint; ssh targets use an ssh endpoint without userinfo"
+    "docker and kubernetes targets use an https endpoint; ssh targets use an ssh endpoint without userinfo",
+    "remote-worker targets are server-owned projections of an enrollment and use only an opaque remote-worker route; their lifecycle is managed through the RemoteWorker API"
   ]
 }

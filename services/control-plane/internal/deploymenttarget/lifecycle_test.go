@@ -41,6 +41,10 @@ func TestDeploymentTargetValidationAndDigests(t *testing.T) {
 	if err := input.Validate("tenant-alpha"); err == nil {
 		t.Fatal("SSH target accepted an HTTPS endpoint")
 	}
+	input.Kind, input.Endpoint = "remote-worker", "remote-worker://enrollment-alpha"
+	if err := input.Validate("tenant-alpha"); err == nil {
+		t.Fatal("accepted direct registration of a server-owned RemoteWorker target")
+	}
 }
 
 func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {
@@ -53,6 +57,10 @@ func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {
 	}
 	if err := snapshot.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	snapshot.Kind, snapshot.Endpoint, snapshot.CredentialRef = "remote-worker", "remote-worker://enrollment-alpha", "enrollment-alpha"
+	if err := snapshot.Validate(); err != nil {
+		t.Fatalf("RemoteWorker target projection: %v", err)
 	}
 	snapshot.StableErrorCode = "must-not-coexist"
 	if err := snapshot.Validate(); err == nil {

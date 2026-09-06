@@ -107,7 +107,7 @@ var (
 	registerDeploymentTargetSQL = `SELECT target_uid
 FROM cloud_agents.register_deployment_target_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	getDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
-FROM cloud_agents.deployment_targets
+FROM cloud_agents.deployment_target_admin_projection
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`
 	deploymentTargetPageCursorIdentitySQL = `SELECT 1
 FROM cloud_agents.deployment_targets
@@ -116,7 +116,7 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND targ
     ORDER BY deployment_target.target_uid), '[]'::jsonb)
 FROM (
     SELECT tenant_id, project_uid, ` + deploymentTargetColumns + `
-    FROM cloud_agents.deployment_targets
+    FROM cloud_agents.deployment_target_admin_projection
     WHERE tenant_id = cloud_agents.require_tenant_id()
         AND project_uid = $1
         AND target_uid > $2
@@ -315,6 +315,9 @@ func (service *DurableCoordinationService) PreviewDeploymentTargetScheduling(
 					}
 					return err
 				}
+				if target.Kind == "remote-worker" {
+					return internaldeploymenttarget.ErrConflict
+				}
 				leases, err := scanDeploymentTargetSchedulingLeases(handle.transaction.queryRow(readContext, deploymentTargetSchedulingLeasesSQL, projectID, targetID))
 				if err != nil {
 					return err
@@ -371,6 +374,9 @@ func (service *DurableCoordinationService) TransitionDeploymentTargetScheduling(
 						return internaldeploymenttarget.ErrNotFound
 					}
 					return scanErr
+				}
+				if target.Kind == "remote-worker" {
+					return internaldeploymenttarget.ErrConflict
 				}
 				leases, scanErr := scanDeploymentTargetSchedulingLeases(handle.transaction.queryRow(ctx, deploymentTargetSchedulingLeasesSQL, input.Scope.ProjectID, input.TargetID))
 				if scanErr != nil {
@@ -702,6 +708,17 @@ func (service *DurableCoordinationService) BeginDeploymentTargetProbe(
 		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				var target internaldeploymenttarget.Snapshot
+				if err := scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL,
+					input.Scope.ProjectID, input.TargetID), input.Scope, &target); err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return internaldeploymenttarget.ErrNotFound
+					}
+					return err
+				}
+				if target.Kind == "remote-worker" {
+					return internaldeploymenttarget.ErrConflict
+				}
 				var targetID string
 				if err := handle.transaction.queryRow(ctx, beginDeploymentTargetProbeSQL, input.Scope.TenantID, input.Scope.ProjectID,
 					input.TargetID, input.ExpectedGeneration, input.Mutation.IdempotencyKey, digest,
@@ -796,6 +813,17 @@ func (service *DurableCoordinationService) BeginDeploymentTargetCleanup(
 		}
 		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				var target internaldeploymenttarget.Snapshot
+				if err := scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL,
+					input.Scope.ProjectID, input.TargetID), input.Scope, &target); err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return internaldeploymenttarget.ErrNotFound
+					}
+					return err
+				}
+				if target.Kind == "remote-worker" {
+					return internaldeploymenttarget.ErrConflict
+				}
 				row := handle.transaction.queryRow(ctx, beginDeploymentTargetCleanupSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.ExpectedGeneration,
 					input.ExpectedResourceVersion, input.ImpactDigest, input.Mutation.IdempotencyKey, digest,

@@ -571,6 +571,7 @@ export type RemoteWorkerEnrollment = Readonly<{
   metadata: ResourceMetadata;
   spec: Readonly<{
     projectRef: NamespaceRef;
+    targetId: string;
     workerId: string;
     state: "pending" | "secret-issued" | "enrolled" | "revoked" | "expired";
     expiresAt: string;
@@ -1001,7 +1002,7 @@ export type DeploymentTarget = Readonly<{
   spec: Readonly<{
     projectRef: NamespaceRef;
     generation: number;
-    targetKind: "docker" | "kubernetes" | "ssh";
+    targetKind: "docker" | "kubernetes" | "ssh" | "remote-worker";
     endpoint: string;
     credentialRef: string;
     schedulingState: "active" | "drained";
@@ -1775,6 +1776,7 @@ const remoteWorkerNodeStatusResponseShape: ResponseShape = {
 };
 const remoteWorkerEnrollmentResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
+  targetId: scalarResponseShape,
   workerId: scalarResponseShape,
   state: scalarResponseShape,
   expiresAt: scalarResponseShape,
@@ -2755,20 +2757,24 @@ function deploymentTargetEndpoint(value: unknown, path: string): string {
 }
 function registeredTargetEndpoint(
   value: unknown,
-  kind: "docker" | "kubernetes" | "ssh",
+  kind: "docker" | "kubernetes" | "ssh" | "remote-worker",
   path: string,
 ): string {
   const text = boundedString(value, 7, 2048, path);
   try {
     const parsed = new URL(text);
+    const protocol =
+      kind === "ssh" ? "ssh:" : kind === "remote-worker" ? "remote-worker:" : "https:";
     if (
-      parsed.protocol !== (kind === "ssh" ? "ssh:" : "https:") ||
+      parsed.protocol !== protocol ||
       parsed.hostname === "" ||
       parsed.username !== "" ||
       parsed.password !== "" ||
       parsed.search !== "" ||
       parsed.hash !== "" ||
-      (kind === "ssh" ? parsed.pathname !== "" && parsed.pathname !== "/" : parsed.pathname !== "/")
+      (kind === "ssh"
+        ? parsed.pathname !== "" && parsed.pathname !== "/"
+        : parsed.pathname !== "" && parsed.pathname !== "/")
     )
       error("INVALID_TARGET_ENDPOINT", path);
   } catch (cause) {
@@ -5893,6 +5899,7 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     source.spec,
     [
       "projectRef",
+      "targetId",
       "workerId",
       "state",
       "expiresAt",
@@ -5907,7 +5914,7 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
       "certificateRevokedAt",
       "node",
     ],
-    ["projectRef", "workerId", "state", "expiresAt"],
+    ["projectRef", "targetId", "workerId", "state", "expiresAt"],
     "/spec",
   );
   const state = enumValue(
@@ -5992,6 +5999,7 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     kind: "RemoteWorkerEnrollment" as const,
     spec: Object.freeze({
       projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      targetId: identifier(spec.targetId, "/spec/targetId"),
       workerId: identifier(spec.workerId, "/spec/workerId"),
       state,
       expiresAt,
@@ -6881,7 +6889,7 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
     error("INVALID_PROBE_STATE", "/spec");
   const targetKind = enumValue(
     spec.targetKind,
-    ["docker", "kubernetes", "ssh"] as const,
+    ["docker", "kubernetes", "ssh", "remote-worker"] as const,
     "/spec/targetKind",
   );
   const target = {

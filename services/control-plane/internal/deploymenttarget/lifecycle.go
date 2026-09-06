@@ -108,7 +108,7 @@ type CleanupStart struct {
 
 func (input RegisterInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
-		invalidIdentifier(input.TargetID) || invalidIdentifier(input.TargetName) || !validKind(input.Kind) ||
+		invalidIdentifier(input.TargetID) || invalidIdentifier(input.TargetName) || !validRegisteredKind(input.Kind) ||
 		!validEndpoint(input.Kind, input.Endpoint) || invalidIdentifier(input.CredentialRef) {
 		return ErrInvalidInput
 	}
@@ -276,6 +276,8 @@ func validEndpoint(kind, value string) bool {
 	scheme := "https"
 	if kind == "ssh" {
 		scheme = "ssh"
+	} else if kind == "remote-worker" {
+		scheme = "remote-worker"
 	}
 	if err != nil || len(value) > 2048 || parsed.Scheme != scheme || parsed.Hostname() == "" || parsed.User != nil ||
 		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
@@ -289,6 +291,10 @@ func validEndpoint(kind, value string) bool {
 }
 
 func validKind(value string) bool {
+	return validRegisteredKind(value) || value == "remote-worker"
+}
+
+func validRegisteredKind(value string) bool {
 	return value == "docker" || value == "kubernetes" || value == "ssh"
 }
 

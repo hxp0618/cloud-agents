@@ -261,9 +261,9 @@ export function TargetFilters({
 }) {
   const { t } = useI18n();
   const popover = useFilterPopover();
-  const kindOptions = (["docker", "kubernetes", "ssh"] as const).map((value) => ({
+  const kindOptions = (["docker", "kubernetes", "ssh", "remote-worker"] as const).map((value) => ({
     value,
-    label: t(`target.kind.${value}`),
+    label: t(value === "remote-worker" ? "target.kind.remoteWorker" : `target.kind.${value}`),
   }));
   const phaseOptions = (["unprobed", "probing", "ready", "unavailable"] as const).map((value) => ({
     value,

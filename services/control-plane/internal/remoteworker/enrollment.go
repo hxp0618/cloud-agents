@@ -74,6 +74,7 @@ type CertificateRotationPersistenceInput struct {
 type Snapshot struct {
 	Scope                Scope
 	EnrollmentID         string
+	TargetID             string
 	WorkerID             string
 	WorkerName           string
 	State                string
@@ -214,6 +215,7 @@ func SecretDigest(secret string) (string, error) {
 
 func (snapshot Snapshot) Validate() error {
 	if invalidIdentifier(snapshot.Scope.TenantID) || invalidIdentifier(snapshot.Scope.ProjectID) || invalidIdentifier(snapshot.EnrollmentID) ||
+		snapshot.TargetID != TargetID(snapshot.Scope, snapshot.EnrollmentID) ||
 		invalidIdentifier(snapshot.WorkerID) || invalidIdentifier(snapshot.WorkerName) || snapshot.ResourceVersion < 1 ||
 		snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.Before(snapshot.CreatedAt) || !snapshot.ExpiresAt.After(snapshot.CreatedAt) {
 		return ErrInvalidInput
@@ -265,6 +267,11 @@ func (snapshot Snapshot) Validate() error {
 		return ErrInvalidInput
 	}
 	return nil
+}
+
+func TargetID(scope Scope, enrollmentID string) string {
+	sum := sha256.Sum256([]byte(scope.TenantID + "|" + scope.ProjectID + "|" + enrollmentID))
+	return "rwt-" + hex.EncodeToString(sum[:])
 }
 
 func (event AuditEvent) Validate() error {

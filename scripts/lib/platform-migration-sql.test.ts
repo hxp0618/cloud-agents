@@ -809,6 +809,19 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ).toBe(true);
   });
 
+  it("allows only the deployment-target constraints expanded by migration 000067", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000067_project_remote_worker_targets.sql"),
+      ),
+    );
+    expect(classifyMigrationStatement(statements[1]!, "000067").command).toBe("ALTER");
+    expect(classifyMigrationStatement(statements[3]!, "000067").command).toBe("ALTER");
+    expect(() => classifyMigrationStatement(statements[1]!, "000066")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("classifies only the exact deployment-target activity migration", () => {
     const statements = splitPostgresStatements(
       readFileSync(

@@ -243,13 +243,13 @@ FROM cloud_agents.schema_migrations;`,
       `SET ROLE cloud_agents_migration_owner;
 SELECT count(*) FROM pg_catalog.pg_class relation
 JOIN pg_catalog.pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
-WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies','remote_worker_enrollments','remote_worker_enrollment_activity','remote_worker_node_activity');`,
+WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies','remote_worker_enrollments','remote_worker_enrollment_activity','remote_worker_node_activity','deployment_target_admin_projection');`,
       "foundation_migration",
       "foundation_fresh",
     )
       .split("\n")
       .at(-1),
-    "10",
+    "11",
   );
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -347,6 +347,7 @@ INSERT INTO cloud_agents.deployment_targets (
         "actual outbound RemoteWorker process Drain over mTLS with durable restart state and receipt",
         "generation/resource-version fencing, exact idempotency and receipt replay, deadline failure and Operation/Audit closure",
         "database-time RemoteWorker online, degraded and offline Admin projection without secret or certificate bytes",
+        "server-owned RemoteWorker DeploymentTarget unprobed, ready, offline, reconnect and revoked projection",
       ],
       boundary:
         "Disposable PostgreSQL, in-process Control Plane HTTPS/mTLS and short-lived outbound RemoteWorker processes; Drain/Resume changes node scheduling state only, and no customer-node Sandbox workload or external Controller is started",

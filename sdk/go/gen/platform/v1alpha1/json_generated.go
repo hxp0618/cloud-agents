@@ -619,6 +619,7 @@ type RemoteWorkerNodeSchedulingPreview struct {
 }
 type RemoteWorkerEnrollmentSpec struct {
 	ProjectRef           common.ProjectRef       `json:"projectRef"`
+	TargetID             string                  `json:"targetId"`
 	WorkerID             string                  `json:"workerId"`
 	State                string                  `json:"state"`
 	ExpiresAt            string                  `json:"expiresAt"`
@@ -1307,7 +1308,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "NetworkPolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
 	case "RemoteWorkerEnrollment":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "workerId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "secretClaimedAt": common.ScalarResponseShape(), "enrolledAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "certificateExpiresAt": common.ScalarResponseShape(), "certificateState": common.ScalarResponseShape(), "certificateRevokedAt": common.ScalarResponseShape(), "node": common.ObjectResponseShape(map[string]common.ResponseShape{"resourceVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "workerVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "kernelVersion": common.ScalarResponseShape(), "capabilities": common.ArrayResponseShape(common.ScalarResponseShape()), "capacity": common.ObjectResponseShape(map[string]common.ResponseShape{"cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "diskBytes": common.ScalarResponseShape()}), "firstConnectedAt": common.ScalarResponseShape(), "lastHeartbeatAt": common.ScalarResponseShape(), "heartbeatExpiresAt": common.ScalarResponseShape()})}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "secretClaimedAt": common.ScalarResponseShape(), "enrolledAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "certificateExpiresAt": common.ScalarResponseShape(), "certificateState": common.ScalarResponseShape(), "certificateRevokedAt": common.ScalarResponseShape(), "node": common.ObjectResponseShape(map[string]common.ResponseShape{"resourceVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "workerVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "kernelVersion": common.ScalarResponseShape(), "capabilities": common.ArrayResponseShape(common.ScalarResponseShape()), "capacity": common.ObjectResponseShape(map[string]common.ResponseShape{"cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "diskBytes": common.ScalarResponseShape()}), "firstConnectedAt": common.ScalarResponseShape(), "lastHeartbeatAt": common.ScalarResponseShape(), "heartbeatExpiresAt": common.ScalarResponseShape()})}
 	case "RemoteWorkerNodeSchedulingPreview":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "workerId": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "currentDesiredState": common.ScalarResponseShape(), "currentObservedState": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape(), "impactSummary": common.ScalarResponseShape(), "commandDeadlineSeconds": common.ScalarResponseShape()}
 	case "DeploymentTarget":
@@ -3473,8 +3474,8 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 	if err != nil {
 		return RemoteWorkerEnrollment{}, err
 	}
-	allowed := []string{"projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt", "incarnationId", "spiffeId", "certificateSha256", "certificateExpiresAt", "certificateState", "certificateRevokedAt", "node"}
-	specFields, err := strictSpec(fields["spec"], allowed, allowed[:4])
+	allowed := []string{"projectRef", "targetId", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt", "incarnationId", "spiffeId", "certificateSha256", "certificateExpiresAt", "certificateState", "certificateRevokedAt", "node"}
+	specFields, err := strictSpec(fields["spec"], allowed, allowed[:5])
 	if err != nil {
 		return RemoteWorkerEnrollment{}, err
 	}
@@ -3487,7 +3488,7 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 		return RemoteWorkerEnrollment{}, common.ContractError("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec")
 	}
 	spec.ProjectRef = project
-	if common.ValidateIdentifier(spec.WorkerID, "/spec/workerId") != nil || spec.State != "pending" && spec.State != "secret-issued" && spec.State != "enrolled" && spec.State != "revoked" && spec.State != "expired" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil {
+	if common.ValidateIdentifier(spec.TargetID, "/spec/targetId") != nil || common.ValidateIdentifier(spec.WorkerID, "/spec/workerId") != nil || spec.State != "pending" && spec.State != "secret-issued" && spec.State != "enrolled" && spec.State != "revoked" && spec.State != "expired" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil {
 		return RemoteWorkerEnrollment{}, common.ContractError("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec")
 	}
 	created, createdErr := time.Parse(time.RFC3339Nano, base.Metadata.CreatedAt)
@@ -5103,11 +5104,17 @@ func validDeploymentTargetEndpoint(value string) bool {
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil && (parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
 }
 func validRegisteredTargetEndpoint(kind, value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || len(value) > 2048 {
+		return false
+	}
+	if kind == "remote-worker" {
+		return parsed.Scheme == "remote-worker" && parsed.Host != "" && parsed.User == nil && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
+	}
 	if kind != "ssh" {
 		return validDeploymentTargetEndpoint(value)
 	}
-	parsed, err := url.Parse(value)
-	if err != nil || len(value) > 2048 || parsed.Scheme != "ssh" || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
+	if parsed.Scheme != "ssh" || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
 		return false
 	}
 	if parsed.Port() == "" {
@@ -5275,7 +5282,7 @@ func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 		return DeploymentTarget{}, common.ContractError("INVALID_GENERATION", "/spec/generation")
 	}
 	kind, err := fieldString(spec, "targetKind", "/spec/targetKind")
-	if err != nil || kind != "docker" && kind != "kubernetes" && kind != "ssh" {
+	if err != nil || kind != "docker" && kind != "kubernetes" && kind != "ssh" && kind != "remote-worker" {
 		return DeploymentTarget{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
 	}
 	endpoint, err := fieldString(spec, "endpoint", "/spec/endpoint")

@@ -289,6 +289,7 @@ func (service *DurableCoordinationService) AuthorizeRemoteWorkerCertificateRotat
 			return err
 		}
 		result.Enrollment.Scope = input.Scope
+		result.Enrollment.TargetID = internalremoteworker.TargetID(input.Scope, result.Enrollment.EnrollmentID)
 		if result.Enrollment.Validate() != nil {
 			return fmt.Errorf("%w: remote worker rotation authorization projection", ErrCoordinationResultDrift)
 		}
@@ -420,6 +421,7 @@ func scanRemoteWorkerEnrollment(row rowScanner, scope internalremoteworker.Scope
 		return err
 	}
 	result.Scope = scope
+	result.TargetID = internalremoteworker.TargetID(scope, result.EnrollmentID)
 	if result.Validate() != nil {
 		return fmt.Errorf("%w: remote worker enrollment projection", ErrCoordinationResultDrift)
 	}
@@ -435,6 +437,7 @@ func scanRemoteWorkerEnrollmentWithNode(row rowScanner, scope internalremotework
 		return err
 	}
 	result.Scope = scope
+	result.TargetID = internalremoteworker.TargetID(scope, result.EnrollmentID)
 	if err := assignRemoteWorkerNodeStatus(result, nodeRow); err != nil || result.Validate() != nil {
 		return fmt.Errorf("%w: remote worker enrollment node projection", ErrCoordinationResultDrift)
 	}
@@ -456,7 +459,17 @@ func decodeRemoteWorkerEnrollmentRows(raw []byte, tenantID, projectID string, li
 	}
 	values := make([]internalremoteworker.Snapshot, 0, len(rows))
 	for _, row := range rows {
-		value := internalremoteworker.Snapshot{Scope: internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}, EnrollmentID: row.EnrollmentID, WorkerID: row.WorkerID, WorkerName: row.WorkerName, State: row.State, ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ExpiresAt: row.ExpiresAt, SecretClaimedAt: row.SecretClaimedAt, EnrolledAt: row.EnrolledAt, RevokedAt: row.RevokedAt, IncarnationID: row.IncarnationID, SPIFFEID: row.SPIFFEID, CertificateSHA256: row.CertificateSHA256, CertificateChainPEM: row.CertificateChainPEM, CertificateSerial: row.CertificateSerial, CertificateNotBefore: row.CertificateNotBefore, CertificateNotAfter: row.CertificateNotAfter, CertificateState: row.CertificateState, CertificateRevokedAt: row.CertificateRevokedAt}
+		scope := internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}
+		value := internalremoteworker.Snapshot{Scope: scope, EnrollmentID: row.EnrollmentID,
+			TargetID: internalremoteworker.TargetID(scope, row.EnrollmentID), WorkerID: row.WorkerID,
+			WorkerName: row.WorkerName, State: row.State, ResourceVersion: row.ResourceVersion,
+			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ExpiresAt: row.ExpiresAt,
+			SecretClaimedAt: row.SecretClaimedAt, EnrolledAt: row.EnrolledAt, RevokedAt: row.RevokedAt,
+			IncarnationID: row.IncarnationID, SPIFFEID: row.SPIFFEID,
+			CertificateSHA256: row.CertificateSHA256, CertificateChainPEM: row.CertificateChainPEM,
+			CertificateSerial: row.CertificateSerial, CertificateNotBefore: row.CertificateNotBefore,
+			CertificateNotAfter: row.CertificateNotAfter, CertificateState: row.CertificateState,
+			CertificateRevokedAt: row.CertificateRevokedAt}
 		if err := assignRemoteWorkerNodeStatus(&value, row); err != nil {
 			return RemoteWorkerEnrollmentPage{}, err
 		}

@@ -57,7 +57,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	defer owner.Close()
 
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get audit.list operations.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list",
+		"projects.act projects.get targets.act targets.get targets.list audit.list operations.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list",
 		"projects.act projects.get",
 		"projects.act remote-worker-bootstrap.act",
 	)
@@ -73,7 +73,18 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := AdminDeniedWriteHandler(verifier, store, remoteWorkerHandler)
+	targetHandler, err := NewAdminDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if HandlesAdminDeploymentTargetPath(request.URL.Path) {
+			targetHandler.ServeHTTP(writer, request)
+			return
+		}
+		remoteWorkerHandler.ServeHTTP(writer, request)
+	})
+	handler := AdminDeniedWriteHandler(verifier, store, routes)
 	clientCAs, err := authority.ClientCAPool()
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +101,33 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 		WorkerName: "customer-node-1", TTLSeconds: 600,
 	}
 	created, err := admin.CreateAdminRemoteWorkerEnrollment(ctx, "tenant", "project", "request-enrollment-create", "remote-enroll-create-key-1", create)
-	if err != nil || created.Value.Spec.State != internalremoteworker.StatePending || created.Value.Metadata.ResourceVersion != "1" {
+	expectedTargetID := internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, create.EnrollmentID)
+	if err != nil || created.Value.Spec.TargetID != expectedTargetID || created.Value.Spec.State != internalremoteworker.StatePending || created.Value.Metadata.ResourceVersion != "1" {
 		t.Fatalf("create enrollment: value=%+v err=%v", created.Value, err)
+	}
+	target, err := admin.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-get-created")
+	if err != nil || target.Value.Spec.TargetKind != "remote-worker" || target.Value.Spec.Endpoint != "remote-worker://"+create.EnrollmentID || target.Value.Spec.CredentialRef != create.EnrollmentID || target.Value.Spec.ObservedPhase != "unprobed" {
+		t.Fatalf("projected target after enrollment: value=%+v err=%v", target.Value, err)
+	}
+	targets, err := admin.ListAdminDeploymentTargets(ctx, "tenant", "project", "request-remote-target-list", 50, "")
+	foundTarget := false
+	for _, listed := range targets.Value.DeploymentTargets {
+		foundTarget = foundTarget || listed.Metadata.UID == expectedTargetID && listed.Spec.TargetKind == "remote-worker"
+	}
+	if err != nil || !foundTarget {
+		t.Fatalf("projected target list: value=%+v err=%v", targets.Value, err)
+	}
+	if _, err := user.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-user-get"); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user projected target status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := admin.ProbeAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-probe", "remote-target-probe-key-1", platform.DeploymentTargetProbeRequest{ExpectedGeneration: 1}); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("generic projected target probe status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := admin.PreviewAdminDeploymentTargetScheduling(ctx, "tenant", "project", expectedTargetID, "request-remote-target-scheduling-preview"); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("generic projected target scheduling status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := admin.PreviewAdminDeploymentTargetCleanup(ctx, "tenant", "project", expectedTargetID, "request-remote-target-cleanup-preview"); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("generic projected target cleanup status=%d err=%v", clientStatus(err), err)
 	}
 	replayed, err := admin.CreateAdminRemoteWorkerEnrollment(ctx, "tenant", "project", "request-enrollment-replay", "remote-enroll-create-key-1", create)
 	if err != nil || replayed.Value.Metadata.ResourceVersion != "1" {
@@ -174,6 +210,10 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil || current.Value.Spec.Node == nil || current.Value.Spec.Node.HealthState != "online" || current.Value.Spec.Node.Capacity.CPUMillis != 4000 {
 		t.Fatalf("Admin heartbeat status: value=%+v err=%v", current.Value, err)
 	}
+	target, err = admin.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-get-ready")
+	if err != nil || target.Value.Spec.ObservedPhase != "ready" || target.Value.Spec.APIVersion != "remote-worker/v1alpha1" || target.Value.Spec.EngineVersion != heartbeat.WorkerVersion || target.Value.Spec.OS != heartbeat.OS || target.Value.Spec.Architecture != heartbeat.Architecture {
+		t.Fatalf("projected target after heartbeat: value=%+v err=%v", target.Value, err)
+	}
 	rotationCSR, rotationPrivateKey := remoteWorkerCertificateRequest(t, create.EnrollmentID)
 	rotationRequest := platform.RemoteWorkerCertificateIssueRequest{ExpectedResourceVersion: "3", ConfirmedEnrollmentID: create.EnrollmentID, IncarnationID: "incarnation-remote-2", CertificateSigningRequestPEM: rotationCSR}
 	rotated, err := oldNode.RotateRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-rotate", "remote-cert-rotate-key-1", rotationRequest)
@@ -206,6 +246,10 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	current, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-get-rotated")
 	if err != nil || current.Value.Metadata.ResourceVersion != "4" || current.Value.Spec.CertificateState != "active" || current.Value.Spec.CertificateSHA256 != rotated.Value.CertificateSHA256 || current.Value.Spec.IncarnationID != rotationRequest.IncarnationID || current.Value.Spec.Node != nil {
 		t.Fatalf("Admin rotated enrollment metadata: value=%+v err=%v", current.Value, err)
+	}
+	target, err = admin.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-get-rotated")
+	if err != nil || target.Value.Spec.ObservedPhase != "unprobed" || target.Value.Spec.StableErrorCode != "" {
+		t.Fatalf("projected target after certificate rotation: value=%+v err=%v", target.Value, err)
 	}
 	heartbeat.IncarnationID = rotationRequest.IncarnationID
 	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-current", heartbeat); err != nil {
@@ -373,8 +417,16 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil || current.Value.Spec.Node == nil || current.Value.Spec.Node.HealthState != "offline" {
 		t.Fatalf("Admin offline heartbeat status: value=%+v err=%v", current.Value, err)
 	}
+	target, err = admin.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-get-offline")
+	if err != nil || target.Value.Spec.ObservedPhase != "unavailable" || target.Value.Spec.StableErrorCode != "remote-worker-offline" {
+		t.Fatalf("projected target after heartbeat expiry: value=%+v err=%v", target.Value, err)
+	}
 	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-recovered", heartbeat); err != nil {
 		t.Fatalf("recovered heartbeat: %v", err)
+	}
+	target, err = admin.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-get-recovered")
+	if err != nil || target.Value.Spec.ObservedPhase != "ready" || target.Value.Spec.StableErrorCode != "" {
+		t.Fatalf("projected target after reconnect: value=%+v err=%v", target.Value, err)
 	}
 	certificateRevoke := platform.RemoteWorkerEnrollmentRevokeRequest{ExpectedResourceVersion: "4", ConfirmedEnrollmentID: create.EnrollmentID}
 	if _, err := user.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-revoke-user", "remote-cert-revoke-user-key-1", certificateRevoke); clientStatus(err) != http.StatusForbidden {
@@ -383,6 +435,10 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	certificateRevoked, err := admin.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-revoke", "remote-cert-revoke-key-1", certificateRevoke)
 	if err != nil || certificateRevoked.Value.Spec.State != internalremoteworker.StateEnrolled || certificateRevoked.Value.Spec.CertificateState != "revoked" || certificateRevoked.Value.Spec.CertificateRevokedAt == "" || certificateRevoked.Value.Metadata.ResourceVersion != "5" {
 		t.Fatalf("revoke certificate: value=%+v err=%v", certificateRevoked.Value, err)
+	}
+	target, err = admin.GetAdminDeploymentTarget(ctx, "tenant", "project", expectedTargetID, "request-remote-target-get-revoked")
+	if err != nil || target.Value.Spec.ObservedPhase != "unavailable" || target.Value.Spec.StableErrorCode != "remote-worker-unavailable" {
+		t.Fatalf("projected target after certificate revoke: value=%+v err=%v", target.Value, err)
 	}
 	certificateRevoked, err = admin.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-revoke-replay", "remote-cert-revoke-key-1", certificateRevoke)
 	if err != nil || certificateRevoked.Value.Metadata.ResourceVersion != "5" {
@@ -441,7 +497,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 		WHERE tenant_id='tenant' AND project_uid='project' AND action='adminTransitionRemoteWorkerScheduling'`).Scan(&deniedScheduling); err != nil || deniedScheduling != 1 {
 		t.Fatalf("denied scheduling audit count=%d err=%v", deniedScheduling, err)
 	}
-	t.Log("real Admin/bootstrap/node generated clients, verified mTLS heartbeat/reconnect, generation-fenced Drain/Resume delivery, durable node restart state, exact receipt replay, deadline failure, 403 audit, Operation/Audit closure, database-time health, certificate rotation/revocation, RLS and redacted Admin reads")
+	t.Log("real Admin/bootstrap/node generated clients, server-owned DeploymentTarget projection, verified mTLS heartbeat/reconnect, generation-fenced Drain/Resume delivery, durable node restart state, exact receipt replay, deadline failure, 403 audit, Operation/Audit closure, database-time health, certificate rotation/revocation, RLS and redacted Admin reads")
 }
 
 func remoteWorkerCertificateRequest(t *testing.T, enrollmentID string) (string, []byte) {

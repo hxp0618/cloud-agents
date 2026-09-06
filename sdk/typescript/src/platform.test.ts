@@ -117,6 +117,7 @@ describe("generated platform JSON models", () => {
       },
       spec: {
         projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        targetId: "rwt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         workerId: "worker-alpha",
         state: "enrolled",
         expiresAt: "2026-09-06T13:00:00Z",

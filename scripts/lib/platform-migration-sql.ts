@@ -81,6 +81,14 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
       targetIdentity: "table:unquoted:cloud_agents/unquoted:network_policies",
     },
   ],
+  [
+    "sha256:753ac1aa669bb7529cc14358c5d744031f3f60c7a6baa8389dd0b3129f26ef6a",
+    {
+      migrationId: "000067",
+      statementIndex: 7,
+      targetIdentity: "table:unquoted:cloud_agents/unquoted:deployment_targets",
+    },
+  ],
 ]);
 const DURABLE_COORDINATION_OPERATION_EFFECT_INDEX = {
   migrationId: "000007",
@@ -233,7 +241,16 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     if (tokens[1] === "TRIGGER") {
-      const on = simpleBeforeRowTrigger(tokens);
+      let on = simpleBeforeRowTrigger(tokens);
+      if (
+        on < 0 &&
+        migrationId === "000067" &&
+        statement.index === 10 &&
+        statement.sha256 ===
+          "sha256:16d215c3c26ffc87b453cfcaaeb84dd250e40e0eadb34a9741a55d58e0a72126"
+      ) {
+        on = tokens.indexOf("ON", 4);
+      }
       if (on < 0) reject(tokens);
       return classification(
         "CREATE",
@@ -241,6 +258,16 @@ export function classifyMigrationStatement(
         qualifiedDerivedIdentity("trigger", tokens, on + 1, tokens[2]!),
         null,
       );
+    }
+    if (
+      tokens[1] === "VIEW" &&
+      migrationId === "000067" &&
+      statement.index === 11 &&
+      statement.sha256 ===
+        "sha256:414854f0544ff507be5b1fad6c72d40f606dbe231195c577a232b4125150c313"
+    ) {
+      requireCloudAgentsQualified(tokens, 2);
+      return classification("CREATE", "VIEW", qualifiedIdentity("view", tokens, 2), null);
     }
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
       if (
@@ -503,6 +530,16 @@ export function classifyMigrationStatement(
   }
   if (first === "ALTER") {
     const kind = tokens[1];
+    if (
+      kind === "VIEW" &&
+      migrationId === "000067" &&
+      statement.index === 14 &&
+      statement.sha256 ===
+        "sha256:96eb4e40e2e00ce727b5dcb8272d6bd9c9a97c1bfb24c108ac2b44487d81189b"
+    ) {
+      requireCloudAgentsQualified(tokens, 2);
+      return classification("ALTER", "VIEW", qualifiedIdentity("view", tokens, 2), null);
+    }
     if (kind === "TABLE") {
       requireCloudAgentsQualified(tokens, 2);
       const subcommand = tokens.slice(5, -1);
@@ -567,9 +604,9 @@ export function classifyMigrationStatement(
         subcommand[1] === "CONSTRAINT";
       const dropDeploymentTargetConstraint =
         targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_targets" &&
-        ((new Set(["000035", "000036"]).has(migrationId) &&
+        ((new Set(["000035", "000036", "000067"]).has(migrationId) &&
           subcommand.join("\0") === ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_KIND"].join("\0")) ||
-          (migrationId === "000038" &&
+          (new Set(["000038", "000067"]).has(migrationId) &&
             subcommand.join("\0") ===
               ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_ENDPOINT"].join("\0")));
       const dropDeploymentTargetActivityConstraint =

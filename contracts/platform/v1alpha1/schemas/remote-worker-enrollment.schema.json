@@ -12,9 +12,10 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectRef", "workerId", "state", "expiresAt"],
+      "required": ["projectRef", "targetId", "workerId", "state", "expiresAt"],
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "state": { "enum": ["pending", "secret-issued", "enrolled", "revoked", "expired"] },
         "expiresAt": { "type": "string", "format": "date-time" },
@@ -36,6 +37,7 @@
     "the resource never exposes enrollment secret, secret digest, CSR, or certificate bytes",
     "incarnationId, spiffeId, certificateSha256, certificateExpiresAt, and certificateState are present together only after certificate issuance",
     "certificateRevokedAt is present if and only if certificateState is revoked",
-    "node is present only after the enrolled RemoteWorker has completed an authenticated heartbeat"
+    "node is present only after the enrolled RemoteWorker has completed an authenticated heartbeat",
+    "targetId is the immutable server-owned DeploymentTarget projection used by RuntimeProfile and Sandbox placement"
   ]
 }

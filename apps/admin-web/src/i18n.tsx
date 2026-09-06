@@ -165,6 +165,7 @@ const enUS = {
     "Reserve one worker identity. The one-time secret is claimed separately by the node CLI.",
   "remoteWorkerEnrollment.id": "Enrollment ID",
   "remoteWorkerEnrollment.workerId": "Worker ID",
+  "remoteWorkerEnrollment.targetId": "Placement target",
   "remoteWorkerEnrollment.workerName": "Worker name",
   "remoteWorkerEnrollment.ttl": "Bootstrap lifetime (seconds)",
   "remoteWorkerEnrollment.state": "State",
@@ -435,6 +436,7 @@ const enUS = {
     "ID and name: 1–128 ASCII letters or digits, with . _ ~ - allowed inside. Start and end with a letter or digit; spaces are not allowed.",
   "target.kind": "Target kind",
   "target.kind.docker": "Docker API",
+  "target.kind.remoteWorker": "Remote worker",
   "target.kind.kubernetes": "Kubernetes API",
   "target.kind.ssh": "SSH host",
   "target.endpoint": "Endpoint",
@@ -536,6 +538,8 @@ const enUS = {
     "Checks connectivity from Control Plane using expected generation {generation}.",
   "detail.runProbe": "Run probe",
   "detail.schedulingTitle": "Lease scheduling",
+  "detail.remoteWorkerManaged":
+    "This target is projected from a RemoteWorker enrollment. Manage heartbeat, Drain, Resume, and certificate state from Remote Workers.",
   "detail.schedulingDescription":
     "Drain blocks new Lease, Session, Turn and Execution admission. Running tasks may finish; resume enables admission again.",
   "detail.previewDrain": "Preview drain",
@@ -1029,6 +1033,7 @@ const zhCN = {
     "预留一个工作节点身份；一次性 Secret 由节点 CLI 单独领取。",
   "remoteWorkerEnrollment.id": "注册意图 ID",
   "remoteWorkerEnrollment.workerId": "工作节点 ID",
+  "remoteWorkerEnrollment.targetId": "放置目标",
   "remoteWorkerEnrollment.workerName": "工作节点名称",
   "remoteWorkerEnrollment.ttl": "引导有效期（秒）",
   "remoteWorkerEnrollment.state": "状态",
@@ -1283,6 +1288,7 @@ const zhCN = {
     "ID 和名称须为 1–128 位英文字母或数字，中间可含 . _ ~ -，首尾须为字母或数字，不允许空格。",
   "target.kind": "目标类型",
   "target.kind.docker": "Docker API",
+  "target.kind.remoteWorker": "远程工作节点",
   "target.kind.kubernetes": "Kubernetes API",
   "target.kind.ssh": "SSH 主机",
   "target.endpoint": "Endpoint",
@@ -1382,6 +1388,8 @@ const zhCN = {
   "detail.probeDescription": "控制平面使用预期代次 {generation} 检查连通性。",
   "detail.runProbe": "执行探测",
   "detail.schedulingTitle": "租约调度",
+  "detail.remoteWorkerManaged":
+    "此目标由 RemoteWorker 注册投影生成。请在“远程工作节点”中管理心跳、Drain、Resume 和证书状态。",
   "detail.schedulingDescription":
     "停止调度会阻止新租约、会话、轮次和执行进入。运行中的任务可完成；恢复后重新允许接收。",
   "detail.previewDrain": "预览停止调度",
