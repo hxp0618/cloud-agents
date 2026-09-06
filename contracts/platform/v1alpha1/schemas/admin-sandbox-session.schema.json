@@ -29,7 +29,8 @@
         "observedGeneration",
         "desiredState",
         "observedState",
-        "writerReleased"
+        "writerReleased",
+        "networkPolicyEnforcement"
       ],
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
@@ -45,6 +46,8 @@
         "runtimeProfileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
         "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "networkPolicyEnforcement": { "enum": ["legacy", "pending", "enforced", "failed", "stopped"] },
         "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
         "observedGeneration": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
         "desiredState": { "enum": ["running", "stopped"] },
@@ -64,6 +67,7 @@
     "Admin projection contains lifecycle metadata only and never endpoint, credential, prompt, file or artifact content",
     "physicalVolumeId is opaque and workspaceRetention is always retained in BASE-M1",
     "ttlSeconds and expiresAt are absent only for resources accepted before TTL authority existed",
-    "lifecycleTrigger identifies durable manual or TTL acceptance without exposing user content"
+    "lifecycleTrigger identifies durable manual or TTL acceptance without exposing user content",
+    "networkPolicyEnforcement is derived from the verified lifecycle result; legacy identifies pre-authority profiles"
   ]
 }

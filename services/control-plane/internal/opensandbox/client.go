@@ -18,25 +18,29 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/networkpolicy"
 )
 
 var (
-	ErrInvalid       = errors.New("opensandbox request is invalid")
-	ErrUnavailable   = errors.New("opensandbox authority is unavailable")
-	ErrNotFound      = errors.New("opensandbox resource is absent")
-	ErrConflict      = errors.New("opensandbox ownership or receipt conflicts")
-	ErrRuntimeFailed = errors.New("opensandbox runtime failed")
-	ErrOutputLimit   = errors.New("opensandbox command output limit exceeded")
-	ErrFileLimit     = errors.New("opensandbox file limit exceeded")
-	identifier       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
-	platformID       = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
-	digest           = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-	runtimeImage     = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	ErrInvalid          = errors.New("opensandbox request is invalid")
+	ErrUnavailable      = errors.New("opensandbox authority is unavailable")
+	ErrNotFound         = errors.New("opensandbox resource is absent")
+	ErrConflict         = errors.New("opensandbox ownership or receipt conflicts")
+	ErrRuntimeFailed    = errors.New("opensandbox runtime failed")
+	ErrOutputLimit      = errors.New("opensandbox command output limit exceeded")
+	ErrFileLimit        = errors.New("opensandbox file limit exceeded")
+	ErrPolicyUnenforced = errors.New("opensandbox network policy was not enforced")
+	identifier          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	platformID          = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
+	digest              = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	runtimeImage        = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 )
 
 type Identity struct {
@@ -129,18 +133,44 @@ func (input ExecInput) valid() bool {
 }
 
 type CreateInput struct {
-	Identity    Identity
-	ImageURI    string
-	VolumeName  string
-	CPUMillis   int64
-	MemoryBytes int64
+	Identity      Identity
+	ImageURI      string
+	VolumeName    string
+	CPUMillis     int64
+	MemoryBytes   int64
+	NetworkPolicy *NetworkPolicy
+}
+
+type NetworkPolicy struct {
+	DefaultAction string        `json:"defaultAction"`
+	Egress        []NetworkRule `json:"egress"`
+}
+
+type NetworkRule struct {
+	Action string `json:"action"`
+	Target string `json:"target"`
+}
+
+func (policy *NetworkPolicy) valid() bool {
+	if policy == nil {
+		return true
+	}
+	targets := make([]string, len(policy.Egress))
+	for index, rule := range policy.Egress {
+		if rule.Action != "allow" {
+			return false
+		}
+		targets[index] = rule.Target
+	}
+	canonical, err := networkpolicy.CanonicalAllowedEgress(targets)
+	return policy.DefaultAction == "deny" && err == nil && slices.Equal(canonical, targets)
 }
 
 func (input CreateInput) valid() bool {
 	return input.Identity.valid() && runtimeImage.MatchString(input.ImageURI) &&
 		identifier.MatchString(input.VolumeName) && len(input.VolumeName) <= 63 &&
 		input.CPUMillis >= 100 && input.CPUMillis <= 64000 &&
-		input.MemoryBytes >= 134217728 && input.MemoryBytes <= 1099511627776
+		input.MemoryBytes >= 134217728 && input.MemoryBytes <= 1099511627776 && input.NetworkPolicy.valid()
 }
 
 type Client struct {
@@ -300,6 +330,9 @@ func (c *Client) Create(ctx context.Context, input CreateInput) (Observation, er
 			}, "mountPath": "/workspace", "readOnly": false,
 		}},
 	}
+	if input.NetworkPolicy != nil {
+		body["networkPolicy"] = input.NetworkPolicy
+	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return Observation{}, ErrInvalid
@@ -310,7 +343,9 @@ func (c *Client) Create(ctx context.Context, input CreateInput) (Observation, er
 	}
 	request.Header.Set("OPEN-SANDBOX-API-KEY", c.key)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.http.Do(request)
+	createHTTP := *c.http
+	createHTTP.Timeout = 45 * time.Second // candidate sidecar readiness is bounded at 30 seconds
+	response, err := createHTTP.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return Observation{}, ctx.Err()
@@ -460,12 +495,16 @@ func (c *Client) PreviewHTTPProxyTarget(ctx context.Context, input PTYInput, por
 	if err := c.verifyRuntime(ctx, input); err != nil {
 		return nil, nil, err
 	}
+	return c.serverProxyTarget(ctx, input.RuntimeID, port)
+}
+
+func (c *Client) serverProxyTarget(ctx context.Context, runtimeID string, port int32) (*url.URL, http.Header, error) {
 	var endpoint struct {
 		Endpoint string            `json:"endpoint"`
 		Headers  map[string]string `json:"headers"`
 	}
 	portValue := strconv.FormatInt(int64(port), 10)
-	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+input.RuntimeID+"/endpoints/"+portValue+"?use_server_proxy=true", &endpoint); err != nil {
+	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+runtimeID+"/endpoints/"+portValue+"?use_server_proxy=true", &endpoint); err != nil {
 		return nil, nil, err
 	}
 	base, baseErr := url.Parse(c.endpoint)
@@ -473,12 +512,16 @@ func (c *Client) PreviewHTTPProxyTarget(ctx context.Context, input PTYInput, por
 	if !strings.Contains(raw, "://") {
 		raw = base.Scheme + "://" + raw
 	}
-	target, err := url.Parse(raw)
-	expectedPath := "/v1/sandboxes/" + input.RuntimeID + "/proxy/" + portValue
-	if err != nil || baseErr != nil || target.Scheme != base.Scheme || target.Host != base.Host || target.Path != expectedPath ||
-		target.User != nil || target.RawPath != "" || target.RawQuery != "" || target.Fragment != "" || target.Opaque != "" || len(endpoint.Headers) > 16 {
+	advertised, err := url.Parse(raw)
+	expectedPath := "/v1/sandboxes/" + runtimeID + "/proxy/" + portValue
+	if err != nil || baseErr != nil || advertised.Scheme != base.Scheme || advertised.Hostname() != base.Hostname() ||
+		(advertised.Port() != "" && advertised.Port() != base.Port()) ||
+		(advertised.Path != expectedPath && advertised.Path != strings.TrimPrefix(expectedPath, "/v1")) ||
+		advertised.User != nil || advertised.RawPath != "" || advertised.RawQuery != "" || advertised.Fragment != "" || advertised.Opaque != "" || len(endpoint.Headers) > 16 {
 		return nil, nil, ErrUnavailable
 	}
+	target := *base
+	target.Path = expectedPath
 	headers := make(http.Header, len(endpoint.Headers)+1)
 	for name, value := range endpoint.Headers {
 		if name == "" || len(name) > 128 || len(value) > 4096 || strings.EqualFold(name, "Host") ||
@@ -488,7 +531,51 @@ func (c *Client) PreviewHTTPProxyTarget(ctx context.Context, input PTYInput, por
 		headers.Set(name, value)
 	}
 	headers.Set("OPEN-SANDBOX-API-KEY", c.key)
-	return target, headers, nil
+	return &target, headers, nil
+}
+
+func (c *Client) VerifyNetworkPolicy(ctx context.Context, id Identity, runtimeID string, expected *NetworkPolicy) error {
+	if c == nil || ctx == nil || !id.valid() || !identifier.MatchString(runtimeID) || expected == nil || !expected.valid() {
+		return ErrInvalid
+	}
+	if err := c.verifyRuntime(ctx, PTYInput{Identity: id, RuntimeID: runtimeID}); err != nil {
+		return err
+	}
+	target, headers, err := c.serverProxyTarget(ctx, runtimeID, 18080)
+	if err != nil {
+		return err
+	}
+	target.Path += "/policy"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
+	if err != nil {
+		return ErrUnavailable
+	}
+	request.Header = headers
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrUnavailable
+	}
+	defer response.Body.Close()
+	var status struct {
+		Status          string         `json:"status"`
+		EnforcementMode string         `json:"enforcementMode"`
+		Policy          *NetworkPolicy `json:"policy"`
+	}
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
+	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK ||
+		json.Unmarshal(data, &status) != nil || status.Status != "ok" || status.EnforcementMode != "dns+nft" ||
+		status.Policy == nil || status.Policy.DefaultAction != expected.DefaultAction || len(status.Policy.Egress) != len(expected.Egress) {
+		return ErrPolicyUnenforced
+	}
+	for index := range expected.Egress {
+		if status.Policy.Egress[index] != expected.Egress[index] {
+			return ErrPolicyUnenforced
+		}
+	}
+	return nil
 }
 
 func execdPath(target *url.URL, path string) {

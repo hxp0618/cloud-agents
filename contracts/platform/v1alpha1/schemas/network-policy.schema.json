@@ -12,11 +12,17 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectRef", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"],
+      "required": ["projectRef", "userSummary", "defaultEgress", "allowedEgress", "ingressEnabled", "previewEnabled"],
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "userSummary": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
         "defaultEgress": { "enum": ["public", "restricted", "deny"] },
+        "allowedEgress": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^\\u0000-\\u0020\\u007F]+$" }
+        },
         "allowlistPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "ingressEnabled": { "type": "boolean" },
         "previewEnabled": { "type": "boolean" },
@@ -26,6 +32,7 @@
     }
   },
   "x-cloud-agents-semantic-constraints": [
+    "allowedEgress contains sorted canonical FQDN, wildcard FQDN, IP, or CIDR targets; restricted requires allowedEgress or allowlistPolicyRef and deny/public require no direct targets",
     "the Admin API exposes only opaque policy references and never resolves them to endpoint, credential, or secret bytes",
     "the User API receives userSummary through its published Environment Profile projection and never receives policy ids or references"
   ]

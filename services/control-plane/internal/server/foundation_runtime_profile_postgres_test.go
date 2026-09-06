@@ -60,6 +60,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	var existing int
 	if err := owner.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM cloud_agents.runtime_profiles) +
+		(SELECT count(*) FROM cloud_agents.network_policies) +
 		(SELECT count(*) FROM cloud_agents.workspaces) +
 		(SELECT count(*) FROM cloud_agents.sandbox_sessions)`).Scan(&existing); err != nil || existing != 0 {
 		t.Fatalf("requires an empty disposable fixture: count=%d err=%v", existing, err)
@@ -70,10 +71,21 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	foundationHandler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	networkPolicyHandler, err := NewNetworkPolicyHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if HandlesNetworkPolicyPath(request.URL.Path) {
+			networkPolicyHandler.ServeHTTP(writer, request)
+			return
+		}
+		foundationHandler.ServeHTTP(writer, request)
+	})
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 	admin, err := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
@@ -83,6 +95,31 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	user, err := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
 	if err != nil {
 		t.Fatal(err)
+	}
+	allowedEgress := []string{"api.openai.com"}
+	if target := os.Getenv("CLOUD_AGENTS_FOUNDATION_ALLOWED_EGRESS"); target != "" {
+		allowedEgress = []string{target}
+	}
+	policyRequest := platform.NetworkPolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "network-restricted", UserSummary: "Approved outbound access",
+		DefaultEgress: "restricted", AllowedEgress: allowedEgress, PreviewEnabled: true,
+	}
+	policy, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "network-restricted", "request-network-create", "network-create-key", policyRequest)
+	if err != nil || policy.Value.Spec.DefaultEgress != "restricted" || policy.Value.Metadata.ResourceVersion != "1" {
+		t.Fatalf("create network policy: value=%+v err=%v", policy.Value, err)
+	}
+	policyRequest.ExpectedResourceVersion = "1"
+	policyRequest.UserSummary = "Approved outbound access, verified"
+	policy, err = admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "network-restricted", "request-network-update", "network-update-key", policyRequest)
+	if err != nil || policy.Value.Spec.UserSummary != policyRequest.UserSummary || policy.Value.Metadata.ResourceVersion != "2" {
+		t.Fatalf("update network policy: value=%+v err=%v", policy.Value, err)
+	}
+	denyRequest := platform.NetworkPolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "network-deny", UserSummary: "No outbound access",
+		DefaultEgress: "deny", AllowedEgress: []string{}, PreviewEnabled: true,
+	}
+	if denied, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "network-deny", "request-network-deny", "network-deny-key", denyRequest); err != nil || denied.Value.Spec.DefaultEgress != "deny" {
+		t.Fatalf("create deny network policy: value=%+v err=%v", denied.Value, err)
 	}
 
 	successImage := os.Getenv("CLOUD_AGENTS_FOUNDATION_SUCCESS_IMAGE_URI")
@@ -97,7 +134,8 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	create := platform.RuntimeProfileCreateRequest{
 		ProfileID: "profile", ProfileName: "profile", Version: 1,
 		Description: "No-agent retained workspace", TargetID: "target",
-		ImageURI: successImage, ReleaseDigest: release,
+		NetworkPolicyRef: "network-restricted",
+		ImageURI:         successImage, ReleaseDigest: release,
 		CPUMillis: 500, MemoryBytes: 536870912,
 	}
 	if _, err := platform.EncodeRuntimeProfileCreateRequestJSON(create); err != nil {
@@ -106,6 +144,11 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	created, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-create", "profile-create-key", create)
 	if err != nil || created.Value.Spec.Status != "draft" || created.Value.Metadata.ResourceVersion != "1" {
 		t.Fatalf("create profile: value=%+v err=%v", created.Value, err)
+	}
+	policyRequest.ExpectedResourceVersion = "2"
+	policyRequest.UserSummary = "Changed after profile reference"
+	if _, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "network-restricted", "request-network-referenced", "network-referenced-key", policyRequest); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("referenced network policy status=%d err=%v", clientStatus(err), err)
 	}
 	if _, err := user.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-user-denied", "profile-user-denied-key", create); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user Admin status=%d err=%v", clientStatus(err), err)
@@ -124,6 +167,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 		failureCreate.ProfileID = "profile-failure"
 		failureCreate.ProfileName = "profile-failure"
 		failureCreate.Description = "Controller failure compensation"
+		failureCreate.NetworkPolicyRef = "network-deny"
 		failureCreate.ImageURI = failureImage
 		failureCreate.ReleaseDigest = parts[1]
 		failureCreated, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-failure-create", "profile-failure-create-key", failureCreate)
@@ -176,7 +220,11 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 		t.Fatalf("Admin sandbox list: value=%+v err=%v", adminSandboxes.Value, err)
 	}
 	for _, item := range adminSandboxes.Value.SandboxSessions {
-		if item.Spec.TTLSeconds != 120 || item.Spec.ExpiresAt == "" {
+		expectedPolicy := "network-restricted"
+		if failureImage != "" && item.Metadata.UID == "sandbox-terminal" {
+			expectedPolicy = "network-deny"
+		}
+		if item.Spec.TTLSeconds != 120 || item.Spec.ExpiresAt == "" || item.Spec.NetworkPolicyRef != expectedPolicy || item.Spec.NetworkPolicyEnforcement != "pending" {
 			t.Fatalf("Admin sandbox TTL projection=%+v", item.Spec)
 		}
 	}
@@ -523,7 +571,7 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 		}
 		return protected + "." + payload + "." + base64.RawURLEncoding.EncodeToString(signature)
 	}
-	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list")
+	admin := issue("foundation-admin-token", "projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list network-policies.update")
 	user := issue("foundation-user-token", "environment-profiles.list environments.create projects.act projects.get sandboxes.update")
 	return verifier, admin, user
 }

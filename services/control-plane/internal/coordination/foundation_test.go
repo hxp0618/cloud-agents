@@ -4,17 +4,22 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestFoundationIntentBinding(t *testing.T) {
-	r := FoundationResolved{"tenant", "project", "workspace", "workspace", "volume", "target", "sandbox", "node@sha256:" + strings.Repeat("a", 64), 500, 536870912}
+	r := FoundationResolved{
+		Tenant: "tenant", Project: "project", Workspace: "workspace", WorkspaceName: "workspace",
+		Volume: "volume", Target: "target", Sandbox: "sandbox",
+		ImageURI: "node@sha256:" + strings.Repeat("a", 64), CPUMillis: 500, MemoryBytes: 536870912,
+	}
 	i, err := BindFoundationIntent(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonical := `{"cpuMillis":500,"imageURI":"node@sha256:` + strings.Repeat("a", 64) + `","memoryBytes":536870912,"profileId":"foundationSandboxLifecycle/v1alpha1","project":"project","sandbox":"sandbox","target":"target","tenant":"tenant","volume":"volume","workspace":"workspace","workspaceName":"workspace"}`
+	canonical := `{"cpuMillis":500,"imageURI":"node@sha256:` + strings.Repeat("a", 64) + `","memoryBytes":536870912,"networkAllowedEgress":null,"networkDefaultEgress":"","networkPolicyId":"","networkPreviewEnabled":false,"profileId":"foundationSandboxLifecycle/v1alpha1","project":"project","sandbox":"sandbox","target":"target","tenant":"tenant","volume":"volume","workspace":"workspace","workspaceName":"workspace"}`
 	sum := sha256.Sum256([]byte(canonical))
 	if i.RequestDigest() != "sha256:"+hex.EncodeToString(sum[:]) {
 		t.Fatal("canonical digest mismatch")
@@ -32,7 +37,7 @@ func TestFoundationIntentBinding(t *testing.T) {
 		if err != nil || bound.RequestDigest() == i.RequestDigest() {
 			t.Fatal("unbound resolved field", err)
 		}
-		if i.Resolved() != r {
+		if !reflect.DeepEqual(i.Resolved(), r) {
 			t.Fatal("snapshot mutated")
 		}
 	}

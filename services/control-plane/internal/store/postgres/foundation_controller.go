@@ -17,7 +17,8 @@ const (
     sandbox_generation, image_uri, runtime_profile_uid, runtime_profile_version,
     cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
 	runtime_generation, runtime_spec_digest, ttl_seconds, expires_at
-FROM cloud_agents.claim_foundation_sandbox_v3($1,$2,$3,$4,$5,$6)`
+	, network_policy_uid, network_default_egress, network_allowed_egress, network_preview_enabled
+FROM cloud_agents.claim_foundation_sandbox_v4($1,$2,$3,$4,$5,$6)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
@@ -46,6 +47,9 @@ type FoundationSandboxClaim struct {
 	OperationGeneration, TargetGeneration, SandboxGeneration              int64
 	RuntimeProfileID                                                      string
 	RuntimeProfileVersion                                                 int64
+	NetworkPolicyID, NetworkDefaultEgress                                 string
+	NetworkAllowedEgress                                                  []string
+	NetworkPreviewEnabled                                                 bool
 	CPUMillis, MemoryBytes                                                int64
 	ClaimExpiresAt                                                        time.Time
 	HolderID, HolderIncarnation, ClaimToken                               string
@@ -178,7 +182,9 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 			&claim.ImageURI, &claim.RuntimeProfileID, &claim.RuntimeProfileVersion,
 			&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest, &claim.RuntimeID,
 			&claim.RuntimeState, &claim.RuntimeOperationID, &claim.RuntimeGeneration,
-			&claim.RuntimeSpecDigest, &claim.TTLSeconds, &claim.ExpiresAt)
+			&claim.RuntimeSpecDigest, &claim.TTLSeconds, &claim.ExpiresAt,
+			&claim.NetworkPolicyID, &claim.NetworkDefaultEgress, &claim.NetworkAllowedEgress,
+			&claim.NetworkPreviewEnabled)
 		if errors.Is(err, pgx.ErrNoRows) {
 			result.Found = false
 			return nil
@@ -263,7 +269,9 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 		Tenant: claim.TenantID, Project: claim.ProjectID, Workspace: claim.WorkspaceID,
 		WorkspaceName: claim.WorkspaceName, Volume: claim.VolumeID, Target: claim.TargetID,
 		Sandbox: claim.SandboxID, ImageURI: claim.ImageURI, CPUMillis: claim.CPUMillis,
-		MemoryBytes: claim.MemoryBytes,
+		MemoryBytes: claim.MemoryBytes, NetworkPolicyID: claim.NetworkPolicyID,
+		NetworkDefaultEgress: claim.NetworkDefaultEgress, NetworkAllowedEgress: claim.NetworkAllowedEgress,
+		NetworkPreviewEnabled: claim.NetworkPreviewEnabled,
 	})
 	requestDigest := claim.SpecDigest
 	requestErr := error(nil)

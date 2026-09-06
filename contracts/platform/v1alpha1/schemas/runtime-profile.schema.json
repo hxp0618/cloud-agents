@@ -20,6 +20,7 @@
         "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
         "status": { "enum": ["draft", "published", "disabled"] },
         "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
         "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
@@ -31,6 +32,7 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "draft has no lifecycle timestamp, published has only publishedAt, and disabled has both timestamps",
-    "target, image and release are Admin-only and immutable for a version"
+    "target, network policy, image and release are Admin-only and immutable for a version",
+    "networkPolicyRef is absent only on legacy versions created before executable network policy authority"
   ]
 }

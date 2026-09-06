@@ -359,6 +359,15 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if status, _ := previewRequest(http.MethodGet, preview.Value.ProxyPath, grant.Value.AccessToken); status != http.StatusNotFound {
 		t.Fatalf("revoked Preview port status=%d", status)
 	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.network_policies SET preview_enabled = false WHERE project_uid = 'project' AND policy_uid = 'network-restricted'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := grantClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-preview-disabled", 3001); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("disabled Preview registration status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.network_policies SET preview_enabled = true WHERE project_uid = 'project' AND policy_uid = 'network-restricted'`); err != nil {
+		t.Fatal(err)
+	}
 	preview, err = grantClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-preview-register-again", 3000)
 	if err != nil {
 		t.Fatal("re-register Preview failed", err)
@@ -397,7 +406,7 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if err := sshSession.RequestPty("xterm-256color", 40, 120, ssh.TerminalModes{}); err != nil {
 		t.Fatal("SSH PTY request failed", err)
 	}
-	sshOutput, err := sshSession.CombinedOutput(`printf 'CAG_SSH_DIR=%s\n' "$PWD"`)
+	sshOutput, err := sshSession.CombinedOutput(`printf 'CAG_SSH_DIR=%s\n' "$PWD"; sleep 0.1`)
 	_ = sshClient.Close()
 	if err != nil || !strings.Contains(string(sshOutput), "CAG_SSH_DIR=/workspace") {
 		t.Fatalf("SSH fixed Sandbox command output=%q err=%v", sshOutput, err)
@@ -413,7 +422,10 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sshOutput, err = sshSession.CombinedOutput(`printf 'CAG_SSH_RESTART=%s\n' "$PWD"`)
+	if err := sshSession.RequestPty("xterm-256color", 40, 120, ssh.TerminalModes{}); err != nil {
+		t.Fatal("SSH PTY request after Gateway restart failed", err)
+	}
+	sshOutput, err = sshSession.CombinedOutput(`printf 'CAG_SSH_RESTART=%s\n' "$PWD"; sleep 0.1`)
 	_ = sshClient.Close()
 	if err != nil || !strings.Contains(string(sshOutput), "CAG_SSH_RESTART=/workspace") {
 		t.Fatalf("SSH Gateway restart output=%q err=%v", sshOutput, err)
@@ -426,12 +438,15 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := revokedSSHSession.RequestPty("xterm-256color", 40, 120, ssh.TerminalModes{}); err != nil {
+		t.Fatal("active SSH revoke PTY request failed", err)
+	}
 	revokedSSHOutput, err := revokedSSHSession.StdoutPipe()
 	if err != nil || revokedSSHSession.Start(`printf 'CAG_SSH_REVOKE_READY\n'; sleep 30`) != nil {
 		t.Fatal("active SSH revoke session failed to start", err)
 	}
 	revokeMarker := make([]byte, len("CAG_SSH_REVOKE_READY\n"))
-	if _, err := io.ReadFull(revokedSSHOutput, revokeMarker); err != nil || string(revokeMarker) != "CAG_SSH_REVOKE_READY\n" {
+	if _, err := io.ReadFull(revokedSSHOutput, revokeMarker); err != nil || strings.TrimSpace(string(revokeMarker)) != "CAG_SSH_REVOKE_READY" {
 		t.Fatalf("active SSH marker=%q err=%v", revokeMarker, err)
 	}
 
@@ -544,7 +559,7 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		"previewUnregisteredStatus": 404, "previewInternalPortStatus": 404,
 		"previewHeadersRedacted": true, "previewActiveResponseRevoked": true,
 		"previewRevokedPortStatus": 404, "previewRevokedGrantStatus": 403,
-		"previewExpiredGrantStatus": 403,
+		"previewExpiredGrantStatus": 403, "previewPolicyDisabledStatus": 403,
 	})
 	t.Logf("FOUNDATION_PTY_API=%s", receipt)
 }

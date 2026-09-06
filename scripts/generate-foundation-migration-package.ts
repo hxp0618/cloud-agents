@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { migrationDigest } from "./lib/platform-migration-json";
 import { splitPostgresStatements, classifyMigrationStatement } from "./lib/platform-migration-sql";
 import { validateObjectIdentity } from "./lib/platform-migration-projection";
+import { migrationObjectIdentity } from "./lib/platform-migration-bundle";
 
 // One exact product successor; frozen predecessor artifacts are inputs, never rewritten.
 const root = resolve(import.meta.dirname, "..");
 const mode = process.argv[2];
 assert.ok(mode === "--write" || mode === "--check");
-const base = "services/control-plane/migrations/product/000060";
-const sqlPath = "services/control-plane/migrations/000060_add_sandbox_preview_ports.sql";
 const read = (path: string) => readFileSync(resolve(root, path));
 const json = (path: string) => JSON.parse(read(path).toString());
 const bytes = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
@@ -23,47 +22,50 @@ const artifact = (path: string, data = read(path)) => ({
   size_bytes: data.length,
   sha256: digest(data),
 });
-const prior = json("services/control-plane/migrations/product/000059/manifest.json");
+const latest = readdirSync(resolve(root, "services/control-plane/migrations"))
+  .map((name) => /^(?<version>[0-9]{6})_(?<name>.+)\.sql$/u.exec(name))
+  .filter((match) => match?.groups && Number(match.groups.version) >= 15)
+  .toSorted((left, right) => left!.groups!.version!.localeCompare(right!.groups!.version!, "en"))
+  .at(-1);
+assert.ok(latest?.groups);
+const current = latest.groups.version!;
+const previous = String(Number(current) - 1).padStart(6, "0");
+const migrationName = latest.groups.name!;
+const base = `services/control-plane/migrations/product/${current}`;
+const sqlPath = `services/control-plane/migrations/${latest[0]}`;
+const prior = json(`services/control-plane/migrations/product/${previous}/manifest.json`);
 const catalog = json(prior.schema_bundle.migrations.at(-1).catalog_contract.path);
-catalog.schema_head = "000060";
+catalog.schema_head = current;
 const sql = read(sqlPath);
+const statements = splitPostgresStatements(sql).map((statement) => ({
+  index: statement.index,
+  start: statement.start,
+  end: statement.end,
+  sha256: statement.sha256,
+  classification: classifyMigrationStatement(statement, current),
+}));
 catalog.source_descriptors.push({
-  migration_id: "000060",
+  migration_id: current,
   sql_sha256: digest(sql),
-  statements: splitPostgresStatements(sql).map((s) => ({
-    index: s.index,
-    start: s.start,
-    end: s.end,
-    sha256: s.sha256,
-    classification: classifyMigrationStatement(s, "000060"),
-  })),
+  statements,
 });
-const additions: any[] = [];
-for (const [name, arguments_] of [
-  ["register_sandbox_preview_port_v1", ["text", "text", "integer", "text"]],
-  ["revoke_sandbox_preview_port_v1", ["text", "text", "integer", "text"]],
-] as const)
-  additions.push({
-    kind: "function",
-    identity: {
-      schema: "cloud_agents",
-      name,
-      arguments: arguments_.map((argument) => ({ schema: "pg_catalog", name: argument })),
-    },
-  });
+const additions = statements
+  .filter(({ classification }) =>
+    classification.command === "CREATE" && classification.object_kind === "FUNCTION")
+  .map(({ classification }) => migrationObjectIdentity(classification.target_identity));
 for (const item of additions) validateObjectIdentity(item);
 catalog.declared_object_identities.push(...additions);
 const catalogBytes = bytes(catalog);
-const catalogArtifact = artifact(`${base}/catalog/schema-000059.json`, catalogBytes);
+const catalogArtifact = artifact(`${base}/catalog/schema-${previous}.json`, catalogBytes);
 const schema = structuredClone(prior.schema_bundle);
-schema.schema_head = "000060";
+schema.schema_head = current;
 schema.migrations.push({
   ...structuredClone(schema.migrations.at(-1)),
-  id: "000060",
-  name: "add_sandbox_preview_ports",
-  predecessor_id: "000059",
-  schema_from: "000059",
-  schema_to: "000060",
+  id: current,
+  name: migrationName,
+  predecessor_id: previous,
+  schema_from: previous,
+  schema_to: current,
   sql_artifact: artifact(sqlPath),
   predecessor_catalog_contract: prior.schema_bundle.migrations.at(-1).catalog_contract,
   catalog_contract: catalogArtifact,
@@ -126,4 +128,4 @@ for (const [path, data] of new Map([
     writeFileSync(resolve(root, path), data);
   } else assert.deepEqual(read(path), data, `${path} is stale`);
 }
-process.stdout.write(`product-000060 ${mode}: ${schemaDigest}\n`);
+process.stdout.write(`product-${current} ${mode}: ${schemaDigest}\n`);

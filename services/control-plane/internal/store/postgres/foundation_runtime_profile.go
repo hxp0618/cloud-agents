@@ -34,6 +34,7 @@ type runtimeProfilePageRow struct {
 	Description      string     `json:"description"`
 	Status           string     `json:"status"`
 	TargetID         string     `json:"target_uid"`
+	NetworkPolicyID  string     `json:"network_policy_ref"`
 	ImageURI         string     `json:"image_uri"`
 	ReleaseDigest    string     `json:"release_digest"`
 	CPUMillis        int64      `json:"cpu_millis"`
@@ -58,14 +59,15 @@ type publishedRuntimeProfilePageRow struct {
 }
 
 const runtimeProfileColumns = `profile_version_uid, profile_uid, profile_name, profile_version,
-    description, status, target_uid, image_uri, release_digest, cpu_millis, memory_bytes,
+    description, status, target_uid, COALESCE(network_policy_ref, '') AS network_policy_ref,
+    image_uri, release_digest, cpu_millis, memory_bytes,
     resource_version, created_at, updated_at, published_at, disabled_at`
 
 var (
 	createRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
-FROM cloud_agents.create_runtime_profile_draft_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
+FROM cloud_agents.create_runtime_profile_draft_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
 	transitionRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
-FROM cloud_agents.transition_runtime_profile_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.transition_runtime_profile_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
 FROM cloud_agents.runtime_profiles
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
@@ -87,8 +89,14 @@ FROM cloud_agents.runtime_profiles AS profile
 JOIN cloud_agents.deployment_targets AS target
   ON target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
  AND target.target_uid = profile.target_uid
+JOIN cloud_agents.network_policies AS policy
+  ON policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
+ AND policy.policy_uid = profile.network_policy_ref
 WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_uid = $1
     AND profile.profile_version_uid = $2 AND profile.status = 'published'
+    AND policy.default_egress IN ('restricted', 'deny')
+    AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
+    AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
     AND target.target_kind = 'docker' AND target.observed_phase = 'ready'
     AND target.scheduling_state = 'active'`
 	listPublishedRuntimeProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
@@ -101,8 +109,14 @@ FROM (
     JOIN cloud_agents.deployment_targets AS target
       ON target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
      AND target.target_uid = profile.target_uid
+    JOIN cloud_agents.network_policies AS policy
+      ON policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
+     AND policy.policy_uid = profile.network_policy_ref
     WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_uid = $1
         AND profile.profile_version_uid > $2 AND profile.status = 'published'
+        AND policy.default_egress IN ('restricted', 'deny')
+        AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
+        AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
         AND target.target_kind = 'docker' AND target.observed_phase = 'ready'
         AND target.scheduling_state = 'active'
     ORDER BY profile.profile_version_uid
@@ -110,7 +124,7 @@ FROM (
 ) AS profile_row`
 	createFoundationSandboxSQL = `SELECT operation_uid, workspace_uid, sandbox_uid, profile_uid,
     profile_version, generation, desired_state, observed_state, ttl_seconds, expires_at
-FROM cloud_agents.accept_foundation_sandbox_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.accept_foundation_sandbox_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 )
 
 func (service *DurableCoordinationService) CreateRuntimeProfile(
@@ -130,7 +144,7 @@ func (service *DurableCoordinationService) CreateRuntimeProfile(
 	err = service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true, func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 		return scanRuntimeProfile(handle.transaction.queryRow(operationContext, createRuntimeProfileSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID, input.ProfileName, input.Version,
-			input.Description, input.TargetID, input.ImageURI, input.ReleaseDigest, input.CPUMillis,
+			input.Description, input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.CPUMillis,
 			input.MemoryBytes, input.Mutation.IdempotencyKey, digest, input.Mutation.RequestID, subjectDigest), input.Scope, &result)
 	})
 	return result, mapRuntimeProfileError(err)
@@ -325,7 +339,7 @@ func scanRuntimeProfile(row rowScanner, scope internalcoordination.FoundationSco
 	var createdAt, updatedAt time.Time
 	var publishedAt, disabledAt *time.Time
 	if err := row.Scan(&result.ProfileVersionID, &result.ProfileID, &result.ProfileName, &result.Version,
-		&result.Description, &result.Status, &result.TargetID, &result.ImageURI, &result.ReleaseDigest,
+		&result.Description, &result.Status, &result.TargetID, &result.NetworkPolicyID, &result.ImageURI, &result.ReleaseDigest,
 		&result.CPUMillis, &result.MemoryBytes, &result.ResourceVersion, &createdAt, &updatedAt,
 		&publishedAt, &disabledAt); err != nil {
 		return err
@@ -394,7 +408,8 @@ func runtimeProfileSnapshot(row runtimeProfilePageRow) internalcoordination.Runt
 		Scope:            internalcoordination.FoundationScope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 		ProfileVersionID: row.ProfileVersionID, ProfileID: row.ProfileID, ProfileName: row.ProfileName,
 		Version: row.Version, Description: row.Description, Status: row.Status, TargetID: row.TargetID,
-		ImageURI: row.ImageURI, ReleaseDigest: row.ReleaseDigest, CPUMillis: row.CPUMillis,
+		NetworkPolicyID: row.NetworkPolicyID,
+		ImageURI:        row.ImageURI, ReleaseDigest: row.ReleaseDigest, CPUMillis: row.CPUMillis,
 		MemoryBytes: row.MemoryBytes, ResourceVersion: row.ResourceVersion,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}

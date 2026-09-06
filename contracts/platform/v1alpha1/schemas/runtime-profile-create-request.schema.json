@@ -4,13 +4,14 @@
   "title": "RuntimeProfileCreateRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["profileId", "profileName", "version", "description", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+  "required": ["profileId", "profileName", "version", "description", "targetId", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
   "properties": {
     "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "profileName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
     "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
     "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
     "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
@@ -18,6 +19,7 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "imageUri must end in the exact releaseDigest",
+    "networkPolicyRef must resolve to an executable restricted or deny policy when the draft is published",
     "a new profileId starts at version 1 and later immutable drafts use the next consecutive version",
     "this Admin-only request never accepts endpoint or credential bytes"
   ]

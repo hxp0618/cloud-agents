@@ -4,6 +4,7 @@ import type {
   EnvironmentProfile,
   NetworkPolicy,
   NetworkPolicySetRequest,
+  RuntimeProfile,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import {
   listAdminNetworkPolicyAuditEvents,
@@ -20,7 +21,8 @@ function formFrom(policy?: NetworkPolicy) {
     policyId: policy?.metadata.uid ?? "",
     policyName: policy?.metadata.name ?? "",
     userSummary: policy?.spec.userSummary ?? "",
-    defaultEgress: policy?.spec.defaultEgress ?? "public",
+    defaultEgress: policy?.spec.defaultEgress ?? "restricted",
+    allowedEgress: policy?.spec.allowedEgress.join("\n") ?? "",
     allowlistPolicyRef: policy?.spec.allowlistPolicyRef ?? "",
     ingressEnabled: policy?.spec.ingressEnabled ?? false,
     previewEnabled: policy?.spec.previewEnabled ?? false,
@@ -34,6 +36,7 @@ export function NetworkPolicyPanel({
   connection,
   policies,
   profiles,
+  runtimeProfiles,
   query,
   busy,
   onQuery,
@@ -45,6 +48,7 @@ export function NetworkPolicyPanel({
   connection: SavedAdminConnection;
   policies: readonly NetworkPolicy[];
   profiles: readonly EnvironmentProfile[];
+  runtimeProfiles: readonly RuntimeProfile[];
   query: string;
   busy: boolean;
   onQuery: (value: string) => void;
@@ -61,7 +65,9 @@ export function NetworkPolicyPanel({
   const [form, setForm] = useState(formFrom);
   const [audit, setAudit] = useState<readonly AdminAuditEvent[]>([]);
   const selected = policies.find(({ metadata }) => metadata.uid === selectedId);
-  const referenced = profiles.some(({ spec }) => spec.networkPolicyRef === selectedId);
+  const referenced =
+    profiles.some(({ spec }) => spec.networkPolicyRef === selectedId) ||
+    runtimeProfiles.some(({ spec }) => spec.networkPolicyRef === selectedId);
   const visible = policies.filter(({ metadata, spec }) =>
     [metadata.uid, metadata.name, spec.userSummary, spec.defaultEgress]
       .join(" ")
@@ -103,6 +109,14 @@ export function NetworkPolicyPanel({
       policyName: form.policyName.trim(),
       userSummary: form.userSummary.trim(),
       defaultEgress: form.defaultEgress,
+      allowedEgress: Array.from(
+        new Set(
+          form.allowedEgress
+            .split(/[\n,]/u)
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ).sort(),
       ingressEnabled: form.ingressEnabled,
       previewEnabled: form.previewEnabled,
       ...(form.allowlistPolicyRef.trim()
@@ -251,6 +265,17 @@ export function NetworkPolicyPanel({
             <small>{t("networkPolicy.userSummaryHelp")}</small>
           </label>
           <label>
+            <span>{t("networkPolicy.allowedEgress")}</span>
+            <textarea
+              rows={5}
+              value={form.allowedEgress}
+              disabled={busy || referenced || form.defaultEgress !== "restricted"}
+              placeholder={t("networkPolicy.allowedEgressPlaceholder")}
+              onChange={(event) => setForm({ ...form, allowedEgress: event.target.value })}
+            />
+            <small>{t("networkPolicy.allowedEgressHelp")}</small>
+          </label>
+          <label>
             <span>{t("networkPolicy.defaultEgress")}</span>
             <select
               value={form.defaultEgress}
@@ -259,6 +284,8 @@ export function NetworkPolicyPanel({
                 setForm({
                   ...form,
                   defaultEgress: event.target.value as NetworkPolicySetRequest["defaultEgress"],
+                  allowedEgress:
+                    event.target.value === "restricted" ? form.allowedEgress : "",
                 })
               }
             >

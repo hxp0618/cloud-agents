@@ -5,6 +5,7 @@ package v1alpha1
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/netip"
 	"net/url"
 	"path"
 	"regexp"
@@ -110,6 +111,7 @@ var (
 	previewProxyPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
 	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
+	egressDomainPattern          = regexp.MustCompile(`^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 	roleNames                    = map[string]struct{}{
 		"platform.admin": {}, "tenant.admin": {}, "organization.admin": {}, "project.admin": {},
 		"project.operator": {}, "project.developer": {}, "project.viewer": {},
@@ -473,20 +475,22 @@ type StoragePolicyPage struct {
 	NextPageToken   string          `json:"nextPageToken,omitempty"`
 }
 type NetworkPolicySetRequest struct {
-	ExpectedResourceVersion string `json:"expectedResourceVersion"`
-	PolicyName              string `json:"policyName"`
-	UserSummary             string `json:"userSummary"`
-	DefaultEgress           string `json:"defaultEgress"`
-	AllowlistPolicyRef      string `json:"allowlistPolicyRef,omitempty"`
-	IngressEnabled          bool   `json:"ingressEnabled"`
-	PreviewEnabled          bool   `json:"previewEnabled"`
-	DNSPolicyRef            string `json:"dnsPolicyRef,omitempty"`
-	ProxyPolicyRef          string `json:"proxyPolicyRef,omitempty"`
+	ExpectedResourceVersion string   `json:"expectedResourceVersion"`
+	PolicyName              string   `json:"policyName"`
+	UserSummary             string   `json:"userSummary"`
+	DefaultEgress           string   `json:"defaultEgress"`
+	AllowedEgress           []string `json:"allowedEgress"`
+	AllowlistPolicyRef      string   `json:"allowlistPolicyRef,omitempty"`
+	IngressEnabled          bool     `json:"ingressEnabled"`
+	PreviewEnabled          bool     `json:"previewEnabled"`
+	DNSPolicyRef            string   `json:"dnsPolicyRef,omitempty"`
+	ProxyPolicyRef          string   `json:"proxyPolicyRef,omitempty"`
 }
 type NetworkPolicySpec struct {
 	ProjectRef         common.ProjectRef `json:"projectRef"`
 	UserSummary        string            `json:"userSummary"`
 	DefaultEgress      string            `json:"defaultEgress"`
+	AllowedEgress      []string          `json:"allowedEgress"`
 	AllowlistPolicyRef string            `json:"allowlistPolicyRef,omitempty"`
 	IngressEnabled     bool              `json:"ingressEnabled"`
 	PreviewEnabled     bool              `json:"previewEnabled"`
@@ -585,32 +589,34 @@ type UserEnvironment struct {
 	ExpiresAt       string            `json:"expiresAt"`
 }
 type RuntimeProfileCreateRequest struct {
-	ProfileID     string `json:"profileId"`
-	ProfileName   string `json:"profileName"`
-	Version       int64  `json:"version"`
-	Description   string `json:"description"`
-	TargetID      string `json:"targetId"`
-	ImageURI      string `json:"imageUri"`
-	ReleaseDigest string `json:"releaseDigest"`
-	CPUMillis     int64  `json:"cpuMillis"`
-	MemoryBytes   int64  `json:"memoryBytes"`
+	ProfileID        string `json:"profileId"`
+	ProfileName      string `json:"profileName"`
+	Version          int64  `json:"version"`
+	Description      string `json:"description"`
+	TargetID         string `json:"targetId"`
+	NetworkPolicyRef string `json:"networkPolicyRef"`
+	ImageURI         string `json:"imageUri"`
+	ReleaseDigest    string `json:"releaseDigest"`
+	CPUMillis        int64  `json:"cpuMillis"`
+	MemoryBytes      int64  `json:"memoryBytes"`
 }
 type RuntimeProfileTransitionRequest struct {
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
 }
 type RuntimeProfileSpec struct {
-	ProjectRef    common.ProjectRef `json:"projectRef"`
-	ProfileID     string            `json:"profileId"`
-	Version       int64             `json:"version"`
-	Description   string            `json:"description"`
-	Status        string            `json:"status"`
-	TargetID      string            `json:"targetId"`
-	ImageURI      string            `json:"imageUri"`
-	ReleaseDigest string            `json:"releaseDigest"`
-	CPUMillis     int64             `json:"cpuMillis"`
-	MemoryBytes   int64             `json:"memoryBytes"`
-	PublishedAt   string            `json:"publishedAt,omitempty"`
-	DisabledAt    string            `json:"disabledAt,omitempty"`
+	ProjectRef       common.ProjectRef `json:"projectRef"`
+	ProfileID        string            `json:"profileId"`
+	Version          int64             `json:"version"`
+	Description      string            `json:"description"`
+	Status           string            `json:"status"`
+	TargetID         string            `json:"targetId"`
+	NetworkPolicyRef string            `json:"networkPolicyRef,omitempty"`
+	ImageURI         string            `json:"imageUri"`
+	ReleaseDigest    string            `json:"releaseDigest"`
+	CPUMillis        int64             `json:"cpuMillis"`
+	MemoryBytes      int64             `json:"memoryBytes"`
+	PublishedAt      string            `json:"publishedAt,omitempty"`
+	DisabledAt       string            `json:"disabledAt,omitempty"`
 }
 type RuntimeProfile struct {
 	ResourceBase
@@ -816,31 +822,33 @@ type SandboxSessionLifecycleOperation struct {
 	WorkspaceDisposition string `json:"workspaceDisposition"`
 }
 type AdminSandboxSessionSpec struct {
-	ProjectRef             common.ProjectRef `json:"projectRef"`
-	OperationID            string            `json:"operationId"`
-	OperationState         string            `json:"operationState"`
-	CleanupPhase           string            `json:"cleanupPhase"`
-	WorkspaceID            string            `json:"workspaceId"`
-	WorkspaceName          string            `json:"workspaceName"`
-	VolumeID               string            `json:"volumeId"`
-	PhysicalVolumeID       string            `json:"physicalVolumeId,omitempty"`
-	WorkspaceRetention     string            `json:"workspaceRetention"`
-	WorkspaceObservedState string            `json:"workspaceObservedState"`
-	RuntimeProfileID       string            `json:"runtimeProfileId"`
-	RuntimeProfileVersion  int64             `json:"runtimeProfileVersion"`
-	TargetID               string            `json:"targetId"`
-	Generation             int64             `json:"generation"`
-	ObservedGeneration     int64             `json:"observedGeneration"`
-	DesiredState           string            `json:"desiredState"`
-	ObservedState          string            `json:"observedState"`
-	WriterReleased         bool              `json:"writerReleased"`
-	TTLSeconds             int64             `json:"ttlSeconds,omitempty"`
-	ExpiresAt              string            `json:"expiresAt,omitempty"`
-	LifecycleTrigger       string            `json:"lifecycleTrigger,omitempty"`
-	RuntimeID              string            `json:"runtimeId,omitempty"`
-	RuntimeState           string            `json:"runtimeState,omitempty"`
-	StableErrorCode        string            `json:"stableErrorCode,omitempty"`
-	ObservedAt             string            `json:"observedAt,omitempty"`
+	ProjectRef               common.ProjectRef `json:"projectRef"`
+	OperationID              string            `json:"operationId"`
+	OperationState           string            `json:"operationState"`
+	CleanupPhase             string            `json:"cleanupPhase"`
+	WorkspaceID              string            `json:"workspaceId"`
+	WorkspaceName            string            `json:"workspaceName"`
+	VolumeID                 string            `json:"volumeId"`
+	PhysicalVolumeID         string            `json:"physicalVolumeId,omitempty"`
+	WorkspaceRetention       string            `json:"workspaceRetention"`
+	WorkspaceObservedState   string            `json:"workspaceObservedState"`
+	RuntimeProfileID         string            `json:"runtimeProfileId"`
+	RuntimeProfileVersion    int64             `json:"runtimeProfileVersion"`
+	TargetID                 string            `json:"targetId"`
+	NetworkPolicyRef         string            `json:"networkPolicyRef,omitempty"`
+	NetworkPolicyEnforcement string            `json:"networkPolicyEnforcement"`
+	Generation               int64             `json:"generation"`
+	ObservedGeneration       int64             `json:"observedGeneration"`
+	DesiredState             string            `json:"desiredState"`
+	ObservedState            string            `json:"observedState"`
+	WriterReleased           bool              `json:"writerReleased"`
+	TTLSeconds               int64             `json:"ttlSeconds,omitempty"`
+	ExpiresAt                string            `json:"expiresAt,omitempty"`
+	LifecycleTrigger         string            `json:"lifecycleTrigger,omitempty"`
+	RuntimeID                string            `json:"runtimeId,omitempty"`
+	RuntimeState             string            `json:"runtimeState,omitempty"`
+	StableErrorCode          string            `json:"stableErrorCode,omitempty"`
+	ObservedAt               string            `json:"observedAt,omitempty"`
 }
 type AdminSandboxSession struct {
 	ResourceBase
@@ -1131,14 +1139,16 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "imageRepository": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "platformVersion": common.ScalarResponseShape(), "runtimeVersion": common.ScalarResponseShape(), "codexVersion": common.ScalarResponseShape(), "claudeCodeVersion": common.ScalarResponseShape(), "architectures": common.ArrayResponseShape(common.ScalarResponseShape()), "status": common.ScalarResponseShape(), "verificationState": common.ScalarResponseShape(), "verificationEvidenceDigest": common.ScalarResponseShape(), "approvedAt": common.ScalarResponseShape()}
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
+	case "RuntimeProfile":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "AdminSandboxSession":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
 	case "AdminSandboxAccessGrant":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "previewPorts": common.ArrayResponseShape(common.ScalarResponseShape()), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
 	case "NetworkPolicy":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "schedulingState": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
@@ -2829,12 +2839,39 @@ func EncodeStoragePolicyPageResponseJSON(value common.ResponseEnvelope[StoragePo
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
-func validateNetworkPolicyValues(userSummary, defaultEgress string, ingressEnabled, previewEnabled bool, allowlistPolicyRef, dnsPolicyRef, proxyPolicyRef, path string) error {
+func validateAllowedEgress(values []string, path string) error {
+	if values == nil || len(values) > 64 {
+		return common.ContractError("INVALID_NETWORK_POLICY", path)
+	}
+	previous := ""
+	for index, value := range values {
+		canonical := value
+		if address, err := netip.ParseAddr(value); err == nil {
+			canonical = address.String()
+		} else if prefix, err := netip.ParsePrefix(value); err == nil {
+			canonical = prefix.Masked().String()
+		} else if len(value) > 253 || !egressDomainPattern.MatchString(value) {
+			return common.ContractError("INVALID_NETWORK_POLICY", path+"/"+itoa(index))
+		}
+		if canonical != value || value != strings.ToLower(strings.TrimSpace(value)) || index > 0 && previous >= value {
+			return common.ContractError("INVALID_NETWORK_POLICY", path+"/"+itoa(index))
+		}
+		previous = value
+	}
+	return nil
+}
+func validateNetworkPolicyValues(userSummary, defaultEgress string, allowedEgress []string, ingressEnabled, previewEnabled bool, allowlistPolicyRef, dnsPolicyRef, proxyPolicyRef, path string) error {
 	if common.ValidateString(userSummary, 1, 256, path+"/userSummary") != nil || strings.IndexFunc(userSummary, func(value rune) bool { return value < 32 || value == 127 }) >= 0 {
 		return common.ContractError("INVALID_POLICY_SUMMARY", path+"/userSummary")
 	}
 	if defaultEgress != "public" && defaultEgress != "restricted" && defaultEgress != "deny" {
 		return common.ContractError("INVALID_NETWORK_POLICY", path+"/defaultEgress")
+	}
+	if err := validateAllowedEgress(allowedEgress, path+"/allowedEgress"); err != nil {
+		return err
+	}
+	if defaultEgress == "restricted" && len(allowedEgress) == 0 && allowlistPolicyRef == "" || defaultEgress != "restricted" && len(allowedEgress) != 0 {
+		return common.ContractError("INVALID_NETWORK_POLICY", path+"/allowedEgress")
 	}
 	for field, value := range map[string]string{"allowlistPolicyRef": allowlistPolicyRef, "dnsPolicyRef": dnsPolicyRef, "proxyPolicyRef": proxyPolicyRef} {
 		if value != "" {
@@ -2858,8 +2895,8 @@ func validateNetworkPolicyRefFields(fields map[string]json.RawMessage, allowlist
 	return nil
 }
 func DecodeNetworkPolicySetRequestJSON(data []byte) (NetworkPolicySetRequest, error) {
-	allowed := []string{"expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "allowlistPolicyRef", "ingressEnabled", "previewEnabled", "dnsPolicyRef", "proxyPolicyRef"}
-	required := []string{"expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"}
+	allowed := []string{"expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "allowedEgress", "allowlistPolicyRef", "ingressEnabled", "previewEnabled", "dnsPolicyRef", "proxyPolicyRef"}
+	required := []string{"expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "allowedEgress", "ingressEnabled", "previewEnabled"}
 	fields, err := common.DecodeStrictObject(data, allowed, required)
 	if err != nil {
 		return NetworkPolicySetRequest{}, err
@@ -2872,7 +2909,7 @@ func DecodeNetworkPolicySetRequestJSON(data []byte) (NetworkPolicySetRequest, er
 	if err != nil || resourceVersion < 0 || common.ValidateIdentifier(value.PolicyName, "/policyName") != nil {
 		return NetworkPolicySetRequest{}, common.ContractError("INVALID_NETWORK_POLICY", "")
 	}
-	if err := validateNetworkPolicyValues(value.UserSummary, value.DefaultEgress, value.IngressEnabled, value.PreviewEnabled, value.AllowlistPolicyRef, value.DNSPolicyRef, value.ProxyPolicyRef, ""); err != nil {
+	if err := validateNetworkPolicyValues(value.UserSummary, value.DefaultEgress, value.AllowedEgress, value.IngressEnabled, value.PreviewEnabled, value.AllowlistPolicyRef, value.DNSPolicyRef, value.ProxyPolicyRef, ""); err != nil {
 		return NetworkPolicySetRequest{}, err
 	}
 	if err := validateNetworkPolicyRefFields(fields, value.AllowlistPolicyRef, value.DNSPolicyRef, value.ProxyPolicyRef, ""); err != nil {
@@ -2899,8 +2936,8 @@ func DecodeNetworkPolicyJSON(data []byte) (NetworkPolicy, error) {
 	if err != nil {
 		return NetworkPolicy{}, err
 	}
-	allowed := []string{"projectRef", "userSummary", "defaultEgress", "allowlistPolicyRef", "ingressEnabled", "previewEnabled", "dnsPolicyRef", "proxyPolicyRef"}
-	required := []string{"projectRef", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"}
+	allowed := []string{"projectRef", "userSummary", "defaultEgress", "allowedEgress", "allowlistPolicyRef", "ingressEnabled", "previewEnabled", "dnsPolicyRef", "proxyPolicyRef"}
+	required := []string{"projectRef", "userSummary", "defaultEgress", "allowedEgress", "ingressEnabled", "previewEnabled"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return NetworkPolicy{}, err
@@ -2914,7 +2951,7 @@ func DecodeNetworkPolicyJSON(data []byte) (NetworkPolicy, error) {
 		return NetworkPolicy{}, common.ContractError("INVALID_NETWORK_POLICY", "/spec")
 	}
 	spec.ProjectRef = project
-	if err := validateNetworkPolicyValues(spec.UserSummary, spec.DefaultEgress, spec.IngressEnabled, spec.PreviewEnabled, spec.AllowlistPolicyRef, spec.DNSPolicyRef, spec.ProxyPolicyRef, "/spec"); err != nil {
+	if err := validateNetworkPolicyValues(spec.UserSummary, spec.DefaultEgress, spec.AllowedEgress, spec.IngressEnabled, spec.PreviewEnabled, spec.AllowlistPolicyRef, spec.DNSPolicyRef, spec.ProxyPolicyRef, "/spec"); err != nil {
 		return NetworkPolicy{}, err
 	}
 	if err := validateNetworkPolicyRefFields(specFields, spec.AllowlistPolicyRef, spec.DNSPolicyRef, spec.ProxyPolicyRef, "/spec"); err != nil {
@@ -3379,12 +3416,15 @@ func validateRuntimeProfileSummaryValues(profileID string, version int64, descri
 	}
 	return nil
 }
-func validateRuntimeProfileValues(profileID string, version int64, description, targetID, imageURI, releaseDigest string, cpuMillis, memoryBytes int64, path string) error {
+func validateRuntimeProfileValues(profileID string, version int64, description, targetID, networkPolicyRef, imageURI, releaseDigest string, cpuMillis, memoryBytes int64, path string) error {
 	if err := validateRuntimeProfileSummaryValues(profileID, version, description, cpuMillis, memoryBytes, path); err != nil {
 		return err
 	}
 	if common.ValidateIdentifier(targetID, path+"/targetId") != nil {
 		return common.ContractError("INVALID_IDENTIFIER", path+"/targetId")
+	}
+	if networkPolicyRef != "" && common.ValidateIdentifier(networkPolicyRef, path+"/networkPolicyRef") != nil {
+		return common.ContractError("INVALID_IDENTIFIER", path+"/networkPolicyRef")
 	}
 	if len(imageURI) > 1024 || !runtimeImagePattern.MatchString(imageURI) {
 		return common.ContractError("INVALID_RUNTIME_IMAGE", path+"/imageUri")
@@ -3395,7 +3435,7 @@ func validateRuntimeProfileValues(profileID string, version int64, description, 
 	return nil
 }
 func DecodeRuntimeProfileCreateRequestJSON(data []byte) (RuntimeProfileCreateRequest, error) {
-	allowed := []string{"profileId", "profileName", "version", "description", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
+	allowed := []string{"profileId", "profileName", "version", "description", "targetId", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
 	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
 		return RuntimeProfileCreateRequest{}, err
 	}
@@ -3403,10 +3443,10 @@ func DecodeRuntimeProfileCreateRequestJSON(data []byte) (RuntimeProfileCreateReq
 	if json.Unmarshal(data, &value) != nil {
 		return RuntimeProfileCreateRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
 	}
-	if common.ValidateIdentifier(value.ProfileName, "/profileName") != nil {
-		return RuntimeProfileCreateRequest{}, common.ContractError("INVALID_IDENTIFIER", "/profileName")
+	if common.ValidateIdentifier(value.ProfileName, "/profileName") != nil || common.ValidateIdentifier(value.NetworkPolicyRef, "/networkPolicyRef") != nil {
+		return RuntimeProfileCreateRequest{}, common.ContractError("INVALID_IDENTIFIER", "")
 	}
-	if err := validateRuntimeProfileValues(value.ProfileID, value.Version, value.Description, value.TargetID, value.ImageURI, value.ReleaseDigest, value.CPUMillis, value.MemoryBytes, ""); err != nil {
+	if err := validateRuntimeProfileValues(value.ProfileID, value.Version, value.Description, value.TargetID, value.NetworkPolicyRef, value.ImageURI, value.ReleaseDigest, value.CPUMillis, value.MemoryBytes, ""); err != nil {
 		return RuntimeProfileCreateRequest{}, err
 	}
 	return value, nil
@@ -3451,8 +3491,9 @@ func DecodeRuntimeProfileJSON(data []byte) (RuntimeProfile, error) {
 	if err != nil {
 		return RuntimeProfile{}, err
 	}
-	allowed := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes", "publishedAt", "disabledAt"}
-	specFields, err := strictSpec(fields["spec"], allowed, allowed[:10])
+	allowed := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes", "publishedAt", "disabledAt"}
+	required := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
+	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return RuntimeProfile{}, err
 	}
@@ -3465,7 +3506,7 @@ func DecodeRuntimeProfileJSON(data []byte) (RuntimeProfile, error) {
 		return RuntimeProfile{}, common.ContractError("INVALID_FIELD_TYPE", "/spec")
 	}
 	spec.ProjectRef = project
-	if err := validateRuntimeProfileValues(spec.ProfileID, spec.Version, spec.Description, spec.TargetID, spec.ImageURI, spec.ReleaseDigest, spec.CPUMillis, spec.MemoryBytes, "/spec"); err != nil {
+	if err := validateRuntimeProfileValues(spec.ProfileID, spec.Version, spec.Description, spec.TargetID, spec.NetworkPolicyRef, spec.ImageURI, spec.ReleaseDigest, spec.CPUMillis, spec.MemoryBytes, "/spec"); err != nil {
 		return RuntimeProfile{}, err
 	}
 	if spec.Status != "draft" && spec.Status != "published" && spec.Status != "disabled" {
@@ -4277,8 +4318,8 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	if err != nil {
 		return AdminSandboxSession{}, err
 	}
-	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "targetId", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt"}
-	required := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "targetId", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased"}
+	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt"}
+	required := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "targetId", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return AdminSandboxSession{}, err
@@ -4297,7 +4338,7 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 			return AdminSandboxSession{}, common.ContractError("INVALID_IDENTIFIER", path)
 		}
 	}
-	for path, id := range map[string]string{"/spec/physicalVolumeId": spec.PhysicalVolumeID, "/spec/runtimeId": spec.RuntimeID, "/spec/stableErrorCode": spec.StableErrorCode} {
+	for path, id := range map[string]string{"/spec/physicalVolumeId": spec.PhysicalVolumeID, "/spec/networkPolicyRef": spec.NetworkPolicyRef, "/spec/runtimeId": spec.RuntimeID, "/spec/stableErrorCode": spec.StableErrorCode} {
 		if id != "" && common.ValidateIdentifier(id, path) != nil {
 			return AdminSandboxSession{}, common.ContractError("INVALID_IDENTIFIER", path)
 		}
@@ -4316,6 +4357,11 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	case "pending", "available", "unknown", "failed":
 	default:
 		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/workspaceObservedState")
+	}
+	switch spec.NetworkPolicyEnforcement {
+	case "legacy", "pending", "enforced", "failed", "stopped":
+	default:
+		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/networkPolicyEnforcement")
 	}
 	switch spec.DesiredState {
 	case "running", "stopped":
@@ -4337,7 +4383,7 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	default:
 		return AdminSandboxSession{}, common.ContractError("INVALID_STATE", "/spec/lifecycleTrigger")
 	}
-	if spec.WorkspaceRetention != "retained" || spec.RuntimeProfileVersion < 1 || spec.RuntimeProfileVersion > 2147483647 || spec.Generation < 1 || spec.ObservedGeneration < 0 || spec.ObservedGeneration > spec.Generation || spec.WriterReleased && spec.ObservedState != "stopped" || (spec.TTLSeconds == 0) != (spec.ExpiresAt == "") || spec.TTLSeconds != 0 && (spec.TTLSeconds < 60 || spec.TTLSeconds > 86400 || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil) {
+	if spec.WorkspaceRetention != "retained" || (spec.NetworkPolicyRef == "") != (spec.NetworkPolicyEnforcement == "legacy") || spec.RuntimeProfileVersion < 1 || spec.RuntimeProfileVersion > 2147483647 || spec.Generation < 1 || spec.ObservedGeneration < 0 || spec.ObservedGeneration > spec.Generation || spec.WriterReleased && spec.ObservedState != "stopped" || (spec.TTLSeconds == 0) != (spec.ExpiresAt == "") || spec.TTLSeconds != 0 && (spec.TTLSeconds < 60 || spec.TTLSeconds > 86400 || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil) {
 		return AdminSandboxSession{}, common.ContractError("INVALID_ADMIN_SANDBOX_SESSION", "/spec")
 	}
 	if spec.ObservedAt != "" && common.ValidateDateTime(spec.ObservedAt, "/spec/observedAt") != nil {

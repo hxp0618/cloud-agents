@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -8,6 +8,13 @@ import { randomUUID } from "node:crypto";
 
 // Real product migration runner against one owned, network-disabled PostgreSQL.
 const root = resolve(import.meta.dirname, "..");
+const productHeads = readdirSync(resolve(root, "services/control-plane/migrations/product"))
+  .filter((entry) => /^\d{6}$/.test(entry))
+  .sort();
+const currentHead = productHeads.at(-1);
+const previousHead = productHeads.at(-2);
+assert.ok(currentHead && previousHead, "at least two product migration packages are required");
+const migrationCount = Number.parseInt(currentHead, 10);
 const name = `foundation-migrate-${randomUUID()}`;
 const build = mkdtempSync(resolve(tmpdir(), "cloud-agents-foundation-migrate-"));
 const binary = resolve(build, "cloud-agents-product-migrate");
@@ -164,19 +171,19 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
     "-test.v",
   );
   assert.ok(upgradeOutput.includes("--- PASS: TestFoundationProductUpgradePostgres"));
-  const fresh = migrate("000060", "foundation_fresh");
+  const fresh = migrate(currentHead, "foundation_fresh");
   assert.deepEqual(
     { applied: fresh.applied, no_op: fresh.no_op, schema_head: fresh.schema_head },
-    { applied: 60, no_op: false, schema_head: "000060" },
+    { applied: migrationCount, no_op: false, schema_head: currentHead },
   );
-  const replay = migrate("000060", "foundation_fresh");
+  const replay = migrate(currentHead, "foundation_fresh");
   assert.deepEqual(
     { applied: replay.applied, no_op: replay.no_op, schema_head: replay.schema_head },
-    { applied: 0, no_op: true, schema_head: "000060" },
+    { applied: 0, no_op: true, schema_head: currentHead },
   );
   const schemaBundleDigest = JSON.parse(
     readFileSync(
-      resolve(root, "services/control-plane/migrations/product/000060/manifest.json"),
+      resolve(root, `services/control-plane/migrations/product/${currentHead}/manifest.json`),
       "utf8",
     ),
   ).schema_bundle_digest;
@@ -190,11 +197,11 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "60|000001|000060|2",
+    `${migrationCount}|000001|${currentHead}|2`,
   );
   assert.equal(
     psql(
-      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000060';",
+      `SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='${currentHead}';`,
       "foundation_migration",
       "foundation_upgrade",
     )
@@ -212,20 +219,20 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "60|000001|000060|1",
+    `${migrationCount}|000001|${currentHead}|1`,
   );
   assert.equal(
     psql(
       `SET ROLE cloud_agents_migration_owner;
 SELECT count(*) FROM pg_catalog.pg_class relation
 JOIN pg_catalog.pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
-WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity');`,
+WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies');`,
       "foundation_migration",
       "foundation_fresh",
     )
       .split("\n")
       .at(-1),
-    "6",
+    "7",
   );
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -294,15 +301,15 @@ INSERT INTO cloud_agents.deployment_targets (
     JSON.stringify({
       postgres: psql("SHOW server_version;"),
       architecture,
-      upgradeFrom: "000059",
-      upgradeTo: "000060",
+      upgradeFrom: previousHead,
+      upgradeTo: currentHead,
       fresh,
       replay,
       checks: [
-        "product-000060 fresh install",
-        "product-000059 to product-000060 exact upgrade",
-        "product-000060 no-op replay",
-        "60-row immutable ledger with two bundle digests",
+        `product-${currentHead} fresh install`,
+        `product-${previousHead} to product-${currentHead} exact upgrade`,
+        `product-${currentHead} no-op replay`,
+        `${migrationCount}-row immutable ledger with two bundle digests`,
         "foundation and runtime profile tables installed",
         "real Admin/User generated SDK and HTTP authorization",
         "RuntimeProfile create/publish/disable and public redaction",

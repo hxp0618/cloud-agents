@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/netip"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,6 +22,7 @@ const (
 )
 
 var ErrInvalidInput = errors.New("network policy input is invalid")
+var egressDomain = regexp.MustCompile(`^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 type Scope struct{ TenantID, ProjectID string }
 type Mutation struct{ RequestID, IdempotencyKey string }
@@ -29,6 +33,7 @@ type SetInput struct {
 	PolicyName              string
 	UserSummary             string
 	DefaultEgress           string
+	AllowedEgress           []string
 	AllowlistPolicyRef      string
 	IngressEnabled          bool
 	PreviewEnabled          bool
@@ -44,6 +49,7 @@ type Snapshot struct {
 	PolicyName         string
 	UserSummary        string
 	DefaultEgress      string
+	AllowedEgress      []string
 	AllowlistPolicyRef string
 	IngressEnabled     bool
 	PreviewEnabled     bool
@@ -68,12 +74,16 @@ type AuditEvent struct {
 }
 
 func (input SetInput) Validate(tenantID string) error {
+	allowed, err := CanonicalAllowedEgress(input.AllowedEgress)
 	if invalidIdentifier(tenantID) || input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
 		invalidIdentifier(input.PolicyID) || invalidIdentifier(input.PolicyName) ||
 		invalidSummary(input.UserSummary) || !validDefaultEgress(input.DefaultEgress) ||
 		(input.AllowlistPolicyRef != "" && invalidIdentifier(input.AllowlistPolicyRef)) ||
 		(input.DNSPolicyRef != "" && invalidIdentifier(input.DNSPolicyRef)) ||
 		(input.ProxyPolicyRef != "" && invalidIdentifier(input.ProxyPolicyRef)) ||
+		err != nil || !equalStrings(allowed, input.AllowedEgress) ||
+		(input.DefaultEgress == DefaultEgressRestricted && len(allowed) == 0 && input.AllowlistPolicyRef == "") ||
+		(input.DefaultEgress != DefaultEgressRestricted && len(allowed) != 0) ||
 		input.ExpectedResourceVersion < 0 || invalidIdentifier(input.Mutation.RequestID) ||
 		commonv1alpha1.ValidateIdempotencyKey(input.Mutation.IdempotencyKey, "/idempotencyKey") != nil {
 		return ErrInvalidInput
@@ -88,12 +98,14 @@ func MutationDigest(input SetInput) (string, error) {
 	encoded, err := json.Marshal(struct {
 		Operation, TenantID, ProjectID, PolicyID, PolicyName, UserSummary string
 		DefaultEgress, AllowlistPolicyRef, DNSPolicyRef, ProxyPolicyRef   string
+		AllowedEgress                                                     []string
 		IngressEnabled, PreviewEnabled                                    bool
 		ExpectedResourceVersion                                           int64
 	}{
 		"network-policy.set", input.Scope.TenantID, input.Scope.ProjectID,
 		input.PolicyID, input.PolicyName, input.UserSummary, input.DefaultEgress,
 		input.AllowlistPolicyRef, input.DNSPolicyRef, input.ProxyPolicyRef,
+		input.AllowedEgress,
 		input.IngressEnabled, input.PreviewEnabled, input.ExpectedResourceVersion,
 	})
 	if err != nil {
@@ -107,6 +119,7 @@ func (snapshot Snapshot) Validate() error {
 	input := SetInput{
 		Scope: snapshot.Scope, PolicyID: snapshot.PolicyID, PolicyName: snapshot.PolicyName,
 		UserSummary: snapshot.UserSummary, DefaultEgress: snapshot.DefaultEgress,
+		AllowedEgress:      snapshot.AllowedEgress,
 		AllowlistPolicyRef: snapshot.AllowlistPolicyRef, IngressEnabled: snapshot.IngressEnabled,
 		PreviewEnabled: snapshot.PreviewEnabled, DNSPolicyRef: snapshot.DNSPolicyRef,
 		ProxyPolicyRef: snapshot.ProxyPolicyRef, ExpectedResourceVersion: snapshot.ResourceVersion - 1,
@@ -117,6 +130,43 @@ func (snapshot Snapshot) Validate() error {
 		return ErrInvalidInput
 	}
 	return nil
+}
+
+func CanonicalAllowedEgress(values []string) ([]string, error) {
+	if len(values) > 64 {
+		return nil, ErrInvalidInput
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		canonical := strings.ToLower(strings.TrimSpace(value))
+		if address, err := netip.ParseAddr(canonical); err == nil {
+			canonical = address.String()
+		} else if prefix, err := netip.ParsePrefix(canonical); err == nil {
+			canonical = prefix.Masked().String()
+		} else if len(canonical) > 253 || !egressDomain.MatchString(canonical) {
+			return nil, ErrInvalidInput
+		}
+		if _, duplicate := seen[canonical]; duplicate {
+			return nil, ErrInvalidInput
+		}
+		seen[canonical] = struct{}{}
+		result = append(result, canonical)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (event AuditEvent) Validate() error {

@@ -194,7 +194,8 @@ func (server *FoundationHTTPServer) createProfile(writer http.ResponseWriter, re
 		Scope:     internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID},
 		ProfileID: input.ProfileID, ProfileName: input.ProfileName, Version: input.Version,
 		Description: input.Description, TargetID: input.TargetID, ImageURI: input.ImageURI,
-		ReleaseDigest: input.ReleaseDigest, CPUMillis: input.CPUMillis, MemoryBytes: input.MemoryBytes,
+		NetworkPolicyID: input.NetworkPolicyRef,
+		ReleaseDigest:   input.ReleaseDigest, CPUMillis: input.CPUMillis, MemoryBytes: input.MemoryBytes,
 		Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
 	})
 	if err != nil {
@@ -635,7 +636,8 @@ func runtimeProfileResource(snapshot internalcoordination.RuntimeProfileSnapshot
 		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
 		ProfileID:  snapshot.ProfileID, Version: snapshot.Version, Description: snapshot.Description,
 		Status: snapshot.Status, TargetID: snapshot.TargetID, ImageURI: snapshot.ImageURI,
-		ReleaseDigest: snapshot.ReleaseDigest, CPUMillis: snapshot.CPUMillis, MemoryBytes: snapshot.MemoryBytes,
+		NetworkPolicyRef: snapshot.NetworkPolicyID,
+		ReleaseDigest:    snapshot.ReleaseDigest, CPUMillis: snapshot.CPUMillis, MemoryBytes: snapshot.MemoryBytes,
 		PublishedAt: publishedAt, DisabledAt: disabledAt,
 	}}
 }
@@ -714,6 +716,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 		WorkspaceID: snapshot.WorkspaceID, WorkspaceName: snapshot.WorkspaceName, VolumeID: snapshot.VolumeID,
 		PhysicalVolumeID: physicalVolumeID, WorkspaceRetention: "retained", WorkspaceObservedState: snapshot.WorkspaceObservedState,
 		RuntimeProfileID: snapshot.RuntimeProfileID, RuntimeProfileVersion: snapshot.RuntimeProfileVersion,
+		NetworkPolicyRef: snapshot.NetworkPolicyID, NetworkPolicyEnforcement: snapshot.NetworkPolicyEnforcement,
 		TargetID: snapshot.TargetID, Generation: snapshot.Generation, ObservedGeneration: snapshot.ObservedGeneration,
 		DesiredState: snapshot.DesiredState, ObservedState: snapshot.ObservedState, WriterReleased: snapshot.WriterReleased,
 		TTLSeconds: ttlSeconds, ExpiresAt: expiresAt, LifecycleTrigger: lifecycleTrigger,

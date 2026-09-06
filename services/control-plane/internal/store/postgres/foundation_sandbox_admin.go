@@ -18,6 +18,7 @@ type AdminSandboxSnapshot struct {
 	WorkspaceID, WorkspaceName, VolumeID, TargetID        string
 	WorkspaceObservedState                                string
 	RuntimeProfileID                                      string
+	NetworkPolicyID, NetworkPolicyEnforcement             string
 	DesiredState, ObservedState                           string
 	RuntimeState                                          string
 	PhysicalVolumeID, RuntimeID, StableErrorCode          *string
@@ -57,6 +58,7 @@ type adminSandboxPageRow struct {
 	WorkspaceObservedState string     `json:"workspace_observed_state"`
 	RuntimeProfileID       string     `json:"runtime_profile_uid"`
 	RuntimeProfileVersion  int64      `json:"runtime_profile_version"`
+	NetworkPolicyID        string     `json:"network_policy_ref"`
 	TargetID               string     `json:"target_uid"`
 	Generation             int64      `json:"generation"`
 	ObservedGeneration     int64      `json:"observed_generation"`
@@ -80,6 +82,7 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     sandbox.workspace_uid, workspace.workspace_name, volume.volume_uid, volume.physical_volume_uid,
     volume.retention, volume.observed_state AS workspace_observed_state,
     sandbox.runtime_profile_uid, sandbox.runtime_profile_version, volume.target_uid,
+	COALESCE(profile.network_policy_ref, '') AS network_policy_ref,
     sandbox.generation, sandbox.observed_generation, sandbox.desired_state, sandbox.observed_state,
     sandbox.writer_released, sandbox.ttl_seconds, sandbox.expires_at, activity.lifecycle_trigger,
     sandbox.runtime_uid, sandbox.runtime_state, sandbox.stable_error_code,
@@ -93,6 +96,9 @@ JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, wor
 JOIN cloud_agents.platform_operations AS operation
   ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
  AND operation.operation_generation = sandbox.operation_generation
+LEFT JOIN cloud_agents.runtime_profiles AS profile
+  ON profile.tenant_id = sandbox.tenant_id AND profile.project_uid = sandbox.project_uid
+ AND profile.profile_uid = sandbox.runtime_profile_uid AND profile.profile_version = sandbox.runtime_profile_version
 LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
   ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
  AND activity.sandbox_generation = sandbox.operation_generation
@@ -128,6 +134,9 @@ FROM (
     JOIN cloud_agents.platform_operations AS operation
       ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
      AND operation.operation_generation = sandbox.operation_generation
+    LEFT JOIN cloud_agents.runtime_profiles AS profile
+      ON profile.tenant_id = sandbox.tenant_id AND profile.project_uid = sandbox.project_uid
+     AND profile.profile_uid = sandbox.runtime_profile_uid AND profile.profile_version = sandbox.runtime_profile_version
     LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
       ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
      AND activity.sandbox_generation = sandbox.operation_generation
@@ -139,7 +148,7 @@ FROM (
 	transitionFoundationSandboxSQL = `SELECT operation_uid, idempotency_key, action, sandbox_uid,
     sandbox_generation, requested_by, request_id, requested_at, updated_at, operation_state,
     cleanup_phase, stable_error_code, compute_disposition, workspace_disposition
-FROM cloud_agents.transition_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
+FROM cloud_agents.transition_foundation_sandbox_v3($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 )
 
 func (service *DurableCoordinationService) TransitionFoundationSandbox(
@@ -306,7 +315,8 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 	return row.Scan(&value.TenantID, &value.ProjectID, &value.SandboxID, &value.OperationID,
 		&value.OperationState, &value.CleanupPhase, &value.WorkspaceID, &value.WorkspaceName,
 		&value.VolumeID, &value.PhysicalVolumeID, &value.WorkspaceRetention, &value.WorkspaceObservedState,
-		&value.RuntimeProfileID, &value.RuntimeProfileVersion, &value.TargetID, &value.Generation,
+		&value.RuntimeProfileID, &value.RuntimeProfileVersion, &value.TargetID, &value.NetworkPolicyID,
+		&value.Generation,
 		&value.ObservedGeneration, &value.DesiredState, &value.ObservedState, &value.WriterReleased,
 		&value.TTLSeconds, &value.ExpiresAt, &value.LifecycleTrigger, &value.RuntimeID,
 		&value.RuntimeState, &value.StableErrorCode, &value.ResourceVersion,
@@ -320,17 +330,36 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 		CleanupPhase: row.CleanupPhase, WorkspaceID: row.WorkspaceID, WorkspaceName: row.WorkspaceName,
 		VolumeID: row.VolumeID, PhysicalVolumeID: row.PhysicalVolumeID, WorkspaceObservedState: row.WorkspaceObservedState,
 		RuntimeProfileID: row.RuntimeProfileID, RuntimeProfileVersion: row.RuntimeProfileVersion,
-		TargetID: row.TargetID, Generation: row.Generation, ObservedGeneration: row.ObservedGeneration,
+		NetworkPolicyID: row.NetworkPolicyID,
+		TargetID:        row.TargetID, Generation: row.Generation, ObservedGeneration: row.ObservedGeneration,
 		DesiredState: row.DesiredState, ObservedState: row.ObservedState, WriterReleased: row.WriterReleased,
 		TTLSeconds: row.TTLSeconds, ExpiresAt: row.ExpiresAt, LifecycleTrigger: row.LifecycleTrigger,
 		RuntimeID: row.RuntimeID, RuntimeState: row.RuntimeState, StableErrorCode: row.StableErrorCode,
 		ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		ObservedAt: row.ObservedAt,
 	}
+	value.NetworkPolicyEnforcement = networkPolicyEnforcement(value)
 	if row.TenantID != tenantID || row.ProjectID != projectID || row.WorkspaceRetention != "retain" || !validAdminSandboxSnapshot(value) {
 		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
 	}
 	return value, nil
+}
+
+func networkPolicyEnforcement(value AdminSandboxSnapshot) string {
+	if value.NetworkPolicyID == "" {
+		return "legacy"
+	}
+	if value.DesiredState == "stopped" && value.ObservedState == "stopped" {
+		return "stopped"
+	}
+	if value.OperationState == "failed" || value.ObservedState == "failed" {
+		return "failed"
+	}
+	if value.OperationState == "succeeded" && value.ObservedState == "running" &&
+		value.ObservedGeneration == value.Generation && value.RuntimeState == "Running" {
+		return "enforced"
+	}
+	return "pending"
 }
 
 func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
@@ -344,6 +373,14 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 		if id != nil && !validMutationIdentifier(*id) {
 			return false
 		}
+	}
+	if value.NetworkPolicyID != "" && !validMutationIdentifier(value.NetworkPolicyID) {
+		return false
+	}
+	switch value.NetworkPolicyEnforcement {
+	case "legacy", "pending", "enforced", "failed", "stopped":
+	default:
+		return false
 	}
 	if (value.TTLSeconds == nil) != (value.ExpiresAt == nil) || value.TTLSeconds != nil &&
 		(*value.TTLSeconds < 60 || *value.TTLSeconds > 86400 || value.ExpiresAt.IsZero()) {

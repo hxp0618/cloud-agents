@@ -269,6 +269,73 @@ func TestCreateAdoptsOrCreatesRetainedVolume(t *testing.T) {
 	}
 }
 
+func TestNetworkPolicyCreateAndVerification(t *testing.T) {
+	id := identity()
+	policy := &NetworkPolicy{DefaultAction: "deny", Egress: []NetworkRule{
+		{Action: "allow", Target: "10.0.0.0/8"},
+		{Action: "allow", Target: "api.openai.com"},
+	}}
+	mode := "dns+nft"
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("OPEN-SANDBOX-API-KEY") != "private-key" {
+			t.Error("missing candidate credential")
+		}
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/sandboxes":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"items": []sandbox{}, "pagination": map[string]any{"page": 1, "hasNextPage": false}})
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/sandboxes":
+			var body struct {
+				NetworkPolicy *NetworkPolicy `json:"networkPolicy"`
+			}
+			if json.NewDecoder(request.Body).Decode(&body) != nil || body.NetworkPolicy == nil ||
+				body.NetworkPolicy.DefaultAction != policy.DefaultAction || len(body.NetworkPolicy.Egress) != len(policy.Egress) ||
+				body.NetworkPolicy.Egress[0] != policy.Egress[0] || body.NetworkPolicy.Egress[1] != policy.Egress[1] {
+				t.Errorf("network policy body = %+v", body.NetworkPolicy)
+			}
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Pending"
+			writer.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(writer).Encode(item)
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/sandboxes/physical-1/endpoints/18080":
+			if request.URL.Query().Get("use_server_proxy") != "true" {
+				t.Error("policy endpoint did not require the candidate server proxy")
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/18080",
+				"headers":  map[string]string{"X-Route": "owned"},
+			})
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/sandboxes/physical-1/proxy/18080/policy":
+			if request.Header.Get("X-Route") != "owned" {
+				t.Error("missing candidate route credential")
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"status": "ok", "enforcementMode": mode, "policy": policy})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	created, err := client.Create(context.Background(), CreateInput{
+		Identity: id, ImageURI: "node@sha256:" + strings.Repeat("b", 64), VolumeName: "ca-ws-volume",
+		CPUMillis: 500, MemoryBytes: 512 << 20, NetworkPolicy: policy,
+	})
+	if err != nil || created.RuntimeID != "physical-1" {
+		t.Fatalf("create = %+v, %v", created, err)
+	}
+	if err := client.VerifyNetworkPolicy(context.Background(), id, "physical-1", policy); err != nil {
+		t.Fatal(err)
+	}
+	mode = "dns"
+	if err := client.VerifyNetworkPolicy(context.Background(), id, "physical-1", policy); !errors.Is(err, ErrPolicyUnenforced) {
+		t.Fatalf("partial enforcement error = %v", err)
+	}
+}
+
 func TestWaitReadyRequiresExecdHealth(t *testing.T) {
 	id := identity()
 	state := "Running"
@@ -394,7 +461,7 @@ func TestExecUsesExactReceiptAndBoundsOutput(t *testing.T) {
 
 func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 	id := identity()
-	unsafeTarget := false
+	unsafeTarget, bareTarget := false, false
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -407,6 +474,10 @@ func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 				t.Error("Preview endpoint did not require the candidate server proxy")
 			}
 			endpoint := server.URL + "/v1/sandboxes/physical-1/proxy/3000"
+			if bareTarget {
+				base, _ := url.Parse(server.URL)
+				endpoint = base.Scheme + "://" + base.Hostname() + "/sandboxes/physical-1/proxy/3000"
+			}
 			if unsafeTarget {
 				endpoint = "https://example.com/proxy/3000"
 			}
@@ -421,6 +492,10 @@ func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 	if err != nil || target.String() != server.URL+"/v1/sandboxes/physical-1/proxy/3000" ||
 		headers.Get("X-Route") != "owned" || headers.Get("OPEN-SANDBOX-API-KEY") != "private-key" {
 		t.Fatalf("target=%v headers=%v err=%v", target, headers, err)
+	}
+	bareTarget = true
+	if target, _, err = client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 3000); err != nil || target.String() != server.URL+"/v1/sandboxes/physical-1/proxy/3000" {
+		t.Fatalf("bare advertised target=%v err=%v", target, err)
 	}
 	unsafeTarget = true
 	if _, _, err := client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 3000); !errors.Is(err, ErrUnavailable) {

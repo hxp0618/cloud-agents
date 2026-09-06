@@ -186,7 +186,8 @@ func (controller *Controller) execute(ctx context.Context, claim postgres.Founda
 		Workspace: claim.WorkspaceID, Sandbox: claim.SandboxID, Operation: claim.OperationID,
 		Generation: claim.SandboxGeneration, SpecDigest: claim.SpecDigest}
 	observation, err := client.Create(ctx, opensandbox.CreateInput{Identity: identity, ImageURI: claim.ImageURI,
-		VolumeName: volumeName, CPUMillis: claim.CPUMillis, MemoryBytes: claim.MemoryBytes})
+		VolumeName: volumeName, CPUMillis: claim.CPUMillis, MemoryBytes: claim.MemoryBytes,
+		NetworkPolicy: foundationNetworkPolicy(claim)})
 	if err == nil {
 		ready, waitErr := client.WaitReady(ctx, identity, observation.RuntimeID)
 		if ready.RuntimeID != "" {
@@ -196,10 +197,13 @@ func (controller *Controller) execute(ctx context.Context, claim postgres.Founda
 			observation.RuntimeState = ready.RuntimeState
 		}
 		err = waitErr
+		if err == nil && claim.NetworkPolicyID != "" {
+			err = client.VerifyNetworkPolicy(ctx, identity, observation.RuntimeID, foundationNetworkPolicy(claim))
+		}
 	}
 	result := effectResult{runtimeID: observation.RuntimeID, runtimeState: observation.RuntimeState,
 		volumeName: volumeName, err: err}
-	if errors.Is(err, opensandbox.ErrRuntimeFailed) && observation.RuntimeID != "" {
+	if (errors.Is(err, opensandbox.ErrRuntimeFailed) || errors.Is(err, opensandbox.ErrPolicyUnenforced)) && observation.RuntimeID != "" {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if cleanupErr := client.Delete(cleanupCtx, identity, observation.RuntimeID); cleanupErr == nil {
@@ -211,6 +215,17 @@ func (controller *Controller) execute(ctx context.Context, claim postgres.Founda
 	return result
 }
 
+func foundationNetworkPolicy(claim postgres.FoundationSandboxClaim) *opensandbox.NetworkPolicy {
+	if claim.NetworkPolicyID == "" {
+		return nil
+	}
+	policy := &opensandbox.NetworkPolicy{DefaultAction: "deny", Egress: make([]opensandbox.NetworkRule, len(claim.NetworkAllowedEgress))}
+	for index, target := range claim.NetworkAllowedEgress {
+		policy.Egress[index] = opensandbox.NetworkRule{Action: "allow", Target: target}
+	}
+	return policy
+}
+
 func classify(err error, attempt int32) (string, string) {
 	if err == nil {
 		return "succeeded", ""
@@ -219,6 +234,8 @@ func classify(err error, attempt int32) (string, string) {
 	switch {
 	case errors.Is(err, opensandbox.ErrRuntimeFailed):
 		terminal, code = true, "opensandbox_runtime_failed"
+	case errors.Is(err, opensandbox.ErrPolicyUnenforced):
+		terminal, code = true, "foundation_network_policy_unenforced"
 	case errors.Is(err, opensandbox.ErrConflict), errors.Is(err, dockertarget.ErrDeploymentConflict):
 		terminal, code = true, "foundation_ownership_conflict"
 	case errors.Is(err, opensandbox.ErrInvalid), errors.Is(err, dockertarget.ErrDeploymentConfigInvalid),

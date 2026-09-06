@@ -19,6 +19,7 @@ func TestClassifyEffectResult(t *testing.T) {
 		{opensandbox.ErrUnavailable, 1, "retry", "foundation_runtime_unavailable"},
 		{opensandbox.ErrUnavailable, 8, "failed", "foundation_runtime_unavailable"},
 		{opensandbox.ErrRuntimeFailed, 1, "failed", "opensandbox_runtime_failed"},
+		{opensandbox.ErrPolicyUnenforced, 1, "failed", "foundation_network_policy_unenforced"},
 		{dockertarget.ErrDeploymentConflict, 1, "failed", "foundation_ownership_conflict"},
 		{errors.Join(opensandbox.ErrInvalid, errors.New("secret")), 1, "failed", "foundation_configuration_invalid"},
 	} {

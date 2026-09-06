@@ -37,3 +37,32 @@ func TestNetworkPolicyValidationAndDigest(t *testing.T) {
 		t.Fatalf("Snapshot.Validate() error = %v", err)
 	}
 }
+
+func TestCanonicalAllowedEgress(t *testing.T) {
+	canonical, err := CanonicalAllowedEgress([]string{" API.OpenAI.com ", "10.0.0.1/8", "2001:0db8::1"})
+	want := []string{"10.0.0.0/8", "2001:db8::1", "api.openai.com"}
+	if err != nil || !equalStrings(canonical, want) {
+		t.Fatalf("canonical = %v, %v", canonical, err)
+	}
+	for _, values := range [][]string{
+		{"api.openai.com", "API.OPENAI.COM"},
+		{"localhost"},
+		{"10.0.0.0/33"},
+	} {
+		if _, err := CanonicalAllowedEgress(values); err == nil {
+			t.Fatalf("accepted invalid targets %v", values)
+		}
+	}
+	input := SetInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, PolicyID: "policy", PolicyName: "policy",
+		UserSummary: "Direct allowlist", DefaultEgress: DefaultEgressRestricted, AllowedEgress: want,
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "network-policy-test-002"},
+	}
+	if err := input.Validate("tenant"); err != nil {
+		t.Fatal(err)
+	}
+	input.AllowedEgress = []string{"api.openai.com", "10.0.0.1/8"}
+	if err := input.Validate("tenant"); err == nil {
+		t.Fatal("accepted non-canonical direct allowlist")
+	}
+}

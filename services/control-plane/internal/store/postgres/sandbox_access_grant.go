@@ -341,7 +341,7 @@ func (store *AccessGatewayStore) RegisterPreviewPort(ctx context.Context, tenant
 	var generation int64
 	err := store.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 		return handle.transaction.queryRow(ctx, `SELECT port, sandbox_uid, sandbox_generation, registered_at
-FROM cloud_agents.register_sandbox_preview_port_v1($1,$2,$3,$4)`, projectID, grantID, port, tokenDigest).
+FROM cloud_agents.register_sandbox_preview_port_v2($1,$2,$3,$4)`, projectID, grantID, port, tokenDigest).
 			Scan(&registered.Port, &sandboxID, &generation, &registered.RegisteredAt)
 	})
 	if err != nil {

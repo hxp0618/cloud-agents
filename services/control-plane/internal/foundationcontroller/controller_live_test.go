@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -178,6 +179,21 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if result.err != nil || result.runtimeState != "Running" {
 		t.Fatalf("prepare physical effect = %#v", result)
 	}
+	allowedIP := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_ALLOWED_IP")
+	blockedIP := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_BLOCKED_IP")
+	dockerGateway := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_DOCKER_GATEWAY")
+	if net.ParseIP(allowedIP) == nil || net.ParseIP(blockedIP) == nil || net.ParseIP(dockerGateway) == nil {
+		t.Fatal("live network isolation fixtures are invalid")
+	}
+	networkOutput := liveCommand(t, ctx, environment, result.runtimeID, fmt.Sprintf(
+		`node -e 'const checks=[["ALLOWED","http://%s:8080"],["CROSS","http://%s:8080"],["HOST","http://%s:18891"],["METADATA","http://169.254.169.254"]];(async()=>{for(const [name,target] of checks){try{const response=await fetch(target,{signal:AbortSignal.timeout(1000)});const body=await response.text();console.log("CAG_NETWORK_"+name+"="+(name==="ALLOWED"&&response.ok&&body.trim()==="allowed"?"allowed":"reachable"))}catch{console.log("CAG_NETWORK_"+name+"=blocked")}}})()'`,
+		allowedIP, blockedIP, dockerGateway,
+	))
+	for _, marker := range []string{"CAG_NETWORK_ALLOWED=allowed", "CAG_NETWORK_CROSS=blocked", "CAG_NETWORK_HOST=blocked", "CAG_NETWORK_METADATA=blocked"} {
+		if !strings.Contains(networkOutput, marker) {
+			t.Fatalf("network policy did not prove %q: %s", marker, networkOutput)
+		}
+	}
 	proof := "cloud-agents-controller-restart"
 	proofDigest := sha256.Sum256([]byte(proof))
 	output := liveCommand(t, ctx, environment, result.runtimeID,
@@ -189,6 +205,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		"runtimeId": result.runtimeID, "volumeName": result.volumeName,
 		"proofDigest": hex.EncodeToString(proofDigest[:]), "operationId": claimed.Claim.OperationID,
 		"specDigest": claimed.Claim.SpecDigest, "expiresAt": claimed.Claim.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		"networkPolicy": "restricted allow plus cross-sandbox/host/metadata deny",
 	})
 	t.Logf("FOUNDATION_LIVE_PREPARE=%s", receipt)
 	// Intentionally exit without settlement: the next OS process must reap and adopt.

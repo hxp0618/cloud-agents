@@ -4,12 +4,18 @@
   "title": "NetworkPolicySetRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"],
+  "required": ["expectedResourceVersion", "policyName", "userSummary", "defaultEgress", "allowedEgress", "ingressEnabled", "previewEnabled"],
   "properties": {
     "expectedResourceVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
     "policyName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "userSummary": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
     "defaultEgress": { "enum": ["public", "restricted", "deny"] },
+    "allowedEgress": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^\\u0000-\\u0020\\u007F]+$" }
+    },
     "allowlistPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "ingressEnabled": { "type": "boolean" },
     "previewEnabled": { "type": "boolean" },
@@ -17,6 +23,7 @@
     "proxyPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
+    "allowedEgress contains sorted canonical FQDN, wildcard FQDN, IP, or CIDR targets; restricted requires allowedEgress or allowlistPolicyRef and deny/public require no direct targets",
     "expectedResourceVersion 0 creates a policy and a positive value updates that exact version",
     "a policy referenced by any Environment Profile is immutable and changes require a new policy id",
     "allowlistPolicyRef, dnsPolicyRef, and proxyPolicyRef are opaque references and never contain endpoint or secret bytes",

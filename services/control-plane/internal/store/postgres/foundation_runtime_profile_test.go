@@ -17,7 +17,8 @@ func TestRuntimeProfileProjectionAndPublicRedaction(t *testing.T) {
 	row := runtimeProfilePageRow{
 		TenantID: "tenant-alpha", ProjectID: "project-alpha", ProfileVersionID: "rp-0123456789abcdef0123456789abcdef",
 		ProfileID: "standard", ProfileName: "standard", Version: 1, Description: "No-agent workspace",
-		Status: "published", TargetID: "docker-primary", ImageURI: "node@" + digest, ReleaseDigest: digest,
+		Status: "published", TargetID: "docker-primary", NetworkPolicyID: "network-deny",
+		ImageURI: "node@" + digest, ReleaseDigest: digest,
 		CPUMillis: 1000, MemoryBytes: 536870912, ResourceVersion: 2, CreatedAt: now, UpdatedAt: now, PublishedAt: &now,
 	}
 	raw, err := json.Marshal([]runtimeProfilePageRow{row, row})
@@ -63,7 +64,7 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 	var snapshot internalcoordination.RuntimeProfileSnapshot
 	if err := scanRuntimeProfile(rowValues(
 		"rp-0123456789abcdef0123456789abcdef", "standard", "standard", int64(1), "No-agent workspace",
-		"draft", "docker-primary", "node@"+digest, digest, int64(1000), int64(536870912), int64(1),
+		"draft", "docker-primary", "network-deny", "node@"+digest, digest, int64(1000), int64(536870912), int64(1),
 		now, now, (*time.Time)(nil), (*time.Time)(nil),
 	), internalcoordination.FoundationScope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); err != nil {
 		t.Fatal(err)
@@ -78,8 +79,36 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 			t.Fatalf("%s mapped to %v", input.Message, err)
 		}
 	}
-	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v1") ||
-		!strings.Contains(createFoundationSandboxSQL, "accept_foundation_sandbox_v2") {
+	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v2") ||
+		!strings.Contains(createFoundationSandboxSQL, "accept_foundation_sandbox_v3") {
 		t.Fatal("runtime profile store is not bound to the migration authority")
+	}
+}
+
+func TestNetworkPolicyEnforcementProjection(t *testing.T) {
+	base := AdminSandboxSnapshot{
+		NetworkPolicyID: "network-deny", DesiredState: "running", ObservedState: "pending",
+		OperationState: "pending", Generation: 2, ObservedGeneration: 1, RuntimeState: "Pending",
+	}
+	for name, test := range map[string]struct {
+		mutate func(*AdminSandboxSnapshot)
+		want   string
+	}{
+		"legacy":  {func(value *AdminSandboxSnapshot) { value.NetworkPolicyID = "" }, "legacy"},
+		"pending": {func(*AdminSandboxSnapshot) {}, "pending"},
+		"enforced": {func(value *AdminSandboxSnapshot) {
+			value.OperationState, value.ObservedState = "succeeded", "running"
+			value.ObservedGeneration, value.RuntimeState = value.Generation, "Running"
+		}, "enforced"},
+		"failed":  {func(value *AdminSandboxSnapshot) { value.OperationState = "failed" }, "failed"},
+		"stopped": {func(value *AdminSandboxSnapshot) { value.DesiredState, value.ObservedState = "stopped", "stopped" }, "stopped"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := base
+			test.mutate(&value)
+			if got := networkPolicyEnforcement(value); got != test.want {
+				t.Fatalf("enforcement = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

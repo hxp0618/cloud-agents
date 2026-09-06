@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -9,16 +10,26 @@ import { setTimeout as delay } from "node:timers/promises";
 const [output] = process.argv.slice(2);
 assert.ok(output, "usage: node scripts/test-foundation-controller-docker.mjs NEW_OUTPUT_DIRECTORY");
 const root = resolve(import.meta.dirname, "..");
+const currentHead = readdirSync(resolve(root, "services/control-plane/migrations/product"))
+  .filter((entry) => /^\d{6}$/.test(entry))
+  .sort()
+  .at(-1);
+assert.ok(currentHead, "product migration package is required");
 const evidenceDirectory = resolve(output);
 mkdirSync(evidenceDirectory, { mode: 0o700 });
 const build = mkdtempSync(resolve(tmpdir(), "cloud-agents-foundation-controller-"));
 const run = `foundation-controller-${randomUUID()}`;
 const postgresName = `${run}-postgres`;
 const sandboxServerName = `${run}-opensandbox`;
+const allowedSinkName = `${run}-allowed-sink`;
+const blockedSinkName = `${run}-blocked-sink`;
+const sandboxServerPort = 18891;
 const serverImage =
   "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb";
 const execdImage =
   "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd";
+const egressImage =
+  "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a";
 const sandboxImage = "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5";
 const failureImage =
   "rancher/mirrored-pause:3.6@sha256:74c4244427b7312c5b901fe0f67cbc53683d06f4f24c6faee65d4182bf0fa893";
@@ -79,6 +90,7 @@ let postgresStarted = false;
 let sandboxServerStarted = false;
 let sandboxBase = "";
 let prepareReceipt;
+const startedSinks = [];
 try {
   assert.equal(
     docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
@@ -100,6 +112,7 @@ try {
     "postgres:17.6-bookworm",
     serverImage,
     execdImage,
+    egressImage,
     sandboxImage,
     failureImage,
   ]) {
@@ -114,6 +127,14 @@ try {
   );
   assert.ok(dockerHost.startsWith("unix://"));
   const dockerSocket = dockerHost.slice("unix://".length);
+  const dockerGateway = docker(
+    "network",
+    "inspect",
+    "bridge",
+    "--format",
+    "{{(index .IPAM.Config 0).Gateway}}",
+  );
+  assert.equal(isIP(dockerGateway), 4);
 
   docker(
     "run",
@@ -201,9 +222,9 @@ try {
         "--repository-root",
         root,
         "--manifest",
-        "services/control-plane/migrations/product/000060/manifest.json",
+        `services/control-plane/migrations/product/${currentHead}/manifest.json`,
         "--selector",
-        "product-000060",
+        `product-${currentHead}`,
       ],
       {
         encoding: "utf8",
@@ -212,7 +233,7 @@ try {
       },
     ),
   );
-  assert.equal(migration.schema_head, "000060");
+  assert.equal(migration.schema_head, currentHead);
 
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -239,6 +260,33 @@ try {
       'ready','1.52','29.4.0','linux','arm64','',clock_timestamp(),1,'foundation-live-target-key',
       'sha256:${"d".repeat(64)}',clock_timestamp(),clock_timestamp());`);
 
+  for (const name of [allowedSinkName, blockedSinkName]) {
+    docker(
+      "run",
+      "-d",
+      "--name",
+      name,
+      "--label",
+      `cloud-agents-foundation-controller-test=${run}`,
+      sandboxImage,
+      "node",
+      "-e",
+      'require("http").createServer((request,response)=>response.end("allowed\\n")).listen(8080,"0.0.0.0")',
+    );
+    startedSinks.push(name);
+  }
+  await delay(200);
+  const allowedSinkIP = docker("inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", allowedSinkName);
+  const blockedSinkIP = docker("inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", blockedSinkName);
+  assert.equal(isIP(allowedSinkIP), 4);
+  assert.equal(isIP(blockedSinkIP), 4);
+  for (const address of [allowedSinkIP, blockedSinkIP]) {
+    assert.equal(
+      docker("run", "--rm", sandboxImage, "node", "-e", `fetch("http://${address}:8080").then(async response=>{if(!response.ok||await response.text()!=="allowed\\n")process.exit(1)}).catch(()=>process.exit(1))`),
+      "",
+    );
+  }
+
   const serverOutput = execFileSync(
     serverTestBinary,
     ["-test.run", "^TestFoundationRuntimeProfilePostgres$", "-test.v"],
@@ -250,6 +298,7 @@ try {
         CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
         CLOUD_AGENTS_FOUNDATION_SUCCESS_IMAGE_URI: sandboxImage,
         CLOUD_AGENTS_FOUNDATION_FAILURE_IMAGE_URI: failureImage,
+        CLOUD_AGENTS_FOUNDATION_ALLOWED_EGRESS: `${allowedSinkIP}/32`,
       },
       timeout: 120_000,
     },
@@ -259,7 +308,7 @@ try {
   const configPath = resolve(build, "opensandbox.toml");
   writeFileSync(
     configPath,
-    `[server]\nhost="0.0.0.0"\nport=8080\napi_key="${apiKey}"\n[runtime]\ntype="docker"\nexecd_image="${execdImage}"\n[docker]\nnetwork_mode="bridge"\nhost_ip="127.0.0.1"\nport_range_min=49310\nport_range_max=49520\n[storage]\nallowed_host_paths=[]\n[store]\ntype="sqlite"\npath="/tmp/opensandbox.db"\n`,
+    `[server]\nhost="0.0.0.0"\neip="127.0.0.1"\nport=8080\napi_key="${apiKey}"\n[runtime]\ntype="docker"\nexecd_image="${execdImage}"\n[docker]\nnetwork_mode="bridge"\nhost_ip="${dockerGateway}"\nport_range_min=49310\nport_range_max=49520\n[egress]\nimage="${egressImage}"\nmode="dns+nft"\n[storage]\nallowed_host_paths=[]\n[store]\ntype="sqlite"\npath="/tmp/opensandbox.db"\n`,
     { mode: 0o600 },
   );
   docker(
@@ -270,7 +319,7 @@ try {
     "--label",
     `cloud-agents-foundation-controller-test=${run}`,
     "-p",
-    "127.0.0.1::8080",
+    `127.0.0.1:${sandboxServerPort}:8080`,
     "--mount",
     `type=bind,src=${configPath},dst=/etc/opensandbox/config.toml,readonly`,
     "--mount",
@@ -278,7 +327,7 @@ try {
     serverImage,
   );
   sandboxServerStarted = true;
-  sandboxBase = `http://127.0.0.1:${mappedPort(sandboxServerName, 8080)}`;
+  sandboxBase = `http://127.0.0.1:${sandboxServerPort}`;
   for (let attempt = 0; ; attempt++) {
     try {
       if ((await fetch(sandboxBase + "/health", { signal: AbortSignal.timeout(1000) })).ok) break;
@@ -302,6 +351,9 @@ try {
     CLOUD_AGENTS_FOUNDATION_LIVE_OPENSANDBOX_ENDPOINT: sandboxBase,
     CLOUD_AGENTS_FOUNDATION_LIVE_OPENSANDBOX_KEY: apiKey,
     CLOUD_AGENTS_FOUNDATION_LIVE_DOCKER_SOCKET: dockerSocket,
+    CLOUD_AGENTS_FOUNDATION_LIVE_ALLOWED_IP: allowedSinkIP,
+    CLOUD_AGENTS_FOUNDATION_LIVE_BLOCKED_IP: blockedSinkIP,
+    CLOUD_AGENTS_FOUNDATION_LIVE_DOCKER_GATEWAY: dockerGateway,
   };
   const prepareOutput = execFileSync(
     controllerTestBinary,
@@ -456,6 +508,7 @@ try {
   assert.equal(ptyReceipt.previewRevokedPortStatus, 404);
   assert.equal(ptyReceipt.previewRevokedGrantStatus, 403);
   assert.equal(ptyReceipt.previewExpiredGrantStatus, 403);
+  assert.equal(ptyReceipt.previewPolicyDisabledStatus, 403);
   assert.equal(ptyReceipt.sshFixedRoute, true);
   assert.equal(ptyReceipt.sshWrongPasswordDenied, true);
   assert.equal(ptyReceipt.sshCrossTenantDenied, true);
@@ -530,6 +583,7 @@ try {
       sourceRef: "207d94c7dc7735c143856fe5c6538b743e478786",
       serverImage,
       execdImage,
+      egressImage,
       sandboxImage,
       failureImage,
     },
@@ -546,6 +600,8 @@ try {
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
       "real durable claim and physical retained Docker volume",
       "real OpenSandbox create and execd readiness",
+      "RuntimeProfile Network Policy is sent to OpenSandbox and verified through the authenticated egress sidecar as dns+nft",
+      "restricted policy reaches only the approved sink and blocks a second container, the Docker host, and metadata IP",
       "OS-process exit before settlement",
       "expired claim reap by a new Controller process",
       "exact runtime adoption without duplicate",
@@ -566,6 +622,7 @@ try {
       "Files rejects path traversal, symlink traversal, oversized input, and reads after deletion",
       "private Preview registers one explicit non-internal port and proxies only the fixed candidate server route",
       "Preview strips Grant and Cookie headers, survives Gateway restart, and rejects unregistered and internal ports",
+      "Network Policy disables new Preview port registration with 403",
       "Preview port revoke closes an active response; port, Grant, and expiry revocation reject subsequent access",
       "real SSH protocol authenticates with the short-lived Grant, pins the server host key, and runs only in the fixed /workspace Sandbox route",
       "SSH rejects direct-tcpip forwarding, environment mutation, wrong password, cross-tenant identity, expiry, revoke, and old generation",
@@ -657,6 +714,7 @@ try {
     }
   }
   if (sandboxServerStarted) docker("rm", "-f", "-v", sandboxServerName);
+  for (const sink of startedSinks) docker("rm", "-f", sink);
   if (postgresStarted) docker("rm", "-f", "-v", postgresName);
   rmSync(build, { recursive: true, force: true });
   assert.equal(

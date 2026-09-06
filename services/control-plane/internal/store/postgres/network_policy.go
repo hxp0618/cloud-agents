@@ -32,6 +32,7 @@ type networkPolicyPageRow struct {
 	PolicyName         string    `json:"policy_name"`
 	UserSummary        string    `json:"user_summary"`
 	DefaultEgress      string    `json:"default_egress"`
+	AllowedEgress      []string  `json:"allowed_egress"`
 	AllowlistPolicyRef string    `json:"allowlist_policy_ref"`
 	IngressEnabled     bool      `json:"ingress_enabled"`
 	PreviewEnabled     bool      `json:"preview_enabled"`
@@ -57,12 +58,12 @@ type networkPolicyAuditRow struct {
 }
 
 const networkPolicyColumns = `policy_uid, policy_name, user_summary, default_egress,
-    COALESCE(allowlist_policy_ref, ''), ingress_enabled, preview_enabled,
+    allowed_egress, COALESCE(allowlist_policy_ref, ''), ingress_enabled, preview_enabled,
     COALESCE(dns_policy_ref, ''), COALESCE(proxy_policy_ref, ''), resource_version, created_at, updated_at`
 
 var (
 	setNetworkPolicySQL = `SELECT ` + networkPolicyColumns + `
-FROM cloud_agents.set_network_policy_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+FROM cloud_agents.set_network_policy_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
 	getNetworkPolicySQL = `SELECT ` + networkPolicyColumns + `
 FROM cloud_agents.network_policies
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND policy_uid = $2`
@@ -72,7 +73,8 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND poli
 	listNetworkPoliciesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(policy_row)
     ORDER BY policy_row.policy_uid), '[]'::jsonb)
 FROM (
-    SELECT tenant_id, project_uid, policy_uid, policy_name, user_summary, default_egress,
+	    SELECT tenant_id, project_uid, policy_uid, policy_name, user_summary, default_egress,
+	        allowed_egress,
         COALESCE(allowlist_policy_ref, '') AS allowlist_policy_ref,
         ingress_enabled, preview_enabled,
         COALESCE(dns_policy_ref, '') AS dns_policy_ref,
@@ -135,7 +137,7 @@ func (service *DurableCoordinationService) SetNetworkPolicy(
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
 				return scanNetworkPolicy(handle.transaction.queryRow(ctx, setNetworkPolicySQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.PolicyID, input.PolicyName,
-					input.UserSummary, input.DefaultEgress, input.AllowlistPolicyRef,
+					input.UserSummary, input.DefaultEgress, input.AllowedEgress, input.AllowlistPolicyRef,
 					input.IngressEnabled, input.PreviewEnabled, input.DNSPolicyRef, input.ProxyPolicyRef,
 					input.ExpectedResourceVersion, input.Mutation.IdempotencyKey,
 					digest, input.Mutation.RequestID, subjectDigest), input.Scope, &result)
@@ -281,7 +283,7 @@ func scanNetworkPolicy(row rowScanner, scope internalnetworkpolicy.Scope, result
 		return ErrCoordinationResultDrift
 	}
 	if err := row.Scan(&result.PolicyID, &result.PolicyName, &result.UserSummary,
-		&result.DefaultEgress, &result.AllowlistPolicyRef, &result.IngressEnabled,
+		&result.DefaultEgress, &result.AllowedEgress, &result.AllowlistPolicyRef, &result.IngressEnabled,
 		&result.PreviewEnabled, &result.DNSPolicyRef, &result.ProxyPolicyRef, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt); err != nil {
 		return err
 	}
@@ -302,8 +304,9 @@ func decodeNetworkPolicyRows(raw []byte, tenantID, projectID string, limit int) 
 		snapshot := internalnetworkpolicy.Snapshot{
 			Scope:    internalnetworkpolicy.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 			PolicyID: row.PolicyID, PolicyName: row.PolicyName, UserSummary: row.UserSummary,
-			DefaultEgress: row.DefaultEgress, AllowlistPolicyRef: row.AllowlistPolicyRef,
-			IngressEnabled: row.IngressEnabled, PreviewEnabled: row.PreviewEnabled,
+			DefaultEgress: row.DefaultEgress, AllowedEgress: row.AllowedEgress,
+			AllowlistPolicyRef: row.AllowlistPolicyRef,
+			IngressEnabled:     row.IngressEnabled, PreviewEnabled: row.PreviewEnabled,
 			DNSPolicyRef: row.DNSPolicyRef, ProxyPolicyRef: row.ProxyPolicyRef, ResourceVersion: row.ResourceVersion,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		}

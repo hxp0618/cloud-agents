@@ -427,6 +427,7 @@ export type NetworkPolicySetRequest = Readonly<{
   policyName: string;
   userSummary: string;
   defaultEgress: "public" | "restricted" | "deny";
+  allowedEgress: readonly string[];
   allowlistPolicyRef?: string;
   ingressEnabled: boolean;
   previewEnabled: boolean;
@@ -441,6 +442,7 @@ export type NetworkPolicy = Readonly<{
     projectRef: NamespaceRef;
     userSummary: string;
     defaultEgress: "public" | "restricted" | "deny";
+    allowedEgress: readonly string[];
     allowlistPolicyRef?: string;
     ingressEnabled: boolean;
     previewEnabled: boolean;
@@ -537,6 +539,7 @@ export type RuntimeProfileCreateRequest = Readonly<{
   version: number;
   description: string;
   targetId: string;
+  networkPolicyRef: string;
   imageUri: string;
   releaseDigest: `sha256:${string}`;
   cpuMillis: number;
@@ -554,6 +557,7 @@ export type RuntimeProfile = Readonly<{
     description: string;
     status: "draft" | "published" | "disabled";
     targetId: string;
+    networkPolicyRef?: string;
     imageUri: string;
     releaseDigest: `sha256:${string}`;
     cpuMillis: number;
@@ -784,6 +788,8 @@ export type AdminSandboxSession = Readonly<{
     runtimeProfileId: string;
     runtimeProfileVersion: number;
     targetId: string;
+    networkPolicyRef?: string;
+    networkPolicyEnforcement: "legacy" | "pending" | "enforced" | "failed" | "stopped";
     generation: number;
     observedGeneration: number;
     desiredState: "running" | "stopped";
@@ -1554,6 +1560,7 @@ const networkPolicyResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   userSummary: scalarResponseShape,
   defaultEgress: scalarResponseShape,
+  allowedEgress: { item: scalarResponseShape },
   allowlistPolicyRef: scalarResponseShape,
   ingressEnabled: scalarResponseShape,
   previewEnabled: scalarResponseShape,
@@ -1639,6 +1646,7 @@ const runtimeProfileResponseShape = resourceResponseShape({
   description: scalarResponseShape,
   status: scalarResponseShape,
   targetId: scalarResponseShape,
+  networkPolicyRef: scalarResponseShape,
   imageUri: scalarResponseShape,
   releaseDigest: scalarResponseShape,
   cpuMillis: scalarResponseShape,
@@ -1848,6 +1856,8 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
   runtimeProfileId: scalarResponseShape,
   runtimeProfileVersion: scalarResponseShape,
   targetId: scalarResponseShape,
+  networkPolicyRef: scalarResponseShape,
+  networkPolicyEnforcement: scalarResponseShape,
   generation: scalarResponseShape,
   observedGeneration: scalarResponseShape,
   desiredState: scalarResponseShape,
@@ -2967,6 +2977,7 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
       "version",
       "description",
       "targetId",
+      "networkPolicyRef",
       "imageUri",
       "releaseDigest",
       "cpuMillis",
@@ -2978,6 +2989,7 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
       "version",
       "description",
       "targetId",
+      "networkPolicyRef",
       "imageUri",
       "releaseDigest",
       "cpuMillis",
@@ -2993,6 +3005,7 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
     version: integer(source.version, 1, 2147483647, "/version"),
     description: profileDescription(source.description, "/description"),
     targetId: identifier(source.targetId, "/targetId"),
+    networkPolicyRef: identifier(source.networkPolicyRef, "/networkPolicyRef"),
     imageUri,
     releaseDigest,
     cpuMillis: integer(source.cpuMillis, 100, 64000, "/cpuMillis"),
@@ -4924,13 +4937,37 @@ export function decodeStoragePolicyPage(value: unknown): StoragePolicyPage {
   );
 }
 function networkPolicySpec(source: Record<string, unknown>, path: string) {
+  const rawAllowed: unknown[] = Array.isArray(source.allowedEgress)
+    ? source.allowedEgress
+    : error("INVALID_NETWORK_POLICY", `${path}/allowedEgress`);
+  if (rawAllowed.length > 64) error("INVALID_NETWORK_POLICY", `${path}/allowedEgress`);
+  const allowedEgress = rawAllowed.map((entry, index) => {
+    const value = boundedString(entry, 1, 253, `${path}/allowedEgress/${index}`);
+    if (
+      value !== value.trim().toLowerCase() ||
+      !/^(?:(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?|[0-9a-f:.]+(?:\/[0-9]{1,3})?)$/u.test(
+        value,
+      ) ||
+      (index > 0 && value <= String(rawAllowed[index - 1]))
+    )
+      error("INVALID_NETWORK_POLICY", `${path}/allowedEgress/${index}`);
+    return value;
+  });
+  const defaultEgress = enumValue(
+    source.defaultEgress,
+    ["public", "restricted", "deny"] as const,
+    `${path}/defaultEgress`,
+  );
+  if (
+    defaultEgress === "restricted"
+      ? allowedEgress.length === 0 && source.allowlistPolicyRef === undefined
+      : allowedEgress.length !== 0
+  )
+    error("INVALID_NETWORK_POLICY", `${path}/allowedEgress`);
   return Object.freeze({
     userSummary: policySummary(source.userSummary, `${path}/userSummary`),
-    defaultEgress: enumValue(
-      source.defaultEgress,
-      ["public", "restricted", "deny"] as const,
-      `${path}/defaultEgress`,
-    ),
+    defaultEgress,
+    allowedEgress: Object.freeze(allowedEgress),
     ...(source.allowlistPolicyRef === undefined
       ? {}
       : {
@@ -4954,6 +4991,7 @@ export function decodeNetworkPolicySetRequest(value: unknown): NetworkPolicySetR
       "policyName",
       "userSummary",
       "defaultEgress",
+      "allowedEgress",
       "allowlistPolicyRef",
       "ingressEnabled",
       "previewEnabled",
@@ -4965,6 +5003,7 @@ export function decodeNetworkPolicySetRequest(value: unknown): NetworkPolicySetR
       "policyName",
       "userSummary",
       "defaultEgress",
+      "allowedEgress",
       "ingressEnabled",
       "previewEnabled",
     ],
@@ -4992,13 +5031,21 @@ export function decodeNetworkPolicy(value: unknown): NetworkPolicy {
       "projectRef",
       "userSummary",
       "defaultEgress",
+      "allowedEgress",
       "allowlistPolicyRef",
       "ingressEnabled",
       "previewEnabled",
       "dnsPolicyRef",
       "proxyPolicyRef",
     ],
-    ["projectRef", "userSummary", "defaultEgress", "ingressEnabled", "previewEnabled"],
+    [
+      "projectRef",
+      "userSummary",
+      "defaultEgress",
+      "allowedEgress",
+      "ingressEnabled",
+      "previewEnabled",
+    ],
     "/spec",
   );
   return Object.freeze({
@@ -5286,6 +5333,7 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       "description",
       "status",
       "targetId",
+      "networkPolicyRef",
       "imageUri",
       "releaseDigest",
       "cpuMillis",
@@ -5340,6 +5388,9 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       description: profileDescription(spec.description, "/spec/description"),
       status,
       targetId: identifier(spec.targetId, "/spec/targetId"),
+      ...(spec.networkPolicyRef === undefined
+        ? {}
+        : { networkPolicyRef: identifier(spec.networkPolicyRef, "/spec/networkPolicyRef") }),
       imageUri,
       releaseDigest,
       cpuMillis: integer(spec.cpuMillis, 100, 64000, "/spec/cpuMillis"),
@@ -5533,6 +5584,8 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "runtimeProfileId",
     "runtimeProfileVersion",
     "targetId",
+    "networkPolicyRef",
+    "networkPolicyEnforcement",
     "generation",
     "observedGeneration",
     "desiredState",
@@ -5553,6 +5606,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
       (field) =>
         ![
           "physicalVolumeId",
+          "networkPolicyRef",
           "ttlSeconds",
           "expiresAt",
           "lifecycleTrigger",
@@ -5577,8 +5631,20 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
       : integer(spec.ttlSeconds, 60, 86400, "/spec/ttlSeconds");
   const expiresAt =
     spec.expiresAt === undefined ? undefined : dateTime(spec.expiresAt, "/spec/expiresAt");
-  if ((ttlSeconds === undefined) !== (expiresAt === undefined))
-    error("INVALID_ADMIN_SANDBOX_SESSION", "/spec/expiresAt");
+  const networkPolicyRef =
+    spec.networkPolicyRef === undefined
+      ? undefined
+      : identifier(spec.networkPolicyRef, "/spec/networkPolicyRef");
+  const networkPolicyEnforcement = enumValue(
+    spec.networkPolicyEnforcement,
+    ["legacy", "pending", "enforced", "failed", "stopped"] as const,
+    "/spec/networkPolicyEnforcement",
+  );
+  if (
+    (ttlSeconds === undefined) !== (expiresAt === undefined) ||
+    (networkPolicyRef === undefined) !== (networkPolicyEnforcement === "legacy")
+  )
+    error("INVALID_ADMIN_SANDBOX_SESSION", "/spec");
   const result = {
     projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
     operationId: identifier(spec.operationId, "/spec/operationId"),
@@ -5613,6 +5679,8 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
       "/spec/runtimeProfileVersion",
     ),
     targetId: identifier(spec.targetId, "/spec/targetId"),
+    ...(networkPolicyRef === undefined ? {} : { networkPolicyRef }),
+    networkPolicyEnforcement,
     generation,
     observedGeneration,
     desiredState: enumValue(

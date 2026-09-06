@@ -11,7 +11,8 @@ func TestRuntimeProfileAndSandboxInputsBindEveryPublicField(t *testing.T) {
 	profile := RuntimeProfileCreateInput{
 		Scope: FoundationScope{"tenant", "project"}, ProfileID: "standard", ProfileName: "standard",
 		Version: 1, Description: "No-agent Docker workspace", TargetID: "docker-primary",
-		ImageURI: "ghcr.io/opensandbox/server@" + digest, ReleaseDigest: digest,
+		NetworkPolicyID: "network-deny",
+		ImageURI:        "ghcr.io/opensandbox/server@" + digest, ReleaseDigest: digest,
 		CPUMillis: 1000, MemoryBytes: 536870912,
 		Mutation: FoundationMutation{"request-profile", "runtime-profile-key-0001"},
 	}
@@ -49,7 +50,8 @@ func TestRuntimeProfileAndSandboxInputsBindEveryPublicField(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := RuntimeProfileSnapshot{Scope: profile.Scope, ProfileVersionID: "rp-version", ProfileID: profile.ProfileID,
 		ProfileName: profile.ProfileName, Description: profile.Description, Status: "published", TargetID: profile.TargetID,
-		ImageURI: profile.ImageURI, ReleaseDigest: profile.ReleaseDigest, Version: profile.Version,
+		NetworkPolicyID: profile.NetworkPolicyID,
+		ImageURI:        profile.ImageURI, ReleaseDigest: profile.ReleaseDigest, Version: profile.Version,
 		CPUMillis: profile.CPUMillis, MemoryBytes: profile.MemoryBytes, ResourceVersion: 2,
 		CreatedAt: now, UpdatedAt: now, PublishedAt: &now}
 	if snapshot.Validate() != nil {

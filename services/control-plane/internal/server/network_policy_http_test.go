@@ -59,7 +59,7 @@ func TestNetworkPolicyHTTPAuthorityLifecycleAndUserBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request := httptest.NewRequest(http.MethodPut, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-standard", strings.NewReader(`{"expectedResourceVersion":"0","policyName":"network-standard","userSummary":"Public internet access","defaultEgress":"public","ingressEnabled":false,"previewEnabled":false}`))
+	request := httptest.NewRequest(http.MethodPut, "/v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-standard", strings.NewReader(`{"expectedResourceVersion":"0","policyName":"network-standard","userSummary":"Public internet access","defaultEgress":"public","allowedEgress":[],"ingressEnabled":false,"previewEnabled":false}`))
 	request.Header.Set("Authorization", "Bearer admin-token")
 	request.Header.Set("X-Request-ID", "request-network-set")
 	request.Header.Set("Idempotency-Key", "network-set-key-0001")

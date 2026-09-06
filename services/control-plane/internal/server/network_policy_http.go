@@ -169,11 +169,17 @@ func (server *NetworkPolicyHTTPServer) set(writer http.ResponseWriter, request *
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	allowedEgress, err := internalnetworkpolicy.CanonicalAllowedEgress(validated.Body.AllowedEgress)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
 	policy, err := server.store.SetNetworkPolicy(request.Context(), tenantID, principal, internalnetworkpolicy.SetInput{
 		Scope:    internalnetworkpolicy.Scope{TenantID: tenantID, ProjectID: projectID},
 		PolicyID: policyID, PolicyName: validated.Body.PolicyName, UserSummary: validated.Body.UserSummary,
-		DefaultEgress: validated.Body.DefaultEgress, AllowlistPolicyRef: validated.Body.AllowlistPolicyRef,
-		IngressEnabled: validated.Body.IngressEnabled, PreviewEnabled: validated.Body.PreviewEnabled,
+		DefaultEgress: validated.Body.DefaultEgress, AllowedEgress: allowedEgress,
+		AllowlistPolicyRef: validated.Body.AllowlistPolicyRef,
+		IngressEnabled:     validated.Body.IngressEnabled, PreviewEnabled: validated.Body.PreviewEnabled,
 		DNSPolicyRef: validated.Body.DNSPolicyRef, ProxyPolicyRef: validated.Body.ProxyPolicyRef,
 		ExpectedResourceVersion: expectedResourceVersion,
 		Mutation:                internalnetworkpolicy.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
@@ -255,6 +261,7 @@ func networkPolicyResource(policy internalnetworkpolicy.Snapshot) platformv1alph
 		Spec: platformv1alpha1.NetworkPolicySpec{
 			ProjectRef:  commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: policy.Scope.ProjectID},
 			UserSummary: policy.UserSummary, DefaultEgress: policy.DefaultEgress,
+			AllowedEgress:      append([]string{}, policy.AllowedEgress...),
 			AllowlistPolicyRef: policy.AllowlistPolicyRef, IngressEnabled: policy.IngressEnabled,
 			PreviewEnabled: policy.PreviewEnabled, DNSPolicyRef: policy.DNSPolicyRef, ProxyPolicyRef: policy.ProxyPolicyRef,
 		},

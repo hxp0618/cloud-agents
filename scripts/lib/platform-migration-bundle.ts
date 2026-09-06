@@ -3537,6 +3537,10 @@ function legacyIdentityToTyped(value: string): JsonObject {
   throw new MigrationValidationError("OBJECT_IDENTITY", value);
 }
 
+export function migrationObjectIdentity(value: string): JsonObject {
+  return legacyIdentityToTyped(value);
+}
+
 function stripLegacyName(value: string): string {
   return value.replace(/^unquoted:/u, "");
 }

@@ -210,7 +210,13 @@ func TestGeneratedStoragePolicyContractKeepsSupportedLifecycle(t *testing.T) {
 }
 
 func TestGeneratedNetworkPolicyContractKeepsOpaqueReferences(t *testing.T) {
-	policy := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicy","metadata":{"uid":"network-restricted","name":"network-restricted","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T04:00:00Z","updatedAt":"2026-09-05T04:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"Approved destinations only","defaultEgress":"restricted","allowlistPolicyRef":"allowlist-standard","ingressEnabled":false,"previewEnabled":false,"dnsPolicyRef":"dns-standard","proxyPolicyRef":"proxy-standard"}}`)
+	if _, err := EncodeNetworkPolicySetRequestJSON(NetworkPolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "network-restricted", UserSummary: "Approved outbound access",
+		DefaultEgress: "restricted", AllowedEgress: []string{"api.openai.com"}, PreviewEnabled: true,
+	}); err != nil {
+		t.Fatalf("direct allowlist request: %v", err)
+	}
+	policy := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicy","metadata":{"uid":"network-restricted","name":"network-restricted","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T04:00:00Z","updatedAt":"2026-09-05T04:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"Approved destinations only","defaultEgress":"restricted","allowedEgress":[],"allowlistPolicyRef":"allowlist-standard","ingressEnabled":false,"previewEnabled":false,"dnsPolicyRef":"dns-standard","proxyPolicyRef":"proxy-standard"}}`)
 	decoded, err := DecodeNetworkPolicyResponseJSON(policy)
 	if err != nil || decoded.Value.Spec.DefaultEgress != "restricted" || decoded.Value.Spec.AllowlistPolicyRef != "allowlist-standard" {
 		t.Fatalf("policy=%#v error=%v", decoded, err)

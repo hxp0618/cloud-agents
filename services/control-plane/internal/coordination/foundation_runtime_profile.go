@@ -36,7 +36,8 @@ type FoundationMutation struct{ RequestID, IdempotencyKey string }
 type RuntimeProfileCreateInput struct {
 	Scope                               FoundationScope
 	ProfileID, ProfileName, Description string
-	TargetID, ImageURI, ReleaseDigest   string
+	TargetID, NetworkPolicyID           string
+	ImageURI, ReleaseDigest             string
 	Version, CPUMillis, MemoryBytes     int64
 	Mutation                            FoundationMutation
 }
@@ -49,14 +50,15 @@ type RuntimeProfileTransitionInput struct {
 }
 
 type RuntimeProfileSnapshot struct {
-	Scope                                    FoundationScope
-	ProfileVersionID, ProfileID, ProfileName string
-	Description, Status, TargetID, ImageURI  string
-	ReleaseDigest                            string
-	Version, CPUMillis, MemoryBytes          int64
-	ResourceVersion                          int64
-	CreatedAt, UpdatedAt                     time.Time
-	PublishedAt, DisabledAt                  *time.Time
+	Scope                                          FoundationScope
+	ProfileVersionID, ProfileID, ProfileName       string
+	Description, Status, TargetID, NetworkPolicyID string
+	ImageURI                                       string
+	ReleaseDigest                                  string
+	Version, CPUMillis, MemoryBytes                int64
+	ResourceVersion                                int64
+	CreatedAt, UpdatedAt                           time.Time
+	PublishedAt, DisabledAt                        *time.Time
 }
 
 type RuntimeProfileSummary struct {
@@ -105,6 +107,7 @@ func (input RuntimeProfileCreateInput) Validate(tenantID string) error {
 	if !validFoundationScope(input.Scope, tenantID) || !validIdentifier(input.ProfileID) ||
 		!validIdentifier(input.ProfileName) || input.Version < 1 || input.Version > 2147483647 ||
 		invalidRuntimeProfileDescription(input.Description) || !validIdentifier(input.TargetID) ||
+		!validIdentifier(input.NetworkPolicyID) ||
 		len(input.ImageURI) > 1024 || !runtimeProfileImagePattern.MatchString(input.ImageURI) ||
 		!runtimeProfileDigestPattern.MatchString(input.ReleaseDigest) ||
 		!strings.HasSuffix(input.ImageURI, "@"+input.ReleaseDigest) ||
@@ -122,10 +125,10 @@ func RuntimeProfileCreateDigest(input RuntimeProfileCreateInput) (string, error)
 	}
 	return foundationDigest(struct {
 		Operation, TenantID, ProjectID, ProfileID, ProfileName, Description string
-		TargetID, ImageURI, ReleaseDigest                                   string
+		TargetID, NetworkPolicyID, ImageURI, ReleaseDigest                  string
 		Version, CPUMillis, MemoryBytes                                     int64
 	}{"runtime-profile.create", input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID,
-		input.ProfileName, input.Description, input.TargetID, input.ImageURI, input.ReleaseDigest,
+		input.ProfileName, input.Description, input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest,
 		input.Version, input.CPUMillis, input.MemoryBytes})
 }
 
@@ -153,9 +156,13 @@ func RuntimeProfileTransitionDigest(input RuntimeProfileTransitionInput) (string
 func (snapshot RuntimeProfileSnapshot) Validate() error {
 	input := RuntimeProfileCreateInput{Scope: snapshot.Scope, ProfileID: snapshot.ProfileID,
 		ProfileName: snapshot.ProfileName, Description: snapshot.Description, TargetID: snapshot.TargetID,
-		ImageURI: snapshot.ImageURI, ReleaseDigest: snapshot.ReleaseDigest, Version: snapshot.Version,
+		NetworkPolicyID: snapshot.NetworkPolicyID,
+		ImageURI:        snapshot.ImageURI, ReleaseDigest: snapshot.ReleaseDigest, Version: snapshot.Version,
 		CPUMillis: snapshot.CPUMillis, MemoryBytes: snapshot.MemoryBytes,
 		Mutation: FoundationMutation{RequestID: "snapshot", IdempotencyKey: "snapshot-runtime-profile"}}
+	if snapshot.NetworkPolicyID == "" {
+		input.NetworkPolicyID = "legacy-network-policy"
+	}
 	if input.Validate(snapshot.Scope.TenantID) != nil || !validIdentifier(snapshot.ProfileVersionID) ||
 		snapshot.ResourceVersion < 1 || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.Before(snapshot.CreatedAt) {
 		return ErrInvalidRuntimeProfile

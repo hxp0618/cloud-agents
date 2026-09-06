@@ -230,7 +230,8 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", selector.schemaHead, length, ok, selector.migrationCount)
 		}
 	}
-	if length, ok := supportedManifestLength("000061"); ok || length != 0 {
+	unknown := fmt.Sprintf("%06d", productFoundationRunnerBindings[len(productFoundationRunnerBindings)-1].migrationCount+1)
+	if length, ok := supportedManifestLength(unknown); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
 	}
 }
@@ -243,10 +244,11 @@ func TestProductRunnerBindingsAreAContiguousClosedSet(t *testing.T) {
 			t.Fatalf("invalid generated product binding at %s: %+v", version, selector)
 		}
 	}
-	if _, ok := lookupProductRunnerBinding("000061"); ok {
+	unknownVersion := fmt.Sprintf("%06d", len(productFoundationRunnerBindings)+15)
+	if _, ok := lookupProductRunnerBinding(unknownVersion); ok {
 		t.Fatal("unknown product binding unexpectedly accepted")
 	}
-	if _, err := selectGeneratedRunnerBinding(Config{ManifestSelector: "product-000061"}); err == nil {
+	if _, err := selectGeneratedRunnerBinding(Config{ManifestSelector: "product-" + unknownVersion}); err == nil {
 		t.Fatal("unknown product selector unexpectedly accepted")
 	}
 }

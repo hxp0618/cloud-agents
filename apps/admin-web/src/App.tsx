@@ -157,11 +157,23 @@ function runtimeProfileForm() {
     version: "1",
     description: "",
     targetId: "",
+    networkPolicyRef: "",
     imageUri: "",
     releaseDigest: "",
     cpuMillis: "1000",
     memoryMiB: "1024",
   };
+}
+
+function executableFoundationNetworkPolicy(policy: NetworkPolicy): boolean {
+  return (
+    (policy.spec.defaultEgress === "deny" ||
+      (policy.spec.defaultEgress === "restricted" && policy.spec.allowedEgress.length > 0)) &&
+    policy.spec.allowlistPolicyRef === undefined &&
+    policy.spec.dnsPolicyRef === undefined &&
+    policy.spec.proxyPolicyRef === undefined &&
+    !policy.spec.ingressEnabled
+  );
 }
 
 function statusLabel(status: ConnectionStatus, t: Translate): string {
@@ -1663,6 +1675,7 @@ export function App() {
       version: Number(runtimeProfileDraft.version),
       description: runtimeProfileDraft.description.trim(),
       targetId: runtimeProfileDraft.targetId,
+      networkPolicyRef: runtimeProfileDraft.networkPolicyRef,
       imageUri: runtimeProfileDraft.imageUri.trim(),
       releaseDigest: runtimeProfileDraft.releaseDigest.trim() as `sha256:${string}`,
       cpuMillis: Number(runtimeProfileDraft.cpuMillis),
@@ -2559,11 +2572,17 @@ export function App() {
                         )?.metadata.uid ||
                         targets.find(({ spec }) => spec.targetKind === "docker")?.metadata.uid ||
                         "",
+                      networkPolicyRef:
+                        current.networkPolicyRef ||
+                        networkPolicies.find(executableFoundationNetworkPolicy)?.metadata.uid ||
+                        "",
                     }));
                     setCreatingRuntimeProfile(true);
                   }}
                   disabled={
-                    busy !== null || !targets.some(({ spec }) => spec.targetKind === "docker")
+                    busy !== null ||
+                    !targets.some(({ spec }) => spec.targetKind === "docker") ||
+                    !networkPolicies.some(executableFoundationNetworkPolicy)
                   }
                 >
                   {t("action.createRuntimeProfile")}
@@ -3048,6 +3067,7 @@ export function App() {
               connection={connection}
               policies={networkPolicies}
               profiles={profiles}
+              runtimeProfiles={runtimeProfiles}
               query={query}
               busy={busy !== null}
               onQuery={setQuery}
@@ -3746,6 +3766,26 @@ export function App() {
                   </select>
                 </label>
               </div>
+              <label>
+                <span>{t("runtimeProfile.networkPolicy")}</span>
+                <select
+                  value={runtimeProfileDraft.networkPolicyRef}
+                  required
+                  onChange={(event) =>
+                    setRuntimeProfileDraft({
+                      ...runtimeProfileDraft,
+                      networkPolicyRef: event.target.value,
+                    })
+                  }
+                >
+                  {networkPolicies.filter(executableFoundationNetworkPolicy).map((policy) => (
+                    <option key={policy.metadata.uid} value={policy.metadata.uid}>
+                      {policy.metadata.name} · {policy.spec.userSummary}
+                    </option>
+                  ))}
+                </select>
+                <small>{t("runtimeProfile.networkPolicyHelp")}</small>
+              </label>
               <label>
                 <span>{t("runtimeProfile.description")}</span>
                 <input
@@ -6638,6 +6678,10 @@ function RuntimeProfileDetail({
           <dd className="mono">{profile.spec.targetId}</dd>
         </div>
         <div>
+          <dt>{t("runtimeProfile.networkPolicy")}</dt>
+          <dd className="mono">{profile.spec.networkPolicyRef ?? t("common.notBound")}</dd>
+        </div>
+        <div>
           <dt>{t("runtimeProfile.image")}</dt>
           <dd className="mono break">{profile.spec.imageUri}</dd>
         </div>
@@ -6763,6 +6807,18 @@ function SandboxDetail({
         <div>
           <dt>{t("sandbox.target")}</dt>
           <dd className="mono">{sandbox.spec.targetId}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.networkPolicy")}</dt>
+          <dd className="mono">{sandbox.spec.networkPolicyRef ?? t("common.notBound")}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.networkPolicyEnforcement")}</dt>
+          <dd>
+            {t(
+              `sandbox.networkPolicyEnforcement.${sandbox.spec.networkPolicyEnforcement}` as MessageKey,
+            )}
+          </dd>
         </div>
         <div>
           <dt>{t("sandbox.ttl")}</dt>
