@@ -198,6 +198,14 @@ const enUS = {
   "remoteWorkerEnrollment.node.heartbeatExpires": "Heartbeat expires",
   "remoteWorkerEnrollment.node.boundary":
     "Health is calculated by Control Plane database time. The browser does not infer liveness and receives no credential bytes or user content.",
+  "remoteWorkerEnrollment.drain": "Drain node",
+  "remoteWorkerEnrollment.resume": "Resume node",
+  "remoteWorkerEnrollment.commandDeadline": "command deadline {seconds}s",
+  "remoteWorkerEnrollment.schedulingConfirm":
+    "Type {id} to confirm the exact node generation, resource version, and impact.",
+  "remoteWorkerEnrollment.schedulingSubmit": "Submit lifecycle command",
+  "remoteWorkerEnrollment.operations": "Lifecycle operations",
+  "remoteWorkerEnrollment.operationsEmpty": "No node lifecycle operations recorded.",
   "remoteWorkerEnrollment.inspect": "Inspect",
   "remoteWorkerEnrollment.revoke": "Revoke enrollment",
   "remoteWorkerEnrollment.revokeCertificate": "Revoke node certificate",
@@ -223,6 +231,10 @@ const enUS = {
   "remoteWorkerEnrollment.notice.loaded": "RemoteWorker enrollment refreshed.",
   "remoteWorkerEnrollment.notice.revoked": "RemoteWorker enrollment revoked.",
   "remoteWorkerEnrollment.notice.certificateRevoked": "RemoteWorker node certificate revoked.",
+  "remoteWorkerEnrollment.notice.schedulingPreview":
+    "Server-authoritative lifecycle impact loaded.",
+  "remoteWorkerEnrollment.notice.schedulingQueued":
+    "Lifecycle command queued for outbound delivery.",
   "error.remoteWorkerEnrollmentPageToken":
     "Control Plane repeated a RemoteWorker enrollment page token.",
   "error.remoteWorkerEnrollmentAuditPageToken":
@@ -269,6 +281,9 @@ const enUS = {
     "Deletes Sandbox compute and releases its writer while retaining Workspace data.",
   "operation.impact.sandboxRebuild":
     "Creates new Sandbox compute attached to the retained Workspace volume.",
+  "operation.impact.remoteWorkerDrain":
+    "Stops new scheduling on this outbound node; running Sandboxes and Workspace data are retained.",
+  "operation.impact.remoteWorkerResume": "Allows new scheduling on this outbound node.",
   "overview.label": "Infrastructure overview",
   "overview.failedOperations": "Recent failed operations",
   "overview.failedOperationsDescription":
@@ -489,6 +504,7 @@ const enUS = {
   "common.yes": "Yes",
   "common.no": "No",
   "maintenance.deploymentTarget": "Deployment Target",
+  "maintenance.remoteWorker": "Remote Worker",
   "maintenance.operationId": "Operation ID",
   "maintenance.resource": "Resource",
   "maintenance.currentStep": "Current step",
@@ -1046,6 +1062,14 @@ const zhCN = {
   "remoteWorkerEnrollment.node.heartbeatExpires": "心跳过期时间",
   "remoteWorkerEnrollment.node.boundary":
     "健康状态由 Control Plane 按数据库时间计算；浏览器不自行推断存活状态，也不会收到凭据原文或用户内容。",
+  "remoteWorkerEnrollment.drain": "排空节点",
+  "remoteWorkerEnrollment.resume": "恢复节点",
+  "remoteWorkerEnrollment.commandDeadline": "命令期限 {seconds} 秒",
+  "remoteWorkerEnrollment.schedulingConfirm":
+    "输入 {id} 以确认准确的节点代次、资源版本与影响范围。",
+  "remoteWorkerEnrollment.schedulingSubmit": "提交生命周期命令",
+  "remoteWorkerEnrollment.operations": "生命周期操作",
+  "remoteWorkerEnrollment.operationsEmpty": "尚无节点生命周期操作记录。",
   "remoteWorkerEnrollment.inspect": "查看",
   "remoteWorkerEnrollment.revoke": "撤销注册意图",
   "remoteWorkerEnrollment.revokeCertificate": "撤销节点证书",
@@ -1070,6 +1094,8 @@ const zhCN = {
   "remoteWorkerEnrollment.notice.loaded": "RemoteWorker 注册意图已刷新。",
   "remoteWorkerEnrollment.notice.revoked": "RemoteWorker 注册意图已撤销。",
   "remoteWorkerEnrollment.notice.certificateRevoked": "RemoteWorker 节点证书已撤销。",
+  "remoteWorkerEnrollment.notice.schedulingPreview": "已加载服务端权威的生命周期影响。",
+  "remoteWorkerEnrollment.notice.schedulingQueued": "生命周期命令已排队等待 outbound 投递。",
   "error.remoteWorkerEnrollmentPageToken": "控制平面重复返回了 RemoteWorker 注册分页令牌。",
   "error.remoteWorkerEnrollmentAuditPageToken":
     "控制平面重复返回了 RemoteWorker 注册审计分页令牌。",
@@ -1110,6 +1136,9 @@ const zhCN = {
   "operation.impact.rollback": "将一个租约 Worker 恢复到已记录的上一发布版本。",
   "operation.impact.sandboxStop": "删除 Sandbox 计算并释放写入者，同时保留 Workspace 数据。",
   "operation.impact.sandboxRebuild": "创建新的 Sandbox 计算并挂载保留的 Workspace 卷。",
+  "operation.impact.remoteWorkerDrain":
+    "停止向此 outbound 节点调度新任务；运行中的 Sandbox 与 Workspace 数据保留。",
+  "operation.impact.remoteWorkerResume": "允许向此 outbound 节点调度新任务。",
   "overview.label": "基础设施概览",
   "overview.failedOperations": "最近失败的操作",
   "overview.failedOperationsDescription": "目标维护 API 中按更新时间排序的最近 6 条失败记录。",
@@ -1323,6 +1352,7 @@ const zhCN = {
   "common.yes": "是",
   "common.no": "否",
   "maintenance.deploymentTarget": "部署目标",
+  "maintenance.remoteWorker": "远程工作节点",
   "maintenance.operationId": "操作 ID",
   "maintenance.resource": "资源",
   "maintenance.currentStep": "当前步骤",

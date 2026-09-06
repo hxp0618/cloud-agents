@@ -25,6 +25,9 @@ type remoteWorkerEnrollmentStore interface {
 	GetRemoteWorkerEnrollment(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalremoteworker.Snapshot, error)
 	ListRemoteWorkerEnrollments(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RemoteWorkerEnrollmentPage, error)
 	ListRemoteWorkerEnrollmentAuditEvents(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.RemoteWorkerEnrollmentAuditPage, error)
+	ListRemoteWorkerOperations(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.RemoteWorkerOperationPage, error)
+	PreviewRemoteWorkerScheduling(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalremoteworker.SchedulingPreview, error)
+	TransitionRemoteWorkerScheduling(context.Context, string, *authn.VerifiedPrincipal, internalremoteworker.SchedulingInput) (internalremoteworker.Operation, error)
 	AuthenticateRemoteWorkerCertificate(context.Context, string, string, string, string, int64) error
 	AuthorizeRemoteWorkerCertificateRotation(context.Context, string, internalremoteworker.CertificateRotationRequest) (postgres.RemoteWorkerCertificateRotationAuthorization, error)
 	IssueRemoteWorkerCertificate(context.Context, string, internalremoteworker.CertificatePersistenceInput) (internalremoteworker.Snapshot, error)
@@ -111,10 +114,16 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 		server.get(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
 	case "revoke":
 		server.revoke(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
+	case "scheduling-preview":
+		server.schedulingPreview(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
+	case "scheduling":
+		server.transitionScheduling(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
 	case "claim-secret":
 		server.claimSecret(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
 	case "audit-events":
 		server.listAuditEvents(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
+	case "operations":
+		server.listOperations(writer, request, tenantID, projectID, enrollmentID, requestID, principal)
 	}
 }
 
@@ -218,6 +227,72 @@ func (server *RemoteWorkerEnrollmentHTTPServer) revoke(writer http.ResponseWrite
 		return
 	}
 	writeRemoteWorkerEnrollment(writer, 200, requestID, value)
+}
+
+func (server *RemoteWorkerEnrollmentHTTPServer) schedulingPreview(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string, principal *authn.VerifiedPrincipal) {
+	if _, err := openapiv1alpha1.ValidatePreviewAdminRemoteWorkerSchedulingServerRequest(tenantID, projectID, enrollmentID, requestID); err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	preview, err := server.store.PreviewRemoteWorkerScheduling(request.Context(), tenantID, principal, projectID, enrollmentID)
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	node := preview.Enrollment.Node
+	if node == nil {
+		writePublicProblem(writer, 409, "remote_worker_node_unavailable")
+		return
+	}
+	value := platformv1alpha1.RemoteWorkerNodeSchedulingPreview{ResourceBase: platformv1alpha1.ResourceBase{
+		APIVersion: platformv1alpha1.APIVersion, Kind: "RemoteWorkerNodeSchedulingPreview",
+		Metadata: commonv1alpha1.ResourceMetadata{UID: preview.Enrollment.EnrollmentID, Name: preview.Enrollment.WorkerName,
+			TenantRef:       commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: tenantID},
+			ResourceVersion: strconv.FormatInt(node.ResourceVersion, 10),
+			CreatedAt:       preview.Enrollment.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: preview.Enrollment.UpdatedAt.UTC().Format(time.RFC3339Nano)},
+	}, Spec: platformv1alpha1.RemoteWorkerNodeSchedulingPreviewSpec{
+		ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
+		WorkerID:   preview.Enrollment.WorkerID, HealthState: node.HealthState,
+		CurrentDesiredState: node.DesiredState, CurrentObservedState: node.ObservedState,
+		DesiredState: preview.DesiredState, ExpectedGeneration: node.Generation,
+		ExpectedResourceVersion: strconv.FormatInt(node.ResourceVersion, 10), ImpactDigest: preview.ImpactDigest,
+		ImpactSummary: preview.ImpactSummary, CommandDeadlineSeconds: int64(internalremoteworker.CommandTTL / time.Second),
+	}}
+	body, err := platformv1alpha1.EncodeRemoteWorkerNodeSchedulingPreviewResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.RemoteWorkerNodeSchedulingPreview]{Value: value})
+	if err != nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Resource-Version", value.Metadata.ResourceVersion)
+	writeJSONResponse(writer, 200, requestID, body)
+}
+
+func (server *RemoteWorkerEnrollmentHTTPServer) transitionScheduling(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string, principal *authn.VerifiedPrincipal) {
+	key, body, ok := remoteWorkerEnrollmentMutationRequest(writer, request)
+	if !ok {
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateTransitionAdminRemoteWorkerSchedulingServerRequest(tenantID, projectID, enrollmentID, requestID, key, body)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	version, err := strconv.ParseInt(validated.Body.ExpectedResourceVersion, 10, 64)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	operation, err := server.store.TransitionRemoteWorkerScheduling(request.Context(), tenantID, principal, internalremoteworker.SchedulingInput{
+		Scope: internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}, EnrollmentID: enrollmentID,
+		ExpectedGeneration: validated.Body.ExpectedGeneration, ExpectedResourceVersion: version,
+		ConfirmedEnrollmentID: validated.Body.ConfirmedEnrollmentID, DesiredState: validated.Body.DesiredState,
+		ImpactDigest: validated.Body.ImpactDigest, Mutation: internalremoteworker.Mutation{RequestID: requestID, IdempotencyKey: key},
+	})
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	writeRemoteWorkerOperation(writer, 200, requestID, operation)
 }
 
 func (server *RemoteWorkerEnrollmentHTTPServer) claimSecret(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string, principal *authn.VerifiedPrincipal) {
@@ -412,7 +487,8 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		ObservedState: validated.Body.ObservedState,
 		WorkerVersion: validated.Body.WorkerVersion, OS: validated.Body.OS, Architecture: validated.Body.Architecture,
 		KernelVersion: validated.Body.KernelVersion, Capabilities: validated.Body.Capabilities,
-		Capacity: internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
+		Capacity:       internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
+		CommandReceipt: remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
 	})
 	if err != nil {
 		writeRemoteWorkerEnrollmentError(writer, err)
@@ -427,6 +503,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		DesiredState: node.DesiredState, ObservedState: node.ObservedState, HealthState: node.HealthState,
 		AcceptedAt: node.LastHeartbeatAt.UTC().Format(time.RFC3339Nano), ExpiresAt: node.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
 		NextHeartbeatAfterSeconds: int64(internalremoteworker.HeartbeatInterval / time.Second), ReconcileRequired: result.ReconcileRequired,
+		Command: remoteWorkerCommandResource(result.Command),
 	}})
 	if err != nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -434,6 +511,20 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writeJSONResponse(writer, 200, requestID, responseBody)
+}
+
+func remoteWorkerCommandReceipt(value *platformv1alpha1.RemoteWorkerCommandReceipt) *internalremoteworker.CommandReceipt {
+	if value == nil {
+		return nil
+	}
+	return &internalremoteworker.CommandReceipt{CommandID: value.CommandID, Generation: value.Generation, Result: value.Result, StableErrorCode: value.StableErrorCode}
+}
+
+func remoteWorkerCommandResource(value *internalremoteworker.Command) *platformv1alpha1.RemoteWorkerCommand {
+	if value == nil {
+		return nil
+	}
+	return &platformv1alpha1.RemoteWorkerCommand{CommandID: value.CommandID, Generation: value.Generation, DesiredState: value.DesiredState, Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
 }
 
 func writeRemoteWorkerCertificate(writer http.ResponseWriter, requestID, projectID, enrollmentID string, value internalremoteworker.Snapshot, issuedAt *time.Time) {
@@ -491,7 +582,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) listAuditEvents(writer http.Resp
 	}
 	events := make([]platformv1alpha1.AdminAuditEvent, 0, len(page.Events))
 	for _, event := range page.Events {
-		events = append(events, platformv1alpha1.AdminAuditEvent{APIVersion: platformv1alpha1.APIVersion, Kind: "AdminAuditEvent", EventID: event.EventID, Actor: event.Actor, Action: event.Action, ResourceKind: "RemoteWorkerEnrollment", ResourceID: event.EnrollmentID, ResourceGeneration: event.EnrollmentResourceVersion, Result: event.Result, OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339Nano), RequestID: event.RequestID, OperationID: event.OperationID})
+		events = append(events, platformv1alpha1.AdminAuditEvent{APIVersion: platformv1alpha1.APIVersion, Kind: "AdminAuditEvent", EventID: event.EventID, Actor: event.Actor, Action: event.Action, ResourceKind: "RemoteWorkerEnrollment", ResourceID: event.EnrollmentID, ResourceGeneration: event.ResourceGeneration, Result: event.Result, OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339Nano), RequestID: event.RequestID, OperationID: event.OperationID, StableErrorCode: event.StableErrorCode})
 	}
 	next := ""
 	if page.NextOccurredAt != nil {
@@ -507,6 +598,66 @@ func (server *RemoteWorkerEnrollmentHTTPServer) listAuditEvents(writer http.Resp
 		return
 	}
 	writeJSONResponse(writer, 200, requestID, body)
+}
+
+func (server *RemoteWorkerEnrollmentHTTPServer) listOperations(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string, principal *authn.VerifiedPrincipal) {
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	validated, err := openapiv1alpha1.ValidateListAdminRemoteWorkerOperationsServerRequest(tenantID, projectID, enrollmentID, requestID, pageSize, pageToken)
+	if !ok || err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	var after *time.Time
+	afterID := ""
+	if validated.PageToken != "" {
+		after, afterID, ok = decodeRemoteWorkerOperationPageToken(tenantID, projectID, enrollmentID, validated.PageToken)
+		if !ok {
+			writePublicProblem(writer, 400, "invalid_request")
+			return
+		}
+	}
+	page, err := server.store.ListRemoteWorkerOperations(request.Context(), tenantID, principal, projectID, enrollmentID, after, afterID, validated.PageSize)
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	values := make([]platformv1alpha1.MaintenanceOperation, 0, len(page.Operations))
+	for _, operation := range page.Operations {
+		values = append(values, remoteWorkerOperationResource(operation))
+	}
+	next := ""
+	if page.NextRequestedAt != nil {
+		next, ok = encodeRemoteWorkerOperationPageToken(tenantID, projectID, enrollmentID, *page.NextRequestedAt, page.NextOperationID)
+		if !ok {
+			writePublicProblem(writer, 500, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeMaintenanceOperationPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.MaintenanceOperationPage]{Value: platformv1alpha1.MaintenanceOperationPage{APIVersion: platformv1alpha1.APIVersion, Kind: "MaintenanceOperationPage", Operations: values, NextPageToken: next}})
+	if err != nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	writeJSONResponse(writer, 200, requestID, body)
+}
+
+func remoteWorkerOperationResource(operation internalremoteworker.Operation) platformv1alpha1.MaintenanceOperation {
+	return platformv1alpha1.MaintenanceOperation{APIVersion: platformv1alpha1.APIVersion, Kind: "MaintenanceOperation",
+		OperationID: operation.OperationID, IdempotencyKey: operation.IdempotencyKey, Action: operation.Action,
+		ResourceKind: "RemoteWorkerEnrollment", ResourceID: operation.EnrollmentID, ResourceGeneration: operation.Generation,
+		RequestedBy: operation.RequestedBy, RequestID: operation.RequestID,
+		RequestedAt: operation.RequestedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: operation.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		State: operation.State, CurrentStep: operation.CurrentStep, StableErrorCode: operation.StableErrorCode,
+		ImpactSummary: operation.ImpactSummary, Retryable: operation.Retryable}
+}
+
+func writeRemoteWorkerOperation(writer http.ResponseWriter, status int, requestID string, operation internalremoteworker.Operation) {
+	body, err := platformv1alpha1.EncodeMaintenanceOperationResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.MaintenanceOperation]{Value: remoteWorkerOperationResource(operation)})
+	if err != nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	writeJSONResponse(writer, status, requestID, body)
 }
 
 func remoteWorkerEnrollmentMutationRequest(writer http.ResponseWriter, request *http.Request) (string, []byte, bool) {
@@ -586,6 +737,12 @@ func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID,
 		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[0] != "" && parts[2] != "" && parts[4] != "" {
+		if strings.HasSuffix(parts[4], ":scheduling-preview") && !isBootstrap && !isRemoteWorker {
+			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":scheduling-preview"), "scheduling-preview", true
+		}
+		if strings.HasSuffix(parts[4], ":scheduling") && !isBootstrap && !isRemoteWorker {
+			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":scheduling"), "scheduling", true
+		}
 		if strings.HasSuffix(parts[4], ":revoke") && !isBootstrap && !isRemoteWorker {
 			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":revoke"), "revoke", true
 		}
@@ -605,8 +762,10 @@ func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID,
 			return parts[0], parts[2], parts[4], "get", true
 		}
 	}
-	if len(parts) == 6 && !isBootstrap && !isRemoteWorker && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[4] != "" && parts[5] == "audit-events" {
-		return parts[0], parts[2], parts[4], "audit-events", true
+	if len(parts) == 6 && !isBootstrap && !isRemoteWorker && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[4] != "" {
+		if parts[5] == "audit-events" || parts[5] == "operations" {
+			return parts[0], parts[2], parts[4], parts[5], true
+		}
 	}
 	return "", "", "", "", false
 }
@@ -631,10 +790,16 @@ func remoteWorkerEnrollmentPermission(action, method string) (string, string, bo
 		return "projects.get", "remote-worker-enrollments.get", true
 	case action == "revoke" && method == http.MethodPost:
 		return "projects.act", "remote-worker-enrollments.act", true
+	case action == "scheduling-preview" && method == http.MethodGet:
+		return "projects.get", "remote-worker-enrollments.get", true
+	case action == "scheduling" && method == http.MethodPost:
+		return "projects.act", "remote-worker-enrollments.act", true
 	case action == "claim-secret" && method == http.MethodPost:
 		return "projects.act", "remote-worker-bootstrap.act", true
 	case action == "audit-events" && method == http.MethodGet:
 		return "projects.get", "audit.list", true
+	case action == "operations" && method == http.MethodGet:
+		return "projects.get", "operations.list", true
 	default:
 		return "", "", false
 	}
@@ -643,6 +808,30 @@ func remoteWorkerEnrollmentPermission(action, method string) (string, string, bo
 func HandlesRemoteWorkerEnrollmentPath(path string) bool {
 	_, _, _, _, ok := remoteWorkerEnrollmentPath(path)
 	return ok
+}
+
+func encodeRemoteWorkerOperationPageToken(tenantID, projectID, enrollmentID string, requestedAt time.Time, operationID string) (string, bool) {
+	if requestedAt.IsZero() || commonv1alpha1.ValidateIdentifier(operationID, "/operationId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("remote-worker-operation/v1\x00" + tenantID + "\x00" + projectID + "\x00" + enrollmentID + "\x00" + requestedAt.UTC().Format(time.RFC3339Nano) + "\x00" + operationID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeRemoteWorkerOperationPageToken(tenantID, projectID, enrollmentID, token string) (*time.Time, string, bool) {
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil || commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return nil, "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 6 || parts[0] != "remote-worker-operation/v1" || parts[1] != tenantID || parts[2] != projectID || parts[3] != enrollmentID || commonv1alpha1.ValidateIdentifier(parts[5], "/operationId") != nil {
+		return nil, "", false
+	}
+	requestedAt, err := time.Parse(time.RFC3339Nano, parts[4])
+	if err != nil {
+		return nil, "", false
+	}
+	return &requestedAt, parts[5], true
 }
 
 func encodeRemoteWorkerEnrollmentAuditPageToken(tenantID, projectID, enrollmentID string, occurredAt time.Time, eventID string) (string, bool) {
@@ -681,6 +870,20 @@ func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, 409, "remote_worker_enrollment_resource_version_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerGenerationConflict):
 		writePublicProblem(writer, 409, "remote_worker_generation_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerCommandReceiptConflict):
+		writePublicProblem(writer, 409, "remote_worker_command_receipt_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingIdempotencyConflict):
+		writePublicProblem(writer, 409, "idempotency_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerOperationInProgress):
+		writePublicProblem(writer, 409, "operation_in_progress")
+	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingResourceVersionConflict):
+		writePublicProblem(writer, 409, "remote_worker_resource_version_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingStateConflict):
+		writePublicProblem(writer, 409, "remote_worker_scheduling_state_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingImpactConflict):
+		writePublicProblem(writer, 409, "scheduling_impact_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerNodeUnavailable):
+		writePublicProblem(writer, 409, "remote_worker_node_unavailable")
 	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentSecretUnavailable):
 		writePublicProblem(writer, 409, "remote_worker_enrollment_secret_unavailable")
 	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentAuthentication):

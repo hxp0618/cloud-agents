@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-command.schema.json",
+  "title": "RemoteWorkerCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "generation", "desiredState", "deadline"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+    "desiredState": { "enum": ["active", "drained"] },
+    "deadline": { "type": "string", "format": "date-time" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "commandId is the idempotency identity for one server-owned generation",
+    "the node must not apply the command after deadline"
+  ]
+}

@@ -5,11 +5,14 @@ import (
 	"regexp"
 	"slices"
 	"time"
+
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
 
 const (
 	HeartbeatInterval = 5 * time.Second
 	HeartbeatTTL      = 30 * time.Second
+	CommandTTL        = 30 * time.Second
 )
 
 var (
@@ -39,6 +42,50 @@ type HeartbeatInput struct {
 	KernelVersion         string
 	Capabilities          []string
 	Capacity              Capacity
+	CommandReceipt        *CommandReceipt
+}
+
+type CommandReceipt struct {
+	CommandID       string
+	Generation      int64
+	Result          string
+	StableErrorCode string
+}
+
+type Command struct {
+	CommandID    string
+	Generation   int64
+	DesiredState string
+	Deadline     time.Time
+}
+
+type SchedulingInput struct {
+	Scope                   Scope
+	EnrollmentID            string
+	ExpectedGeneration      int64
+	ExpectedResourceVersion int64
+	ConfirmedEnrollmentID   string
+	DesiredState            string
+	ImpactDigest            string
+	Mutation                Mutation
+}
+
+type SchedulingPreview struct {
+	Enrollment    Snapshot
+	DesiredState  string
+	ImpactDigest  string
+	ImpactSummary string
+}
+
+type Operation struct {
+	Scope                                   Scope
+	OperationID, IdempotencyKey, Action     string
+	EnrollmentID, CommandID, RequestedBy    string
+	RequestID, State, CurrentStep           string
+	StableErrorCode, ImpactSummary          string
+	Generation                              int64
+	Retryable                               bool
+	RequestedAt, UpdatedAt, CommandDeadline time.Time
 }
 
 type NodeStatus struct {
@@ -70,7 +117,98 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		input.ObservedGeneration < 1 || !workerVersionPattern.MatchString(input.WorkerVersion) ||
 		(input.ObservedState != "active" && input.ObservedState != "drained") ||
 		invalidIdentifier(input.OS) || invalidIdentifier(input.Architecture) || invalidKernelVersion(input.KernelVersion) ||
-		invalidCapabilities(input.Capabilities) || invalidCapacity(input.Capacity) {
+		invalidCapabilities(input.Capabilities) || invalidCapacity(input.Capacity) ||
+		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func (receipt CommandReceipt) Validate() error {
+	if invalidIdentifier(receipt.CommandID) || receipt.Generation < 2 ||
+		receipt.Result != "succeeded" && receipt.Result != "failed" ||
+		receipt.Result == "succeeded" && receipt.StableErrorCode != "" ||
+		receipt.Result == "failed" && invalidIdentifier(receipt.StableErrorCode) {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func CommandReceiptDigest(receipt CommandReceipt) (string, error) {
+	if receipt.Validate() != nil {
+		return "", ErrInvalidHeartbeat
+	}
+	return mutationDigest("remote-worker.command-receipt", receipt.CommandID, receipt.Generation, receipt.Result, receipt.StableErrorCode)
+}
+
+func (command Command) Validate() error {
+	if invalidIdentifier(command.CommandID) || command.Generation < 2 ||
+		command.DesiredState != "active" && command.DesiredState != "drained" || command.Deadline.IsZero() {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func (input SchedulingInput) Validate(tenantID string) error {
+	if invalidIdentifier(tenantID) || input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
+		invalidIdentifier(input.EnrollmentID) || input.ConfirmedEnrollmentID != input.EnrollmentID ||
+		input.ExpectedGeneration < 1 || input.ExpectedResourceVersion < 1 ||
+		input.DesiredState != "active" && input.DesiredState != "drained" || !digest(input.ImpactDigest) ||
+		invalidMutation(input.Mutation) {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func SchedulingMutationDigest(input SchedulingInput) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidHeartbeat
+	}
+	return mutationDigest("remote-worker.scheduling", input.Scope, input.EnrollmentID, input.ExpectedGeneration,
+		input.ExpectedResourceVersion, input.ConfirmedEnrollmentID, input.DesiredState, input.ImpactDigest)
+}
+
+func NewSchedulingPreview(enrollment Snapshot) (SchedulingPreview, error) {
+	if enrollment.Validate() != nil || enrollment.Node == nil {
+		return SchedulingPreview{}, ErrInvalidHeartbeat
+	}
+	node := enrollment.Node
+	desired := node.DesiredState
+	if node.DesiredState == node.ObservedState {
+		if desired == "active" {
+			desired = "drained"
+		} else {
+			desired = "active"
+		}
+	}
+	impact, err := mutationDigest("remote-worker.scheduling-impact", enrollment.Scope, enrollment.EnrollmentID,
+		enrollment.WorkerID, node.HealthState, node.Generation, node.ResourceVersion, node.DesiredState,
+		node.ObservedState, desired)
+	if err != nil {
+		return SchedulingPreview{}, err
+	}
+	action := "Drain"
+	if desired == "active" {
+		action = "Resume"
+	}
+	return SchedulingPreview{Enrollment: enrollment, DesiredState: desired, ImpactDigest: impact,
+		ImpactSummary: action + " RemoteWorker; new scheduling follows the desired state and running Sandboxes or Workspace data are retained"}, nil
+}
+
+func (operation Operation) Validate() error {
+	if invalidIdentifier(operation.Scope.TenantID) || invalidIdentifier(operation.Scope.ProjectID) ||
+		invalidIdentifier(operation.OperationID) || invalidIdentifier(operation.CommandID) ||
+		commonv1alpha1.ValidateIdempotencyKey(operation.IdempotencyKey, "/idempotencyKey") != nil ||
+		operation.Action != "remote-worker.drain" && operation.Action != "remote-worker.resume" ||
+		invalidIdentifier(operation.EnrollmentID) || operation.Generation < 2 || !digest(operation.RequestedBy) ||
+		invalidIdentifier(operation.RequestID) ||
+		operation.State != "queued" && operation.State != "running" && operation.State != "succeeded" && operation.State != "failed" ||
+		invalidIdentifier(operation.CurrentStep) || operation.StableErrorCode != "" && invalidIdentifier(operation.StableErrorCode) ||
+		len(operation.ImpactSummary) < 1 || len(operation.ImpactSummary) > 256 ||
+		operation.RequestedAt.IsZero() || operation.UpdatedAt.Before(operation.RequestedAt) ||
+		operation.CommandDeadline.Sub(operation.RequestedAt) != CommandTTL ||
+		operation.State == "failed" && (operation.StableErrorCode == "" || !operation.Retryable) ||
+		operation.State != "failed" && (operation.StableErrorCode != "" || operation.Retryable) {
 		return ErrInvalidHeartbeat
 	}
 	return nil

@@ -174,6 +174,7 @@ type RemoteWorkerEnrollmentPageResult = common.ResponseEnvelope[platform.RemoteW
 type RemoteWorkerEnrollmentSecretResult = common.ResponseEnvelope[platform.RemoteWorkerEnrollmentSecret]
 type RemoteWorkerCertificateResult = common.ResponseEnvelope[platform.RemoteWorkerCertificate]
 type RemoteWorkerHeartbeatResult = common.ResponseEnvelope[platform.RemoteWorkerHeartbeat]
+type RemoteWorkerNodeSchedulingPreviewResult = common.ResponseEnvelope[platform.RemoteWorkerNodeSchedulingPreview]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -1348,6 +1349,60 @@ func (client *Client) GetAdminRemoteWorkerEnrollment(ctx context.Context, tenant
 	}
 	return value, nil
 }
+func (client *Client) PreviewAdminRemoteWorkerScheduling(ctx context.Context, tenantID, projectID, enrollmentID, requestID string) (RemoteWorkerNodeSchedulingPreviewResult, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return RemoteWorkerNodeSchedulingPreviewResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/remote-worker-enrollments/" + enrollmentID + ":scheduling-preview", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return RemoteWorkerNodeSchedulingPreviewResult{}, err
+	}
+	if response.Status != 200 {
+		return RemoteWorkerNodeSchedulingPreviewResult{}, client.problemError("adminPreviewRemoteWorkerScheduling", response)
+	}
+	value, err := platform.DecodeRemoteWorkerNodeSchedulingPreviewResponseJSON(response.Body)
+	if err != nil {
+		return RemoteWorkerNodeSchedulingPreviewResult{}, &ClientError{Operation: "adminPreviewRemoteWorkerScheduling", Status: response.Status, Cause: err}
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != enrollmentID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.ResourceVersion != value.Value.Spec.ExpectedResourceVersion {
+		return RemoteWorkerNodeSchedulingPreviewResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) TransitionAdminRemoteWorkerScheduling(ctx context.Context, tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body platform.RemoteWorkerNodeSchedulingRequest) (MaintenanceOperationResult, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeRemoteWorkerNodeSchedulingRequestJSON(body)
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if body.ConfirmedEnrollmentID != enrollmentID {
+		return MaintenanceOperationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId")
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/remote-worker-enrollments/" + enrollmentID + ":scheduling", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return MaintenanceOperationResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationResult{}, client.problemError("adminTransitionRemoteWorkerScheduling", response)
+	}
+	value, err := platform.DecodeMaintenanceOperationResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationResult{}, &ClientError{Operation: "adminTransitionRemoteWorkerScheduling", Status: response.Status, Cause: err}
+	}
+	expectedAction := "remote-worker.resume"
+	if body.DesiredState == "drained" {
+		expectedAction = "remote-worker.drain"
+	}
+	if value.Value.ResourceKind != "RemoteWorkerEnrollment" || value.Value.ResourceID != enrollmentID || value.Value.ResourceGeneration != body.ExpectedGeneration+1 || value.Value.Action != expectedAction {
+		return MaintenanceOperationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/resourceId")
+	}
+	return value, nil
+}
 func (client *Client) RevokeAdminRemoteWorkerEnrollment(ctx context.Context, tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body platform.RemoteWorkerEnrollmentRevokeRequest) (RemoteWorkerEnrollmentResult, error) {
 	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
 		return RemoteWorkerEnrollmentResult{}, err
@@ -1532,6 +1587,47 @@ func (client *Client) ListAdminRemoteWorkerEnrollmentAuditEvents(ctx context.Con
 	for _, event := range value.Value.Events {
 		if event.ResourceKind != "RemoteWorkerEnrollment" || event.ResourceID != enrollmentID {
 			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminRemoteWorkerOperations(ctx context.Context, tenantID, projectID, enrollmentID, requestID string, pageSize int, pageToken string) (MaintenanceOperationPageResult, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return MaintenanceOperationPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return MaintenanceOperationPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return MaintenanceOperationPageResult{}, err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	path := "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/remote-worker-enrollments/" + enrollmentID + "/operations"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return MaintenanceOperationPageResult{}, err
+	}
+	if response.Status != 200 {
+		return MaintenanceOperationPageResult{}, client.problemError("adminListRemoteWorkerOperations", response)
+	}
+	value, err := platform.DecodeMaintenanceOperationPageResponseJSON(response.Body)
+	if err != nil {
+		return MaintenanceOperationPageResult{}, &ClientError{Operation: "adminListRemoteWorkerOperations", Status: response.Status, Cause: err}
+	}
+	for _, operation := range value.Value.Operations {
+		if operation.ResourceKind != "RemoteWorkerEnrollment" || operation.ResourceID != enrollmentID {
+			return MaintenanceOperationPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/operations")
 		}
 	}
 	return value, nil
@@ -5019,6 +5115,43 @@ func ValidateGetAdminRemoteWorkerEnrollmentServerRequest(tenantID, projectID, en
 	return GetAdminRemoteWorkerEnrollmentServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID}, nil
 }
 
+type PreviewAdminRemoteWorkerSchedulingServerInput struct {
+	TenantID     string
+	ProjectID    string
+	EnrollmentID string
+	RequestID    string
+}
+
+func ValidatePreviewAdminRemoteWorkerSchedulingServerRequest(tenantID, projectID, enrollmentID, requestID string) (PreviewAdminRemoteWorkerSchedulingServerInput, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return PreviewAdminRemoteWorkerSchedulingServerInput{}, err
+	}
+	return PreviewAdminRemoteWorkerSchedulingServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID}, nil
+}
+
+type TransitionAdminRemoteWorkerSchedulingServerInput struct {
+	TenantID       string
+	ProjectID      string
+	EnrollmentID   string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.RemoteWorkerNodeSchedulingRequest
+}
+
+func ValidateTransitionAdminRemoteWorkerSchedulingServerRequest(tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body []byte) (TransitionAdminRemoteWorkerSchedulingServerInput, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return TransitionAdminRemoteWorkerSchedulingServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return TransitionAdminRemoteWorkerSchedulingServerInput{}, err
+	}
+	value, err := platform.DecodeRemoteWorkerNodeSchedulingRequestJSON(body)
+	if err != nil || value.ConfirmedEnrollmentID != enrollmentID {
+		return TransitionAdminRemoteWorkerSchedulingServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId")
+	}
+	return TransitionAdminRemoteWorkerSchedulingServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
 type RevokeAdminRemoteWorkerEnrollmentServerInput struct {
 	TenantID       string
 	ProjectID      string
@@ -5158,6 +5291,30 @@ func ValidateListAdminRemoteWorkerEnrollmentAuditEventsServerRequest(tenantID, p
 		}
 	}
 	return ListAdminRemoteWorkerEnrollmentAuditEventsServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type ListAdminRemoteWorkerOperationsServerInput struct {
+	TenantID     string
+	ProjectID    string
+	EnrollmentID string
+	RequestID    string
+	PageSize     int
+	PageToken    string
+}
+
+func ValidateListAdminRemoteWorkerOperationsServerRequest(tenantID, projectID, enrollmentID, requestID string, pageSize int, pageToken string) (ListAdminRemoteWorkerOperationsServerInput, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return ListAdminRemoteWorkerOperationsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminRemoteWorkerOperationsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminRemoteWorkerOperationsServerInput{}, err
+		}
+	}
+	return ListAdminRemoteWorkerOperationsServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 func validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID string) error {
 	if err := validateLeasePath(tenantID, projectID, "", requestID); err != nil {

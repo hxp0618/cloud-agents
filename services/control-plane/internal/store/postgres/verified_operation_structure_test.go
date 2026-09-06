@@ -333,11 +333,14 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ListPublishedRuntimeProfiles",
 		"*DurableCoordinationService.ListRemoteWorkerEnrollmentAuditEvents",
 		"*DurableCoordinationService.ListRemoteWorkerEnrollments",
+		"*DurableCoordinationService.ListRemoteWorkerOperations",
 		"*DurableCoordinationService.ListRuntimeProfiles",
 		"*DurableCoordinationService.ListSandboxAccessGrants",
+		"*DurableCoordinationService.PreviewRemoteWorkerScheduling",
 		"*DurableCoordinationService.RevokeSandboxAccessGrant",
 		"*DurableCoordinationService.RevokeRemoteWorkerEnrollment",
 		"*DurableCoordinationService.TransitionFoundationSandbox",
+		"*DurableCoordinationService.TransitionRemoteWorkerScheduling",
 		"*DurableCoordinationService.TransitionRuntimeProfile",
 	)
 

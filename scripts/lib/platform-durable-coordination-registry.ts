@@ -761,6 +761,9 @@ function discoverOperations(root: string): IdempotentHttpOperation[] {
           coordination === "direct-transaction" ||
           coordination === "durable-runtime" ||
           coordination === "durable-operation" ||
+          coordination === "one-time-secret" ||
+          coordination === "secret-authenticated-csr-exchange" ||
+          coordination === "current-or-previous-certificate-exact-replay" ||
           coordination === "synchronous-access" ||
           coordination === "durable-access-grant"
         )

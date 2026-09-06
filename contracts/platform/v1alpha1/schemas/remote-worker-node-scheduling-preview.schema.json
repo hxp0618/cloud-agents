@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-node-scheduling-preview.schema.json",
+  "title": "RemoteWorkerNodeSchedulingPreview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "RemoteWorkerNodeSchedulingPreview" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "workerId", "healthState", "currentDesiredState", "currentObservedState", "desiredState", "expectedGeneration", "expectedResourceVersion", "impactDigest", "impactSummary", "commandDeadlineSeconds"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "healthState": { "enum": ["online", "degraded", "offline"] },
+        "currentDesiredState": { "enum": ["active", "drained"] },
+        "currentObservedState": { "enum": ["active", "drained"] },
+        "desiredState": { "enum": ["active", "drained"] },
+        "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "impactSummary": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "commandDeadlineSeconds": { "const": 30 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "desiredState is the next safe transition or retry chosen from current desired and observed state",
+    "the digest binds the node identity, health, current states, generation and resource version",
+    "drain stops new scheduling but does not delete running Sandboxes or Workspace data"
+  ]
+}

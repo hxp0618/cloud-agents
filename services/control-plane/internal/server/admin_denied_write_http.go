@@ -103,9 +103,9 @@ func adminDeniedWriteRoute(r *http.Request) (postgres.AdminDeniedWrite, bool) {
 		event.TenantID, event.ProjectID, event.ResourceID, event.Action = tenant, project, id, "adminSetStoragePolicy"
 	} else if tenant, project, id, action, ok := networkPolicyPath(r.URL.Path); ok && action == "get-set" && r.Method == http.MethodPut {
 		event.TenantID, event.ProjectID, event.ResourceID, event.Action = tenant, project, id, "adminSetNetworkPolicy"
-	} else if tenant, project, id, action, ok := remoteWorkerEnrollmentPath(r.URL.Path); ok && r.Method == http.MethodPost && (action == "collection" || action == "revoke") {
+	} else if tenant, project, id, action, ok := remoteWorkerEnrollmentPath(r.URL.Path); ok && r.Method == http.MethodPost && (action == "collection" || action == "revoke" || action == "scheduling") {
 		event.TenantID, event.ProjectID, event.ResourceID = tenant, project, id
-		event.Action = map[string]string{"collection": "adminCreateRemoteWorkerEnrollment", "revoke": "adminRevokeRemoteWorkerEnrollment"}[action]
+		event.Action = map[string]string{"collection": "adminCreateRemoteWorkerEnrollment", "revoke": "adminRevokeRemoteWorkerEnrollment", "scheduling": "adminTransitionRemoteWorkerScheduling"}[action]
 	} else if tenant, project, admin, action, ok := projectLeaseQuotaPath(r.URL.Path); ok && admin && action == "get-set" && r.Method == http.MethodPut {
 		event.TenantID, event.ProjectID, event.Action = tenant, project, "adminSetProjectLeaseQuota"
 	}

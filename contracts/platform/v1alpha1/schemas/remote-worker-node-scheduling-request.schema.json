@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-node-scheduling-request.schema.json",
+  "title": "RemoteWorkerNodeSchedulingRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedGeneration", "expectedResourceVersion", "confirmedEnrollmentId", "desiredState", "impactDigest"],
+  "properties": {
+    "expectedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "expectedResourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "confirmedEnrollmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "desiredState": { "enum": ["active", "drained"] },
+    "impactDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "all fields exactly match a current server-authoritative preview",
+    "the confirmed enrollment name, generation and resource version fence the operation"
+  ]
+}

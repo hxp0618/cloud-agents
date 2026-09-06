@@ -243,13 +243,13 @@ FROM cloud_agents.schema_migrations;`,
       `SET ROLE cloud_agents_migration_owner;
 SELECT count(*) FROM pg_catalog.pg_class relation
 JOIN pg_catalog.pg_namespace namespace_row ON namespace_row.oid = relation.relnamespace
-WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies','remote_worker_enrollments','remote_worker_enrollment_activity');`,
+WHERE namespace_row.nspname = 'cloud_agents' AND relation.relname IN ('workspaces','workspace_volumes','sandbox_sessions','runtime_profiles','runtime_profile_activity','foundation_sandbox_activity','network_policies','remote_worker_enrollments','remote_worker_enrollment_activity','remote_worker_node_activity');`,
       "foundation_migration",
       "foundation_fresh",
     )
       .split("\n")
       .at(-1),
-    "9",
+    "10",
   );
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -344,11 +344,12 @@ INSERT INTO cloud_agents.deployment_targets (
         "RemoteWorker Admin/bootstrap 403 separation and non-replayable no-store enrollment secret",
         "RemoteWorker CSR validation, 15-minute mTLS identity, verified rotation and old-certificate exact replay",
         "active RemoteWorker certificate revocation, ordinary-user Admin 403 and durable audit",
-        "actual outbound RemoteWorker process heartbeat over mTLS and process reconnect backoff check",
+        "actual outbound RemoteWorker process Drain over mTLS with durable restart state and receipt",
+        "generation/resource-version fencing, exact idempotency and receipt replay, deadline failure and Operation/Audit closure",
         "database-time RemoteWorker online, degraded and offline Admin projection without secret or certificate bytes",
       ],
       boundary:
-        "Disposable PostgreSQL, in-process Control Plane HTTPS/mTLS and one short-lived outbound RemoteWorker process; no customer-node command channel, external Controller or Docker Sandbox is started",
+        "Disposable PostgreSQL, in-process Control Plane HTTPS/mTLS and short-lived outbound RemoteWorker processes; Drain/Resume changes node scheduling state only, and no customer-node Sandbox workload or external Controller is started",
     }) + "\n",
   );
 } finally {

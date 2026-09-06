@@ -27,6 +27,7 @@ import {
   listAdminStoragePolicyAuditEvents,
   listAdminReleases,
   listAdminMaintenanceOperations,
+  listAdminRemoteWorkerOperations,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
   listAdminTargets,
@@ -778,6 +779,39 @@ describe("Admin Web boundary", () => {
       new AbortController().signal,
     );
     expect(tokens).toEqual([undefined, "next-page"]);
+  });
+
+  it("reads RemoteWorker operations through scoped Admin API pagination", async () => {
+    const calls: string[] = [];
+    const client = {
+      listAdminRemoteWorkerOperations: async (
+        _tenantId: string,
+        _projectId: string,
+        enrollmentId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        calls.push(`${enrollmentId}:${pageToken ?? "first"}`);
+        return {
+          value: {
+            apiVersion: "platform.cloud-agents.dev/v1alpha1" as const,
+            kind: "MaintenanceOperationPage" as const,
+            operations: [],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    await listAdminRemoteWorkerOperations(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      "enrollment-alpha",
+      new AbortController().signal,
+    );
+    expect(calls).toEqual(["enrollment-alpha:first", "enrollment-alpha:next-page"]);
   });
 
   it("pages the complete filtered Target snapshot without dropping or duplicating rows", () => {

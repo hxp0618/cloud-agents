@@ -3,9 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
 func TestHeartbeatLoopReconnectsWithBoundedBackoff(t *testing.T) {
@@ -35,14 +39,57 @@ func TestParseConfigBuildsCanonicalHeartbeat(t *testing.T) {
 	value, err := parseConfig([]string{
 		"--control-plane-url=https://control.example.test", "--tenant=tenant-alpha", "--project=project-alpha",
 		"--enrollment=enrollment-alpha", "--incarnation=incarnation-alpha", "--certificate=/tmp/node.pem",
-		"--private-key=/tmp/node-key.pem", "--server-ca=/tmp/ca.pem", "--kernel-version=6.12.1",
+		"--private-key=/tmp/node-key.pem", "--server-ca=/tmp/ca.pem", "--state-file=/tmp/node-state.json", "--kernel-version=6.12.1",
 		"--capabilities=docker,exec,files", "--capacity-cpu-millis=4000",
 		"--capacity-memory-bytes=8589934592", "--capacity-disk-bytes=42949672960", "--once",
 	})
-	if err != nil || !value.once || value.heartbeatRequest().ObservedState != "active" {
+	if err != nil || !value.once || value.heartbeatRequest(initialNodeState(value.incarnationID)).ObservedState != "active" {
 		t.Fatalf("config=%#v err=%v", value, err)
 	}
 	if _, err := parseConfig([]string{"--control-plane-url=https://control.example.test"}); err == nil {
 		t.Fatal("accepted incomplete configuration")
+	}
+}
+
+func TestRemoteWorkerCommandStateSurvivesRestartAndDeduplicates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node", "state.json")
+	state, err := loadNodeState(path, "incarnation-alpha")
+	if err != nil || state.ObservedGeneration != 1 || state.ObservedState != "active" {
+		t.Fatalf("initial state=%#v err=%v", state, err)
+	}
+	now := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	command := &platform.RemoteWorkerCommand{CommandID: "command-alpha", Generation: 2, DesiredState: "drained", Deadline: now.Add(30 * time.Second).Format(time.RFC3339Nano)}
+	if err := reconcileHeartbeat(path, &state, platform.RemoteWorkerHeartbeat{IncarnationID: "incarnation-alpha", Command: command}, now); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := loadNodeState(path, "incarnation-alpha")
+	if err != nil || restarted.ObservedGeneration != 2 || restarted.ObservedState != "drained" || restarted.CommandReceipt == nil || restarted.CommandReceipt.Result != "succeeded" {
+		t.Fatalf("restarted state=%#v err=%v", restarted, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("state mode=%v", info.Mode().Perm())
+	}
+	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: "incarnation-alpha", Command: command}, now); err != nil || restarted.ObservedGeneration != 2 || restarted.CommandReceipt == nil || restarted.CommandReceipt.Result != "succeeded" {
+		t.Fatalf("duplicate state=%#v err=%v", restarted, err)
+	}
+	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: "incarnation-alpha"}, now); err != nil || restarted.CommandReceipt != nil {
+		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
+	}
+}
+
+func TestRemoteWorkerRejectsExpiredCommandWithoutAdvancingGeneration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	state := initialNodeState("incarnation-alpha")
+	now := time.Date(2026, 9, 6, 10, 0, 31, 0, time.UTC)
+	command := &platform.RemoteWorkerCommand{CommandID: "command-alpha", Generation: 2, DesiredState: "drained", Deadline: now.Add(-time.Second).Format(time.RFC3339Nano)}
+	if err := reconcileHeartbeat(path, &state, platform.RemoteWorkerHeartbeat{IncarnationID: "incarnation-alpha", Command: command}, now); err != nil {
+		t.Fatal(err)
+	}
+	if state.ObservedGeneration != 1 || state.ObservedState != "active" || state.CommandReceipt == nil || state.CommandReceipt.Result != "failed" || state.CommandReceipt.StableErrorCode != "remote-worker-command-expired" {
+		t.Fatalf("expired state=%#v", state)
 	}
 }

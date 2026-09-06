@@ -534,16 +534,29 @@ type RemoteWorkerCapacity struct {
 	MemoryBytes int64 `json:"memoryBytes"`
 	DiskBytes   int64 `json:"diskBytes"`
 }
+type RemoteWorkerCommandReceipt struct {
+	CommandID       string `json:"commandId"`
+	Generation      int64  `json:"generation"`
+	Result          string `json:"result"`
+	StableErrorCode string `json:"stableErrorCode,omitempty"`
+}
+type RemoteWorkerCommand struct {
+	CommandID    string `json:"commandId"`
+	Generation   int64  `json:"generation"`
+	DesiredState string `json:"desiredState"`
+	Deadline     string `json:"deadline"`
+}
 type RemoteWorkerHeartbeatRequest struct {
-	IncarnationID      string               `json:"incarnationId"`
-	ObservedGeneration int64                `json:"observedGeneration"`
-	ObservedState      string               `json:"observedState"`
-	WorkerVersion      string               `json:"workerVersion"`
-	OS                 string               `json:"os"`
-	Architecture       string               `json:"architecture"`
-	KernelVersion      string               `json:"kernelVersion"`
-	Capabilities       []string             `json:"capabilities"`
-	Capacity           RemoteWorkerCapacity `json:"capacity"`
+	IncarnationID      string                      `json:"incarnationId"`
+	ObservedGeneration int64                       `json:"observedGeneration"`
+	ObservedState      string                      `json:"observedState"`
+	WorkerVersion      string                      `json:"workerVersion"`
+	OS                 string                      `json:"os"`
+	Architecture       string                      `json:"architecture"`
+	KernelVersion      string                      `json:"kernelVersion"`
+	Capabilities       []string                    `json:"capabilities"`
+	Capacity           RemoteWorkerCapacity        `json:"capacity"`
+	CommandReceipt     *RemoteWorkerCommandReceipt `json:"commandReceipt,omitempty"`
 }
 type RemoteWorkerNodeStatus struct {
 	ResourceVersion    string               `json:"resourceVersion"`
@@ -563,21 +576,46 @@ type RemoteWorkerNodeStatus struct {
 	HeartbeatExpiresAt string               `json:"heartbeatExpiresAt"`
 }
 type RemoteWorkerHeartbeat struct {
-	APIVersion                string            `json:"apiVersion"`
-	Kind                      string            `json:"kind"`
-	ProjectRef                common.ProjectRef `json:"projectRef"`
-	EnrollmentID              string            `json:"enrollmentId"`
-	WorkerID                  string            `json:"workerId"`
-	IncarnationID             string            `json:"incarnationId"`
-	Generation                int64             `json:"generation"`
-	ObservedGeneration        int64             `json:"observedGeneration"`
-	DesiredState              string            `json:"desiredState"`
-	ObservedState             string            `json:"observedState"`
-	HealthState               string            `json:"healthState"`
-	AcceptedAt                string            `json:"acceptedAt"`
-	ExpiresAt                 string            `json:"expiresAt"`
-	NextHeartbeatAfterSeconds int64             `json:"nextHeartbeatAfterSeconds"`
-	ReconcileRequired         bool              `json:"reconcileRequired"`
+	APIVersion                string               `json:"apiVersion"`
+	Kind                      string               `json:"kind"`
+	ProjectRef                common.ProjectRef    `json:"projectRef"`
+	EnrollmentID              string               `json:"enrollmentId"`
+	WorkerID                  string               `json:"workerId"`
+	IncarnationID             string               `json:"incarnationId"`
+	Generation                int64                `json:"generation"`
+	ObservedGeneration        int64                `json:"observedGeneration"`
+	DesiredState              string               `json:"desiredState"`
+	ObservedState             string               `json:"observedState"`
+	HealthState               string               `json:"healthState"`
+	AcceptedAt                string               `json:"acceptedAt"`
+	ExpiresAt                 string               `json:"expiresAt"`
+	NextHeartbeatAfterSeconds int64                `json:"nextHeartbeatAfterSeconds"`
+	ReconcileRequired         bool                 `json:"reconcileRequired"`
+	Command                   *RemoteWorkerCommand `json:"command,omitempty"`
+}
+type RemoteWorkerNodeSchedulingRequest struct {
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ConfirmedEnrollmentID   string `json:"confirmedEnrollmentId"`
+	DesiredState            string `json:"desiredState"`
+	ImpactDigest            string `json:"impactDigest"`
+}
+type RemoteWorkerNodeSchedulingPreviewSpec struct {
+	ProjectRef              common.ProjectRef `json:"projectRef"`
+	WorkerID                string            `json:"workerId"`
+	HealthState             string            `json:"healthState"`
+	CurrentDesiredState     string            `json:"currentDesiredState"`
+	CurrentObservedState    string            `json:"currentObservedState"`
+	DesiredState            string            `json:"desiredState"`
+	ExpectedGeneration      int64             `json:"expectedGeneration"`
+	ExpectedResourceVersion string            `json:"expectedResourceVersion"`
+	ImpactDigest            string            `json:"impactDigest"`
+	ImpactSummary           string            `json:"impactSummary"`
+	CommandDeadlineSeconds  int64             `json:"commandDeadlineSeconds"`
+}
+type RemoteWorkerNodeSchedulingPreview struct {
+	ResourceBase
+	Spec RemoteWorkerNodeSchedulingPreviewSpec `json:"spec"`
 }
 type RemoteWorkerEnrollmentSpec struct {
 	ProjectRef           common.ProjectRef       `json:"projectRef"`
@@ -1109,7 +1147,7 @@ func DecodeAdminDeniedWriteEventJSON(data []byte) (AdminDeniedWriteEvent, error)
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "")
 	}
 	switch value.Action {
-	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget":
+	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
 	default:
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "/action")
 	}
@@ -1270,6 +1308,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
 	case "RemoteWorkerEnrollment":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "workerId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "secretClaimedAt": common.ScalarResponseShape(), "enrolledAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "certificateExpiresAt": common.ScalarResponseShape(), "certificateState": common.ScalarResponseShape(), "certificateRevokedAt": common.ScalarResponseShape(), "node": common.ObjectResponseShape(map[string]common.ResponseShape{"resourceVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "workerVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "kernelVersion": common.ScalarResponseShape(), "capabilities": common.ArrayResponseShape(common.ScalarResponseShape()), "capacity": common.ObjectResponseShape(map[string]common.ResponseShape{"cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "diskBytes": common.ScalarResponseShape()}), "firstConnectedAt": common.ScalarResponseShape(), "lastHeartbeatAt": common.ScalarResponseShape(), "heartbeatExpiresAt": common.ScalarResponseShape()})}
+	case "RemoteWorkerNodeSchedulingPreview":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "workerId": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "currentDesiredState": common.ScalarResponseShape(), "currentObservedState": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape(), "impactSummary": common.ScalarResponseShape(), "commandDeadlineSeconds": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "schedulingState": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	case "DeploymentTargetCleanupPreview":
@@ -1328,7 +1368,8 @@ var networkPolicyPageResponseShape = common.ObjectResponseShape(map[string]commo
 var remoteWorkerEnrollmentPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "remoteWorkerEnrollments": common.ArrayResponseShape(resourceResponseShape("RemoteWorkerEnrollment")), "nextPageToken": common.ScalarResponseShape()})
 var remoteWorkerEnrollmentSecretResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "enrollmentSecret": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var remoteWorkerCertificateResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateChainPem": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "issuedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
-var remoteWorkerHeartbeatResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "acceptedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "nextHeartbeatAfterSeconds": common.ScalarResponseShape(), "reconcileRequired": common.ScalarResponseShape()})
+var remoteWorkerHeartbeatResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "acceptedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "nextHeartbeatAfterSeconds": common.ScalarResponseShape(), "reconcileRequired": common.ScalarResponseShape(), "command": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()})})
+var remoteWorkerNodeSchedulingPreviewResponseShape = resourceResponseShape("RemoteWorkerNodeSchedulingPreview")
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"environmentProfiles": common.ArrayResponseShape(resourceResponseShape("EnvironmentProfile")), "nextPageToken": common.ScalarResponseShape(),
@@ -3238,9 +3279,31 @@ func validRemoteWorkerCapabilities(values []string) bool {
 func validRemoteWorkerPlatform(workerVersion, osValue, architecture, kernelVersion string) bool {
 	return workerVersionPattern.MatchString(workerVersion) && common.ValidateIdentifier(osValue, "/os") == nil && common.ValidateIdentifier(architecture, "/architecture") == nil && common.ValidateString(kernelVersion, 1, 128, "/kernelVersion") == nil && strings.IndexFunc(kernelVersion, func(value rune) bool { return value < 32 || value > 126 }) < 0
 }
+func DecodeRemoteWorkerCommandReceiptJSON(data []byte) (RemoteWorkerCommandReceipt, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"commandId", "generation", "result", "stableErrorCode"}, []string{"commandId", "generation", "result"})
+	if err != nil {
+		return RemoteWorkerCommandReceipt{}, err
+	}
+	var value RemoteWorkerCommandReceipt
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || value.Generation < 2 || value.Generation > 9007199254740991 || value.Result != "succeeded" && value.Result != "failed" || value.Result == "succeeded" && value.StableErrorCode != "" || value.Result == "failed" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil {
+		return RemoteWorkerCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_COMMAND_RECEIPT", "")
+	}
+	_ = fields
+	return value, nil
+}
+func DecodeRemoteWorkerCommandJSON(data []byte) (RemoteWorkerCommand, error) {
+	if _, err := common.DecodeStrictObject(data, []string{"commandId", "generation", "desiredState", "deadline"}, []string{"commandId", "generation", "desiredState", "deadline"}); err != nil {
+		return RemoteWorkerCommand{}, err
+	}
+	var value RemoteWorkerCommand
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || value.Generation < 2 || value.Generation > 9007199254740991 || value.DesiredState != "active" && value.DesiredState != "drained" || common.ValidateDateTime(value.Deadline, "/deadline") != nil {
+		return RemoteWorkerCommand{}, common.ContractError("INVALID_REMOTE_WORKER_COMMAND", "")
+	}
+	return value, nil
+}
 func DecodeRemoteWorkerHeartbeatRequestJSON(data []byte) (RemoteWorkerHeartbeatRequest, error) {
-	allowed := []string{"incarnationId", "observedGeneration", "observedState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity"}
-	fields, err := common.DecodeStrictObject(data, allowed, allowed)
+	allowed := []string{"incarnationId", "observedGeneration", "observedState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "commandReceipt"}
+	fields, err := common.DecodeStrictObject(data, allowed, allowed[:9])
 	if err != nil {
 		return RemoteWorkerHeartbeatRequest{}, err
 	}
@@ -3248,7 +3311,13 @@ func DecodeRemoteWorkerHeartbeatRequestJSON(data []byte) (RemoteWorkerHeartbeatR
 	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || value.ObservedGeneration < 1 || value.ObservedGeneration > 9007199254740991 || value.ObservedState != "active" && value.ObservedState != "drained" || !validRemoteWorkerPlatform(value.WorkerVersion, value.OS, value.Architecture, value.KernelVersion) || !validRemoteWorkerCapabilities(value.Capabilities) || !validRemoteWorkerCapacity(value.Capacity) {
 		return RemoteWorkerHeartbeatRequest{}, common.ContractError("INVALID_REMOTE_WORKER_HEARTBEAT", "")
 	}
-	_ = fields
+	if raw, ok := fields["commandReceipt"]; ok {
+		receipt, receiptErr := DecodeRemoteWorkerCommandReceiptJSON(raw)
+		if receiptErr != nil {
+			return RemoteWorkerHeartbeatRequest{}, receiptErr
+		}
+		value.CommandReceipt = &receipt
+	}
 	return value, nil
 }
 func EncodeRemoteWorkerHeartbeatRequestJSON(value RemoteWorkerHeartbeatRequest) ([]byte, error) {
@@ -3279,8 +3348,8 @@ func DecodeRemoteWorkerNodeStatusJSON(data []byte) (RemoteWorkerNodeStatus, erro
 	return value, nil
 }
 func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error) {
-	allowed := []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "acceptedAt", "expiresAt", "nextHeartbeatAfterSeconds", "reconcileRequired"}
-	fields, err := common.DecodeStrictObject(data, allowed, allowed)
+	allowed := []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "acceptedAt", "expiresAt", "nextHeartbeatAfterSeconds", "reconcileRequired", "command"}
+	fields, err := common.DecodeStrictObject(data, allowed, allowed[:15])
 	if err != nil {
 		return RemoteWorkerHeartbeat{}, err
 	}
@@ -3297,6 +3366,14 @@ func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error)
 	if acceptedErr != nil || expiresErr != nil || expires.Sub(accepted) != 30*time.Second {
 		return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_HEARTBEAT", "/expiresAt")
 	}
+	if raw, ok := fields["command"]; ok {
+		command, commandErr := DecodeRemoteWorkerCommandJSON(raw)
+		deadline, deadlineErr := time.Parse(time.RFC3339Nano, command.Deadline)
+		if commandErr != nil || deadlineErr != nil || command.Generation != value.Generation || command.DesiredState != value.DesiredState || !deadline.After(accepted) {
+			return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_COMMAND", "/command")
+		}
+		value.Command = &command
+	}
 	return value, nil
 }
 func DecodeRemoteWorkerHeartbeatResponseJSON(data []byte) (common.ResponseEnvelope[RemoteWorkerHeartbeat], error) {
@@ -3311,6 +3388,66 @@ func DecodeRemoteWorkerHeartbeatResponseJSON(data []byte) (common.ResponseEnvelo
 	return common.ResponseEnvelope[RemoteWorkerHeartbeat]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeRemoteWorkerHeartbeatResponseJSON(value common.ResponseEnvelope[RemoteWorkerHeartbeat]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeRemoteWorkerNodeSchedulingRequestJSON(data []byte) (RemoteWorkerNodeSchedulingRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedGeneration", "expectedResourceVersion", "confirmedEnrollmentId", "desiredState", "impactDigest"}, []string{"expectedGeneration", "expectedResourceVersion", "confirmedEnrollmentId", "desiredState", "impactDigest"})
+	if err != nil {
+		return RemoteWorkerNodeSchedulingRequest{}, err
+	}
+	var value RemoteWorkerNodeSchedulingRequest
+	if json.Unmarshal(data, &value) != nil || value.ExpectedGeneration < 1 || value.ExpectedGeneration > 9007199254740991 || common.ValidateResourceVersion(value.ExpectedResourceVersion, "/expectedResourceVersion") != nil || common.ValidateIdentifier(value.ConfirmedEnrollmentID, "/confirmedEnrollmentId") != nil || value.DesiredState != "active" && value.DesiredState != "drained" || !digestPattern.MatchString(value.ImpactDigest) {
+		return RemoteWorkerNodeSchedulingRequest{}, common.ContractError("INVALID_REMOTE_WORKER_SCHEDULING", "")
+	}
+	_ = fields
+	return value, nil
+}
+func EncodeRemoteWorkerNodeSchedulingRequestJSON(value RemoteWorkerNodeSchedulingRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeRemoteWorkerNodeSchedulingRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeRemoteWorkerNodeSchedulingPreviewJSON(data []byte) (RemoteWorkerNodeSchedulingPreview, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return RemoteWorkerNodeSchedulingPreview{}, err
+	}
+	base, err := checkResourceBase(fields, "RemoteWorkerNodeSchedulingPreview")
+	if err != nil {
+		return RemoteWorkerNodeSchedulingPreview{}, err
+	}
+	allowed := []string{"projectRef", "workerId", "healthState", "currentDesiredState", "currentObservedState", "desiredState", "expectedGeneration", "expectedResourceVersion", "impactDigest", "impactSummary", "commandDeadlineSeconds"}
+	specFields, err := strictSpec(fields["spec"], allowed, allowed)
+	if err != nil {
+		return RemoteWorkerNodeSchedulingPreview{}, err
+	}
+	var spec RemoteWorkerNodeSchedulingPreviewSpec
+	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.WorkerID, "/spec/workerId") != nil || spec.HealthState != "online" && spec.HealthState != "degraded" && spec.HealthState != "offline" || spec.CurrentDesiredState != "active" && spec.CurrentDesiredState != "drained" || spec.CurrentObservedState != "active" && spec.CurrentObservedState != "drained" || spec.DesiredState != "active" && spec.DesiredState != "drained" || spec.ExpectedGeneration < 1 || spec.ExpectedGeneration > 9007199254740991 || common.ValidateResourceVersion(spec.ExpectedResourceVersion, "/spec/expectedResourceVersion") != nil || !digestPattern.MatchString(spec.ImpactDigest) || common.ValidateString(spec.ImpactSummary, 1, 256, "/spec/impactSummary") != nil || strings.ContainsAny(spec.ImpactSummary, "\r\n\x00") || spec.CommandDeadlineSeconds != 30 {
+		return RemoteWorkerNodeSchedulingPreview{}, common.ContractError("INVALID_REMOTE_WORKER_SCHEDULING_PREVIEW", "")
+	}
+	spec.ProjectRef, err = common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return RemoteWorkerNodeSchedulingPreview{}, err
+	}
+	return RemoteWorkerNodeSchedulingPreview{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeRemoteWorkerNodeSchedulingPreviewResponseJSON(data []byte) (common.ResponseEnvelope[RemoteWorkerNodeSchedulingPreview], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, remoteWorkerNodeSchedulingPreviewResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[RemoteWorkerNodeSchedulingPreview]{}, err
+	}
+	value, err := DecodeRemoteWorkerNodeSchedulingPreviewJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[RemoteWorkerNodeSchedulingPreview]{}, err
+	}
+	return common.ResponseEnvelope[RemoteWorkerNodeSchedulingPreview]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeRemoteWorkerNodeSchedulingPreviewResponseJSON(value common.ResponseEnvelope[RemoteWorkerNodeSchedulingPreview]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 func DecodeRemoteWorkerEnrollmentRevokeRequestJSON(data []byte) (RemoteWorkerEnrollmentRevokeRequest, error) {
@@ -5270,7 +5407,7 @@ func DecodeMaintenanceOperationJSON(data []byte) (MaintenanceOperation, error) {
 	if value.APIVersion != APIVersion || value.Kind != "MaintenanceOperation" {
 		return MaintenanceOperation{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" || value.ResourceKind != "DeploymentTarget" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
+	if common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdempotencyKey(value.IdempotencyKey, "/idempotencyKey") != nil || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "remote-worker.drain" && value.Action != "remote-worker.resume" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "RemoteWorkerEnrollment" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || !maintenanceOperationTimesValid(value.RequestedAt, value.UpdatedAt) || value.State != "queued" && value.State != "running" && value.State != "succeeded" && value.State != "failed" && value.State != "cancelled" || common.ValidateIdentifier(value.CurrentStep, "/currentStep") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || common.ValidateString(value.ImpactSummary, 1, 256, "/impactSummary") != nil || strings.ContainsAny(value.ImpactSummary, "\r\n\x00") || value.State == "failed" && (value.StableErrorCode == "" || !value.Retryable) || value.State != "failed" && (value.StableErrorCode != "" || value.Retryable) {
 		return MaintenanceOperation{}, common.ContractError("INVALID_MAINTENANCE_OPERATION", "")
 	}
 	return value, nil
@@ -5342,7 +5479,7 @@ func DecodeAdminAuditEventJSON(data []byte) (AdminAuditEvent, error) {
 	if value.APIVersion != APIVersion || value.Kind != "AdminAuditEvent" {
 		return AdminAuditEvent{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
 	}
-	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" && value.Action != "network-policy.set" && value.Action != "remote-worker-enrollment.create" && value.Action != "remote-worker-enrollment.claim-secret" && value.Action != "remote-worker-enrollment.issue-certificate" && value.Action != "remote-worker-enrollment.revoke" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" && value.ResourceKind != "NetworkPolicy" && value.ResourceKind != "RemoteWorkerEnrollment" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
+	if common.ValidateIdentifier(value.EventID, "/eventId") != nil || !digestPattern.MatchString(value.Actor) || value.Action != "target.register" && value.Action != "target.probe" && value.Action != "target.drain" && value.Action != "target.resume" && value.Action != "target.cleanup" && value.Action != "target.upgrade" && value.Action != "target.rollback" && value.Action != "profile.create" && value.Action != "profile.publish" && value.Action != "profile.disable" && value.Action != "quota.set" && value.Action != "storage-policy.set" && value.Action != "network-policy.set" && value.Action != "remote-worker-enrollment.create" && value.Action != "remote-worker-enrollment.claim-secret" && value.Action != "remote-worker-enrollment.issue-certificate" && value.Action != "remote-worker-enrollment.revoke" && value.Action != "remote-worker.drain" && value.Action != "remote-worker.resume" || value.ResourceKind != "DeploymentTarget" && value.ResourceKind != "EnvironmentProfile" && value.ResourceKind != "ProjectLeaseQuota" && value.ResourceKind != "StoragePolicy" && value.ResourceKind != "NetworkPolicy" && value.ResourceKind != "RemoteWorkerEnrollment" || common.ValidateIdentifier(value.ResourceID, "/resourceId") != nil || value.ResourceGeneration < 1 || value.Result != "requested" && value.Result != "succeeded" && value.Result != "failed" || common.ValidateDateTime(value.OccurredAt, "/occurredAt") != nil || common.ValidateIdentifier(value.RequestID, "/requestId") != nil || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil || (value.Result == "failed") != (value.StableErrorCode != "") {
 		return AdminAuditEvent{}, common.ContractError("INVALID_ADMIN_AUDIT_EVENT", "")
 	}
 	return value, nil

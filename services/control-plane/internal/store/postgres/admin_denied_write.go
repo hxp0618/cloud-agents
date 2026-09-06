@@ -35,14 +35,15 @@ func validAdminDeniedWrite(event AdminDeniedWrite) bool {
 		return false
 	}
 	switch event.Action {
-	case "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile":
+	case "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile":
 		return event.ResourceID != "" && event.ProfileVersion > 0 && event.ProfileVersion <= 2147483647
 	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminSetStoragePolicy", "adminSetNetworkPolicy",
-		"adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget":
+		"adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget",
+		"adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant",
+		"adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
 		return event.ResourceID != "" && event.ProfileVersion == 0
-	case "adminRevokeSandboxAccessGrant":
-		return event.ResourceID != "" && event.ProfileVersion == 0
-	case "adminRegisterWorkerRelease", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminRegisterDeploymentTarget":
+	case "adminRegisterWorkerRelease", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminCreateRuntimeProfile",
+		"adminRegisterDeploymentTarget", "adminCreateRemoteWorkerEnrollment":
 		return event.ResourceID == "" && event.ProfileVersion == 0
 	}
 	return false

@@ -72,17 +72,18 @@ type remoteWorkerEnrollmentRow struct {
 }
 
 type remoteWorkerEnrollmentAuditRow struct {
-	TenantID                  string    `json:"tenant_id"`
-	ProjectID                 string    `json:"project_uid"`
-	EnrollmentID              string    `json:"enrollment_uid"`
-	EventID                   string    `json:"event_uid"`
-	OperationID               string    `json:"operation_uid"`
-	Actor                     string    `json:"subject_digest"`
-	Action                    string    `json:"action"`
-	EnrollmentResourceVersion int64     `json:"enrollment_resource_version"`
-	Result                    string    `json:"result"`
-	RequestID                 string    `json:"request_id"`
-	OccurredAt                time.Time `json:"occurred_at"`
+	TenantID           string    `json:"tenant_id"`
+	ProjectID          string    `json:"project_uid"`
+	EnrollmentID       string    `json:"enrollment_uid"`
+	EventID            string    `json:"event_uid"`
+	OperationID        string    `json:"operation_uid"`
+	Actor              string    `json:"subject_digest"`
+	Action             string    `json:"action"`
+	ResourceGeneration int64     `json:"resource_generation"`
+	Result             string    `json:"result"`
+	RequestID          string    `json:"request_id"`
+	StableErrorCode    string    `json:"stable_error_code"`
+	OccurredAt         time.Time `json:"occurred_at"`
 }
 
 const remoteWorkerEnrollmentColumns = `enrollment_uid, worker_uid, worker_name,
@@ -148,17 +149,30 @@ FROM (
 ) AS enrollment_row`
 	remoteWorkerEnrollmentAuditIdentitySQL = `SELECT 1 FROM cloud_agents.remote_worker_enrollments
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2`
-	remoteWorkerEnrollmentAuditCursorSQL = `SELECT 1 FROM cloud_agents.remote_worker_enrollment_activity
-WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2
-  AND event_uid = $3 AND occurred_at = $4`
+	remoteWorkerEnrollmentAuditCursorSQL = `SELECT 1 FROM (
+    SELECT event_uid, occurred_at FROM cloud_agents.remote_worker_enrollment_activity
+    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2
+    UNION ALL
+    SELECT event_uid, occurred_at FROM cloud_agents.remote_worker_node_activity
+    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2
+) AS event WHERE event_uid = $3 AND occurred_at = $4`
 	listRemoteWorkerEnrollmentAuditSQL = `SELECT COALESCE(jsonb_agg(to_jsonb(audit_row)
     ORDER BY audit_row.occurred_at DESC, audit_row.event_uid DESC), '[]'::jsonb)
 FROM (
-    SELECT tenant_id, project_uid, enrollment_uid, event_uid, operation_uid, subject_digest,
-        action, enrollment_resource_version, result, request_id, occurred_at
-    FROM cloud_agents.remote_worker_enrollment_activity
-    WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2
-      AND ($3::timestamptz IS NULL OR (occurred_at, event_uid) < ($3, $4))
+    SELECT * FROM (
+        SELECT tenant_id, project_uid, enrollment_uid, event_uid, operation_uid, subject_digest,
+            action, enrollment_resource_version AS resource_generation, result, request_id,
+            ''::text AS stable_error_code, occurred_at
+        FROM cloud_agents.remote_worker_enrollment_activity
+        WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2
+        UNION ALL
+        SELECT tenant_id, project_uid, enrollment_uid, event_uid, operation_uid, subject_digest,
+            action, node_generation AS resource_generation, result, request_id,
+            COALESCE(stable_error_code, '') AS stable_error_code, occurred_at
+        FROM cloud_agents.remote_worker_node_activity
+        WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2
+    ) AS all_events
+    WHERE $3::timestamptz IS NULL OR (occurred_at, event_uid) < ($3, $4)
     ORDER BY occurred_at DESC, event_uid DESC LIMIT $5
 ) AS audit_row`
 )
@@ -466,7 +480,7 @@ func decodeRemoteWorkerEnrollmentAuditRows(raw []byte, tenantID, projectID, enro
 	}
 	events := make([]internalremoteworker.AuditEvent, 0, len(rows))
 	for _, row := range rows {
-		event := internalremoteworker.AuditEvent{Scope: internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}, EventID: row.EventID, OperationID: row.OperationID, Actor: row.Actor, Action: row.Action, EnrollmentID: row.EnrollmentID, EnrollmentResourceVersion: row.EnrollmentResourceVersion, Result: row.Result, RequestID: row.RequestID, OccurredAt: row.OccurredAt}
+		event := internalremoteworker.AuditEvent{Scope: internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}, EventID: row.EventID, OperationID: row.OperationID, Actor: row.Actor, Action: row.Action, EnrollmentID: row.EnrollmentID, ResourceGeneration: row.ResourceGeneration, Result: row.Result, RequestID: row.RequestID, StableErrorCode: row.StableErrorCode, OccurredAt: row.OccurredAt}
 		if row.TenantID != tenantID || row.ProjectID != projectID || row.EnrollmentID != enrollmentID || event.Validate() != nil {
 			return RemoteWorkerEnrollmentAuditPage{}, ErrCoordinationResultDrift
 		}

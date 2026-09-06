@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -36,6 +38,7 @@ type config struct {
 	certificate     string
 	privateKey      string
 	serverCA        string
+	stateFile       string
 	kernelVersion   string
 	capabilities    []string
 	capacity        platform.RemoteWorkerCapacity
@@ -55,6 +58,7 @@ func parseConfig(args []string) (config, error) {
 	set.StringVar(&value.certificate, "certificate", "", "client certificate PEM file")
 	set.StringVar(&value.privateKey, "private-key", "", "client private key PEM file")
 	set.StringVar(&value.serverCA, "server-ca", "", "Control Plane CA certificate PEM file")
+	set.StringVar(&value.stateFile, "state-file", "", "durable RemoteWorker state file")
 	set.StringVar(&value.kernelVersion, "kernel-version", "", "host kernel version")
 	set.StringVar(&capabilities, "capabilities", "", "sorted comma-separated capabilities")
 	set.Int64Var(&value.capacity.CPUMillis, "capacity-cpu-millis", 0, "allocatable CPU in millicores")
@@ -65,11 +69,11 @@ func parseConfig(args []string) (config, error) {
 		return config{}, errInvalidRemoteWorkerConfig
 	}
 	value.capabilities = strings.Split(capabilities, ",")
-	request := value.heartbeatRequest()
+	request := value.heartbeatRequest(initialNodeState(value.incarnationID))
 	if common.ValidateIdentifier(value.tenantID, "/tenant") != nil || common.ValidateIdentifier(value.projectID, "/project") != nil || common.ValidateIdentifier(value.enrollmentID, "/enrollment") != nil ||
-		value.controlPlaneURL == "" || value.certificate == "" || value.privateKey == "" || value.serverCA == "" ||
+		value.controlPlaneURL == "" || value.certificate == "" || value.privateKey == "" || value.serverCA == "" || value.stateFile == "" ||
 		strings.TrimSpace(value.controlPlaneURL) != value.controlPlaneURL ||
-		strings.TrimSpace(value.certificate) != value.certificate || strings.TrimSpace(value.privateKey) != value.privateKey || strings.TrimSpace(value.serverCA) != value.serverCA {
+		strings.TrimSpace(value.certificate) != value.certificate || strings.TrimSpace(value.privateKey) != value.privateKey || strings.TrimSpace(value.serverCA) != value.serverCA || strings.TrimSpace(value.stateFile) != value.stateFile {
 		return config{}, errInvalidRemoteWorkerConfig
 	}
 	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil {
@@ -78,13 +82,138 @@ func parseConfig(args []string) (config, error) {
 	return value, nil
 }
 
-func (value config) heartbeatRequest() platform.RemoteWorkerHeartbeatRequest {
-	// ponytail: heartbeat-only node starts at generation 1; command delivery will persist and advance observations.
+func (value config) heartbeatRequest(state nodeState) platform.RemoteWorkerHeartbeatRequest {
 	return platform.RemoteWorkerHeartbeatRequest{
-		IncarnationID: value.incarnationID, ObservedGeneration: 1, ObservedState: "active",
+		IncarnationID: value.incarnationID, ObservedGeneration: state.ObservedGeneration, ObservedState: state.ObservedState,
 		WorkerVersion: version, OS: runtime.GOOS, Architecture: runtime.GOARCH,
-		KernelVersion: value.kernelVersion, Capabilities: value.capabilities, Capacity: value.capacity,
+		KernelVersion: value.kernelVersion, Capabilities: value.capabilities, Capacity: value.capacity, CommandReceipt: state.CommandReceipt,
 	}
+}
+
+type nodeState struct {
+	IncarnationID      string                               `json:"incarnationId"`
+	ObservedGeneration int64                                `json:"observedGeneration"`
+	ObservedState      string                               `json:"observedState"`
+	LastCommandID      string                               `json:"lastCommandId,omitempty"`
+	CommandReceipt     *platform.RemoteWorkerCommandReceipt `json:"commandReceipt,omitempty"`
+}
+
+func initialNodeState(incarnationID string) nodeState {
+	return nodeState{IncarnationID: incarnationID, ObservedGeneration: 1, ObservedState: "active"}
+}
+
+func validateNodeState(value nodeState) error {
+	if common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || value.ObservedGeneration < 1 ||
+		value.ObservedState != "active" && value.ObservedState != "drained" ||
+		value.LastCommandID != "" && common.ValidateIdentifier(value.LastCommandID, "/lastCommandId") != nil {
+		return errInvalidRemoteWorkerConfig
+	}
+	if value.CommandReceipt == nil {
+		return nil
+	}
+	request := platform.RemoteWorkerHeartbeatRequest{IncarnationID: value.IncarnationID, ObservedGeneration: value.ObservedGeneration,
+		ObservedState: value.ObservedState, WorkerVersion: "state", OS: "state", Architecture: "state", KernelVersion: "state",
+		Capabilities: []string{"exec"}, Capacity: platform.RemoteWorkerCapacity{CPUMillis: 100, MemoryBytes: 134217728, DiskBytes: 134217728}, CommandReceipt: value.CommandReceipt}
+	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil || value.LastCommandID != value.CommandReceipt.CommandID ||
+		value.CommandReceipt.Result == "succeeded" && value.CommandReceipt.Generation != value.ObservedGeneration ||
+		value.CommandReceipt.Result == "failed" && value.CommandReceipt.Generation != value.ObservedGeneration+1 {
+		return errInvalidRemoteWorkerConfig
+	}
+	return nil
+}
+
+func loadNodeState(path, incarnationID string) (nodeState, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return initialNodeState(incarnationID), nil
+	}
+	if err != nil || len(data) == 0 || len(data) > 64<<10 {
+		return nodeState{}, errInvalidRemoteWorkerConfig
+	}
+	var value nodeState
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&value) != nil || decoder.Decode(&struct{}{}) != io.EOF || value.IncarnationID != incarnationID || validateNodeState(value) != nil {
+		return nodeState{}, errInvalidRemoteWorkerConfig
+	}
+	return value, nil
+}
+
+func saveNodeState(path string, value nodeState) error {
+	if path == "" || validateNodeState(value) != nil {
+		return errInvalidRemoteWorkerConfig
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".remote-worker-state-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err == nil {
+		_, err = temporary.Write(append(data, '\n'))
+	}
+	if err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(temporaryPath, path)
+	}
+	if err != nil {
+		return err
+	}
+	dir, err := os.Open(directory)
+	if err != nil {
+		return err
+	}
+	err = dir.Sync()
+	if closeErr := dir.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.RemoteWorkerHeartbeat, now time.Time) error {
+	if state == nil || heartbeat.IncarnationID != state.IncarnationID {
+		return errInvalidRemoteWorkerConfig
+	}
+	changed := state.CommandReceipt != nil
+	state.CommandReceipt = nil
+	if heartbeat.Command != nil {
+		command := heartbeat.Command
+		deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
+		if err != nil {
+			return errInvalidRemoteWorkerConfig
+		}
+		result, stableErrorCode := "succeeded", ""
+		if !deadline.After(now) {
+			result, stableErrorCode = "failed", "remote-worker-command-expired"
+		} else if command.Generation != state.ObservedGeneration+1 {
+			if command.CommandID != state.LastCommandID || command.Generation != state.ObservedGeneration || command.DesiredState != state.ObservedState {
+				result, stableErrorCode = "failed", "remote-worker-command-generation-conflict"
+			}
+		}
+		if result == "succeeded" {
+			state.ObservedGeneration, state.ObservedState = command.Generation, command.DesiredState
+		}
+		state.LastCommandID = command.CommandID
+		state.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: command.CommandID, Generation: command.Generation, Result: result, StableErrorCode: stableErrorCode}
+		changed = true
+	}
+	if changed {
+		return saveNodeState(path, *state)
+	}
+	return nil
 }
 
 func newClient(value config) (*api.Client, error) {
@@ -154,16 +283,20 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	request := value.heartbeatRequest()
+	state, err := loadNodeState(value.stateFile, value.incarnationID)
+	if err != nil {
+		log.Fatal(err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	err = runHeartbeatLoop(ctx, value.once, func(callContext context.Context) error {
 		requestID := fmt.Sprintf("remote-worker-heartbeat-%d", time.Now().UnixNano())
-		_, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, request)
+		response, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, value.heartbeatRequest(state))
 		if callErr != nil {
 			log.Printf("remote worker heartbeat failed: %v", callErr)
+			return callErr
 		}
-		return callErr
+		return reconcileHeartbeat(value.stateFile, &state, response.Value, time.Now())
 	}, waitContext)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatal(err)

@@ -97,16 +97,17 @@ type Snapshot struct {
 }
 
 type AuditEvent struct {
-	Scope                     Scope
-	EventID                   string
-	OperationID               string
-	Actor                     string
-	Action                    string
-	EnrollmentID              string
-	EnrollmentResourceVersion int64
-	Result                    string
-	RequestID                 string
-	OccurredAt                time.Time
+	Scope              Scope
+	EventID            string
+	OperationID        string
+	Actor              string
+	Action             string
+	EnrollmentID       string
+	ResourceGeneration int64
+	Result             string
+	RequestID          string
+	StableErrorCode    string
+	OccurredAt         time.Time
 }
 
 func (input CreateInput) Validate(tenantID string) error {
@@ -269,9 +270,11 @@ func (snapshot Snapshot) Validate() error {
 func (event AuditEvent) Validate() error {
 	if invalidIdentifier(event.Scope.TenantID) || invalidIdentifier(event.Scope.ProjectID) || invalidIdentifier(event.EventID) ||
 		invalidIdentifier(event.OperationID) || !digest(event.Actor) ||
-		event.Action != "remote-worker-enrollment.create" && event.Action != "remote-worker-enrollment.claim-secret" && event.Action != "remote-worker-enrollment.issue-certificate" && event.Action != "remote-worker-enrollment.revoke" ||
-		invalidIdentifier(event.EnrollmentID) || event.EnrollmentResourceVersion < 1 || event.Result != "succeeded" ||
-		invalidIdentifier(event.RequestID) || event.OccurredAt.IsZero() {
+		event.Action != "remote-worker-enrollment.create" && event.Action != "remote-worker-enrollment.claim-secret" && event.Action != "remote-worker-enrollment.issue-certificate" && event.Action != "remote-worker-enrollment.revoke" && event.Action != "remote-worker.drain" && event.Action != "remote-worker.resume" ||
+		invalidIdentifier(event.EnrollmentID) || event.ResourceGeneration < 1 ||
+		event.Result != "requested" && event.Result != "succeeded" && event.Result != "failed" ||
+		invalidIdentifier(event.RequestID) || event.StableErrorCode != "" && invalidIdentifier(event.StableErrorCode) ||
+		(event.Result == "failed") != (event.StableErrorCode != "") || event.OccurredAt.IsZero() {
 		return ErrInvalidInput
 	}
 	return nil

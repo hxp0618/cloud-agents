@@ -192,25 +192,37 @@ describe("generated platform JSON models", () => {
           enrollmentId: "enrollment-alpha",
           workerId: "worker-alpha",
           incarnationId: "incarnation-alpha",
-          generation: 1,
+          generation: 2,
           observedGeneration: 1,
-          desiredState: "active",
+          desiredState: "drained",
           observedState: "active",
           healthState: "online",
           acceptedAt: "2026-09-06T12:00:00Z",
           expiresAt: "2026-09-06T12:00:30Z",
           nextHeartbeatAfterSeconds: 5,
-          reconcileRequired: false,
+          reconcileRequired: true,
+          command: {
+            commandId: "command-alpha",
+            generation: 2,
+            desiredState: "drained",
+            deadline: "2026-09-06T12:00:30Z",
+          },
         }),
       };
     });
-    await client.heartbeatRemoteWorker(
+    const response = await client.heartbeatRemoteWorker(
       "tenant-alpha",
       "project-alpha",
       "enrollment-alpha",
       "request-heartbeat",
       request,
     );
+    expect(response.value.command).toEqual({
+      commandId: "command-alpha",
+      generation: 2,
+      desiredState: "drained",
+      deadline: "2026-09-06T12:00:30Z",
+    });
     expect(seen).toEqual([
       {
         method: "POST",

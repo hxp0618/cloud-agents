@@ -277,6 +277,8 @@ const auditMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   "quota.set": "audit.quotaSet",
   "storage-policy.set": "audit.storagePolicySet",
   "network-policy.set": "audit.networkPolicySet",
+  "remote-worker.drain": "remoteWorkerEnrollment.drain",
+  "remote-worker.resume": "remoteWorkerEnrollment.resume",
 });
 
 const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
@@ -289,9 +291,13 @@ const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.
   "target.rollback": "operation.impact.rollback",
   "sandbox.stop": "operation.impact.sandboxStop",
   "sandbox.rebuild": "operation.impact.sandboxRebuild",
+  "remote-worker.drain": "operation.impact.remoteWorkerDrain",
+  "remote-worker.resume": "operation.impact.remoteWorkerResume",
 });
 
 const resourceMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
+  DeploymentTarget: "maintenance.deploymentTarget",
+  RemoteWorkerEnrollment: "maintenance.remoteWorker",
   container: "resource.container",
   deployment: "resource.deployment",
   pods: "resource.pods",
@@ -5617,7 +5623,7 @@ function MaintenanceOperationTable({
               </td>
               <td>
                 <strong>{operation.resourceId}</strong>
-                <small className="table-subline">{t("maintenance.deploymentTarget")}</small>
+                <small className="table-subline">{resourceLabel(operation.resourceKind, t)}</small>
               </td>
               <td>
                 <span className={`phase ${phaseTone(operation.state)}`}>

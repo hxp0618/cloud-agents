@@ -324,6 +324,7 @@ export function classifyMigrationStatement(
         "000053",
         "000055",
         "000059",
+        "000066",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -489,6 +490,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:issue_sandbox_access_grant_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000066",
+          [
+            "function:unquoted:cloud_agents/unquoted:reset_remote_worker_node_status_on_incarnation_change_v1()",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -582,7 +589,7 @@ export function classifyMigrationStatement(
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "REMOTE_WORKER_ENROLLMENT_ACTIVITY_ACTION_CHECK"].join("\0");
       const dropAdminDeniedWriteConstraint =
-        new Set(["000054", "000056", "000058", "000062"]).has(migrationId) &&
+        new Set(["000054", "000056", "000058", "000062", "000066"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:admin_denied_writes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ADMIN_DENIED_WRITES_ACTION_CHECK"].join("\0");
@@ -789,8 +796,7 @@ function simpleBeforeRowTrigger(tokens: ReadonlyArray<string>): number {
       event.slice(0, 3).join("\0") === ["BEFORE", "UPDATE", "OF"].join("\0") &&
       simpleUnquotedIdentifier(event[3])) ||
     (event.length === 6 &&
-      event.slice(0, 5).join("\0") ===
-        ["BEFORE", "INSERT", "OR", "UPDATE", "OF"].join("\0") &&
+      event.slice(0, 5).join("\0") === ["BEFORE", "INSERT", "OR", "UPDATE", "OF"].join("\0") &&
       simpleUnquotedIdentifier(event[5]));
   const tail = [
     "CLOUD_AGENTS",

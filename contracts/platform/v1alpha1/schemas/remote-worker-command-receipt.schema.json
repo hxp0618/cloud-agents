@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-command-receipt.schema.json",
+  "title": "RemoteWorkerCommandReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "generation", "result"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+    "result": { "enum": ["succeeded", "failed"] },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "failed" } }, "required": ["result"] },
+      "then": { "required": ["stableErrorCode"] },
+      "else": { "not": { "required": ["stableErrorCode"] } }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "a succeeded receipt accompanies the matching observed generation and desired state",
+    "an exact duplicate receipt is accepted without applying the command again"
+  ]
+}

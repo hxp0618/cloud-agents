@@ -481,6 +481,18 @@ export type RemoteWorkerCapacity = Readonly<{
   memoryBytes: number;
   diskBytes: number;
 }>;
+export type RemoteWorkerCommandReceipt = Readonly<{
+  commandId: string;
+  generation: number;
+  result: "succeeded" | "failed";
+  stableErrorCode?: string;
+}>;
+export type RemoteWorkerCommand = Readonly<{
+  commandId: string;
+  generation: number;
+  desiredState: "active" | "drained";
+  deadline: string;
+}>;
 export type RemoteWorkerHeartbeatRequest = Readonly<{
   incarnationId: string;
   observedGeneration: number;
@@ -491,6 +503,7 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   kernelVersion: string;
   capabilities: readonly ("docker" | "exec" | "files" | "preview" | "pty" | "ssh")[];
   capacity: RemoteWorkerCapacity;
+  commandReceipt?: RemoteWorkerCommandReceipt;
 }>;
 export type RemoteWorkerNodeStatus = Readonly<{
   resourceVersion: string;
@@ -525,6 +538,32 @@ export type RemoteWorkerHeartbeat = Readonly<{
   expiresAt: string;
   nextHeartbeatAfterSeconds: 5;
   reconcileRequired: boolean;
+  command?: RemoteWorkerCommand;
+}>;
+export type RemoteWorkerNodeSchedulingRequest = Readonly<{
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  confirmedEnrollmentId: string;
+  desiredState: "active" | "drained";
+  impactDigest: `sha256:${string}`;
+}>;
+export type RemoteWorkerNodeSchedulingPreview = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RemoteWorkerNodeSchedulingPreview";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    workerId: string;
+    healthState: "online" | "degraded" | "offline";
+    currentDesiredState: "active" | "drained";
+    currentObservedState: "active" | "drained";
+    desiredState: "active" | "drained";
+    expectedGeneration: number;
+    expectedResourceVersion: string;
+    impactDigest: `sha256:${string}`;
+    impactSummary: string;
+    commandDeadlineSeconds: 30;
+  }>;
 }>;
 export type RemoteWorkerEnrollment = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -993,8 +1032,10 @@ export type MaintenanceOperation = Readonly<{
     | "target.resume"
     | "target.cleanup"
     | "target.upgrade"
-    | "target.rollback";
-  resourceKind: "DeploymentTarget";
+    | "target.rollback"
+    | "remote-worker.drain"
+    | "remote-worker.resume";
+  resourceKind: "DeploymentTarget" | "RemoteWorkerEnrollment";
   resourceId: string;
   resourceGeneration: number;
   requestedBy: `sha256:${string}`;
@@ -1035,7 +1076,9 @@ export type AdminAuditEvent = Readonly<{
     | "remote-worker-enrollment.create"
     | "remote-worker-enrollment.claim-secret"
     | "remote-worker-enrollment.issue-certificate"
-    | "remote-worker-enrollment.revoke";
+    | "remote-worker-enrollment.revoke"
+    | "remote-worker.drain"
+    | "remote-worker.resume";
   resourceKind:
     | "DeploymentTarget"
     | "EnvironmentProfile"
@@ -1074,6 +1117,12 @@ const adminDeniedWriteActions = [
   "adminProbeDeploymentTarget",
   "adminTransitionDeploymentTargetScheduling",
   "adminCleanupDeploymentTarget",
+  "adminStopSandboxSession",
+  "adminRebuildSandboxSession",
+  "adminRevokeSandboxAccessGrant",
+  "adminCreateRemoteWorkerEnrollment",
+  "adminRevokeRemoteWorkerEnrollment",
+  "adminTransitionRemoteWorkerScheduling",
 ] as const;
 export type AdminDeniedWriteEvent = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -1773,6 +1822,14 @@ const remoteWorkerCertificateResponseShape: ResponseShape = {
     expiresAt: scalarResponseShape,
   },
 };
+const remoteWorkerCommandResponseShape: ResponseShape = {
+  fields: {
+    commandId: scalarResponseShape,
+    generation: scalarResponseShape,
+    desiredState: scalarResponseShape,
+    deadline: scalarResponseShape,
+  },
+};
 const remoteWorkerHeartbeatResponseShape: ResponseShape = {
   fields: {
     apiVersion: scalarResponseShape,
@@ -1790,8 +1847,22 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
     expiresAt: scalarResponseShape,
     nextHeartbeatAfterSeconds: scalarResponseShape,
     reconcileRequired: scalarResponseShape,
+    command: remoteWorkerCommandResponseShape,
   },
 };
+const remoteWorkerNodeSchedulingPreviewResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  workerId: scalarResponseShape,
+  healthState: scalarResponseShape,
+  currentDesiredState: scalarResponseShape,
+  currentObservedState: scalarResponseShape,
+  desiredState: scalarResponseShape,
+  expectedGeneration: scalarResponseShape,
+  expectedResourceVersion: scalarResponseShape,
+  impactDigest: scalarResponseShape,
+  impactSummary: scalarResponseShape,
+  commandDeadlineSeconds: scalarResponseShape,
+});
 const environmentProfileResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   profileId: scalarResponseShape,
@@ -5436,6 +5507,39 @@ function remoteWorkerPlatform(source: Record<string, unknown>, path: string) {
     capacity: remoteWorkerCapacity(source.capacity, `${path}/capacity`),
   };
 }
+export function decodeRemoteWorkerCommandReceipt(value: unknown): RemoteWorkerCommandReceipt {
+  const source = strictRecord(
+    value,
+    ["commandId", "generation", "result", "stableErrorCode"],
+    ["commandId", "generation", "result"],
+  );
+  const result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+    stableErrorCode =
+      source.stableErrorCode === undefined
+        ? undefined
+        : identifier(source.stableErrorCode, "/stableErrorCode");
+  if ((result === "failed") !== (stableErrorCode !== undefined))
+    error("INVALID_REMOTE_WORKER_COMMAND_RECEIPT", "/result");
+  const receipt = {
+    commandId: identifier(source.commandId, "/commandId"),
+    generation: integer(source.generation, 2, Number.MAX_SAFE_INTEGER, "/generation"),
+    result,
+  };
+  return Object.freeze(stableErrorCode === undefined ? receipt : { ...receipt, stableErrorCode });
+}
+export function decodeRemoteWorkerCommand(value: unknown): RemoteWorkerCommand {
+  const source = strictRecord(
+    value,
+    ["commandId", "generation", "desiredState", "deadline"],
+    ["commandId", "generation", "desiredState", "deadline"],
+  );
+  return Object.freeze({
+    commandId: identifier(source.commandId, "/commandId"),
+    generation: integer(source.generation, 2, Number.MAX_SAFE_INTEGER, "/generation"),
+    desiredState: enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState"),
+    deadline: dateTime(source.deadline, "/deadline"),
+  });
+}
 export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorkerHeartbeatRequest {
   const source = strictRecord(
     value,
@@ -5449,6 +5553,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "kernelVersion",
       "capabilities",
       "capacity",
+      "commandReceipt",
     ],
     [
       "incarnationId",
@@ -5462,7 +5567,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "capacity",
     ],
   );
-  return Object.freeze({
+  const request = {
     incarnationId: identifier(source.incarnationId, "/incarnationId"),
     observedGeneration: integer(
       source.observedGeneration,
@@ -5476,7 +5581,12 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "/observedState",
     ),
     ...remoteWorkerPlatform(source, ""),
-  });
+  };
+  return Object.freeze(
+    source.commandReceipt === undefined
+      ? request
+      : { ...request, commandReceipt: decodeRemoteWorkerCommandReceipt(source.commandReceipt) },
+  );
 }
 export function encodeRemoteWorkerHeartbeatRequest(value: RemoteWorkerHeartbeatRequest): string {
   return JSON.stringify(decodeRemoteWorkerHeartbeatRequest(value));
@@ -5572,6 +5682,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       "expiresAt",
       "nextHeartbeatAfterSeconds",
       "reconcileRequired",
+      "command",
     ],
     [
       "apiVersion",
@@ -5600,29 +5711,169 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     error("INVALID_REMOTE_WORKER_HEARTBEAT", "");
   const generation = integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
     acceptedAt = dateTime(source.acceptedAt, "/acceptedAt"),
-    expiresAt = dateTime(source.expiresAt, "/expiresAt");
+    expiresAt = dateTime(source.expiresAt, "/expiresAt"),
+    desiredState = enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState");
   if (Date.parse(expiresAt) - Date.parse(acceptedAt) !== 30000)
     error("INVALID_REMOTE_WORKER_HEARTBEAT", "/expiresAt");
-  return Object.freeze({
+  const heartbeat = {
     apiVersion: platformApiVersion,
-    kind: "RemoteWorkerHeartbeat",
+    kind: "RemoteWorkerHeartbeat" as const,
     projectRef: namespace(source.projectRef, "project", "/projectRef"),
     enrollmentId: identifier(source.enrollmentId, "/enrollmentId"),
     workerId: identifier(source.workerId, "/workerId"),
     incarnationId: identifier(source.incarnationId, "/incarnationId"),
     generation,
     observedGeneration: integer(source.observedGeneration, 1, generation, "/observedGeneration"),
-    desiredState: enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState"),
+    desiredState,
     observedState: enumValue(
       source.observedState,
       ["active", "drained"] as const,
       "/observedState",
     ),
-    healthState: "online",
+    healthState: "online" as const,
     acceptedAt,
     expiresAt,
-    nextHeartbeatAfterSeconds: 5,
+    nextHeartbeatAfterSeconds: 5 as const,
     reconcileRequired: boolean(source.reconcileRequired, "/reconcileRequired"),
+  };
+  if (source.command === undefined) return Object.freeze(heartbeat);
+  const command = decodeRemoteWorkerCommand(source.command);
+  if (
+    command.generation !== generation ||
+    command.desiredState !== desiredState ||
+    Date.parse(command.deadline) <= Date.parse(acceptedAt)
+  )
+    error("INVALID_REMOTE_WORKER_COMMAND", "/command");
+  return Object.freeze({ ...heartbeat, command });
+}
+export function decodeRemoteWorkerNodeSchedulingRequest(
+  value: unknown,
+): RemoteWorkerNodeSchedulingRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "confirmedEnrollmentId",
+      "desiredState",
+      "impactDigest",
+    ],
+    [
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "confirmedEnrollmentId",
+      "desiredState",
+      "impactDigest",
+    ],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    confirmedEnrollmentId: identifier(source.confirmedEnrollmentId, "/confirmedEnrollmentId"),
+    desiredState: enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState"),
+    impactDigest: digest(source.impactDigest, "/impactDigest") as `sha256:${string}`,
+  });
+}
+export function encodeRemoteWorkerNodeSchedulingRequest(
+  value: RemoteWorkerNodeSchedulingRequest,
+): string {
+  return JSON.stringify(decodeRemoteWorkerNodeSchedulingRequest(value));
+}
+export function decodeRemoteWorkerNodeSchedulingPreview(
+  value: unknown,
+): RemoteWorkerNodeSchedulingPreview {
+  const source = record(value),
+    root = base(source, "RemoteWorkerNodeSchedulingPreview");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "workerId",
+      "healthState",
+      "currentDesiredState",
+      "currentObservedState",
+      "desiredState",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "impactDigest",
+      "impactSummary",
+      "commandDeadlineSeconds",
+    ],
+    [
+      "projectRef",
+      "workerId",
+      "healthState",
+      "currentDesiredState",
+      "currentObservedState",
+      "desiredState",
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "impactDigest",
+      "impactSummary",
+      "commandDeadlineSeconds",
+    ],
+    "/spec",
+  );
+  const expectedResourceVersion = string(
+      spec.expectedResourceVersion,
+      "/spec/expectedResourceVersion",
+    ),
+    impactSummary = boundedString(spec.impactSummary, 1, 256, "/spec/impactSummary");
+  if (
+    !/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion) ||
+    expectedResourceVersion !== root.metadata.resourceVersion
+  )
+    error("INVALID_RESOURCE_VERSION", "/spec/expectedResourceVersion");
+  if (/[\u0000\r\n]/u.test(impactSummary) || spec.commandDeadlineSeconds !== 30)
+    error("INVALID_REMOTE_WORKER_SCHEDULING_PREVIEW", "/spec");
+  return Object.freeze({
+    ...root,
+    kind: "RemoteWorkerNodeSchedulingPreview" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      workerId: identifier(spec.workerId, "/spec/workerId"),
+      healthState: enumValue(
+        spec.healthState,
+        ["online", "degraded", "offline"] as const,
+        "/spec/healthState",
+      ),
+      currentDesiredState: enumValue(
+        spec.currentDesiredState,
+        ["active", "drained"] as const,
+        "/spec/currentDesiredState",
+      ),
+      currentObservedState: enumValue(
+        spec.currentObservedState,
+        ["active", "drained"] as const,
+        "/spec/currentObservedState",
+      ),
+      desiredState: enumValue(
+        spec.desiredState,
+        ["active", "drained"] as const,
+        "/spec/desiredState",
+      ),
+      expectedGeneration: integer(
+        spec.expectedGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/expectedGeneration",
+      ),
+      expectedResourceVersion,
+      impactDigest: digest(spec.impactDigest, "/spec/impactDigest") as `sha256:${string}`,
+      impactSummary,
+      commandDeadlineSeconds: 30 as const,
+    }),
   });
 }
 export function decodeRemoteWorkerEnrollmentRevokeRequest(
@@ -6764,10 +7015,16 @@ export function decodeMaintenanceOperation(value: unknown): MaintenanceOperation
         "target.cleanup",
         "target.upgrade",
         "target.rollback",
+        "remote-worker.drain",
+        "remote-worker.resume",
       ] as const,
       "/action",
     ),
-    resourceKind: enumValue(source.resourceKind, ["DeploymentTarget"] as const, "/resourceKind"),
+    resourceKind: enumValue(
+      source.resourceKind,
+      ["DeploymentTarget", "RemoteWorkerEnrollment"] as const,
+      "/resourceKind",
+    ),
     resourceId: identifier(source.resourceId, "/resourceId"),
     resourceGeneration: integer(
       source.resourceGeneration,
@@ -6879,6 +7136,8 @@ export function decodeAdminAuditEvent(value: unknown): AdminAuditEvent {
         "remote-worker-enrollment.claim-secret",
         "remote-worker-enrollment.issue-certificate",
         "remote-worker-enrollment.revoke",
+        "remote-worker.drain",
+        "remote-worker.resume",
       ] as const,
       "/action",
     ),
@@ -7905,6 +8164,15 @@ export function parseRemoteWorkerCertificate(
 }
 export function parseRemoteWorkerHeartbeat(text: string): ResponseEnvelope<RemoteWorkerHeartbeat> {
   return parseResponse(text, remoteWorkerHeartbeatResponseShape, decodeRemoteWorkerHeartbeat);
+}
+export function parseRemoteWorkerNodeSchedulingPreview(
+  text: string,
+): ResponseEnvelope<RemoteWorkerNodeSchedulingPreview> {
+  return parseResponse(
+    text,
+    remoteWorkerNodeSchedulingPreviewResponseShape,
+    decodeRemoteWorkerNodeSchedulingPreview,
+  );
 }
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
@@ -10057,6 +10325,72 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  async previewAdminRemoteWorkerScheduling(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerNodeSchedulingPreview>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:scheduling-preview`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminPreviewRemoteWorkerScheduling", response);
+    const result = parseRemoteWorkerNodeSchedulingPreview(response.body);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== enrollmentId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.metadata.resourceVersion !== result.value.spec.expectedResourceVersion
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async transitionAdminRemoteWorkerScheduling(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RemoteWorkerNodeSchedulingRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperation>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRemoteWorkerNodeSchedulingRequest(body);
+    if (checked.confirmedEnrollmentId !== enrollmentId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:scheduling`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRemoteWorkerNodeSchedulingRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminTransitionRemoteWorkerScheduling", response);
+    const result = parseMaintenanceOperation(response.body),
+      expectedAction =
+        checked.desiredState === "drained" ? "remote-worker.drain" : "remote-worker.resume";
+    if (
+      result.value.resourceKind !== "RemoteWorkerEnrollment" ||
+      result.value.resourceId !== enrollmentId ||
+      result.value.resourceGeneration !== checked.expectedGeneration + 1 ||
+      result.value.action !== expectedAction
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/resourceId");
+    return result;
+  }
   async revokeAdminRemoteWorkerEnrollment(
     tenantId: string,
     projectId: string,
@@ -10266,6 +10600,43 @@ export class Client {
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
+  }
+  async listAdminRemoteWorkerOperations(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MaintenanceOperationPage>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}/operations${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListRemoteWorkerOperations", response);
+    const result = parseMaintenanceOperationPage(response.body);
+    if (
+      result.value.operations.some(
+        (operation) =>
+          operation.resourceKind !== "RemoteWorkerEnrollment" ||
+          operation.resourceId !== enrollmentId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/operations");
     return result;
   }
   async listAdminNetworkPolicies(

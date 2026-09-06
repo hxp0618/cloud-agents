@@ -28,7 +28,7 @@ import (
 )
 
 // Real generated Admin/bootstrap/node clients, verified mTLS identity,
-// PostgreSQL RLS/functions and durable audit acceptance. No outbound command channel.
+// PostgreSQL RLS/functions, outbound commands and durable Operation/Audit acceptance.
 func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
 	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
@@ -57,7 +57,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	defer owner.Close()
 
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get audit.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list",
+		"projects.act projects.get audit.list operations.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list",
 		"projects.act projects.get",
 		"projects.act remote-worker-bootstrap.act",
 	)
@@ -69,10 +69,11 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewRemoteWorkerEnrollmentHTTPServer(verifier, store, authority)
+	remoteWorkerHandler, err := NewRemoteWorkerEnrollmentHTTPServer(verifier, store, authority)
 	if err != nil {
 		t.Fatal(err)
 	}
+	handler := AdminDeniedWriteHandler(verifier, store, remoteWorkerHandler)
 	clientCAs, err := authority.ClientCAPool()
 	if err != nil {
 		t.Fatal(err)
@@ -217,11 +218,127 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if _, err := reconnectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-reconnected", heartbeat); err != nil {
 		t.Fatalf("reconnected heartbeat: %v", err)
 	}
+	drainPreview, err := admin.PreviewAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-preview")
+	if err != nil || drainPreview.Value.Spec.DesiredState != "drained" || drainPreview.Value.Spec.ExpectedGeneration != 1 {
+		t.Fatalf("drain preview: value=%+v err=%v", drainPreview.Value, err)
+	}
+	drainRequest := platform.RemoteWorkerNodeSchedulingRequest{ExpectedGeneration: drainPreview.Value.Spec.ExpectedGeneration,
+		ExpectedResourceVersion: drainPreview.Value.Spec.ExpectedResourceVersion, ConfirmedEnrollmentID: create.EnrollmentID,
+		DesiredState: drainPreview.Value.Spec.DesiredState, ImpactDigest: drainPreview.Value.Spec.ImpactDigest}
+	if _, err := user.TransitionAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-user", "remote-worker-drain-user-key-1", drainRequest); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user drain status=%d err=%v", clientStatus(err), err)
+	}
+	drainOperation, err := admin.TransitionAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain", "remote-worker-drain-key-1", drainRequest)
+	if err != nil || drainOperation.Value.State != "queued" || drainOperation.Value.ResourceGeneration != 2 {
+		t.Fatalf("queue drain: value=%+v err=%v", drainOperation.Value, err)
+	}
+	delivered, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-delivery", heartbeat)
+	if err != nil || delivered.Value.Command == nil || delivered.Value.Command.Generation != 2 || delivered.Value.Command.DesiredState != "drained" {
+		t.Fatalf("deliver drain: value=%+v err=%v", delivered.Value, err)
+	}
 	if binary := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_BINARY"); binary != "" {
-		runRemoteWorkerHeartbeatProcess(t, ctx, binary, httpServer, create.EnrollmentID, rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotationPrivateKey)
+		stateFile := filepath.Join(t.TempDir(), "remote-worker-state.json")
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, httpServer, create.EnrollmentID, rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotationPrivateKey, stateFile)
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, httpServer, create.EnrollmentID, rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotationPrivateKey, stateFile)
+	} else {
+		heartbeat.ObservedGeneration, heartbeat.ObservedState = 2, "drained"
+		heartbeat.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: delivered.Value.Command.CommandID, Generation: 2, Result: "succeeded"}
+		if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-receipt", heartbeat); err != nil {
+			t.Fatalf("drain receipt: %v", err)
+		}
+	}
+	heartbeat.ObservedGeneration, heartbeat.ObservedState = 2, "drained"
+	heartbeat.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: delivered.Value.Command.CommandID, Generation: 2, Result: "succeeded"}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-receipt-replay", heartbeat); err != nil {
+		t.Fatalf("drain receipt replay: %v", err)
+	}
+	heartbeat.CommandReceipt = nil
+	operations, err := admin.ListAdminRemoteWorkerOperations(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-operations-drain", 50, "")
+	if err != nil || len(operations.Value.Operations) != 1 || operations.Value.Operations[0].State != "succeeded" {
+		t.Fatalf("drain operation: value=%+v err=%v", operations.Value, err)
+	}
+
+	resumePreview, err := admin.PreviewAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-resume-preview")
+	if err != nil || resumePreview.Value.Spec.DesiredState != "active" || resumePreview.Value.Spec.ExpectedGeneration != 2 {
+		t.Fatalf("resume preview: value=%+v err=%v", resumePreview.Value, err)
+	}
+	resumeRequest := platform.RemoteWorkerNodeSchedulingRequest{ExpectedGeneration: resumePreview.Value.Spec.ExpectedGeneration,
+		ExpectedResourceVersion: resumePreview.Value.Spec.ExpectedResourceVersion, ConfirmedEnrollmentID: create.EnrollmentID,
+		DesiredState: resumePreview.Value.Spec.DesiredState, ImpactDigest: resumePreview.Value.Spec.ImpactDigest}
+	resumeOperation, err := admin.TransitionAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-resume", "remote-worker-resume-key-1", resumeRequest)
+	if err != nil || resumeOperation.Value.State != "queued" || resumeOperation.Value.ResourceGeneration != 3 {
+		t.Fatalf("queue resume: value=%+v err=%v", resumeOperation.Value, err)
+	}
+	resumeReplay, err := admin.TransitionAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-resume-replay", "remote-worker-resume-key-1", resumeRequest)
+	if err != nil || resumeReplay.Value.OperationID != resumeOperation.Value.OperationID {
+		t.Fatalf("resume replay: value=%+v err=%v", resumeReplay.Value, err)
+	}
+	resumeDelivery, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-resume-delivery", heartbeat)
+	if err != nil || resumeDelivery.Value.Command == nil || resumeDelivery.Value.Command.Generation != 3 || resumeDelivery.Value.Command.DesiredState != "active" {
+		t.Fatalf("deliver resume: value=%+v err=%v", resumeDelivery.Value, err)
+	}
+	wrongReceipt := heartbeat
+	wrongReceipt.ObservedGeneration, wrongReceipt.ObservedState = 3, "active"
+	wrongReceipt.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: "command-wrong", Generation: 3, Result: "succeeded"}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-wrong-receipt", wrongReceipt); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("wrong receipt status=%d err=%v", clientStatus(err), err)
+	}
+	heartbeat.ObservedGeneration, heartbeat.ObservedState = 3, "active"
+	heartbeat.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: resumeDelivery.Value.Command.CommandID, Generation: 3, Result: "succeeded"}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-resume-receipt", heartbeat); err != nil {
+		t.Fatalf("resume receipt: %v", err)
+	}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-resume-receipt-replay", heartbeat); err != nil {
+		t.Fatalf("resume receipt replay: %v", err)
+	}
+	heartbeat.CommandReceipt = nil
+
+	expiryPreview, err := admin.PreviewAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-expiry-preview")
+	if err != nil || expiryPreview.Value.Spec.DesiredState != "drained" || expiryPreview.Value.Spec.ExpectedGeneration != 3 {
+		t.Fatalf("expiry preview: value=%+v err=%v", expiryPreview.Value, err)
+	}
+	expiryRequest := platform.RemoteWorkerNodeSchedulingRequest{ExpectedGeneration: expiryPreview.Value.Spec.ExpectedGeneration,
+		ExpectedResourceVersion: expiryPreview.Value.Spec.ExpectedResourceVersion, ConfirmedEnrollmentID: create.EnrollmentID,
+		DesiredState: expiryPreview.Value.Spec.DesiredState, ImpactDigest: expiryPreview.Value.Spec.ImpactDigest}
+	expiryOperation, err := admin.TransitionAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-expiry", "remote-worker-expiry-key-1", expiryRequest)
+	if err != nil || expiryOperation.Value.State != "queued" {
+		t.Fatalf("queue expiring command: value=%+v err=%v", expiryOperation.Value, err)
+	}
+	expiryDelivery, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-expiry-delivery", heartbeat)
+	if err != nil || expiryDelivery.Value.Command == nil || expiryDelivery.Value.Command.Generation != 4 {
+		t.Fatalf("deliver expiring command: value=%+v err=%v", expiryDelivery.Value, err)
+	}
+	if _, err := owner.Exec(ctx, `WITH observed AS (SELECT clock_timestamp() AS at)
+		UPDATE cloud_agents.remote_worker_node_activity AS activity
+		SET requested_at = observed.at - interval '31 seconds', command_deadline_at = observed.at - interval '1 second'
+		FROM observed WHERE activity.tenant_id='tenant' AND activity.project_uid='project'
+		AND activity.enrollment_uid=$1 AND activity.operation_uid=$2`, create.EnrollmentID, expiryOperation.Value.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_enrollments SET node_command_deadline_at=clock_timestamp()-interval '1 second'
+		WHERE tenant_id='tenant' AND project_uid='project' AND enrollment_uid=$1`, create.EnrollmentID); err != nil {
+		t.Fatal(err)
+	}
+	heartbeat.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: expiryDelivery.Value.Command.CommandID, Generation: 4, Result: "failed", StableErrorCode: "remote-worker-command-expired"}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-expire", heartbeat); err != nil {
+		t.Fatalf("expired command receipt: %v", err)
+	}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-expire-replay", heartbeat); err != nil {
+		t.Fatalf("expired command receipt replay: %v", err)
+	}
+	heartbeat.CommandReceipt = nil
+	operations, err = admin.ListAdminRemoteWorkerOperations(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-operations-final", 50, "")
+	var expiredOperation *platform.MaintenanceOperation
+	for index := range operations.Value.Operations {
+		if operations.Value.Operations[index].OperationID == expiryOperation.Value.OperationID {
+			expiredOperation = &operations.Value.Operations[index]
+		}
+	}
+	if err != nil || len(operations.Value.Operations) != 3 || expiredOperation == nil || expiredOperation.State != "failed" || expiredOperation.StableErrorCode != "remote-worker-command-expired" {
+		t.Fatalf("final operations: value=%+v err=%v", operations.Value, err)
 	}
 	conflictingHeartbeat := heartbeat
-	conflictingHeartbeat.ObservedGeneration = 2
+	conflictingHeartbeat.ObservedGeneration = 5
 	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-generation-conflict", conflictingHeartbeat); clientStatus(err) != http.StatusConflict {
 		t.Fatalf("heartbeat generation conflict status=%d err=%v", clientStatus(err), err)
 	}
@@ -281,8 +398,17 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	}
 	assertRemoteWorkerAdminRedaction(t, ctx, httpServer, tokens[0], create.EnrollmentID, secret)
 	audit, err = admin.ListAdminRemoteWorkerEnrollmentAuditEvents(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-audit-final", 50, "")
-	if err != nil || len(audit.Value.Events) != 5 {
+	if err != nil {
 		t.Fatalf("final enrollment audit: value=%+v err=%v", audit.Value, err)
+	}
+	var drainSucceeded, resumeSucceeded, expiryFailed bool
+	for _, event := range audit.Value.Events {
+		drainSucceeded = drainSucceeded || event.Action == "remote-worker.drain" && event.Result == "succeeded"
+		resumeSucceeded = resumeSucceeded || event.Action == "remote-worker.resume" && event.Result == "succeeded"
+		expiryFailed = expiryFailed || event.Action == "remote-worker.drain" && event.Result == "failed" && event.StableErrorCode == "remote-worker-command-expired"
+	}
+	if !drainSucceeded || !resumeSucceeded || !expiryFailed {
+		t.Fatalf("missing lifecycle audit closure: value=%+v", audit.Value.Events)
 	}
 	revokeCreate := platform.RemoteWorkerEnrollmentCreateRequest{EnrollmentID: "enrollment-revoke-1", WorkerID: "worker-revoke-1", WorkerName: "customer-revoke-1", TTLSeconds: 600}
 	if _, err := admin.CreateAdminRemoteWorkerEnrollment(ctx, "tenant", "project", "request-revoke-create", "remote-revoke-create-key-1", revokeCreate); err != nil {
@@ -310,7 +436,12 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if persistedDigest != expectedDigest || certificateChain != rotated.Value.CertificateChainPEM || strings.Contains(enrollmentJSON, secret) || strings.Contains(activityJSON, secret) {
 		t.Fatal("one-time enrollment secret persisted outside its digest")
 	}
-	t.Log("real Admin/bootstrap/node generated clients, verified mTLS heartbeat/reconnect and database-time online/degraded/offline status, short-lived certificate rotation/revocation, RLS-backed persistence and redacted Admin reads passed; no outbound command channel claimed")
+	var deniedScheduling int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FROM cloud_agents.admin_denied_writes
+		WHERE tenant_id='tenant' AND project_uid='project' AND action='adminTransitionRemoteWorkerScheduling'`).Scan(&deniedScheduling); err != nil || deniedScheduling != 1 {
+		t.Fatalf("denied scheduling audit count=%d err=%v", deniedScheduling, err)
+	}
+	t.Log("real Admin/bootstrap/node generated clients, verified mTLS heartbeat/reconnect, generation-fenced Drain/Resume delivery, durable node restart state, exact receipt replay, deadline failure, 403 audit, Operation/Audit closure, database-time health, certificate rotation/revocation, RLS and redacted Admin reads")
 }
 
 func remoteWorkerCertificateRequest(t *testing.T, enrollmentID string) (string, []byte) {
@@ -346,7 +477,7 @@ func remoteWorkerMTLSHTTPClient(t *testing.T, server *httptest.Server, certifica
 	return &http.Client{Transport: clone}
 }
 
-func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte) {
+func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte, stateFile string) {
 	t.Helper()
 	directory := t.TempDir()
 	certificateFile := filepath.Join(directory, "node.pem")
@@ -360,6 +491,7 @@ func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary s
 		"--control-plane-url="+server.URL, "--tenant=tenant", "--project=project",
 		"--enrollment="+enrollmentID, "--incarnation="+incarnationID,
 		"--certificate="+certificateFile, "--private-key="+privateKeyFile, "--server-ca="+serverCAFile,
+		"--state-file="+stateFile,
 		"--kernel-version=6.12.1", "--capabilities=docker,exec,files",
 		"--capacity-cpu-millis=4000", "--capacity-memory-bytes=8589934592",
 		"--capacity-disk-bytes=42949672960", "--once",

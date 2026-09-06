@@ -766,6 +766,68 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:scheduling-preview": {
+      "get": {
+        "operationId": "adminPreviewRemoteWorkerScheduling",
+        "x-cloud-agents-required-scope": "remote-worker-enrollments.get",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current server-authoritative RemoteWorker Drain or Resume impact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/remote-worker-node-scheduling-preview.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:scheduling": {
+      "post": {
+        "operationId": "adminTransitionRemoteWorkerScheduling",
+        "x-cloud-agents-required-scope": "remote-worker-enrollments.act",
+        "x-cloud-agents-coordination": "durable-operation",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-node-scheduling-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/MaintenanceOperation" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:revoke": {
       "post": {
         "operationId": "adminRevokeRemoteWorkerEnrollment",
@@ -818,6 +880,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}/operations": {
+      "get": {
+        "operationId": "adminListRemoteWorkerOperations",
+        "x-cloud-agents-required-scope": "operations.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "RemoteWorker maintenance operations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/maintenance-operation-page.schema.json"
                 }
               }
             }

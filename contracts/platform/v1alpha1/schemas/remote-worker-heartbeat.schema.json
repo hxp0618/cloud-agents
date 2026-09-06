@@ -36,11 +36,12 @@
     "acceptedAt": { "type": "string", "format": "date-time" },
     "expiresAt": { "type": "string", "format": "date-time" },
     "nextHeartbeatAfterSeconds": { "const": 5 },
-    "reconcileRequired": { "type": "boolean" }
+    "reconcileRequired": { "type": "boolean" },
+    "command": { "$ref": "./remote-worker-command.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "acceptedAt is the database mutation time and expiresAt is exactly 30 seconds later",
     "reconcileRequired is true when observed generation or state differs from the server-owned desired values",
-    "this response does not yet carry lifecycle commands; command delivery is a separate generation-fenced contract"
+    "command is present only for the current unexpired server-owned generation"
   ]
 }
