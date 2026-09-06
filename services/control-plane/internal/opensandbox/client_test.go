@@ -392,6 +392,45 @@ func TestExecUsesExactReceiptAndBoundsOutput(t *testing.T) {
 	}
 }
 
+func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
+	id := identity()
+	unsafeTarget := false
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/3000":
+			if request.URL.Query().Get("use_server_proxy") != "true" {
+				t.Error("Preview endpoint did not require the candidate server proxy")
+			}
+			endpoint := server.URL + "/v1/sandboxes/physical-1/proxy/3000"
+			if unsafeTarget {
+				endpoint = "https://example.com/proxy/3000"
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": endpoint, "headers": map[string]string{"X-Route": "owned"}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	target, headers, err := client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 3000)
+	if err != nil || target.String() != server.URL+"/v1/sandboxes/physical-1/proxy/3000" ||
+		headers.Get("X-Route") != "owned" || headers.Get("OPEN-SANDBOX-API-KEY") != "private-key" {
+		t.Fatalf("target=%v headers=%v err=%v", target, headers, err)
+	}
+	unsafeTarget = true
+	if _, _, err := client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 3000); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("unsafe target error = %v", err)
+	}
+	if _, _, err := client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 44772); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("internal port error = %v", err)
+	}
+}
+
 func TestFilesStayInsideWorkspaceAndPreserveVersions(t *testing.T) {
 	id := identity()
 	modified := time.Date(2026, 9, 6, 1, 2, 3, 4, time.UTC)

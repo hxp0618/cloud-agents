@@ -164,19 +164,19 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
     "-test.v",
   );
   assert.ok(upgradeOutput.includes("--- PASS: TestFoundationProductUpgradePostgres"));
-  const fresh = migrate("000059", "foundation_fresh");
+  const fresh = migrate("000060", "foundation_fresh");
   assert.deepEqual(
     { applied: fresh.applied, no_op: fresh.no_op, schema_head: fresh.schema_head },
-    { applied: 59, no_op: false, schema_head: "000059" },
+    { applied: 60, no_op: false, schema_head: "000060" },
   );
-  const replay = migrate("000059", "foundation_fresh");
+  const replay = migrate("000060", "foundation_fresh");
   assert.deepEqual(
     { applied: replay.applied, no_op: replay.no_op, schema_head: replay.schema_head },
-    { applied: 0, no_op: true, schema_head: "000059" },
+    { applied: 0, no_op: true, schema_head: "000060" },
   );
   const schemaBundleDigest = JSON.parse(
     readFileSync(
-      resolve(root, "services/control-plane/migrations/product/000059/manifest.json"),
+      resolve(root, "services/control-plane/migrations/product/000060/manifest.json"),
       "utf8",
     ),
   ).schema_bundle_digest;
@@ -190,11 +190,11 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "59|000001|000059|2",
+    "60|000001|000060|2",
   );
   assert.equal(
     psql(
-      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000059';",
+      "SET ROLE cloud_agents_migration_owner; SELECT bundle_digest FROM cloud_agents.schema_migrations WHERE migration_id='000060';",
       "foundation_migration",
       "foundation_upgrade",
     )
@@ -212,7 +212,7 @@ FROM cloud_agents.schema_migrations;`,
     )
       .split("\n")
       .at(-1),
-    "59|000001|000059|1",
+    "60|000001|000060|1",
   );
   assert.equal(
     psql(
@@ -294,15 +294,15 @@ INSERT INTO cloud_agents.deployment_targets (
     JSON.stringify({
       postgres: psql("SHOW server_version;"),
       architecture,
-      upgradeFrom: "000058",
-      upgradeTo: "000059",
+      upgradeFrom: "000059",
+      upgradeTo: "000060",
       fresh,
       replay,
       checks: [
-        "product-000059 fresh install",
-        "product-000058 to product-000059 exact upgrade",
-        "product-000059 no-op replay",
-        "59-row immutable ledger with two bundle digests",
+        "product-000060 fresh install",
+        "product-000059 to product-000060 exact upgrade",
+        "product-000060 no-op replay",
+        "60-row immutable ledger with two bundle digests",
         "foundation and runtime profile tables installed",
         "real Admin/User generated SDK and HTTP authorization",
         "RuntimeProfile create/publish/disable and public redaction",

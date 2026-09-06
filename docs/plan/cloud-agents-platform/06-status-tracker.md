@@ -20,7 +20,8 @@
 - BASE-M2 首个同步 Exec 垂直切片已接通：Product API 只接受 Sandbox generation、bounded command 和 timeout；Control Plane 经服务端 user scope、PostgreSQL project authority 和完整物理回执执行固定 `/workspace` 前台命令，生成 Go/TypeScript SDK 与 CLI 同步更新。真实 OpenSandbox 返回 Workspace 摘要、stderr 和 exit 7；Admin 403、旧 generation 409、超 1 MiB 413，响应不含 endpoint/runtime/credential。见 [同步 Exec 证据](evidence/base-m2-sandbox-exec-20260906.md)。这不是 PTY/Files/访问网关或 BASE-M2 阶段完成。
 - BASE-M2 PTY 垂直切片已接通：product-000058 持久化短期 Grant、PTY session 映射和签发/撤销 activity；独立固定路由 Access Gateway 逐请求及活跃连接重验 generation/expiry/revoke authority。真实 PTY 在 `/workspace` 执行，Gateway 重启与 cursor 重连无丢失，超过 1.1 MiB 输出时回放固定为 1 MiB；错误 token、跨 tenant、过期/撤销均拒绝，撤销关闭活跃连接。Admin API/Web 只显示 Grant 元数据并带 fencing/确认撤销，不返回 token、终端/文件内容或凭据。见 [PTY 与 Gateway 证据](evidence/base-m2-sandbox-pty-20260906.md)。本切片未做 Admin 浏览器视觉矩阵，不表示 BASE-M2 完成。
 - BASE-M2 Files 垂直切片已接通：product-000059 将同一短期 Grant 固定为 PTY+Files，Access Gateway 提供 `/workspace` 相对路径的列表、1 MiB 版本绑定分页读取、16 MiB 写入和普通文件删除；路径穿越、symlink 穿越、错误 token、跨 tenant、超限和删除后读取均真实拒绝。真实文件在 Gateway 重启后按 offset/version 续读成功。Admin API/Web 仅显示 7 次尝试、2 次失败及最近 `NOT_FOUND` 等诊断元数据，不返回路径、文件名或内容；最终测试资源为 0。见 [Files 与 Admin 诊断证据](evidence/base-m2-sandbox-files-20260906.md)。本切片未做 Admin 浏览器视觉矩阵，不表示 BASE-M2 完成。
-- 下一项：继续 BASE-M2，优先完成私有 Preview；随后完成短期 SSH 和网络策略实际执行及对应 Admin 管理。不得让 Admin 读取终端或文件内容。
+- BASE-M2 私有 Preview 垂直切片已接通：product-000060 持久化 Grant 下的显式活动端口，生成 SDK/CLI 只返回相对 Gateway 路径；Gateway 仅代理固定 OpenSandbox runtime/port，剥离 Grant、Cookie、候选 key 和用户伪造 forwarding 值。真实端口 3000 经 POST 方法/路径/query 转发，Gateway 重启后恢复；错误 token、跨 tenant、未注册/内部端口、端口/Grant 吊销和过期均拒绝，端口吊销关闭活跃流。Admin API/Web 只显示活动端口数字且普通用户为 403，最终测试资源为 0。见 [私有 Preview 与 Admin 端口证据](evidence/base-m2-sandbox-preview-20260906.md)。本轮未把 Foundation 尚未绑定的 Network Policy 显示成已执行。
+- 下一项：继续 BASE-M2，优先完成短期 SSH；随后完成网络策略实际执行及对应 Admin 管理。不得让 Admin 读取终端、文件或 Preview 内容。
 - 本次未改既有 Agent/Lease/Profile/User Web 行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -43,7 +44,7 @@
 | ---------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | BASE-M0    | VERIFIED    | 固定候选、no-Agent Docker PoC、产品执行接缝、幂等 adopt、失败补偿及对应 Admin 运维投影已有固定证据；不表示底座产品已就绪 |
 | BASE-M1    | VERIFIED    | 真实长期卷、跨进程恢复、失败补偿、手动与 TTL Stop/Rebuild、单写 fencing、Operation/Audit 和 Admin 保留/到期反馈已实测 |
-| BASE-M2    | IN PROGRESS | bounded Exec、PTY/Files Grant/Gateway 与 Admin 诊断已真实接通；仍缺 Preview/SSH、策略执行和对应 Admin 管理 |
+| BASE-M2    | IN PROGRESS | bounded Exec、PTY/Files/private Preview Grant/Gateway 与 Admin 诊断已真实接通；仍缺短期 SSH、策略执行和对应 Admin 管理 |
 | BASE-M3    | NOT STARTED | outbound RemoteWorker 注册/证书/重连/fencing，以及节点归属、健康、Drain/Resume 管理                         |
 | BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |
 | BASE-M5    | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收                                    |

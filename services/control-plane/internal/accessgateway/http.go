@@ -37,7 +37,8 @@ func New(store *postgres.AccessGatewayStore, access *opensandbox.CredentialDirec
 }
 
 type route struct {
-	tenant, project, grant, session, action string
+	tenant, project, grant, session, action, suffix string
+	port                                            int32
 }
 
 func parseRoute(path string) (route, bool) {
@@ -60,6 +61,28 @@ func parseRoute(path string) (route, bool) {
 			return value, true
 		}
 		return route{}, false
+	}
+	if parts[5] == "preview-ports" {
+		if len(parts) < 7 || parts[6] == "" {
+			return route{}, false
+		}
+		port, err := strconv.ParseInt(parts[6], 10, 32)
+		if err != nil || strconv.FormatInt(port, 10) != parts[6] || port < 1024 || port > 65535 || port == 44772 {
+			return route{}, false
+		}
+		value.port = int32(port)
+		if len(parts) == 7 {
+			value.action = "preview-port"
+			return value, true
+		}
+		if parts[7] != "proxy" {
+			return route{}, false
+		}
+		value.action = "preview-proxy"
+		if len(parts) > 8 {
+			value.suffix = "/" + strings.Join(parts[8:], "/")
+		}
+		return value, true
 	}
 	if parts[5] != "pty-sessions" {
 		return route{}, false
@@ -101,7 +124,10 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		value.action == "detail" && (request.Method == http.MethodGet || request.Method == http.MethodDelete) ||
 		value.action == "websocket" && request.Method == http.MethodGet ||
 		value.action == "files" && (request.Method == http.MethodGet || request.Method == http.MethodPut || request.Method == http.MethodDelete) ||
-		value.action == "file-content" && request.Method == http.MethodGet
+		value.action == "file-content" && request.Method == http.MethodGet ||
+		value.action == "preview-port" && (request.Method == http.MethodPut || request.Method == http.MethodDelete) ||
+		value.action == "preview-proxy" && (request.Method == http.MethodGet || request.Method == http.MethodPost ||
+			request.Method == http.MethodPut || request.Method == http.MethodPatch || request.Method == http.MethodDelete)
 	if !allowed {
 		writeProblem(writer, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 		return
@@ -134,6 +160,14 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		}
 	case "file-content":
 		server.readFile(writer, request, value, digest)
+	case "preview-port":
+		if request.Method == http.MethodPut {
+			server.registerPreviewPort(writer, request, value, digest)
+		} else {
+			server.revokePreviewPort(writer, request, value, digest)
+		}
+	case "preview-proxy":
+		server.proxyPreview(writer, request, value, digest)
 	}
 }
 
@@ -441,6 +475,113 @@ func (server *Server) deleteFile(writer http.ResponseWriter, request *http.Reque
 	writer.WriteHeader(http.StatusNoContent)
 }
 
+func previewProxyPath(grant postgres.SandboxAccessGrantAuthority, port int32) string {
+	return "/v1/tenants/" + grant.Access.Scope.TenantID + "/projects/" + grant.Access.Scope.ProjectID +
+		"/sandbox-access-grants/" + grant.GrantID + "/preview-ports/" + strconv.FormatInt(int64(port), 10) + "/proxy"
+}
+
+func (server *Server) registerPreviewPort(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	if query, ok := strictQuery(request); !ok || len(query) != 0 {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	if _, err := openapi.ValidateRegisterSandboxPreviewPortServerRequest(value.tenant, value.project, value.grant, request.Header.Get("X-Request-ID"), value.port); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	registered, err := server.store.RegisterPreviewPort(request.Context(), value.tenant, value.project, value.grant, value.port, tokenDigest)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	grant := registered.Grant
+	body, encodeErr := platform.EncodeSandboxPreviewPortResponseJSON(common.ResponseEnvelope[platform.SandboxPreviewPort]{Value: platform.SandboxPreviewPort{
+		APIVersion: platform.APIVersion, Kind: "SandboxPreviewPort",
+		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: grant.Access.Scope.ProjectID},
+		GrantID:    grant.GrantID, SandboxID: grant.Access.SandboxID, Generation: grant.Access.Generation,
+		Port: registered.Port, Status: "active", ProxyPath: previewProxyPath(grant, registered.Port),
+		RegisteredAt: registered.RegisteredAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
+	}})
+	writeGatewayJSON(writer, http.StatusOK, body, encodeErr)
+}
+
+func (server *Server) revokePreviewPort(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	if query, ok := strictQuery(request); !ok || len(query) != 0 {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	if _, err := openapi.ValidateRevokeSandboxPreviewPortServerRequest(value.tenant, value.project, value.grant, request.Header.Get("X-Request-ID"), value.port); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	if err := server.store.RevokePreviewPort(request.Context(), value.tenant, value.project, value.grant, value.port, tokenDigest); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) proxyPreview(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	registered, err := server.store.ResolvePreviewPort(request.Context(), value.tenant, value.project, value.grant, value.port, tokenDigest)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	client, err := server.client(registered.Grant)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	target, headers, err := client.PreviewHTTPProxyTarget(request.Context(), ptyInput(registered.Grant), value.port)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Director = func(upstream *http.Request) {
+		upstream.URL.Scheme, upstream.URL.Host = target.Scheme, target.Host
+		upstream.URL.Path, upstream.URL.RawPath = strings.TrimSuffix(target.Path, "/")+value.suffix, ""
+		upstream.URL.RawQuery = request.URL.RawQuery
+		upstream.Host = target.Host
+		for _, name := range []string{"Authorization", "Proxy-Authorization", "Cookie", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "OPEN-SANDBOX-API-KEY"} {
+			upstream.Header.Del(name)
+		}
+		for name, values := range headers {
+			upstream.Header.Del(name)
+			for _, headerValue := range values {
+				upstream.Header.Add(name, headerValue)
+			}
+		}
+	}
+	proxy.ModifyResponse = func(response *http.Response) error {
+		response.Header.Del("Set-Cookie")
+		response.Header.Set("Cache-Control", "private, no-store")
+		response.Header.Set("Referrer-Policy", "no-referrer")
+		return nil
+	}
+	proxy.ErrorHandler = func(response http.ResponseWriter, _ *http.Request, _ error) {
+		writeProblem(response, http.StatusBadGateway, "SANDBOX_ACCESS_UNAVAILABLE")
+	}
+	authorizedContext, cancel := context.WithCancel(request.Context())
+	defer cancel()
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-authorizedContext.Done():
+				return
+			case <-ticker.C:
+				if _, err := server.store.ResolvePreviewPort(authorizedContext, value.tenant, value.project, value.grant, value.port, tokenDigest); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	proxy.ServeHTTP(writer, request.WithContext(authorizedContext))
+}
+
 func writeGatewayJSON(writer http.ResponseWriter, status int, body []byte, err error) {
 	if err != nil {
 		writeProblem(writer, http.StatusInternalServerError, "INTERNAL_ERROR")
@@ -560,6 +701,8 @@ func gatewayError(err error) (int, string) {
 		return http.StatusForbidden, "ACCESS_GRANT_DENIED"
 	case errors.Is(err, coordination.ErrFoundationSandboxNotFound), errors.Is(err, opensandbox.ErrNotFound):
 		return http.StatusNotFound, "NOT_FOUND"
+	case errors.Is(err, postgres.ErrSandboxPreviewPortNotFound):
+		return http.StatusNotFound, "PREVIEW_PORT_NOT_FOUND"
 	case errors.Is(err, coordination.ErrFoundationSandboxConflict), errors.Is(err, opensandbox.ErrConflict), errors.Is(err, opensandbox.ErrRuntimeFailed):
 		return http.StatusConflict, "RESOURCE_CONFLICT"
 	case errors.Is(err, opensandbox.ErrFileLimit):

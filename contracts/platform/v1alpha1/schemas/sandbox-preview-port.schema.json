@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-preview-port.schema.json",
+  "title": "SandboxPreviewPort",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "port", "status", "proxyPath", "registeredAt"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxPreviewPort" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "port": { "type": "integer", "minimum": 1024, "maximum": 65535, "not": { "const": 44772 } },
+    "status": { "const": "active" },
+    "proxyPath": { "type": "string", "pattern": "^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$", "maxLength": 768 },
+    "registeredAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "proxyPath is a private Access Gateway route and contains no endpoint or credential",
+    "the Gateway resolves only this registered port on the exact authorized Sandbox generation",
+    "the internal execd port 44772 cannot be published"
+  ]
+}

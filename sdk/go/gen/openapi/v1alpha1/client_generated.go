@@ -182,6 +182,7 @@ type SandboxAccessGrantResult = common.ResponseEnvelope[platform.SandboxAccessGr
 type AdminSandboxAccessGrantResult = common.ResponseEnvelope[platform.AdminSandboxAccessGrant]
 type AdminSandboxAccessGrantPageResult = common.ResponseEnvelope[platform.AdminSandboxAccessGrantPage]
 type SandboxPTYSessionResult = common.ResponseEnvelope[platform.SandboxPTYSession]
+type SandboxPreviewPortResult = common.ResponseEnvelope[platform.SandboxPreviewPort]
 type SandboxFileEntryResult = common.ResponseEnvelope[platform.SandboxFileEntry]
 type SandboxFilePageResult = common.ResponseEnvelope[platform.SandboxFilePage]
 type SandboxFileReadPageResult = common.ResponseEnvelope[platform.SandboxFileReadPage]
@@ -1635,6 +1636,41 @@ func (client *Client) DeleteSandboxFile(ctx context.Context, tenantID, projectID
 	}
 	if response.Status != 204 {
 		return client.problemError("foundationDeleteSandboxFile", response)
+	}
+	return nil
+}
+func (client *Client) RegisterSandboxPreviewPort(ctx context.Context, tenantID, projectID, grantID, requestID string, port int32) (SandboxPreviewPortResult, error) {
+	input, err := ValidateRegisterSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID, port)
+	if err != nil {
+		return SandboxPreviewPortResult{}, err
+	}
+	path := "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/preview-ports/" + strconv.FormatInt(int64(port), 10)
+	response, err := client.roundTrip(ctx, Request{Method: "PUT", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SandboxPreviewPortResult{}, err
+	}
+	if response.Status != 200 {
+		return SandboxPreviewPortResult{}, client.problemError("foundationRegisterSandboxPreviewPort", response)
+	}
+	value, err := platform.DecodeSandboxPreviewPortResponseJSON(response.Body)
+	if err != nil {
+		return SandboxPreviewPortResult{}, &ClientError{Operation: "foundationRegisterSandboxPreviewPort", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.GrantID != grantID || value.Value.Port != input.Port || value.Value.ProxyPath != path+"/proxy" {
+		return SandboxPreviewPortResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/port")
+	}
+	return value, nil
+}
+func (client *Client) RevokeSandboxPreviewPort(ctx context.Context, tenantID, projectID, grantID, requestID string, port int32) error {
+	if _, err := ValidateRevokeSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID, port); err != nil {
+		return err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "DELETE", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/preview-ports/" + strconv.FormatInt(int64(port), 10), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return client.problemError("foundationRevokeSandboxPreviewPort", response)
 	}
 	return nil
 }
@@ -5237,6 +5273,33 @@ func ValidateWriteSandboxFileServerRequest(tenantID, projectID, grantID, request
 }
 func ValidateDeleteSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath string) (SandboxFileServerInput, error) {
 	return validateSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath, false)
+}
+
+type SandboxPreviewPortServerInput struct {
+	TenantID  string
+	ProjectID string
+	GrantID   string
+	RequestID string
+	Port      int32
+}
+
+func validateSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID string, port int32) (SandboxPreviewPortServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return SandboxPreviewPortServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(grantID, "/grantId"); err != nil {
+		return SandboxPreviewPortServerInput{}, err
+	}
+	if port < 1024 || port > 65535 || port == 44772 {
+		return SandboxPreviewPortServerInput{}, common.ContractError("INVALID_PREVIEW_PORT", "/previewPort")
+	}
+	return SandboxPreviewPortServerInput{TenantID: tenantID, ProjectID: projectID, GrantID: grantID, RequestID: requestID, Port: port}, nil
+}
+func ValidateRegisterSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID string, port int32) (SandboxPreviewPortServerInput, error) {
+	return validateSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID, port)
+}
+func ValidateRevokeSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID string, port int32) (SandboxPreviewPortServerInput, error) {
+	return validateSandboxPreviewPortServerRequest(tenantID, projectID, grantID, requestID, port)
 }
 
 type CreateAdminEnvironmentProfileServerInput struct {

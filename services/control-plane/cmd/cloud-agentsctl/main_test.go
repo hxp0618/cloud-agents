@@ -207,6 +207,27 @@ func TestRunWritesSandboxFileThroughAccessGateway(t *testing.T) {
 	}
 }
 
+func TestRunRegistersPrivateSandboxPreviewPort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPut || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/preview-ports/3000" ||
+			request.Header.Get("Authorization") != "Bearer cag1_"+strings.Repeat("x", 43) || request.Header.Get("X-Request-ID") != "request-alpha" {
+			t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.String(), request.Header)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"SandboxPreviewPort","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"grantId":"grant-alpha","sandboxId":"sandbox-alpha","generation":3,"port":3000,"status":"active","proxyPath":"/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/preview-ports/3000/proxy","registeredAt":"2026-09-06T00:02:00Z"}`))
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "cag1_" + strings.Repeat("x", 43), "--tenant", "tenant-alpha",
+		"--project", "project-alpha", "--grant", "grant-alpha", "--request-id", "request-alpha",
+		"preview", "register", "--port", "3000",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"proxyPath":"/v1/tenants/tenant-alpha/`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 	for _, test := range []struct {
 		args     []string
@@ -224,6 +245,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"sandbox", "grant", "help"}, expected: "-ttl-seconds int"},
 		{args: []string{"pty", "attach", "help"}, expected: "-takeover"},
 		{args: []string{"files", "read", "help"}, expected: "-file-version string"},
+		{args: []string{"preview", "register", "help"}, expected: "-port int"},
 	} {
 		var stdout bytes.Buffer
 		if err := run(test.args, &stdout); err != nil {

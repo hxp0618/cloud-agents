@@ -144,7 +144,7 @@ describe("generated platform JSON models", () => {
     ).toThrow("INVALID_SANDBOX_EXEC_RESULT");
   });
 
-  it("uses fixed Grant, PTY, and Files routes without exposing infrastructure authority", async () => {
+  it("uses fixed Grant, PTY, Files, and Preview routes without exposing infrastructure authority", async () => {
     const projectRef = { namespace: "cloud-agents", kind: "project", id: "project-alpha" } as const;
     const tenantRef = { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" } as const;
     const grant = {
@@ -194,7 +194,21 @@ describe("generated platform JSON models", () => {
         ptySessionCount: 1,
         fileAccessCount: 0,
         fileFailureCount: 0,
+        previewPorts: [],
       },
+    } as const;
+    const preview = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "SandboxPreviewPort",
+      projectRef,
+      grantId: "grant-alpha",
+      sandboxId: "sandbox-alpha",
+      generation: 3,
+      port: 3000,
+      status: "active",
+      proxyPath:
+        "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/preview-ports/3000/proxy",
+      registeredAt: "2026-09-06T00:02:00Z",
     } as const;
     const fileVersion = `sfv1_${"x".repeat(43)}`;
     const fileEntry = {
@@ -208,6 +222,9 @@ describe("generated platform JSON models", () => {
     const client = new Client(async (request) => {
       seen.push(request);
       if (request.method === "DELETE") return { status: 204, headers: {}, body: "" };
+      if (request.path.endsWith("/preview-ports/3000")) {
+        return { status: 200, headers: {}, body: JSON.stringify(preview) };
+      }
       if (request.path.startsWith("/v1/admin/") && request.method === "GET") {
         return {
           status: 200,
@@ -325,6 +342,20 @@ describe("generated platform JSON models", () => {
       "request-alpha",
       "notes.txt",
     );
+    await client.registerSandboxPreviewPort(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "request-alpha",
+      3000,
+    );
+    await client.revokeSandboxPreviewPort(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "request-alpha",
+      3000,
+    );
     await client.listAdminSandboxAccessGrants(
       "tenant-alpha",
       "project-alpha",
@@ -349,9 +380,20 @@ describe("generated platform JSON models", () => {
       "GET",
       "PUT",
       "DELETE",
+      "PUT",
+      "DELETE",
       "GET",
       "POST",
     ]);
+    await expect(
+      client.registerSandboxPreviewPort(
+        "tenant-alpha",
+        "project-alpha",
+        "grant-alpha",
+        "request-alpha",
+        44772,
+      ),
+    ).rejects.toThrow("INVALID_PREVIEW_PORT");
     await expect(
       client.readSandboxFile(
         "tenant-alpha",

@@ -13,7 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrSandboxAccessGrantDenied = errors.New("sandbox access grant denied")
+var (
+	ErrSandboxAccessGrantDenied   = errors.New("sandbox access grant denied")
+	ErrSandboxPreviewPortNotFound = errors.New("sandbox Preview port was not found")
+)
 
 type SandboxAccessGrantIssueInput struct {
 	Scope                           internalcoordination.FoundationScope
@@ -38,6 +41,7 @@ type SandboxAccessGrantSnapshot struct {
 	Generation, ResourceVersion            int64
 	PTYSessionCount, FileAccessCount       int64
 	FileFailureCount                       int64
+	PreviewPorts                           []int32
 	LastFileAction, LastFileStatus         *string
 	LastFileErrorCode                      *string
 	LastFileAccessAt                       *time.Time
@@ -62,6 +66,7 @@ type sandboxAccessGrantPageRow struct {
 	PTYSessionCount   int64      `json:"pty_session_count"`
 	FileAccessCount   int64      `json:"file_access_count"`
 	FileFailureCount  int64      `json:"file_failure_count"`
+	PreviewPorts      []int32    `json:"preview_ports"`
 	LastFileAction    *string    `json:"last_file_action"`
 	LastFileStatus    *string    `json:"last_file_status"`
 	LastFileErrorCode *string    `json:"last_file_error_code"`
@@ -105,6 +110,12 @@ type SandboxPTYSessionAuthority struct {
 	Grant     SandboxAccessGrantAuthority
 	SessionID string
 	CreatedAt time.Time
+}
+
+type SandboxPreviewPortAuthority struct {
+	Grant        SandboxAccessGrantAuthority
+	Port         int32
+	RegisteredAt time.Time
 }
 
 type AccessGatewayStore struct{ runner *TenantTransactionRunner }
@@ -216,6 +227,12 @@ FROM (
          WHERE session.tenant_id = access_grant.tenant_id AND session.project_uid = access_grant.project_uid
            AND session.grant_uid = access_grant.grant_uid) AS pty_session_count,
         file_counts.file_access_count, file_counts.file_failure_count,
+        COALESCE((SELECT jsonb_agg(preview.port ORDER BY preview.port)
+            FROM cloud_agents.sandbox_preview_ports AS preview
+            WHERE preview.tenant_id = access_grant.tenant_id
+              AND preview.project_uid = access_grant.project_uid
+              AND preview.grant_uid = access_grant.grant_uid AND preview.revoked_at IS NULL
+              AND access_grant.status = 'active' AND access_grant.expires_at > clock_timestamp()), '[]'::jsonb) AS preview_ports,
         latest_file.last_file_action, latest_file.last_file_status,
         latest_file.last_file_error_code, latest_file.last_file_access_at
     FROM cloud_agents.sandbox_access_grants AS access_grant
@@ -251,7 +268,7 @@ FROM (
 					row.AccessKind != "sandbox" || row.Status != "active" && row.Status != "expired" && row.Status != "revoked" ||
 					row.PTYSessionCount < 0 || row.PTYSessionCount > 10000 || row.FileAccessCount < 0 ||
 					row.FileFailureCount < 0 || row.FileFailureCount > row.FileAccessCount ||
-					!validFileActivity(row) {
+					!validPreviewPorts(row.PreviewPorts) || !validFileActivity(row) {
 					return ErrCoordinationResultDrift
 				}
 				result.Grants = append(result.Grants, SandboxAccessGrantSnapshot{
@@ -259,7 +276,8 @@ FROM (
 					GrantID: row.GrantID, SandboxID: row.SandboxID, AccessKind: row.AccessKind,
 					Status: row.Status, Generation: row.Generation, ResourceVersion: row.ResourceVersion,
 					PTYSessionCount: row.PTYSessionCount, FileAccessCount: row.FileAccessCount,
-					FileFailureCount: row.FileFailureCount, LastFileAction: row.LastFileAction,
+					FileFailureCount: row.FileFailureCount, PreviewPorts: row.PreviewPorts,
+					LastFileAction: row.LastFileAction,
 					LastFileStatus: row.LastFileStatus, LastFileErrorCode: row.LastFileErrorCode,
 					LastFileAccessAt: row.LastFileAccessAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 					ExpiresAt: row.ExpiresAt, RevokedAt: row.RevokedAt,
@@ -272,6 +290,18 @@ FROM (
 			return nil
 		})
 	return result, mapSandboxAccessGrantError(err)
+}
+
+func validPreviewPorts(ports []int32) bool {
+	if ports == nil || len(ports) > 32 {
+		return false
+	}
+	for index, port := range ports {
+		if port < 1024 || port > 65535 || port == 44772 || index > 0 && ports[index-1] >= port {
+			return false
+		}
+	}
+	return true
 }
 
 func (store *AccessGatewayStore) ResolveGrant(ctx context.Context, tenantID, projectID, grantID, tokenDigest string) (SandboxAccessGrantAuthority, error) {
@@ -300,6 +330,67 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND gran
 		return SandboxPTYSessionAuthority{}, mapSandboxAccessGrantError(err)
 	}
 	return SandboxPTYSessionAuthority{Grant: authority, SessionID: sessionID, CreatedAt: createdAt}, nil
+}
+
+func (store *AccessGatewayStore) RegisterPreviewPort(ctx context.Context, tenantID, projectID, grantID string, port int32, tokenDigest string) (SandboxPreviewPortAuthority, error) {
+	if store == nil || store.runner == nil || ctx == nil || port < 1024 || port > 65535 || port == 44772 {
+		return SandboxPreviewPortAuthority{}, ErrCoordinationInvalidInput
+	}
+	var registered SandboxPreviewPortAuthority
+	var sandboxID string
+	var generation int64
+	err := store.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, `SELECT port, sandbox_uid, sandbox_generation, registered_at
+FROM cloud_agents.register_sandbox_preview_port_v1($1,$2,$3,$4)`, projectID, grantID, port, tokenDigest).
+			Scan(&registered.Port, &sandboxID, &generation, &registered.RegisteredAt)
+	})
+	if err != nil {
+		return SandboxPreviewPortAuthority{}, mapSandboxAccessGrantError(err)
+	}
+	registered.Grant, err = store.ResolveGrant(ctx, tenantID, projectID, grantID, tokenDigest)
+	if err != nil || registered.Grant.Access.SandboxID != sandboxID || registered.Grant.Access.Generation != generation {
+		return SandboxPreviewPortAuthority{}, ErrSandboxAccessGrantDenied
+	}
+	return registered, nil
+}
+
+func (store *AccessGatewayStore) ResolvePreviewPort(ctx context.Context, tenantID, projectID, grantID string, port int32, tokenDigest string) (SandboxPreviewPortAuthority, error) {
+	if port < 1024 || port > 65535 || port == 44772 {
+		return SandboxPreviewPortAuthority{}, ErrCoordinationInvalidInput
+	}
+	authority, err := store.resolve(ctx, tenantID, projectID, grantID, tokenDigest)
+	if err != nil {
+		return SandboxPreviewPortAuthority{}, err
+	}
+	var registeredAt time.Time
+	err = store.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+		handle, ok := capability.(*tenantReadHandle)
+		if !ok {
+			return ErrTenantCapabilityClosed
+		}
+		return handle.transaction.queryRow(readContext, `SELECT registered_at
+FROM cloud_agents.sandbox_preview_ports
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND grant_uid = $2
+  AND port = $3 AND revoked_at IS NULL`, projectID, grantID, port).Scan(&registeredAt)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SandboxPreviewPortAuthority{}, ErrSandboxPreviewPortNotFound
+	}
+	if err != nil {
+		return SandboxPreviewPortAuthority{}, mapSandboxAccessGrantError(err)
+	}
+	return SandboxPreviewPortAuthority{Grant: authority, Port: port, RegisteredAt: registeredAt}, nil
+}
+
+func (store *AccessGatewayStore) RevokePreviewPort(ctx context.Context, tenantID, projectID, grantID string, port int32, tokenDigest string) error {
+	if _, err := store.ResolveGrant(ctx, tenantID, projectID, grantID, tokenDigest); err != nil {
+		return err
+	}
+	return mapSandboxAccessGrantError(store.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		var revokedAt time.Time
+		return handle.transaction.queryRow(ctx, `SELECT cloud_agents.revoke_sandbox_preview_port_v1($1,$2,$3,$4)`,
+			projectID, grantID, port, tokenDigest).Scan(&revokedAt)
+	}))
 }
 
 func (store *AccessGatewayStore) resolve(ctx context.Context, tenantID, projectID, grantID, tokenDigest string) (SandboxAccessGrantAuthority, error) {
@@ -454,6 +545,8 @@ func mapSandboxAccessGrantError(err error) error {
 			return internalcoordination.ErrFoundationSandboxNotFound
 		case pgErr.Code == "23503" && pgErr.Message == "foundation sandbox was not found":
 			return internalcoordination.ErrFoundationSandboxNotFound
+		case pgErr.Code == "23503" && pgErr.Message == "sandbox Preview port was not found":
+			return ErrSandboxPreviewPortNotFound
 		case pgErr.Code == "23505" || pgErr.Code == "54000":
 			return internalcoordination.ErrFoundationSandboxConflict
 		}

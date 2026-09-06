@@ -644,6 +644,7 @@ func runtimeProfileSummaryResource(summary internalcoordination.RuntimeProfileSu
 
 func adminSandboxAccessGrantResource(snapshot postgres.SandboxAccessGrantSnapshot) platform.AdminSandboxAccessGrant {
 	revokedAt, lastFileAction, lastFileStatus, lastFileErrorCode, lastFileAccessAt := "", "", "", "", ""
+	previewPorts := append([]int32{}, snapshot.PreviewPorts...)
 	if snapshot.RevokedAt != nil {
 		revokedAt = snapshot.RevokedAt.UTC().Format(time.RFC3339Nano)
 	}
@@ -667,6 +668,7 @@ func adminSandboxAccessGrantResource(snapshot postgres.SandboxAccessGrantSnapsho
 		Status: snapshot.Status, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano),
 		RevokedAt: revokedAt, PTYSessionCount: snapshot.PTYSessionCount,
 		FileAccessCount: snapshot.FileAccessCount, FileFailureCount: snapshot.FileFailureCount,
+		PreviewPorts:   previewPorts,
 		LastFileAction: lastFileAction, LastFileStatus: lastFileStatus,
 		LastFileErrorCode: lastFileErrorCode, LastFileAccessAt: lastFileAccessAt,
 	}}

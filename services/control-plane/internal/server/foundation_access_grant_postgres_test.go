@@ -34,7 +34,7 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if runtimeURL == "" || ownerURL == "" || credentialDirectory == "" {
 		t.Skip("isolated running Sandbox environment is not configured")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
 	runtimePool, err := pgxpool.New(ctx, runtimeURL)
 	if err != nil {
@@ -248,6 +248,116 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if _, err := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-after-delete", "cag-files.txt", 0, 1, ""); clientStatus(err) != http.StatusNotFound {
 		t.Fatalf("deleted file status=%d err=%v", clientStatus(err), err)
 	}
+	previewCommand := `node -e 'const http=require("http");http.createServer((req,res)=>{res.setHeader("content-type","application/json");if(req.url.startsWith("/slow")){res.write("open");const timer=setInterval(()=>res.write("."),50);req.on("close",()=>clearInterval(timer));return;}res.end(JSON.stringify({method:req.method,url:req.url,authorization:req.headers.authorization||"",proxyAuthorization:req.headers["proxy-authorization"]||"",cookie:req.headers.cookie||"",apiKey:req.headers["open-sandbox-api-key"]||"",forwarded:req.headers.forwarded||req.headers["x-forwarded-for"]||""}));}).listen(3000,"0.0.0.0");' >/workspace/cag-preview.log 2>&1 & printf 'CAG_PREVIEW_READY\n'`
+	if err := connection.WriteMessage(websocket.BinaryMessage, append([]byte{0}, []byte(previewCommand+"\n")...)); err != nil {
+		t.Fatal(err)
+	}
+	readPTYUntil(t, connection, "CAG_PREVIEW_READY")
+	preview, err := grantClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-preview-register", 3000)
+	if err != nil || preview.Value.Port != 3000 || !strings.HasSuffix(preview.Value.ProxyPath, "/preview-ports/3000/proxy") {
+		t.Fatalf("register Preview failed: %+v %v", preview.Value, err)
+	}
+	replayedPreview, err := grantClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-preview-register-replay", 3000)
+	if err != nil || replayedPreview.Value.RegisteredAt != preview.Value.RegisteredAt {
+		t.Fatalf("Preview registration replay failed: %+v %v", replayedPreview.Value, err)
+	}
+	previewRequest := func(method, target, token string) (int, []byte) {
+		t.Helper()
+		request, err := http.NewRequestWithContext(ctx, method, gateway.URL+target, http.NoBody)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Proxy-Authorization", "Basic must-not-reach-sandbox")
+		request.Header.Set("Cookie", "private-cookie=must-not-reach-sandbox")
+		request.Header.Set("Forwarded", "for=must-not-reach-sandbox")
+		request.Header.Set("X-Forwarded-For", "must-not-reach-sandbox")
+		request.Header.Set("X-Request-ID", "request-preview-proxy")
+		response, err := gateway.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.StatusCode, body
+	}
+	var previewStatus int
+	var previewBody []byte
+	for attempt := 0; attempt < 20; attempt++ {
+		previewStatus, previewBody = previewRequest(http.MethodPost, preview.Value.ProxyPath+"/hello?value=alpha", grant.Value.AccessToken)
+		if previewStatus == http.StatusOK {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	var previewPayload map[string]string
+	if err := json.Unmarshal(previewBody, &previewPayload); err != nil || previewStatus != http.StatusOK ||
+		previewPayload["method"] != http.MethodPost || previewPayload["url"] != "/hello?value=alpha" ||
+		previewPayload["authorization"] != "" || previewPayload["proxyAuthorization"] != "" ||
+		previewPayload["cookie"] != "" || previewPayload["apiKey"] != "" || strings.Contains(previewPayload["forwarded"], "must-not-reach") {
+		t.Fatalf("Preview proxy status=%d payload=%v body=%q err=%v", previewStatus, previewPayload, previewBody, err)
+	}
+	if status, _ := previewRequest(http.MethodGet, preview.Value.ProxyPath, wrongToken); status != http.StatusForbidden {
+		t.Fatalf("wrong Preview token status=%d", status)
+	}
+	crossTenantPath := strings.Replace(preview.Value.ProxyPath, "/tenants/tenant/", "/tenants/other-tenant/", 1)
+	if status, _ := previewRequest(http.MethodGet, crossTenantPath, grant.Value.AccessToken); status != http.StatusForbidden {
+		t.Fatalf("cross-tenant Preview status=%d", status)
+	}
+	unregisteredPath := strings.Replace(preview.Value.ProxyPath, "/preview-ports/3000/", "/preview-ports/3001/", 1)
+	if status, _ := previewRequest(http.MethodGet, unregisteredPath, grant.Value.AccessToken); status != http.StatusNotFound {
+		t.Fatalf("unregistered Preview status=%d", status)
+	}
+	internalPath := strings.Replace(preview.Value.ProxyPath, "/preview-ports/3000/", "/preview-ports/44772/", 1)
+	if status, _ := previewRequest(http.MethodGet, internalPath, grant.Value.AccessToken); status != http.StatusNotFound {
+		t.Fatalf("internal Preview port status=%d", status)
+	}
+
+	gateway.Close()
+	gateway = newGateway()
+	defer gateway.Close()
+	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
+	if status, _ := previewRequest(http.MethodGet, preview.Value.ProxyPath+"/after-restart", grant.Value.AccessToken); status != http.StatusOK {
+		t.Fatalf("Gateway restart Preview status=%d", status)
+	}
+	slowRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, gateway.URL+preview.Value.ProxyPath+"/slow", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slowRequest.Header.Set("Authorization", "Bearer "+grant.Value.AccessToken)
+	slowRequest.Header.Set("X-Request-ID", "request-preview-slow")
+	slowResponse, err := gateway.Client().Do(slowRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := make([]byte, 4)
+	if _, err := io.ReadFull(slowResponse.Body, prefix); err != nil || string(prefix) != "open" {
+		t.Fatalf("slow Preview prefix=%q err=%v", prefix, err)
+	}
+	closedPreview := make(chan struct{}, 1)
+	go func() {
+		_, _ = io.Copy(io.Discard, slowResponse.Body)
+		closedPreview <- struct{}{}
+	}()
+	if err := grantClient.RevokeSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-preview-revoke", 3000); err != nil {
+		t.Fatal("revoke Preview failed", err)
+	}
+	select {
+	case <-closedPreview:
+	case <-time.After(4 * time.Second):
+		t.Fatal("active Preview response remained open after revoke")
+	}
+	_ = slowResponse.Body.Close()
+	if status, _ := previewRequest(http.MethodGet, preview.Value.ProxyPath, grant.Value.AccessToken); status != http.StatusNotFound {
+		t.Fatalf("revoked Preview port status=%d", status)
+	}
+	preview, err = grantClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-preview-register-again", 3000)
+	if err != nil {
+		t.Fatal("re-register Preview failed", err)
+	}
 
 	if _, err := user.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-user-admin", 50, ""); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user Admin Grant status=%d err=%v", clientStatus(err), err)
@@ -255,6 +365,7 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	page, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-admin-list", 50, "")
 	if err != nil || len(page.Value.AccessGrants) != 1 || page.Value.AccessGrants[0].Spec.PTYSessionCount != 1 ||
 		page.Value.AccessGrants[0].Spec.FileAccessCount != 7 || page.Value.AccessGrants[0].Spec.FileFailureCount != 2 ||
+		len(page.Value.AccessGrants[0].Spec.PreviewPorts) != 1 || page.Value.AccessGrants[0].Spec.PreviewPorts[0] != 3000 ||
 		page.Value.AccessGrants[0].Spec.LastFileAction != "read" || page.Value.AccessGrants[0].Spec.LastFileStatus != "failed" ||
 		page.Value.AccessGrants[0].Spec.LastFileErrorCode != "NOT_FOUND" {
 		t.Fatalf("Admin Grant metadata failed: %v", err)
@@ -276,10 +387,18 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if _, err := grantClient.GetPTYSession(ctx, "tenant", "project", grant.Value.GrantID, session.Value.SessionID, "request-pty-revoked"); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("revoked Grant status=%d err=%v", clientStatus(err), err)
 	}
+	if status, _ := previewRequest(http.MethodGet, preview.Value.ProxyPath, grant.Value.AccessToken); status != http.StatusForbidden {
+		t.Fatalf("revoked Grant Preview status=%d", status)
+	}
 
 	expiring, err := user.CreateSandboxAccessGrant(ctx, "tenant", "project", "sandbox", "request-grant-expiring", "grant-expiring-key-0001", request)
 	if err != nil {
 		t.Fatalf("issue expiring Grant failed: %v", err)
+	}
+	expiringClient, _ := api.NewHTTPClientWithClient(gateway.URL, expiring.Value.AccessToken, gateway.Client())
+	expiringPreview, err := expiringClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", expiring.Value.GrantID, "request-preview-expiring", 3001)
+	if err != nil {
+		t.Fatalf("register expiring Preview failed: %v", err)
 	}
 	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.sandbox_access_grants SET expires_at=created_at+interval '1 millisecond' WHERE tenant_id='tenant' AND project_uid='project' AND grant_uid=$1`, expiring.Value.GrantID); err != nil {
 		t.Fatal(err)
@@ -288,6 +407,9 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	expiredClient, _ := api.NewHTTPClientWithClient(gateway.URL, expiring.Value.AccessToken, gateway.Client())
 	if _, err := expiredClient.CreatePTYSession(ctx, "tenant", "project", expiring.Value.GrantID, "request-pty-expired"); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("expired Grant status=%d err=%v", clientStatus(err), err)
+	}
+	if status, _ := previewRequest(http.MethodGet, expiringPreview.Value.ProxyPath, expiring.Value.AccessToken); status != http.StatusForbidden {
+		t.Fatalf("expired Grant Preview status=%d", status)
 	}
 	page, err = admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-admin-final", 50, "")
 	statuses := map[string]string{}
@@ -314,6 +436,12 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		"fileWrongTokenStatus": 403, "fileCrossTenantStatus": 403, "fileTraversalStatus": 400,
 		"fileSymlinkStatus": 409, "fileOversizedStatus": 413, "fileDeletedStatus": 404,
 		"fileAccessCount": fileCount, "fileFailureCount": fileFailureCount,
+		"previewPort": 3000, "previewPrivate": true, "previewGatewayRestart": true,
+		"previewWrongTokenStatus": 403, "previewCrossTenantStatus": 403,
+		"previewUnregisteredStatus": 404, "previewInternalPortStatus": 404,
+		"previewHeadersRedacted": true, "previewActiveResponseRevoked": true,
+		"previewRevokedPortStatus": 404, "previewRevokedGrantStatus": 403,
+		"previewExpiredGrantStatus": 403,
 	})
 	t.Logf("FOUNDATION_PTY_API=%s", receipt)
 }
@@ -413,7 +541,7 @@ func assertAdminGrantRedaction(t *testing.T, ctx context.Context, baseURL, admin
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("Admin Grant response status=%d err=%v", response.StatusCode, err)
 	}
-	for _, forbidden := range []string{grantToken, "accessToken", "CAG_PTY", "credentialRef", "providerCredentialRef", "endpoint", "cag-files.txt", "cag-files-link", "contentBase64Url"} {
+	for _, forbidden := range []string{grantToken, "accessToken", "CAG_PTY", "credentialRef", "providerCredentialRef", "endpoint", "proxyPath", "cag-files.txt", "cag-files-link", "cag-preview", "contentBase64Url"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("Admin Grant response disclosed %q", forbidden)
 		}

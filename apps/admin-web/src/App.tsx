@@ -6879,6 +6879,13 @@ function SandboxDetail({
                     failures: number(grant.spec.fileFailureCount),
                   })}
                 </small>
+                <small>
+                  {grant.spec.previewPorts.length === 0
+                    ? t("sandbox.grants.previewPortsEmpty")
+                    : t("sandbox.grants.previewPorts", {
+                        ports: grant.spec.previewPorts.map(number).join(", "),
+                      })}
+                </small>
                 {grant.spec.lastFileAction === undefined ||
                 grant.spec.lastFileStatus === undefined ||
                 grant.spec.lastFileAccessAt === undefined ? null : (
@@ -7110,6 +7117,14 @@ function SandboxGrantRevokeConfirmation({
           <div>
             <dt>{t("sandbox.grants.fileFailures")}</dt>
             <dd>{number(grant.spec.fileFailureCount)}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.grants.previewPortsLabel")}</dt>
+            <dd className="mono">
+              {grant.spec.previewPorts.length === 0
+                ? t("sandbox.grants.previewPortsEmptyValue")
+                : grant.spec.previewPorts.map(number).join(", ")}
+            </dd>
           </div>
         </dl>
         <label className="confirmation-check">

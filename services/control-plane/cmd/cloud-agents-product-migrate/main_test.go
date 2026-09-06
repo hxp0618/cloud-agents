@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
+)
 
 func TestParseProductMigrationConfigUsesDatabaseEnvironment(t *testing.T) {
 	config, err := parseProductMigrationConfig([]string{"--repository-root", "/srv/cloud-agents"}, func(key string) string {
@@ -12,7 +16,7 @@ func TestParseProductMigrationConfigUsesDatabaseEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.databaseURL == "" || config.repositoryRoot != "/srv/cloud-agents" || config.selector != "product-000059" {
+	if config.databaseURL == "" || config.repositoryRoot != "/srv/cloud-agents" || config.selector != localmigration.CurrentProductManifestSelector() {
 		t.Fatalf("config = %+v", config)
 	}
 }

@@ -643,6 +643,7 @@ export type AdminSandboxAccessGrantSpec = Readonly<{
   ptySessionCount: number;
   fileAccessCount: number;
   fileFailureCount: number;
+  previewPorts: readonly number[];
   lastFileAction?: "list" | "read" | "write" | "delete";
   lastFileStatus?: "started" | "succeeded" | "failed";
   lastFileErrorCode?: string;
@@ -672,6 +673,18 @@ export type SandboxPTYSession = Readonly<{
   outputOffset: number;
   webSocketPath: string;
   createdAt: string;
+}>;
+export type SandboxPreviewPort = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxPreviewPort";
+  projectRef: NamespaceRef;
+  grantId: string;
+  sandboxId: string;
+  generation: number;
+  port: number;
+  status: "active";
+  proxyPath: string;
+  registeredAt: string;
 }>;
 export type SandboxFileEntry = Readonly<{
   path: string;
@@ -1717,6 +1730,7 @@ const adminSandboxAccessGrantResponseShape = resourceResponseShape({
   ptySessionCount: scalarResponseShape,
   fileAccessCount: scalarResponseShape,
   fileFailureCount: scalarResponseShape,
+  previewPorts: { item: scalarResponseShape },
   lastFileAction: scalarResponseShape,
   lastFileStatus: scalarResponseShape,
   lastFileErrorCode: scalarResponseShape,
@@ -1743,6 +1757,20 @@ const sandboxPTYSessionResponseShape: ResponseShape = {
     outputOffset: scalarResponseShape,
     webSocketPath: scalarResponseShape,
     createdAt: scalarResponseShape,
+  },
+};
+const sandboxPreviewPortResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    grantId: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    generation: scalarResponseShape,
+    port: scalarResponseShape,
+    status: scalarResponseShape,
+    proxyPath: scalarResponseShape,
+    registeredAt: scalarResponseShape,
   },
 };
 const sandboxFileEntryResponseShape: ResponseShape = {
@@ -3202,6 +3230,7 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
     "ptySessionCount",
     "fileAccessCount",
     "fileFailureCount",
+    "previewPorts",
     "lastFileAction",
     "lastFileStatus",
     "lastFileErrorCode",
@@ -3220,6 +3249,7 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
       "ptySessionCount",
       "fileAccessCount",
       "fileFailureCount",
+      "previewPorts",
     ],
     "/spec",
   );
@@ -3239,6 +3269,19 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
     0,
     fileAccessCount,
     "/spec/fileFailureCount",
+  );
+  if (!Array.isArray(spec.previewPorts) || spec.previewPorts.length > 32)
+    error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/previewPorts");
+  const previewPorts = Object.freeze(
+    (spec.previewPorts as unknown[]).map((port, index) => {
+      const value = integer(port, 1024, 65535, `/spec/previewPorts/${index}`);
+      if (
+        value === 44772 ||
+        (index > 0 && value <= Number((spec.previewPorts as unknown[])[index - 1]))
+      )
+        error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", `/spec/previewPorts/${index}`);
+      return value;
+    }),
   );
   const hasLast =
     spec.lastFileAction !== undefined ||
@@ -3287,6 +3330,7 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
       ptySessionCount: integer(spec.ptySessionCount, 0, 10000, "/spec/ptySessionCount"),
       fileAccessCount,
       fileFailureCount,
+      previewPorts,
       ...(hasLast
         ? {
             lastFileAction: lastFileAction!,
@@ -3375,6 +3419,58 @@ export function decodeSandboxPTYSession(value: unknown): SandboxPTYSession {
     outputOffset: integer(source.outputOffset, 0, Number.MAX_SAFE_INTEGER, "/outputOffset"),
     webSocketPath,
     createdAt: dateTime(source.createdAt, "/createdAt"),
+  });
+}
+export function decodeSandboxPreviewPort(value: unknown): SandboxPreviewPort {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "port",
+      "status",
+      "proxyPath",
+      "registeredAt",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "port",
+      "status",
+      "proxyPath",
+      "registeredAt",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "SandboxPreviewPort")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const port = integer(source.port, 1024, 65535, "/port");
+  if (port === 44772) error("INVALID_PREVIEW_PORT", "/port");
+  const proxyPath = boundedString(source.proxyPath, 1, 768, "/proxyPath");
+  if (
+    !/^\/v1\/tenants\/[A-Za-z0-9._~-]+\/projects\/[A-Za-z0-9._~-]+\/sandbox-access-grants\/[A-Za-z0-9._~-]+\/preview-ports\/[0-9]+\/proxy$/u.test(
+      proxyPath,
+    )
+  )
+    error("INVALID_PREVIEW_PATH", "/proxyPath");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxPreviewPort",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    grantId: identifier(source.grantId, "/grantId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    port,
+    status: enumValue(source.status, ["active"] as const, "/status"),
+    proxyPath,
+    registeredAt: dateTime(source.registeredAt, "/registeredAt"),
   });
 }
 export function decodeSandboxFileEntry(value: unknown): SandboxFileEntry {
@@ -6967,6 +7063,9 @@ export function parseAdminSandboxAccessGrantPage(
 export function parseSandboxPTYSession(text: string): ResponseEnvelope<SandboxPTYSession> {
   return parseResponse(text, sandboxPTYSessionResponseShape, decodeSandboxPTYSession);
 }
+export function parseSandboxPreviewPort(text: string): ResponseEnvelope<SandboxPreviewPort> {
+  return parseResponse(text, sandboxPreviewPortResponseShape, decodeSandboxPreviewPort);
+}
 export function parseSandboxFileEntry(text: string): ResponseEnvelope<SandboxFileEntry> {
   return parseResponse(text, sandboxFileEntryResponseShape, decodeSandboxFileEntry);
 }
@@ -9547,6 +9646,58 @@ export class Client {
       signal,
     );
     if (response.status !== 204) throw await this.problem("foundationDeleteSandboxFile", response);
+  }
+  async registerSandboxPreviewPort(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    port: number,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxPreviewPort>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    integer(port, 1024, 65535, "/previewPort");
+    if (port === 44772) error("INVALID_PREVIEW_PORT", "/previewPort");
+    const path = `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/preview-ports/${port}`;
+    const response = await this.call(
+      { method: "PUT", path, headers: { "X-Request-ID": requestId } },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("foundationRegisterSandboxPreviewPort", response);
+    const result = parseSandboxPreviewPort(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.grantId !== grantId ||
+      result.value.port !== port ||
+      result.value.proxyPath !== `${path}/proxy`
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/port");
+    return result;
+  }
+  async revokeSandboxPreviewPort(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    port: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    integer(port, 1024, 65535, "/previewPort");
+    if (port === 44772) error("INVALID_PREVIEW_PORT", "/previewPort");
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/preview-ports/${port}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 204)
+      throw await this.problem("foundationRevokeSandboxPreviewPort", response);
   }
   async listEnvironmentProfiles(
     tenantId: string,

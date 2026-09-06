@@ -106,6 +106,7 @@ var (
 	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
 	fileVersionPattern           = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
 	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
+	previewProxyPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
 	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
 	roleNames                    = map[string]struct{}{
@@ -695,6 +696,7 @@ type AdminSandboxAccessGrantSpec struct {
 	PTYSessionCount   int64             `json:"ptySessionCount"`
 	FileAccessCount   int64             `json:"fileAccessCount"`
 	FileFailureCount  int64             `json:"fileFailureCount"`
+	PreviewPorts      []int32           `json:"previewPorts"`
 	LastFileAction    string            `json:"lastFileAction,omitempty"`
 	LastFileStatus    string            `json:"lastFileStatus,omitempty"`
 	LastFileErrorCode string            `json:"lastFileErrorCode,omitempty"`
@@ -722,6 +724,18 @@ type SandboxPTYSession struct {
 	OutputOffset  int64             `json:"outputOffset"`
 	WebSocketPath string            `json:"webSocketPath"`
 	CreatedAt     string            `json:"createdAt"`
+}
+type SandboxPreviewPort struct {
+	APIVersion   string            `json:"apiVersion"`
+	Kind         string            `json:"kind"`
+	ProjectRef   common.ProjectRef `json:"projectRef"`
+	GrantID      string            `json:"grantId"`
+	SandboxID    string            `json:"sandboxId"`
+	Generation   int64             `json:"generation"`
+	Port         int32             `json:"port"`
+	Status       string            `json:"status"`
+	ProxyPath    string            `json:"proxyPath"`
+	RegisteredAt string            `json:"registeredAt"`
 }
 type SandboxFileEntry struct {
 	Path        string `json:"path"`
@@ -1118,7 +1132,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "AdminSandboxSession":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
 	case "AdminSandboxAccessGrant":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "previewPorts": common.ArrayResponseShape(common.ScalarResponseShape()), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
 	case "NetworkPolicy":
@@ -1194,6 +1208,7 @@ var sandboxExecResultResponseShape = common.ObjectResponseShape(map[string]commo
 var sandboxAccessGrantResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "accessToken": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var adminSandboxAccessGrantPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "accessGrants": common.ArrayResponseShape(resourceResponseShape("AdminSandboxAccessGrant")), "nextPageToken": common.ScalarResponseShape()})
 var sandboxPTYSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "outputOffset": common.ScalarResponseShape(), "webSocketPath": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape()})
+var sandboxPreviewPortResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "port": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "proxyPath": common.ScalarResponseShape(), "registeredAt": common.ScalarResponseShape()})
 var sandboxFileEntryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"path": common.ScalarResponseShape(), "type": common.ScalarResponseShape(), "sizeBytes": common.ScalarResponseShape(), "modifiedAt": common.ScalarResponseShape(), "fileVersion": common.ScalarResponseShape()})
 var sandboxFilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "path": common.ScalarResponseShape(), "entries": common.ArrayResponseShape(sandboxFileEntryResponseShape)})
 var sandboxFileReadPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "path": common.ScalarResponseShape(), "fileVersion": common.ScalarResponseShape(), "offset": common.ScalarResponseShape(), "nextOffset": common.ScalarResponseShape(), "totalBytes": common.ScalarResponseShape(), "eof": common.ScalarResponseShape(), "contentBase64Url": common.ScalarResponseShape()})
@@ -3795,6 +3810,17 @@ func EncodeSandboxAccessGrantResponseJSON(value common.ResponseEnvelope[SandboxA
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
+func validSandboxPreviewPorts(ports []int32) bool {
+	if ports == nil || len(ports) > 32 {
+		return false
+	}
+	for index, port := range ports {
+		if port < 1024 || port > 65535 || port == 44772 || index > 0 && ports[index-1] >= port {
+			return false
+		}
+	}
+	return true
+}
 func DecodeAdminSandboxAccessGrantJSON(data []byte) (AdminSandboxAccessGrant, error) {
 	fields, err := strictResourceExact(data)
 	if err != nil {
@@ -3804,14 +3830,14 @@ func DecodeAdminSandboxAccessGrantJSON(data []byte) (AdminSandboxAccessGrant, er
 	if err != nil {
 		return AdminSandboxAccessGrant{}, err
 	}
-	allowed := []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "revokedAt", "ptySessionCount", "fileAccessCount", "fileFailureCount", "lastFileAction", "lastFileStatus", "lastFileErrorCode", "lastFileAccessAt"}
-	required := []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount", "fileAccessCount", "fileFailureCount"}
+	allowed := []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "revokedAt", "ptySessionCount", "fileAccessCount", "fileFailureCount", "previewPorts", "lastFileAction", "lastFileStatus", "lastFileErrorCode", "lastFileAccessAt"}
+	required := []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount", "fileAccessCount", "fileFailureCount", "previewPorts"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return AdminSandboxAccessGrant{}, err
 	}
 	var spec AdminSandboxAccessGrantSpec
-	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SandboxID, "/spec/sandboxId") != nil || spec.Generation < 1 || spec.Generation > 9007199254740991 || spec.AccessKind != "sandbox" || spec.Status != "active" && spec.Status != "expired" && spec.Status != "revoked" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil || spec.PTYSessionCount < 0 || spec.PTYSessionCount > 10000 || spec.FileAccessCount < 0 || spec.FileFailureCount < 0 || spec.FileFailureCount > spec.FileAccessCount {
+	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SandboxID, "/spec/sandboxId") != nil || spec.Generation < 1 || spec.Generation > 9007199254740991 || spec.AccessKind != "sandbox" || spec.Status != "active" && spec.Status != "expired" && spec.Status != "revoked" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil || spec.PTYSessionCount < 0 || spec.PTYSessionCount > 10000 || spec.FileAccessCount < 0 || spec.FileFailureCount < 0 || spec.FileFailureCount > spec.FileAccessCount || !validSandboxPreviewPorts(spec.PreviewPorts) {
 		return AdminSandboxAccessGrant{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec")
 	}
 	spec.ProjectRef, err = common.DecodeProjectRefJSON(specFields["projectRef"])
@@ -3919,6 +3945,39 @@ func EncodeSandboxPTYSessionResponseJSON(value common.ResponseEnvelope[SandboxPT
 		return nil, err
 	}
 	if _, err := DecodeSandboxPTYSessionJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxPreviewPortJSON(data []byte) (SandboxPreviewPort, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "port", "status", "proxyPath", "registeredAt"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "port", "status", "proxyPath", "registeredAt"})
+	if err != nil {
+		return SandboxPreviewPort{}, err
+	}
+	var value SandboxPreviewPort
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxPreviewPort" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.Port < 1024 || value.Port > 65535 || value.Port == 44772 || value.Status != "active" || len(value.ProxyPath) > 768 || !previewProxyPathPattern.MatchString(value.ProxyPath) || common.ValidateDateTime(value.RegisteredAt, "/registeredAt") != nil {
+		return SandboxPreviewPort{}, common.ContractError("INVALID_SANDBOX_PREVIEW_PORT", "")
+	}
+	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxPreviewPort{}, err
+	}
+	return value, nil
+}
+func DecodeSandboxPreviewPortResponseJSON(data []byte) (common.ResponseEnvelope[SandboxPreviewPort], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxPreviewPortResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxPreviewPort]{}, err
+	}
+	value, err := DecodeSandboxPreviewPortJSON(raw)
+	return common.ResponseEnvelope[SandboxPreviewPort]{Value: value, Unknown: sidecar}, err
+}
+func EncodeSandboxPreviewPortResponseJSON(value common.ResponseEnvelope[SandboxPreviewPort]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxPreviewPortJSON(raw); err != nil {
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

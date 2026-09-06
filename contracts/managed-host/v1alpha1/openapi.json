@@ -971,7 +971,7 @@
         },
         "responses": {
           "201": {
-            "description": "Short-lived PTY and Files grant for the exact authorized Sandbox generation",
+            "description": "Short-lived PTY, Files and private Preview grant for the exact authorized Sandbox generation",
             "content": {
               "application/json": {
                 "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant.schema.json" }
@@ -1163,6 +1163,51 @@
           "404": { "$ref": "#/components/responses/Problem" },
           "409": { "$ref": "#/components/responses/Problem" },
           "413": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sandbox-access-grants/{grantId}/preview-ports/{previewPort}": {
+      "put": {
+        "operationId": "foundationRegisterSandboxPreviewPort",
+        "x-cloud-agents-service": "access-gateway",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/GrantId" },
+          { "$ref": "#/components/parameters/PreviewPort" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Idempotently registered private Preview port and fixed relative Gateway path",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-preview-port.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "delete": {
+        "operationId": "foundationRevokeSandboxPreviewPort",
+        "x-cloud-agents-service": "access-gateway",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/GrantId" },
+          { "$ref": "#/components/parameters/PreviewPort" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "204": { "description": "Preview port registration revoked" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
           "503": { "$ref": "#/components/responses/Problem" }
         }
       }
@@ -2296,6 +2341,12 @@
         "in": "path",
         "required": true,
         "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
+      "PreviewPort": {
+        "name": "previewPort",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 1024, "maximum": 65535, "not": { "const": 44772 } }
       },
       "StoragePolicyId": {
         "name": "storagePolicyId",

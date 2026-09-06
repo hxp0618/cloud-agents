@@ -135,14 +135,15 @@ func TestLoadAndVerifyIndependentProductSessionManifest(t *testing.T) {
 }
 
 func TestLoadAndVerifyLatestIndependentProductManifest(t *testing.T) {
+	current := currentProductRunnerBinding()
 	config := testConfig(t)
-	config.ManifestSelector = "product-000059"
-	config.ManifestPath = "services/control-plane/migrations/product/000059/manifest.json"
+	config.ManifestSelector = current.selectorID
+	config.ManifestPath = current.manifestPath
 	bundle, err := loadAndVerify(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.manifest.SchemaBundle.SchemaHead != "000059" || len(bundle.manifest.SchemaBundle.Migrations) != 59 {
+	if bundle.manifest.SchemaBundle.SchemaHead != current.schemaHead || len(bundle.manifest.SchemaBundle.Migrations) != current.migrationCount {
 		t.Fatalf("unexpected latest product manifest: head=%s migrations=%d", bundle.manifest.SchemaBundle.SchemaHead, len(bundle.manifest.SchemaBundle.Migrations))
 	}
 }
@@ -222,65 +223,31 @@ func TestProductManifestDoesNotRequireHistoricalRunnerProfile(t *testing.T) {
 }
 
 func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
-	for _, test := range []struct {
-		head   string
-		length int
-	}{
-		{head: "000013", length: 13},
-		{head: "000014", length: 14},
-		{head: "000015", length: 15},
-		{head: "000016", length: 16},
-		{head: "000017", length: 17},
-		{head: "000018", length: 18},
-		{head: "000019", length: 19},
-		{head: "000020", length: 20},
-		{head: "000021", length: 21},
-		{head: "000022", length: 22},
-		{head: "000023", length: 23},
-		{head: "000024", length: 24},
-		{head: "000025", length: 25},
-		{head: "000026", length: 26},
-		{head: "000027", length: 27},
-		{head: "000028", length: 28},
-		{head: "000029", length: 29},
-		{head: "000030", length: 30},
-		{head: "000031", length: 31},
-		{head: "000032", length: 32},
-		{head: "000033", length: 33},
-		{head: "000034", length: 34},
-		{head: "000035", length: 35},
-		{head: "000036", length: 36},
-		{head: "000037", length: 37},
-		{head: "000038", length: 38},
-		{head: "000039", length: 39},
-		{head: "000040", length: 40},
-		{head: "000041", length: 41},
-		{head: "000042", length: 42},
-		{head: "000043", length: 43},
-		{head: "000044", length: 44},
-		{head: "000045", length: 45},
-		{head: "000046", length: 46},
-		{head: "000047", length: 47},
-		{head: "000048", length: 48},
-		{head: "000049", length: 49},
-		{head: "000050", length: 50},
-		{head: "000051", length: 51},
-		{head: "000052", length: 52},
-		{head: "000053", length: 53},
-		{head: "000054", length: 54},
-		{head: "000055", length: 55},
-		{head: "000056", length: 56},
-		{head: "000057", length: 57},
-		{head: "000058", length: 58},
-		{head: "000059", length: 59},
-	} {
-		length, ok := supportedManifestLength(test.head)
-		if !ok || length != test.length {
-			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
+	selectors := append(generatedRunnerBindingSelectors[:], productFoundationRunnerBindings[:]...)
+	for _, selector := range selectors {
+		length, ok := supportedManifestLength(selector.schemaHead)
+		if !ok || length != selector.migrationCount {
+			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", selector.schemaHead, length, ok, selector.migrationCount)
 		}
 	}
-	if length, ok := supportedManifestLength("000060"); ok || length != 0 {
+	if length, ok := supportedManifestLength("000061"); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
+	}
+}
+
+func TestProductRunnerBindingsAreAContiguousClosedSet(t *testing.T) {
+	for index, selector := range productFoundationRunnerBindings {
+		version := fmt.Sprintf("%06d", index+15)
+		selected, ok := lookupProductRunnerBinding(version)
+		if !ok || selected != selector || selector.selectorID != "product-"+version || selector.migrationCount != index+15 {
+			t.Fatalf("invalid generated product binding at %s: %+v", version, selector)
+		}
+	}
+	if _, ok := lookupProductRunnerBinding("000061"); ok {
+		t.Fatal("unknown product binding unexpectedly accepted")
+	}
+	if _, err := selectGeneratedRunnerBinding(Config{ManifestSelector: "product-000061"}); err == nil {
+		t.Fatal("unknown product selector unexpectedly accepted")
 	}
 }
 

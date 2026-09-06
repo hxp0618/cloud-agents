@@ -61,20 +61,21 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 }
 
 func parseProductMigrationConfig(args []string, getenv func(string) string) (productMigrationConfig, error) {
+	currentSelector := localmigration.CurrentProductManifestSelector()
 	set := flag.NewFlagSet("cloud-agents-product-migrate", flag.ContinueOnError)
 	set.SetOutput(os.Stderr)
 	databaseURL := set.String("database-url", "", "PostgreSQL URL")
 	repositoryRoot := set.String("repository-root", ".", "repository root containing the product migration bundle")
-	manifestPath := set.String("manifest", "services/control-plane/migrations/product/000059/manifest.json", "manifest path relative to repository root")
-	selector := set.String("selector", "product-000059", "independent product migration selector")
+	manifestPath := set.String("manifest", localmigration.CurrentProductManifestPath(), "manifest path relative to repository root")
+	selector := set.String("selector", currentSelector, "independent product migration selector")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return productMigrationConfig{}, errors.New("invalid product migration configuration")
 	}
 	if *databaseURL == "" && getenv != nil {
 		*databaseURL = getenv(databaseURLEnvironment)
 	}
-	if *databaseURL == "" || *repositoryRoot == "" || *manifestPath == "" || *selector != "product-000059" {
-		return productMigrationConfig{}, errors.New("database URL, repository root, and product-000059 selector are required")
+	if *databaseURL == "" || *repositoryRoot == "" || *manifestPath == "" || *selector != currentSelector {
+		return productMigrationConfig{}, fmt.Errorf("database URL, repository root, and %s selector are required", currentSelector)
 	}
 	return productMigrationConfig{databaseURL: *databaseURL, repositoryRoot: *repositoryRoot, manifestPath: *manifestPath, selector: *selector}, nil
 }

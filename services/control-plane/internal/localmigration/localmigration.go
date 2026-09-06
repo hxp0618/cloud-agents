@@ -141,104 +141,13 @@ func Run(ctx context.Context, config Config, connector Connector) (result Result
 }
 
 func supportedManifestLength(schemaHead string) (int, bool) {
-	switch schemaHead {
-	case "000013":
-		return 13, true
-	case "000014":
-		return 14, true
-	case "000015":
-		return 15, true
-	case "000016":
-		return 16, true
-	case "000017":
-		return 17, true
-	case "000018":
-		return 18, true
-	case "000019":
-		return 19, true
-	case "000020":
-		return 20, true
-	case "000021":
-		return 21, true
-	case "000022":
-		return 22, true
-	case "000023":
-		return 23, true
-	case "000024":
-		return 24, true
-	case "000025":
-		return 25, true
-	case "000026":
-		return 26, true
-	case "000027":
-		return 27, true
-	case "000028":
-		return 28, true
-	case "000029":
-		return 29, true
-	case "000030":
-		return 30, true
-	case "000031":
-		return 31, true
-	case "000032":
-		return 32, true
-	case "000033":
-		return 33, true
-	case "000034":
-		return 34, true
-	case "000035":
-		return 35, true
-	case "000036":
-		return 36, true
-	case "000037":
-		return 37, true
-	case "000038":
-		return 38, true
-	case "000039":
-		return 39, true
-	case "000040":
-		return 40, true
-	case "000041":
-		return 41, true
-	case "000042":
-		return 42, true
-	case "000043":
-		return 43, true
-	case "000044":
-		return 44, true
-	case "000045":
-		return 45, true
-	case "000046":
-		return 46, true
-	case "000047":
-		return 47, true
-	case "000048":
-		return 48, true
-	case "000049":
-		return 49, true
-	case "000050":
-		return 50, true
-	case "000051":
-		return 51, true
-	case "000052":
-		return 52, true
-	case "000053":
-		return 53, true
-	case "000054":
-		return 54, true
-	case "000055":
-		return 55, true
-	case "000056":
-		return 56, true
-	case "000057":
-		return 57, true
-	case "000058":
-		return 58, true
-	case "000059":
-		return 59, true
-	default:
-		return 0, false
+	for _, selector := range generatedRunnerBindingSelectors {
+		if selector.schemaHead == schemaHead {
+			return selector.migrationCount, true
+		}
 	}
+	selector, ok := lookupProductRunnerBinding(schemaHead)
+	return selector.migrationCount, ok
 }
 
 func loadAndVerify(config Config) (*loadedBundle, error) {
@@ -438,10 +347,10 @@ func bindIndependentProductSelection(root string, config Config) (boundRunnerSel
 func selectGeneratedRunnerBinding(config Config) (generatedRunnerBindingSelector, error) {
 	if strings.HasPrefix(config.ManifestSelector, "product-") {
 		version := strings.TrimPrefix(config.ManifestSelector, "product-")
-		if version != "000015" && version != "000016" && version != "000017" && version != "000018" && version != "000019" && version != "000020" && version != "000021" && version != "000022" && version != "000023" && version != "000024" && version != "000025" && version != "000026" && version != "000027" && version != "000028" && version != "000029" && version != "000030" && version != "000031" && version != "000032" && version != "000033" && version != "000034" && version != "000035" && version != "000036" && version != "000037" && version != "000038" && version != "000039" && version != "000040" && version != "000041" && version != "000042" && version != "000043" && version != "000044" && version != "000045" && version != "000046" && version != "000047" && version != "000048" && version != "000049" && version != "000050" && version != "000051" && version != "000052" && version != "000053" && version != "000054" && version != "000055" && version != "000056" && version != "000057" && version != "000058" && version != "000059" {
+		selector, ok := lookupProductRunnerBinding(version)
+		if !ok {
 			return generatedRunnerBindingSelector{}, errors.New("unknown product selector")
 		}
-		selector := productRunnerBindingSelector(version)
 		if config.ManifestPath != "" && config.ManifestPath != selector.manifestPath {
 			return generatedRunnerBindingSelector{}, errors.New("manifest path does not match the product selector")
 		}
@@ -670,9 +579,8 @@ func knownLedgerBundleDigest(digest migration.Digest, index, currentCount int) b
 			return true
 		}
 	}
-	for version := 15; version <= currentCount; version++ {
-		selector := productRunnerBindingSelector(fmt.Sprintf("%06d", version))
-		if selector.migrationCount >= index && digest == migration.Digest(selector.schemaBundleDigest) {
+	for _, selector := range productFoundationRunnerBindings {
+		if selector.migrationCount >= index && selector.migrationCount <= currentCount && digest == migration.Digest(selector.schemaBundleDigest) {
 			return true
 		}
 	}

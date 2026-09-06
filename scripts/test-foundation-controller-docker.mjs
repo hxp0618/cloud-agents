@@ -201,9 +201,9 @@ try {
         "--repository-root",
         root,
         "--manifest",
-        "services/control-plane/migrations/product/000059/manifest.json",
+        "services/control-plane/migrations/product/000060/manifest.json",
         "--selector",
-        "product-000059",
+        "product-000060",
       ],
       {
         encoding: "utf8",
@@ -212,7 +212,7 @@ try {
       },
     ),
   );
-  assert.equal(migration.schema_head, "000059");
+  assert.equal(migration.schema_head, "000060");
 
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -444,6 +444,18 @@ try {
   assert.equal(ptyReceipt.fileDeletedStatus, 404);
   assert.equal(ptyReceipt.fileAccessCount, 7);
   assert.equal(ptyReceipt.fileFailureCount, 2);
+  assert.equal(ptyReceipt.previewPort, 3000);
+  assert.equal(ptyReceipt.previewPrivate, true);
+  assert.equal(ptyReceipt.previewGatewayRestart, true);
+  assert.equal(ptyReceipt.previewWrongTokenStatus, 403);
+  assert.equal(ptyReceipt.previewCrossTenantStatus, 403);
+  assert.equal(ptyReceipt.previewUnregisteredStatus, 404);
+  assert.equal(ptyReceipt.previewInternalPortStatus, 404);
+  assert.equal(ptyReceipt.previewHeadersRedacted, true);
+  assert.equal(ptyReceipt.previewActiveResponseRevoked, true);
+  assert.equal(ptyReceipt.previewRevokedPortStatus, 404);
+  assert.equal(ptyReceipt.previewRevokedGrantStatus, 403);
+  assert.equal(ptyReceipt.previewExpiredGrantStatus, 403);
   assert.ok(ptyReceipt.boundedOutputOffset >= 1_100_000);
   assert.ok(ptyReceipt.boundedReplayOffset > 0);
   assert.ok(ptyReceipt.boundedReplayBytes <= 1 << 20);
@@ -537,13 +549,16 @@ try {
       "Admin token, stale generation, and combined output above 1 MiB are denied with 403, 409, and 413",
       "Product Exec response omits endpoint, runtime identifier, and credential references",
       "short-lived Sandbox Grant is idempotent, generation-bound, database persisted, expiring, and revocable",
-      "standalone Access Gateway allows only fixed PTY and Files routes and denies wrong-token and cross-tenant requests",
+      "standalone Access Gateway allows only fixed PTY, Files, and private Preview routes and denies wrong-token and cross-tenant requests",
       "PTY survives Gateway restart and reconnects from an absolute cursor without output loss",
       "fixed candidate replay buffer remains bounded to 1 MiB after more than 1.1 MiB output",
       "Files writes, lists, and reads two version-bound pages across Gateway restart inside /workspace",
       "Files rejects path traversal, symlink traversal, oversized input, and reads after deletion",
+      "private Preview registers one explicit non-internal port and proxies only the fixed candidate server route",
+      "Preview strips Grant and Cookie headers, survives Gateway restart, and rejects unregistered and internal ports",
+      "Preview port revoke closes an active response; port, Grant, and expiry revocation reject subsequent access",
       "revocation closes an active PTY connection and rejects reconnects; expired Grants reject new sessions",
-      "Admin Grant metadata includes PTY and file operation diagnostics but excludes tokens, terminal/file content, paths, endpoints, and credential references",
+      "Admin Grant metadata includes PTY, file, and active Preview port diagnostics but excludes tokens, terminal/file/Preview content, paths, endpoints, proxy paths, and credential references",
       "database-clock TTL accepts the same durable Stop authority and records its trigger and Audit",
       "TTL stop deletes compute, releases its writer, and retains the physical Workspace volume",
       "rebuild after TTL expiry restores the same Workspace bytes",

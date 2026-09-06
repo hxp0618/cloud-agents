@@ -428,18 +428,65 @@ func (c *Client) verifyAccessTarget(ctx context.Context, input PTYInput) (*url.U
 	if c == nil || ctx == nil || !input.valid() {
 		return nil, nil, ErrInvalid
 	}
+	if err := c.verifyRuntime(ctx, input); err != nil {
+		return nil, nil, err
+	}
+	return c.execdEndpoint(ctx, input.RuntimeID)
+}
+
+func (c *Client) verifyRuntime(ctx context.Context, input PTYInput) error {
 	var current sandbox
 	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+input.RuntimeID, &current); err != nil {
-		return nil, nil, err
+		return err
 	}
 	observation, err := current.observation(input.Identity)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	if observation.RuntimeID != input.RuntimeID || observation.RuntimeState != "Running" {
-		return nil, nil, ErrRuntimeFailed
+		return ErrRuntimeFailed
 	}
-	return c.execdEndpoint(ctx, input.RuntimeID)
+	return nil
+}
+
+// PreviewHTTPProxyTarget returns only the candidate's fixed server-proxy route for
+// the verified Sandbox receipt. The caller remains responsible for Grant lifetime.
+func (c *Client) PreviewHTTPProxyTarget(ctx context.Context, input PTYInput, port int32) (*url.URL, http.Header, error) {
+	if c == nil || ctx == nil || !input.valid() || port < 1024 || port > 65535 || port == 44772 {
+		return nil, nil, ErrInvalid
+	}
+	if err := c.verifyRuntime(ctx, input); err != nil {
+		return nil, nil, err
+	}
+	var endpoint struct {
+		Endpoint string            `json:"endpoint"`
+		Headers  map[string]string `json:"headers"`
+	}
+	portValue := strconv.FormatInt(int64(port), 10)
+	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+input.RuntimeID+"/endpoints/"+portValue+"?use_server_proxy=true", &endpoint); err != nil {
+		return nil, nil, err
+	}
+	base, baseErr := url.Parse(c.endpoint)
+	raw := endpoint.Endpoint
+	if !strings.Contains(raw, "://") {
+		raw = base.Scheme + "://" + raw
+	}
+	target, err := url.Parse(raw)
+	expectedPath := "/v1/sandboxes/" + input.RuntimeID + "/proxy/" + portValue
+	if err != nil || baseErr != nil || target.Scheme != base.Scheme || target.Host != base.Host || target.Path != expectedPath ||
+		target.User != nil || target.RawPath != "" || target.RawQuery != "" || target.Fragment != "" || target.Opaque != "" || len(endpoint.Headers) > 16 {
+		return nil, nil, ErrUnavailable
+	}
+	headers := make(http.Header, len(endpoint.Headers)+1)
+	for name, value := range endpoint.Headers {
+		if name == "" || len(name) > 128 || len(value) > 4096 || strings.EqualFold(name, "Host") ||
+			strings.EqualFold(name, "OPEN-SANDBOX-API-KEY") || strings.ContainsAny(name+value, "\r\n") {
+			return nil, nil, ErrUnavailable
+		}
+		headers.Set(name, value)
+	}
+	headers.Set("OPEN-SANDBOX-API-KEY", c.key)
+	return target, headers, nil
 }
 
 func execdPath(target *url.URL, path string) {

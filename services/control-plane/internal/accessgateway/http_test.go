@@ -28,11 +28,22 @@ func TestRoutesCannotBecomeArbitraryProxy(t *testing.T) {
 		t.Fatal("wrong-length grant token accepted")
 	}
 	for path, action := range map[string]string{
-		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/files":         "files",
-		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/files/content": "file-content",
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/files":                        "files",
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/files/content":                "file-content",
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/preview-ports/3000":           "preview-port",
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/preview-ports/3000/proxy/app": "preview-proxy",
 	} {
 		if route, ok := parseRoute(path); !ok || route.action != action {
-			t.Fatalf("Files route rejected: %s", path)
+			t.Fatalf("fixed access route rejected: %s", path)
+		}
+	}
+	for _, path := range []string{
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/preview-ports/44772",
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/preview-ports/https:/example.com/proxy",
+		"/v1/tenants/tenant-a/projects/project-a/sandbox-access-grants/grant-a/preview-ports/3000/http://example.com",
+	} {
+		if _, ok := parseRoute(path); ok {
+			t.Fatalf("arbitrary Preview route accepted: %s", path)
 		}
 	}
 	request := httptest.NewRequest(http.MethodGet, valid, nil)
