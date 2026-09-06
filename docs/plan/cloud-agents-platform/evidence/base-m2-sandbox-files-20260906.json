@@ -1,0 +1,62 @@
+{
+  "slice": "BASE-M2 Sandbox Files",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "headBeforeCommit": "2cc3307c99095a5cafbc1306106ce73edb273e4f",
+    "dirtyDuringRun": true,
+    "preservedUnrelatedDirty": [".gitignore", "go.work.sum", "docs/img.png"]
+  },
+  "contract": {
+    "grantKind": "sandbox",
+    "workspaceRoot": "/workspace",
+    "readPageLimitBytes": 1048576,
+    "fileLimitBytes": 16777216,
+    "listLimit": 1000,
+    "continuation": "sfv1 metadata digest and absolute byte offset"
+  },
+  "migration": {
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "upgradeFrom": "000058",
+    "upgradeTo": "000059",
+    "freshApplied": 59,
+    "replayApplied": 0,
+    "schemaBundleDigest": "sha256:9b4344c2ea4d9ac2525a1c761a2024dabcd528ef72c499c9ec6a7f67d8d1ddce",
+    "ledgerRows": 59
+  },
+  "runtimeEvidence": "base-m2-sandbox-files-20260906-runtime/evidence.json",
+  "runtime": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "candidateSourceRef": "207d94c7dc7735c143856fe5c6538b743e478786",
+    "generation": 3,
+    "writeBytes": 29,
+    "readPages": 2,
+    "gatewayRestart": true,
+    "wrongTokenStatus": 403,
+    "crossTenantStatus": 403,
+    "pathTraversalStatus": 400,
+    "symlinkTraversalStatus": 409,
+    "oversizedStatus": 413,
+    "deletedReadStatus": 404,
+    "adminFileAccessCount": 7,
+    "adminFileFailureCount": 2,
+    "adminResponseRedacted": true
+  },
+  "verification": {
+    "generatedSDK": "current",
+    "goTests": "pass",
+    "goRace": "pass",
+    "goVet": "pass",
+    "typescriptSDKTests": "46 pass",
+    "adminWebTests": "32 pass",
+    "userWebTests": "23 pass",
+    "adminAndUserBuilds": "pass with existing Admin chunk-size warning",
+    "contractStandards": "not run: local Bun 1.4.1 and uv 0.6.0 do not match pinned Bun 1.3.14 and uv 0.12.5"
+  },
+  "cleanup": {
+    "testOwnedRuntimeContainers": 0,
+    "testOwnedWorkspaceVolumes": 0,
+    "harnessContainers": 0
+  },
+  "boundary": "Real local OrbStack Docker, OpenSandbox, Access Gateway, Control Plane and disposable PostgreSQL only. Admin Web was test/typecheck/build verified without a new browser visual matrix. Preview, SSH and network-policy execution remain incomplete; no deployment, publication, Kubernetes or customer node was used."
+}

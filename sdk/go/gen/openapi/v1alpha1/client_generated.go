@@ -182,6 +182,9 @@ type SandboxAccessGrantResult = common.ResponseEnvelope[platform.SandboxAccessGr
 type AdminSandboxAccessGrantResult = common.ResponseEnvelope[platform.AdminSandboxAccessGrant]
 type AdminSandboxAccessGrantPageResult = common.ResponseEnvelope[platform.AdminSandboxAccessGrantPage]
 type SandboxPTYSessionResult = common.ResponseEnvelope[platform.SandboxPTYSession]
+type SandboxFileEntryResult = common.ResponseEnvelope[platform.SandboxFileEntry]
+type SandboxFilePageResult = common.ResponseEnvelope[platform.SandboxFilePage]
+type SandboxFileReadPageResult = common.ResponseEnvelope[platform.SandboxFileReadPage]
 type SandboxSessionLifecycleOperationResult = common.ResponseEnvelope[platform.SandboxSessionLifecycleOperation]
 type AdminSandboxSessionResult = common.ResponseEnvelope[platform.AdminSandboxSession]
 type AdminSandboxSessionPageResult = common.ResponseEnvelope[platform.AdminSandboxSessionPage]
@@ -1537,6 +1540,101 @@ func (client *Client) DeletePTYSession(ctx context.Context, tenantID, projectID,
 	}
 	if response.Status != 204 {
 		return client.problemError("foundationDeletePTYSession", response)
+	}
+	return nil
+}
+func (client *Client) ListSandboxFiles(ctx context.Context, tenantID, projectID, grantID, requestID, filePath string) (SandboxFilePageResult, error) {
+	input, err := ValidateListSandboxFilesServerRequest(tenantID, projectID, grantID, requestID, filePath)
+	if err != nil {
+		return SandboxFilePageResult{}, err
+	}
+	query := url.Values{}
+	query.Set("path", input.Path)
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/files?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SandboxFilePageResult{}, err
+	}
+	if response.Status != 200 {
+		return SandboxFilePageResult{}, client.problemError("foundationListSandboxFiles", response)
+	}
+	value, err := platform.DecodeSandboxFilePageResponseJSON(response.Body)
+	if err != nil {
+		return SandboxFilePageResult{}, &ClientError{Operation: "foundationListSandboxFiles", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.GrantID != grantID || value.Value.Path != input.Path {
+		return SandboxFilePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/path")
+	}
+	return value, nil
+}
+func (client *Client) ReadSandboxFile(ctx context.Context, tenantID, projectID, grantID, requestID, filePath string, offset int64, limit int, fileVersion string) (SandboxFileReadPageResult, error) {
+	if limit == 0 {
+		limit = 1 << 20
+	}
+	input, err := ValidateReadSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath, offset, limit, fileVersion)
+	if err != nil {
+		return SandboxFileReadPageResult{}, err
+	}
+	query := url.Values{}
+	query.Set("path", input.Path)
+	query.Set("offset", strconv.FormatInt(input.Offset, 10))
+	query.Set("limit", strconv.Itoa(input.Limit))
+	if input.FileVersion != "" {
+		query.Set("fileVersion", input.FileVersion)
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/files/content?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SandboxFileReadPageResult{}, err
+	}
+	if response.Status != 200 {
+		return SandboxFileReadPageResult{}, client.problemError("foundationReadSandboxFile", response)
+	}
+	value, err := platform.DecodeSandboxFileReadPageResponseJSON(response.Body)
+	if err != nil {
+		return SandboxFileReadPageResult{}, &ClientError{Operation: "foundationReadSandboxFile", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.GrantID != grantID || value.Value.Path != input.Path || value.Value.Offset != input.Offset || input.FileVersion != "" && value.Value.FileVersion != input.FileVersion {
+		return SandboxFileReadPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/path")
+	}
+	return value, nil
+}
+func (client *Client) WriteSandboxFile(ctx context.Context, tenantID, projectID, grantID, requestID string, body platform.SandboxFileWriteRequest) (SandboxFileEntryResult, error) {
+	bodyBytes, err := platform.EncodeSandboxFileWriteRequestJSON(body)
+	if err != nil {
+		return SandboxFileEntryResult{}, err
+	}
+	input, err := ValidateWriteSandboxFileServerRequest(tenantID, projectID, grantID, requestID, bodyBytes)
+	if err != nil {
+		return SandboxFileEntryResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "PUT", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/files", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
+	if err != nil {
+		return SandboxFileEntryResult{}, err
+	}
+	if response.Status != 200 {
+		return SandboxFileEntryResult{}, client.problemError("foundationWriteSandboxFile", response)
+	}
+	value, err := platform.DecodeSandboxFileEntryResponseJSON(response.Body)
+	if err != nil {
+		return SandboxFileEntryResult{}, &ClientError{Operation: "foundationWriteSandboxFile", Status: response.Status, Cause: err}
+	}
+	if value.Value.Path != input.Body.Path || value.Value.Type != "file" {
+		return SandboxFileEntryResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/path")
+	}
+	return value, nil
+}
+func (client *Client) DeleteSandboxFile(ctx context.Context, tenantID, projectID, grantID, requestID, filePath string) error {
+	input, err := ValidateDeleteSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath)
+	if err != nil {
+		return err
+	}
+	query := url.Values{}
+	query.Set("path", input.Path)
+	response, err := client.roundTrip(ctx, Request{Method: "DELETE", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-access-grants/" + grantID + "/files?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return client.problemError("foundationDeleteSandboxFile", response)
 	}
 	return nil
 }
@@ -5074,6 +5172,71 @@ func ValidateGetPTYSessionServerRequest(tenantID, projectID, grantID, sessionID,
 }
 func ValidateDeletePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID string) (PTYSessionServerInput, error) {
 	return validatePTYSessionServerRequest(tenantID, projectID, grantID, sessionID, requestID)
+}
+
+type SandboxFileServerInput struct {
+	TenantID    string
+	ProjectID   string
+	GrantID     string
+	RequestID   string
+	Path        string
+	Offset      int64
+	Limit       int
+	FileVersion string
+	Body        platform.SandboxFileWriteRequest
+}
+
+func validateSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath string, allowRoot bool) (SandboxFileServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return SandboxFileServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(grantID, "/grantId"); err != nil {
+		return SandboxFileServerInput{}, err
+	}
+	if err := platform.ValidateSandboxFilePath(filePath, allowRoot); err != nil {
+		return SandboxFileServerInput{}, err
+	}
+	return SandboxFileServerInput{TenantID: tenantID, ProjectID: projectID, GrantID: grantID, RequestID: requestID, Path: filePath}, nil
+}
+func ValidateListSandboxFilesServerRequest(tenantID, projectID, grantID, requestID, filePath string) (SandboxFileServerInput, error) {
+	return validateSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath, true)
+}
+func ValidateReadSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath string, offset int64, limit int, fileVersion string) (SandboxFileServerInput, error) {
+	input, err := validateSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath, false)
+	if err != nil {
+		return SandboxFileServerInput{}, err
+	}
+	if offset < 0 || offset > 16<<20 {
+		return SandboxFileServerInput{}, common.ContractError("INVALID_FILE_OFFSET", "/offset")
+	}
+	if limit < 1 || limit > 1<<20 {
+		return SandboxFileServerInput{}, common.ContractError("INVALID_FILE_LIMIT", "/limit")
+	}
+	if offset > 0 && fileVersion == "" {
+		return SandboxFileServerInput{}, common.ContractError("FILE_VERSION_REQUIRED", "/fileVersion")
+	}
+	if fileVersion != "" {
+		if err := platform.ValidateSandboxFileVersion(fileVersion); err != nil {
+			return SandboxFileServerInput{}, err
+		}
+	}
+	input.Offset, input.Limit, input.FileVersion = offset, limit, fileVersion
+	return input, nil
+}
+func ValidateWriteSandboxFileServerRequest(tenantID, projectID, grantID, requestID string, body []byte) (SandboxFileServerInput, error) {
+	value, err := platform.DecodeSandboxFileWriteRequestJSON(body)
+	if err != nil {
+		return SandboxFileServerInput{}, err
+	}
+	input, err := validateSandboxFileServerRequest(tenantID, projectID, grantID, requestID, value.Path, false)
+	if err != nil {
+		return SandboxFileServerInput{}, err
+	}
+	input.Body = value
+	return input, nil
+}
+func ValidateDeleteSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath string) (SandboxFileServerInput, error) {
+	return validateSandboxFileServerRequest(tenantID, projectID, grantID, requestID, filePath, false)
 }
 
 type CreateAdminEnvironmentProfileServerInput struct {

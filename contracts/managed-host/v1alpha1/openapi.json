@@ -971,7 +971,7 @@
         },
         "responses": {
           "201": {
-            "description": "Short-lived PTY grant for the exact authorized Sandbox generation",
+            "description": "Short-lived PTY and Files grant for the exact authorized Sandbox generation",
             "content": {
               "application/json": {
                 "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant.schema.json" }
@@ -1060,6 +1060,109 @@
           "403": { "$ref": "#/components/responses/Problem" },
           "404": { "$ref": "#/components/responses/Problem" },
           "409": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sandbox-access-grants/{grantId}/files": {
+      "get": {
+        "operationId": "foundationListSandboxFiles",
+        "x-cloud-agents-service": "access-gateway",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/GrantId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Immediate children beneath one authorized Workspace-relative directory",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "put": {
+        "operationId": "foundationWriteSandboxFile",
+        "x-cloud-agents-service": "access-gateway",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/GrantId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-write-request.schema.json" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Written regular-file metadata without infrastructure authority",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-entry.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "delete": {
+        "operationId": "foundationDeleteSandboxFile",
+        "x-cloud-agents-service": "access-gateway",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/GrantId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+        ],
+        "responses": {
+          "204": { "description": "Regular file deleted" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sandbox-access-grants/{grantId}/files/content": {
+      "get": {
+        "operationId": "foundationReadSandboxFile",
+        "x-cloud-agents-service": "access-gateway",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/GrantId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 1024 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "maximum": 16777216, "default": 0 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 1048576 } },
+          { "name": "fileVersion", "in": "query", "schema": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded reconnectable file bytes and absolute next offset",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-read-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" },
           "503": { "$ref": "#/components/responses/Problem" }
         }
       }

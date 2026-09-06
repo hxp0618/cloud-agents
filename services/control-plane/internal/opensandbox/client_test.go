@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -387,6 +389,138 @@ func TestExecUsesExactReceiptAndBoundsOutput(t *testing.T) {
 	input.Identity.Generation++
 	if _, err := client.Exec(context.Background(), input); !errors.Is(err, ErrConflict) || commands != 3 {
 		t.Fatalf("stale receipt commands=%d err=%v", commands, err)
+	}
+}
+
+func TestFilesStayInsideWorkspaceAndPreserveVersions(t *testing.T) {
+	id := identity()
+	modified := time.Date(2026, 9, 6, 1, 2, 3, 4, time.UTC)
+	content := []byte("hello")
+	deleted := false
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		info := func(filePath, fileType string, size int64) candidateFileInfo {
+			return candidateFileInfo{Path: filePath, Type: fileType, Size: size, ModifiedAt: modified}
+		}
+		switch request.URL.Path {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL, "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
+		case "/files/info":
+			if request.Header.Get("X-EXECD-ACCESS-TOKEN") != "owned" {
+				t.Error("missing endpoint credential")
+			}
+			filePath := request.URL.Query().Get("path")
+			var value candidateFileInfo
+			switch filePath {
+			case "/workspace":
+				value = info(filePath, "directory", 0)
+			case "/workspace/link":
+				value = info(filePath, "symlink", 0)
+			case "/workspace/notes.txt":
+				if deleted {
+					http.NotFound(writer, request)
+					return
+				}
+				value = info(filePath, "file", int64(len(content)))
+			default:
+				http.NotFound(writer, request)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]candidateFileInfo{filePath: value})
+		case "/directories/list":
+			if request.URL.Query().Get("path") != "/workspace" || request.URL.Query().Get("depth") != "1" {
+				t.Error("unsafe list scope")
+			}
+			_ = json.NewEncoder(writer).Encode([]candidateFileInfo{
+				info("/workspace/notes.txt", "file", int64(len(content))),
+				info("/workspace/link", "symlink", 0),
+			})
+		case "/files/download":
+			parts := strings.Split(strings.TrimPrefix(request.Header.Get("Range"), "bytes="), "-")
+			if len(parts) != 2 {
+				t.Error("invalid Range")
+				return
+			}
+			start, startErr := strconv.Atoi(parts[0])
+			end, endErr := strconv.Atoi(parts[1])
+			if startErr != nil || endErr != nil || start < 0 || end >= len(content) || start > end {
+				t.Error("invalid Range")
+				return
+			}
+			writer.Header().Set("Content-Range", "bytes "+strconv.Itoa(start)+"-"+strconv.Itoa(end)+"/"+strconv.Itoa(len(content)))
+			writer.WriteHeader(http.StatusPartialContent)
+			_, _ = writer.Write(content[start : end+1])
+		case "/files/upload":
+			if request.Method != http.MethodPost || request.ParseMultipartForm(17<<20) != nil {
+				t.Error("invalid upload")
+				return
+			}
+			metadata, _, err := request.FormFile("metadata")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			var spec struct {
+				Path string `json:"path"`
+				Mode int    `json:"mode"`
+			}
+			decodeErr := json.NewDecoder(metadata).Decode(&spec)
+			_ = metadata.Close()
+			file, _, err := request.FormFile("file")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			uploaded, readErr := io.ReadAll(file)
+			_ = file.Close()
+			if decodeErr != nil || readErr != nil || spec.Path != "/workspace/notes.txt" || spec.Mode != 600 {
+				t.Error("unsafe upload metadata")
+				return
+			}
+			content, deleted = uploaded, false
+			_, _ = writer.Write([]byte("{}"))
+		case "/files":
+			if request.Method != http.MethodDelete || request.URL.Query().Get("path") != "/workspace/notes.txt" {
+				t.Error("unsafe delete")
+				return
+			}
+			deleted = true
+			_, _ = writer.Write([]byte("{}"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	input := PTYInput{Identity: id, RuntimeID: "physical-1"}
+	entries, err := client.ListFiles(context.Background(), input, ".")
+	if err != nil || len(entries) != 2 || entries[0].Path != "link" || entries[0].Type != "symlink" || entries[1].Path != "notes.txt" {
+		t.Fatalf("entries=%+v err=%v", entries, err)
+	}
+	first, err := client.ReadFile(context.Background(), input, "notes.txt", 0, 2, "")
+	if err != nil || string(first.Content) != "he" || first.TotalBytes != 5 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	second, err := client.ReadFile(context.Background(), input, "notes.txt", 2, 3, first.FileVersion)
+	if err != nil || string(second.Content) != "llo" || second.FileVersion != first.FileVersion {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	if _, err := client.ReadFile(context.Background(), input, "link/secret", 0, 1, ""); !errors.Is(err, ErrConflict) {
+		t.Fatal("followed symlink", err)
+	}
+	if _, err := client.ReadFile(context.Background(), input, "../secret", 0, 1, ""); !errors.Is(err, ErrInvalid) {
+		t.Fatal("accepted traversal", err)
+	}
+	written, err := client.WriteFile(context.Background(), input, "notes.txt", []byte("updated"))
+	if err != nil || written.SizeBytes != 7 || string(content) != "updated" {
+		t.Fatalf("written=%+v content=%q err=%v", written, content, err)
+	}
+	if err := client.DeleteFile(context.Background(), input, "notes.txt"); err != nil || !deleted {
+		t.Fatal("delete failed", err)
 	}
 }
 

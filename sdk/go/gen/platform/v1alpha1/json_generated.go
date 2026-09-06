@@ -3,8 +3,10 @@
 package v1alpha1
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -102,6 +104,7 @@ var (
 	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
 	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
+	fileVersionPattern           = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
 	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
 	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
 	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
@@ -682,14 +685,20 @@ type SandboxAccessGrant struct {
 	ExpiresAt   string            `json:"expiresAt"`
 }
 type AdminSandboxAccessGrantSpec struct {
-	ProjectRef      common.ProjectRef `json:"projectRef"`
-	SandboxID       string            `json:"sandboxId"`
-	Generation      int64             `json:"generation"`
-	AccessKind      string            `json:"accessKind"`
-	Status          string            `json:"status"`
-	ExpiresAt       string            `json:"expiresAt"`
-	RevokedAt       string            `json:"revokedAt,omitempty"`
-	PTYSessionCount int64             `json:"ptySessionCount"`
+	ProjectRef        common.ProjectRef `json:"projectRef"`
+	SandboxID         string            `json:"sandboxId"`
+	Generation        int64             `json:"generation"`
+	AccessKind        string            `json:"accessKind"`
+	Status            string            `json:"status"`
+	ExpiresAt         string            `json:"expiresAt"`
+	RevokedAt         string            `json:"revokedAt,omitempty"`
+	PTYSessionCount   int64             `json:"ptySessionCount"`
+	FileAccessCount   int64             `json:"fileAccessCount"`
+	FileFailureCount  int64             `json:"fileFailureCount"`
+	LastFileAction    string            `json:"lastFileAction,omitempty"`
+	LastFileStatus    string            `json:"lastFileStatus,omitempty"`
+	LastFileErrorCode string            `json:"lastFileErrorCode,omitempty"`
+	LastFileAccessAt  string            `json:"lastFileAccessAt,omitempty"`
 }
 type AdminSandboxAccessGrant struct {
 	ResourceBase
@@ -713,6 +722,42 @@ type SandboxPTYSession struct {
 	OutputOffset  int64             `json:"outputOffset"`
 	WebSocketPath string            `json:"webSocketPath"`
 	CreatedAt     string            `json:"createdAt"`
+}
+type SandboxFileEntry struct {
+	Path        string `json:"path"`
+	Type        string `json:"type"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	ModifiedAt  string `json:"modifiedAt"`
+	FileVersion string `json:"fileVersion"`
+}
+type SandboxFilePage struct {
+	APIVersion string             `json:"apiVersion"`
+	Kind       string             `json:"kind"`
+	ProjectRef common.ProjectRef  `json:"projectRef"`
+	GrantID    string             `json:"grantId"`
+	SandboxID  string             `json:"sandboxId"`
+	Generation int64              `json:"generation"`
+	Path       string             `json:"path"`
+	Entries    []SandboxFileEntry `json:"entries"`
+}
+type SandboxFileReadPage struct {
+	APIVersion       string            `json:"apiVersion"`
+	Kind             string            `json:"kind"`
+	ProjectRef       common.ProjectRef `json:"projectRef"`
+	GrantID          string            `json:"grantId"`
+	SandboxID        string            `json:"sandboxId"`
+	Generation       int64             `json:"generation"`
+	Path             string            `json:"path"`
+	FileVersion      string            `json:"fileVersion"`
+	Offset           int64             `json:"offset"`
+	NextOffset       int64             `json:"nextOffset"`
+	TotalBytes       int64             `json:"totalBytes"`
+	EOF              bool              `json:"eof"`
+	ContentBase64URL string            `json:"contentBase64Url"`
+}
+type SandboxFileWriteRequest struct {
+	Path             string `json:"path"`
+	ContentBase64URL string `json:"contentBase64Url"`
 }
 type SandboxSession struct {
 	APIVersion            string            `json:"apiVersion"`
@@ -1072,6 +1117,8 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "AdminSandboxSession":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
+	case "AdminSandboxAccessGrant":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
 	case "NetworkPolicy":
@@ -1147,6 +1194,9 @@ var sandboxExecResultResponseShape = common.ObjectResponseShape(map[string]commo
 var sandboxAccessGrantResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "accessToken": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var adminSandboxAccessGrantPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "accessGrants": common.ArrayResponseShape(resourceResponseShape("AdminSandboxAccessGrant")), "nextPageToken": common.ScalarResponseShape()})
 var sandboxPTYSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "outputOffset": common.ScalarResponseShape(), "webSocketPath": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape()})
+var sandboxFileEntryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"path": common.ScalarResponseShape(), "type": common.ScalarResponseShape(), "sizeBytes": common.ScalarResponseShape(), "modifiedAt": common.ScalarResponseShape(), "fileVersion": common.ScalarResponseShape()})
+var sandboxFilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "path": common.ScalarResponseShape(), "entries": common.ArrayResponseShape(sandboxFileEntryResponseShape)})
+var sandboxFileReadPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "grantId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "path": common.ScalarResponseShape(), "fileVersion": common.ScalarResponseShape(), "offset": common.ScalarResponseShape(), "nextOffset": common.ScalarResponseShape(), "totalBytes": common.ScalarResponseShape(), "eof": common.ScalarResponseShape(), "contentBase64Url": common.ScalarResponseShape()})
 var sandboxSessionLifecycleOperationResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "idempotencyKey": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "requestedBy": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "requestedAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "currentStep": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "computeDisposition": common.ScalarResponseShape(), "workspaceDisposition": common.ScalarResponseShape()})
 var deploymentTargetPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -3718,7 +3768,7 @@ func DecodeSandboxAccessGrantJSON(data []byte) (SandboxAccessGrant, error) {
 		return SandboxAccessGrant{}, err
 	}
 	var value SandboxAccessGrant
-	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxAccessGrant" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.AccessKind != "pty" || !accessTokenPattern.MatchString(value.AccessToken) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxAccessGrant" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.AccessKind != "sandbox" || !accessTokenPattern.MatchString(value.AccessToken) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
 		return SandboxAccessGrant{}, common.ContractError("INVALID_SANDBOX_ACCESS_GRANT", "")
 	}
 	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
@@ -3754,12 +3804,14 @@ func DecodeAdminSandboxAccessGrantJSON(data []byte) (AdminSandboxAccessGrant, er
 	if err != nil {
 		return AdminSandboxAccessGrant{}, err
 	}
-	specFields, err := strictSpec(fields["spec"], []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "revokedAt", "ptySessionCount"}, []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount"})
+	allowed := []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "revokedAt", "ptySessionCount", "fileAccessCount", "fileFailureCount", "lastFileAction", "lastFileStatus", "lastFileErrorCode", "lastFileAccessAt"}
+	required := []string{"projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount", "fileAccessCount", "fileFailureCount"}
+	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return AdminSandboxAccessGrant{}, err
 	}
 	var spec AdminSandboxAccessGrantSpec
-	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SandboxID, "/spec/sandboxId") != nil || spec.Generation < 1 || spec.Generation > 9007199254740991 || spec.AccessKind != "pty" || spec.Status != "active" && spec.Status != "expired" && spec.Status != "revoked" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil || spec.PTYSessionCount < 0 || spec.PTYSessionCount > 10000 {
+	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SandboxID, "/spec/sandboxId") != nil || spec.Generation < 1 || spec.Generation > 9007199254740991 || spec.AccessKind != "sandbox" || spec.Status != "active" && spec.Status != "expired" && spec.Status != "revoked" || common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil || spec.PTYSessionCount < 0 || spec.PTYSessionCount > 10000 || spec.FileAccessCount < 0 || spec.FileFailureCount < 0 || spec.FileFailureCount > spec.FileAccessCount {
 		return AdminSandboxAccessGrant{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec")
 	}
 	spec.ProjectRef, err = common.DecodeProjectRefJSON(specFields["projectRef"])
@@ -3769,6 +3821,13 @@ func DecodeAdminSandboxAccessGrantJSON(data []byte) (AdminSandboxAccessGrant, er
 	_, hasRevokedAt := specFields["revokedAt"]
 	if (spec.Status == "revoked") != hasRevokedAt || hasRevokedAt && common.ValidateDateTime(spec.RevokedAt, "/spec/revokedAt") != nil {
 		return AdminSandboxAccessGrant{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/revokedAt")
+	}
+	_, hasAction := specFields["lastFileAction"]
+	_, hasStatus := specFields["lastFileStatus"]
+	_, hasAt := specFields["lastFileAccessAt"]
+	_, hasError := specFields["lastFileErrorCode"]
+	if (spec.FileAccessCount > 0) != (hasAction && hasStatus && hasAt) || hasAction && spec.LastFileAction != "list" && spec.LastFileAction != "read" && spec.LastFileAction != "write" && spec.LastFileAction != "delete" || hasStatus && spec.LastFileStatus != "started" && spec.LastFileStatus != "succeeded" && spec.LastFileStatus != "failed" || hasAt && common.ValidateDateTime(spec.LastFileAccessAt, "/spec/lastFileAccessAt") != nil || hasError != (spec.LastFileStatus == "failed") || hasError && common.ValidateIdentifier(spec.LastFileErrorCode, "/spec/lastFileErrorCode") != nil {
+		return AdminSandboxAccessGrant{}, common.ContractError("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/lastFileStatus")
 	}
 	return AdminSandboxAccessGrant{ResourceBase: base, Spec: spec}, nil
 }
@@ -3863,6 +3922,169 @@ func EncodeSandboxPTYSessionResponseJSON(value common.ResponseEnvelope[SandboxPT
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func ValidateSandboxFilePath(value string, allowRoot bool) error {
+	if len(value) < 1 || len(value) > 1024 || !utf8.ValidString(value) || strings.ContainsAny(value, "\\\x00\r\n") || path.IsAbs(value) || path.Clean(value) != value || value == "." && !allowRoot {
+		return common.ContractError("INVALID_SANDBOX_FILE_PATH", "/path")
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			if value != "." {
+				return common.ContractError("INVALID_SANDBOX_FILE_PATH", "/path")
+			}
+		}
+	}
+	return nil
+}
+func ValidateSandboxFileVersion(value string) error {
+	if !fileVersionPattern.MatchString(value) {
+		return common.ContractError("INVALID_SANDBOX_FILE_VERSION", "/fileVersion")
+	}
+	return nil
+}
+func decodeSandboxFileContent(value string, maximum int) ([]byte, error) {
+	if len(value) > base64.RawURLEncoding.EncodedLen(maximum) {
+		return nil, common.ContractError("SANDBOX_FILE_SIZE_LIMIT", "/contentBase64Url")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(decoded) > maximum || base64.RawURLEncoding.EncodeToString(decoded) != value {
+		return nil, common.ContractError("INVALID_SANDBOX_FILE_CONTENT", "/contentBase64Url")
+	}
+	return decoded, nil
+}
+func DecodeSandboxFileEntryJSON(data []byte) (SandboxFileEntry, error) {
+	_, err := common.DecodeStrictObject(data, []string{"path", "type", "sizeBytes", "modifiedAt", "fileVersion"}, []string{"path", "type", "sizeBytes", "modifiedAt", "fileVersion"})
+	if err != nil {
+		return SandboxFileEntry{}, err
+	}
+	var value SandboxFileEntry
+	if json.Unmarshal(data, &value) != nil || ValidateSandboxFilePath(value.Path, false) != nil || value.Type != "file" && value.Type != "directory" && value.Type != "symlink" && value.Type != "other" || value.SizeBytes < 0 || value.SizeBytes > 9007199254740991 || common.ValidateDateTime(value.ModifiedAt, "/modifiedAt") != nil || !fileVersionPattern.MatchString(value.FileVersion) {
+		return SandboxFileEntry{}, common.ContractError("INVALID_SANDBOX_FILE_ENTRY", "")
+	}
+	return value, nil
+}
+func DecodeSandboxFileEntryResponseJSON(data []byte) (common.ResponseEnvelope[SandboxFileEntry], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxFileEntryResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxFileEntry]{}, err
+	}
+	value, err := DecodeSandboxFileEntryJSON(raw)
+	return common.ResponseEnvelope[SandboxFileEntry]{Value: value, Unknown: sidecar}, err
+}
+func EncodeSandboxFileEntryResponseJSON(value common.ResponseEnvelope[SandboxFileEntry]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxFileEntryJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxFilePageJSON(data []byte) (SandboxFilePage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "entries"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "entries"})
+	if err != nil {
+		return SandboxFilePage{}, err
+	}
+	var page SandboxFilePage
+	var raw []json.RawMessage
+	if json.Unmarshal(data, &page) != nil || page.APIVersion != APIVersion || page.Kind != "SandboxFilePage" || common.ValidateIdentifier(page.GrantID, "/grantId") != nil || common.ValidateIdentifier(page.SandboxID, "/sandboxId") != nil || page.Generation < 1 || page.Generation > 9007199254740991 || ValidateSandboxFilePath(page.Path, true) != nil || json.Unmarshal(fields["entries"], &raw) != nil || raw == nil || len(raw) > 1000 {
+		return SandboxFilePage{}, common.ContractError("INVALID_SANDBOX_FILE_PAGE", "")
+	}
+	page.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxFilePage{}, err
+	}
+	page.Entries = make([]SandboxFileEntry, 0, len(raw))
+	seen := map[string]bool{}
+	for _, item := range raw {
+		entry, decodeErr := DecodeSandboxFileEntryJSON(item)
+		if decodeErr != nil || path.Dir(entry.Path) != page.Path || seen[entry.Path] {
+			return SandboxFilePage{}, common.ContractError("INVALID_SANDBOX_FILE_PAGE", "/entries")
+		}
+		seen[entry.Path] = true
+		page.Entries = append(page.Entries, entry)
+	}
+	return page, nil
+}
+func DecodeSandboxFilePageResponseJSON(data []byte) (common.ResponseEnvelope[SandboxFilePage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxFilePageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxFilePage]{}, err
+	}
+	value, err := DecodeSandboxFilePageJSON(raw)
+	return common.ResponseEnvelope[SandboxFilePage]{Value: value, Unknown: sidecar}, err
+}
+func EncodeSandboxFilePageResponseJSON(value common.ResponseEnvelope[SandboxFilePage]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxFilePageJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxFileReadPageJSON(data []byte) (SandboxFileReadPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "fileVersion", "offset", "nextOffset", "totalBytes", "eof", "contentBase64Url"}, []string{"apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "fileVersion", "offset", "nextOffset", "totalBytes", "eof", "contentBase64Url"})
+	if err != nil {
+		return SandboxFileReadPage{}, err
+	}
+	var value SandboxFileReadPage
+	if json.Unmarshal(data, &value) != nil || value.APIVersion != APIVersion || value.Kind != "SandboxFileReadPage" || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || ValidateSandboxFilePath(value.Path, false) != nil || !fileVersionPattern.MatchString(value.FileVersion) || value.Offset < 0 || value.NextOffset < value.Offset || value.TotalBytes < value.NextOffset || value.TotalBytes > 16<<20 {
+		return SandboxFileReadPage{}, common.ContractError("INVALID_SANDBOX_FILE_READ_PAGE", "")
+	}
+	content, contentErr := decodeSandboxFileContent(value.ContentBase64URL, 1<<20)
+	if contentErr != nil || int64(len(content)) != value.NextOffset-value.Offset || value.EOF != (value.NextOffset == value.TotalBytes) {
+		return SandboxFileReadPage{}, common.ContractError("INVALID_SANDBOX_FILE_READ_PAGE", "/contentBase64Url")
+	}
+	value.ProjectRef, err = common.DecodeProjectRefJSON(fields["projectRef"])
+	if err != nil {
+		return SandboxFileReadPage{}, err
+	}
+	return value, nil
+}
+func DecodeSandboxFileReadPageResponseJSON(data []byte) (common.ResponseEnvelope[SandboxFileReadPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, sandboxFileReadPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SandboxFileReadPage]{}, err
+	}
+	value, err := DecodeSandboxFileReadPageJSON(raw)
+	return common.ResponseEnvelope[SandboxFileReadPage]{Value: value, Unknown: sidecar}, err
+}
+func EncodeSandboxFileReadPageResponseJSON(value common.ResponseEnvelope[SandboxFileReadPage]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxFileReadPageJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSandboxFileWriteRequestJSON(data []byte) (SandboxFileWriteRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"path", "contentBase64Url"}, []string{"path", "contentBase64Url"})
+	if err != nil {
+		return SandboxFileWriteRequest{}, err
+	}
+	var value SandboxFileWriteRequest
+	if json.Unmarshal(data, &value) != nil || ValidateSandboxFilePath(value.Path, false) != nil {
+		return SandboxFileWriteRequest{}, common.ContractError("INVALID_SANDBOX_FILE_WRITE_REQUEST", "")
+	}
+	if _, err := decodeSandboxFileContent(value.ContentBase64URL, 16<<20); err != nil {
+		return SandboxFileWriteRequest{}, err
+	}
+	return value, nil
+}
+func EncodeSandboxFileWriteRequestJSON(value SandboxFileWriteRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxFileWriteRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 func DecodeSandboxSessionLifecycleRequestJSON(data []byte) (SandboxSessionLifecycleRequest, error) {
 	allowed := []string{"expectedGeneration", "expectedResourceVersion", "confirmedSandboxId", "computeDisposition", "workspaceDisposition"}

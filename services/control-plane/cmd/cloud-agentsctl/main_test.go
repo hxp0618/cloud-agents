@@ -181,6 +181,32 @@ func TestRunAttachesPTYWithCursor(t *testing.T) {
 	}
 }
 
+func TestRunWritesSandboxFileThroughAccessGateway(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPut || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/files" ||
+			request.Header.Get("Authorization") != "Bearer cag1_"+strings.Repeat("x", 43) || request.Header.Get("X-Request-ID") != "request-alpha" ||
+			string(body) != `{"path":"notes.txt","contentBase64Url":"aGk"}` {
+			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.String(), request.Header, body)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"path":"notes.txt","type":"file","sizeBytes":2,"modifiedAt":"2026-09-06T00:00:00Z","fileVersion":"sfv1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}`))
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "cag1_" + strings.Repeat("x", 43), "--tenant", "tenant-alpha",
+		"--project", "project-alpha", "--grant", "grant-alpha", "--request-id", "request-alpha",
+		"files", "write", "--path", "notes.txt", "--content-base64url", "aGk",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"path":"notes.txt"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 	for _, test := range []struct {
 		args     []string
@@ -197,6 +223,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"sandbox", "exec", "help"}, expected: "-expected-generation int"},
 		{args: []string{"sandbox", "grant", "help"}, expected: "-ttl-seconds int"},
 		{args: []string{"pty", "attach", "help"}, expected: "-takeover"},
+		{args: []string{"files", "read", "help"}, expected: "-file-version string"},
 	} {
 		var stdout bytes.Buffer
 		if err := run(test.args, &stdout); err != nil {

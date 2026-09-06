@@ -2,15 +2,21 @@ package accessgateway
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	openapi "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/coordination"
@@ -40,10 +46,24 @@ func parseRoute(path string) (route, bool) {
 	}
 	parts := strings.Split(strings.TrimPrefix(path, "/v1/tenants/"), "/")
 	if len(parts) < 6 || parts[0] == "" || parts[1] != "projects" || parts[2] == "" ||
-		parts[3] != "sandbox-access-grants" || parts[4] == "" || parts[5] != "pty-sessions" {
+		parts[3] != "sandbox-access-grants" || parts[4] == "" {
 		return route{}, false
 	}
 	value := route{tenant: parts[0], project: parts[2], grant: parts[4]}
+	if parts[5] == "files" {
+		if len(parts) == 6 {
+			value.action = "files"
+			return value, true
+		}
+		if len(parts) == 7 && parts[6] == "content" {
+			value.action = "file-content"
+			return value, true
+		}
+		return route{}, false
+	}
+	if parts[5] != "pty-sessions" {
+		return route{}, false
+	}
 	switch len(parts) {
 	case 6:
 		value.action = "create"
@@ -65,8 +85,11 @@ func parseRoute(path string) (route, bool) {
 
 func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	requestID := request.Header.Get("X-Request-ID")
-	if requestID == "" || strings.ContainsAny(requestID, "\r\n,/") || len(requestID) > 128 {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil {
 		requestID = "request-unavailable"
+		writer.Header().Set("X-Request-ID", requestID)
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
 	}
 	writer.Header().Set("X-Request-ID", requestID)
 	value, ok := parseRoute(request.URL.Path)
@@ -76,7 +99,9 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 	allowed := value.action == "create" && request.Method == http.MethodPost ||
 		value.action == "detail" && (request.Method == http.MethodGet || request.Method == http.MethodDelete) ||
-		value.action == "websocket" && request.Method == http.MethodGet
+		value.action == "websocket" && request.Method == http.MethodGet ||
+		value.action == "files" && (request.Method == http.MethodGet || request.Method == http.MethodPut || request.Method == http.MethodDelete) ||
+		value.action == "file-content" && request.Method == http.MethodGet
 	if !allowed {
 		writeProblem(writer, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 		return
@@ -98,6 +123,17 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		}
 	case "websocket":
 		server.webSocket(writer, request, value, digest)
+	case "files":
+		switch request.Method {
+		case http.MethodGet:
+			server.listFiles(writer, request, value, digest)
+		case http.MethodPut:
+			server.writeFile(writer, request, value, digest)
+		case http.MethodDelete:
+			server.deleteFile(writer, request, value, digest)
+		}
+	case "file-content":
+		server.readFile(writer, request, value, digest)
 	}
 }
 
@@ -188,6 +224,231 @@ func (server *Server) delete(writer http.ResponseWriter, request *http.Request, 
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+type fileAccess struct {
+	authority postgres.SandboxAccessGrantAuthority
+	client    *opensandbox.Client
+	eventID   string
+}
+
+func strictQuery(request *http.Request, allowed ...string) (url.Values, bool) {
+	query, err := url.ParseQuery(request.URL.RawQuery)
+	if err != nil {
+		return nil, false
+	}
+	accepted := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		accepted[name] = struct{}{}
+	}
+	for name, values := range query {
+		if _, ok := accepted[name]; !ok || len(values) != 1 {
+			return nil, false
+		}
+	}
+	return query, true
+}
+
+func newFileEventID() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return "file-" + hex.EncodeToString(random[:]), nil
+}
+
+func fileErrorCode(err error) string {
+	_, code := gatewayError(err)
+	return code
+}
+
+func (server *Server) startFileAccess(request *http.Request, value route, tokenDigest, action string) (fileAccess, error) {
+	authority, err := server.store.ResolveGrant(request.Context(), value.tenant, value.project, value.grant, tokenDigest)
+	if err != nil {
+		return fileAccess{}, err
+	}
+	eventID, err := newFileEventID()
+	if err != nil {
+		return fileAccess{}, err
+	}
+	if err := server.store.StartFileAccess(request.Context(), value.tenant, value.project, value.grant, eventID, action, tokenDigest, request.Header.Get("X-Request-ID")); err != nil {
+		return fileAccess{}, err
+	}
+	client, err := server.client(authority)
+	if err != nil {
+		_ = server.finishFileAccess(request.Context(), value, tokenDigest, eventID, 0, err)
+		return fileAccess{}, err
+	}
+	return fileAccess{authority: authority, client: client, eventID: eventID}, nil
+}
+
+func (server *Server) finishFileAccess(ctx context.Context, value route, tokenDigest, eventID string, bytesTransferred int64, operationErr error) error {
+	outcome, stableErrorCode := "succeeded", ""
+	if operationErr != nil {
+		outcome, stableErrorCode = "failed", fileErrorCode(operationErr)
+	}
+	finishContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	completionErr := server.store.CompleteFileAccess(finishContext, value.tenant, value.project, value.grant, eventID, tokenDigest, outcome, stableErrorCode, bytesTransferred)
+	if operationErr != nil {
+		return operationErr
+	}
+	return completionErr
+}
+
+func (server *Server) listFiles(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	query, ok := strictQuery(request, "path")
+	if !ok || query.Get("path") == "" {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	validated, err := openapi.ValidateListSandboxFilesServerRequest(value.tenant, value.project, value.grant, request.Header.Get("X-Request-ID"), query.Get("path"))
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	access, err := server.startFileAccess(request, value, tokenDigest, "list")
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	entries, operationErr := access.client.ListFiles(request.Context(), ptyInput(access.authority), validated.Path)
+	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, 0, operationErr); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	result := make([]platform.SandboxFileEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, platform.SandboxFileEntry{Path: entry.Path, Type: entry.Type, SizeBytes: entry.SizeBytes, ModifiedAt: entry.ModifiedAt, FileVersion: entry.FileVersion})
+	}
+	grant := access.authority
+	body, encodeErr := platform.EncodeSandboxFilePageResponseJSON(common.ResponseEnvelope[platform.SandboxFilePage]{Value: platform.SandboxFilePage{
+		APIVersion: platform.APIVersion, Kind: "SandboxFilePage",
+		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: grant.Access.Scope.ProjectID},
+		GrantID:    grant.GrantID, SandboxID: grant.Access.SandboxID, Generation: grant.Access.Generation,
+		Path: validated.Path, Entries: result,
+	}})
+	writeGatewayJSON(writer, http.StatusOK, body, encodeErr)
+}
+
+func (server *Server) readFile(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	query, ok := strictQuery(request, "path", "offset", "limit", "fileVersion")
+	if !ok || query.Get("path") == "" {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	offset, limit := int64(0), int64(1<<20)
+	var err error
+	if query.Has("offset") {
+		offset, err = strconv.ParseInt(query.Get("offset"), 10, 64)
+	}
+	if err == nil && query.Has("limit") {
+		limit, err = strconv.ParseInt(query.Get("limit"), 10, 32)
+	}
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	validated, err := openapi.ValidateReadSandboxFileServerRequest(value.tenant, value.project, value.grant, request.Header.Get("X-Request-ID"), query.Get("path"), offset, int(limit), query.Get("fileVersion"))
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	access, err := server.startFileAccess(request, value, tokenDigest, "read")
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	read, operationErr := access.client.ReadFile(request.Context(), ptyInput(access.authority), validated.Path, validated.Offset, validated.Limit, validated.FileVersion)
+	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, int64(len(read.Content)), operationErr); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	nextOffset := read.Offset + int64(len(read.Content))
+	grant := access.authority
+	body, encodeErr := platform.EncodeSandboxFileReadPageResponseJSON(common.ResponseEnvelope[platform.SandboxFileReadPage]{Value: platform.SandboxFileReadPage{
+		APIVersion: platform.APIVersion, Kind: "SandboxFileReadPage",
+		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: grant.Access.Scope.ProjectID},
+		GrantID:    grant.GrantID, SandboxID: grant.Access.SandboxID, Generation: grant.Access.Generation,
+		Path: read.Path, FileVersion: read.FileVersion, Offset: read.Offset, NextOffset: nextOffset,
+		TotalBytes: read.TotalBytes, EOF: nextOffset == read.TotalBytes,
+		ContentBase64URL: base64.RawURLEncoding.EncodeToString(read.Content),
+	}})
+	writeGatewayJSON(writer, http.StatusOK, body, encodeErr)
+}
+
+func (server *Server) writeFile(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	if query, ok := strictQuery(request); !ok || len(query) != 0 {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(strings.Split(request.Header.Get("Content-Type"), ";")[0])) != "application/json" {
+		writeProblem(writer, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 22369622+2049))
+	if err != nil || len(body) > 22369622+2048 {
+		writeProblem(writer, http.StatusRequestEntityTooLarge, "SANDBOX_FILE_LIMIT")
+		return
+	}
+	validated, err := openapi.ValidateWriteSandboxFileServerRequest(value.tenant, value.project, value.grant, request.Header.Get("X-Request-ID"), body)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	content, err := base64.RawURLEncoding.DecodeString(validated.Body.ContentBase64URL)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	access, err := server.startFileAccess(request, value, tokenDigest, "write")
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	entry, operationErr := access.client.WriteFile(request.Context(), ptyInput(access.authority), validated.Path, content)
+	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, int64(len(content)), operationErr); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	body, encodeErr := platform.EncodeSandboxFileEntryResponseJSON(common.ResponseEnvelope[platform.SandboxFileEntry]{Value: platform.SandboxFileEntry{
+		Path: entry.Path, Type: entry.Type, SizeBytes: entry.SizeBytes, ModifiedAt: entry.ModifiedAt, FileVersion: entry.FileVersion,
+	}})
+	writeGatewayJSON(writer, http.StatusOK, body, encodeErr)
+}
+
+func (server *Server) deleteFile(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string) {
+	query, ok := strictQuery(request, "path")
+	if !ok || query.Get("path") == "" {
+		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	validated, err := openapi.ValidateDeleteSandboxFileServerRequest(value.tenant, value.project, value.grant, request.Header.Get("X-Request-ID"), query.Get("path"))
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	access, err := server.startFileAccess(request, value, tokenDigest, "delete")
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	operationErr := access.client.DeleteFile(request.Context(), ptyInput(access.authority), validated.Path)
+	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, 0, operationErr); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func writeGatewayJSON(writer http.ResponseWriter, status int, body []byte, err error) {
+	if err != nil {
+		writeProblem(writer, http.StatusInternalServerError, "INTERNAL_ERROR")
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
+	_, _ = writer.Write(body)
 }
 
 func (server *Server) webSocket(writer http.ResponseWriter, request *http.Request, route route, tokenDigest string) {
@@ -288,17 +549,25 @@ func writeSession(writer http.ResponseWriter, status int, session postgres.Sandb
 }
 
 func writeGatewayError(writer http.ResponseWriter, err error) {
+	status, code := gatewayError(err)
+	writeProblem(writer, status, code)
+}
+
+func gatewayError(err error) (int, string) {
+	var contractErr *common.JSONContractError
 	switch {
 	case errors.Is(err, postgres.ErrSandboxAccessGrantDenied):
-		writeProblem(writer, http.StatusForbidden, "ACCESS_GRANT_DENIED")
+		return http.StatusForbidden, "ACCESS_GRANT_DENIED"
 	case errors.Is(err, coordination.ErrFoundationSandboxNotFound), errors.Is(err, opensandbox.ErrNotFound):
-		writeProblem(writer, http.StatusNotFound, "NOT_FOUND")
+		return http.StatusNotFound, "NOT_FOUND"
 	case errors.Is(err, coordination.ErrFoundationSandboxConflict), errors.Is(err, opensandbox.ErrConflict), errors.Is(err, opensandbox.ErrRuntimeFailed):
-		writeProblem(writer, http.StatusConflict, "RESOURCE_CONFLICT")
-	case errors.Is(err, postgres.ErrCoordinationInvalidInput), errors.Is(err, opensandbox.ErrInvalid):
-		writeProblem(writer, http.StatusBadRequest, "INVALID_REQUEST")
+		return http.StatusConflict, "RESOURCE_CONFLICT"
+	case errors.Is(err, opensandbox.ErrFileLimit):
+		return http.StatusRequestEntityTooLarge, "SANDBOX_FILE_LIMIT"
+	case errors.Is(err, postgres.ErrCoordinationInvalidInput), errors.Is(err, opensandbox.ErrInvalid), errors.As(err, &contractErr):
+		return http.StatusBadRequest, "INVALID_REQUEST"
 	default:
-		writeProblem(writer, http.StatusServiceUnavailable, "SANDBOX_ACCESS_UNAVAILABLE")
+		return http.StatusServiceUnavailable, "SANDBOX_ACCESS_UNAVAILABLE"
 	}
 }
 

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-file-page.schema.json",
+  "title": "SandboxFilePage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "entries"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxFilePage" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "entries": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "sandbox-file-entry.schema.json" }
+    }
+  }
+}

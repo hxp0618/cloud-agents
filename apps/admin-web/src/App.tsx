@@ -6873,6 +6873,26 @@ function SandboxDetail({
                 <small>
                   {t("sandbox.grants.sessions", { count: number(grant.spec.ptySessionCount) })}
                 </small>
+                <small>
+                  {t("sandbox.grants.files", {
+                    count: number(grant.spec.fileAccessCount),
+                    failures: number(grant.spec.fileFailureCount),
+                  })}
+                </small>
+                {grant.spec.lastFileAction === undefined ||
+                grant.spec.lastFileStatus === undefined ||
+                grant.spec.lastFileAccessAt === undefined ? null : (
+                  <small>
+                    {t("sandbox.grants.lastFile", {
+                      action: t(`sandbox.grants.fileAction.${grant.spec.lastFileAction}`),
+                      status: t(`sandbox.grants.fileStatus.${grant.spec.lastFileStatus}`),
+                      at: dateTime(grant.spec.lastFileAccessAt),
+                    })}
+                  </small>
+                )}
+                {grant.spec.lastFileErrorCode === undefined ? null : (
+                  <small className="mono danger-text">{grant.spec.lastFileErrorCode}</small>
+                )}
                 {grant.spec.status === "active" ? (
                   <button
                     className="button danger"
@@ -7082,6 +7102,14 @@ function SandboxGrantRevokeConfirmation({
           <div>
             <dt>{t("sandbox.grants.ptySessions")}</dt>
             <dd>{number(grant.spec.ptySessionCount)}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.grants.fileOperations")}</dt>
+            <dd>{number(grant.spec.fileAccessCount)}</dd>
+          </div>
+          <div>
+            <dt>{t("sandbox.grants.fileFailures")}</dt>
+            <dd>{number(grant.spec.fileFailureCount)}</dd>
           </div>
         </dl>
         <label className="confirmation-check">

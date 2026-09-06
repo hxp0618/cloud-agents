@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-file-entry.schema.json",
+  "title": "SandboxFileEntry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["path", "type", "sizeBytes", "modifiedAt", "fileVersion"],
+  "properties": {
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "type": { "enum": ["file", "directory", "symlink", "other"] },
+    "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "modifiedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "fileVersion": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "path is relative to the fixed /workspace root and never names an infrastructure path",
+    "symlink entries may be listed but cannot be traversed, read, overwritten or deleted through this API"
+  ]
+}

@@ -10,7 +10,7 @@
     "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 900 }
   },
   "x-cloud-agents-semantic-constraints": [
-    "the grant is fixed to PTY access for exactly one current Sandbox generation",
+    "the grant is fixed to PTY and Files access for exactly one current Sandbox generation",
     "the caller cannot submit an endpoint, runtime identity, credential reference or upstream session identity"
   ]
 }

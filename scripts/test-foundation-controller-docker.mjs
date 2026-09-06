@@ -201,9 +201,9 @@ try {
         "--repository-root",
         root,
         "--manifest",
-        "services/control-plane/migrations/product/000058/manifest.json",
+        "services/control-plane/migrations/product/000059/manifest.json",
         "--selector",
-        "product-000058",
+        "product-000059",
       ],
       {
         encoding: "utf8",
@@ -212,7 +212,7 @@ try {
       },
     ),
   );
-  assert.equal(migration.schema_head, "000058");
+  assert.equal(migration.schema_head, "000059");
 
   psql(
     `SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1(
@@ -434,6 +434,16 @@ try {
   assert.equal(ptyReceipt.expiredStatus, 403);
   assert.equal(ptyReceipt.activeConnectionRevoked, true);
   assert.equal(ptyReceipt.adminContentRedacted, true);
+  assert.equal(ptyReceipt.fileGatewayRestart, true);
+  assert.equal(ptyReceipt.filePages, 2);
+  assert.equal(ptyReceipt.fileWrongTokenStatus, 403);
+  assert.equal(ptyReceipt.fileCrossTenantStatus, 403);
+  assert.equal(ptyReceipt.fileTraversalStatus, 400);
+  assert.equal(ptyReceipt.fileSymlinkStatus, 409);
+  assert.equal(ptyReceipt.fileOversizedStatus, 413);
+  assert.equal(ptyReceipt.fileDeletedStatus, 404);
+  assert.equal(ptyReceipt.fileAccessCount, 7);
+  assert.equal(ptyReceipt.fileFailureCount, 2);
   assert.ok(ptyReceipt.boundedOutputOffset >= 1_100_000);
   assert.ok(ptyReceipt.boundedReplayOffset > 0);
   assert.ok(ptyReceipt.boundedReplayBytes <= 1 << 20);
@@ -526,12 +536,14 @@ try {
       "real bounded foreground command runs in /workspace and returns exit code, stdout, stderr, and duration",
       "Admin token, stale generation, and combined output above 1 MiB are denied with 403, 409, and 413",
       "Product Exec response omits endpoint, runtime identifier, and credential references",
-      "short-lived PTY Grant is idempotent, generation-bound, database persisted, expiring, and revocable",
-      "standalone Access Gateway allows only fixed PTY routes and denies wrong-token and cross-tenant requests",
+      "short-lived Sandbox Grant is idempotent, generation-bound, database persisted, expiring, and revocable",
+      "standalone Access Gateway allows only fixed PTY and Files routes and denies wrong-token and cross-tenant requests",
       "PTY survives Gateway restart and reconnects from an absolute cursor without output loss",
       "fixed candidate replay buffer remains bounded to 1 MiB after more than 1.1 MiB output",
+      "Files writes, lists, and reads two version-bound pages across Gateway restart inside /workspace",
+      "Files rejects path traversal, symlink traversal, oversized input, and reads after deletion",
       "revocation closes an active PTY connection and rejects reconnects; expired Grants reject new sessions",
-      "Admin Grant metadata includes status and PTY count but excludes tokens, terminal output, endpoints, and credential references",
+      "Admin Grant metadata includes PTY and file operation diagnostics but excludes tokens, terminal/file content, paths, endpoints, and credential references",
       "database-clock TTL accepts the same durable Stop authority and records its trigger and Audit",
       "TTL stop deletes compute, releases its writer, and retains the physical Workspace volume",
       "rebuild after TTL expiry restores the same Workspace bytes",

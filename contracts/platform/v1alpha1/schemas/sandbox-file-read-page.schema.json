@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-file-read-page.schema.json",
+  "title": "SandboxFileReadPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "fileVersion", "offset", "nextOffset", "totalBytes", "eof", "contentBase64Url"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SandboxFileReadPage" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "fileVersion": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" },
+    "offset": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+    "nextOffset": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+    "totalBytes": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+    "eof": { "type": "boolean" },
+    "contentBase64Url": { "type": "string", "maxLength": 1398102, "pattern": "^[A-Za-z0-9_-]*$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "contentBase64Url is canonical unpadded base64url and decodes to exactly nextOffset minus offset bytes",
+    "a continuation supplies fileVersion and is rejected if size or modification time changed"
+  ]
+}

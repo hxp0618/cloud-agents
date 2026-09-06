@@ -12,21 +12,28 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount"],
+      "required": ["projectRef", "sandboxId", "generation", "accessKind", "status", "expiresAt", "ptySessionCount", "fileAccessCount", "fileFailureCount"],
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-        "accessKind": { "const": "pty" },
+        "accessKind": { "const": "sandbox" },
         "status": { "enum": ["active", "expired", "revoked"] },
         "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "revokedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
-        "ptySessionCount": { "type": "integer", "minimum": 0, "maximum": 10000 }
+        "ptySessionCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "fileAccessCount": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "fileFailureCount": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "lastFileAction": { "enum": ["list", "read", "write", "delete"] },
+        "lastFileStatus": { "enum": ["started", "succeeded", "failed"] },
+        "lastFileErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "lastFileAccessAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       }
     }
   },
   "x-cloud-agents-semantic-constraints": [
-    "Admin sees operational metadata only; accessToken, token digest, endpoints, terminal input and terminal output are absent",
+    "Admin sees operational metadata only; accessToken, token digest, endpoints, terminal input/output, file paths/names and file content are absent",
+    "fileFailureCount does not exceed fileAccessCount and lastFile fields are present together only after a file access attempt",
     "expired is derived from authoritative database time and revoked is durable"
   ]
 }

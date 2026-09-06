@@ -144,7 +144,7 @@ describe("generated platform JSON models", () => {
     ).toThrow("INVALID_SANDBOX_EXEC_RESULT");
   });
 
-  it("uses fixed Grant and PTY routes without exposing infrastructure authority", async () => {
+  it("uses fixed Grant, PTY, and Files routes without exposing infrastructure authority", async () => {
     const projectRef = { namespace: "cloud-agents", kind: "project", id: "project-alpha" } as const;
     const tenantRef = { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" } as const;
     const grant = {
@@ -154,7 +154,7 @@ describe("generated platform JSON models", () => {
       grantId: "grant-alpha",
       sandboxId: "sandbox-alpha",
       generation: 3,
-      accessKind: "pty",
+      accessKind: "sandbox",
       accessToken: `cag1_${"x".repeat(43)}`,
       expiresAt: "2026-09-06T00:05:00Z",
     } as const;
@@ -187,12 +187,22 @@ describe("generated platform JSON models", () => {
         projectRef,
         sandboxId: "sandbox-alpha",
         generation: 3,
-        accessKind: "pty",
+        accessKind: "sandbox",
         status: "revoked",
         expiresAt: "2026-09-06T00:05:00Z",
         revokedAt: "2026-09-06T00:01:00Z",
         ptySessionCount: 1,
+        fileAccessCount: 0,
+        fileFailureCount: 0,
       },
+    } as const;
+    const fileVersion = `sfv1_${"x".repeat(43)}`;
+    const fileEntry = {
+      path: "notes.txt",
+      type: "file",
+      sizeBytes: 2,
+      modifiedAt: "2026-09-06T00:02:00Z",
+      fileVersion,
     } as const;
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
@@ -218,6 +228,46 @@ describe("generated platform JSON models", () => {
       }
       if (request.path.endsWith("/access-grants")) {
         return { status: 201, headers: {}, body: JSON.stringify(grant) };
+      }
+      if (request.path.includes("/files/content?")) {
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            apiVersion: "platform.cloud-agents.dev/v1alpha1",
+            kind: "SandboxFileReadPage",
+            projectRef,
+            grantId: "grant-alpha",
+            sandboxId: "sandbox-alpha",
+            generation: 3,
+            path: "notes.txt",
+            fileVersion,
+            offset: 0,
+            nextOffset: 2,
+            totalBytes: 2,
+            eof: true,
+            contentBase64Url: "aGk",
+          }),
+        };
+      }
+      if (request.path.includes("/files?") && request.method === "GET") {
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            apiVersion: "platform.cloud-agents.dev/v1alpha1",
+            kind: "SandboxFilePage",
+            projectRef,
+            grantId: "grant-alpha",
+            sandboxId: "sandbox-alpha",
+            generation: 3,
+            path: ".",
+            entries: [fileEntry],
+          }),
+        };
+      }
+      if (request.path.endsWith("/files") && request.method === "PUT") {
+        return { status: 200, headers: {}, body: JSON.stringify(fileEntry) };
       }
       return {
         status: request.method === "GET" ? 200 : 201,
@@ -248,6 +298,33 @@ describe("generated platform JSON models", () => {
       "session-alpha",
       "request-alpha",
     );
+    await client.listSandboxFiles(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "request-alpha",
+      ".",
+    );
+    await client.readSandboxFile(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "request-alpha",
+      "notes.txt",
+      0,
+      2,
+    );
+    await client.writeSandboxFile("tenant-alpha", "project-alpha", "grant-alpha", "request-alpha", {
+      path: "notes.txt",
+      contentBase64Url: "aGk",
+    });
+    await client.deleteSandboxFile(
+      "tenant-alpha",
+      "project-alpha",
+      "grant-alpha",
+      "request-alpha",
+      "notes.txt",
+    );
     await client.listAdminSandboxAccessGrants(
       "tenant-alpha",
       "project-alpha",
@@ -269,8 +346,31 @@ describe("generated platform JSON models", () => {
       "GET",
       "DELETE",
       "GET",
+      "GET",
+      "PUT",
+      "DELETE",
+      "GET",
       "POST",
     ]);
+    await expect(
+      client.readSandboxFile(
+        "tenant-alpha",
+        "project-alpha",
+        "grant-alpha",
+        "request-alpha",
+        "../secret",
+      ),
+    ).rejects.toThrow("INVALID_SANDBOX_FILE_PATH");
+    await expect(
+      client.readSandboxFile(
+        "tenant-alpha",
+        "project-alpha",
+        "grant-alpha",
+        "request-alpha",
+        "notes.txt",
+        1,
+      ),
+    ).rejects.toThrow("FILE_VERSION_REQUIRED");
     expect(JSON.stringify(seen)).not.toMatch(/endpoint|credentialRef|providerCredentialRef/u);
   });
 

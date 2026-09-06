@@ -100,6 +100,12 @@ const FOUNDATION_SANDBOX_RECEIPT_BACKFILL = {
   sha256: "sha256:b559d418d899d44500a38d02e995270b52822b20c712db0d267655398b3f589e",
   targetIdentity: "table:unquoted:cloud_agents/unquoted:sandbox_sessions",
 } as const;
+const SANDBOX_ACCESS_KIND_BACKFILL = {
+  migrationId: "000059",
+  statementIndex: 1,
+  sha256: "sha256:e398fdfc275842a3da14fac8fc6bb96361d7ef8249558c30348db885009c406e",
+  targetIdentity: "table:unquoted:cloud_agents/unquoted:sandbox_access_grants",
+} as const;
 const DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX = {
   migrationId: "000039",
   statementIndex: 3,
@@ -428,6 +434,7 @@ export function classifyMigrationStatement(
         "000036",
         "000053",
         "000055",
+        "000059",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -587,6 +594,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:claim_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000059",
+          [
+            "function:unquoted:cloud_agents/unquoted:issue_sandbox_access_grant_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -683,6 +696,20 @@ export function classifyMigrationStatement(
         migrationId === "000056" &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:sandbox_sessions" &&
         subcommand.join("\0") === ["DROP", "CONSTRAINT", "SANDBOX_SESSIONS_OBSERVATION"].join("\0");
+      const dropSandboxAccessConstraint =
+        migrationId === "000059" &&
+        new Map([
+          [
+            "table:unquoted:cloud_agents/unquoted:sandbox_access_grants",
+            "SANDBOX_ACCESS_GRANTS_ACCESS_KIND_CHECK",
+          ],
+          [
+            "table:unquoted:cloud_agents/unquoted:sandbox_access_grant_activity",
+            "SANDBOX_ACCESS_GRANT_ACTIVITY_ACTION_CHECK",
+          ],
+        ]).get(targetIdentity) === subcommand[2] &&
+        subcommand[0] === "DROP" &&
+        subcommand[1] === "CONSTRAINT";
       if (
         !exact &&
         !addConstraint &&
@@ -694,7 +721,8 @@ export function classifyMigrationStatement(
         !dropDeploymentTargetActivityConstraint &&
         !dropEnvironmentProfileActivityConstraint &&
         !dropAdminDeniedWriteConstraint &&
-        !dropFoundationObservationConstraint
+        !dropFoundationObservationConstraint &&
+        !dropSandboxAccessConstraint
       )
         reject(tokens);
       return classification("ALTER", "TABLE", targetIdentity, null);
@@ -754,15 +782,16 @@ export function classifyMigrationStatement(
     return classification("INSERT", "TABLE", targetIdentity, null);
   }
   if (first === "UPDATE") {
-    if (
-      migrationId !== FOUNDATION_SANDBOX_RECEIPT_BACKFILL.migrationId ||
-      statement.index !== FOUNDATION_SANDBOX_RECEIPT_BACKFILL.statementIndex ||
-      statement.sha256 !== FOUNDATION_SANDBOX_RECEIPT_BACKFILL.sha256
-    )
-      reject(tokens);
+    const special = [FOUNDATION_SANDBOX_RECEIPT_BACKFILL, SANDBOX_ACCESS_KIND_BACKFILL].find(
+      (candidate) =>
+        migrationId === candidate.migrationId &&
+        statement.index === candidate.statementIndex &&
+        statement.sha256 === candidate.sha256,
+    );
+    if (!special) reject(tokens);
     requireCloudAgentsQualified(tokens, 1);
     const targetIdentity = qualifiedIdentity("table", tokens, 1);
-    if (targetIdentity !== FOUNDATION_SANDBOX_RECEIPT_BACKFILL.targetIdentity) reject(tokens);
+    if (targetIdentity !== special.targetIdentity) reject(tokens);
     return classification("UPDATE", "TABLE", targetIdentity, null);
   }
   if (first === "GRANT" || first === "REVOKE") {

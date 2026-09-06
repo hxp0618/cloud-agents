@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-file-write-request.schema.json",
+  "title": "SandboxFileWriteRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["path", "contentBase64Url"],
+  "properties": {
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "contentBase64Url": { "type": "string", "maxLength": 22369622, "pattern": "^[A-Za-z0-9_-]*$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "contentBase64Url is canonical unpadded base64url and decodes to at most 16 MiB",
+    "the path is relative to /workspace and every existing component must be non-symlink"
+  ]
+}

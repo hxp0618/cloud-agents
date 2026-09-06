@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -163,12 +164,99 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if bounded.replayOffset <= 0 || bounded.replayBytes > 1<<20 {
 		t.Fatalf("bounded replay offset=%d bytes=%d", bounded.replayOffset, bounded.replayBytes)
 	}
+	if err := connection.WriteMessage(websocket.BinaryMessage, append([]byte{0}, []byte("ln -sfn /etc /workspace/cag-files-link; printf 'CAG_FILES_LINK_READY\\n'\n")...)); err != nil {
+		t.Fatal(err)
+	}
+	readPTYUntil(t, connection, "CAG_FILES_LINK_READY")
+
+	fileContent := []byte("files-survive-gateway-restart")
+	written, err := grantClient.WriteSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-write", platform.SandboxFileWriteRequest{
+		Path: "cag-files.txt", ContentBase64URL: base64.RawURLEncoding.EncodeToString(fileContent),
+	})
+	if err != nil || written.Value.Path != "cag-files.txt" || written.Value.SizeBytes != int64(len(fileContent)) {
+		t.Fatalf("write file failed: %+v %v", written.Value, err)
+	}
+	files, err := grantClient.ListSandboxFiles(ctx, "tenant", "project", grant.Value.GrantID, "request-file-list", ".")
+	foundFile, foundLink := false, false
+	for _, entry := range files.Value.Entries {
+		foundFile = foundFile || entry.Path == "cag-files.txt" && entry.Type == "file"
+		foundLink = foundLink || entry.Path == "cag-files-link" && entry.Type == "symlink"
+	}
+	if err != nil || !foundFile || !foundLink {
+		t.Fatalf("list files failed: %+v %v", files.Value.Entries, err)
+	}
+	firstFilePage, err := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-read-first", "cag-files.txt", 0, 6, "")
+	firstFileContent, decodeErr := base64.RawURLEncoding.DecodeString(firstFilePage.Value.ContentBase64URL)
+	if err != nil || decodeErr != nil || string(firstFileContent) != string(fileContent[:6]) || firstFilePage.Value.EOF {
+		t.Fatalf("first file page failed: %+v %v %v", firstFilePage.Value, err, decodeErr)
+	}
+
+	gateway.Close()
+	gateway = newGateway()
+	defer gateway.Close()
+	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
+	wrongClient, _ = api.NewHTTPClientWithClient(gateway.URL, wrongToken, gateway.Client())
+	secondFilePage, err := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-read-second", "cag-files.txt", firstFilePage.Value.NextOffset, 1<<20, firstFilePage.Value.FileVersion)
+	secondFileContent, decodeErr := base64.RawURLEncoding.DecodeString(secondFilePage.Value.ContentBase64URL)
+	if err != nil || decodeErr != nil || string(append(firstFileContent, secondFileContent...)) != string(fileContent) || !secondFilePage.Value.EOF {
+		t.Fatalf("file restart page failed: %+v %v %v", secondFilePage.Value, err, decodeErr)
+	}
+	if _, err := wrongClient.ListSandboxFiles(ctx, "tenant", "project", grant.Value.GrantID, "request-file-wrong-token", "."); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("wrong file Grant token status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := grantClient.ListSandboxFiles(ctx, "other-tenant", "project", grant.Value.GrantID, "request-file-cross-tenant", "."); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("cross-tenant file Grant status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-symlink", "cag-files-link/passwd", 0, 1, ""); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("symlink traversal status=%d err=%v", clientStatus(err), err)
+	}
+	rawStatus := func(method, target, requestID, contentType string, body io.Reader) int {
+		t.Helper()
+		request, err := http.NewRequestWithContext(ctx, method, gateway.URL+target, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+grant.Value.AccessToken)
+		request.Header.Set("X-Request-ID", requestID)
+		if contentType != "" {
+			request.Header.Set("Content-Type", contentType)
+		}
+		response, err := gateway.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		return response.StatusCode
+	}
+	filesPath := "/v1/tenants/tenant/projects/project/sandbox-access-grants/" + grant.Value.GrantID + "/files"
+	if status := rawStatus(http.MethodGet, filesPath+"?path="+url.QueryEscape("../secret"), "request-file-traversal", "", http.NoBody); status != http.StatusBadRequest {
+		t.Fatalf("traversal status=%d", status)
+	}
+	oversized := `{"path":"cag-too-large.txt","contentBase64Url":"` + strings.Repeat("A", 22371680) + `"}`
+	if status := rawStatus(http.MethodPut, filesPath, "request-file-oversized", "application/json", strings.NewReader(oversized)); status != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized file status=%d", status)
+	}
+	connection = dialPTY(t, gateway.URL, buffered.Value.WebSocketPath, grant.Value.AccessToken, buffered.Value.OutputOffset, true)
+	if err := connection.WriteMessage(websocket.BinaryMessage, append([]byte{0}, []byte("rm -f /workspace/cag-files-link; printf 'CAG_FILES_LINK_REMOVED\\n'\n")...)); err != nil {
+		t.Fatal(err)
+	}
+	readPTYUntil(t, connection, "CAG_FILES_LINK_REMOVED")
+	if err := grantClient.DeleteSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-delete", "cag-files.txt"); err != nil {
+		t.Fatal("delete file failed", err)
+	}
+	if _, err := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-file-after-delete", "cag-files.txt", 0, 1, ""); clientStatus(err) != http.StatusNotFound {
+		t.Fatalf("deleted file status=%d err=%v", clientStatus(err), err)
+	}
 
 	if _, err := user.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-user-admin", 50, ""); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user Admin Grant status=%d err=%v", clientStatus(err), err)
 	}
 	page, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "sandbox", "request-grant-admin-list", 50, "")
-	if err != nil || len(page.Value.AccessGrants) != 1 || page.Value.AccessGrants[0].Spec.PTYSessionCount != 1 {
+	if err != nil || len(page.Value.AccessGrants) != 1 || page.Value.AccessGrants[0].Spec.PTYSessionCount != 1 ||
+		page.Value.AccessGrants[0].Spec.FileAccessCount != 7 || page.Value.AccessGrants[0].Spec.FileFailureCount != 2 ||
+		page.Value.AccessGrants[0].Spec.LastFileAction != "read" || page.Value.AccessGrants[0].Spec.LastFileStatus != "failed" ||
+		page.Value.AccessGrants[0].Spec.LastFileErrorCode != "NOT_FOUND" {
 		t.Fatalf("Admin Grant metadata failed: %v", err)
 	}
 	assertAdminGrantRedaction(t, ctx, foundationServer.URL, adminToken, grant.Value.AccessToken)
@@ -209,9 +297,9 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 	if err != nil || len(page.Value.AccessGrants) != 2 || statuses[expiring.Value.GrantID] != "expired" || statuses[grant.Value.GrantID] != "revoked" {
 		t.Fatalf("Admin final Grant metadata failed: %v", err)
 	}
-	var issued, revokedCount int
-	if err := owner.QueryRow(ctx, `SELECT count(*) FILTER (WHERE action='issued'), count(*) FILTER (WHERE action='revoked') FROM cloud_agents.sandbox_access_grant_activity WHERE tenant_id='tenant' AND project_uid='project'`).Scan(&issued, &revokedCount); err != nil || issued != 2 || revokedCount != 1 {
-		t.Fatalf("Grant activity issued=%d revoked=%d err=%v", issued, revokedCount, err)
+	var issued, revokedCount, fileCount, fileFailureCount int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FILTER (WHERE action='issued'), count(*) FILTER (WHERE action='revoked'), count(*) FILTER (WHERE action LIKE 'file_%'), count(*) FILTER (WHERE action LIKE 'file_%' AND outcome='failed') FROM cloud_agents.sandbox_access_grant_activity WHERE tenant_id='tenant' AND project_uid='project'`).Scan(&issued, &revokedCount, &fileCount, &fileFailureCount); err != nil || issued != 2 || revokedCount != 1 || fileCount != 7 || fileFailureCount != 2 {
+		t.Fatalf("Grant activity issued=%d revoked=%d files=%d failures=%d err=%v", issued, revokedCount, fileCount, fileFailureCount, err)
 	}
 	receipt, _ := json.Marshal(map[string]any{
 		"grantId": grant.Value.GrantID, "sessionId": session.Value.SessionID,
@@ -222,6 +310,10 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		"wrongTokenStatus": 403, "crossTenantStatus": 403, "revokedStatus": 403,
 		"expiredStatus": 403, "activeConnectionRevoked": true, "adminContentRedacted": true,
 		"activityIssued": issued, "activityRevoked": revokedCount,
+		"fileWriteBytes": len(fileContent), "filePages": 2, "fileGatewayRestart": true,
+		"fileWrongTokenStatus": 403, "fileCrossTenantStatus": 403, "fileTraversalStatus": 400,
+		"fileSymlinkStatus": 409, "fileOversizedStatus": 413, "fileDeletedStatus": 404,
+		"fileAccessCount": fileCount, "fileFailureCount": fileFailureCount,
 	})
 	t.Logf("FOUNDATION_PTY_API=%s", receipt)
 }
@@ -321,7 +413,7 @@ func assertAdminGrantRedaction(t *testing.T, ctx context.Context, baseURL, admin
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatalf("Admin Grant response status=%d err=%v", response.StatusCode, err)
 	}
-	for _, forbidden := range []string{grantToken, "accessToken", "CAG_PTY", "credentialRef", "providerCredentialRef", "endpoint"} {
+	for _, forbidden := range []string{grantToken, "accessToken", "CAG_PTY", "credentialRef", "providerCredentialRef", "endpoint", "cag-files.txt", "cag-files-link", "contentBase64Url"} {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("Admin Grant response disclosed %q", forbidden)
 		}

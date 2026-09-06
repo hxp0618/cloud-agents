@@ -12,7 +12,7 @@
     "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-    "accessKind": { "const": "pty" },
+    "accessKind": { "const": "sandbox" },
     "accessToken": { "type": "string", "pattern": "^cag1_[A-Za-z0-9_-]{43}$" },
     "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
   },

@@ -6,14 +6,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +32,7 @@ var (
 	ErrConflict      = errors.New("opensandbox ownership or receipt conflicts")
 	ErrRuntimeFailed = errors.New("opensandbox runtime failed")
 	ErrOutputLimit   = errors.New("opensandbox command output limit exceeded")
+	ErrFileLimit     = errors.New("opensandbox file limit exceeded")
 	identifier       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	platformID       = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
 	digest           = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -97,6 +103,17 @@ type PTYObservation struct {
 	SessionID    string
 	Running      bool
 	OutputOffset int64
+}
+
+type FileEntry struct {
+	Path, Type, ModifiedAt, FileVersion string
+	SizeBytes                           int64
+}
+
+type FileRead struct {
+	Path, FileVersion  string
+	Offset, TotalBytes int64
+	Content            []byte
 }
 
 func (input PTYInput) valid() bool {
@@ -407,7 +424,7 @@ func (c *Client) execdEndpoint(ctx context.Context, runtimeID string) (*url.URL,
 	return target, headers, nil
 }
 
-func (c *Client) verifyPTYTarget(ctx context.Context, input PTYInput) (*url.URL, http.Header, error) {
+func (c *Client) verifyAccessTarget(ctx context.Context, input PTYInput) (*url.URL, http.Header, error) {
 	if c == nil || ctx == nil || !input.valid() {
 		return nil, nil, ErrInvalid
 	}
@@ -432,7 +449,7 @@ func execdPath(target *url.URL, path string) {
 // CreatePTY creates only a fixed /workspace shell session after re-verifying the
 // physical Sandbox receipt. Authorization and grant lifetime remain Gateway concerns.
 func (c *Client) CreatePTY(ctx context.Context, input PTYInput) (PTYObservation, error) {
-	target, headers, err := c.verifyPTYTarget(ctx, input)
+	target, headers, err := c.verifyAccessTarget(ctx, input)
 	if err != nil {
 		return PTYObservation{}, err
 	}
@@ -466,7 +483,7 @@ func (c *Client) CreatePTY(ctx context.Context, input PTYInput) (PTYObservation,
 }
 
 func (c *Client) GetPTY(ctx context.Context, input PTYInput, sessionID string) (PTYObservation, error) {
-	target, headers, err := c.verifyPTYTarget(ctx, input)
+	target, headers, err := c.verifyAccessTarget(ctx, input)
 	if err != nil || !identifier.MatchString(sessionID) {
 		if err != nil {
 			return PTYObservation{}, err
@@ -504,7 +521,7 @@ func (c *Client) GetPTY(ctx context.Context, input PTYInput, sessionID string) (
 }
 
 func (c *Client) DeletePTY(ctx context.Context, input PTYInput, sessionID string) error {
-	target, headers, err := c.verifyPTYTarget(ctx, input)
+	target, headers, err := c.verifyAccessTarget(ctx, input)
 	if err != nil || !identifier.MatchString(sessionID) {
 		if err != nil {
 			return err
@@ -536,7 +553,7 @@ func (c *Client) DeletePTY(ctx context.Context, input PTYInput, sessionID string
 }
 
 func (c *Client) PTYWebSocketTarget(ctx context.Context, input PTYInput, sessionID string) (*url.URL, http.Header, error) {
-	target, headers, err := c.verifyPTYTarget(ctx, input)
+	target, headers, err := c.verifyAccessTarget(ctx, input)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -545,6 +562,350 @@ func (c *Client) PTYWebSocketTarget(ctx context.Context, input PTYInput, session
 	}
 	execdPath(target, "/pty/"+sessionID+"/ws")
 	return target, headers, nil
+}
+
+type candidateFileInfo struct {
+	Path       string    `json:"path"`
+	Type       string    `json:"type"`
+	Size       int64     `json:"size"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
+func validFilePath(value string, allowRoot bool) bool {
+	if len(value) < 1 || len(value) > 1024 || !utf8.ValidString(value) || strings.ContainsAny(value, "\\\x00\r\n") || path.IsAbs(value) || path.Clean(value) != value {
+		return false
+	}
+	if value == "." {
+		return allowRoot
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func workspaceFilePath(value string) string {
+	if value == "." {
+		return "/workspace"
+	}
+	return "/workspace/" + value
+}
+
+func cloneExecdTarget(target *url.URL, suffix string) *url.URL {
+	cloned := *target
+	execdPath(&cloned, suffix)
+	return &cloned
+}
+
+func (c *Client) fileInfo(ctx context.Context, target *url.URL, headers http.Header, absolutePath string) (candidateFileInfo, error) {
+	requestTarget := cloneExecdTarget(target, "/files/info")
+	query := requestTarget.Query()
+	query.Add("path", absolutePath)
+	requestTarget.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestTarget.String(), http.NoBody)
+	if err != nil {
+		return candidateFileInfo{}, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return candidateFileInfo{}, ctx.Err()
+		}
+		return candidateFileInfo{}, ErrUnavailable
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return candidateFileInfo{}, ErrNotFound
+	}
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
+	var values map[string]candidateFileInfo
+	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK || json.Unmarshal(data, &values) != nil || len(values) != 1 {
+		return candidateFileInfo{}, ErrUnavailable
+	}
+	info, ok := values[absolutePath]
+	if !ok || info.Path != absolutePath || info.Size < 0 || info.ModifiedAt.IsZero() {
+		return candidateFileInfo{}, ErrUnavailable
+	}
+	return info, nil
+}
+
+func fileVersion(info candidateFileInfo) string {
+	sum := sha256.Sum256([]byte(info.Type + "\x00" + strconv.FormatInt(info.Size, 10) + "\x00" + info.ModifiedAt.UTC().Format(time.RFC3339Nano)))
+	return "sfv1_" + base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func fileEntry(info candidateFileInfo, relativePath string) (FileEntry, error) {
+	if !validFilePath(relativePath, false) || info.Path != workspaceFilePath(relativePath) || info.Size < 0 {
+		return FileEntry{}, ErrUnavailable
+	}
+	switch info.Type {
+	case "file", "directory", "symlink", "other":
+	default:
+		return FileEntry{}, ErrUnavailable
+	}
+	return FileEntry{Path: relativePath, Type: info.Type, SizeBytes: info.Size, ModifiedAt: info.ModifiedAt.UTC().Format(time.RFC3339Nano), FileVersion: fileVersion(info)}, nil
+}
+
+func (c *Client) checkedFileInfo(ctx context.Context, target *url.URL, headers http.Header, relativePath, wantedType string, allowMissing bool) (candidateFileInfo, bool, error) {
+	current := "/workspace"
+	root, err := c.fileInfo(ctx, target, headers, current)
+	if err != nil || root.Type != "directory" {
+		if err != nil {
+			return candidateFileInfo{}, false, err
+		}
+		return candidateFileInfo{}, false, ErrConflict
+	}
+	if relativePath == "." {
+		if wantedType != "" && root.Type != wantedType {
+			return candidateFileInfo{}, false, ErrConflict
+		}
+		return root, true, nil
+	}
+	segments := strings.Split(relativePath, "/")
+	for index, segment := range segments {
+		current += "/" + segment
+		info, infoErr := c.fileInfo(ctx, target, headers, current)
+		if errors.Is(infoErr, ErrNotFound) && allowMissing {
+			return candidateFileInfo{}, false, nil
+		}
+		if infoErr != nil {
+			return candidateFileInfo{}, false, infoErr
+		}
+		if info.Type == "symlink" || index < len(segments)-1 && info.Type != "directory" {
+			return candidateFileInfo{}, false, ErrConflict
+		}
+		if index == len(segments)-1 {
+			if wantedType != "" && info.Type != wantedType {
+				return candidateFileInfo{}, false, ErrConflict
+			}
+			return info, true, nil
+		}
+	}
+	return candidateFileInfo{}, false, ErrUnavailable
+}
+
+// ListFiles returns at most the immediate 1000 Workspace children and never follows symlinks.
+func (c *Client) ListFiles(ctx context.Context, input PTYInput, relativePath string) ([]FileEntry, error) {
+	if !validFilePath(relativePath, true) {
+		return nil, ErrInvalid
+	}
+	target, headers, err := c.verifyAccessTarget(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "directory", false); err != nil {
+		return nil, err
+	}
+	requestTarget := cloneExecdTarget(target, "/directories/list")
+	query := requestTarget.Query()
+	query.Set("path", workspaceFilePath(relativePath))
+	query.Set("depth", "1")
+	requestTarget.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestTarget.String(), http.NoBody)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, ErrUnavailable
+	}
+	defer response.Body.Close()
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	var raw []candidateFileInfo
+	if readErr != nil || len(data) > 1<<20 || response.StatusCode != http.StatusOK || json.Unmarshal(data, &raw) != nil {
+		return nil, ErrUnavailable
+	}
+	if len(raw) > 1000 {
+		return nil, ErrFileLimit
+	}
+	entries := make([]FileEntry, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, info := range raw {
+		relative := strings.TrimPrefix(info.Path, "/workspace/")
+		entry, entryErr := fileEntry(info, relative)
+		if entryErr != nil || path.Dir(relative) != relativePath {
+			return nil, ErrUnavailable
+		}
+		if _, duplicate := seen[relative]; duplicate {
+			return nil, ErrUnavailable
+		}
+		seen[relative] = struct{}{}
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, nil
+}
+
+// ReadFile returns one byte page after checking the same metadata version before and after the read.
+func (c *Client) ReadFile(ctx context.Context, input PTYInput, relativePath string, offset int64, limit int, expectedVersion string) (FileRead, error) {
+	if !validFilePath(relativePath, false) || offset < 0 || offset > 16<<20 || limit < 1 || limit > 1<<20 || offset > 0 && expectedVersion == "" {
+		return FileRead{}, ErrInvalid
+	}
+	target, headers, err := c.verifyAccessTarget(ctx, input)
+	if err != nil {
+		return FileRead{}, err
+	}
+	before, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "file", false)
+	if err != nil {
+		return FileRead{}, err
+	}
+	version := fileVersion(before)
+	if expectedVersion != "" && version != expectedVersion {
+		return FileRead{}, ErrConflict
+	}
+	if before.Size > 16<<20 {
+		return FileRead{}, ErrFileLimit
+	}
+	if offset > before.Size {
+		return FileRead{}, ErrConflict
+	}
+	result := FileRead{Path: relativePath, FileVersion: version, Offset: offset, TotalBytes: before.Size}
+	if offset < before.Size {
+		end := offset + int64(limit)
+		if end > before.Size {
+			end = before.Size
+		}
+		requestTarget := cloneExecdTarget(target, "/files/download")
+		query := requestTarget.Query()
+		query.Set("path", workspaceFilePath(relativePath))
+		requestTarget.RawQuery = query.Encode()
+		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, requestTarget.String(), http.NoBody)
+		if requestErr != nil {
+			return FileRead{}, ErrUnavailable
+		}
+		request.Header = headers.Clone()
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, end-1))
+		response, responseErr := c.http.Do(request)
+		if responseErr != nil {
+			if ctx.Err() != nil {
+				return FileRead{}, ctx.Err()
+			}
+			return FileRead{}, ErrUnavailable
+		}
+		result.Content, requestErr = io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
+		response.Body.Close()
+		if requestErr != nil || len(result.Content) != int(end-offset) || response.StatusCode != http.StatusPartialContent || response.Header.Get("Content-Range") != fmt.Sprintf("bytes %d-%d/%d", offset, end-1, before.Size) {
+			return FileRead{}, ErrUnavailable
+		}
+	}
+	after, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "file", false)
+	if err != nil || fileVersion(after) != version {
+		if err != nil {
+			return FileRead{}, err
+		}
+		return FileRead{}, ErrConflict
+	}
+	return result, nil
+}
+
+func (c *Client) WriteFile(ctx context.Context, input PTYInput, relativePath string, content []byte) (FileEntry, error) {
+	if !validFilePath(relativePath, false) || len(content) > 16<<20 {
+		if len(content) > 16<<20 {
+			return FileEntry{}, ErrFileLimit
+		}
+		return FileEntry{}, ErrInvalid
+	}
+	target, headers, err := c.verifyAccessTarget(ctx, input)
+	if err != nil {
+		return FileEntry{}, err
+	}
+	if _, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "file", true); err != nil {
+		return FileEntry{}, err
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	metadataPart, err := writer.CreateFormFile("metadata", "metadata.json")
+	if err == nil {
+		err = json.NewEncoder(metadataPart).Encode(map[string]any{"path": workspaceFilePath(relativePath), "mode": 600})
+	}
+	var filePart io.Writer
+	if err == nil {
+		filePart, err = writer.CreateFormFile("file", path.Base(relativePath))
+	}
+	if err == nil {
+		_, err = filePart.Write(content)
+	}
+	if closeErr := writer.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return FileEntry{}, ErrInvalid
+	}
+	requestTarget := cloneExecdTarget(target, "/files/upload")
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestTarget.String(), &body)
+	if err != nil {
+		return FileEntry{}, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return FileEntry{}, ctx.Err()
+		}
+		return FileEntry{}, ErrUnavailable
+	}
+	copied, readErr := io.Copy(io.Discard, io.LimitReader(response.Body, (64<<10)+1))
+	response.Body.Close()
+	if readErr != nil || copied > 64<<10 || response.StatusCode != http.StatusOK {
+		return FileEntry{}, ErrUnavailable
+	}
+	info, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "file", false)
+	if err != nil || info.Size != int64(len(content)) {
+		if err != nil {
+			return FileEntry{}, err
+		}
+		return FileEntry{}, ErrConflict
+	}
+	return fileEntry(info, relativePath)
+}
+
+func (c *Client) DeleteFile(ctx context.Context, input PTYInput, relativePath string) error {
+	if !validFilePath(relativePath, false) {
+		return ErrInvalid
+	}
+	target, headers, err := c.verifyAccessTarget(ctx, input)
+	if err != nil {
+		return err
+	}
+	if _, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "file", false); err != nil {
+		return err
+	}
+	requestTarget := cloneExecdTarget(target, "/files")
+	query := requestTarget.Query()
+	query.Add("path", workspaceFilePath(relativePath))
+	requestTarget.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, requestTarget.String(), http.NoBody)
+	if err != nil {
+		return ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrUnavailable
+	}
+	copied, readErr := io.Copy(io.Discard, io.LimitReader(response.Body, (64<<10)+1))
+	response.Body.Close()
+	if readErr != nil || copied > 64<<10 || response.StatusCode != http.StatusOK {
+		return ErrUnavailable
+	}
+	if _, err := c.fileInfo(ctx, target, headers, workspaceFilePath(relativePath)); !errors.Is(err, ErrNotFound) {
+		if err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	return nil
 }
 
 // Exec runs one bounded foreground command in the fixed Workspace directory.

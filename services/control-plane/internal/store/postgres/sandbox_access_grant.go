@@ -36,7 +36,11 @@ type SandboxAccessGrantSnapshot struct {
 	Scope                                  internalcoordination.FoundationScope
 	GrantID, SandboxID, AccessKind, Status string
 	Generation, ResourceVersion            int64
-	PTYSessionCount                        int64
+	PTYSessionCount, FileAccessCount       int64
+	FileFailureCount                       int64
+	LastFileAction, LastFileStatus         *string
+	LastFileErrorCode                      *string
+	LastFileAccessAt                       *time.Time
 	CreatedAt, UpdatedAt, ExpiresAt        time.Time
 	RevokedAt                              *time.Time
 }
@@ -47,19 +51,47 @@ type SandboxAccessGrantPage struct {
 }
 
 type sandboxAccessGrantPageRow struct {
-	TenantID        string     `json:"tenant_id"`
-	ProjectID       string     `json:"project_uid"`
-	GrantID         string     `json:"grant_uid"`
-	SandboxID       string     `json:"sandbox_uid"`
-	AccessKind      string     `json:"access_kind"`
-	Status          string     `json:"status"`
-	Generation      int64      `json:"sandbox_generation"`
-	ResourceVersion int64      `json:"resource_version"`
-	PTYSessionCount int64      `json:"pty_session_count"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	ExpiresAt       time.Time  `json:"expires_at"`
-	RevokedAt       *time.Time `json:"revoked_at"`
+	TenantID          string     `json:"tenant_id"`
+	ProjectID         string     `json:"project_uid"`
+	GrantID           string     `json:"grant_uid"`
+	SandboxID         string     `json:"sandbox_uid"`
+	AccessKind        string     `json:"access_kind"`
+	Status            string     `json:"status"`
+	Generation        int64      `json:"sandbox_generation"`
+	ResourceVersion   int64      `json:"resource_version"`
+	PTYSessionCount   int64      `json:"pty_session_count"`
+	FileAccessCount   int64      `json:"file_access_count"`
+	FileFailureCount  int64      `json:"file_failure_count"`
+	LastFileAction    *string    `json:"last_file_action"`
+	LastFileStatus    *string    `json:"last_file_status"`
+	LastFileErrorCode *string    `json:"last_file_error_code"`
+	LastFileAccessAt  *time.Time `json:"last_file_access_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	ExpiresAt         time.Time  `json:"expires_at"`
+	RevokedAt         *time.Time `json:"revoked_at"`
+}
+
+func validFileActivity(row sandboxAccessGrantPageRow) bool {
+	if row.FileAccessCount == 0 {
+		return row.LastFileAction == nil && row.LastFileStatus == nil && row.LastFileErrorCode == nil && row.LastFileAccessAt == nil
+	}
+	if row.LastFileAction == nil || row.LastFileStatus == nil || row.LastFileAccessAt == nil || row.LastFileAccessAt.IsZero() {
+		return false
+	}
+	switch *row.LastFileAction {
+	case "list", "read", "write", "delete":
+	default:
+		return false
+	}
+	switch *row.LastFileStatus {
+	case "started", "succeeded":
+		return row.LastFileErrorCode == nil
+	case "failed":
+		return row.LastFileErrorCode != nil && validMutationIdentifier(*row.LastFileErrorCode)
+	default:
+		return false
+	}
 }
 
 type SandboxAccessGrantAuthority struct {
@@ -182,8 +214,27 @@ FROM (
         access_grant.resource_version, access_grant.created_at, access_grant.updated_at, access_grant.expires_at, access_grant.revoked_at,
         (SELECT count(*) FROM cloud_agents.sandbox_pty_sessions AS session
          WHERE session.tenant_id = access_grant.tenant_id AND session.project_uid = access_grant.project_uid
-           AND session.grant_uid = access_grant.grant_uid) AS pty_session_count
+           AND session.grant_uid = access_grant.grant_uid) AS pty_session_count,
+        file_counts.file_access_count, file_counts.file_failure_count,
+        latest_file.last_file_action, latest_file.last_file_status,
+        latest_file.last_file_error_code, latest_file.last_file_access_at
     FROM cloud_agents.sandbox_access_grants AS access_grant
+    CROSS JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE activity.action LIKE 'file_%') AS file_access_count,
+            count(*) FILTER (WHERE activity.action LIKE 'file_%' AND activity.outcome = 'failed') AS file_failure_count
+        FROM cloud_agents.sandbox_access_grant_activity AS activity
+        WHERE activity.tenant_id = access_grant.tenant_id AND activity.project_uid = access_grant.project_uid
+          AND activity.grant_uid = access_grant.grant_uid
+    ) AS file_counts
+    LEFT JOIN LATERAL (
+        SELECT substring(activity.action FROM 6) AS last_file_action,
+            activity.outcome AS last_file_status, activity.stable_error_code AS last_file_error_code,
+            COALESCE(activity.completed_at, activity.occurred_at) AS last_file_access_at
+        FROM cloud_agents.sandbox_access_grant_activity AS activity
+        WHERE activity.tenant_id = access_grant.tenant_id AND activity.project_uid = access_grant.project_uid
+          AND activity.grant_uid = access_grant.grant_uid AND activity.action LIKE 'file_%'
+        ORDER BY activity.occurred_at DESC, activity.event_uid DESC LIMIT 1
+    ) AS latest_file ON true
     WHERE access_grant.tenant_id = cloud_agents.require_tenant_id() AND access_grant.project_uid = $1
       AND access_grant.sandbox_uid = $2 AND access_grant.grant_uid > $3
     ORDER BY access_grant.grant_uid LIMIT $4
@@ -197,15 +248,20 @@ FROM (
 			for _, row := range rows {
 				if row.TenantID != tenantID || row.ProjectID != projectID || row.SandboxID != sandboxID ||
 					!validMutationIdentifier(row.GrantID) || row.Generation < 1 || row.ResourceVersion < 1 ||
-					row.AccessKind != "pty" || row.Status != "active" && row.Status != "expired" && row.Status != "revoked" ||
-					row.PTYSessionCount < 0 || row.PTYSessionCount > 10000 {
+					row.AccessKind != "sandbox" || row.Status != "active" && row.Status != "expired" && row.Status != "revoked" ||
+					row.PTYSessionCount < 0 || row.PTYSessionCount > 10000 || row.FileAccessCount < 0 ||
+					row.FileFailureCount < 0 || row.FileFailureCount > row.FileAccessCount ||
+					!validFileActivity(row) {
 					return ErrCoordinationResultDrift
 				}
 				result.Grants = append(result.Grants, SandboxAccessGrantSnapshot{
 					Scope:   internalcoordination.FoundationScope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 					GrantID: row.GrantID, SandboxID: row.SandboxID, AccessKind: row.AccessKind,
 					Status: row.Status, Generation: row.Generation, ResourceVersion: row.ResourceVersion,
-					PTYSessionCount: row.PTYSessionCount, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+					PTYSessionCount: row.PTYSessionCount, FileAccessCount: row.FileAccessCount,
+					FileFailureCount: row.FileFailureCount, LastFileAction: row.LastFileAction,
+					LastFileStatus: row.LastFileStatus, LastFileErrorCode: row.LastFileErrorCode,
+					LastFileAccessAt: row.LastFileAccessAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 					ExpiresAt: row.ExpiresAt, RevokedAt: row.RevokedAt,
 				})
 			}
@@ -341,6 +397,50 @@ func (store *AccessGatewayStore) MarkPTYSessionDeleted(ctx context.Context, tena
 		var deletedAt time.Time
 		return handle.transaction.queryRow(ctx, `SELECT cloud_agents.delete_sandbox_pty_session_v1($1,$2,$3,$4)`,
 			projectID, grantID, sessionID, tokenDigest).Scan(&deletedAt)
+	}))
+}
+
+func validFileAction(action string) bool {
+	switch action {
+	case "list", "read", "write", "delete":
+		return true
+	default:
+		return false
+	}
+}
+
+func (store *AccessGatewayStore) StartFileAccess(ctx context.Context, tenantID, projectID, grantID, eventID, action, tokenDigest, requestID string) error {
+	if store == nil || store.runner == nil || ctx == nil || !validMutationIdentifier(tenantID) ||
+		!validMutationIdentifier(projectID) || !validMutationIdentifier(grantID) ||
+		!validMutationIdentifier(eventID) || !validFileAction(action) ||
+		!validCoordinationDigest(tokenDigest) || !validMutationIdentifier(requestID) {
+		return ErrCoordinationInvalidInput
+	}
+	return mapSandboxAccessGrantError(store.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		var startedAt time.Time
+		return handle.transaction.queryRow(ctx, `SELECT cloud_agents.start_sandbox_file_access_v1($1,$2,$3,$4,$5,$6)`,
+			projectID, grantID, eventID, "file_"+action, tokenDigest, requestID).Scan(&startedAt)
+	}))
+}
+
+func (store *AccessGatewayStore) CompleteFileAccess(ctx context.Context, tenantID, projectID, grantID, eventID, tokenDigest, outcome, stableErrorCode string, bytesTransferred int64) error {
+	if store == nil || store.runner == nil || ctx == nil || !validMutationIdentifier(tenantID) ||
+		!validMutationIdentifier(projectID) || !validMutationIdentifier(grantID) ||
+		!validMutationIdentifier(eventID) || !validCoordinationDigest(tokenDigest) ||
+		(outcome != "succeeded" && outcome != "failed") ||
+		(outcome == "succeeded" && stableErrorCode != "") ||
+		(outcome == "failed" && !validMutationIdentifier(stableErrorCode)) ||
+		bytesTransferred < 0 || bytesTransferred > 16<<20 {
+		return ErrCoordinationInvalidInput
+	}
+	var errorCode any
+	if stableErrorCode != "" {
+		errorCode = stableErrorCode
+	}
+	return mapSandboxAccessGrantError(store.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		var completedAt time.Time
+		return handle.transaction.queryRow(ctx, `SELECT cloud_agents.complete_sandbox_file_access_v1($1,$2,$3,$4,$5,$6,$7)`,
+			projectID, grantID, eventID, tokenDigest, outcome, errorCode, bytesTransferred).Scan(&completedAt)
 	}))
 }
 

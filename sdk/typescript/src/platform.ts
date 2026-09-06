@@ -628,7 +628,7 @@ export type SandboxAccessGrant = Readonly<{
   grantId: string;
   sandboxId: string;
   generation: number;
-  accessKind: "pty";
+  accessKind: "sandbox";
   accessToken: string;
   expiresAt: string;
 }>;
@@ -636,11 +636,17 @@ export type AdminSandboxAccessGrantSpec = Readonly<{
   projectRef: NamespaceRef;
   sandboxId: string;
   generation: number;
-  accessKind: "pty";
+  accessKind: "sandbox";
   status: "active" | "expired" | "revoked";
   expiresAt: string;
   revokedAt?: string;
   ptySessionCount: number;
+  fileAccessCount: number;
+  fileFailureCount: number;
+  lastFileAction?: "list" | "read" | "write" | "delete";
+  lastFileStatus?: "started" | "succeeded" | "failed";
+  lastFileErrorCode?: string;
+  lastFileAccessAt?: string;
 }>;
 export type AdminSandboxAccessGrant = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -667,6 +673,39 @@ export type SandboxPTYSession = Readonly<{
   webSocketPath: string;
   createdAt: string;
 }>;
+export type SandboxFileEntry = Readonly<{
+  path: string;
+  type: "file" | "directory" | "symlink" | "other";
+  sizeBytes: number;
+  modifiedAt: string;
+  fileVersion: string;
+}>;
+export type SandboxFilePage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxFilePage";
+  projectRef: NamespaceRef;
+  grantId: string;
+  sandboxId: string;
+  generation: number;
+  path: string;
+  entries: readonly SandboxFileEntry[];
+}>;
+export type SandboxFileReadPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SandboxFileReadPage";
+  projectRef: NamespaceRef;
+  grantId: string;
+  sandboxId: string;
+  generation: number;
+  path: string;
+  fileVersion: string;
+  offset: number;
+  nextOffset: number;
+  totalBytes: number;
+  eof: boolean;
+  contentBase64Url: string;
+}>;
+export type SandboxFileWriteRequest = Readonly<{ path: string; contentBase64Url: string }>;
 export type SandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "SandboxSession";
@@ -1676,6 +1715,12 @@ const adminSandboxAccessGrantResponseShape = resourceResponseShape({
   expiresAt: scalarResponseShape,
   revokedAt: scalarResponseShape,
   ptySessionCount: scalarResponseShape,
+  fileAccessCount: scalarResponseShape,
+  fileFailureCount: scalarResponseShape,
+  lastFileAction: scalarResponseShape,
+  lastFileStatus: scalarResponseShape,
+  lastFileErrorCode: scalarResponseShape,
+  lastFileAccessAt: scalarResponseShape,
 });
 const adminSandboxAccessGrantPageResponseShape: ResponseShape = {
   fields: {
@@ -1698,6 +1743,44 @@ const sandboxPTYSessionResponseShape: ResponseShape = {
     outputOffset: scalarResponseShape,
     webSocketPath: scalarResponseShape,
     createdAt: scalarResponseShape,
+  },
+};
+const sandboxFileEntryResponseShape: ResponseShape = {
+  fields: {
+    path: scalarResponseShape,
+    type: scalarResponseShape,
+    sizeBytes: scalarResponseShape,
+    modifiedAt: scalarResponseShape,
+    fileVersion: scalarResponseShape,
+  },
+};
+const sandboxFilePageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    grantId: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    generation: scalarResponseShape,
+    path: scalarResponseShape,
+    entries: { item: sandboxFileEntryResponseShape },
+  },
+};
+const sandboxFileReadPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    grantId: scalarResponseShape,
+    sandboxId: scalarResponseShape,
+    generation: scalarResponseShape,
+    path: scalarResponseShape,
+    fileVersion: scalarResponseShape,
+    offset: scalarResponseShape,
+    nextOffset: scalarResponseShape,
+    totalBytes: scalarResponseShape,
+    eof: scalarResponseShape,
+    contentBase64Url: scalarResponseShape,
   },
 };
 const sandboxSessionLifecycleOperationResponseShape: ResponseShape = {
@@ -2264,6 +2347,52 @@ function dateTime(value: unknown, path: string): string {
     Number.isNaN(Date.parse(text))
   )
     error("INVALID_DATE_TIME", path);
+  return text;
+}
+function sandboxFilePath(value: unknown, allowRoot: boolean, field = "/path"): string {
+  const text = boundedString(value, 1, 1024, field);
+  if (text === ".") {
+    if (!allowRoot) error("INVALID_SANDBOX_FILE_PATH", field);
+    return text;
+  }
+  const segments = text.split("/");
+  if (
+    text.startsWith("/") ||
+    text.includes("\\") ||
+    text.includes("\0") ||
+    text.includes("\r") ||
+    text.includes("\n") ||
+    segments.some((segment) => segment === "" || segment === "." || segment === "..")
+  )
+    error("INVALID_SANDBOX_FILE_PATH", field);
+  return text;
+}
+function sandboxFileVersion(value: unknown, field = "/fileVersion"): string {
+  const text = string(value, field);
+  if (!/^sfv1_[A-Za-z0-9_-]{43}$/u.test(text)) error("INVALID_SANDBOX_FILE_VERSION", field);
+  return text;
+}
+function sandboxFileContent(value: unknown, maximum: number, field = "/contentBase64Url"): string {
+  const text = string(value, field);
+  if (
+    !/^[A-Za-z0-9_-]*$/u.test(text) ||
+    text.length % 4 === 1 ||
+    text.length > Math.ceil((maximum * 4) / 3)
+  )
+    error("INVALID_SANDBOX_FILE_CONTENT", field);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const last = alphabet.indexOf(text.at(-1) ?? "A");
+  if ((text.length % 4 === 2 && (last & 15) !== 0) || (text.length % 4 === 3 && (last & 3) !== 0))
+    error("INVALID_SANDBOX_FILE_CONTENT", field);
+  let decoded = "";
+  try {
+    decoded = atob(
+      text.replace(/-/gu, "+").replace(/_/gu, "/") + "=".repeat((4 - (text.length % 4)) % 4),
+    );
+  } catch {
+    error("INVALID_SANDBOX_FILE_CONTENT", field);
+  }
+  if (decoded.length > maximum) error("SANDBOX_FILE_SIZE_LIMIT", field);
   return text;
 }
 function absoluteURI(value: unknown, path: string): string {
@@ -3054,7 +3183,7 @@ export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
     grantId: identifier(source.grantId, "/grantId"),
     sandboxId: identifier(source.sandboxId, "/sandboxId"),
     generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
-    accessKind: enumValue(source.accessKind, ["pty"] as const, "/accessKind"),
+    accessKind: enumValue(source.accessKind, ["sandbox"] as const, "/accessKind"),
     accessToken,
     expiresAt: dateTime(source.expiresAt, "/expiresAt"),
   });
@@ -3062,18 +3191,25 @@ export function decodeSandboxAccessGrant(value: unknown): SandboxAccessGrant {
 export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAccessGrant {
   const source = record(value);
   const root = base(source, "AdminSandboxAccessGrant");
+  const allowed = [
+    "projectRef",
+    "sandboxId",
+    "generation",
+    "accessKind",
+    "status",
+    "expiresAt",
+    "revokedAt",
+    "ptySessionCount",
+    "fileAccessCount",
+    "fileFailureCount",
+    "lastFileAction",
+    "lastFileStatus",
+    "lastFileErrorCode",
+    "lastFileAccessAt",
+  ];
   const spec = strictRecord(
     source.spec,
-    [
-      "projectRef",
-      "sandboxId",
-      "generation",
-      "accessKind",
-      "status",
-      "expiresAt",
-      "revokedAt",
-      "ptySessionCount",
-    ],
+    allowed,
     [
       "projectRef",
       "sandboxId",
@@ -3082,6 +3218,8 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
       "status",
       "expiresAt",
       "ptySessionCount",
+      "fileAccessCount",
+      "fileFailureCount",
     ],
     "/spec",
   );
@@ -3090,6 +3228,51 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
     spec.revokedAt === undefined ? undefined : dateTime(spec.revokedAt, "/spec/revokedAt");
   if ((status === "revoked") !== (revokedAt !== undefined))
     error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/revokedAt");
+  const fileAccessCount = integer(
+    spec.fileAccessCount,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    "/spec/fileAccessCount",
+  );
+  const fileFailureCount = integer(
+    spec.fileFailureCount,
+    0,
+    fileAccessCount,
+    "/spec/fileFailureCount",
+  );
+  const hasLast =
+    spec.lastFileAction !== undefined ||
+    spec.lastFileStatus !== undefined ||
+    spec.lastFileErrorCode !== undefined ||
+    spec.lastFileAccessAt !== undefined;
+  if (
+    hasLast !== fileAccessCount > 0 ||
+    (hasLast &&
+      (spec.lastFileAction === undefined ||
+        spec.lastFileStatus === undefined ||
+        spec.lastFileAccessAt === undefined))
+  )
+    error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/lastFileStatus");
+  const lastFileAction = hasLast
+    ? enumValue(
+        spec.lastFileAction,
+        ["list", "read", "write", "delete"] as const,
+        "/spec/lastFileAction",
+      )
+    : undefined;
+  const lastFileStatus = hasLast
+    ? enumValue(
+        spec.lastFileStatus,
+        ["started", "succeeded", "failed"] as const,
+        "/spec/lastFileStatus",
+      )
+    : undefined;
+  const lastFileErrorCode =
+    spec.lastFileErrorCode === undefined
+      ? undefined
+      : identifier(spec.lastFileErrorCode, "/spec/lastFileErrorCode");
+  if ((lastFileStatus === "failed") !== (lastFileErrorCode !== undefined))
+    error("INVALID_ADMIN_SANDBOX_ACCESS_GRANT", "/spec/lastFileErrorCode");
   return Object.freeze({
     ...root,
     kind: "AdminSandboxAccessGrant",
@@ -3097,11 +3280,21 @@ export function decodeAdminSandboxAccessGrant(value: unknown): AdminSandboxAcces
       projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
       sandboxId: identifier(spec.sandboxId, "/spec/sandboxId"),
       generation: integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation"),
-      accessKind: enumValue(spec.accessKind, ["pty"] as const, "/spec/accessKind"),
+      accessKind: enumValue(spec.accessKind, ["sandbox"] as const, "/spec/accessKind"),
       status,
       expiresAt: dateTime(spec.expiresAt, "/spec/expiresAt"),
       ...(revokedAt === undefined ? {} : { revokedAt }),
       ptySessionCount: integer(spec.ptySessionCount, 0, 10000, "/spec/ptySessionCount"),
+      fileAccessCount,
+      fileFailureCount,
+      ...(hasLast
+        ? {
+            lastFileAction: lastFileAction!,
+            lastFileStatus: lastFileStatus!,
+            lastFileAccessAt: dateTime(spec.lastFileAccessAt, "/spec/lastFileAccessAt"),
+          }
+        : {}),
+      ...(lastFileErrorCode === undefined ? {} : { lastFileErrorCode }),
     }),
   });
 }
@@ -3183,6 +3376,128 @@ export function decodeSandboxPTYSession(value: unknown): SandboxPTYSession {
     webSocketPath,
     createdAt: dateTime(source.createdAt, "/createdAt"),
   });
+}
+export function decodeSandboxFileEntry(value: unknown): SandboxFileEntry {
+  const source = strictRecord(
+    value,
+    ["path", "type", "sizeBytes", "modifiedAt", "fileVersion"],
+    ["path", "type", "sizeBytes", "modifiedAt", "fileVersion"],
+  );
+  return Object.freeze({
+    path: sandboxFilePath(source.path, false),
+    type: enumValue(source.type, ["file", "directory", "symlink", "other"] as const, "/type"),
+    sizeBytes: integer(source.sizeBytes, 0, Number.MAX_SAFE_INTEGER, "/sizeBytes"),
+    modifiedAt: dateTime(source.modifiedAt, "/modifiedAt"),
+    fileVersion: sandboxFileVersion(source.fileVersion),
+  });
+}
+export function decodeSandboxFilePage(value: unknown): SandboxFilePage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "entries"],
+    ["apiVersion", "kind", "projectRef", "grantId", "sandboxId", "generation", "path", "entries"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "SandboxFilePage" ||
+    !Array.isArray(source.entries) ||
+    source.entries.length > 1000
+  )
+    error("INVALID_SANDBOX_FILE_PAGE", "/entries");
+  const pagePath = sandboxFilePath(source.path, true);
+  const entries = (source.entries as unknown[]).map(decodeSandboxFileEntry);
+  if (
+    entries.some(
+      (entry) =>
+        (entry.path.lastIndexOf("/") < 0
+          ? "."
+          : entry.path.slice(0, entry.path.lastIndexOf("/"))) !== pagePath,
+    ) ||
+    new Set(entries.map(({ path }) => path)).size !== entries.length
+  )
+    error("INVALID_SANDBOX_FILE_PAGE", "/entries");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxFilePage",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    grantId: identifier(source.grantId, "/grantId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    path: pagePath,
+    entries: Object.freeze(entries),
+  });
+}
+export function decodeSandboxFileReadPage(value: unknown): SandboxFileReadPage {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "path",
+      "fileVersion",
+      "offset",
+      "nextOffset",
+      "totalBytes",
+      "eof",
+      "contentBase64Url",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "grantId",
+      "sandboxId",
+      "generation",
+      "path",
+      "fileVersion",
+      "offset",
+      "nextOffset",
+      "totalBytes",
+      "eof",
+      "contentBase64Url",
+    ],
+  );
+  if (source.apiVersion !== platformApiVersion || source.kind !== "SandboxFileReadPage")
+    error("RESOURCE_KIND_MISMATCH", "/kind");
+  const offset = integer(source.offset, 0, 16 << 20, "/offset");
+  const nextOffset = integer(source.nextOffset, offset, 16 << 20, "/nextOffset");
+  const totalBytes = integer(source.totalBytes, nextOffset, 16 << 20, "/totalBytes");
+  const contentBase64Url = sandboxFileContent(source.contentBase64Url, 1 << 20);
+  const decodedLength = Math.floor((contentBase64Url.length * 6) / 8);
+  if (
+    decodedLength !== nextOffset - offset ||
+    boolean(source.eof, "/eof") !== (nextOffset === totalBytes)
+  )
+    error("INVALID_SANDBOX_FILE_READ_PAGE", "/contentBase64Url");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "SandboxFileReadPage",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    grantId: identifier(source.grantId, "/grantId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    generation: integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    path: sandboxFilePath(source.path, false),
+    fileVersion: sandboxFileVersion(source.fileVersion),
+    offset,
+    nextOffset,
+    totalBytes,
+    eof: nextOffset === totalBytes,
+    contentBase64Url,
+  });
+}
+export function decodeSandboxFileWriteRequest(value: unknown): SandboxFileWriteRequest {
+  const source = strictRecord(value, ["path", "contentBase64Url"], ["path", "contentBase64Url"]);
+  return Object.freeze({
+    path: sandboxFilePath(source.path, false),
+    contentBase64Url: sandboxFileContent(source.contentBase64Url, 16 << 20),
+  });
+}
+export function encodeSandboxFileWriteRequest(value: SandboxFileWriteRequest): string {
+  return JSON.stringify(decodeSandboxFileWriteRequest(value));
 }
 export function decodeSandboxSessionLifecycleRequest(
   value: unknown,
@@ -6652,6 +6967,15 @@ export function parseAdminSandboxAccessGrantPage(
 export function parseSandboxPTYSession(text: string): ResponseEnvelope<SandboxPTYSession> {
   return parseResponse(text, sandboxPTYSessionResponseShape, decodeSandboxPTYSession);
 }
+export function parseSandboxFileEntry(text: string): ResponseEnvelope<SandboxFileEntry> {
+  return parseResponse(text, sandboxFileEntryResponseShape, decodeSandboxFileEntry);
+}
+export function parseSandboxFilePage(text: string): ResponseEnvelope<SandboxFilePage> {
+  return parseResponse(text, sandboxFilePageResponseShape, decodeSandboxFilePage);
+}
+export function parseSandboxFileReadPage(text: string): ResponseEnvelope<SandboxFileReadPage> {
+  return parseResponse(text, sandboxFileReadPageResponseShape, decodeSandboxFileReadPage);
+}
 export function decodeSandboxSessionLifecycleOperation(
   value: unknown,
 ): SandboxSessionLifecycleOperation {
@@ -9101,6 +9425,128 @@ export class Client {
       signal,
     );
     if (response.status !== 204) throw await this.problem("foundationDeletePTYSession", response);
+  }
+  async listSandboxFiles(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxFilePage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    const checkedPath = sandboxFilePath(filePath, true);
+    const query = new URLSearchParams({ path: checkedPath });
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/files?${query.toString()}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("foundationListSandboxFiles", response);
+    const result = parseSandboxFilePage(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.grantId !== grantId ||
+      result.value.path !== checkedPath
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/path");
+    return result;
+  }
+  async readSandboxFile(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    filePath: string,
+    offset = 0,
+    limit = 1 << 20,
+    fileVersion?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxFileReadPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    const checkedPath = sandboxFilePath(filePath, false);
+    integer(offset, 0, 16 << 20, "/offset");
+    integer(limit, 1, 1 << 20, "/limit");
+    if (offset > 0 && fileVersion === undefined) error("FILE_VERSION_REQUIRED", "/fileVersion");
+    const checkedVersion = fileVersion === undefined ? undefined : sandboxFileVersion(fileVersion);
+    const query = new URLSearchParams({
+      path: checkedPath,
+      offset: String(offset),
+      limit: String(limit),
+    });
+    if (checkedVersion !== undefined) query.set("fileVersion", checkedVersion);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/files/content?${query.toString()}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("foundationReadSandboxFile", response);
+    const result = parseSandboxFileReadPage(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.grantId !== grantId ||
+      result.value.path !== checkedPath ||
+      result.value.offset !== offset ||
+      (checkedVersion !== undefined && result.value.fileVersion !== checkedVersion)
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/path");
+    return result;
+  }
+  async writeSandboxFile(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    body: SandboxFileWriteRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxFileEntry>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    const checked = decodeSandboxFileWriteRequest(body);
+    const response = await this.call(
+      {
+        method: "PUT",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/files`,
+        headers: { "X-Request-ID": requestId },
+        body: encodeSandboxFileWriteRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("foundationWriteSandboxFile", response);
+    const result = parseSandboxFileEntry(response.body);
+    if (result.value.path !== checked.path || result.value.type !== "file")
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/path");
+    return result;
+  }
+  async deleteSandboxFile(
+    tenantId: string,
+    projectId: string,
+    grantId: string,
+    requestId: string,
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(grantId, "/grantId");
+    const checkedPath = sandboxFilePath(filePath, false);
+    const query = new URLSearchParams({ path: checkedPath });
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sandbox-access-grants/${grantId}/files?${query.toString()}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw await this.problem("foundationDeleteSandboxFile", response);
   }
   async listEnvironmentProfiles(
     tenantId: string,

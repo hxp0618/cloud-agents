@@ -271,6 +271,47 @@ func run(args []string, stdout io.Writer) error {
 		} else if err == nil {
 			return attachPTY(ctx, options, client, since, takeover, os.Stdin, stdout)
 		}
+	case "files list":
+		path := "."
+		if err = parseActionFlags("files list", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&path, "path", ".", "Workspace-relative directory path")
+		}); err == nil {
+			value, err = client.ListSandboxFiles(ctx, options.tenant, options.project, options.grant, options.requestID, path)
+		}
+	case "files read":
+		var path, fileVersion string
+		var offset int64
+		limit := 1 << 20
+		if err = parseActionFlags("files read", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&path, "path", "", "Workspace-relative file path")
+			set.Int64Var(&offset, "offset", 0, "byte offset")
+			set.IntVar(&limit, "limit", 1<<20, "maximum bytes to return")
+			set.StringVar(&fileVersion, "file-version", "", "version returned by the first page")
+		}); err == nil && path == "" {
+			err = errors.New("--path is required")
+		} else if err == nil {
+			value, err = client.ReadSandboxFile(ctx, options.tenant, options.project, options.grant, options.requestID, path, offset, limit, fileVersion)
+		}
+	case "files write":
+		var path, content string
+		if err = parseActionFlags("files write", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&path, "path", "", "Workspace-relative file path")
+			set.StringVar(&content, "content-base64url", "", "unpadded base64url file content")
+		}); err == nil && path == "" {
+			err = errors.New("--path is required")
+		} else if err == nil {
+			value, err = client.WriteSandboxFile(ctx, options.tenant, options.project, options.grant, options.requestID, platform.SandboxFileWriteRequest{Path: path, ContentBase64URL: content})
+		}
+	case "files delete":
+		var path string
+		if err = parseActionFlags("files delete", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&path, "path", "", "Workspace-relative file path")
+		}); err == nil && path == "" {
+			err = errors.New("--path is required")
+		} else if err == nil {
+			err = client.DeleteSandboxFile(ctx, options.tenant, options.project, options.grant, options.requestID, path)
+			value = map[string]string{"status": "deleted"}
+		}
 	case "session list":
 		var pageSize int
 		var pageToken string
@@ -872,7 +913,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
 		return true
 	default:
 		return false
@@ -880,7 +921,7 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "sandbox" || command == "pty" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
+	return command == "target" && action != "preflight" || command == "project" && action == "get" || command == "sandbox" || command == "pty" || command == "files" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool {
 	return command == "organization" && action != "list" || command == "project" && action == "list"
@@ -902,7 +943,7 @@ func requiresExecution(command, action string) bool {
 	return command == "execution" && action != "list"
 }
 func requiresSandbox(command, action string) bool { return command == "sandbox" }
-func requiresGrant(command, action string) bool   { return command == "pty" }
+func requiresGrant(command, action string) bool   { return command == "pty" || command == "files" }
 func requiresPTYSession(command, action string) bool {
 	return command == "pty" && action != "create"
 }
@@ -930,6 +971,7 @@ resources and actions:
 
   sandbox exec|grant
   pty create|get|attach|delete
+  files list|read|write|delete
   session get|list|create|close
   turn get|list|create
   execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input

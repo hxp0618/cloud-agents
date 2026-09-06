@@ -3,8 +3,20 @@ package localmigration
 // productRunnerBindingSelector is the checked-in independent-product schema
 // successor. It is separate from the frozen D-053 localdev review binding.
 func productRunnerBindingSelector(version string) generatedRunnerBindingSelector {
-	if version == "000058" {
+	if version == "000059" {
 		return productFoundationRunnerBinding
+	}
+	if version == "000058" {
+		return generatedRunnerBindingSelector{
+			selectorID: "product-000058", schemaHead: "000058",
+			manifestPath:      "services/control-plane/migrations/product/000058/manifest.json",
+			manifestSizeBytes: 135651, manifestRawDigest: "sha256:b3c92a4b737eda9a971d36e8b2e72f52178b6c6430d0553ee781eaa3db7855c9",
+			manifestDigest:        "sha256:f98fb1d5a3d41af4943a31d94ac57750141a2e0ae891d75e4277f6538a7cef68",
+			schemaBundlePath:      "services/control-plane/migrations/product/000058/schema-bundle.json",
+			schemaBundleSizeBytes: 91732, schemaBundleRawDigest: "sha256:8a0f7736f5cfe0185f251b917658066ed2a75b54a4a40c08d6c8d931347e914e",
+			schemaBundleDigest: "sha256:5bfc89969d49c4d5a50c4c300b5ffff58476560a79ab5bd5be1fe82804dafbb7",
+			migrationCount:     58,
+		}
 	}
 	if version == "000057" {
 		return generatedRunnerBindingSelector{
