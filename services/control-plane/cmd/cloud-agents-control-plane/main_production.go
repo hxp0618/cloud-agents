@@ -316,6 +316,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("network policy HTTP server is unavailable")
 	}
 	var remoteWorkerCertificateAuthority *internalremoteworker.CertificateAuthority
+	var remoteWorkerClientCAs *x509.CertPool
 	if config.remoteWorkerCACert != "" {
 		certificatePEM, readErr := readProductionFile(config.remoteWorkerCACert, maxProductionCABytes)
 		if readErr != nil {
@@ -328,6 +329,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		remoteWorkerCertificateAuthority, err = internalremoteworker.NewCertificateAuthority(certificatePEM, privateKeyPEM, config.remoteWorkerTrustDomain)
 		if err != nil {
 			return errors.New("RemoteWorker certificate authority is invalid")
+		}
+		remoteWorkerClientCAs, err = remoteWorkerCertificateAuthority.ClientCAPool()
+		if err != nil {
+			return errors.New("RemoteWorker client CA pool is invalid")
 		}
 	}
 	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifier, coordinationService, remoteWorkerCertificateAuthority)
@@ -423,6 +428,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		adminDeploymentTargetServer.ServeHTTP(writer, request)
 	})))
 	mux.Handle("/v1/remote-worker-bootstrap/", remoteWorkerEnrollmentServer)
+	mux.Handle("/v1/remote-workers/", remoteWorkerEnrollmentServer)
 	mux.Handle(server.OrganizationCollectionRoute, organizationServer)
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleCollectionRoute, roleServer)
@@ -515,6 +521,9 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		writer.WriteHeader(http.StatusOK)
 	})
 	httpServer := &http.Server{Addr: config.listen, Handler: productionAccessLogHandler(logger, server.ConcurrentRequestLimitHandler(config.maxConcurrentRequests, server.JSONContentTypeHandler(mux))), BaseContext: func(net.Listener) context.Context { return ctx }, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 64 << 10}
+	if remoteWorkerClientCAs != nil {
+		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: remoteWorkerClientCAs}
+	}
 	errorChannel := make(chan error, 1)
 	go func() {
 		if config.tlsCert != "" {

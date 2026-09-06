@@ -75,6 +75,26 @@ func TestRemoteWorkerBootstrapHTTPClientUsesEnrollmentScheme(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerMTLSHTTPClientRequiresTLSAndOmitsAuthorization(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if _, present := request.Header["Authorization"]; present {
+			t.Fatalf("unexpected authorization header=%q", request.Header.Get("Authorization"))
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client, err := NewRemoteWorkerMTLSHTTPClientWithClient(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, err := client.roundTrip(context.Background(), Request{Method: http.MethodGet, Path: "/node"}); err != nil || response.Status != http.StatusNoContent {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+	if client, err := NewRemoteWorkerMTLSHTTPClientWithClient("http://127.0.0.1:8080", http.DefaultClient); client != nil || err == nil {
+		t.Fatal("plain HTTP RemoteWorker client was accepted")
+	}
+}
+
 func TestHTTPClientSendsJSONContentTypeForRequestBodies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost || request.Header.Get("Content-Type") != "application/json" {

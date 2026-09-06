@@ -24,6 +24,11 @@ type RemoteWorkerEnrollmentAuditPage struct {
 	NextEventID    string
 }
 
+type RemoteWorkerCertificateRotationAuthorization struct {
+	Enrollment   internalremoteworker.Snapshot
+	NeedsSigning bool
+}
+
 type remoteWorkerEnrollmentRow struct {
 	TenantID             string     `json:"tenant_id"`
 	ProjectID            string     `json:"project_uid"`
@@ -45,6 +50,8 @@ type remoteWorkerEnrollmentRow struct {
 	CertificateSerial    string     `json:"certificate_serial"`
 	CertificateNotBefore *time.Time `json:"certificate_not_before"`
 	CertificateNotAfter  *time.Time `json:"certificate_not_after"`
+	CertificateState     string     `json:"certificate_state"`
+	CertificateRevokedAt *time.Time `json:"certificate_revoked_at"`
 }
 
 type remoteWorkerEnrollmentAuditRow struct {
@@ -67,22 +74,33 @@ const remoteWorkerEnrollmentColumns = `enrollment_uid, worker_uid, worker_name,
 	    resource_version, created_at, updated_at, expires_at, secret_claimed_at, enrolled_at, revoked_at,
 	    COALESCE(incarnation_uid, ''), COALESCE(certificate_spiffe_id, ''),
 	    COALESCE(certificate_sha256, ''), COALESCE(certificate_chain_pem, ''),
-	    COALESCE(certificate_serial, ''), certificate_not_before, certificate_not_after`
+	    COALESCE(certificate_serial, ''), certificate_not_before, certificate_not_after,
+	    COALESCE(certificate_state, ''), certificate_revoked_at`
 
 const remoteWorkerEnrollmentLegacyMutationColumns = `enrollment_uid, worker_uid, worker_name, state,
 	resource_version, created_at, updated_at, expires_at, secret_claimed_at, enrolled_at, revoked_at,
-	''::text, ''::text, ''::text, ''::text, ''::text, NULL::timestamptz, NULL::timestamptz`
+	''::text, ''::text, ''::text, ''::text, ''::text, NULL::timestamptz, NULL::timestamptz,
+	''::text, NULL::timestamptz`
+
+const remoteWorkerEnrollmentIssueMutationColumns = `enrollment_uid, worker_uid, worker_name, state,
+	resource_version, created_at, updated_at, expires_at, secret_claimed_at, enrolled_at, revoked_at,
+	incarnation_uid, certificate_spiffe_id, certificate_sha256, certificate_chain_pem,
+	certificate_serial, certificate_not_before, certificate_not_after, 'active'::text, NULL::timestamptz`
 
 var (
 	createRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentLegacyMutationColumns + `
 	FROM cloud_agents.create_remote_worker_enrollment_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
 	claimRemoteWorkerEnrollmentSecretSQL = `SELECT ` + remoteWorkerEnrollmentLegacyMutationColumns + `
 	FROM cloud_agents.claim_remote_worker_enrollment_secret_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
-	issueRemoteWorkerCertificateSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
+	issueRemoteWorkerCertificateSQL = `SELECT ` + remoteWorkerEnrollmentIssueMutationColumns + `
 FROM cloud_agents.issue_remote_worker_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
-	authenticateRemoteWorkerCertificateSQL = `SELECT cloud_agents.authenticate_remote_worker_certificate_v1($1,$2,$3,$4,$5)`
-	revokeRemoteWorkerEnrollmentSQL        = `SELECT ` + remoteWorkerEnrollmentLegacyMutationColumns + `
-	FROM cloud_agents.revoke_remote_worker_enrollment_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+	authenticateRemoteWorkerCertificateSQL      = `SELECT cloud_agents.authenticate_remote_worker_certificate_v1($1,$2,$3,$4,$5)`
+	authorizeRemoteWorkerCertificateRotationSQL = `SELECT needs_signing, ` + remoteWorkerEnrollmentColumns + `
+FROM cloud_agents.authorize_remote_worker_certificate_rotation_v1($1,$2,$3,$4,$5,$6,$7,$8)`
+	rotateRemoteWorkerCertificateSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
+FROM cloud_agents.rotate_remote_worker_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
+	revokeRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
+	FROM cloud_agents.revoke_remote_worker_enrollment_or_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)`
 	getRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
 FROM cloud_agents.remote_worker_enrollments
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2`
@@ -95,7 +113,8 @@ FROM (
             THEN 'expired' ELSE state END AS state,
         resource_version, created_at, updated_at, expires_at, secret_claimed_at, enrolled_at, revoked_at,
         incarnation_uid, certificate_spiffe_id, certificate_sha256, certificate_chain_pem,
-        certificate_serial, certificate_not_before, certificate_not_after
+        certificate_serial, certificate_not_before, certificate_not_after,
+        certificate_state, certificate_revoked_at
     FROM cloud_agents.remote_worker_enrollments
     WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid > $2
     ORDER BY enrollment_uid LIMIT $3
@@ -205,6 +224,62 @@ func (service *DurableCoordinationService) AuthenticateRemoteWorkerCertificate(c
 	return mapRemoteWorkerEnrollmentError(err)
 }
 
+func (service *DurableCoordinationService) AuthorizeRemoteWorkerCertificateRotation(ctx context.Context, tenantID string, input internalremoteworker.CertificateRotationRequest) (RemoteWorkerCertificateRotationAuthorization, error) {
+	if service == nil || service.runner == nil {
+		return RemoteWorkerCertificateRotationAuthorization{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return RemoteWorkerCertificateRotationAuthorization{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalremoteworker.CertificateRotationMutationDigest(input)
+	if err != nil {
+		return RemoteWorkerCertificateRotationAuthorization{}, ErrCoordinationInvalidInput
+	}
+	var result RemoteWorkerCertificateRotationAuthorization
+	err = service.runner.withTenantReadBinder(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+		handle, ok := capability.(*tenantReadHandle)
+		if !ok || handle == nil {
+			return ErrTenantCapabilityClosed
+		}
+		targets := append([]any{&result.NeedsSigning}, remoteWorkerEnrollmentScanTargets(&result.Enrollment)...)
+		if err := handle.transaction.queryRow(readContext, authorizeRemoteWorkerCertificateRotationSQL,
+			tenantID, input.Scope.ProjectID, input.EnrollmentID, input.ExpectedResourceVersion,
+			input.ConfirmedEnrollmentID, input.PeerCertificateSHA256, input.Mutation.IdempotencyKey, digest).Scan(targets...); err != nil {
+			return err
+		}
+		result.Enrollment.Scope = input.Scope
+		if result.Enrollment.Validate() != nil {
+			return fmt.Errorf("%w: remote worker rotation authorization projection", ErrCoordinationResultDrift)
+		}
+		return nil
+	}, bindTenantSetting)
+	return result, mapRemoteWorkerEnrollmentError(err)
+}
+
+func (service *DurableCoordinationService) RotateRemoteWorkerCertificate(ctx context.Context, tenantID string, input internalremoteworker.CertificateRotationPersistenceInput) (internalremoteworker.Snapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalremoteworker.Snapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || input.Validate(tenantID) != nil {
+		return internalremoteworker.Snapshot{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalremoteworker.CertificateRotationMutationDigest(input.Request)
+	if err != nil {
+		return internalremoteworker.Snapshot{}, ErrCoordinationInvalidInput
+	}
+	var result internalremoteworker.Snapshot
+	err = service.runner.withTenantMutationBinder(ctx, tenantID, func(handle *tenantReadHandle) error {
+		request, certificate := input.Request, input.Certificate
+		return scanRemoteWorkerEnrollment(handle.transaction.queryRow(ctx, rotateRemoteWorkerCertificateSQL,
+			tenantID, request.Scope.ProjectID, request.EnrollmentID, request.ExpectedResourceVersion,
+			request.ConfirmedEnrollmentID, request.PeerCertificateSHA256, certificate.IncarnationID,
+			certificate.SPIFFEID, certificate.CSRSHA256, certificate.Serial, certificate.SHA256,
+			certificate.ChainPEM, certificate.NotBefore, certificate.NotAfter,
+			request.Mutation.IdempotencyKey, digest, request.Mutation.RequestID), request.Scope, &result)
+	}, bindTenantSetting)
+	return result, mapRemoteWorkerEnrollmentError(err)
+}
+
 func (service *DurableCoordinationService) RevokeRemoteWorkerEnrollment(ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input internalremoteworker.TransitionInput) (internalremoteworker.Snapshot, error) {
 	if service == nil || service.runner == nil {
 		return internalremoteworker.Snapshot{}, ErrNilCoordinationRunner
@@ -300,10 +375,7 @@ func scanRemoteWorkerEnrollment(row rowScanner, scope internalremoteworker.Scope
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
-	if err := row.Scan(&result.EnrollmentID, &result.WorkerID, &result.WorkerName, &result.State, &result.ResourceVersion,
-		&result.CreatedAt, &result.UpdatedAt, &result.ExpiresAt, &result.SecretClaimedAt, &result.EnrolledAt, &result.RevokedAt,
-		&result.IncarnationID, &result.SPIFFEID, &result.CertificateSHA256, &result.CertificateChainPEM,
-		&result.CertificateSerial, &result.CertificateNotBefore, &result.CertificateNotAfter); err != nil {
+	if err := row.Scan(remoteWorkerEnrollmentScanTargets(result)...); err != nil {
 		return err
 	}
 	result.Scope = scope
@@ -313,6 +385,14 @@ func scanRemoteWorkerEnrollment(row rowScanner, scope internalremoteworker.Scope
 	return nil
 }
 
+func remoteWorkerEnrollmentScanTargets(result *internalremoteworker.Snapshot) []any {
+	return []any{&result.EnrollmentID, &result.WorkerID, &result.WorkerName, &result.State, &result.ResourceVersion,
+		&result.CreatedAt, &result.UpdatedAt, &result.ExpiresAt, &result.SecretClaimedAt, &result.EnrolledAt, &result.RevokedAt,
+		&result.IncarnationID, &result.SPIFFEID, &result.CertificateSHA256, &result.CertificateChainPEM,
+		&result.CertificateSerial, &result.CertificateNotBefore, &result.CertificateNotAfter,
+		&result.CertificateState, &result.CertificateRevokedAt}
+}
+
 func decodeRemoteWorkerEnrollmentRows(raw []byte, tenantID, projectID string, limit int) (RemoteWorkerEnrollmentPage, error) {
 	var rows []remoteWorkerEnrollmentRow
 	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
@@ -320,7 +400,7 @@ func decodeRemoteWorkerEnrollmentRows(raw []byte, tenantID, projectID string, li
 	}
 	values := make([]internalremoteworker.Snapshot, 0, len(rows))
 	for _, row := range rows {
-		value := internalremoteworker.Snapshot{Scope: internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}, EnrollmentID: row.EnrollmentID, WorkerID: row.WorkerID, WorkerName: row.WorkerName, State: row.State, ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ExpiresAt: row.ExpiresAt, SecretClaimedAt: row.SecretClaimedAt, EnrolledAt: row.EnrolledAt, RevokedAt: row.RevokedAt, IncarnationID: row.IncarnationID, SPIFFEID: row.SPIFFEID, CertificateSHA256: row.CertificateSHA256, CertificateChainPEM: row.CertificateChainPEM, CertificateSerial: row.CertificateSerial, CertificateNotBefore: row.CertificateNotBefore, CertificateNotAfter: row.CertificateNotAfter}
+		value := internalremoteworker.Snapshot{Scope: internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}, EnrollmentID: row.EnrollmentID, WorkerID: row.WorkerID, WorkerName: row.WorkerName, State: row.State, ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ExpiresAt: row.ExpiresAt, SecretClaimedAt: row.SecretClaimedAt, EnrolledAt: row.EnrolledAt, RevokedAt: row.RevokedAt, IncarnationID: row.IncarnationID, SPIFFEID: row.SPIFFEID, CertificateSHA256: row.CertificateSHA256, CertificateChainPEM: row.CertificateChainPEM, CertificateSerial: row.CertificateSerial, CertificateNotBefore: row.CertificateNotBefore, CertificateNotAfter: row.CertificateNotAfter, CertificateState: row.CertificateState, CertificateRevokedAt: row.CertificateRevokedAt}
 		if row.TenantID != tenantID || row.ProjectID != projectID || value.Validate() != nil {
 			return RemoteWorkerEnrollmentPage{}, ErrCoordinationResultDrift
 		}
@@ -367,11 +447,15 @@ func mapRemoteWorkerEnrollmentError(err error) error {
 			return ErrRemoteWorkerEnrollmentSecretUnavailable
 		case "remote worker enrollment authentication failed":
 			return ErrRemoteWorkerEnrollmentAuthentication
+		case "remote worker certificate authentication failed":
+			return ErrRemoteWorkerEnrollmentAuthentication
 		case "remote worker certificate idempotency conflict":
 			return ErrRemoteWorkerEnrollmentIdempotencyConflict
 		case "remote worker certificate enrollment is unavailable":
 			return ErrRemoteWorkerEnrollmentResourceVersionConflict
 		case "remote worker enrollment revoke conflict":
+			return ErrRemoteWorkerEnrollmentResourceVersionConflict
+		case "remote worker certificate revoke conflict":
 			return ErrRemoteWorkerEnrollmentResourceVersionConflict
 		case "remote worker enrollment was not found":
 			return ErrRemoteWorkerEnrollmentNotFound

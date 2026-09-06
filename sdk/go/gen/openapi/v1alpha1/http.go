@@ -45,19 +45,30 @@ func NewRemoteWorkerBootstrapHTTPClientWithClient(baseURL, enrollmentSecret stri
 	return newAuthorizedHTTPClient(baseURL, "RemoteWorkerEnrollment "+enrollmentSecret, enrollmentSecret, client)
 }
 
+// NewRemoteWorkerMTLSHTTPClientWithClient creates a node client whose caller-
+// provided transport owns the short-lived client certificate. No bearer or
+// enrollment secret is attached, and HTTPS is mandatory.
+func NewRemoteWorkerMTLSHTTPClientWithClient(baseURL string, client *http.Client) (*Client, error) {
+	return newHTTPClient(baseURL, "", true, client)
+}
+
 func newAuthorizedHTTPClient(baseURL, authorization, credential string, client *http.Client) (*Client, error) {
+	if strings.TrimSpace(credential) != credential || credential == "" || strings.ContainsAny(credential, " \t\r\n") {
+		return nil, ErrInvalidHTTPClientConfig
+	}
+	return newHTTPClient(baseURL, authorization, false, client)
+}
+
+func newHTTPClient(baseURL, authorization string, requireTLS bool, client *http.Client) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" || strings.HasSuffix(parsed.Path, "/") || client == nil {
 		return nil, ErrInvalidHTTPClientConfig
 	}
 	if parsed.Scheme == "http" {
 		ip := net.ParseIP(parsed.Hostname())
-		if ip == nil || !ip.IsLoopback() {
+		if requireTLS || ip == nil || !ip.IsLoopback() {
 			return nil, ErrInvalidHTTPClientConfig
 		}
-	}
-	if strings.TrimSpace(credential) != credential || credential == "" || strings.ContainsAny(credential, " \t\r\n") {
-		return nil, ErrInvalidHTTPClientConfig
 	}
 	clientCopy := *client
 	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -84,7 +95,9 @@ func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Re
 	if len(input.Body) != 0 {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	request.Header.Set("Authorization", transport.authorization)
+	if transport.authorization != "" {
+		request.Header.Set("Authorization", transport.authorization)
+	}
 	response, err := transport.client.Do(request)
 	if err != nil {
 		return Response{}, err

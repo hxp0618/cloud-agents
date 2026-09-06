@@ -492,6 +492,8 @@ export type RemoteWorkerEnrollment = Readonly<{
     spiffeId?: string;
     certificateSha256?: `sha256:${string}`;
     certificateExpiresAt?: string;
+    certificateState?: "active" | "revoked";
+    certificateRevokedAt?: string;
   }>;
 }>;
 export type RemoteWorkerEnrollmentPage = Readonly<{
@@ -1657,6 +1659,8 @@ const remoteWorkerEnrollmentResponseShape = resourceResponseShape({
   spiffeId: scalarResponseShape,
   certificateSha256: scalarResponseShape,
   certificateExpiresAt: scalarResponseShape,
+  certificateState: scalarResponseShape,
+  certificateRevokedAt: scalarResponseShape,
 });
 const remoteWorkerEnrollmentPageResponseShape: ResponseShape = {
   fields: {
@@ -5314,6 +5318,8 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
       "spiffeId",
       "certificateSha256",
       "certificateExpiresAt",
+      "certificateState",
+      "certificateRevokedAt",
     ],
     ["projectRef", "workerId", "state", "expiresAt"],
     "/spec",
@@ -5327,12 +5333,14 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     createdAt = Date.parse(root.metadata.createdAt),
     updatedAt = Date.parse(root.metadata.updatedAt ?? root.metadata.createdAt),
     expires = Date.parse(expiresAt);
-  const optionalTime = (name: "secretClaimedAt" | "enrolledAt" | "revokedAt") =>
-    spec[name] === undefined ? undefined : dateTime(spec[name], `/spec/${name}`);
+  const optionalTime = (
+    name: "secretClaimedAt" | "enrolledAt" | "revokedAt" | "certificateRevokedAt",
+  ) => (spec[name] === undefined ? undefined : dateTime(spec[name], `/spec/${name}`));
   const secretClaimedAt = optionalTime("secretClaimedAt"),
     enrolledAt = optionalTime("enrolledAt"),
-    revokedAt = optionalTime("revokedAt");
-  for (const instant of [secretClaimedAt, enrolledAt, revokedAt])
+    revokedAt = optionalTime("revokedAt"),
+    certificateRevokedAt = optionalTime("certificateRevokedAt");
+  for (const instant of [secretClaimedAt, enrolledAt, revokedAt, certificateRevokedAt])
     if (
       instant !== undefined &&
       (Date.parse(instant) < createdAt || Date.parse(instant) > updatedAt)
@@ -5342,7 +5350,9 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     spec.incarnationId !== undefined ||
     spec.spiffeId !== undefined ||
     spec.certificateSha256 !== undefined ||
-    spec.certificateExpiresAt !== undefined;
+    spec.certificateExpiresAt !== undefined ||
+    spec.certificateState !== undefined ||
+    certificateRevokedAt !== undefined;
   if (
     expires <= createdAt ||
     (secretClaimedAt !== undefined && Date.parse(secretClaimedAt) >= expires) ||
@@ -5361,6 +5371,12 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
     (state === "enrolled") !== hasCertificate
   )
     error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state");
+  const certificateExpiresAt = hasCertificate
+      ? dateTime(spec.certificateExpiresAt, "/spec/certificateExpiresAt")
+      : undefined,
+    certificateState = hasCertificate
+      ? enumValue(spec.certificateState, ["active", "revoked"] as const, "/spec/certificateState")
+      : undefined;
   const certificate = !hasCertificate
     ? {}
     : {
@@ -5370,10 +5386,18 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
           spec.certificateSha256,
           "/spec/certificateSha256",
         ) as `sha256:${string}`,
-        certificateExpiresAt: dateTime(spec.certificateExpiresAt, "/spec/certificateExpiresAt"),
+        certificateExpiresAt: certificateExpiresAt!,
+        certificateState: certificateState!,
+        ...(certificateRevokedAt === undefined ? {} : { certificateRevokedAt }),
       };
-  if (hasCertificate && Date.parse(certificate.certificateExpiresAt!) <= updatedAt)
-    error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/certificateExpiresAt");
+  if (
+    hasCertificate &&
+    (certificateState === "active"
+      ? certificateRevokedAt !== undefined || Date.parse(certificateExpiresAt!) <= updatedAt
+      : certificateRevokedAt === undefined ||
+        Date.parse(certificateRevokedAt) < Date.parse(enrolledAt!))
+  )
+    error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/certificateState");
   return Object.freeze({
     ...root,
     kind: "RemoteWorkerEnrollment" as const,
@@ -9722,7 +9746,9 @@ export class Client {
       result.value.metadata.uid !== enrollmentId ||
       result.value.spec.projectRef.id !== projectId ||
       checked.confirmedEnrollmentId !== enrollmentId ||
-      result.value.spec.state !== "revoked"
+      (result.value.spec.state !== "revoked" &&
+        (result.value.spec.state !== "enrolled" ||
+          result.value.spec.certificateState !== "revoked"))
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
@@ -9785,6 +9811,42 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("remoteWorkerIssueCertificate", response);
+    if (response.headers["cache-control"] !== "no-store" || response.headers.pragma !== "no-cache")
+      error("CERTIFICATE_CACHE_POLICY_MISMATCH", "/headers");
+    const result = parseRemoteWorkerCertificate(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.enrollmentId !== enrollmentId ||
+      result.value.incarnationId !== checked.incarnationId ||
+      checked.confirmedEnrollmentId !== enrollmentId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId");
+    return result;
+  }
+  async rotateRemoteWorkerCertificate(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: RemoteWorkerCertificateIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerCertificate>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeRemoteWorkerCertificateIssueRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/remote-workers/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:rotateCertificate`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeRemoteWorkerCertificateIssueRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("remoteWorkerRotateCertificate", response);
     if (response.headers["cache-control"] !== "no-store" || response.headers.pragma !== "no-cache")
       error("CERTIFICATE_CACHE_POLICY_MISMATCH", "/headers");
     const result = parseRemoteWorkerCertificate(response.body);

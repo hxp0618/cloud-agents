@@ -8,7 +8,7 @@ import { classifyMigrationStatement, splitPostgresStatements } from "./platform-
 const root = resolve(import.meta.dirname, "../..");
 
 describe("postgresql-lex-v1 bootstrap", () => {
-  it("pins only the three new-work admission triggers in migration 000051", () => {
+  it("admits bounded before-row triggers without per-version definitions", () => {
     for (const relation of ["sessions", "turns", "executions"]) {
       const event = relation === "executions" ? "INSERT OR UPDATE OF state" : "INSERT";
       const sql = `CREATE TRIGGER managed_agent_${relation}_target_admission BEFORE ${event} ON cloud_agents.managed_agent_${relation} FOR EACH ROW EXECUTE FUNCTION cloud_agents.guard_managed_agent_target_admission_v1();`;
@@ -18,12 +18,13 @@ describe("postgresql-lex-v1 bootstrap", () => {
           version,
         );
       expect(classify(sql).object_kind).toBe("TRIGGER");
-      expect(() => classify(sql, "000050")).toThrow();
+      expect(classify(sql, "000050").object_kind).toBe("TRIGGER");
       for (const changed of [
         sql.replace("BEFORE", "AFTER"),
         sql.replace(event, "DELETE"),
-        sql.replace("guard_managed_agent_target_admission_v1", "other_function"),
-        sql.replace(`ON cloud_agents.managed_agent_${relation}`, "ON cloud_agents.projects"),
+        sql.replace("ON cloud_agents", "ON other"),
+        sql.replace("()", "('argument')"),
+        sql.replace("FOR EACH ROW", "FOR EACH STATEMENT"),
       ])
         expect(() => classify(changed)).toThrow();
     }
@@ -1111,9 +1112,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
       "GRANT",
     ]);
-    expect(() => classifyMigrationStatement(statements[8]!, "000045")).toThrow(
-      /SQL_STATEMENT_PROFILE_REJECTED/u,
-    );
+    expect(classifyMigrationStatement(statements[8]!, "000045").object_kind).toBe("TRIGGER");
   });
 
   it("classifies the project Lease quota migration", () => {
@@ -1156,9 +1155,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
       "GRANT",
     ]);
-    expect(() => classifyMigrationStatement(statements[19]!, "000046")).toThrow(
-      /SQL_STATEMENT_PROFILE_REJECTED/u,
-    );
+    expect(classifyMigrationStatement(statements[19]!, "000046").object_kind).toBe("TRIGGER");
   });
 
   it("classifies the Storage Policy migration", () => {
@@ -1229,6 +1226,31 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(() => classifyMigrationStatement(statements[1]!, "000048")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/u,
     );
+  });
+
+  it("admits bounded table backfills without per-version hashes", () => {
+    const classify = (sql: string) =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        "999999",
+      );
+    expect(
+      classify(
+        "UPDATE cloud_agents.rows SET current_value = previous_value, state = 'active' WHERE source_value IS NOT NULL;",
+      ),
+    ).toMatchObject({
+      command: "UPDATE",
+      object_kind: "TABLE",
+      target_identity: "table:unquoted:cloud_agents/unquoted:rows",
+    });
+    for (const sql of [
+      "UPDATE other.rows SET state = 'active' WHERE source_value IS NOT NULL;",
+      "UPDATE cloud_agents.rows SET state = 'active';",
+      "UPDATE cloud_agents.rows SET state = 'active' FROM cloud_agents.other WHERE source_value IS NOT NULL;",
+      "UPDATE cloud_agents.rows SET state = (SELECT 'active') WHERE source_value IS NOT NULL;",
+    ]) {
+      expect(() => classify(sql)).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
   });
 
   it("admits only the exact generated-profile operation-effect partial index", () => {

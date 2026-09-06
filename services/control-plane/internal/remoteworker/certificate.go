@@ -52,6 +52,13 @@ type Certificate struct {
 	NotAfter      time.Time
 }
 
+type PeerIdentity struct {
+	Scope             Scope
+	EnrollmentID      string
+	IncarnationID     string
+	CertificateSHA256 string
+}
+
 func NewCertificateAuthority(certificatePEM, privateKeyPEM []byte, trustDomain string) (*CertificateAuthority, error) {
 	identity, err := url.Parse("spiffe://" + trustDomain + "/remote-worker")
 	if err != nil || trustDomain == "" || len(trustDomain) > 255 || trustDomain != strings.ToLower(trustDomain) || identity.Host != trustDomain || identity.Hostname() != trustDomain || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" || strings.Contains(trustDomain, "/") {
@@ -101,6 +108,17 @@ func NewEphemeralCertificateAuthority(trustDomain string) (*CertificateAuthority
 	return NewCertificateAuthority(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: raw}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyRaw}), trustDomain)
 }
 
+func (authority *CertificateAuthority) ClientCAPool() (*x509.CertPool, error) {
+	if authority == nil || authority.chainPEM == "" {
+		return nil, ErrCertificateAuthorityUnavailable
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM([]byte(authority.chainPEM)) {
+		return nil, ErrCertificateAuthorityUnavailable
+	}
+	return pool, nil
+}
+
 func (authority *CertificateAuthority) Issue(input CertificateInput) (Certificate, error) {
 	if authority == nil || authority.certificate == nil || authority.signer == nil || authority.clock == nil ||
 		invalidIdentifier(input.Scope.TenantID) || invalidIdentifier(input.Scope.ProjectID) || invalidIdentifier(input.EnrollmentID) || invalidIdentifier(input.IncarnationID) || len(input.CSRPEM) == 0 || len(input.CSRPEM) > 32768 {
@@ -143,6 +161,24 @@ func (authority *CertificateAuthority) Issue(input CertificateInput) (Certificat
 		return Certificate{}, ErrInvalidCertificateRequest
 	}
 	return Certificate{IncarnationID: input.IncarnationID, SPIFFEID: identity.String(), ChainPEM: chain, CSRSHA256: "sha256:" + hex.EncodeToString(csrDigest[:]), SHA256: "sha256:" + hex.EncodeToString(digest[:]), Serial: serial.Text(16), NotBefore: template.NotBefore, NotAfter: template.NotAfter}, nil
+}
+
+func (authority *CertificateAuthority) PeerIdentity(state *tls.ConnectionState) (PeerIdentity, error) {
+	if authority == nil || authority.clock == nil || state == nil || len(state.PeerCertificates) < 1 || len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 || !state.PeerCertificates[0].Equal(state.VerifiedChains[0][0]) {
+		return PeerIdentity{}, ErrInvalidCertificateRequest
+	}
+	certificate := state.PeerCertificates[0]
+	now := authority.clock().UTC()
+	if now.Before(certificate.NotBefore) || !now.Before(certificate.NotAfter) || len(certificate.URIs) != 1 || len(certificate.ExtKeyUsage) != 1 || certificate.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth {
+		return PeerIdentity{}, ErrInvalidCertificateRequest
+	}
+	identity := certificate.URIs[0]
+	parts := strings.Split(strings.TrimPrefix(identity.Path, "/"), "/")
+	if identity.Scheme != "spiffe" || identity.Host != authority.trustDomain || identity.User != nil || identity.RawPath != "" || identity.RawQuery != "" || identity.Fragment != "" || len(parts) != 5 || parts[0] != "remote-worker" || invalidIdentifier(parts[1]) || invalidIdentifier(parts[2]) || invalidIdentifier(parts[3]) || invalidIdentifier(parts[4]) {
+		return PeerIdentity{}, ErrInvalidCertificateRequest
+	}
+	digest := sha256.Sum256(certificate.Raw)
+	return PeerIdentity{Scope: Scope{TenantID: parts[1], ProjectID: parts[2]}, EnrollmentID: parts[3], IncarnationID: parts[4], CertificateSHA256: "sha256:" + hex.EncodeToString(digest[:])}, nil
 }
 
 func BootstrapActorDigest(secretDigest string) (string, error) {

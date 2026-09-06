@@ -43,6 +43,7 @@ import {
   decodeRolePage,
   decodeRoleBinding,
   decodeRoleBindingPage,
+  decodeRemoteWorkerEnrollment,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -100,6 +101,52 @@ const platformFixtureRoot = resolve(
 );
 
 describe("generated platform JSON models", () => {
+  it("validates active and revoked RemoteWorker certificate metadata", () => {
+    const active = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "RemoteWorkerEnrollment",
+      metadata: {
+        uid: "enrollment-alpha",
+        name: "worker-alpha",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "3",
+        createdAt: "2026-09-06T12:00:00Z",
+        updatedAt: "2026-09-06T12:01:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        workerId: "worker-alpha",
+        state: "enrolled",
+        expiresAt: "2026-09-06T13:00:00Z",
+        secretClaimedAt: "2026-09-06T12:00:10Z",
+        enrolledAt: "2026-09-06T12:00:20Z",
+        incarnationId: "incarnation-alpha",
+        spiffeId:
+          "spiffe://remote-worker.test/remote-worker/tenant-alpha/project-alpha/enrollment-alpha/incarnation-alpha",
+        certificateSha256: `sha256:${"a".repeat(64)}`,
+        certificateExpiresAt: "2026-09-06T12:15:00Z",
+        certificateState: "active",
+      },
+    };
+    expect(decodeRemoteWorkerEnrollment(active).spec.certificateState).toBe("active");
+    const revoked = {
+      ...active,
+      metadata: { ...active.metadata, resourceVersion: "4", updatedAt: "2026-09-06T12:20:00Z" },
+      spec: {
+        ...active.spec,
+        certificateState: "revoked",
+        certificateRevokedAt: "2026-09-06T12:19:00Z",
+      },
+    };
+    expect(decodeRemoteWorkerEnrollment(revoked).spec.certificateState).toBe("revoked");
+    expect(() =>
+      decodeRemoteWorkerEnrollment({
+        ...active,
+        spec: { ...active.spec, certificateState: undefined },
+      }),
+    ).toThrow(TypeError);
+  });
+
   it("executes only a bounded command against the exact Sandbox generation", async () => {
     const response = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",

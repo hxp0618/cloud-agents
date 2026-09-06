@@ -94,18 +94,6 @@ const MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX = {
   sha256: "sha256:a8bf73adb48cb4be976422e41e1ec546a4490a7f1e8b167ae5287e7743c6f83d",
   targetIdentity: "index:unquoted:cloud_agents/unquoted:managed_host_leases_create_key_idx",
 } as const;
-const FOUNDATION_SANDBOX_RECEIPT_BACKFILL = {
-  migrationId: "000056",
-  statementIndex: 4,
-  sha256: "sha256:b559d418d899d44500a38d02e995270b52822b20c712db0d267655398b3f589e",
-  targetIdentity: "table:unquoted:cloud_agents/unquoted:sandbox_sessions",
-} as const;
-const SANDBOX_ACCESS_KIND_BACKFILL = {
-  migrationId: "000059",
-  statementIndex: 1,
-  sha256: "sha256:e398fdfc275842a3da14fac8fc6bb96361d7ef8249558c30348db885009c406e",
-  targetIdentity: "table:unquoted:cloud_agents/unquoted:sandbox_access_grants",
-} as const;
 const DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX = {
   migrationId: "000039",
   statementIndex: 3,
@@ -245,111 +233,12 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     if (tokens[1] === "TRIGGER") {
-      if (migrationId === "000051") {
-        const relations: Readonly<Record<string, string>> = {
-          MANAGED_AGENT_SESSIONS_TARGET_ADMISSION: "MANAGED_AGENT_SESSIONS",
-          MANAGED_AGENT_TURNS_TARGET_ADMISSION: "MANAGED_AGENT_TURNS",
-          MANAGED_AGENT_EXECUTIONS_TARGET_ADMISSION: "MANAGED_AGENT_EXECUTIONS",
-        };
-        const relation = relations[tokens[2] ?? ""];
-        if (!relation) reject(tokens);
-        const event =
-          relation === "MANAGED_AGENT_EXECUTIONS"
-            ? ["INSERT", "OR", "UPDATE", "OF", "STATE"]
-            : ["INSERT"];
-        const expected = [
-          "CREATE",
-          "TRIGGER",
-          tokens[2]!,
-          "BEFORE",
-          ...event,
-          "ON",
-          "CLOUD_AGENTS",
-          ".",
-          relation,
-          "FOR",
-          "EACH",
-          "ROW",
-          "EXECUTE",
-          "FUNCTION",
-          "CLOUD_AGENTS",
-          ".",
-          "GUARD_MANAGED_AGENT_TARGET_ADMISSION_V1",
-          "(",
-          ")",
-          ";",
-        ];
-        if (
-          tokens.length !== expected.length ||
-          tokens.some((token, index) => token !== expected[index])
-        )
-          reject(tokens);
-        return classification(
-          "CREATE",
-          "TRIGGER",
-          qualifiedDerivedIdentity("trigger", tokens, expected.indexOf("ON") + 1, tokens[2]!),
-          null,
-        );
-      }
-      const expected =
-        migrationId === "000046"
-          ? [
-              "CREATE",
-              "TRIGGER",
-              "MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_GUARD",
-              "BEFORE",
-              "UPDATE",
-              "OF",
-              "RELEASE_DIGEST",
-              "ON",
-              "CLOUD_AGENTS",
-              ".",
-              "MANAGED_HOST_ENVIRONMENT_LEASES",
-              "FOR",
-              "EACH",
-              "ROW",
-              "EXECUTE",
-              "FUNCTION",
-              "CLOUD_AGENTS",
-              ".",
-              "TRACK_MANAGED_HOST_ENVIRONMENT_LEASE_RELEASE_V1",
-              "(",
-              ")",
-              ";",
-            ]
-          : migrationId === "000047"
-            ? [
-                "CREATE",
-                "TRIGGER",
-                "MANAGED_HOST_ENVIRONMENT_LEASES_PROJECT_QUOTA",
-                "BEFORE",
-                "INSERT",
-                "ON",
-                "CLOUD_AGENTS",
-                ".",
-                "MANAGED_HOST_ENVIRONMENT_LEASES",
-                "FOR",
-                "EACH",
-                "ROW",
-                "EXECUTE",
-                "FUNCTION",
-                "CLOUD_AGENTS",
-                ".",
-                "ENFORCE_PROJECT_LEASE_QUOTA_V1",
-                "(",
-                ")",
-                ";",
-              ]
-            : [];
-      if (
-        tokens.length !== expected.length ||
-        tokens.some((token, index) => token !== expected[index])
-      )
-        reject(tokens);
+      const on = simpleBeforeRowTrigger(tokens);
+      if (on < 0) reject(tokens);
       return classification(
         "CREATE",
         "TRIGGER",
-        qualifiedDerivedIdentity("trigger", tokens, migrationId === "000046" ? 8 : 6, tokens[2]!),
+        qualifiedDerivedIdentity("trigger", tokens, on + 1, tokens[2]!),
         null,
       );
     }
@@ -787,16 +676,9 @@ export function classifyMigrationStatement(
     return classification("INSERT", "TABLE", targetIdentity, null);
   }
   if (first === "UPDATE") {
-    const special = [FOUNDATION_SANDBOX_RECEIPT_BACKFILL, SANDBOX_ACCESS_KIND_BACKFILL].find(
-      (candidate) =>
-        migrationId === candidate.migrationId &&
-        statement.index === candidate.statementIndex &&
-        statement.sha256 === candidate.sha256,
-    );
-    if (!special) reject(tokens);
     requireCloudAgentsQualified(tokens, 1);
     const targetIdentity = qualifiedIdentity("table", tokens, 1);
-    if (targetIdentity !== special.targetIdentity) reject(tokens);
+    if (!simpleBackfill(tokens)) reject(tokens);
     return classification("UPDATE", "TABLE", targetIdentity, null);
   }
   if (first === "GRANT" || first === "REVOKE") {
@@ -860,6 +742,77 @@ export function classifyMigrationStatement(
     return classification(first, objectKind, targetIdentity, grantee);
   }
   reject(tokens);
+}
+
+function simpleBackfill(tokens: ReadonlyArray<string>): boolean {
+  if (tokens[4] !== "SET") return false;
+  let offset = 5;
+  let assignments = 0;
+  while (
+    simpleUnquotedIdentifier(tokens[offset]) &&
+    (simpleUnquotedIdentifier(tokens[offset + 1]) || tokens[offset + 1] === "$STRING$")
+  ) {
+    assignments += 1;
+    offset += 2;
+    if (tokens[offset] === ",") {
+      offset += 1;
+      continue;
+    }
+    break;
+  }
+  if (
+    assignments === 0 ||
+    tokens[offset] !== "WHERE" ||
+    !simpleUnquotedIdentifier(tokens[offset + 1])
+  )
+    return false;
+  const condition = tokens.slice(offset + 2).join("\0");
+  return (
+    condition === ["IS", "NOT", "NULL", ";"].join("\0") ||
+    condition === ["$STRING$", ";"].join("\0")
+  );
+}
+
+function simpleBeforeRowTrigger(tokens: ReadonlyArray<string>): number {
+  const on = tokens.indexOf("ON", 4);
+  if (
+    on < 0 ||
+    !simpleUnquotedIdentifier(tokens[2]) ||
+    !simpleUnquotedIdentifier(tokens[on + 3]) ||
+    !simpleUnquotedIdentifier(tokens[on + 11])
+  )
+    return -1;
+  const event = tokens.slice(3, on);
+  const validEvent =
+    event.join("\0") === ["BEFORE", "INSERT"].join("\0") ||
+    (event.length === 4 &&
+      event.slice(0, 3).join("\0") === ["BEFORE", "UPDATE", "OF"].join("\0") &&
+      simpleUnquotedIdentifier(event[3])) ||
+    (event.length === 6 &&
+      event.slice(0, 5).join("\0") ===
+        ["BEFORE", "INSERT", "OR", "UPDATE", "OF"].join("\0") &&
+      simpleUnquotedIdentifier(event[5]));
+  const tail = [
+    "CLOUD_AGENTS",
+    ".",
+    tokens[on + 3]!,
+    "FOR",
+    "EACH",
+    "ROW",
+    "EXECUTE",
+    "FUNCTION",
+    "CLOUD_AGENTS",
+    ".",
+    tokens[on + 11]!,
+    "(",
+    ")",
+    ";",
+  ];
+  return validEvent && tokens.slice(on + 1).join("\0") === tail.join("\0") ? on : -1;
+}
+
+function simpleUnquotedIdentifier(value: string | undefined): boolean {
+  return value !== undefined && /^[A-Z_][A-Z0-9_$]*$/u.test(value);
 }
 
 function classification(

@@ -26,7 +26,9 @@ type remoteWorkerEnrollmentStore interface {
 	ListRemoteWorkerEnrollments(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RemoteWorkerEnrollmentPage, error)
 	ListRemoteWorkerEnrollmentAuditEvents(context.Context, string, *authn.VerifiedPrincipal, string, string, *time.Time, string, int) (postgres.RemoteWorkerEnrollmentAuditPage, error)
 	AuthenticateRemoteWorkerCertificate(context.Context, string, string, string, string, int64) error
+	AuthorizeRemoteWorkerCertificateRotation(context.Context, string, internalremoteworker.CertificateRotationRequest) (postgres.RemoteWorkerCertificateRotationAuthorization, error)
 	IssueRemoteWorkerCertificate(context.Context, string, internalremoteworker.CertificatePersistenceInput) (internalremoteworker.Snapshot, error)
+	RotateRemoteWorkerCertificate(context.Context, string, internalremoteworker.CertificateRotationPersistenceInput) (internalremoteworker.Snapshot, error)
 }
 
 type RemoteWorkerEnrollmentHTTPServer struct {
@@ -53,7 +55,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 		writePublicProblem(writer, 404, "route_not_found")
 		return
 	}
-	if action == "issue-certificate" {
+	if action == "issue-certificate" || action == "rotate-certificate" {
 		if request.Method != http.MethodPost {
 			writePublicProblem(writer, 405, "method_not_allowed")
 			return
@@ -63,7 +65,11 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 			writePublicProblem(writer, 400, "invalid_request")
 			return
 		}
-		server.issueCertificate(writer, request, tenantID, projectID, enrollmentID, requestID)
+		if action == "issue-certificate" {
+			server.issueCertificate(writer, request, tenantID, projectID, enrollmentID, requestID)
+		} else {
+			server.rotateCertificate(writer, request, tenantID, projectID, enrollmentID, requestID)
+		}
 		return
 	}
 	projectPermission, enrollmentPermission, allowed := remoteWorkerEnrollmentPermission(action, request.Method)
@@ -299,14 +305,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) issueCertificate(writer http.Res
 	}
 	certificate, err := server.authority.Issue(internalremoteworker.CertificateInput{Scope: internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}, EnrollmentID: enrollmentID, IncarnationID: validated.Body.IncarnationID, CSRPEM: validated.Body.CertificateSigningRequestPEM})
 	if err != nil {
-		switch {
-		case errors.Is(err, internalremoteworker.ErrInvalidCertificateRequest):
-			writePublicProblem(writer, 400, "invalid_remote_worker_certificate_request")
-		case errors.Is(err, internalremoteworker.ErrCertificateAuthorityUnavailable):
-			writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
-		default:
-			writePublicProblem(writer, 500, "internal_error")
-		}
+		writeRemoteWorkerCertificateAuthorityError(writer, err)
 		return
 	}
 	actorDigest, err := internalremoteworker.BootstrapActorDigest(secretDigest)
@@ -324,7 +323,64 @@ func (server *RemoteWorkerEnrollmentHTTPServer) issueCertificate(writer http.Res
 		writeRemoteWorkerEnrollmentError(writer, err)
 		return
 	}
-	if value.EnrolledAt == nil || value.CertificateNotAfter == nil {
+	writeRemoteWorkerCertificate(writer, requestID, projectID, enrollmentID, value, value.EnrolledAt)
+}
+
+func (server *RemoteWorkerEnrollmentHTTPServer) rotateCertificate(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string) {
+	if server.authority == nil {
+		writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
+		return
+	}
+	peer, err := server.authority.PeerIdentity(request.TLS)
+	if err != nil || peer.Scope.TenantID != tenantID || peer.Scope.ProjectID != projectID || peer.EnrollmentID != enrollmentID {
+		writePublicProblem(writer, 401, "authentication_failed")
+		return
+	}
+	key, body, ok := remoteWorkerEnrollmentMutationRequest(writer, request)
+	if !ok {
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateRotateRemoteWorkerCertificateServerRequest(tenantID, projectID, enrollmentID, requestID, key, body)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	version, err := strconv.ParseInt(validated.Body.ExpectedResourceVersion, 10, 64)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	rotation := internalremoteworker.CertificateRotationRequest{
+		Scope: internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}, EnrollmentID: enrollmentID,
+		ExpectedResourceVersion: version, ConfirmedEnrollmentID: validated.Body.ConfirmedEnrollmentID,
+		PeerCertificateSHA256: peer.CertificateSHA256, IncarnationID: validated.Body.IncarnationID,
+		CSRPEM:   validated.Body.CertificateSigningRequestPEM,
+		Mutation: internalremoteworker.Mutation{RequestID: requestID, IdempotencyKey: key},
+	}
+	authorized, err := server.store.AuthorizeRemoteWorkerCertificateRotation(request.Context(), tenantID, rotation)
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	if !authorized.NeedsSigning {
+		writeRemoteWorkerCertificate(writer, requestID, projectID, enrollmentID, authorized.Enrollment, authorized.Enrollment.CertificateNotBefore)
+		return
+	}
+	certificate, err := server.authority.Issue(internalremoteworker.CertificateInput{Scope: rotation.Scope, EnrollmentID: enrollmentID, IncarnationID: rotation.IncarnationID, CSRPEM: rotation.CSRPEM})
+	if err != nil {
+		writeRemoteWorkerCertificateAuthorityError(writer, err)
+		return
+	}
+	value, err := server.store.RotateRemoteWorkerCertificate(request.Context(), tenantID, internalremoteworker.CertificateRotationPersistenceInput{Request: rotation, Certificate: certificate})
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	writeRemoteWorkerCertificate(writer, requestID, projectID, enrollmentID, value, value.CertificateNotBefore)
+}
+
+func writeRemoteWorkerCertificate(writer http.ResponseWriter, requestID, projectID, enrollmentID string, value internalremoteworker.Snapshot, issuedAt *time.Time) {
+	if issuedAt == nil || value.CertificateNotAfter == nil {
 		writePublicProblem(writer, 500, "internal_error")
 		return
 	}
@@ -333,7 +389,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) issueCertificate(writer http.Res
 		ProjectRef:   commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
 		EnrollmentID: enrollmentID, WorkerID: value.WorkerID, IncarnationID: value.IncarnationID,
 		SPIFFEID: value.SPIFFEID, CertificateChainPEM: value.CertificateChainPEM, CertificateSHA256: value.CertificateSHA256,
-		IssuedAt: value.EnrolledAt.UTC().Format(time.RFC3339Nano), ExpiresAt: value.CertificateNotAfter.UTC().Format(time.RFC3339Nano),
+		IssuedAt: issuedAt.UTC().Format(time.RFC3339Nano), ExpiresAt: value.CertificateNotAfter.UTC().Format(time.RFC3339Nano),
 	}})
 	if err != nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -342,6 +398,17 @@ func (server *RemoteWorkerEnrollmentHTTPServer) issueCertificate(writer http.Res
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("Pragma", "no-cache")
 	writeJSONResponse(writer, 200, requestID, responseBody)
+}
+
+func writeRemoteWorkerCertificateAuthorityError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, internalremoteworker.ErrInvalidCertificateRequest):
+		writePublicProblem(writer, 400, "invalid_remote_worker_certificate_request")
+	case errors.Is(err, internalremoteworker.ErrCertificateAuthorityUnavailable):
+		writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
+	default:
+		writePublicProblem(writer, 500, "internal_error")
+	}
 }
 
 func (server *RemoteWorkerEnrollmentHTTPServer) listAuditEvents(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string, principal *authn.VerifiedPrincipal) {
@@ -413,7 +480,7 @@ func remoteWorkerEnrollmentResource(value internalremoteworker.Snapshot) platfor
 	return platformv1alpha1.RemoteWorkerEnrollment{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "RemoteWorkerEnrollment", Metadata: commonv1alpha1.ResourceMetadata{
 		UID: value.EnrollmentID, Name: value.WorkerName, TenantRef: commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: value.Scope.TenantID},
 		ResourceVersion: strconv.FormatInt(value.ResourceVersion, 10), CreatedAt: value.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: value.UpdatedAt.UTC().Format(time.RFC3339Nano),
-	}}, Spec: platformv1alpha1.RemoteWorkerEnrollmentSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: value.Scope.ProjectID}, WorkerID: value.WorkerID, State: value.State, ExpiresAt: value.ExpiresAt.UTC().Format(time.RFC3339Nano), SecretClaimedAt: format(value.SecretClaimedAt), EnrolledAt: format(value.EnrolledAt), RevokedAt: format(value.RevokedAt), IncarnationID: value.IncarnationID, SPIFFEID: value.SPIFFEID, CertificateSHA256: value.CertificateSHA256, CertificateExpiresAt: format(value.CertificateNotAfter)}}
+	}}, Spec: platformv1alpha1.RemoteWorkerEnrollmentSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: value.Scope.ProjectID}, WorkerID: value.WorkerID, State: value.State, ExpiresAt: value.ExpiresAt.UTC().Format(time.RFC3339Nano), SecretClaimedAt: format(value.SecretClaimedAt), EnrolledAt: format(value.EnrolledAt), RevokedAt: format(value.RevokedAt), IncarnationID: value.IncarnationID, SPIFFEID: value.SPIFFEID, CertificateSHA256: value.CertificateSHA256, CertificateExpiresAt: format(value.CertificateNotAfter), CertificateState: value.CertificateState, CertificateRevokedAt: format(value.CertificateRevokedAt)}}
 }
 
 func writeRemoteWorkerEnrollment(writer http.ResponseWriter, status int, requestID string, value internalremoteworker.Snapshot) {
@@ -428,31 +495,40 @@ func writeRemoteWorkerEnrollment(writer http.ResponseWriter, status int, request
 
 func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID, action string, ok bool) {
 	prefix := adminEnvironmentProfileRoutePrefix
+	isBootstrap := false
+	isRemoteWorker := false
 	if strings.HasPrefix(path, "/v1/remote-worker-bootstrap/tenants/") {
 		prefix = "/v1/remote-worker-bootstrap/tenants/"
+		isBootstrap = true
+	} else if strings.HasPrefix(path, "/v1/remote-workers/tenants/") {
+		prefix = "/v1/remote-workers/tenants/"
+		isRemoteWorker = true
 	}
 	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[0] != "" && parts[2] != "" {
-		if prefix != adminEnvironmentProfileRoutePrefix {
+		if isBootstrap || isRemoteWorker {
 			return "", "", "", "", false
 		}
 		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[0] != "" && parts[2] != "" && parts[4] != "" {
-		if strings.HasSuffix(parts[4], ":revoke") && prefix == adminEnvironmentProfileRoutePrefix {
+		if strings.HasSuffix(parts[4], ":revoke") && !isBootstrap && !isRemoteWorker {
 			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":revoke"), "revoke", true
 		}
-		if strings.HasSuffix(parts[4], ":claimSecret") && prefix != adminEnvironmentProfileRoutePrefix {
+		if strings.HasSuffix(parts[4], ":claimSecret") && isBootstrap {
 			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":claimSecret"), "claim-secret", true
 		}
-		if strings.HasSuffix(parts[4], ":issueCertificate") && prefix != adminEnvironmentProfileRoutePrefix {
+		if strings.HasSuffix(parts[4], ":issueCertificate") && isBootstrap {
 			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":issueCertificate"), "issue-certificate", true
 		}
-		if prefix == adminEnvironmentProfileRoutePrefix {
+		if strings.HasSuffix(parts[4], ":rotateCertificate") && isRemoteWorker {
+			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":rotateCertificate"), "rotate-certificate", true
+		}
+		if !isBootstrap && !isRemoteWorker {
 			return parts[0], parts[2], parts[4], "get", true
 		}
 	}
-	if len(parts) == 6 && prefix == adminEnvironmentProfileRoutePrefix && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[4] != "" && parts[5] == "audit-events" {
+	if len(parts) == 6 && !isBootstrap && !isRemoteWorker && parts[1] == "projects" && parts[3] == "remote-worker-enrollments" && parts[4] != "" && parts[5] == "audit-events" {
 		return parts[0], parts[2], parts[4], "audit-events", true
 	}
 	return "", "", "", "", false

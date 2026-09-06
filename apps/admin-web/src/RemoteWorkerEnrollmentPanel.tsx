@@ -21,6 +21,10 @@ const stateKeys: Readonly<Record<RemoteWorkerEnrollment["spec"]["state"], Messag
   expired: "remoteWorkerEnrollment.state.expired",
 };
 
+function enrollmentStateKey(enrollment: RemoteWorkerEnrollment): MessageKey {
+  return enrollment.spec.certificateState === "revoked" ? "remoteWorkerEnrollment.certificateState.revoked" : stateKeys[enrollment.spec.state];
+}
+
 export function RemoteWorkerEnrollmentPanel({ client, connection }: Readonly<{ client: AdminClient; connection: SavedAdminConnection }>) {
   const { t, number, dateTime } = useI18n();
   const [enrollments, setEnrollments] = useState<readonly RemoteWorkerEnrollment[]>([]);
@@ -97,6 +101,7 @@ export function RemoteWorkerEnrollmentPanel({ client, connection }: Readonly<{ c
   function revoke() {
     if (selected === undefined || confirmation !== selected.metadata.uid) return;
     const enrollment = selected;
+    const certificate = enrollment.spec.state === "enrolled" && enrollment.spec.certificateState === "active";
     void run(async (signal) => {
       const result = await client.revokeAdminRemoteWorkerEnrollment(
         connection.tenantId,
@@ -109,7 +114,7 @@ export function RemoteWorkerEnrollmentPanel({ client, connection }: Readonly<{ c
       );
       setConfirmation("");
       await load(signal, result.value.metadata.uid);
-    }, "remoteWorkerEnrollment.notice.revoked");
+    }, certificate ? "remoteWorkerEnrollment.notice.certificateRevoked" : "remoteWorkerEnrollment.notice.revoked");
   }
 
   return (
@@ -140,16 +145,16 @@ export function RemoteWorkerEnrollmentPanel({ client, connection }: Readonly<{ c
       <div className="panel target-list-panel">
         {enrollments.length === 0 ? <p className="table-empty">{t("remoteWorkerEnrollment.empty")}</p> : (
           <div className="table-scroll"><table><thead><tr><th>{t("remoteWorkerEnrollment.workerName")}</th><th>{t("remoteWorkerEnrollment.workerId")}</th><th>{t("remoteWorkerEnrollment.state")}</th><th>{t("remoteWorkerEnrollment.expires")}</th><th>{t("table.actions")}</th></tr></thead><tbody>
-            {enrollments.map((enrollment) => <tr key={enrollment.metadata.uid} className={selectedId === enrollment.metadata.uid ? "selected" : ""}><td><strong>{enrollment.metadata.name}</strong><small className="mono">{enrollment.metadata.uid}</small></td><td className="mono">{enrollment.spec.workerId}</td><td><span className={`phase ${enrollment.spec.state === "revoked" || enrollment.spec.state === "expired" ? "danger" : enrollment.spec.state === "enrolled" ? "success" : "running"}`}><i />{t(stateKeys[enrollment.spec.state])}</span></td><td>{dateTime(enrollment.spec.expiresAt)}</td><td><button className="button outline" type="button" disabled={busy} onClick={() => select(enrollment.metadata.uid)}>{t("remoteWorkerEnrollment.inspect")}</button></td></tr>)}
+            {enrollments.map((enrollment) => <tr key={enrollment.metadata.uid} className={selectedId === enrollment.metadata.uid ? "selected" : ""}><td><strong>{enrollment.metadata.name}</strong><small className="mono">{enrollment.metadata.uid}</small></td><td className="mono">{enrollment.spec.workerId}</td><td><span className={`phase ${enrollment.spec.state === "revoked" || enrollment.spec.state === "expired" || enrollment.spec.certificateState === "revoked" ? "danger" : enrollment.spec.state === "enrolled" ? "success" : "running"}`}><i />{t(enrollmentStateKey(enrollment))}</span></td><td>{dateTime(enrollment.spec.expiresAt)}</td><td><button className="button outline" type="button" disabled={busy} onClick={() => select(enrollment.metadata.uid)}>{t("remoteWorkerEnrollment.inspect")}</button></td></tr>)}
           </tbody></table></div>
         )}
       </div>
       {selected ? (
         <section className="panel overview-panel">
           <div className="panel-heading"><div><div className="eyebrow">RemoteWorker</div><h2>{selected.metadata.name}</h2><p className="mono">{selected.metadata.uid}</p></div><span className="scope-chip">resourceVersion {selected.metadata.resourceVersion}</span></div>
-          <dl className="detail-grid"><div><dt>{t("remoteWorkerEnrollment.workerId")}</dt><dd className="mono">{selected.spec.workerId}</dd></div><div><dt>{t("remoteWorkerEnrollment.state")}</dt><dd>{t(stateKeys[selected.spec.state])}</dd></div><div><dt>{t("remoteWorkerEnrollment.created")}</dt><dd>{dateTime(selected.metadata.createdAt)}</dd></div><div><dt>{t("remoteWorkerEnrollment.expires")}</dt><dd>{dateTime(selected.spec.expiresAt)}</dd></div>{selected.spec.incarnationId ? <div><dt>{t("remoteWorkerEnrollment.incarnation")}</dt><dd className="mono">{selected.spec.incarnationId}</dd></div> : null}{selected.spec.spiffeId ? <div><dt>{t("remoteWorkerEnrollment.spiffeId")}</dt><dd className="mono">{selected.spec.spiffeId}</dd></div> : null}{selected.spec.certificateSha256 ? <div><dt>{t("remoteWorkerEnrollment.certificateSha256")}</dt><dd className="mono">{selected.spec.certificateSha256}</dd></div> : null}{selected.spec.certificateExpiresAt ? <div><dt>{t("remoteWorkerEnrollment.certificateExpires")}</dt><dd>{dateTime(selected.spec.certificateExpiresAt)}</dd></div> : null}</dl>
+          <dl className="detail-grid"><div><dt>{t("remoteWorkerEnrollment.workerId")}</dt><dd className="mono">{selected.spec.workerId}</dd></div><div><dt>{t("remoteWorkerEnrollment.state")}</dt><dd>{t(enrollmentStateKey(selected))}</dd></div><div><dt>{t("remoteWorkerEnrollment.created")}</dt><dd>{dateTime(selected.metadata.createdAt)}</dd></div><div><dt>{t("remoteWorkerEnrollment.expires")}</dt><dd>{dateTime(selected.spec.expiresAt)}</dd></div>{selected.spec.incarnationId ? <div><dt>{t("remoteWorkerEnrollment.incarnation")}</dt><dd className="mono">{selected.spec.incarnationId}</dd></div> : null}{selected.spec.spiffeId ? <div><dt>{t("remoteWorkerEnrollment.spiffeId")}</dt><dd className="mono">{selected.spec.spiffeId}</dd></div> : null}{selected.spec.certificateSha256 ? <div><dt>{t("remoteWorkerEnrollment.certificateSha256")}</dt><dd className="mono">{selected.spec.certificateSha256}</dd></div> : null}{selected.spec.certificateExpiresAt ? <div><dt>{t("remoteWorkerEnrollment.certificateExpires")}</dt><dd>{dateTime(selected.spec.certificateExpiresAt)}</dd></div> : null}{selected.spec.certificateState ? <div><dt>{t("remoteWorkerEnrollment.certificateState")}</dt><dd>{t(selected.spec.certificateState === "active" ? "remoteWorkerEnrollment.certificateState.active" : "remoteWorkerEnrollment.certificateState.revoked")}</dd></div> : null}{selected.spec.certificateRevokedAt ? <div><dt>{t("remoteWorkerEnrollment.certificateRevoked")}</dt><dd>{dateTime(selected.spec.certificateRevokedAt)}</dd></div> : null}</dl>
           <p className="cluster-boundary">{t("remoteWorkerEnrollment.adminBoundary")}</p>
-          {selected.spec.state === "pending" || selected.spec.state === "secret-issued" || selected.spec.state === "expired" ? <div className="danger-zone"><label><span>{t("remoteWorkerEnrollment.confirm", { id: selected.metadata.uid })}</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} spellCheck={false} /></label><button className="button danger" type="button" disabled={busy || confirmation !== selected.metadata.uid} onClick={revoke}>{t("remoteWorkerEnrollment.revoke")}</button></div> : null}
+          {selected.spec.state === "pending" || selected.spec.state === "secret-issued" || selected.spec.state === "expired" || selected.spec.state === "enrolled" && selected.spec.certificateState === "active" ? <div className="danger-zone"><label><span>{t("remoteWorkerEnrollment.confirm", { id: selected.metadata.uid })}</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} spellCheck={false} /></label><button className="button danger" type="button" disabled={busy || confirmation !== selected.metadata.uid} onClick={revoke}>{t(selected.spec.state === "enrolled" ? "remoteWorkerEnrollment.revokeCertificate" : "remoteWorkerEnrollment.revoke")}</button></div> : null}
           <section className="activity-block"><div className="activity-heading"><h3>{t("remoteWorkerEnrollment.audit")}</h3><span className="scope-chip">audit.list · {number(audit.length)}</span></div>{audit.length === 0 ? <p className="activity-empty">{t("remoteWorkerEnrollment.auditEmpty")}</p> : <ol className="activity-list compact">{audit.map((event) => <li key={event.eventId}><div><strong>{t(event.action === "remote-worker-enrollment.create" ? "remoteWorkerEnrollment.auditCreate" : event.action === "remote-worker-enrollment.claim-secret" ? "remoteWorkerEnrollment.auditClaim" : event.action === "remote-worker-enrollment.issue-certificate" ? "remoteWorkerEnrollment.auditCertificate" : "remoteWorkerEnrollment.auditRevoke")}</strong></div><small className="mono">{event.actor}</small><small>{dateTime(event.occurredAt)}</small></li>)}</ol>}</section>
         </section>
       ) : null}

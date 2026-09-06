@@ -540,6 +540,8 @@ type RemoteWorkerEnrollmentSpec struct {
 	SPIFFEID             string            `json:"spiffeId,omitempty"`
 	CertificateSHA256    string            `json:"certificateSha256,omitempty"`
 	CertificateExpiresAt string            `json:"certificateExpiresAt,omitempty"`
+	CertificateState     string            `json:"certificateState,omitempty"`
+	CertificateRevokedAt string            `json:"certificateRevokedAt,omitempty"`
 }
 type RemoteWorkerEnrollment struct {
 	ResourceBase
@@ -3186,7 +3188,7 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 	if err != nil {
 		return RemoteWorkerEnrollment{}, err
 	}
-	allowed := []string{"projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt", "incarnationId", "spiffeId", "certificateSha256", "certificateExpiresAt"}
+	allowed := []string{"projectRef", "workerId", "state", "expiresAt", "secretClaimedAt", "enrolledAt", "revokedAt", "incarnationId", "spiffeId", "certificateSha256", "certificateExpiresAt", "certificateState", "certificateRevokedAt"}
 	specFields, err := strictSpec(fields["spec"], allowed, allowed[:4])
 	if err != nil {
 		return RemoteWorkerEnrollment{}, err
@@ -3219,12 +3221,14 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 	claimed, claimedOK := timeValue("secretClaimedAt", spec.SecretClaimedAt)
 	enrolled, enrolledOK := timeValue("enrolledAt", spec.EnrolledAt)
 	_, revokedOK := timeValue("revokedAt", spec.RevokedAt)
+	certificateRevoked, certificateRevokedOK := timeValue("certificateRevokedAt", spec.CertificateRevokedAt)
 	claimedPresent, enrolledPresent, revokedPresent := spec.SecretClaimedAt != "", spec.EnrolledAt != "", spec.RevokedAt != ""
-	certificateFieldsPresent := spec.IncarnationID != "" || spec.SPIFFEID != "" || spec.CertificateSHA256 != "" || spec.CertificateExpiresAt != ""
+	certificateRevokedPresent := spec.CertificateRevokedAt != ""
+	certificateFieldsPresent := spec.IncarnationID != "" || spec.SPIFFEID != "" || spec.CertificateSHA256 != "" || spec.CertificateExpiresAt != "" || spec.CertificateState != "" || certificateRevokedPresent
 	identity, identityErr := url.Parse(spec.SPIFFEID)
 	certificateExpiry, certificateExpiryErr := time.Parse(time.RFC3339Nano, spec.CertificateExpiresAt)
-	validCertificateFields := common.ValidateIdentifier(spec.IncarnationID, "/spec/incarnationId") == nil && identityErr == nil && identity.Scheme == "spiffe" && identity.Host != "" && identity.Path != "" && identity.User == nil && identity.RawQuery == "" && identity.Fragment == "" && digestPattern.MatchString(spec.CertificateSHA256) && certificateExpiryErr == nil && certificateExpiry.After(updated)
-	if !claimedOK || !enrolledOK || !revokedOK || claimedPresent && !claimed.Before(expires) || enrolledPresent && (enrolled.Before(claimed) || !enrolled.Before(expires)) || spec.State == "pending" && (claimedPresent || enrolledPresent || revokedPresent) || spec.State == "secret-issued" && (!claimedPresent || enrolledPresent || revokedPresent) || spec.State == "enrolled" && (!claimedPresent || !enrolledPresent || revokedPresent) || spec.State == "revoked" && (enrolledPresent || !revokedPresent) || spec.State == "expired" && (enrolledPresent || revokedPresent) || spec.State == "enrolled" != certificateFieldsPresent || certificateFieldsPresent && !validCertificateFields {
+	validCertificateFields := common.ValidateIdentifier(spec.IncarnationID, "/spec/incarnationId") == nil && identityErr == nil && identity.Scheme == "spiffe" && identity.Host != "" && identity.Path != "" && identity.User == nil && identity.RawQuery == "" && identity.Fragment == "" && digestPattern.MatchString(spec.CertificateSHA256) && certificateExpiryErr == nil && (spec.CertificateState == "active" && !certificateRevokedPresent && certificateExpiry.After(updated) || spec.CertificateState == "revoked" && certificateRevokedPresent && !certificateRevoked.Before(enrolled))
+	if !claimedOK || !enrolledOK || !revokedOK || !certificateRevokedOK || claimedPresent && !claimed.Before(expires) || enrolledPresent && (enrolled.Before(claimed) || !enrolled.Before(expires)) || spec.State == "pending" && (claimedPresent || enrolledPresent || revokedPresent) || spec.State == "secret-issued" && (!claimedPresent || enrolledPresent || revokedPresent) || spec.State == "enrolled" && (!claimedPresent || !enrolledPresent || revokedPresent) || spec.State == "revoked" && (enrolledPresent || !revokedPresent) || spec.State == "expired" && (enrolledPresent || revokedPresent) || spec.State == "enrolled" != certificateFieldsPresent || certificateFieldsPresent && !validCertificateFields {
 		return RemoteWorkerEnrollment{}, common.ContractError("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/state")
 	}
 	return RemoteWorkerEnrollment{ResourceBase: base, Spec: spec}, nil

@@ -1372,7 +1372,7 @@ func (client *Client) RevokeAdminRemoteWorkerEnrollment(ctx context.Context, ten
 	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
 		return RemoteWorkerEnrollmentResult{}, err
 	}
-	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != enrollmentID || value.Value.Spec.ProjectRef.ID != projectID || body.ConfirmedEnrollmentID != enrollmentID || value.Value.Spec.State != "revoked" {
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != enrollmentID || value.Value.Spec.ProjectRef.ID != projectID || body.ConfirmedEnrollmentID != enrollmentID || value.Value.Spec.State != "revoked" && (value.Value.Spec.State != "enrolled" || value.Value.Spec.CertificateState != "revoked") {
 		return RemoteWorkerEnrollmentResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
@@ -1431,6 +1431,36 @@ func (client *Client) IssueRemoteWorkerCertificate(ctx context.Context, tenantID
 	value, err := platform.DecodeRemoteWorkerCertificateResponseJSON(response.Body)
 	if err != nil {
 		return RemoteWorkerCertificateResult{}, &ClientError{Operation: "remoteWorkerIssueCertificate", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.EnrollmentID != enrollmentID || value.Value.IncarnationID != body.IncarnationID || body.ConfirmedEnrollmentID != enrollmentID {
+		return RemoteWorkerCertificateResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId")
+	}
+	return value, nil
+}
+func (client *Client) RotateRemoteWorkerCertificate(ctx context.Context, tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body platform.RemoteWorkerCertificateIssueRequest) (RemoteWorkerCertificateResult, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	bodyBytes, err := platform.EncodeRemoteWorkerCertificateIssueRequestJSON(body)
+	if err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/remote-workers/tenants/" + tenantID + "/projects/" + projectID + "/remote-worker-enrollments/" + enrollmentID + ":rotateCertificate", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return RemoteWorkerCertificateResult{}, err
+	}
+	if response.Status != 200 {
+		return RemoteWorkerCertificateResult{}, client.problemError("remoteWorkerRotateCertificate", response)
+	}
+	if response.Headers["Cache-Control"] != "no-store" || response.Headers["Pragma"] != "no-cache" {
+		return RemoteWorkerCertificateResult{}, common.ContractError("CERTIFICATE_CACHE_POLICY_MISMATCH", "/headers")
+	}
+	value, err := platform.DecodeRemoteWorkerCertificateResponseJSON(response.Body)
+	if err != nil {
+		return RemoteWorkerCertificateResult{}, &ClientError{Operation: "remoteWorkerRotateCertificate", Status: response.Status, Cause: err}
 	}
 	if value.Value.ProjectRef.ID != projectID || value.Value.EnrollmentID != enrollmentID || value.Value.IncarnationID != body.IncarnationID || body.ConfirmedEnrollmentID != enrollmentID {
 		return RemoteWorkerCertificateResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId")
@@ -5031,6 +5061,32 @@ func ValidateIssueRemoteWorkerCertificateServerRequest(tenantID, projectID, enro
 		return IssueRemoteWorkerCertificateServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId")
 	}
 	return IssueRemoteWorkerCertificateServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type RotateRemoteWorkerCertificateServerInput struct {
+	TenantID       string
+	ProjectID      string
+	EnrollmentID   string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.RemoteWorkerCertificateIssueRequest
+}
+
+func ValidateRotateRemoteWorkerCertificateServerRequest(tenantID, projectID, enrollmentID, requestID, idempotencyKey string, body []byte) (RotateRemoteWorkerCertificateServerInput, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return RotateRemoteWorkerCertificateServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return RotateRemoteWorkerCertificateServerInput{}, err
+	}
+	value, err := platform.DecodeRemoteWorkerCertificateIssueRequestJSON(body)
+	if err != nil {
+		return RotateRemoteWorkerCertificateServerInput{}, err
+	}
+	if value.ConfirmedEnrollmentID != enrollmentID {
+		return RotateRemoteWorkerCertificateServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId")
+	}
+	return RotateRemoteWorkerCertificateServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type ListAdminRemoteWorkerEnrollmentAuditEventsServerInput struct {

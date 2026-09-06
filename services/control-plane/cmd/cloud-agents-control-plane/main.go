@@ -558,6 +558,7 @@ func run(ctx context.Context, args []string) error {
 		adminDeploymentTargetHTTPServer.ServeHTTP(writer, request)
 	})))
 	mux.Handle("/v1/remote-worker-bootstrap/", remoteWorkerEnrollmentHTTPServer)
+	mux.Handle("/v1/remote-workers/", remoteWorkerEnrollmentHTTPServer)
 	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
 	mux.Handle(server.RoleCollectionRoute, roleHTTPServer)

@@ -841,6 +841,36 @@
         }
       }
     },
+    "/v1/remote-workers/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:rotateCertificate": {
+      "post": {
+        "operationId": "remoteWorkerRotateCertificate",
+        "security": [{ "RemoteWorkerMTLS": [] }],
+        "x-cloud-agents-coordination": "current-or-previous-certificate-exact-replay",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/RemoteWorkerCertificate" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/network-policies": {
       "get": {
         "operationId": "adminListNetworkPolicies",
@@ -2473,6 +2503,10 @@
         "type": "http",
         "scheme": "RemoteWorkerEnrollment",
         "description": "One-time carw1_ enrollment secret; accepted only by the CSR exchange route"
+      },
+      "RemoteWorkerMTLS": {
+        "type": "mutualTLS",
+        "description": "Current short-lived RemoteWorker client identity; old identity is accepted only for exact rotation replay"
       }
     },
     "parameters": {

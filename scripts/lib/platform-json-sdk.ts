@@ -401,6 +401,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedHostUpgradeEnvironmentLease",
     "remoteWorkerClaimEnrollmentSecret",
     "remoteWorkerIssueCertificate",
+    "remoteWorkerRotateCertificate",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {
     throw new Error(`OpenAPI operation set changed: ${operations.join(",")}`);

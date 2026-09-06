@@ -55,6 +55,22 @@ type CertificatePersistenceInput struct {
 	Mutation                Mutation
 }
 
+type CertificateRotationRequest struct {
+	Scope                   Scope
+	EnrollmentID            string
+	ExpectedResourceVersion int64
+	ConfirmedEnrollmentID   string
+	PeerCertificateSHA256   string
+	IncarnationID           string
+	CSRPEM                  string
+	Mutation                Mutation
+}
+
+type CertificateRotationPersistenceInput struct {
+	Request     CertificateRotationRequest
+	Certificate Certificate
+}
+
 type Snapshot struct {
 	Scope                Scope
 	EnrollmentID         string
@@ -75,6 +91,8 @@ type Snapshot struct {
 	CertificateSerial    string
 	CertificateNotBefore *time.Time
 	CertificateNotAfter  *time.Time
+	CertificateState     string
+	CertificateRevokedAt *time.Time
 }
 
 type AuditEvent struct {
@@ -129,17 +147,48 @@ func CertificateMutationDigest(input CertificatePersistenceInput) (string, error
 	return mutationDigest("remote-worker-enrollment.issue-certificate", input.Scope, input.EnrollmentID, input.ExpectedResourceVersion, input.ConfirmedEnrollmentID, input.SecretDigest, input.ActorDigest, input.Certificate.CSRSHA256, input.Certificate.IncarnationID, input.Certificate.SPIFFEID)
 }
 
-func (input CertificatePersistenceInput) Validate(tenantID string) error {
-	certificate := input.Certificate
-	if invalidIdentifier(tenantID) || input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) || invalidIdentifier(input.EnrollmentID) || input.ConfirmedEnrollmentID != input.EnrollmentID || input.ExpectedResourceVersion < 1 || !digest(input.SecretDigest) || !digest(input.ActorDigest) || !digest(certificate.CSRSHA256) || invalidIdentifier(certificate.IncarnationID) || certificate.SPIFFEID == "" || certificate.ChainPEM == "" || len(certificate.ChainPEM) > 32768 || !digest(certificate.SHA256) || certificate.Serial == "" || certificate.NotBefore.IsZero() || !certificate.NotAfter.After(certificate.NotBefore) || invalidMutation(input.Mutation) {
-		return ErrInvalidInput
+func CertificateRotationMutationDigest(input CertificateRotationRequest) (string, error) {
+	if input.Validate(input.Scope.TenantID) != nil {
+		return "", ErrInvalidInput
 	}
-	identity, err := url.Parse(certificate.SPIFFEID)
-	expectedPath := "/remote-worker/" + input.Scope.TenantID + "/" + input.Scope.ProjectID + "/" + input.EnrollmentID + "/" + certificate.IncarnationID
-	if err != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path != expectedPath || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" {
+	return mutationDigest("remote-worker-enrollment.rotate-certificate", input.Scope, input.EnrollmentID, input.ExpectedResourceVersion, input.ConfirmedEnrollmentID, input.IncarnationID, input.CSRPEM)
+}
+
+func (input CertificateRotationRequest) Validate(tenantID string) error {
+	if invalidIdentifier(tenantID) || input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
+		invalidIdentifier(input.EnrollmentID) || input.ConfirmedEnrollmentID != input.EnrollmentID ||
+		input.ExpectedResourceVersion < 1 || !digest(input.PeerCertificateSHA256) || invalidIdentifier(input.IncarnationID) ||
+		len(input.CSRPEM) == 0 || len(input.CSRPEM) > 32768 || invalidMutation(input.Mutation) {
 		return ErrInvalidInput
 	}
 	return nil
+}
+
+func (input CertificateRotationPersistenceInput) Validate(tenantID string) error {
+	if input.Request.Validate(tenantID) != nil || input.Certificate.IncarnationID != input.Request.IncarnationID || input.Certificate.SHA256 == input.Request.PeerCertificateSHA256 || invalidCertificate(input.Request.Scope, input.Request.EnrollmentID, input.Certificate) {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+func (input CertificatePersistenceInput) Validate(tenantID string) error {
+	certificate := input.Certificate
+	if invalidIdentifier(tenantID) || input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) || invalidIdentifier(input.EnrollmentID) || input.ConfirmedEnrollmentID != input.EnrollmentID || input.ExpectedResourceVersion < 1 || !digest(input.SecretDigest) || !digest(input.ActorDigest) || invalidCertificate(input.Scope, input.EnrollmentID, certificate) || invalidMutation(input.Mutation) {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+func invalidCertificate(scope Scope, enrollmentID string, certificate Certificate) bool {
+	if !digest(certificate.CSRSHA256) || invalidIdentifier(certificate.IncarnationID) || certificate.SPIFFEID == "" || certificate.ChainPEM == "" || len(certificate.ChainPEM) > 32768 || !digest(certificate.SHA256) || certificate.Serial == "" || certificate.NotBefore.IsZero() || !certificate.NotAfter.After(certificate.NotBefore) {
+		return true
+	}
+	identity, err := url.Parse(certificate.SPIFFEID)
+	expectedPath := "/remote-worker/" + scope.TenantID + "/" + scope.ProjectID + "/" + enrollmentID + "/" + certificate.IncarnationID
+	if err != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path != expectedPath || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" {
+		return true
+	}
+	return false
 }
 
 func NewEnrollmentSecret() (string, error) {
@@ -187,7 +236,10 @@ func (snapshot Snapshot) Validate() error {
 	case StateEnrolled:
 		identity, err := url.Parse(snapshot.SPIFFEID)
 		expectedPath := "/remote-worker/" + snapshot.Scope.TenantID + "/" + snapshot.Scope.ProjectID + "/" + snapshot.EnrollmentID + "/" + snapshot.IncarnationID
-		if snapshot.SecretClaimedAt == nil || snapshot.EnrolledAt == nil || snapshot.RevokedAt != nil || invalidIdentifier(snapshot.IncarnationID) || err != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path != expectedPath || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" || !digest(snapshot.CertificateSHA256) || snapshot.CertificateChainPEM == "" || snapshot.CertificateSerial == "" || snapshot.CertificateNotBefore == nil || snapshot.CertificateNotAfter == nil || !snapshot.CertificateNotAfter.After(*snapshot.CertificateNotBefore) || snapshot.CertificateNotBefore.After(*snapshot.EnrolledAt) || !snapshot.CertificateNotAfter.After(snapshot.UpdatedAt) {
+		if snapshot.SecretClaimedAt == nil || snapshot.EnrolledAt == nil || snapshot.RevokedAt != nil || invalidIdentifier(snapshot.IncarnationID) || err != nil || identity.Scheme != "spiffe" || identity.Host == "" || identity.Path != expectedPath || identity.User != nil || identity.RawQuery != "" || identity.Fragment != "" || !digest(snapshot.CertificateSHA256) || snapshot.CertificateChainPEM == "" || snapshot.CertificateSerial == "" || snapshot.CertificateNotBefore == nil || snapshot.CertificateNotAfter == nil || !snapshot.CertificateNotAfter.After(*snapshot.CertificateNotBefore) || snapshot.CertificateNotBefore.After(snapshot.UpdatedAt) || snapshot.CertificateState != "active" && snapshot.CertificateState != "revoked" {
+			return ErrInvalidInput
+		}
+		if snapshot.CertificateState == "active" && (snapshot.CertificateRevokedAt != nil || !snapshot.CertificateNotAfter.After(snapshot.UpdatedAt)) || snapshot.CertificateState == "revoked" && (snapshot.CertificateRevokedAt == nil || snapshot.CertificateRevokedAt.Before(*snapshot.EnrolledAt) || snapshot.CertificateRevokedAt.After(snapshot.UpdatedAt)) {
 			return ErrInvalidInput
 		}
 	case StateRevoked:
@@ -201,7 +253,7 @@ func (snapshot Snapshot) Validate() error {
 	default:
 		return ErrInvalidInput
 	}
-	if snapshot.State != StateEnrolled && (snapshot.IncarnationID != "" || snapshot.SPIFFEID != "" || snapshot.CertificateSHA256 != "" || snapshot.CertificateChainPEM != "" || snapshot.CertificateSerial != "" || snapshot.CertificateNotBefore != nil || snapshot.CertificateNotAfter != nil) {
+	if snapshot.State != StateEnrolled && (snapshot.IncarnationID != "" || snapshot.SPIFFEID != "" || snapshot.CertificateSHA256 != "" || snapshot.CertificateChainPEM != "" || snapshot.CertificateSerial != "" || snapshot.CertificateNotBefore != nil || snapshot.CertificateNotAfter != nil || snapshot.CertificateState != "" || snapshot.CertificateRevokedAt != nil) {
 		return ErrInvalidInput
 	}
 	return nil
