@@ -146,7 +146,7 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
       "-trimpath",
       "-o",
       remoteWorkerBinary,
-      "./services/worker/cmd/cloud-agents-remote-worker",
+      "./services/control-plane/cmd/cloud-agents-remote-worker",
     ],
     {
       cwd: root,

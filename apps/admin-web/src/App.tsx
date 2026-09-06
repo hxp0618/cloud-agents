@@ -2581,9 +2581,13 @@ export function App() {
                         current.targetId ||
                         targets.find(
                           ({ spec }) =>
-                            spec.targetKind === "docker" && spec.observedPhase === "ready",
+                            (spec.targetKind === "docker" || spec.targetKind === "remote-worker") &&
+                            spec.observedPhase === "ready",
                         )?.metadata.uid ||
-                        targets.find(({ spec }) => spec.targetKind === "docker")?.metadata.uid ||
+                        targets.find(
+                          ({ spec }) =>
+                            spec.targetKind === "docker" || spec.targetKind === "remote-worker",
+                        )?.metadata.uid ||
                         "",
                       networkPolicyRef:
                         current.networkPolicyRef ||
@@ -2594,7 +2598,10 @@ export function App() {
                   }}
                   disabled={
                     busy !== null ||
-                    !targets.some(({ spec }) => spec.targetKind === "docker") ||
+                    !targets.some(
+                      ({ spec }) =>
+                        spec.targetKind === "docker" || spec.targetKind === "remote-worker",
+                    ) ||
                     !networkPolicies.some(executableFoundationNetworkPolicy)
                   }
                 >
@@ -3772,7 +3779,10 @@ export function App() {
                     }
                   >
                     {targets
-                      .filter(({ spec }) => spec.targetKind === "docker")
+                      .filter(
+                        ({ spec }) =>
+                          spec.targetKind === "docker" || spec.targetKind === "remote-worker",
+                      )
                       .map((target) => (
                         <option key={target.metadata.uid} value={target.metadata.uid}>
                           {target.metadata.name} · {phaseLabel(target.spec.observedPhase, t)}

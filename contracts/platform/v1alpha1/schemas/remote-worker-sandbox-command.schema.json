@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-command.schema.json",
+  "title": "RemoteWorkerSandboxCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commandId",
+    "attempt",
+    "action",
+    "operationId",
+    "workspaceId",
+    "workspaceName",
+    "targetId",
+    "sandboxId",
+    "sandboxGeneration",
+    "imageUri",
+    "cpuMillis",
+    "memoryBytes",
+    "specDigest",
+    "networkPolicyId",
+    "networkAllowedEgress",
+    "deadline"
+  ],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "action": { "const": "sandbox.create" },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
+    "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
+    "memoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
+    "specDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "networkPolicyId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "networkAllowedEgress": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^\\u0000-\\u0020\\u007F]+$" }
+    },
+    "deadline": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the mTLS route supplies tenant, project, enrollment, and incarnation authority",
+    "commandId is unique to one durable Operation attempt and the node must not start it after deadline",
+    "the command contains no Control Plane target endpoint or credential reference"
+  ]
+}

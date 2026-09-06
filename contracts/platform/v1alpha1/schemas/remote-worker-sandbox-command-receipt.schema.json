@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-command-receipt.schema.json",
+  "title": "RemoteWorkerSandboxCommandReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "attempt", "operationId", "sandboxId", "sandboxGeneration", "result", "cleanupComplete"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "result": { "enum": ["succeeded", "failed"] },
+    "runtimeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" },
+    "runtimeState": { "enum": ["Pending", "Running", "Pausing", "Paused", "Resuming", "Stopping", "Terminated", "Failed"] },
+    "volumeName": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$" },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "cleanupComplete": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "succeeded" } }, "required": ["result"] },
+      "then": {
+        "required": ["runtimeId", "runtimeState", "volumeName"],
+        "properties": { "runtimeState": { "const": "Running" } },
+        "not": { "required": ["stableErrorCode"] }
+      },
+      "else": { "required": ["stableErrorCode"] }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "Control Plane accepts a receipt only for the current mTLS node, target, Operation attempt, and Sandbox generation",
+    "an exact settled receipt replay is acknowledged without repeating the physical effect",
+    "the receipt contains only physical identifiers and stable status, never endpoint, credential, Workspace file, or user content"
+  ]
+}

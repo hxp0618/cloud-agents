@@ -8,10 +8,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,8 +61,8 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	defer owner.Close()
 
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get targets.act targets.get targets.list audit.list operations.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list",
-		"projects.act projects.get",
+		"projects.act projects.get targets.act targets.get targets.list audit.list operations.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list profiles.act profiles.create profiles.get profiles.list sandboxes.get network-policies.update",
+		"projects.act projects.get environment-profiles.list environments.create",
 		"projects.act remote-worker-bootstrap.act",
 	)
 	store, err := postgres.NewDurableCoordinationService(runtimePool)
@@ -77,9 +81,25 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	foundationHandler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	networkHandler, err := NewNetworkPolicyHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
 	routes := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if HandlesAdminDeploymentTargetPath(request.URL.Path) {
 			targetHandler.ServeHTTP(writer, request)
+			return
+		}
+		if HandlesNetworkPolicyPath(request.URL.Path) {
+			networkHandler.ServeHTTP(writer, request)
+			return
+		}
+		if HandlesFoundationPath(request.URL.Path) {
+			foundationHandler.ServeHTTP(writer, request)
 			return
 		}
 		remoteWorkerHandler.ServeHTTP(writer, request)
@@ -262,6 +282,8 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if _, err := reconnectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-reconnected", heartbeat); err != nil {
 		t.Fatalf("reconnected heartbeat: %v", err)
 	}
+	runRemoteWorkerSandboxLive(t, ctx, owner, admin, user, currentNode, httpServer, create.EnrollmentID,
+		rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotated.Value.CertificateSHA256, rotationPrivateKey, heartbeat)
 	drainPreview, err := admin.PreviewAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-preview")
 	if err != nil || drainPreview.Value.Spec.DesiredState != "drained" || drainPreview.Value.Spec.ExpectedGeneration != 1 {
 		t.Fatalf("drain preview: value=%+v err=%v", drainPreview.Value, err)
@@ -533,6 +555,156 @@ func remoteWorkerMTLSHTTPClient(t *testing.T, server *httptest.Server, certifica
 	return &http.Client{Transport: clone}
 }
 
+func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, owner *pgxpool.Pool, admin, user, node *api.Client,
+	server *httptest.Server, enrollmentID, incarnationID, certificateChain, certificateSHA256 string, privateKey []byte,
+	heartbeat platform.RemoteWorkerHeartbeatRequest,
+) {
+	t.Helper()
+	binary := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_BINARY")
+	image := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_SUCCESS_IMAGE_URI")
+	allowedEgress := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS")
+	liveValues := []string{image, allowedEgress, os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET"),
+		os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY"), os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF")}
+	liveCount := 0
+	for _, value := range liveValues {
+		if value != "" {
+			liveCount++
+		}
+	}
+	if liveCount == 0 {
+		return
+	}
+	if binary == "" || liveCount != len(liveValues) {
+		t.Fatal("RemoteWorker Sandbox live environment is incomplete")
+	}
+	t.Setenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", startRemoteWorkerDockerProxy(t))
+	parts := strings.Split(image, "@")
+	if len(parts) != 2 {
+		t.Fatal("RemoteWorker Sandbox image is not digest pinned")
+	}
+	policy, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "remote-network", "request-remote-network", "remote-network-key-1", platform.NetworkPolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "remote-network", UserSummary: "RemoteWorker approved outbound access",
+		DefaultEgress: "restricted", AllowedEgress: []string{allowedEgress}, PreviewEnabled: false,
+	})
+	if err != nil || policy.Value.Metadata.ResourceVersion != "1" {
+		t.Fatalf("create RemoteWorker network policy: value=%+v err=%v", policy.Value, err)
+	}
+	profile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-profile", "remote-profile-key-1", platform.RuntimeProfileCreateRequest{
+		ProfileID: "remote-profile", ProfileName: "remote-profile", Version: 1,
+		Description: "RemoteWorker retained workspace", TargetID: internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID),
+		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
+	})
+	if err != nil || profile.Value.Spec.Status != "draft" {
+		t.Fatalf("create RemoteWorker RuntimeProfile: value=%+v err=%v", profile.Value, err)
+	}
+	profile, err = admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "remote-profile", 1, "request-remote-profile-publish", "remote-profile-publish-key", platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+	if err != nil || profile.Value.Spec.Status != "published" {
+		t.Fatalf("publish RemoteWorker RuntimeProfile: value=%+v err=%v", profile.Value, err)
+	}
+	publicProfiles, err := user.ListRuntimeProfiles(ctx, "tenant", "project", "request-remote-profile-list", 50, "")
+	foundProfile := false
+	for _, item := range publicProfiles.Value.RuntimeProfiles {
+		foundProfile = foundProfile || item.ProfileID == "remote-profile"
+	}
+	if err != nil || !foundProfile {
+		t.Fatalf("RemoteWorker RuntimeProfile is not publicly available: value=%+v err=%v", publicProfiles.Value, err)
+	}
+	sandbox, err := user.CreateSandbox(ctx, "tenant", "project", "request-remote-sandbox", "remote-sandbox-key-1", platform.SandboxSessionCreateRequest{
+		WorkspaceID: "remote-workspace", WorkspaceName: "remote-workspace", SandboxID: "remote-sandbox",
+		RuntimeProfileID: "remote-profile", RuntimeProfileVersion: 1, TTLSeconds: 120,
+	})
+	if err != nil || sandbox.Value.ObservedState != "pending" {
+		t.Fatalf("create RemoteWorker Sandbox: value=%+v err=%v", sandbox.Value, err)
+	}
+	delivery, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-delivery", heartbeat)
+	if err != nil || delivery.Value.SandboxCommand == nil {
+		var available bool
+		var pending int
+		queryErr := owner.QueryRow(ctx, `SELECT cloud_agents.foundation_target_available_v1('tenant','project',$1),
+            (SELECT count(*) FROM cloud_agents.outbox_events AS event
+             JOIN cloud_agents.sandbox_sessions AS sandbox ON sandbox.tenant_id=event.tenant_id
+              AND sandbox.operation_id=event.operation_id AND sandbox.operation_generation=event.operation_generation
+             JOIN cloud_agents.workspace_volumes AS volume ON volume.tenant_id=sandbox.tenant_id
+              AND volume.project_uid=sandbox.project_uid AND volume.workspace_uid=sandbox.workspace_uid
+             WHERE event.state='pending' AND volume.target_uid=$1)`,
+			internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID)).Scan(&available, &pending)
+		t.Fatalf("deliver RemoteWorker Sandbox command: value=%+v err=%v available=%v pending=%d queryErr=%v", delivery.Value, err, available, pending, queryErr)
+	}
+	command := delivery.Value.SandboxCommand
+	stateFile := filepath.Join(t.TempDir(), "remote-worker-sandbox-state.json")
+	state, _ := json.Marshal(map[string]any{"incarnationId": incarnationID, "observedGeneration": heartbeat.ObservedGeneration,
+		"observedState": heartbeat.ObservedState, "sandboxCommand": command})
+	if err := os.WriteFile(stateFile, append(state, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	adminSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-get")
+	if err != nil || adminSandbox.Value.Spec.ObservedState != "running" || adminSandbox.Value.Spec.RuntimeID == "" || adminSandbox.Value.Spec.PhysicalVolumeID == "" {
+		t.Fatalf("RemoteWorker Sandbox settlement: value=%+v err=%v", adminSandbox.Value, err)
+	}
+	heartbeat.SandboxCommandReceipt = &platform.RemoteWorkerSandboxCommandReceipt{CommandID: command.CommandID,
+		Attempt: command.Attempt, OperationID: command.OperationID, SandboxID: command.SandboxID,
+		SandboxGeneration: command.SandboxGeneration, Result: "succeeded", RuntimeID: adminSandbox.Value.Spec.RuntimeID,
+		RuntimeState: "Running", VolumeName: adminSandbox.Value.Spec.PhysicalVolumeID}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-replay-1", heartbeat); err != nil {
+		t.Fatalf("replay RemoteWorker Sandbox receipt: %v", err)
+	}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-replay-2", heartbeat); err != nil {
+		t.Fatalf("repeat RemoteWorker Sandbox receipt replay: %v", err)
+	}
+	var nodeAuditCount int
+	var exactNodeAuditSubject bool
+	if err := owner.QueryRow(ctx, `SELECT count(*), bool_and(subject_digest = $2)
+FROM cloud_agents.coordination_audit_facts
+WHERE operation_id = $1 AND transition IN ('sandbox.claim', 'outbox.delivery_succeeded')`,
+		sandbox.Value.OperationID, certificateSHA256).Scan(&nodeAuditCount, &exactNodeAuditSubject); err != nil || nodeAuditCount != 2 || !exactNodeAuditSubject {
+		t.Fatalf("RemoteWorker Sandbox audit authority: count=%d exact=%v err=%v", nodeAuditCount, exactNodeAuditSubject, err)
+	}
+	marker, _ := json.Marshal(map[string]any{"operationId": sandbox.Value.OperationID, "runtimeId": adminSandbox.Value.Spec.RuntimeID,
+		"volumeName": adminSandbox.Value.Spec.PhysicalVolumeID, "receiptReplay": true, "nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
+	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
+}
+
+func startRemoteWorkerDockerProxy(t *testing.T) string {
+	t.Helper()
+	socket := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET")
+	credentialDirectory := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY")
+	credentialRef := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF")
+	if socket == "" || credentialDirectory == "" || credentialRef == "" {
+		t.Fatal("RemoteWorker Docker proxy environment is incomplete")
+	}
+	if info, err := os.Stat(socket); err != nil || info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("RemoteWorker Docker socket is unavailable: %v", err)
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	proxy := &httputil.ReverseProxy{Director: func(request *http.Request) {
+		request.URL.Scheme, request.URL.Host, request.Host = "http", "docker", "docker"
+	}, Transport: transport}
+	server := httptest.NewUnstartedServer(proxy)
+	server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ClientAuth: tls.RequireAnyClientCert}
+	server.StartTLS()
+	t.Cleanup(func() { server.Close(); transport.CloseIdleConnections() })
+	certificate := server.TLS.Certificates[0]
+	privateKey, err := x509.MarshalPKCS8PrivateKey(certificate.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := filepath.Join(credentialDirectory, credentialRef)
+	if err := os.MkdirAll(reference, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKey})
+	for name, contents := range map[string][]byte{"ca.pem": certPEM, "cert.pem": certPEM, "key.pem": keyPEM} {
+		if err := os.WriteFile(filepath.Join(reference, name), contents, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return server.URL
+}
+
 func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte, stateFile string) {
 	t.Helper()
 	directory := t.TempDir()
@@ -548,6 +720,9 @@ func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary s
 		"--enrollment="+enrollmentID, "--incarnation="+incarnationID,
 		"--certificate="+certificateFile, "--private-key="+privateKeyFile, "--server-ca="+serverCAFile,
 		"--state-file="+stateFile,
+		"--docker-endpoint="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", "https://docker.example.test"),
+		"--credential-directory="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY", "/tmp"),
+		"--credential-ref="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF", "fixture-only"),
 		"--kernel-version=6.12.1", "--capabilities=docker,exec,files",
 		"--capacity-cpu-millis=4000", "--capacity-memory-bytes=8589934592",
 		"--capacity-disk-bytes=42949672960", "--once",
@@ -556,6 +731,13 @@ func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary s
 		t.Fatalf("outbound RemoteWorker process: %v: %s", err, output)
 	}
 	t.Log("outbound RemoteWorker process heartbeat passed")
+}
+
+func remoteWorkerRuntimeEnv(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func assertRemoteWorkerAdminRedaction(t *testing.T, ctx context.Context, server *httptest.Server, adminToken, enrollmentID, secret string) {

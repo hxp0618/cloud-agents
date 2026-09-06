@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +23,10 @@ import (
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	api "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/foundationcontroller"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
 var (
@@ -30,19 +35,22 @@ var (
 )
 
 type config struct {
-	controlPlaneURL string
-	tenantID        string
-	projectID       string
-	enrollmentID    string
-	incarnationID   string
-	certificate     string
-	privateKey      string
-	serverCA        string
-	stateFile       string
-	kernelVersion   string
-	capabilities    []string
-	capacity        platform.RemoteWorkerCapacity
-	once            bool
+	controlPlaneURL     string
+	tenantID            string
+	projectID           string
+	enrollmentID        string
+	incarnationID       string
+	certificate         string
+	privateKey          string
+	serverCA            string
+	stateFile           string
+	dockerEndpoint      string
+	credentialDirectory string
+	credentialRef       string
+	kernelVersion       string
+	capabilities        []string
+	capacity            platform.RemoteWorkerCapacity
+	once                bool
 }
 
 func parseConfig(args []string) (config, error) {
@@ -59,6 +67,9 @@ func parseConfig(args []string) (config, error) {
 	set.StringVar(&value.privateKey, "private-key", "", "client private key PEM file")
 	set.StringVar(&value.serverCA, "server-ca", "", "Control Plane CA certificate PEM file")
 	set.StringVar(&value.stateFile, "state-file", "", "durable RemoteWorker state file")
+	set.StringVar(&value.dockerEndpoint, "docker-endpoint", "", "node-local Docker HTTPS endpoint")
+	set.StringVar(&value.credentialDirectory, "credential-directory", "", "node-local runtime credential directory")
+	set.StringVar(&value.credentialRef, "credential-ref", "", "node-local runtime credential identifier")
 	set.StringVar(&value.kernelVersion, "kernel-version", "", "host kernel version")
 	set.StringVar(&capabilities, "capabilities", "", "sorted comma-separated capabilities")
 	set.Int64Var(&value.capacity.CPUMillis, "capacity-cpu-millis", 0, "allocatable CPU in millicores")
@@ -70,10 +81,13 @@ func parseConfig(args []string) (config, error) {
 	}
 	value.capabilities = strings.Split(capabilities, ",")
 	request := value.heartbeatRequest(initialNodeState(value.incarnationID))
+	runtimeConfigMissing := value.dockerEndpoint == "" || value.credentialDirectory == "" || common.ValidateIdentifier(value.credentialRef, "/credential-ref") != nil
 	if common.ValidateIdentifier(value.tenantID, "/tenant") != nil || common.ValidateIdentifier(value.projectID, "/project") != nil || common.ValidateIdentifier(value.enrollmentID, "/enrollment") != nil ||
 		value.controlPlaneURL == "" || value.certificate == "" || value.privateKey == "" || value.serverCA == "" || value.stateFile == "" ||
+		slices.Contains(value.capabilities, "docker") && runtimeConfigMissing ||
 		strings.TrimSpace(value.controlPlaneURL) != value.controlPlaneURL ||
-		strings.TrimSpace(value.certificate) != value.certificate || strings.TrimSpace(value.privateKey) != value.privateKey || strings.TrimSpace(value.serverCA) != value.serverCA || strings.TrimSpace(value.stateFile) != value.stateFile {
+		strings.TrimSpace(value.certificate) != value.certificate || strings.TrimSpace(value.privateKey) != value.privateKey || strings.TrimSpace(value.serverCA) != value.serverCA || strings.TrimSpace(value.stateFile) != value.stateFile ||
+		strings.TrimSpace(value.dockerEndpoint) != value.dockerEndpoint || strings.TrimSpace(value.credentialDirectory) != value.credentialDirectory {
 		return config{}, errInvalidRemoteWorkerConfig
 	}
 	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil {
@@ -86,16 +100,19 @@ func (value config) heartbeatRequest(state nodeState) platform.RemoteWorkerHeart
 	return platform.RemoteWorkerHeartbeatRequest{
 		IncarnationID: value.incarnationID, ObservedGeneration: state.ObservedGeneration, ObservedState: state.ObservedState,
 		WorkerVersion: version, OS: runtime.GOOS, Architecture: runtime.GOARCH,
-		KernelVersion: value.kernelVersion, Capabilities: value.capabilities, Capacity: value.capacity, CommandReceipt: state.CommandReceipt,
+		KernelVersion: value.kernelVersion, Capabilities: value.capabilities, Capacity: value.capacity,
+		CommandReceipt: state.CommandReceipt, SandboxCommandReceipt: state.SandboxCommandReceipt,
 	}
 }
 
 type nodeState struct {
-	IncarnationID      string                               `json:"incarnationId"`
-	ObservedGeneration int64                                `json:"observedGeneration"`
-	ObservedState      string                               `json:"observedState"`
-	LastCommandID      string                               `json:"lastCommandId,omitempty"`
-	CommandReceipt     *platform.RemoteWorkerCommandReceipt `json:"commandReceipt,omitempty"`
+	IncarnationID         string                                      `json:"incarnationId"`
+	ObservedGeneration    int64                                       `json:"observedGeneration"`
+	ObservedState         string                                      `json:"observedState"`
+	LastCommandID         string                                      `json:"lastCommandId,omitempty"`
+	CommandReceipt        *platform.RemoteWorkerCommandReceipt        `json:"commandReceipt,omitempty"`
+	SandboxCommand        *platform.RemoteWorkerSandboxCommand        `json:"sandboxCommand,omitempty"`
+	SandboxCommandReceipt *platform.RemoteWorkerSandboxCommandReceipt `json:"sandboxCommandReceipt,omitempty"`
 }
 
 func initialNodeState(incarnationID string) nodeState {
@@ -108,16 +125,28 @@ func validateNodeState(value nodeState) error {
 		value.LastCommandID != "" && common.ValidateIdentifier(value.LastCommandID, "/lastCommandId") != nil {
 		return errInvalidRemoteWorkerConfig
 	}
-	if value.CommandReceipt == nil {
-		return nil
-	}
 	request := platform.RemoteWorkerHeartbeatRequest{IncarnationID: value.IncarnationID, ObservedGeneration: value.ObservedGeneration,
 		ObservedState: value.ObservedState, WorkerVersion: "state", OS: "state", Architecture: "state", KernelVersion: "state",
-		Capabilities: []string{"exec"}, Capacity: platform.RemoteWorkerCapacity{CPUMillis: 100, MemoryBytes: 134217728, DiskBytes: 134217728}, CommandReceipt: value.CommandReceipt}
-	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil || value.LastCommandID != value.CommandReceipt.CommandID ||
-		value.CommandReceipt.Result == "succeeded" && value.CommandReceipt.Generation != value.ObservedGeneration ||
-		value.CommandReceipt.Result == "failed" && value.CommandReceipt.Generation != value.ObservedGeneration+1 {
+		Capabilities: []string{"exec"}, Capacity: platform.RemoteWorkerCapacity{CPUMillis: 100, MemoryBytes: 134217728, DiskBytes: 134217728}, CommandReceipt: value.CommandReceipt, SandboxCommandReceipt: value.SandboxCommandReceipt}
+	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil {
 		return errInvalidRemoteWorkerConfig
+	}
+	if value.CommandReceipt != nil && (value.LastCommandID != value.CommandReceipt.CommandID ||
+		value.CommandReceipt.Result == "succeeded" && value.CommandReceipt.Generation != value.ObservedGeneration ||
+		value.CommandReceipt.Result == "failed" && value.CommandReceipt.Generation != value.ObservedGeneration+1) {
+		return errInvalidRemoteWorkerConfig
+	}
+	if value.SandboxCommand == nil && value.SandboxCommandReceipt != nil || value.SandboxCommand != nil && value.SandboxCommandReceipt != nil && value.SandboxCommand.CommandID != value.SandboxCommandReceipt.CommandID {
+		return errInvalidRemoteWorkerConfig
+	}
+	if value.SandboxCommand != nil {
+		raw, err := json.Marshal(value.SandboxCommand)
+		if err != nil {
+			return errInvalidRemoteWorkerConfig
+		}
+		if _, err := platform.DecodeRemoteWorkerSandboxCommandJSON(raw); err != nil {
+			return errInvalidRemoteWorkerConfig
+		}
 	}
 	return nil
 }
@@ -187,8 +216,11 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 	if state == nil || heartbeat.IncarnationID != state.IncarnationID {
 		return errInvalidRemoteWorkerConfig
 	}
-	changed := state.CommandReceipt != nil
+	changed := state.CommandReceipt != nil || state.SandboxCommandReceipt != nil
 	state.CommandReceipt = nil
+	if state.SandboxCommandReceipt != nil {
+		state.SandboxCommand, state.SandboxCommandReceipt = nil, nil
+	}
 	if heartbeat.Command != nil {
 		command := heartbeat.Command
 		deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
@@ -210,10 +242,61 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 		state.CommandReceipt = &platform.RemoteWorkerCommandReceipt{CommandID: command.CommandID, Generation: command.Generation, Result: result, StableErrorCode: stableErrorCode}
 		changed = true
 	}
+	if heartbeat.SandboxCommand != nil {
+		if state.SandboxCommand != nil && state.SandboxCommand.CommandID != heartbeat.SandboxCommand.CommandID {
+			return errInvalidRemoteWorkerConfig
+		}
+		state.SandboxCommand = heartbeat.SandboxCommand
+		changed = true
+	}
 	if changed {
 		return saveNodeState(path, *state)
 	}
 	return nil
+}
+
+func executePendingSandbox(ctx context.Context, value config, state *nodeState) error {
+	if state == nil || state.SandboxCommand == nil || state.SandboxCommandReceipt != nil {
+		return nil
+	}
+	command := state.SandboxCommand
+	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
+	result := foundationcontroller.EffectResult{}
+	if err != nil || !deadline.After(time.Now()) {
+		result.Err = context.DeadlineExceeded
+	} else {
+		docker, dockerErr := dockertarget.NewCredentialDirectory(value.credentialDirectory)
+		sandbox, sandboxErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
+		if dockerErr != nil {
+			result.Err = dockerErr
+		} else if sandboxErr != nil {
+			result.Err = sandboxErr
+		} else {
+			effectContext, cancel := context.WithDeadline(ctx, deadline)
+			result = foundationcontroller.ExecuteEffect(effectContext, docker, sandbox, postgres.FoundationSandboxClaim{
+				TenantID: value.tenantID, ProjectID: value.projectID, TargetKind: "remote-worker",
+				TargetID: command.TargetID, TargetEndpoint: value.dockerEndpoint, CredentialRef: value.credentialRef,
+				Action: command.Action, OperationID: command.OperationID, WorkspaceID: command.WorkspaceID,
+				WorkspaceName: command.WorkspaceName, SandboxID: command.SandboxID,
+				SandboxGeneration: command.SandboxGeneration, ImageURI: command.ImageURI,
+				CPUMillis: command.CPUMillis, MemoryBytes: command.MemoryBytes, SpecDigest: command.SpecDigest,
+				NetworkPolicyID: command.NetworkPolicyID, NetworkAllowedEgress: command.NetworkAllowedEgress,
+			})
+			cancel()
+		}
+	}
+	receipt := &platform.RemoteWorkerSandboxCommandReceipt{CommandID: command.CommandID, Attempt: command.Attempt,
+		OperationID: command.OperationID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
+		RuntimeID: result.RuntimeID, RuntimeState: result.RuntimeState, VolumeName: result.VolumeName,
+		CleanupComplete: result.CleanupComplete}
+	if result.Err == nil {
+		receipt.Result = "succeeded"
+	} else {
+		receipt.Result = "failed"
+		_, receipt.StableErrorCode = foundationcontroller.ClassifyEffect(result.Err, int32(command.Attempt))
+	}
+	state.SandboxCommandReceipt = receipt
+	return saveNodeState(value.stateFile, *state)
 }
 
 func newClient(value config) (*api.Client, error) {
@@ -289,6 +372,9 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if err := executePendingSandbox(ctx, value, &state); err != nil {
+		log.Fatal(err)
+	}
 	err = runHeartbeatLoop(ctx, value.once, func(callContext context.Context) error {
 		requestID := fmt.Sprintf("remote-worker-heartbeat-%d", time.Now().UnixNano())
 		response, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, value.heartbeatRequest(state))
@@ -296,7 +382,10 @@ func main() {
 			log.Printf("remote worker heartbeat failed: %v", callErr)
 			return callErr
 		}
-		return reconcileHeartbeat(value.stateFile, &state, response.Value, time.Now())
+		if err := reconcileHeartbeat(value.stateFile, &state, response.Value, time.Now()); err != nil {
+			return err
+		}
+		return executePendingSandbox(callContext, value, &state)
 	}, waitContext)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatal(err)

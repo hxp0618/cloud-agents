@@ -1,9 +1,12 @@
 package remoteworker
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"regexp"
 	"slices"
+	"strconv"
 	"time"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
@@ -43,6 +46,7 @@ type HeartbeatInput struct {
 	Capabilities          []string
 	Capacity              Capacity
 	CommandReceipt        *CommandReceipt
+	SandboxCommandReceipt *SandboxCommandReceipt
 }
 
 type CommandReceipt struct {
@@ -57,6 +61,22 @@ type Command struct {
 	Generation   int64
 	DesiredState string
 	Deadline     time.Time
+}
+
+type SandboxCommandReceipt struct {
+	CommandID, OperationID, SandboxID           string
+	Attempt, SandboxGeneration                  int64
+	Result, RuntimeID, RuntimeState, VolumeName string
+	StableErrorCode                             string
+	CleanupComplete                             bool
+}
+
+type SandboxCommand struct {
+	CommandID, Action, OperationID, WorkspaceID, WorkspaceName string
+	TargetID, SandboxID, ImageURI, SpecDigest, NetworkPolicyID string
+	Attempt, SandboxGeneration, CPUMillis, MemoryBytes         int64
+	NetworkAllowedEgress                                       []string
+	Deadline                                                   time.Time
 }
 
 type SchedulingInput struct {
@@ -93,6 +113,7 @@ type NodeStatus struct {
 	EnrollmentID       string
 	WorkerID           string
 	WorkerName         string
+	TargetID           string
 	IncarnationID      string
 	ResourceVersion    int64
 	Generation         int64
@@ -118,10 +139,57 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		(input.ObservedState != "active" && input.ObservedState != "drained") ||
 		invalidIdentifier(input.OS) || invalidIdentifier(input.Architecture) || invalidKernelVersion(input.KernelVersion) ||
 		invalidCapabilities(input.Capabilities) || invalidCapacity(input.Capacity) ||
-		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil {
+		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil ||
+		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil {
 		return ErrInvalidHeartbeat
 	}
 	return nil
+}
+
+func (receipt SandboxCommandReceipt) Validate() error {
+	if invalidIdentifier(receipt.CommandID) || receipt.Attempt < 1 || receipt.Attempt > 8 ||
+		invalidIdentifier(receipt.OperationID) || invalidIdentifier(receipt.SandboxID) || receipt.SandboxGeneration < 1 ||
+		receipt.Result != "succeeded" && receipt.Result != "failed" ||
+		receipt.RuntimeID != "" && invalidIdentifier(receipt.RuntimeID) ||
+		receipt.VolumeName != "" && (invalidIdentifier(receipt.VolumeName) || len(receipt.VolumeName) > 63) ||
+		receipt.StableErrorCode != "" && invalidIdentifier(receipt.StableErrorCode) ||
+		receipt.Result == "succeeded" && (receipt.RuntimeID == "" || receipt.RuntimeState != "Running" || receipt.VolumeName == "" || receipt.StableErrorCode != "") ||
+		receipt.Result == "failed" && receipt.StableErrorCode == "" {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func (command SandboxCommand) Validate() error {
+	if invalidIdentifier(command.CommandID) || command.Attempt < 1 || command.Attempt > 8 || command.Action != "sandbox.create" ||
+		invalidIdentifier(command.OperationID) || invalidIdentifier(command.WorkspaceID) || invalidIdentifier(command.WorkspaceName) ||
+		invalidIdentifier(command.TargetID) || invalidIdentifier(command.SandboxID) || command.SandboxGeneration < 1 ||
+		len(command.ImageURI) < 1 || len(command.ImageURI) > 1024 || !digest(command.SpecDigest) ||
+		invalidIdentifier(command.NetworkPolicyID) || command.CPUMillis < 100 || command.CPUMillis > 64000 ||
+		command.MemoryBytes < 134_217_728 || command.MemoryBytes > 1_099_511_627_776 || command.Deadline.IsZero() {
+		return ErrInvalidHeartbeat
+	}
+	seen := map[string]bool{}
+	for _, target := range command.NetworkAllowedEgress {
+		if seen[target] || len(target) < 1 || len(target) > 253 {
+			return ErrInvalidHeartbeat
+		}
+		seen[target] = true
+		for _, character := range target {
+			if character <= 32 || character == 127 {
+				return ErrInvalidHeartbeat
+			}
+		}
+	}
+	if len(command.NetworkAllowedEgress) > 64 {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func SandboxCommandID(operationID string, attempt int64) string {
+	sum := sha256.Sum256([]byte(operationID + "|" + strconv.FormatInt(attempt, 10)))
+	return "rwsc-" + hex.EncodeToString(sum[:16])
 }
 
 func (receipt CommandReceipt) Validate() error {
@@ -216,7 +284,7 @@ func (operation Operation) Validate() error {
 
 func (status NodeStatus) Validate() error {
 	if invalidIdentifier(status.Scope.TenantID) || invalidIdentifier(status.Scope.ProjectID) || invalidIdentifier(status.EnrollmentID) ||
-		invalidIdentifier(status.WorkerID) || invalidIdentifier(status.WorkerName) || invalidIdentifier(status.IncarnationID) ||
+		invalidIdentifier(status.WorkerID) || invalidIdentifier(status.WorkerName) || status.TargetID != "" && invalidIdentifier(status.TargetID) || invalidIdentifier(status.IncarnationID) ||
 		status.ResourceVersion < 1 || status.Generation < 1 || status.ObservedGeneration < 1 || status.ObservedGeneration > status.Generation ||
 		(status.DesiredState != "active" && status.DesiredState != "drained") ||
 		(status.ObservedState != "active" && status.ObservedState != "drained") ||

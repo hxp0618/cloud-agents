@@ -352,6 +352,7 @@ export function classifyMigrationStatement(
         "000055",
         "000059",
         "000066",
+        "000068",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -521,6 +522,14 @@ export function classifyMigrationStatement(
           "000066",
           [
             "function:unquoted:cloud_agents/unquoted:reset_remote_worker_node_status_on_incarnation_change_v1()",
+          ],
+        ],
+        [
+          "000068",
+          [
+            "function:unquoted:cloud_agents/unquoted:create_runtime_profile_draft_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:transition_runtime_profile_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_intent_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
       ]).get(migrationId);

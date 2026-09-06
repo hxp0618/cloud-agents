@@ -119,6 +119,8 @@ const PLATFORM_SCHEMAS = [
   "remote-worker-certificate.schema.json",
   "remote-worker-command-receipt.schema.json",
   "remote-worker-command.schema.json",
+  "remote-worker-sandbox-command-receipt.schema.json",
+  "remote-worker-sandbox-command.schema.json",
   "remote-worker-heartbeat-request.schema.json",
   "remote-worker-heartbeat.schema.json",
   "remote-worker-enrollment-create-request.schema.json",

@@ -172,6 +172,15 @@ func TestGeneratedEnvironmentProfileSummaryRejectsInfrastructureFields(t *testin
 	}
 }
 
+func TestRemoteWorkerHeartbeatResponseKeepsSandboxCommand(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RemoteWorkerHeartbeat","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"enrollmentId":"enrollment-alpha","workerId":"worker-alpha","incarnationId":"incarnation-alpha","generation":1,"observedGeneration":1,"desiredState":"active","observedState":"active","healthState":"online","acceptedAt":"2026-09-06T12:00:00Z","expiresAt":"2026-09-06T12:00:30Z","nextHeartbeatAfterSeconds":5,"reconcileRequired":false,"sandboxCommand":{"commandId":"rwsc-alpha","attempt":1,"action":"sandbox.create","operationId":"operation-alpha","workspaceId":"workspace-alpha","workspaceName":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":1,"imageUri":"registry.example.test/runtime@` + digest + `","cpuMillis":500,"memoryBytes":536870912,"specDigest":"` + digest + `","networkPolicyId":"network-alpha","networkAllowedEgress":["example.test"],"deadline":"2026-09-06T12:01:00Z"}}`)
+	heartbeat, err := DecodeRemoteWorkerHeartbeatResponseJSON(body)
+	if err != nil || heartbeat.Value.SandboxCommand == nil || heartbeat.Value.SandboxCommand.OperationID != "operation-alpha" || len(heartbeat.Unknown) != 0 {
+		t.Fatalf("sandbox command = %#v, unknown = %#v, error = %v", heartbeat.Value.SandboxCommand, heartbeat.Unknown, err)
+	}
+}
+
 func TestGeneratedRuntimeProfileKeepsAdminAndUserBoundaries(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","targetId":"docker-primary","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)

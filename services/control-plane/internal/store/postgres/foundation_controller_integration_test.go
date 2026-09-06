@@ -128,7 +128,8 @@ func TestFoundationControllerPostgres(t *testing.T) {
 func claimFoundationControllerTest(t *testing.T, ctx context.Context, service *DurableCoordinationService, subject, suffix string, lease int32) FoundationSandboxClaim {
 	t.Helper()
 	result, err := service.ClaimFoundationSandbox(ctx, FoundationSandboxClaimInput{
-		HolderID: "controller", HolderIncarnation: "controller-incarnation", ClaimToken: "claim-" + suffix,
+		TargetKind: "docker",
+		HolderID:   "controller", HolderIncarnation: "controller-incarnation", ClaimToken: "claim-" + suffix,
 		LeaseSeconds: lease, SubjectDigest: subject, AuditFactID: "audit-foundation-claim-" + suffix,
 	})
 	if err != nil || result.DatabaseOutcome != DatabaseCommitted || !result.Found {

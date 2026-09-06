@@ -90,6 +90,7 @@ let postgresStarted = false;
 let sandboxServerStarted = false;
 let sandboxBase = "";
 let prepareReceipt;
+let remoteWorkerReceipt;
 const startedSinks = [];
 try {
   assert.equal(
@@ -212,9 +213,11 @@ try {
   const migrateBinary = resolve(build, "cloud-agents-product-migrate");
   const serverTestBinary = resolve(build, "server.test");
   const controllerTestBinary = resolve(build, "foundationcontroller.test");
+  const remoteWorkerBinary = resolve(build, "cloud-agents-remote-worker");
   goBuild(migrateBinary, "./services/control-plane/cmd/cloud-agents-product-migrate");
   goBuild(serverTestBinary, "./services/control-plane/internal/server", true);
   goBuild(controllerTestBinary, "./services/control-plane/internal/foundationcontroller", true);
+  goBuild(remoteWorkerBinary, "./services/control-plane/cmd/cloud-agents-remote-worker");
   const migration = JSON.parse(
     execFileSync(
       migrateBinary,
@@ -311,6 +314,7 @@ try {
     `[server]\nhost="0.0.0.0"\neip="127.0.0.1"\nport=8080\napi_key="${apiKey}"\n[runtime]\ntype="docker"\nexecd_image="${execdImage}"\n[docker]\nnetwork_mode="bridge"\nhost_ip="${dockerGateway}"\nport_range_min=49310\nport_range_max=49520\n[egress]\nimage="${egressImage}"\nmode="dns+nft"\n[storage]\nallowed_host_paths=[]\n[store]\ntype="sqlite"\npath="/tmp/opensandbox.db"\n`,
     { mode: 0o600 },
   );
+
   docker(
     "run",
     "-d",
@@ -343,6 +347,38 @@ try {
     JSON.stringify({ endpoint: sandboxBase, apiKey }) + "\n",
     { mode: 0o600 },
   );
+
+  remoteWorkerReceipt = parseMarker(
+    execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestRemoteWorkerEnrollmentPostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_REMOTE_WORKER_BINARY: remoteWorkerBinary,
+          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET: dockerSocket,
+          CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY: credentialDirectory,
+          CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF: "fixture-only",
+          CLOUD_AGENTS_REMOTE_WORKER_SUCCESS_IMAGE_URI: sandboxImage,
+          CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS: `${allowedSinkIP}/32`,
+        },
+        timeout: 180_000,
+      },
+    ),
+    "REMOTE_WORKER_SANDBOX",
+  );
+  assert.equal(remoteWorkerReceipt.receiptReplay, true);
+  assert.equal(remoteWorkerReceipt.observedState, "running");
+  assert.equal((await request(sandboxBase, `/v1/sandboxes/${remoteWorkerReceipt.runtimeId}`, "DELETE")).status, 204);
+  for (let attempt = 0; ; attempt++) {
+    if (docker("ps", "-aq", "--filter", `label=opensandbox.io/id=${remoteWorkerReceipt.runtimeId}`) === "") break;
+    if (attempt === 100) throw new Error("RemoteWorker Sandbox runtime did not terminate");
+    await delay(100);
+  }
+  docker("volume", "rm", remoteWorkerReceipt.volumeName);
 
   const commonEnvironment = {
     ...process.env,
@@ -588,6 +624,7 @@ try {
       failureImage,
     },
     prepare: prepareReceipt,
+    remoteWorker: remoteWorkerReceipt,
     recover: recoverReceipt,
     stop: { api: stopAPIReceipt, controller: stopReceipt },
     rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
@@ -597,6 +634,8 @@ try {
     finalRebuild: { api: finalRebuildAPIReceipt, controller: finalRebuildReceipt },
     checks: [
       "public RuntimeProfile and Sandbox admission",
+      "outbound customer-node RemoteWorker claims and physically creates a real Sandbox through the existing durable Operation",
+      "RemoteWorker settlement and exact receipt replay persist Running state without endpoint or credential bytes in the command",
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
       "real durable claim and physical retained Docker volume",
       "real OpenSandbox create and execd readiness",
@@ -636,7 +675,7 @@ try {
       "zero test-owned runtime containers and Workspace volumes",
     ],
     boundary:
-      "Local OrbStack Docker and disposable PostgreSQL only; Admin Web is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes or customer node",
+      "Local OrbStack Docker customer-node process and disposable PostgreSQL only; Admin Web is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes or SSH node",
   };
   writeFileSync(
     resolve(evidenceDirectory, "evidence.json"),
@@ -706,7 +745,7 @@ try {
     if (
       info.Labels?.["cloud-agents.dev/tenant"] === "tenant" &&
       info.Labels?.["cloud-agents.dev/project"] === "project" &&
-      ["workspace", "workspace-terminal", "workspace-foreign"].includes(
+      ["workspace", "workspace-terminal", "workspace-foreign", "remote-workspace"].includes(
         info.Labels?.["cloud-agents.dev/workspace"],
       )
     ) {

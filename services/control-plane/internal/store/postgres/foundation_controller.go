@@ -18,7 +18,7 @@ const (
     cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
 	runtime_generation, runtime_spec_digest, ttl_seconds, expires_at
 	, network_policy_uid, network_default_egress, network_allowed_egress, network_preview_enabled
-FROM cloud_agents.claim_foundation_sandbox_v4($1,$2,$3,$4,$5,$6)`
+FROM cloud_agents.claim_foundation_sandbox_v5($1,$2,$3,$4,$5,$6,$7,$8)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
@@ -30,6 +30,7 @@ FROM cloud_agents.expire_foundation_sandbox_v1($1,$2)`
 )
 
 type FoundationSandboxClaimInput struct {
+	TargetKind, TargetID                    string
 	HolderID, HolderIncarnation, ClaimToken string
 	LeaseSeconds                            int32
 	SubjectDigest, AuditFactID              string
@@ -38,6 +39,7 @@ type FoundationSandboxClaimInput struct {
 type FoundationSandboxClaim struct {
 	TenantID, EventID, OperationID, ProjectID, WorkspaceID, WorkspaceName string
 	VolumeID, TargetID, TargetEndpoint, CredentialRef, SandboxID          string
+	TargetKind                                                            string
 	Action, ImageURI, SpecDigest, RuntimeState                            string
 	PhysicalVolumeName, RuntimeID, RuntimeOperationID, RuntimeSpecDigest  *string
 	RuntimeGeneration                                                     *int64
@@ -163,28 +165,21 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 	if service == nil || service.runner == nil {
 		return FoundationSandboxClaimResult{}, ErrNilCoordinationRunner
 	}
-	if ctx == nil || !validMutationIdentifier(input.HolderID) || !validMutationIdentifier(input.HolderIncarnation) ||
+	if ctx == nil || input.TargetKind != "docker" && input.TargetKind != "remote-worker" ||
+		input.TargetKind == "docker" && input.TargetID != "" || input.TargetKind == "remote-worker" && !validMutationIdentifier(input.TargetID) ||
+		!validMutationIdentifier(input.HolderID) || !validMutationIdentifier(input.HolderIncarnation) ||
 		!validMutationIdentifier(input.ClaimToken) || input.LeaseSeconds < 1 || input.LeaseSeconds > 60 ||
 		!validCoordinationDigest(input.SubjectDigest) || !validMutationIdentifier(input.AuditFactID) {
 		return FoundationSandboxClaimResult{}, ErrCoordinationInvalidInput
 	}
 	result := FoundationSandboxClaimResult{Found: true}
 	claim := &result.Claim
+	claim.TargetKind = input.TargetKind
 	claim.HolderID, claim.HolderIncarnation, claim.ClaimToken = input.HolderID, input.HolderIncarnation, input.ClaimToken
 	err := service.runner.withGlobalMutation(ctx, func(handle *tenantReadHandle) error {
-		err := handle.transaction.queryRow(ctx, claimFoundationSandboxSQL,
-			input.HolderID, input.HolderIncarnation, input.ClaimToken, input.LeaseSeconds,
-			input.SubjectDigest, input.AuditFactID,
-		).Scan(&claim.TenantID, &claim.EventID, &claim.DeliveryAttempts, &claim.ClaimExpiresAt,
-			&claim.OperationID, &claim.OperationGeneration, &claim.Action, &claim.ProjectID, &claim.WorkspaceID,
-			&claim.WorkspaceName, &claim.VolumeID, &claim.PhysicalVolumeName, &claim.TargetID, &claim.TargetGeneration,
-			&claim.TargetEndpoint, &claim.CredentialRef, &claim.SandboxID, &claim.SandboxGeneration,
-			&claim.ImageURI, &claim.RuntimeProfileID, &claim.RuntimeProfileVersion,
-			&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest, &claim.RuntimeID,
-			&claim.RuntimeState, &claim.RuntimeOperationID, &claim.RuntimeGeneration,
-			&claim.RuntimeSpecDigest, &claim.TTLSeconds, &claim.ExpiresAt,
-			&claim.NetworkPolicyID, &claim.NetworkDefaultEgress, &claim.NetworkAllowedEgress,
-			&claim.NetworkPreviewEnabled)
+		err := scanFoundationSandboxClaim(handle.transaction.queryRow(ctx, claimFoundationSandboxSQL,
+			input.TargetKind, input.TargetID, input.HolderID, input.HolderIncarnation, input.ClaimToken,
+			input.LeaseSeconds, input.SubjectDigest, input.AuditFactID), claim)
 		if errors.Is(err, pgx.ErrNoRows) {
 			result.Found = false
 			return nil
@@ -205,6 +200,22 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 		return FoundationSandboxClaimResult{}, ErrCoordinationResultDrift
 	}
 	return result, nil
+}
+
+func scanFoundationSandboxClaim(row rowScanner, claim *FoundationSandboxClaim) error {
+	if row == nil || claim == nil {
+		return ErrCoordinationResultDrift
+	}
+	return row.Scan(&claim.TenantID, &claim.EventID, &claim.DeliveryAttempts, &claim.ClaimExpiresAt,
+		&claim.OperationID, &claim.OperationGeneration, &claim.Action, &claim.ProjectID, &claim.WorkspaceID,
+		&claim.WorkspaceName, &claim.VolumeID, &claim.PhysicalVolumeName, &claim.TargetID, &claim.TargetGeneration,
+		&claim.TargetEndpoint, &claim.CredentialRef, &claim.SandboxID, &claim.SandboxGeneration,
+		&claim.ImageURI, &claim.RuntimeProfileID, &claim.RuntimeProfileVersion,
+		&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest, &claim.RuntimeID,
+		&claim.RuntimeState, &claim.RuntimeOperationID, &claim.RuntimeGeneration,
+		&claim.RuntimeSpecDigest, &claim.TTLSeconds, &claim.ExpiresAt,
+		&claim.NetworkPolicyID, &claim.NetworkDefaultEgress, &claim.NetworkAllowedEgress,
+		&claim.NetworkPreviewEnabled)
 }
 
 func (service *DurableCoordinationService) RenewFoundationSandbox(ctx context.Context, claim FoundationSandboxClaim, leaseSeconds int32) (time.Time, error) {
@@ -307,8 +318,9 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 			validMutationIdentifier(*claim.PhysicalVolumeName) && validMutationIdentifier(*claim.RuntimeID) &&
 			validMutationIdentifier(*claim.RuntimeOperationID) && *claim.RuntimeGeneration > 0 &&
 			*claim.RuntimeGeneration < claim.SandboxGeneration && validCoordinationDigest(*claim.RuntimeSpecDigest)
-	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validTTL && validActionReceipt &&
-		endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" &&
+	validTarget := claim.TargetKind == "docker" && endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" ||
+		claim.TargetKind == "remote-worker" && endpointErr == nil && endpoint.Scheme == "remote-worker" && endpoint.Host == claim.CredentialRef && endpoint.Path == ""
+	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validTTL && validActionReceipt && validTarget &&
 		validMutationIdentifier(claim.EventID) && validMutationIdentifier(claim.OperationID) &&
 		validMutationIdentifier(claim.CredentialRef) && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 &&
 		claim.OperationGeneration > 0 && claim.TargetGeneration > 0 && claim.SandboxGeneration > 0 &&

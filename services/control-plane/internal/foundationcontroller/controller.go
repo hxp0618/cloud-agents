@@ -28,10 +28,10 @@ type Controller struct {
 	incarnation string
 }
 
-type effectResult struct {
-	runtimeID, runtimeState, volumeName string
-	cleanupComplete                     bool
-	err                                 error
+type EffectResult struct {
+	RuntimeID, RuntimeState, VolumeName string
+	CleanupComplete                     bool
+	Err                                 error
 }
 
 func New(store *postgres.DurableCoordinationService, docker *dockertarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory) (*Controller, error) {
@@ -86,7 +86,8 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	claimResult, err := controller.store.ClaimFoundationSandbox(ctx, postgres.FoundationSandboxClaimInput{
-		HolderID: controller.holder, HolderIncarnation: controller.incarnation,
+		TargetKind: "docker",
+		HolderID:   controller.holder, HolderIncarnation: controller.incarnation,
 		ClaimToken: randomIdentifier("claim"), LeaseSeconds: int32(claimLease / time.Second),
 		SubjectDigest: subject, AuditFactID: randomIdentifier("audit"),
 	})
@@ -104,10 +105,10 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	transition, code := classify(result.err, claim.DeliveryAttempts)
+	transition, code := classify(result.Err, claim.DeliveryAttempts)
 	settled, err := controller.store.SettleFoundationSandbox(ctx, postgres.FoundationSandboxSettlement{
-		Claim: claim, Transition: transition, RuntimeID: result.runtimeID, RuntimeState: result.runtimeState,
-		VolumeName: result.volumeName, StableErrorCode: code, CleanupComplete: result.cleanupComplete,
+		Claim: claim, Transition: transition, RuntimeID: result.RuntimeID, RuntimeState: result.RuntimeState,
+		VolumeName: result.VolumeName, StableErrorCode: code, CleanupComplete: result.CleanupComplete,
 		SubjectDigest: subject, AuditFactID: randomIdentifier("audit"),
 	})
 	if err != nil {
@@ -119,68 +120,71 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (controller *Controller) executeWithRenewal(ctx context.Context, claim *postgres.FoundationSandboxClaim) (effectResult, error) {
+func (controller *Controller) executeWithRenewal(ctx context.Context, claim *postgres.FoundationSandboxClaim) (EffectResult, error) {
 	effectCtx, cancel := context.WithTimeout(ctx, effectTimeout)
 	defer cancel()
-	results := make(chan effectResult, 1)
-	go func() { results <- controller.execute(effectCtx, *claim) }()
+	results := make(chan EffectResult, 1)
+	go func() { results <- ExecuteEffect(effectCtx, controller.docker, controller.opensandbox, *claim) }()
 	ticker := time.NewTicker(renewInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case result := <-results:
 			if ctx.Err() != nil {
-				return effectResult{}, ctx.Err()
+				return EffectResult{}, ctx.Err()
 			}
 			return result, nil
 		case <-ticker.C:
 			expiry, err := controller.store.RenewFoundationSandbox(ctx, *claim, int32(claimLease/time.Second))
 			if err != nil {
 				cancel()
-				return effectResult{}, err
+				return EffectResult{}, err
 			}
 			claim.ClaimExpiresAt = expiry
 		case <-ctx.Done():
-			return effectResult{}, ctx.Err()
+			return EffectResult{}, ctx.Err()
 		}
 	}
 }
 
-func (controller *Controller) execute(ctx context.Context, claim postgres.FoundationSandboxClaim) effectResult {
+func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, claim postgres.FoundationSandboxClaim) EffectResult {
+	if ctx == nil || docker == nil || sandbox == nil {
+		return EffectResult{Err: errors.New("foundation executor configuration is invalid")}
+	}
 	volume := dockertarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
 		TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID}
 	if claim.Action == "sandbox.stop" {
-		volumeName, err := controller.docker.VerifyFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+		volumeName, err := docker.VerifyFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
 		if err != nil || claim.PhysicalVolumeName == nil || volumeName != *claim.PhysicalVolumeName {
 			if err == nil {
 				err = dockertarget.ErrDeploymentConflict
 			}
-			return effectResult{err: err}
+			return EffectResult{Err: err}
 		}
-		client, err := controller.opensandbox.Client(claim.CredentialRef)
+		client, err := sandbox.Client(claim.CredentialRef)
 		if err != nil {
-			return effectResult{volumeName: volumeName, err: err}
+			return EffectResult{VolumeName: volumeName, Err: err}
 		}
 		identity := opensandbox.Identity{Tenant: claim.TenantID, Project: claim.ProjectID,
 			Workspace: claim.WorkspaceID, Sandbox: claim.SandboxID, Operation: *claim.RuntimeOperationID,
 			Generation: *claim.RuntimeGeneration, SpecDigest: *claim.RuntimeSpecDigest}
 		if err := client.Delete(ctx, identity, *claim.RuntimeID); err != nil {
-			return effectResult{runtimeID: *claim.RuntimeID, runtimeState: claim.RuntimeState,
-				volumeName: volumeName, err: err}
+			return EffectResult{RuntimeID: *claim.RuntimeID, RuntimeState: claim.RuntimeState,
+				VolumeName: volumeName, Err: err}
 		}
-		return effectResult{volumeName: volumeName, cleanupComplete: true}
+		return EffectResult{VolumeName: volumeName, CleanupComplete: true}
 	}
 
-	volumeName, err := controller.docker.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+	volumeName, err := docker.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
 	if err != nil {
-		return effectResult{err: err}
+		return EffectResult{Err: err}
 	}
 	if claim.PhysicalVolumeName != nil && volumeName != *claim.PhysicalVolumeName {
-		return effectResult{err: dockertarget.ErrDeploymentConflict}
+		return EffectResult{Err: dockertarget.ErrDeploymentConflict}
 	}
-	client, err := controller.opensandbox.Client(claim.CredentialRef)
+	client, err := sandbox.Client(claim.CredentialRef)
 	if err != nil {
-		return effectResult{volumeName: volumeName, err: err}
+		return EffectResult{VolumeName: volumeName, Err: err}
 	}
 	identity := opensandbox.Identity{Tenant: claim.TenantID, Project: claim.ProjectID,
 		Workspace: claim.WorkspaceID, Sandbox: claim.SandboxID, Operation: claim.OperationID,
@@ -201,15 +205,15 @@ func (controller *Controller) execute(ctx context.Context, claim postgres.Founda
 			err = client.VerifyNetworkPolicy(ctx, identity, observation.RuntimeID, foundationNetworkPolicy(claim))
 		}
 	}
-	result := effectResult{runtimeID: observation.RuntimeID, runtimeState: observation.RuntimeState,
-		volumeName: volumeName, err: err}
+	result := EffectResult{RuntimeID: observation.RuntimeID, RuntimeState: observation.RuntimeState,
+		VolumeName: volumeName, Err: err}
 	if (errors.Is(err, opensandbox.ErrRuntimeFailed) || errors.Is(err, opensandbox.ErrPolicyUnenforced)) && observation.RuntimeID != "" {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if cleanupErr := client.Delete(cleanupCtx, identity, observation.RuntimeID); cleanupErr == nil {
-			result.cleanupComplete = true
+			result.CleanupComplete = true
 		} else {
-			result.err = cleanupErr
+			result.Err = cleanupErr
 		}
 	}
 	return result
@@ -246,6 +250,10 @@ func classify(err error, attempt int32) (string, string) {
 		return "failed", code
 	}
 	return "retry", code
+}
+
+func ClassifyEffect(err error, attempt int32) (string, string) {
+	return classify(err, attempt)
 }
 
 func randomIdentifier(prefix string) string {

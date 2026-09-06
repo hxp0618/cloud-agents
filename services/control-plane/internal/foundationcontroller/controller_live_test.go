@@ -169,14 +169,15 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	t.Helper()
 	subject := digest("foundation-controller")
 	claimed, err := environment.store.ClaimFoundationSandbox(ctx, postgres.FoundationSandboxClaimInput{
-		HolderID: "prepare-controller", HolderIncarnation: "prepare-incarnation", ClaimToken: "prepare-claim",
+		TargetKind: "docker",
+		HolderID:   "prepare-controller", HolderIncarnation: "prepare-incarnation", ClaimToken: "prepare-claim",
 		LeaseSeconds: 1, SubjectDigest: subject, AuditFactID: "audit-live-prepare-claim",
 	})
 	if err != nil || claimed.DatabaseOutcome != postgres.DatabaseCommitted || !claimed.Found || claimed.Claim.SandboxID != "sandbox" {
 		t.Fatalf("prepare claim = %#v / %v", claimed, err)
 	}
-	result := environment.controller.execute(ctx, claimed.Claim)
-	if result.err != nil || result.runtimeState != "Running" {
+	result := ExecuteEffect(ctx, environment.controller.docker, environment.controller.opensandbox, claimed.Claim)
+	if result.Err != nil || result.RuntimeState != "Running" {
 		t.Fatalf("prepare physical effect = %#v", result)
 	}
 	allowedIP := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_ALLOWED_IP")
@@ -185,7 +186,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if net.ParseIP(allowedIP) == nil || net.ParseIP(blockedIP) == nil || net.ParseIP(dockerGateway) == nil {
 		t.Fatal("live network isolation fixtures are invalid")
 	}
-	networkOutput := liveCommand(t, ctx, environment, result.runtimeID, fmt.Sprintf(
+	networkOutput := liveCommand(t, ctx, environment, result.RuntimeID, fmt.Sprintf(
 		`node -e 'const checks=[["ALLOWED","http://%s:8080"],["CROSS","http://%s:8080"],["HOST","http://%s:18891"],["METADATA","http://169.254.169.254"]];(async()=>{for(const [name,target] of checks){try{const response=await fetch(target,{signal:AbortSignal.timeout(1000)});const body=await response.text();console.log("CAG_NETWORK_"+name+"="+(name==="ALLOWED"&&response.ok&&body.trim()==="allowed"?"allowed":"reachable"))}catch{console.log("CAG_NETWORK_"+name+"=blocked")}}})()'`,
 		allowedIP, blockedIP, dockerGateway,
 	))
@@ -196,13 +197,13 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	}
 	proof := "cloud-agents-controller-restart"
 	proofDigest := sha256.Sum256([]byte(proof))
-	output := liveCommand(t, ctx, environment, result.runtimeID,
+	output := liveCommand(t, ctx, environment, result.RuntimeID,
 		"printf %s "+proof+" > /workspace/controller-proof.txt && sha256sum /workspace/controller-proof.txt")
 	if !strings.Contains(output, hex.EncodeToString(proofDigest[:])) {
 		t.Fatalf("workspace write response = %s", output)
 	}
 	receipt, _ := json.Marshal(map[string]string{
-		"runtimeId": result.runtimeID, "volumeName": result.volumeName,
+		"runtimeId": result.RuntimeID, "volumeName": result.VolumeName,
 		"proofDigest": hex.EncodeToString(proofDigest[:]), "operationId": claimed.Claim.OperationID,
 		"specDigest": claimed.Claim.SpecDigest, "expiresAt": claimed.Claim.ExpiresAt.UTC().Format(time.RFC3339Nano),
 		"networkPolicy": "restricted allow plus cross-sandbox/host/metadata deny",

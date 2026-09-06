@@ -40,6 +40,7 @@ func TestParseConfigBuildsCanonicalHeartbeat(t *testing.T) {
 		"--control-plane-url=https://control.example.test", "--tenant=tenant-alpha", "--project=project-alpha",
 		"--enrollment=enrollment-alpha", "--incarnation=incarnation-alpha", "--certificate=/tmp/node.pem",
 		"--private-key=/tmp/node-key.pem", "--server-ca=/tmp/ca.pem", "--state-file=/tmp/node-state.json", "--kernel-version=6.12.1",
+		"--docker-endpoint=https://docker.example.test", "--credential-directory=/tmp", "--credential-ref=fixture-only",
 		"--capabilities=docker,exec,files", "--capacity-cpu-millis=4000",
 		"--capacity-memory-bytes=8589934592", "--capacity-disk-bytes=42949672960", "--once",
 	})
@@ -48,6 +49,16 @@ func TestParseConfigBuildsCanonicalHeartbeat(t *testing.T) {
 	}
 	if _, err := parseConfig([]string{"--control-plane-url=https://control.example.test"}); err == nil {
 		t.Fatal("accepted incomplete configuration")
+	}
+	withoutDocker := []string{
+		"--control-plane-url=https://control.example.test", "--tenant=tenant-alpha", "--project=project-alpha",
+		"--enrollment=enrollment-alpha", "--incarnation=incarnation-alpha", "--certificate=/tmp/node.pem",
+		"--private-key=/tmp/node-key.pem", "--server-ca=/tmp/ca.pem", "--state-file=/tmp/node-state.json",
+		"--kernel-version=6.12.1", "--capabilities=exec,files", "--capacity-cpu-millis=4000",
+		"--capacity-memory-bytes=8589934592", "--capacity-disk-bytes=42949672960",
+	}
+	if _, err := parseConfig(withoutDocker); err != nil {
+		t.Fatalf("non-Docker heartbeat config rejected: %v", err)
 	}
 }
 

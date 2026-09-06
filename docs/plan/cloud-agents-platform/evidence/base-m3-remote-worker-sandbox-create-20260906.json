@@ -1,0 +1,37 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "0bbbbabca96d2493c358e1d01c5097cebe87057b",
+    "dirty": true
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "remoteWorker": {
+    "nodeAuditCount": 2,
+    "observedState": "running",
+    "operationId": "op-0bf517702b3fa3735ad3c5e035702f52",
+    "receiptReplay": true,
+    "runtimeId": "1e6f8a74-a7ef-4ae0-907a-7fdc976d1320",
+    "volumeName": "ca-ws-887ca62cff2f8a88152a4cc647d35ad95434d0563208bb7a3d43110f"
+  },
+  "checks": [
+    "outbound customer-node RemoteWorker claims and physically creates a real Sandbox through the existing durable Operation",
+    "RemoteWorker settlement and exact receipt replay persist Running state without endpoint or credential bytes in the command",
+    "the claim and settlement Audit subjects equal the authenticated current mTLS certificate fingerprint",
+    "zero test-owned runtime containers and Workspace volumes"
+  ],
+  "cleanup": {
+    "testOwnedRuntimeContainers": 0,
+    "testOwnedWorkspaceVolumes": 0,
+    "preExistingResourcesPreserved": [
+      "cloud-agents-local-registry",
+      "cloud-agents-diag-worker-ca",
+      "cloud-agents-diag-worker",
+      "cloud-agents-diag-workspace"
+    ]
+  },
+  "boundary": "Local OrbStack Docker customer-node process and disposable PostgreSQL only; Admin Web is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes or SSH node"
+}

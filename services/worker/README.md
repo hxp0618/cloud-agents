@@ -1,6 +1,6 @@
 # Cloud Agents execution Worker
 
-The module includes the production mTLS execution entry point in [`cmd/cloud-agents-worker`](cmd/cloud-agents-worker/README.md), an Agent Runtime process bridge, the Supervisor client, and the outbound [`cmd/cloud-agents-remote-worker`](cmd/cloud-agents-remote-worker) node heartbeat process. The execution Worker remains a Control Plane-dialed, Lease-bound compatibility path. The RemoteWorker presents its short-lived enrollment certificate to Control Plane, reports host capability/capacity/version every five seconds, reconnects with bounded backoff, and durably applies generation-fenced Drain/Resume commands through its required `--state-file`.
+The module includes the production mTLS execution entry point in [`cmd/cloud-agents-worker`](cmd/cloud-agents-worker/README.md), an Agent Runtime process bridge, and the Supervisor client. The execution Worker remains a Control Plane-dialed, Lease-bound compatibility path. The outbound RemoteWorker node process lives with the Control Plane's shared Foundation executor at [`../control-plane/cmd/cloud-agents-remote-worker`](../control-plane/cmd/cloud-agents-remote-worker).
 
 The following section documents the original bounded kernel and its profiles, not the entire module's current capabilities or deployment authority.
 

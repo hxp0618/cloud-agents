@@ -29,7 +29,8 @@
 - BASE-M3 outbound heartbeat/节点健康切片已接通：product-000065 以当前短期 mTLS 证书接受五秒 heartbeat，在 PostgreSQL 持久化节点版本、能力、容量和 30 秒租约，并由数据库时间向 Admin 计算 online/degraded/offline；独立 Linux `cloud-agents-remote-worker` 进程真实出站上报且具备 1–30 秒退避重连，Admin Web 双语展示安全元数据。PostgreSQL 17.6 实测 000064→000065、全新安装/no-op、真实进程 heartbeat、重连客户端、轮换清除旧 incarnation 状态、401/409 负向路径、健康过期/恢复和 Admin 脱敏；见 [heartbeat 与节点健康证据](evidence/base-m3-remote-worker-heartbeat-20260906.md)。真实 harness 使用 `--once`，未模拟定时网络中断恢复，也尚无 command/Drain/Resume。
 - BASE-M3 节点 Drain/Resume 命令切片已接通：product-000066 原子推进 server-owned desired generation，经 mTLS heartbeat 下发 30 秒 deadline command；RemoteWorker 以 `0600` 原子状态文件跨重启保存 observed generation/state、去重和 receipt，Control Plane 以 receipt 结算 Operation/Audit。PostgreSQL 17.6 与真实短生命周期进程实测 Drain、重启、Resume、精确请求/回执重放、旧 generation/resourceVersion、错误回执、过期失败和普通用户 Admin 403；Admin Web 使用生成 SDK 完成服务端 preview、精确 enrollment 确认和状态反馈。见 [命令与 Drain/Resume 证据](evidence/base-m3-remote-worker-command-20260906.md)。本切片只改变节点调度状态，尚未在客户节点执行 Workspace/Sandbox workload。
 - BASE-M3 RemoteWorker Target 投影切片已接通：product-000067 为每个 enrollment 生成 server-owned `remote-worker` DeploymentTarget，数据库时钟与 mTLS heartbeat/certificate authority 驱动 unprobed/ready/offline/reconnect/revoked 状态；普通用户 Admin Target 读取 403，通用 Target Probe/Cleanup/Drain/Resume 均 409，避免绕过 RemoteWorker 生命周期。PostgreSQL 17.6 实测 000066→000067、fresh/no-op、真实 outbound 进程与投影状态；Admin Web 用生成 SDK 展示 placement target 并禁用错误入口。见 [Target 投影证据](evidence/base-m3-remote-worker-target-20260906.md)。本切片尚未向客户节点下发 Workspace/Sandbox workload。
-- 下一项：接通 outbound 客户节点上的 Workspace/Sandbox create、Exec/Files、Stop/Rebuild 与 reconnect reconciliation；离线节点停止新调度，重连不盲目重放旧命令。
+- BASE-M3 outbound Sandbox create 切片已接通：product-000068 将在线、active 且具备 Docker capability 的 RemoteWorker 纳入 no-Agent RuntimeProfile publish 与 User Sandbox admission；heartbeat 只下发无 endpoint/credential 的持久化 `sandbox.create` attempt，节点使用本地 Docker/OpenSandbox 配置复用 Foundation executor，并以当前 mTLS 指纹结算 Audit。PostgreSQL 17.6 实测 000067→000068、fresh/no-op；OrbStack 上真实独立 RemoteWorker 创建 Running OpenSandbox runtime、保留 Workspace volume、重复两次回执，并精准清理至零测试残留。见 [客户节点 Sandbox create 证据](evidence/base-m3-remote-worker-sandbox-create-20260906.md)。
+- 下一项：接通 outbound 客户节点 Sandbox 的 Exec/Files、Stop/Rebuild、长操作 claim renewal 与 reconnect reconciliation；离线节点停止新调度，重连不盲目重放旧命令。
 - 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -53,7 +54,7 @@
 | BASE-M0    | VERIFIED    | 固定候选、no-Agent Docker PoC、产品执行接缝、幂等 adopt、失败补偿及对应 Admin 运维投影已有固定证据；不表示底座产品已就绪 |
 | BASE-M1    | VERIFIED    | 真实长期卷、跨进程恢复、失败补偿、手动与 TTL Stop/Rebuild、单写 fencing、Operation/Audit 和 Admin 保留/到期反馈已实测 |
 | BASE-M2    | VERIFIED    | bounded Exec、PTY/Files/private Preview/short-lived SSH、Grant/Gateway、实际网络隔离及对应 Admin 管理已有真实本地 Docker/PostgreSQL 证据 |
-| BASE-M3    | IN PROGRESS | enrollment、短期 mTLS 身份/轮换/吊销、heartbeat、Target 投影及 generation-fenced Drain/Resume 已实测；尚缺客户节点 Workspace/Sandbox 执行、NAT 断线与重连 reconciliation |
+| BASE-M3    | IN PROGRESS | enrollment、短期 mTLS 身份、heartbeat、Target、Drain/Resume 及客户节点 Sandbox create 已实测；尚缺远端 Exec/Files、Stop/Rebuild、NAT 断线与重连 reconciliation |
 | BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |
 | BASE-M5    | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收                                    |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |

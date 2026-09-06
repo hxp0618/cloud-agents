@@ -37,11 +37,13 @@
     "expiresAt": { "type": "string", "format": "date-time" },
     "nextHeartbeatAfterSeconds": { "const": 5 },
     "reconcileRequired": { "type": "boolean" },
-    "command": { "$ref": "./remote-worker-command.schema.json" }
+    "command": { "$ref": "./remote-worker-command.schema.json" },
+    "sandboxCommand": { "$ref": "./remote-worker-sandbox-command.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "acceptedAt is the database mutation time and expiresAt is exactly 30 seconds later",
     "reconcileRequired is true when observed generation or state differs from the server-owned desired values",
-    "command is present only for the current unexpired server-owned generation"
+    "command is present only for the current unexpired server-owned node generation",
+    "sandboxCommand is present only for a durable Sandbox Operation attempt assigned to this active node"
   ]
 }

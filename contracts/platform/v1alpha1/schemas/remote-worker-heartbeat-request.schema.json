@@ -45,11 +45,12 @@
         "diskBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 }
       }
     },
-    "commandReceipt": { "$ref": "./remote-worker-command-receipt.schema.json" }
+    "commandReceipt": { "$ref": "./remote-worker-command-receipt.schema.json" },
+    "sandboxCommandReceipt": { "$ref": "./remote-worker-sandbox-command-receipt.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "the mTLS SPIFFE identity supplies tenant, project, enrollment, and incarnation authority",
     "the server, not the node, owns desired generation and scheduling state",
-    "commandReceipt is retried until one heartbeat response acknowledges it"
+    "commandReceipt and sandboxCommandReceipt are retried until one heartbeat response acknowledges them"
   ]
 }
