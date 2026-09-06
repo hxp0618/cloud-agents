@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -157,6 +159,20 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	heartbeat := platform.RemoteWorkerHeartbeatRequest{
+		IncarnationID: certificateRequest.IncarnationID, ObservedGeneration: 1, ObservedState: "active",
+		WorkerVersion: "v0.1.0", OS: "linux", Architecture: "arm64", KernelVersion: "6.12.1",
+		Capabilities: []string{"docker", "exec", "files"},
+		Capacity:     platform.RemoteWorkerCapacity{CPUMillis: 4000, MemoryBytes: 8 << 30, DiskBytes: 40 << 30},
+	}
+	accepted, err := oldNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-initial", heartbeat)
+	if err != nil || accepted.Value.HealthState != "online" || accepted.Value.Generation != 1 || accepted.Value.ReconcileRequired {
+		t.Fatalf("initial heartbeat: value=%+v err=%v", accepted.Value, err)
+	}
+	current, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-get-heartbeat")
+	if err != nil || current.Value.Spec.Node == nil || current.Value.Spec.Node.HealthState != "online" || current.Value.Spec.Node.Capacity.CPUMillis != 4000 {
+		t.Fatalf("Admin heartbeat status: value=%+v err=%v", current.Value, err)
+	}
 	rotationCSR, rotationPrivateKey := remoteWorkerCertificateRequest(t, create.EnrollmentID)
 	rotationRequest := platform.RemoteWorkerCertificateIssueRequest{ExpectedResourceVersion: "3", ConfirmedEnrollmentID: create.EnrollmentID, IncarnationID: "incarnation-remote-2", CertificateSigningRequestPEM: rotationCSR}
 	rotated, err := oldNode.RotateRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-rotate", "remote-cert-rotate-key-1", rotationRequest)
@@ -178,14 +194,70 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if _, err := oldNode.RotateRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-old-node", "remote-cert-old-node-key-1", rotationRequest); clientStatus(err) != http.StatusUnauthorized {
 		t.Fatalf("displaced certificate status=%d err=%v", clientStatus(err), err)
 	}
+	if _, err := oldNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-old-node", heartbeat); clientStatus(err) != http.StatusUnauthorized {
+		t.Fatalf("displaced heartbeat status=%d err=%v", clientStatus(err), err)
+	}
 	currentNodeHTTP := remoteWorkerMTLSHTTPClient(t, httpServer, rotated.Value.CertificateChainPEM, rotationPrivateKey)
 	currentNode, err := api.NewRemoteWorkerMTLSHTTPClientWithClient(httpServer.URL, currentNodeHTTP)
 	if err != nil {
 		t.Fatal(err)
 	}
 	current, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-get-rotated")
-	if err != nil || current.Value.Metadata.ResourceVersion != "4" || current.Value.Spec.CertificateState != "active" || current.Value.Spec.CertificateSHA256 != rotated.Value.CertificateSHA256 || current.Value.Spec.IncarnationID != rotationRequest.IncarnationID {
+	if err != nil || current.Value.Metadata.ResourceVersion != "4" || current.Value.Spec.CertificateState != "active" || current.Value.Spec.CertificateSHA256 != rotated.Value.CertificateSHA256 || current.Value.Spec.IncarnationID != rotationRequest.IncarnationID || current.Value.Spec.Node != nil {
 		t.Fatalf("Admin rotated enrollment metadata: value=%+v err=%v", current.Value, err)
+	}
+	heartbeat.IncarnationID = rotationRequest.IncarnationID
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-current", heartbeat); err != nil {
+		t.Fatalf("current heartbeat: %v", err)
+	}
+	reconnectedNode, err := api.NewRemoteWorkerMTLSHTTPClientWithClient(httpServer.URL, remoteWorkerMTLSHTTPClient(t, httpServer, rotated.Value.CertificateChainPEM, rotationPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconnectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-reconnected", heartbeat); err != nil {
+		t.Fatalf("reconnected heartbeat: %v", err)
+	}
+	if binary := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_BINARY"); binary != "" {
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, httpServer, create.EnrollmentID, rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotationPrivateKey)
+	}
+	conflictingHeartbeat := heartbeat
+	conflictingHeartbeat.ObservedGeneration = 2
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-generation-conflict", conflictingHeartbeat); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("heartbeat generation conflict status=%d err=%v", clientStatus(err), err)
+	}
+	wrongIncarnationHeartbeat := heartbeat
+	wrongIncarnationHeartbeat.IncarnationID = "incarnation-remote-wrong"
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-wrong-incarnation", wrongIncarnationHeartbeat); clientStatus(err) != http.StatusUnauthorized {
+		t.Fatalf("heartbeat incarnation mismatch status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := owner.Exec(ctx, `WITH observed AS (SELECT clock_timestamp() AS at)
+		UPDATE cloud_agents.remote_worker_enrollments
+		SET node_first_connected_at = observed.at - interval '20 seconds',
+			node_last_heartbeat_at = observed.at - interval '15 seconds',
+			node_heartbeat_expires_at = observed.at + interval '15 seconds'
+		FROM observed
+		WHERE tenant_id = 'tenant' AND project_uid = 'project' AND enrollment_uid = $1`, create.EnrollmentID); err != nil {
+		t.Fatal(err)
+	}
+	current, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-get-degraded")
+	if err != nil || current.Value.Spec.Node == nil || current.Value.Spec.Node.HealthState != "degraded" {
+		t.Fatalf("Admin degraded heartbeat status: value=%+v err=%v", current.Value, err)
+	}
+	if _, err := owner.Exec(ctx, `WITH observed AS (SELECT clock_timestamp() AS at)
+		UPDATE cloud_agents.remote_worker_enrollments
+		SET node_first_connected_at = observed.at - interval '40 seconds',
+			node_last_heartbeat_at = observed.at - interval '31 seconds',
+			node_heartbeat_expires_at = observed.at - interval '1 second'
+		FROM observed
+		WHERE tenant_id = 'tenant' AND project_uid = 'project' AND enrollment_uid = $1`, create.EnrollmentID); err != nil {
+		t.Fatal(err)
+	}
+	current, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-get-offline")
+	if err != nil || current.Value.Spec.Node == nil || current.Value.Spec.Node.HealthState != "offline" {
+		t.Fatalf("Admin offline heartbeat status: value=%+v err=%v", current.Value, err)
+	}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-recovered", heartbeat); err != nil {
+		t.Fatalf("recovered heartbeat: %v", err)
 	}
 	certificateRevoke := platform.RemoteWorkerEnrollmentRevokeRequest{ExpectedResourceVersion: "4", ConfirmedEnrollmentID: create.EnrollmentID}
 	if _, err := user.RevokeAdminRemoteWorkerEnrollment(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-revoke-user", "remote-cert-revoke-user-key-1", certificateRevoke); clientStatus(err) != http.StatusForbidden {
@@ -203,6 +275,9 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	postRevokeRequest.ExpectedResourceVersion = "5"
 	if _, err := currentNode.RotateRemoteWorkerCertificate(ctx, "tenant", "project", create.EnrollmentID, "request-certificate-revoked-node", "remote-cert-revoked-key-1", postRevokeRequest); clientStatus(err) != http.StatusUnauthorized {
 		t.Fatalf("revoked certificate status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := currentNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-revoked-node", heartbeat); clientStatus(err) != http.StatusUnauthorized {
+		t.Fatalf("revoked heartbeat status=%d err=%v", clientStatus(err), err)
 	}
 	assertRemoteWorkerAdminRedaction(t, ctx, httpServer, tokens[0], create.EnrollmentID, secret)
 	audit, err = admin.ListAdminRemoteWorkerEnrollmentAuditEvents(ctx, "tenant", "project", create.EnrollmentID, "request-enrollment-audit-final", 50, "")
@@ -235,7 +310,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if persistedDigest != expectedDigest || certificateChain != rotated.Value.CertificateChainPEM || strings.Contains(enrollmentJSON, secret) || strings.Contains(activityJSON, secret) {
 		t.Fatal("one-time enrollment secret persisted outside its digest")
 	}
-	t.Log("real Admin/bootstrap/node generated clients, verified short-lived mTLS rotation, old-certificate exact replay, active-certificate revocation, RLS-backed persistence and redacted Admin audit passed; no outbound command channel claimed")
+	t.Log("real Admin/bootstrap/node generated clients, verified mTLS heartbeat/reconnect and database-time online/degraded/offline status, short-lived certificate rotation/revocation, RLS-backed persistence and redacted Admin reads passed; no outbound command channel claimed")
 }
 
 func remoteWorkerCertificateRequest(t *testing.T, enrollmentID string) (string, []byte) {
@@ -269,6 +344,30 @@ func remoteWorkerMTLSHTTPClient(t *testing.T, server *httptest.Server, certifica
 	clone.TLSClientConfig = clone.TLSClientConfig.Clone()
 	clone.TLSClientConfig.Certificates = []tls.Certificate{certificate}
 	return &http.Client{Transport: clone}
+}
+
+func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte) {
+	t.Helper()
+	directory := t.TempDir()
+	certificateFile := filepath.Join(directory, "node.pem")
+	privateKeyFile := filepath.Join(directory, "node-key.pem")
+	serverCAFile := filepath.Join(directory, "server-ca.pem")
+	serverCertificate := server.Certificate()
+	if serverCertificate == nil || os.WriteFile(certificateFile, []byte(certificateChain), 0o600) != nil || os.WriteFile(privateKeyFile, privateKey, 0o600) != nil || os.WriteFile(serverCAFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverCertificate.Raw}), 0o600) != nil {
+		t.Fatal("write RemoteWorker process TLS material")
+	}
+	command := exec.CommandContext(ctx, binary,
+		"--control-plane-url="+server.URL, "--tenant=tenant", "--project=project",
+		"--enrollment="+enrollmentID, "--incarnation="+incarnationID,
+		"--certificate="+certificateFile, "--private-key="+privateKeyFile, "--server-ca="+serverCAFile,
+		"--kernel-version=6.12.1", "--capabilities=docker,exec,files",
+		"--capacity-cpu-millis=4000", "--capacity-memory-bytes=8589934592",
+		"--capacity-disk-bytes=42949672960", "--once",
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("outbound RemoteWorker process: %v: %s", err, output)
+	}
+	t.Log("outbound RemoteWorker process heartbeat passed")
 }
 
 func assertRemoteWorkerAdminRedaction(t *testing.T, ctx context.Context, server *httptest.Server, adminToken, enrollmentID, secret string) {

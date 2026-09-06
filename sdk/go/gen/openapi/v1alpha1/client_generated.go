@@ -173,6 +173,7 @@ type RemoteWorkerEnrollmentResult = common.ResponseEnvelope[platform.RemoteWorke
 type RemoteWorkerEnrollmentPageResult = common.ResponseEnvelope[platform.RemoteWorkerEnrollmentPage]
 type RemoteWorkerEnrollmentSecretResult = common.ResponseEnvelope[platform.RemoteWorkerEnrollmentSecret]
 type RemoteWorkerCertificateResult = common.ResponseEnvelope[platform.RemoteWorkerCertificate]
+type RemoteWorkerHeartbeatResult = common.ResponseEnvelope[platform.RemoteWorkerHeartbeat]
 type EnvironmentProfileResult = common.ResponseEnvelope[platform.EnvironmentProfile]
 type EnvironmentProfilePageResult = common.ResponseEnvelope[platform.EnvironmentProfilePage]
 type EnvironmentProfileSummaryPageResult = common.ResponseEnvelope[platform.EnvironmentProfileSummaryPage]
@@ -1464,6 +1465,33 @@ func (client *Client) RotateRemoteWorkerCertificate(ctx context.Context, tenantI
 	}
 	if value.Value.ProjectRef.ID != projectID || value.Value.EnrollmentID != enrollmentID || value.Value.IncarnationID != body.IncarnationID || body.ConfirmedEnrollmentID != enrollmentID {
 		return RemoteWorkerCertificateResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId")
+	}
+	return value, nil
+}
+func (client *Client) HeartbeatRemoteWorker(ctx context.Context, tenantID, projectID, enrollmentID, requestID string, body platform.RemoteWorkerHeartbeatRequest) (RemoteWorkerHeartbeatResult, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return RemoteWorkerHeartbeatResult{}, err
+	}
+	bodyBytes, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(body)
+	if err != nil {
+		return RemoteWorkerHeartbeatResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/remote-workers/tenants/" + tenantID + "/projects/" + projectID + "/remote-worker-enrollments/" + enrollmentID + ":heartbeat", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
+	if err != nil {
+		return RemoteWorkerHeartbeatResult{}, err
+	}
+	if response.Status != 200 {
+		return RemoteWorkerHeartbeatResult{}, client.problemError("remoteWorkerHeartbeat", response)
+	}
+	if response.Headers["Cache-Control"] != "no-store" {
+		return RemoteWorkerHeartbeatResult{}, common.ContractError("HEARTBEAT_CACHE_POLICY_MISMATCH", "/headers")
+	}
+	value, err := platform.DecodeRemoteWorkerHeartbeatResponseJSON(response.Body)
+	if err != nil {
+		return RemoteWorkerHeartbeatResult{}, &ClientError{Operation: "remoteWorkerHeartbeat", Status: response.Status, Cause: err}
+	}
+	if value.Value.ProjectRef.ID != projectID || value.Value.EnrollmentID != enrollmentID || value.Value.IncarnationID != body.IncarnationID {
+		return RemoteWorkerHeartbeatResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId")
 	}
 	return value, nil
 }
@@ -5087,6 +5115,25 @@ func ValidateRotateRemoteWorkerCertificateServerRequest(tenantID, projectID, enr
 		return RotateRemoteWorkerCertificateServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedEnrollmentId")
 	}
 	return RotateRemoteWorkerCertificateServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type HeartbeatRemoteWorkerServerInput struct {
+	TenantID     string
+	ProjectID    string
+	EnrollmentID string
+	RequestID    string
+	Body         platform.RemoteWorkerHeartbeatRequest
+}
+
+func ValidateHeartbeatRemoteWorkerServerRequest(tenantID, projectID, enrollmentID, requestID string, body []byte) (HeartbeatRemoteWorkerServerInput, error) {
+	if err := validateRemoteWorkerEnrollmentPath(tenantID, projectID, enrollmentID, requestID); err != nil {
+		return HeartbeatRemoteWorkerServerInput{}, err
+	}
+	value, err := platform.DecodeRemoteWorkerHeartbeatRequestJSON(body)
+	if err != nil {
+		return HeartbeatRemoteWorkerServerInput{}, err
+	}
+	return HeartbeatRemoteWorkerServerInput{TenantID: tenantID, ProjectID: projectID, EnrollmentID: enrollmentID, RequestID: requestID, Body: value}, nil
 }
 
 type ListAdminRemoteWorkerEnrollmentAuditEventsServerInput struct {

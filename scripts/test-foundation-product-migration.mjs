@@ -21,6 +21,7 @@ const binary = resolve(build, "cloud-agents-product-migrate");
 const testBinary = resolve(build, "localmigration.test");
 const serverTestBinary = resolve(build, "server.test");
 const postgresTestBinary = resolve(build, "postgres.test");
+const remoteWorkerBinary = resolve(build, "cloud-agents-remote-worker");
 const docker = (...args) =>
   execFileSync("docker", ["--context", "orbstack", ...args], {
     encoding: "utf8",
@@ -138,10 +139,26 @@ GRANT CREATE ON DATABASE foundation_fresh TO cloud_agents_migration_owner;`);
       timeout: 120_000,
     },
   );
+  execFileSync(
+    "go",
+    [
+      "build",
+      "-trimpath",
+      "-o",
+      remoteWorkerBinary,
+      "./services/worker/cmd/cloud-agents-remote-worker",
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, CGO_ENABLED: "0", GOOS: "linux", GOARCH: goarch },
+      timeout: 120_000,
+    },
+  );
   docker("cp", binary, `${name}:/tmp/cloud-agents-product-migrate`);
   docker("cp", testBinary, `${name}:/tmp/localmigration.test`);
   docker("cp", serverTestBinary, `${name}:/tmp/server.test`);
   docker("cp", postgresTestBinary, `${name}:/tmp/postgres.test`);
+  docker("cp", remoteWorkerBinary, `${name}:/tmp/cloud-agents-remote-worker`);
   const migrate = (head, database) => {
     const output = docker(
       "exec",
@@ -278,6 +295,8 @@ INSERT INTO cloud_agents.deployment_targets (
       "CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL=postgres://foundation_runtime@127.0.0.1/foundation_fresh?sslmode=disable",
       "-e",
       "CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL=postgres://foundation_migration@127.0.0.1/foundation_fresh?sslmode=disable",
+      "-e",
+      "CLOUD_AGENTS_REMOTE_WORKER_BINARY=/tmp/cloud-agents-remote-worker",
       name,
       "/tmp/server.test",
       "-test.run",
@@ -288,6 +307,7 @@ INSERT INTO cloud_agents.deployment_targets (
   assert.ok(serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"));
   const enrollmentOutput = runServerTest("TestRemoteWorkerEnrollmentPostgres");
   assert.ok(enrollmentOutput.includes("--- PASS: TestRemoteWorkerEnrollmentPostgres"));
+  assert.ok(enrollmentOutput.includes("outbound RemoteWorker process heartbeat passed"));
   const controllerOutput = docker(
     "exec",
     "-e",
@@ -324,10 +344,11 @@ INSERT INTO cloud_agents.deployment_targets (
         "RemoteWorker Admin/bootstrap 403 separation and non-replayable no-store enrollment secret",
         "RemoteWorker CSR validation, 15-minute mTLS identity, verified rotation and old-certificate exact replay",
         "active RemoteWorker certificate revocation, ordinary-user Admin 403 and durable audit",
-        "RemoteWorker Admin projection exposes certificate state without secret or certificate bytes",
+        "actual outbound RemoteWorker process heartbeat over mTLS and process reconnect backoff check",
+        "database-time RemoteWorker online, degraded and offline Admin projection without secret or certificate bytes",
       ],
       boundary:
-        "Disposable PostgreSQL and in-process Control Plane HTTPS/mTLS validation; no outbound customer-node process, command channel, Controller or Docker Sandbox is started",
+        "Disposable PostgreSQL, in-process Control Plane HTTPS/mTLS and one short-lived outbound RemoteWorker process; no customer-node command channel, external Controller or Docker Sandbox is started",
     }) + "\n",
   );
 } finally {

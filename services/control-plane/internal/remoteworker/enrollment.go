@@ -93,6 +93,7 @@ type Snapshot struct {
 	CertificateNotAfter  *time.Time
 	CertificateState     string
 	CertificateRevokedAt *time.Time
+	Node                 *NodeStatus
 }
 
 type AuditEvent struct {
@@ -254,6 +255,12 @@ func (snapshot Snapshot) Validate() error {
 		return ErrInvalidInput
 	}
 	if snapshot.State != StateEnrolled && (snapshot.IncarnationID != "" || snapshot.SPIFFEID != "" || snapshot.CertificateSHA256 != "" || snapshot.CertificateChainPEM != "" || snapshot.CertificateSerial != "" || snapshot.CertificateNotBefore != nil || snapshot.CertificateNotAfter != nil || snapshot.CertificateState != "" || snapshot.CertificateRevokedAt != nil) {
+		return ErrInvalidInput
+	}
+	if snapshot.Node != nil && (snapshot.State != StateEnrolled || snapshot.Node.Validate() != nil ||
+		snapshot.Node.Scope != snapshot.Scope || snapshot.Node.EnrollmentID != snapshot.EnrollmentID ||
+		snapshot.Node.WorkerID != snapshot.WorkerID || snapshot.Node.WorkerName != snapshot.WorkerName ||
+		snapshot.Node.IncarnationID != snapshot.IncarnationID) {
 		return ErrInvalidInput
 	}
 	return nil

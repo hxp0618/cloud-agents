@@ -23,7 +23,16 @@
           { "$ref": "#/components/parameters/PageToken" }
         ],
         "responses": {
-          "200": { "description": "Authenticated denied Admin writes, newest first; metadata only", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-denied-write-event-page.schema.json" } } } },
+          "200": {
+            "description": "Authenticated denied Admin writes, newest first; metadata only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-denied-write-event-page.schema.json"
+                }
+              }
+            }
+          },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
           "403": { "$ref": "#/components/responses/Problem" }
@@ -123,7 +132,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases": {
       "get": {
         "operationId": "managedHostListEnvironmentLeases",
-		"x-cloud-agents-required-scope": "leases.list",
+        "x-cloud-agents-required-scope": "leases.list",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -149,7 +158,7 @@
       },
       "post": {
         "operationId": "managedHostCreateEnvironmentLease",
-		"x-cloud-agents-required-scope": "leases.act",
+        "x-cloud-agents-required-scope": "leases.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -180,7 +189,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}": {
       "get": {
         "operationId": "managedHostGetEnvironmentLease",
-		"x-cloud-agents-required-scope": "leases.get",
+        "x-cloud-agents-required-scope": "leases.get",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -199,7 +208,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:terminate": {
       "post": {
         "operationId": "managedHostTerminateEnvironmentLease",
-		"x-cloud-agents-required-scope": "leases.act",
+        "x-cloud-agents-required-scope": "leases.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -232,7 +241,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:upgrade": {
       "post": {
         "operationId": "managedHostUpgradeEnvironmentLease",
-		"x-cloud-agents-required-scope": "leases.act",
+        "x-cloud-agents-required-scope": "leases.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -332,7 +341,9 @@
             "description": "Current server-authoritative single Worker and Lease upgrade impact",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json"
+                }
               }
             }
           },
@@ -359,7 +370,9 @@
             "description": "Current server-authoritative rollback target and impact",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/environment-lease-upgrade-preview.schema.json"
+                }
               }
             }
           },
@@ -387,7 +400,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json"
+              }
             }
           }
         },
@@ -420,7 +435,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json"
+              }
             }
           }
         },
@@ -475,10 +492,24 @@
           { "$ref": "#/components/parameters/ProjectId" },
           { "$ref": "#/components/parameters/LeaseId" },
           { "$ref": "#/components/parameters/RequestId" },
-          { "name": "expectedGeneration", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } }
+          {
+            "name": "expectedGeneration",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
         ],
         "responses": {
-          "200": { "description": "Request-time observation without secrets or user content", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-health-observation.schema.json" } } } },
+          "200": {
+            "description": "Request-time observation without secrets or user content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/worker-health-observation.schema.json"
+                }
+              }
+            }
+          },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
           "403": { "$ref": "#/components/responses/Problem" },
@@ -504,7 +535,9 @@
             "description": "Approved immutable Worker releases",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-release-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/worker-release-page.schema.json"
+                }
               }
             }
           },
@@ -527,7 +560,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/worker-release-register-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/worker-release-register-request.schema.json"
+              }
             }
           }
         },
@@ -564,7 +599,9 @@
             "description": "Project Storage Policies",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/storage-policy-page.schema.json"
+                }
               }
             }
           },
@@ -607,7 +644,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/storage-policy-set-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/storage-policy-set-request.schema.json"
+              }
             }
           }
         },
@@ -638,7 +677,9 @@
             "description": "Redacted Storage Policy audit events",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json"
+                }
               }
             }
           },
@@ -665,7 +706,9 @@
             "description": "Remote Worker enrollment intents",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-page.schema.json"
+                }
               }
             }
           },
@@ -688,7 +731,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-create-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-create-request.schema.json"
+              }
             }
           }
         },
@@ -737,7 +782,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-revoke-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-revoke-request.schema.json"
+              }
             }
           }
         },
@@ -769,7 +816,9 @@
             "description": "Redacted Remote Worker enrollment audit events",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json"
+                }
               }
             }
           },
@@ -796,7 +845,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret-claim-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret-claim-request.schema.json"
+              }
             }
           }
         },
@@ -827,7 +878,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json"
+              }
             }
           }
         },
@@ -857,7 +910,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate-issue-request.schema.json"
+              }
             }
           }
         },
@@ -868,6 +923,36 @@
           "409": { "$ref": "#/components/responses/Problem" },
           "415": { "$ref": "#/components/responses/Problem" },
           "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/remote-workers/tenants/{tenantId}/projects/{projectId}/remote-worker-enrollments/{remoteWorkerEnrollmentId}:heartbeat": {
+      "post": {
+        "operationId": "remoteWorkerHeartbeat",
+        "security": [{ "RemoteWorkerMTLS": [] }],
+        "x-cloud-agents-coordination": "database-authoritative-heartbeat",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RemoteWorkerEnrollmentId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/remote-worker-heartbeat-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/RemoteWorkerHeartbeat" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
         }
       }
     },
@@ -887,7 +972,9 @@
             "description": "Project Network Policies",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/network-policy-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/network-policy-page.schema.json"
+                }
               }
             }
           },
@@ -930,7 +1017,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/network-policy-set-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/network-policy-set-request.schema.json"
+              }
             }
           }
         },
@@ -961,7 +1050,9 @@
             "description": "Redacted Network Policy audit events",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json"
+                }
               }
             }
           },
@@ -1003,7 +1094,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/project-lease-quota-set-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/project-lease-quota-set-request.schema.json"
+              }
             }
           }
         },
@@ -1033,7 +1126,9 @@
             "description": "Redacted Project Lease quota audit events",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json"
+                }
               }
             }
           },
@@ -1058,7 +1153,9 @@
             "description": "User-safe Project Lease limits and current usage",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/project-lease-quota-summary.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project-lease-quota-summary.schema.json"
+                }
               }
             }
           },
@@ -1085,7 +1182,9 @@
             "description": "Published and available no-Agent RuntimeProfile summaries",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/runtime-profile-summary-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/runtime-profile-summary-page.schema.json"
+                }
               }
             }
           },
@@ -1110,7 +1209,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-create-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-session-create-request.schema.json"
+              }
             }
           }
         },
@@ -1147,7 +1248,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-exec-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-exec-request.schema.json"
+              }
             }
           }
         },
@@ -1156,7 +1259,9 @@
             "description": "Bounded foreground command result from the authorized Sandbox generation",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-exec-result.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-exec-result.schema.json"
+                }
               }
             }
           },
@@ -1187,7 +1292,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant-create-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant-create-request.schema.json"
+              }
             }
           }
         },
@@ -1196,7 +1303,9 @@
             "description": "Short-lived PTY, Files, private Preview and SSH grant for the exact authorized Sandbox generation",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant.schema.json"
+                }
               }
             }
           },
@@ -1225,7 +1334,9 @@
             "description": "PTY session created in the grant's fixed Sandbox and /workspace directory",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-pty-session.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-pty-session.schema.json"
+                }
               }
             }
           },
@@ -1253,7 +1364,9 @@
             "description": "PTY status and reconnect cursor metadata",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-pty-session.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-pty-session.schema.json"
+                }
               }
             }
           },
@@ -1295,12 +1408,23 @@
           { "$ref": "#/components/parameters/ProjectId" },
           { "$ref": "#/components/parameters/GrantId" },
           { "$ref": "#/components/parameters/RequestId" },
-          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          }
         ],
         "responses": {
           "200": {
             "description": "Immediate children beneath one authorized Workspace-relative directory",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-file-page.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1322,12 +1446,24 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-write-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-file-write-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "Written regular-file metadata without infrastructure authority",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-entry.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-file-entry.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1347,7 +1483,12 @@
           { "$ref": "#/components/parameters/ProjectId" },
           { "$ref": "#/components/parameters/GrantId" },
           { "$ref": "#/components/parameters/RequestId" },
-          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          }
         ],
         "responses": {
           "204": { "description": "Regular file deleted" },
@@ -1369,15 +1510,38 @@
           { "$ref": "#/components/parameters/ProjectId" },
           { "$ref": "#/components/parameters/GrantId" },
           { "$ref": "#/components/parameters/RequestId" },
-          { "name": "path", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 1024 } },
-          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "maximum": 16777216, "default": 0 } },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 1048576 } },
-          { "name": "fileVersion", "in": "query", "schema": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" } }
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 0, "maximum": 16777216, "default": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 1048576 }
+          },
+          {
+            "name": "fileVersion",
+            "in": "query",
+            "schema": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" }
+          }
         ],
         "responses": {
           "200": {
             "description": "Bounded reconnectable file bytes and absolute next offset",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-file-read-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-file-read-page.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1403,7 +1567,13 @@
         "responses": {
           "200": {
             "description": "Idempotently registered private Preview port and fixed relative Gateway path",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-preview-port.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-preview-port.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1450,7 +1620,9 @@
             "description": "Published and schedulable environment profile summaries",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-summary-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/environment-profile-summary-page.schema.json"
+                }
               }
             }
           },
@@ -1475,7 +1647,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/user-environment-create-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/user-environment-create-request.schema.json"
+              }
             }
           }
         },
@@ -1541,7 +1715,9 @@
             "description": "Admin RuntimeProfile versions",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/runtime-profile-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/runtime-profile-page.schema.json"
+                }
               }
             }
           },
@@ -1564,7 +1740,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/runtime-profile-create-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/runtime-profile-create-request.schema.json"
+              }
             }
           }
         },
@@ -1615,7 +1793,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/runtime-profile-transition-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/runtime-profile-transition-request.schema.json"
+              }
             }
           }
         },
@@ -1647,7 +1827,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/runtime-profile-transition-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/runtime-profile-transition-request.schema.json"
+              }
             }
           }
         },
@@ -1678,7 +1860,9 @@
             "description": "Admin Sandbox and retained Workspace metadata",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session-page.schema.json"
+                }
               }
             }
           },
@@ -1703,7 +1887,9 @@
             "description": "Admin Sandbox and retained Workspace metadata",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session.schema.json"
+                }
               }
             }
           },
@@ -1731,7 +1917,9 @@
             "description": "Redacted Sandbox access Grant metadata",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-access-grant-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-access-grant-page.schema.json"
+                }
               }
             }
           },
@@ -1759,7 +1947,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant-revoke-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-access-grant-revoke-request.schema.json"
+              }
             }
           }
         },
@@ -1768,7 +1958,9 @@
             "description": "Durably revoked Grant metadata",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-access-grant.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-access-grant.schema.json"
+                }
               }
             }
           },
@@ -1797,7 +1989,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json"
+              }
             }
           }
         },
@@ -1806,7 +2000,9 @@
             "description": "Durable stop operation; compute is deleted and Workspace data is retained",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json"
+                }
               }
             }
           },
@@ -1835,7 +2031,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-request.schema.json"
+              }
             }
           }
         },
@@ -1844,7 +2042,9 @@
             "description": "Durable rebuild operation using the retained Workspace volume",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-session-lifecycle-operation.schema.json"
+                }
               }
             }
           },
@@ -1873,7 +2073,9 @@
             "description": "Admin environment profile versions",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/environment-profile-page.schema.json"
+                }
               }
             }
           },
@@ -1896,7 +2098,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-create-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/environment-profile-create-request.schema.json"
+              }
             }
           }
         },
@@ -1947,7 +2151,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-transition-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/environment-profile-transition-request.schema.json"
+              }
             }
           }
         },
@@ -1979,7 +2185,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-profile-transition-request.schema.json" }
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/environment-profile-transition-request.schema.json"
+              }
             }
           }
         },
@@ -2012,7 +2220,9 @@
             "description": "Redacted environment profile audit events",
             "content": {
               "application/json": {
-                "schema": { "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json" }
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-audit-event-page.schema.json"
+                }
               }
             }
           },
@@ -2350,7 +2560,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets": {
       "get": {
         "operationId": "managedHostListDeploymentTargets",
-		"x-cloud-agents-required-scope": "targets.list",
+        "x-cloud-agents-required-scope": "targets.list",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -2376,7 +2586,7 @@
       },
       "post": {
         "operationId": "managedHostRegisterDeploymentTarget",
-		"x-cloud-agents-required-scope": "targets.create",
+        "x-cloud-agents-required-scope": "targets.create",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -2407,7 +2617,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}": {
       "get": {
         "operationId": "managedHostGetDeploymentTarget",
-		"x-cloud-agents-required-scope": "targets.get",
+        "x-cloud-agents-required-scope": "targets.get",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -2426,7 +2636,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:probe": {
       "post": {
         "operationId": "managedHostProbeDeploymentTarget",
-		"x-cloud-agents-required-scope": "targets.act",
+        "x-cloud-agents-required-scope": "targets.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -2459,7 +2669,7 @@
     "/v1/tenants/{tenantId}/projects/{projectId}/deployment-targets/{targetId}:cleanup": {
       "post": {
         "operationId": "managedHostCleanupDeploymentTarget",
-		"x-cloud-agents-required-scope": "targets.act",
+        "x-cloud-agents-required-scope": "targets.act",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
@@ -2580,7 +2790,12 @@
         "name": "previewPort",
         "in": "path",
         "required": true,
-        "schema": { "type": "integer", "minimum": 1024, "maximum": 65535, "not": { "const": 44772 } }
+        "schema": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "not": { "const": 44772 }
+        }
       },
       "StoragePolicyId": {
         "name": "storagePolicyId",
@@ -2723,7 +2938,9 @@
         },
         "content": {
           "application/json": {
-            "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment.schema.json" }
+            "schema": {
+              "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment.schema.json"
+            }
           }
         }
       },
@@ -2736,7 +2953,9 @@
         },
         "content": {
           "application/json": {
-            "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret.schema.json" }
+            "schema": {
+              "$ref": "../../platform/v1alpha1/schemas/remote-worker-enrollment-secret.schema.json"
+            }
           }
         }
       },
@@ -2749,7 +2968,23 @@
         },
         "content": {
           "application/json": {
-            "schema": { "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate.schema.json" }
+            "schema": {
+              "$ref": "../../platform/v1alpha1/schemas/remote-worker-certificate.schema.json"
+            }
+          }
+        }
+      },
+      "RemoteWorkerHeartbeat": {
+        "description": "Accepted RemoteWorker heartbeat and current server-owned node state",
+        "headers": {
+          "X-Request-ID": { "$ref": "#/components/headers/RequestId" },
+          "Cache-Control": { "required": true, "schema": { "const": "no-store" } }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../platform/v1alpha1/schemas/remote-worker-heartbeat.schema.json"
+            }
           }
         }
       },
@@ -2780,7 +3015,9 @@
         "description": "Maintenance operation",
         "content": {
           "application/json": {
-            "schema": { "$ref": "../../platform/v1alpha1/schemas/maintenance-operation.schema.json" }
+            "schema": {
+              "$ref": "../../platform/v1alpha1/schemas/maintenance-operation.schema.json"
+            }
           }
         }
       }

@@ -29,6 +29,7 @@ type remoteWorkerEnrollmentStore interface {
 	AuthorizeRemoteWorkerCertificateRotation(context.Context, string, internalremoteworker.CertificateRotationRequest) (postgres.RemoteWorkerCertificateRotationAuthorization, error)
 	IssueRemoteWorkerCertificate(context.Context, string, internalremoteworker.CertificatePersistenceInput) (internalremoteworker.Snapshot, error)
 	RotateRemoteWorkerCertificate(context.Context, string, internalremoteworker.CertificateRotationPersistenceInput) (internalremoteworker.Snapshot, error)
+	HeartbeatRemoteWorker(context.Context, string, internalremoteworker.HeartbeatInput) (postgres.RemoteWorkerHeartbeatResult, error)
 }
 
 type RemoteWorkerEnrollmentHTTPServer struct {
@@ -55,7 +56,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 		writePublicProblem(writer, 404, "route_not_found")
 		return
 	}
-	if action == "issue-certificate" || action == "rotate-certificate" {
+	if action == "issue-certificate" || action == "rotate-certificate" || action == "heartbeat" {
 		if request.Method != http.MethodPost {
 			writePublicProblem(writer, 405, "method_not_allowed")
 			return
@@ -67,8 +68,10 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 		}
 		if action == "issue-certificate" {
 			server.issueCertificate(writer, request, tenantID, projectID, enrollmentID, requestID)
-		} else {
+		} else if action == "rotate-certificate" {
 			server.rotateCertificate(writer, request, tenantID, projectID, enrollmentID, requestID)
+		} else {
+			server.heartbeat(writer, request, tenantID, projectID, enrollmentID, requestID)
 		}
 		return
 	}
@@ -379,6 +382,60 @@ func (server *RemoteWorkerEnrollmentHTTPServer) rotateCertificate(writer http.Re
 	writeRemoteWorkerCertificate(writer, requestID, projectID, enrollmentID, value, value.CertificateNotBefore)
 }
 
+func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string) {
+	if server.authority == nil {
+		writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
+		return
+	}
+	peer, err := server.authority.PeerIdentity(request.TLS)
+	if err != nil || peer.Scope.TenantID != tenantID || peer.Scope.ProjectID != projectID || peer.EnrollmentID != enrollmentID {
+		writePublicProblem(writer, 401, "authentication_failed")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 64<<10))
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateHeartbeatRemoteWorkerServerRequest(tenantID, projectID, enrollmentID, requestID, body)
+	if err != nil {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	if validated.Body.IncarnationID != peer.IncarnationID {
+		writePublicProblem(writer, 401, "authentication_failed")
+		return
+	}
+	result, err := server.store.HeartbeatRemoteWorker(request.Context(), tenantID, internalremoteworker.HeartbeatInput{
+		Scope: peer.Scope, EnrollmentID: enrollmentID, PeerCertificateSHA256: peer.CertificateSHA256,
+		IncarnationID: validated.Body.IncarnationID, ObservedGeneration: validated.Body.ObservedGeneration,
+		ObservedState: validated.Body.ObservedState,
+		WorkerVersion: validated.Body.WorkerVersion, OS: validated.Body.OS, Architecture: validated.Body.Architecture,
+		KernelVersion: validated.Body.KernelVersion, Capabilities: validated.Body.Capabilities,
+		Capacity: internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
+	})
+	if err != nil {
+		writeRemoteWorkerEnrollmentError(writer, err)
+		return
+	}
+	node := result.Node
+	responseBody, err := platformv1alpha1.EncodeRemoteWorkerHeartbeatResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.RemoteWorkerHeartbeat]{Value: platformv1alpha1.RemoteWorkerHeartbeat{
+		APIVersion: platformv1alpha1.APIVersion, Kind: "RemoteWorkerHeartbeat",
+		ProjectRef:   commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
+		EnrollmentID: enrollmentID, WorkerID: node.WorkerID, IncarnationID: node.IncarnationID,
+		Generation: node.Generation, ObservedGeneration: node.ObservedGeneration,
+		DesiredState: node.DesiredState, ObservedState: node.ObservedState, HealthState: node.HealthState,
+		AcceptedAt: node.LastHeartbeatAt.UTC().Format(time.RFC3339Nano), ExpiresAt: node.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
+		NextHeartbeatAfterSeconds: int64(internalremoteworker.HeartbeatInterval / time.Second), ReconcileRequired: result.ReconcileRequired,
+	}})
+	if err != nil {
+		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writeJSONResponse(writer, 200, requestID, responseBody)
+}
+
 func writeRemoteWorkerCertificate(writer http.ResponseWriter, requestID, projectID, enrollmentID string, value internalremoteworker.Snapshot, issuedAt *time.Time) {
 	if issuedAt == nil || value.CertificateNotAfter == nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -480,7 +537,24 @@ func remoteWorkerEnrollmentResource(value internalremoteworker.Snapshot) platfor
 	return platformv1alpha1.RemoteWorkerEnrollment{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "RemoteWorkerEnrollment", Metadata: commonv1alpha1.ResourceMetadata{
 		UID: value.EnrollmentID, Name: value.WorkerName, TenantRef: commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: value.Scope.TenantID},
 		ResourceVersion: strconv.FormatInt(value.ResourceVersion, 10), CreatedAt: value.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: value.UpdatedAt.UTC().Format(time.RFC3339Nano),
-	}}, Spec: platformv1alpha1.RemoteWorkerEnrollmentSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: value.Scope.ProjectID}, WorkerID: value.WorkerID, State: value.State, ExpiresAt: value.ExpiresAt.UTC().Format(time.RFC3339Nano), SecretClaimedAt: format(value.SecretClaimedAt), EnrolledAt: format(value.EnrolledAt), RevokedAt: format(value.RevokedAt), IncarnationID: value.IncarnationID, SPIFFEID: value.SPIFFEID, CertificateSHA256: value.CertificateSHA256, CertificateExpiresAt: format(value.CertificateNotAfter), CertificateState: value.CertificateState, CertificateRevokedAt: format(value.CertificateRevokedAt)}}
+	}}, Spec: platformv1alpha1.RemoteWorkerEnrollmentSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: value.Scope.ProjectID}, WorkerID: value.WorkerID, State: value.State, ExpiresAt: value.ExpiresAt.UTC().Format(time.RFC3339Nano), SecretClaimedAt: format(value.SecretClaimedAt), EnrolledAt: format(value.EnrolledAt), RevokedAt: format(value.RevokedAt), IncarnationID: value.IncarnationID, SPIFFEID: value.SPIFFEID, CertificateSHA256: value.CertificateSHA256, CertificateExpiresAt: format(value.CertificateNotAfter), CertificateState: value.CertificateState, CertificateRevokedAt: format(value.CertificateRevokedAt), Node: remoteWorkerNodeStatusResource(value.Node)}}
+}
+
+func remoteWorkerNodeStatusResource(value *internalremoteworker.NodeStatus) *platformv1alpha1.RemoteWorkerNodeStatus {
+	if value == nil {
+		return nil
+	}
+	return &platformv1alpha1.RemoteWorkerNodeStatus{
+		ResourceVersion: strconv.FormatInt(value.ResourceVersion, 10), Generation: value.Generation,
+		ObservedGeneration: value.ObservedGeneration, DesiredState: value.DesiredState,
+		ObservedState: value.ObservedState, HealthState: value.HealthState, WorkerVersion: value.WorkerVersion,
+		OS: value.OS, Architecture: value.Architecture, KernelVersion: value.KernelVersion,
+		Capabilities:       value.Capabilities,
+		Capacity:           platformv1alpha1.RemoteWorkerCapacity{CPUMillis: value.Capacity.CPUMillis, MemoryBytes: value.Capacity.MemoryBytes, DiskBytes: value.Capacity.DiskBytes},
+		FirstConnectedAt:   value.FirstConnectedAt.UTC().Format(time.RFC3339Nano),
+		LastHeartbeatAt:    value.LastHeartbeatAt.UTC().Format(time.RFC3339Nano),
+		HeartbeatExpiresAt: value.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
+	}
 }
 
 func writeRemoteWorkerEnrollment(writer http.ResponseWriter, status int, requestID string, value internalremoteworker.Snapshot) {
@@ -523,6 +597,9 @@ func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID,
 		}
 		if strings.HasSuffix(parts[4], ":rotateCertificate") && isRemoteWorker {
 			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":rotateCertificate"), "rotate-certificate", true
+		}
+		if strings.HasSuffix(parts[4], ":heartbeat") && isRemoteWorker {
+			return parts[0], parts[2], strings.TrimSuffix(parts[4], ":heartbeat"), "heartbeat", true
 		}
 		if !isBootstrap && !isRemoteWorker {
 			return parts[0], parts[2], parts[4], "get", true
@@ -602,6 +679,8 @@ func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, 409, "idempotency_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentResourceVersionConflict):
 		writePublicProblem(writer, 409, "remote_worker_enrollment_resource_version_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerGenerationConflict):
+		writePublicProblem(writer, 409, "remote_worker_generation_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentSecretUnavailable):
 		writePublicProblem(writer, 409, "remote_worker_enrollment_secret_unavailable")
 	case errors.Is(err, postgres.ErrRemoteWorkerEnrollmentAuthentication):

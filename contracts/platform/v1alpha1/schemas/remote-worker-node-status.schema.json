@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-node-status.schema.json",
+  "title": "RemoteWorkerNodeStatus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resourceVersion",
+    "generation",
+    "observedGeneration",
+    "desiredState",
+    "observedState",
+    "healthState",
+    "workerVersion",
+    "os",
+    "architecture",
+    "kernelVersion",
+    "capabilities",
+    "capacity",
+    "firstConnectedAt",
+    "lastHeartbeatAt",
+    "heartbeatExpiresAt"
+  ],
+  "properties": {
+    "resourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "observedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "desiredState": { "enum": ["active", "drained"] },
+    "observedState": { "enum": ["active", "drained"] },
+    "healthState": { "enum": ["online", "degraded", "offline"] },
+    "workerVersion": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$" },
+    "os": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "architecture": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "kernelVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[\\u0020-\\u007E]+$"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "enum": ["docker", "exec", "files", "pty", "preview", "ssh"] }
+    },
+    "capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpuMillis", "memoryBytes", "diskBytes"],
+      "properties": {
+        "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 512000000 },
+        "memoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 },
+        "diskBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 }
+      }
+    },
+    "firstConnectedAt": { "type": "string", "format": "date-time" },
+    "lastHeartbeatAt": { "type": "string", "format": "date-time" },
+    "heartbeatExpiresAt": { "type": "string", "format": "date-time" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "observedGeneration is no greater than generation",
+    "capabilities are sorted in canonical order",
+    "healthState is calculated using database time; the browser never infers it",
+    "node status contains no endpoint, credential reference, Secret bytes, user content, or Workspace contents"
+  ]
+}

@@ -26,7 +26,8 @@
         "certificateSha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "certificateExpiresAt": { "type": "string", "format": "date-time" },
         "certificateState": { "enum": ["active", "revoked"] },
-        "certificateRevokedAt": { "type": "string", "format": "date-time" }
+        "certificateRevokedAt": { "type": "string", "format": "date-time" },
+        "node": { "$ref": "remote-worker-node-status.schema.json" }
       }
     }
   },
@@ -34,6 +35,7 @@
     "expired is derived from the database clock for pending or secret-issued enrollment intents",
     "the resource never exposes enrollment secret, secret digest, CSR, or certificate bytes",
     "incarnationId, spiffeId, certificateSha256, certificateExpiresAt, and certificateState are present together only after certificate issuance",
-    "certificateRevokedAt is present if and only if certificateState is revoked"
+    "certificateRevokedAt is present if and only if certificateState is revoked",
+    "node is present only after the enrolled RemoteWorker has completed an authenticated heartbeat"
   ]
 }

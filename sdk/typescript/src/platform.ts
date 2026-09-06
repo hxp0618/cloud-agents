@@ -476,6 +476,56 @@ export type RemoteWorkerEnrollmentRevokeRequest = Readonly<{
   expectedResourceVersion: string;
   confirmedEnrollmentId: string;
 }>;
+export type RemoteWorkerCapacity = Readonly<{
+  cpuMillis: number;
+  memoryBytes: number;
+  diskBytes: number;
+}>;
+export type RemoteWorkerHeartbeatRequest = Readonly<{
+  incarnationId: string;
+  observedGeneration: number;
+  observedState: "active" | "drained";
+  workerVersion: string;
+  os: string;
+  architecture: string;
+  kernelVersion: string;
+  capabilities: readonly ("docker" | "exec" | "files" | "preview" | "pty" | "ssh")[];
+  capacity: RemoteWorkerCapacity;
+}>;
+export type RemoteWorkerNodeStatus = Readonly<{
+  resourceVersion: string;
+  generation: number;
+  observedGeneration: number;
+  desiredState: "active" | "drained";
+  observedState: "active" | "drained";
+  healthState: "online" | "degraded" | "offline";
+  workerVersion: string;
+  os: string;
+  architecture: string;
+  kernelVersion: string;
+  capabilities: readonly ("docker" | "exec" | "files" | "preview" | "pty" | "ssh")[];
+  capacity: RemoteWorkerCapacity;
+  firstConnectedAt: string;
+  lastHeartbeatAt: string;
+  heartbeatExpiresAt: string;
+}>;
+export type RemoteWorkerHeartbeat = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "RemoteWorkerHeartbeat";
+  projectRef: NamespaceRef;
+  enrollmentId: string;
+  workerId: string;
+  incarnationId: string;
+  generation: number;
+  observedGeneration: number;
+  desiredState: "active" | "drained";
+  observedState: "active" | "drained";
+  healthState: "online";
+  acceptedAt: string;
+  expiresAt: string;
+  nextHeartbeatAfterSeconds: 5;
+  reconcileRequired: boolean;
+}>;
 export type RemoteWorkerEnrollment = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "RemoteWorkerEnrollment";
@@ -494,6 +544,7 @@ export type RemoteWorkerEnrollment = Readonly<{
     certificateExpiresAt?: string;
     certificateState?: "active" | "revoked";
     certificateRevokedAt?: string;
+    node?: RemoteWorkerNodeStatus;
   }>;
 }>;
 export type RemoteWorkerEnrollmentPage = Readonly<{
@@ -1647,6 +1698,32 @@ const networkPolicyPageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const remoteWorkerCapacityResponseShape: ResponseShape = {
+  fields: {
+    cpuMillis: scalarResponseShape,
+    memoryBytes: scalarResponseShape,
+    diskBytes: scalarResponseShape,
+  },
+};
+const remoteWorkerNodeStatusResponseShape: ResponseShape = {
+  fields: {
+    resourceVersion: scalarResponseShape,
+    generation: scalarResponseShape,
+    observedGeneration: scalarResponseShape,
+    desiredState: scalarResponseShape,
+    observedState: scalarResponseShape,
+    healthState: scalarResponseShape,
+    workerVersion: scalarResponseShape,
+    os: scalarResponseShape,
+    architecture: scalarResponseShape,
+    kernelVersion: scalarResponseShape,
+    capabilities: { item: scalarResponseShape },
+    capacity: remoteWorkerCapacityResponseShape,
+    firstConnectedAt: scalarResponseShape,
+    lastHeartbeatAt: scalarResponseShape,
+    heartbeatExpiresAt: scalarResponseShape,
+  },
+};
 const remoteWorkerEnrollmentResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   workerId: scalarResponseShape,
@@ -1661,6 +1738,7 @@ const remoteWorkerEnrollmentResponseShape = resourceResponseShape({
   certificateExpiresAt: scalarResponseShape,
   certificateState: scalarResponseShape,
   certificateRevokedAt: scalarResponseShape,
+  node: remoteWorkerNodeStatusResponseShape,
 });
 const remoteWorkerEnrollmentPageResponseShape: ResponseShape = {
   fields: {
@@ -1693,6 +1771,25 @@ const remoteWorkerCertificateResponseShape: ResponseShape = {
     certificateSha256: scalarResponseShape,
     issuedAt: scalarResponseShape,
     expiresAt: scalarResponseShape,
+  },
+};
+const remoteWorkerHeartbeatResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    projectRef: referenceResponseShape,
+    enrollmentId: scalarResponseShape,
+    workerId: scalarResponseShape,
+    incarnationId: scalarResponseShape,
+    generation: scalarResponseShape,
+    observedGeneration: scalarResponseShape,
+    desiredState: scalarResponseShape,
+    observedState: scalarResponseShape,
+    healthState: scalarResponseShape,
+    acceptedAt: scalarResponseShape,
+    expiresAt: scalarResponseShape,
+    nextHeartbeatAfterSeconds: scalarResponseShape,
+    reconcileRequired: scalarResponseShape,
   },
 };
 const environmentProfileResponseShape = resourceResponseShape({
@@ -5291,6 +5388,243 @@ export function encodeRemoteWorkerCertificateIssueRequest(
 ): string {
   return JSON.stringify(decodeRemoteWorkerCertificateIssueRequest(value));
 }
+function remoteWorkerCapacity(value: unknown, path: string): RemoteWorkerCapacity {
+  const source = strictRecord(
+    value,
+    ["cpuMillis", "memoryBytes", "diskBytes"],
+    ["cpuMillis", "memoryBytes", "diskBytes"],
+    path,
+  );
+  return Object.freeze({
+    cpuMillis: integer(source.cpuMillis, 100, 512000000, `${path}/cpuMillis`),
+    memoryBytes: integer(source.memoryBytes, 134217728, 8796093022208000, `${path}/memoryBytes`),
+    diskBytes: integer(source.diskBytes, 134217728, 8796093022208000, `${path}/diskBytes`),
+  });
+}
+function remoteWorkerCapabilities(
+  value: unknown,
+  path: string,
+): RemoteWorkerHeartbeatRequest["capabilities"] {
+  const source: unknown[] = Array.isArray(value)
+    ? value
+    : error("INVALID_REMOTE_WORKER_CAPABILITIES", path);
+  if (source.length < 1 || source.length > 16) error("INVALID_REMOTE_WORKER_CAPABILITIES", path);
+  const capabilities = source.map((entry, index) =>
+    enumValue(
+      entry,
+      ["docker", "exec", "files", "preview", "pty", "ssh"] as const,
+      `${path}/${index}`,
+    ),
+  );
+  if (capabilities.some((entry, index) => index > 0 && capabilities[index - 1]! >= entry))
+    error("INVALID_REMOTE_WORKER_CAPABILITIES", path);
+  return Object.freeze(capabilities);
+}
+function remoteWorkerPlatform(source: Record<string, unknown>, path: string) {
+  const workerVersion = boundedString(source.workerVersion, 1, 64, `${path}/workerVersion`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u.test(workerVersion))
+    error("INVALID_REMOTE_WORKER_VERSION", `${path}/workerVersion`);
+  const kernelVersion = boundedString(source.kernelVersion, 1, 128, `${path}/kernelVersion`);
+  if (/[^\u0020-\u007e]/u.test(kernelVersion))
+    error("INVALID_REMOTE_WORKER_KERNEL", `${path}/kernelVersion`);
+  return {
+    workerVersion,
+    os: identifier(source.os, `${path}/os`),
+    architecture: identifier(source.architecture, `${path}/architecture`),
+    kernelVersion,
+    capabilities: remoteWorkerCapabilities(source.capabilities, `${path}/capabilities`),
+    capacity: remoteWorkerCapacity(source.capacity, `${path}/capacity`),
+  };
+}
+export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorkerHeartbeatRequest {
+  const source = strictRecord(
+    value,
+    [
+      "incarnationId",
+      "observedGeneration",
+      "observedState",
+      "workerVersion",
+      "os",
+      "architecture",
+      "kernelVersion",
+      "capabilities",
+      "capacity",
+    ],
+    [
+      "incarnationId",
+      "observedGeneration",
+      "observedState",
+      "workerVersion",
+      "os",
+      "architecture",
+      "kernelVersion",
+      "capabilities",
+      "capacity",
+    ],
+  );
+  return Object.freeze({
+    incarnationId: identifier(source.incarnationId, "/incarnationId"),
+    observedGeneration: integer(
+      source.observedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/observedGeneration",
+    ),
+    observedState: enumValue(
+      source.observedState,
+      ["active", "drained"] as const,
+      "/observedState",
+    ),
+    ...remoteWorkerPlatform(source, ""),
+  });
+}
+export function encodeRemoteWorkerHeartbeatRequest(value: RemoteWorkerHeartbeatRequest): string {
+  return JSON.stringify(decodeRemoteWorkerHeartbeatRequest(value));
+}
+export function decodeRemoteWorkerNodeStatus(value: unknown): RemoteWorkerNodeStatus {
+  const source = strictRecord(
+    value,
+    [
+      "resourceVersion",
+      "generation",
+      "observedGeneration",
+      "desiredState",
+      "observedState",
+      "healthState",
+      "workerVersion",
+      "os",
+      "architecture",
+      "kernelVersion",
+      "capabilities",
+      "capacity",
+      "firstConnectedAt",
+      "lastHeartbeatAt",
+      "heartbeatExpiresAt",
+    ],
+    [
+      "resourceVersion",
+      "generation",
+      "observedGeneration",
+      "desiredState",
+      "observedState",
+      "healthState",
+      "workerVersion",
+      "os",
+      "architecture",
+      "kernelVersion",
+      "capabilities",
+      "capacity",
+      "firstConnectedAt",
+      "lastHeartbeatAt",
+      "heartbeatExpiresAt",
+    ],
+  );
+  const resourceVersion = string(source.resourceVersion, "/resourceVersion");
+  if (!/^[1-9][0-9]{0,18}$/u.test(resourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/resourceVersion");
+  const generation = integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    observedGeneration = integer(source.observedGeneration, 1, generation, "/observedGeneration");
+  const firstConnectedAt = dateTime(source.firstConnectedAt, "/firstConnectedAt"),
+    lastHeartbeatAt = dateTime(source.lastHeartbeatAt, "/lastHeartbeatAt"),
+    heartbeatExpiresAt = dateTime(source.heartbeatExpiresAt, "/heartbeatExpiresAt");
+  if (
+    Date.parse(lastHeartbeatAt) < Date.parse(firstConnectedAt) ||
+    Date.parse(heartbeatExpiresAt) - Date.parse(lastHeartbeatAt) !== 30000
+  )
+    error("INVALID_REMOTE_WORKER_NODE_STATUS", "/lastHeartbeatAt");
+  return Object.freeze({
+    resourceVersion,
+    generation,
+    observedGeneration,
+    desiredState: enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState"),
+    observedState: enumValue(
+      source.observedState,
+      ["active", "drained"] as const,
+      "/observedState",
+    ),
+    healthState: enumValue(
+      source.healthState,
+      ["online", "degraded", "offline"] as const,
+      "/healthState",
+    ),
+    ...remoteWorkerPlatform(source, ""),
+    firstConnectedAt,
+    lastHeartbeatAt,
+    heartbeatExpiresAt,
+  });
+}
+export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbeat {
+  const source = strictRecord(
+    value,
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "enrollmentId",
+      "workerId",
+      "incarnationId",
+      "generation",
+      "observedGeneration",
+      "desiredState",
+      "observedState",
+      "healthState",
+      "acceptedAt",
+      "expiresAt",
+      "nextHeartbeatAfterSeconds",
+      "reconcileRequired",
+    ],
+    [
+      "apiVersion",
+      "kind",
+      "projectRef",
+      "enrollmentId",
+      "workerId",
+      "incarnationId",
+      "generation",
+      "observedGeneration",
+      "desiredState",
+      "observedState",
+      "healthState",
+      "acceptedAt",
+      "expiresAt",
+      "nextHeartbeatAfterSeconds",
+      "reconcileRequired",
+    ],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "RemoteWorkerHeartbeat" ||
+    source.healthState !== "online" ||
+    source.nextHeartbeatAfterSeconds !== 5
+  )
+    error("INVALID_REMOTE_WORKER_HEARTBEAT", "");
+  const generation = integer(source.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    acceptedAt = dateTime(source.acceptedAt, "/acceptedAt"),
+    expiresAt = dateTime(source.expiresAt, "/expiresAt");
+  if (Date.parse(expiresAt) - Date.parse(acceptedAt) !== 30000)
+    error("INVALID_REMOTE_WORKER_HEARTBEAT", "/expiresAt");
+  return Object.freeze({
+    apiVersion: platformApiVersion,
+    kind: "RemoteWorkerHeartbeat",
+    projectRef: namespace(source.projectRef, "project", "/projectRef"),
+    enrollmentId: identifier(source.enrollmentId, "/enrollmentId"),
+    workerId: identifier(source.workerId, "/workerId"),
+    incarnationId: identifier(source.incarnationId, "/incarnationId"),
+    generation,
+    observedGeneration: integer(source.observedGeneration, 1, generation, "/observedGeneration"),
+    desiredState: enumValue(source.desiredState, ["active", "drained"] as const, "/desiredState"),
+    observedState: enumValue(
+      source.observedState,
+      ["active", "drained"] as const,
+      "/observedState",
+    ),
+    healthState: "online",
+    acceptedAt,
+    expiresAt,
+    nextHeartbeatAfterSeconds: 5,
+    reconcileRequired: boolean(source.reconcileRequired, "/reconcileRequired"),
+  });
+}
 export function decodeRemoteWorkerEnrollmentRevokeRequest(
   value: unknown,
 ): RemoteWorkerEnrollmentRevokeRequest {
@@ -5320,6 +5654,7 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
       "certificateExpiresAt",
       "certificateState",
       "certificateRevokedAt",
+      "node",
     ],
     ["projectRef", "workerId", "state", "expiresAt"],
     "/spec",
@@ -5398,6 +5733,9 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
         Date.parse(certificateRevokedAt) < Date.parse(enrolledAt!))
   )
     error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/certificateState");
+  const node = spec.node === undefined ? undefined : decodeRemoteWorkerNodeStatus(spec.node);
+  if (node !== undefined && state !== "enrolled")
+    error("INVALID_REMOTE_WORKER_NODE_STATUS", "/spec/node");
   return Object.freeze({
     ...root,
     kind: "RemoteWorkerEnrollment" as const,
@@ -5410,6 +5748,7 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
       ...(enrolledAt === undefined ? {} : { enrolledAt }),
       ...(revokedAt === undefined ? {} : { revokedAt }),
       ...certificate,
+      ...(node === undefined ? {} : { node }),
     }),
   });
 }
@@ -7563,6 +7902,9 @@ export function parseRemoteWorkerCertificate(
   text: string,
 ): ResponseEnvelope<RemoteWorkerCertificate> {
   return parseResponse(text, remoteWorkerCertificateResponseShape, decodeRemoteWorkerCertificate);
+}
+export function parseRemoteWorkerHeartbeat(text: string): ResponseEnvelope<RemoteWorkerHeartbeat> {
+  return parseResponse(text, remoteWorkerHeartbeatResponseShape, decodeRemoteWorkerHeartbeat);
 }
 export function parseEnvironmentProfile(text: string): ResponseEnvelope<EnvironmentProfile> {
   return parseResponse(text, environmentProfileResponseShape, decodeEnvironmentProfile);
@@ -9855,6 +10197,37 @@ export class Client {
       result.value.enrollmentId !== enrollmentId ||
       result.value.incarnationId !== checked.incarnationId ||
       checked.confirmedEnrollmentId !== enrollmentId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId");
+    return result;
+  }
+  async heartbeatRemoteWorker(
+    tenantId: string,
+    projectId: string,
+    enrollmentId: string,
+    requestId: string,
+    body: RemoteWorkerHeartbeatRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RemoteWorkerHeartbeat>> {
+    validateRemoteWorkerEnrollmentPath(tenantId, projectId, enrollmentId, requestId);
+    const checked = decodeRemoteWorkerHeartbeatRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/remote-workers/tenants/${tenantId}/projects/${projectId}/remote-worker-enrollments/${enrollmentId}:heartbeat`,
+        headers: { "X-Request-ID": requestId },
+        body: encodeRemoteWorkerHeartbeatRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("remoteWorkerHeartbeat", response);
+    if (response.headers["cache-control"] !== "no-store")
+      error("HEARTBEAT_CACHE_POLICY_MISMATCH", "/headers");
+    const result = parseRemoteWorkerHeartbeat(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.enrollmentId !== enrollmentId ||
+      result.value.incarnationId !== checked.incarnationId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/enrollmentId");
     return result;

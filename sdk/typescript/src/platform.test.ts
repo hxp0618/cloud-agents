@@ -44,6 +44,8 @@ import {
   decodeRoleBinding,
   decodeRoleBindingPage,
   decodeRemoteWorkerEnrollment,
+  decodeRemoteWorkerHeartbeatRequest,
+  decodeRemoteWorkerNodeStatus,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -126,9 +128,27 @@ describe("generated platform JSON models", () => {
         certificateSha256: `sha256:${"a".repeat(64)}`,
         certificateExpiresAt: "2026-09-06T12:15:00Z",
         certificateState: "active",
+        node: {
+          resourceVersion: "1",
+          generation: 1,
+          observedGeneration: 1,
+          desiredState: "active",
+          observedState: "active",
+          healthState: "online",
+          workerVersion: "v0.1.0",
+          os: "linux",
+          architecture: "arm64",
+          kernelVersion: "6.12.1",
+          capabilities: ["docker", "exec", "files"],
+          capacity: { cpuMillis: 4000, memoryBytes: 8589934592, diskBytes: 42949672960 },
+          firstConnectedAt: "2026-09-06T12:00:30Z",
+          lastHeartbeatAt: "2026-09-06T12:00:40Z",
+          heartbeatExpiresAt: "2026-09-06T12:01:10Z",
+        },
       },
     };
-    expect(decodeRemoteWorkerEnrollment(active).spec.certificateState).toBe("active");
+    expect(decodeRemoteWorkerEnrollment(active).spec.node?.healthState).toBe("online");
+    expect(decodeRemoteWorkerNodeStatus(active.spec.node).capacity.cpuMillis).toBe(4000);
     const revoked = {
       ...active,
       metadata: { ...active.metadata, resourceVersion: "4", updatedAt: "2026-09-06T12:20:00Z" },
@@ -145,6 +165,60 @@ describe("generated platform JSON models", () => {
         spec: { ...active.spec, certificateState: undefined },
       }),
     ).toThrow(TypeError);
+  });
+
+  it("sends RemoteWorker heartbeats through the mTLS transport contract", async () => {
+    const request = decodeRemoteWorkerHeartbeatRequest({
+      incarnationId: "incarnation-alpha",
+      observedGeneration: 1,
+      observedState: "active",
+      workerVersion: "v0.1.0",
+      os: "linux",
+      architecture: "arm64",
+      kernelVersion: "6.12.1",
+      capabilities: ["docker", "exec", "files"],
+      capacity: { cpuMillis: 4000, memoryBytes: 8589934592, diskBytes: 42949672960 },
+    });
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (input) => {
+      seen.push(input);
+      return {
+        status: 200,
+        headers: { "cache-control": "no-store" },
+        body: JSON.stringify({
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "RemoteWorkerHeartbeat",
+          projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+          enrollmentId: "enrollment-alpha",
+          workerId: "worker-alpha",
+          incarnationId: "incarnation-alpha",
+          generation: 1,
+          observedGeneration: 1,
+          desiredState: "active",
+          observedState: "active",
+          healthState: "online",
+          acceptedAt: "2026-09-06T12:00:00Z",
+          expiresAt: "2026-09-06T12:00:30Z",
+          nextHeartbeatAfterSeconds: 5,
+          reconcileRequired: false,
+        }),
+      };
+    });
+    await client.heartbeatRemoteWorker(
+      "tenant-alpha",
+      "project-alpha",
+      "enrollment-alpha",
+      "request-heartbeat",
+      request,
+    );
+    expect(seen).toEqual([
+      {
+        method: "POST",
+        path: "/v1/remote-workers/tenants/tenant-alpha/projects/project-alpha/remote-worker-enrollments/enrollment-alpha:heartbeat",
+        headers: { "X-Request-ID": "request-heartbeat" },
+        body: JSON.stringify(request),
+      },
+    ]);
   });
 
   it("executes only a bounded command against the exact Sandbox generation", async () => {

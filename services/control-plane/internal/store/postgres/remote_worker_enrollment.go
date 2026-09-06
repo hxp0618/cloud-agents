@@ -30,28 +30,45 @@ type RemoteWorkerCertificateRotationAuthorization struct {
 }
 
 type remoteWorkerEnrollmentRow struct {
-	TenantID             string     `json:"tenant_id"`
-	ProjectID            string     `json:"project_uid"`
-	EnrollmentID         string     `json:"enrollment_uid"`
-	WorkerID             string     `json:"worker_uid"`
-	WorkerName           string     `json:"worker_name"`
-	State                string     `json:"state"`
-	ResourceVersion      int64      `json:"resource_version"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	ExpiresAt            time.Time  `json:"expires_at"`
-	SecretClaimedAt      *time.Time `json:"secret_claimed_at"`
-	EnrolledAt           *time.Time `json:"enrolled_at"`
-	RevokedAt            *time.Time `json:"revoked_at"`
-	IncarnationID        string     `json:"incarnation_uid"`
-	SPIFFEID             string     `json:"certificate_spiffe_id"`
-	CertificateSHA256    string     `json:"certificate_sha256"`
-	CertificateChainPEM  string     `json:"certificate_chain_pem"`
-	CertificateSerial    string     `json:"certificate_serial"`
-	CertificateNotBefore *time.Time `json:"certificate_not_before"`
-	CertificateNotAfter  *time.Time `json:"certificate_not_after"`
-	CertificateState     string     `json:"certificate_state"`
-	CertificateRevokedAt *time.Time `json:"certificate_revoked_at"`
+	TenantID               string     `json:"tenant_id"`
+	ProjectID              string     `json:"project_uid"`
+	EnrollmentID           string     `json:"enrollment_uid"`
+	WorkerID               string     `json:"worker_uid"`
+	WorkerName             string     `json:"worker_name"`
+	State                  string     `json:"state"`
+	ResourceVersion        int64      `json:"resource_version"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+	ExpiresAt              time.Time  `json:"expires_at"`
+	SecretClaimedAt        *time.Time `json:"secret_claimed_at"`
+	EnrolledAt             *time.Time `json:"enrolled_at"`
+	RevokedAt              *time.Time `json:"revoked_at"`
+	IncarnationID          string     `json:"incarnation_uid"`
+	SPIFFEID               string     `json:"certificate_spiffe_id"`
+	CertificateSHA256      string     `json:"certificate_sha256"`
+	CertificateChainPEM    string     `json:"certificate_chain_pem"`
+	CertificateSerial      string     `json:"certificate_serial"`
+	CertificateNotBefore   *time.Time `json:"certificate_not_before"`
+	CertificateNotAfter    *time.Time `json:"certificate_not_after"`
+	CertificateState       string     `json:"certificate_state"`
+	CertificateRevokedAt   *time.Time `json:"certificate_revoked_at"`
+	NodeResourceVersion    *int64     `json:"node_resource_version"`
+	NodeGeneration         *int64     `json:"node_generation"`
+	NodeObservedGeneration *int64     `json:"node_observed_generation"`
+	NodeDesiredState       *string    `json:"node_desired_state"`
+	NodeObservedState      *string    `json:"node_observed_state"`
+	NodeHealthState        *string    `json:"node_health_state"`
+	NodeWorkerVersion      *string    `json:"node_worker_version"`
+	NodeOS                 *string    `json:"node_os"`
+	NodeArchitecture       *string    `json:"node_architecture"`
+	NodeKernelVersion      *string    `json:"node_kernel_version"`
+	NodeCapabilities       []string   `json:"node_capabilities"`
+	NodeCapacityCPUMillis  *int64     `json:"node_capacity_cpu_millis"`
+	NodeCapacityMemory     *int64     `json:"node_capacity_memory_bytes"`
+	NodeCapacityDisk       *int64     `json:"node_capacity_disk_bytes"`
+	NodeFirstConnectedAt   *time.Time `json:"node_first_connected_at"`
+	NodeLastHeartbeatAt    *time.Time `json:"node_last_heartbeat_at"`
+	NodeHeartbeatExpiresAt *time.Time `json:"node_heartbeat_expires_at"`
 }
 
 type remoteWorkerEnrollmentAuditRow struct {
@@ -101,7 +118,7 @@ FROM cloud_agents.authorize_remote_worker_certificate_rotation_v1($1,$2,$3,$4,$5
 FROM cloud_agents.rotate_remote_worker_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
 	revokeRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
 	FROM cloud_agents.revoke_remote_worker_enrollment_or_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)`
-	getRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
+	getRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `, ` + remoteWorkerNodeAdminColumns + `
 FROM cloud_agents.remote_worker_enrollments
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2`
 	remoteWorkerEnrollmentCursorSQL = `SELECT 1 FROM cloud_agents.remote_worker_enrollments
@@ -114,7 +131,17 @@ FROM (
         resource_version, created_at, updated_at, expires_at, secret_claimed_at, enrolled_at, revoked_at,
         incarnation_uid, certificate_spiffe_id, certificate_sha256, certificate_chain_pem,
         certificate_serial, certificate_not_before, certificate_not_after,
-        certificate_state, certificate_revoked_at
+        certificate_state, certificate_revoked_at,
+        node_resource_version, node_generation, node_observed_generation,
+        node_desired_state, node_observed_state,
+        CASE WHEN node_last_heartbeat_at IS NULL THEN NULL
+            WHEN certificate_state <> 'active' OR certificate_not_after <= clock_timestamp()
+                OR node_heartbeat_expires_at <= clock_timestamp() THEN 'offline'
+            WHEN node_last_heartbeat_at + interval '10 seconds' <= clock_timestamp() THEN 'degraded'
+            ELSE 'online' END AS node_health_state,
+        node_worker_version, node_os, node_architecture, node_kernel_version, node_capabilities,
+        node_capacity_cpu_millis, node_capacity_memory_bytes, node_capacity_disk_bytes,
+        node_first_connected_at, node_last_heartbeat_at, node_heartbeat_expires_at
     FROM cloud_agents.remote_worker_enrollments
     WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid > $2
     ORDER BY enrollment_uid LIMIT $3
@@ -310,7 +337,7 @@ func (service *DurableCoordinationService) GetRemoteWorkerEnrollment(ctx context
 	scope := internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}
 	var result internalremoteworker.Snapshot
 	err := service.withFoundationOperation(ctx, tenantID, principal, projectID, "projects.get", false, func(readContext context.Context, handle *tenantReadHandle, _ string) error {
-		return scanRemoteWorkerEnrollment(handle.transaction.queryRow(readContext, getRemoteWorkerEnrollmentSQL, projectID, enrollmentID), scope, &result)
+		return scanRemoteWorkerEnrollmentWithNode(handle.transaction.queryRow(readContext, getRemoteWorkerEnrollmentSQL, projectID, enrollmentID), scope, &result)
 	})
 	return result, mapRemoteWorkerEnrollmentError(err)
 }
@@ -385,6 +412,21 @@ func scanRemoteWorkerEnrollment(row rowScanner, scope internalremoteworker.Scope
 	return nil
 }
 
+func scanRemoteWorkerEnrollmentWithNode(row rowScanner, scope internalremoteworker.Scope, result *internalremoteworker.Snapshot) error {
+	if row == nil || result == nil {
+		return ErrCoordinationResultDrift
+	}
+	var nodeRow remoteWorkerEnrollmentRow
+	if err := row.Scan(append(remoteWorkerEnrollmentScanTargets(result), remoteWorkerNodeRowScanTargets(&nodeRow)...)...); err != nil {
+		return err
+	}
+	result.Scope = scope
+	if err := assignRemoteWorkerNodeStatus(result, nodeRow); err != nil || result.Validate() != nil {
+		return fmt.Errorf("%w: remote worker enrollment node projection", ErrCoordinationResultDrift)
+	}
+	return nil
+}
+
 func remoteWorkerEnrollmentScanTargets(result *internalremoteworker.Snapshot) []any {
 	return []any{&result.EnrollmentID, &result.WorkerID, &result.WorkerName, &result.State, &result.ResourceVersion,
 		&result.CreatedAt, &result.UpdatedAt, &result.ExpiresAt, &result.SecretClaimedAt, &result.EnrolledAt, &result.RevokedAt,
@@ -401,6 +443,9 @@ func decodeRemoteWorkerEnrollmentRows(raw []byte, tenantID, projectID string, li
 	values := make([]internalremoteworker.Snapshot, 0, len(rows))
 	for _, row := range rows {
 		value := internalremoteworker.Snapshot{Scope: internalremoteworker.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID}, EnrollmentID: row.EnrollmentID, WorkerID: row.WorkerID, WorkerName: row.WorkerName, State: row.State, ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, ExpiresAt: row.ExpiresAt, SecretClaimedAt: row.SecretClaimedAt, EnrolledAt: row.EnrolledAt, RevokedAt: row.RevokedAt, IncarnationID: row.IncarnationID, SPIFFEID: row.SPIFFEID, CertificateSHA256: row.CertificateSHA256, CertificateChainPEM: row.CertificateChainPEM, CertificateSerial: row.CertificateSerial, CertificateNotBefore: row.CertificateNotBefore, CertificateNotAfter: row.CertificateNotAfter, CertificateState: row.CertificateState, CertificateRevokedAt: row.CertificateRevokedAt}
+		if err := assignRemoteWorkerNodeStatus(&value, row); err != nil {
+			return RemoteWorkerEnrollmentPage{}, err
+		}
 		if row.TenantID != tenantID || row.ProjectID != projectID || value.Validate() != nil {
 			return RemoteWorkerEnrollmentPage{}, ErrCoordinationResultDrift
 		}

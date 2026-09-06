@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-heartbeat.schema.json",
+  "title": "RemoteWorkerHeartbeat",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "projectRef",
+    "enrollmentId",
+    "workerId",
+    "incarnationId",
+    "generation",
+    "observedGeneration",
+    "desiredState",
+    "observedState",
+    "healthState",
+    "acceptedAt",
+    "expiresAt",
+    "nextHeartbeatAfterSeconds",
+    "reconcileRequired"
+  ],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "RemoteWorkerHeartbeat" },
+    "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+    "enrollmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workerId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "incarnationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "observedGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "desiredState": { "enum": ["active", "drained"] },
+    "observedState": { "enum": ["active", "drained"] },
+    "healthState": { "const": "online" },
+    "acceptedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "nextHeartbeatAfterSeconds": { "const": 5 },
+    "reconcileRequired": { "type": "boolean" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "acceptedAt is the database mutation time and expiresAt is exactly 30 seconds later",
+    "reconcileRequired is true when observed generation or state differs from the server-owned desired values",
+    "this response does not yet carry lifecycle commands; command delivery is a separate generation-fenced contract"
+  ]
+}
