@@ -1,0 +1,4 @@
+=== RUN   TestFoundationKubernetesLifecycle
+    foundation_kubernetes_live_test.go:273: FOUNDATION_KUBERNETES={"activities":3,"adminExecStatus":403,"audits":9,"finalCleanupPhase":"complete","finalObservedState":"stopped","firstRuntimeId":"5fddbab2-5824-424a-ab9f-cb90eea46411","operations":3,"ordinaryUserAdminStatus":403,"outbox":4,"rebuiltRuntimeId":"925f8e65-e5d6-46b7-970a-c27d74abde0f","staleGenerationStatus":409,"targetApiVersion":"1.35","targetArchitecture":"arm64","targetEngineVersion":"v1.35.6+orb1","targetOS":"linux","workspaceDigest":"5bbfc69442b4335d6f7247c16053172eb0d6d4b781deb112f15de36e27195a41","workspaceRetained":true,"workspaceVolume":"ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247"}
+--- PASS: TestFoundationKubernetesLifecycle (18.97s)
+PASS

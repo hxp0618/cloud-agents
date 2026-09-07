@@ -344,13 +344,17 @@ func TestWaitReadyRequiresExecdHealth(t *testing.T) {
 	pings := 0
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
+		requestPath := strings.TrimPrefix(request.URL.Path, "/v1/sandboxes/physical-1/proxy/44772")
+		switch requestPath {
 		case "/v1/sandboxes/physical-1":
 			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
 			item.Status.State = state
 			_ = json.NewEncoder(writer).Encode(item)
 		case "/v1/sandboxes/physical-1/endpoints/44772":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/proxy/44772", "headers": map[string]string{"X-Route": "owned"}})
+			if request.URL.Query().Get("use_server_proxy") != "true" {
+				t.Error("execd endpoint did not require the server proxy")
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/44772", "headers": map[string]string{"X-Route": "owned"}})
 		case "/ping":
 			pings++
 			if request.Header.Get("X-Route") != "owned" {
@@ -388,13 +392,14 @@ func TestExecUsesExactReceiptAndBoundsOutput(t *testing.T) {
 	overflow, commandFailed, commands, statuses := false, false, 0, 0
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
+		requestPath := strings.TrimPrefix(request.URL.Path, "/v1/sandboxes/physical-1/proxy/44772")
+		switch requestPath {
 		case "/v1/sandboxes/physical-1":
 			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
 			item.Status.State = "Running"
 			_ = json.NewEncoder(writer).Encode(item)
 		case "/v1/sandboxes/physical-1/endpoints/44772":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL, "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/44772", "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
 		case "/command":
 			commands++
 			if request.Method != http.MethodPost || request.Header.Get("X-EXECD-ACCESS-TOKEN") != "owned" || request.Header.Get("Content-Type") != "application/json" {
@@ -465,7 +470,8 @@ func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 	unsafeTarget, bareTarget := false, false
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
+		requestPath := strings.TrimPrefix(request.URL.Path, "/v1/sandboxes/physical-1/proxy/44772")
+		switch requestPath {
 		case "/v1/sandboxes/physical-1":
 			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
 			item.Status.State = "Running"
@@ -541,13 +547,14 @@ func TestFilesStayInsideWorkspaceAndPreserveVersions(t *testing.T) {
 		info := func(filePath, fileType string, size int64) candidateFileInfo {
 			return candidateFileInfo{Path: filePath, Type: fileType, Size: size, ModifiedAt: modified}
 		}
-		switch request.URL.Path {
+		requestPath := strings.TrimPrefix(request.URL.Path, "/v1/sandboxes/physical-1/proxy/44772")
+		switch requestPath {
 		case "/v1/sandboxes/physical-1":
 			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
 			item.Status.State = "Running"
 			_ = json.NewEncoder(writer).Encode(item)
 		case "/v1/sandboxes/physical-1/endpoints/44772":
-			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL, "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/44772", "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
 		case "/files/info":
 			if request.Header.Get("X-EXECD-ACCESS-TOKEN") != "owned" {
 				t.Error("missing endpoint credential")

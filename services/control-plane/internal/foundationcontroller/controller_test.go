@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 )
 
@@ -21,6 +22,7 @@ func TestClassifyEffectResult(t *testing.T) {
 		{opensandbox.ErrRuntimeFailed, 1, "failed", "opensandbox_runtime_failed"},
 		{opensandbox.ErrPolicyUnenforced, 1, "failed", "foundation_network_policy_unenforced"},
 		{dockertarget.ErrDeploymentConflict, 1, "failed", "foundation_ownership_conflict"},
+		{kubernetestarget.ErrDeploymentConflict, 1, "failed", "foundation_ownership_conflict"},
 		{errors.Join(opensandbox.ErrInvalid, errors.New("secret")), 1, "failed", "foundation_configuration_invalid"},
 	} {
 		transition, code := classify(test.err, test.attempt)

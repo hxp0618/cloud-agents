@@ -22,7 +22,7 @@ import (
 )
 
 type config struct {
-	listen, database, dockerCredentials, tlsCert, tlsKey, sshListen, sshHostKey string
+	listen, database, dockerCredentials, kubernetesCredentials, tlsCert, tlsKey, sshListen, sshHostKey string
 }
 
 func main() {
@@ -41,6 +41,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	set.StringVar(&value.listen, "listen", "127.0.0.1:8090", "Gateway listen address")
 	set.StringVar(&value.database, "database-url", "", "PostgreSQL URL")
 	set.StringVar(&value.dockerCredentials, "docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
+	set.StringVar(&value.kubernetesCredentials, "kubernetes-credentials-directory", "", "deployment-owned Kubernetes credential directory")
 	set.StringVar(&value.tlsCert, "tls-cert", "", "optional TLS certificate")
 	set.StringVar(&value.tlsKey, "tls-key", "", "optional TLS private key")
 	set.StringVar(&value.sshListen, "ssh-listen", "", "optional SSH Gateway listen address")
@@ -55,15 +56,16 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	}
 	fill(&value.database, "CLOUD_AGENTS_PLATFORM_DATABASE_URL")
 	fill(&value.dockerCredentials, "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY")
+	fill(&value.kubernetesCredentials, "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY")
 	fill(&value.tlsCert, "CLOUD_AGENTS_ACCESS_GATEWAY_TLS_CERT")
 	fill(&value.tlsKey, "CLOUD_AGENTS_ACCESS_GATEWAY_TLS_KEY")
 	fill(&value.sshListen, "CLOUD_AGENTS_ACCESS_GATEWAY_SSH_LISTEN")
 	fill(&value.sshHostKey, "CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY")
-	if value.database == "" || value.dockerCredentials == "" ||
+	if value.database == "" || value.dockerCredentials == "" && value.kubernetesCredentials == "" ||
 		(value.tlsCert == "") != (value.tlsKey == "") || (value.sshListen == "") != (value.sshHostKey == "") {
-		return config{}, errors.New("database, Docker credential, and complete TLS/SSH configuration are required")
+		return config{}, errors.New("database, target credential, and complete TLS/SSH configuration are required")
 	}
-	for _, item := range []string{value.listen, value.database, value.dockerCredentials, value.tlsCert, value.tlsKey, value.sshListen, value.sshHostKey} {
+	for _, item := range []string{value.listen, value.database, value.dockerCredentials, value.kubernetesCredentials, value.tlsCert, value.tlsKey, value.sshListen, value.sshHostKey} {
 		if strings.TrimSpace(item) != item {
 			return config{}, errors.New("invalid access Gateway configuration")
 		}
@@ -129,7 +131,13 @@ FROM pg_roles WHERE rolname = current_user`).Scan(&safe); err != nil || !safe {
 	if err != nil {
 		return errors.New("access Gateway store is unavailable")
 	}
-	credentials, err := opensandbox.NewCredentialDirectory(config.dockerCredentials)
+	credentialDirectories := make([]string, 0, 2)
+	for _, directory := range []string{config.dockerCredentials, config.kubernetesCredentials} {
+		if directory != "" {
+			credentialDirectories = append(credentialDirectories, directory)
+		}
+	}
+	credentials, err := opensandbox.NewCredentialDirectory(credentialDirectories...)
 	if err != nil {
 		return errors.New("OpenSandbox credential directory is invalid")
 	}

@@ -247,7 +247,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("project HTTP server is unavailable")
 	}
 	var dockerProber *dockertarget.CredentialDirectory
-	var sandboxCredentials *opensandbox.CredentialDirectory
 	grantCodec, err := accessgrant.Load(config.accessGrantKey)
 	if err != nil {
 		return errors.New("Sandbox access Grant key is invalid")
@@ -257,11 +256,28 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		if err != nil {
 			return errors.New("Docker target credential directory is invalid")
 		}
-		sandboxCredentials, err = opensandbox.NewCredentialDirectory(config.dockerCredentials)
+	}
+	var kubernetesProber *kubernetestarget.CredentialDirectory
+	if config.kubernetesCredentials != "" {
+		kubernetesProber, err = kubernetestarget.NewCredentialDirectory(config.kubernetesCredentials)
+		if err != nil {
+			return errors.New("Kubernetes target credential directory is invalid")
+		}
+	}
+	credentialDirectories := make([]string, 0, 2)
+	if config.dockerCredentials != "" {
+		credentialDirectories = append(credentialDirectories, config.dockerCredentials)
+	}
+	if config.kubernetesCredentials != "" {
+		credentialDirectories = append(credentialDirectories, config.kubernetesCredentials)
+	}
+	var sandboxCredentials *opensandbox.CredentialDirectory
+	if len(credentialDirectories) != 0 {
+		sandboxCredentials, err = opensandbox.NewCredentialDirectory(credentialDirectories...)
 		if err != nil {
 			return errors.New("OpenSandbox credential directory is invalid")
 		}
-		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, sandboxCredentials)
+		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, kubernetesProber, sandboxCredentials)
 		if controllerErr != nil {
 			return errors.New("foundation controller is unavailable")
 		}
@@ -272,13 +288,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			foundationController.Run(foundationContext, logger)
 		}()
 		defer func() { cancelFoundation(); <-foundationDone }()
-	}
-	var kubernetesProber *kubernetestarget.CredentialDirectory
-	if config.kubernetesCredentials != "" {
-		kubernetesProber, err = kubernetestarget.NewCredentialDirectory(config.kubernetesCredentials)
-		if err != nil {
-			return errors.New("Kubernetes target credential directory is invalid")
-		}
 	}
 	var sshProber *sshtarget.CredentialDirectory
 	if config.sshCredentials != "" {

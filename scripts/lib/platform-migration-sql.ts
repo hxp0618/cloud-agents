@@ -263,8 +263,7 @@ export function classifyMigrationStatement(
       tokens[1] === "VIEW" &&
       migrationId === "000067" &&
       statement.index === 11 &&
-      statement.sha256 ===
-        "sha256:414854f0544ff507be5b1fad6c72d40f606dbe231195c577a232b4125150c313"
+      statement.sha256 === "sha256:414854f0544ff507be5b1fad6c72d40f606dbe231195c577a232b4125150c313"
     ) {
       requireCloudAgentsQualified(tokens, 2);
       return classification("CREATE", "VIEW", qualifiedIdentity("view", tokens, 2), null);
@@ -353,6 +352,7 @@ export function classifyMigrationStatement(
         "000059",
         "000066",
         "000068",
+        "000077",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -532,6 +532,14 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:accept_foundation_intent_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000077",
+          [
+            "function:unquoted:cloud_agents/unquoted:foundation_target_available_v1(unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:create_runtime_profile_draft_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:transition_foundation_sandbox_v4(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -543,8 +551,7 @@ export function classifyMigrationStatement(
       kind === "VIEW" &&
       migrationId === "000067" &&
       statement.index === 14 &&
-      statement.sha256 ===
-        "sha256:96eb4e40e2e00ce727b5dcb8272d6bd9c9a97c1bfb24c108ac2b44487d81189b"
+      statement.sha256 === "sha256:96eb4e40e2e00ce727b5dcb8272d6bd9c9a97c1bfb24c108ac2b44487d81189b"
     ) {
       requireCloudAgentsQualified(tokens, 2);
       return classification("ALTER", "VIEW", qualifiedIdentity("view", tokens, 2), null);

@@ -503,7 +503,7 @@ func executeSandboxCommand(ctx context.Context, value config, command platform.R
 				claim.RuntimeID, claim.RuntimeState = &command.RuntimeID, command.RuntimeState
 				claim.RuntimeOperationID, claim.RuntimeGeneration, claim.RuntimeSpecDigest = &command.RuntimeOperationID, &command.RuntimeGeneration, &command.RuntimeSpecDigest
 			}
-			result = foundationcontroller.ExecuteEffect(effectContext, docker, sandbox, claim)
+			result = foundationcontroller.ExecuteEffect(effectContext, docker, nil, sandbox, claim)
 			cancel()
 		}
 	}

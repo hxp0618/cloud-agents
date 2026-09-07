@@ -441,7 +441,6 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("local user environment HTTP server is unavailable")
 	}
 	var dockerProber *dockertarget.CredentialDirectory
-	var sandboxCredentials *opensandbox.CredentialDirectory
 	var grantCodec *accessgrant.Codec
 	if config.accessGrantKey != "" {
 		grantCodec, err = accessgrant.Load(config.accessGrantKey)
@@ -454,16 +453,26 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return errors.New("local Docker target credential directory is invalid")
 		}
-		sandboxCredentials, err = opensandbox.NewCredentialDirectory(config.dockerCredentials)
-		if err != nil {
-			return errors.New("local OpenSandbox credential directory is invalid")
-		}
 	}
 	var kubernetesProber *kubernetestarget.CredentialDirectory
 	if config.kubernetesCredentials != "" {
 		kubernetesProber, err = kubernetestarget.NewCredentialDirectory(config.kubernetesCredentials)
 		if err != nil {
 			return errors.New("local Kubernetes target credential directory is invalid")
+		}
+	}
+	credentialDirectories := make([]string, 0, 2)
+	if config.dockerCredentials != "" {
+		credentialDirectories = append(credentialDirectories, config.dockerCredentials)
+	}
+	if config.kubernetesCredentials != "" {
+		credentialDirectories = append(credentialDirectories, config.kubernetesCredentials)
+	}
+	var sandboxCredentials *opensandbox.CredentialDirectory
+	if len(credentialDirectories) != 0 {
+		sandboxCredentials, err = opensandbox.NewCredentialDirectory(credentialDirectories...)
+		if err != nil {
+			return errors.New("local OpenSandbox credential directory is invalid")
 		}
 	}
 	var sshProber *sshtarget.CredentialDirectory

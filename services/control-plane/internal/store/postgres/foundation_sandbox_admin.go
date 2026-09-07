@@ -277,7 +277,7 @@ func (service *DurableCoordinationService) PrepareFoundationSandboxExec(
 				return internalcoordination.ErrFoundationSandboxConflict
 			}
 			if tenant != tenantID || project != projectID || result.Access.SandboxID != sandboxID ||
-				(targetKind != "docker" && targetKind != "remote-worker") || runtimeID == nil || runtimeOperationID == nil ||
+				(targetKind != "docker" && targetKind != "kubernetes" && targetKind != "remote-worker") || runtimeID == nil || runtimeOperationID == nil ||
 				runtimeGeneration == nil || runtimeSpecDigest == nil || *runtimeGeneration != result.Access.Generation ||
 				*runtimeSpecDigest != specDigest || !validMutationIdentifier(result.Access.WorkspaceID) ||
 				!validMutationIdentifier(result.Access.SandboxID) || !validMutationIdentifier(result.Access.TargetID) ||
@@ -288,7 +288,7 @@ func (service *DurableCoordinationService) PrepareFoundationSandboxExec(
 			result.Access.Scope = internalcoordination.FoundationScope{TenantID: tenant, ProjectID: project}
 			result.Access.TargetKind, result.Access.RuntimeID, result.Access.RuntimeOperationID = targetKind, *runtimeID, *runtimeOperationID
 			result.Access.RuntimeGeneration, result.Access.RuntimeSpecDigest = *runtimeGeneration, *runtimeSpecDigest
-			if targetKind == "docker" {
+			if targetKind == "docker" || targetKind == "kubernetes" {
 				result.CommandID = ""
 				return nil
 			}

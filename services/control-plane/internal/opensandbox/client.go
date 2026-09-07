@@ -419,7 +419,7 @@ func (c *Client) probeExecd(ctx context.Context, runtimeID string) error {
 	if err != nil {
 		return err
 	}
-	target.Path = "/ping"
+	execdPath(target, "/ping")
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
 	if err != nil {
 		return ErrUnavailable
@@ -441,33 +441,7 @@ func (c *Client) probeExecd(ctx context.Context, runtimeID string) error {
 }
 
 func (c *Client) execdEndpoint(ctx context.Context, runtimeID string) (*url.URL, http.Header, error) {
-	var endpoint struct {
-		Endpoint string            `json:"endpoint"`
-		Headers  map[string]string `json:"headers"`
-	}
-	if err := c.call(ctx, http.MethodGet, "/v1/sandboxes/"+runtimeID+"/endpoints/44772", &endpoint); err != nil {
-		return nil, nil, err
-	}
-	base, baseErr := url.Parse(c.endpoint)
-	raw := endpoint.Endpoint
-	if !strings.Contains(raw, "://") {
-		raw = base.Scheme + "://" + raw
-	}
-	target, err := url.Parse(raw)
-	if err != nil || baseErr != nil || target.Host == "" || target.Hostname() != base.Hostname() || target.Scheme != base.Scheme || target.User != nil ||
-		(target.Path != "" && target.Path != "/" && target.Path != "/proxy/44772") || target.RawPath != "" || target.RawQuery != "" || target.Fragment != "" || target.Opaque != "" ||
-		(target.Scheme != "http" && target.Scheme != "https") || len(endpoint.Headers) > 16 {
-		return nil, nil, ErrUnavailable
-	}
-	headers := make(http.Header, len(endpoint.Headers))
-	for name, value := range endpoint.Headers {
-		if name == "" || len(name) > 128 || len(value) > 4096 || strings.EqualFold(name, "Host") ||
-			strings.ContainsAny(name+value, "\r\n") {
-			return nil, nil, ErrUnavailable
-		}
-		headers.Set(name, value)
-	}
-	return target, headers, nil
+	return c.serverProxyTarget(ctx, runtimeID, 44772)
 }
 
 func (c *Client) verifyAccessTarget(ctx context.Context, input PTYInput) (*url.URL, http.Header, error) {
@@ -1181,7 +1155,8 @@ func (c *Client) Exec(ctx context.Context, input ExecInput) (ExecResult, error) 
 	if err != nil {
 		return ExecResult{}, ErrInvalid
 	}
-	target.Path = "/command"
+	execdBasePath := target.Path
+	execdPath(target, "/command")
 	request, err := http.NewRequestWithContext(execCtx, http.MethodPost, target.String(), bytes.NewReader(body))
 	if err != nil {
 		return ExecResult{}, ErrUnavailable
@@ -1246,7 +1221,8 @@ func (c *Client) Exec(ctx context.Context, input ExecInput) (ExecResult, error) 
 	if executionID == "" {
 		return ExecResult{}, ErrUnavailable
 	}
-	target.Path = "/command/status/" + executionID
+	target.Path = execdBasePath
+	execdPath(target, "/command/status/"+executionID)
 	for {
 		statusRequest, err := http.NewRequestWithContext(execCtx, http.MethodGet, target.String(), http.NoBody)
 		if err != nil {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
@@ -23,7 +24,10 @@ const (
 type Controller struct {
 	store       *postgres.DurableCoordinationService
 	docker      *dockertarget.CredentialDirectory
+	kubernetes  *kubernetestarget.CredentialDirectory
 	opensandbox *opensandbox.CredentialDirectory
+	targetKinds []string
+	nextTarget  int
 	holder      string
 	incarnation string
 }
@@ -34,11 +38,18 @@ type EffectResult struct {
 	Err                                 error
 }
 
-func New(store *postgres.DurableCoordinationService, docker *dockertarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory) (*Controller, error) {
-	if store == nil || docker == nil || sandbox == nil {
+func New(store *postgres.DurableCoordinationService, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory) (*Controller, error) {
+	if store == nil || sandbox == nil || docker == nil && kubernetes == nil {
 		return nil, errors.New("foundation controller configuration is invalid")
 	}
-	return &Controller{store: store, docker: docker, opensandbox: sandbox,
+	targetKinds := make([]string, 0, 2)
+	if docker != nil {
+		targetKinds = append(targetKinds, "docker")
+	}
+	if kubernetes != nil {
+		targetKinds = append(targetKinds, "kubernetes")
+	}
+	return &Controller{store: store, docker: docker, kubernetes: kubernetes, opensandbox: sandbox, targetKinds: targetKinds,
 		holder: "foundation-controller", incarnation: randomIdentifier("inc")}, nil
 }
 
@@ -85,17 +96,25 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	if expired.Found {
 		return true, nil
 	}
-	claimResult, err := controller.store.ClaimFoundationSandbox(ctx, postgres.FoundationSandboxClaimInput{
-		TargetKind: "docker",
-		HolderID:   controller.holder, HolderIncarnation: controller.incarnation,
-		ClaimToken: randomIdentifier("claim"), LeaseSeconds: int32(claimLease / time.Second),
-		SubjectDigest: subject, AuditFactID: randomIdentifier("audit"),
-	})
-	if err != nil {
-		return false, err
-	}
-	if claimResult.DatabaseOutcome != postgres.DatabaseCommitted {
-		return false, errors.New("foundation claim outcome is unknown")
+	var claimResult postgres.FoundationSandboxClaimResult
+	for offset := range controller.targetKinds {
+		index := (controller.nextTarget + offset) % len(controller.targetKinds)
+		claimResult, err = controller.store.ClaimFoundationSandbox(ctx, postgres.FoundationSandboxClaimInput{
+			TargetKind: controller.targetKinds[index],
+			HolderID:   controller.holder, HolderIncarnation: controller.incarnation,
+			ClaimToken: randomIdentifier("claim"), LeaseSeconds: int32(claimLease / time.Second),
+			SubjectDigest: subject, AuditFactID: randomIdentifier("audit"),
+		})
+		if err != nil {
+			return false, err
+		}
+		if claimResult.DatabaseOutcome != postgres.DatabaseCommitted {
+			return false, errors.New("foundation claim outcome is unknown")
+		}
+		if claimResult.Found {
+			controller.nextTarget = (index + 1) % len(controller.targetKinds)
+			break
+		}
 	}
 	if !claimResult.Found {
 		return false, nil
@@ -124,7 +143,9 @@ func (controller *Controller) executeWithRenewal(ctx context.Context, claim *pos
 	effectCtx, cancel := context.WithTimeout(ctx, effectTimeout)
 	defer cancel()
 	results := make(chan EffectResult, 1)
-	go func() { results <- ExecuteEffect(effectCtx, controller.docker, controller.opensandbox, *claim) }()
+	go func() {
+		results <- ExecuteEffect(effectCtx, controller.docker, controller.kubernetes, controller.opensandbox, *claim)
+	}()
 	ticker := time.NewTicker(renewInterval)
 	defer ticker.Stop()
 	for {
@@ -147,14 +168,12 @@ func (controller *Controller) executeWithRenewal(ctx context.Context, claim *pos
 	}
 }
 
-func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, claim postgres.FoundationSandboxClaim) EffectResult {
-	if ctx == nil || docker == nil || sandbox == nil {
+func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, claim postgres.FoundationSandboxClaim) EffectResult {
+	if ctx == nil || sandbox == nil || (claim.TargetKind != "kubernetes" && docker == nil) || (claim.TargetKind == "kubernetes" && kubernetes == nil) {
 		return EffectResult{Err: errors.New("foundation executor configuration is invalid")}
 	}
-	volume := dockertarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
-		TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID}
 	if claim.Action == "sandbox.stop" {
-		volumeName, err := docker.VerifyFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+		volumeName, err := foundationWorkspaceVolume(ctx, docker, kubernetes, claim, false)
 		if err != nil || claim.PhysicalVolumeName == nil || volumeName != *claim.PhysicalVolumeName {
 			if err == nil {
 				err = dockertarget.ErrDeploymentConflict
@@ -175,7 +194,7 @@ func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory
 		return EffectResult{VolumeName: volumeName, CleanupComplete: true}
 	}
 
-	volumeName, err := docker.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+	volumeName, err := foundationWorkspaceVolume(ctx, docker, kubernetes, claim, true)
 	if err != nil {
 		return EffectResult{Err: err}
 	}
@@ -219,6 +238,23 @@ func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory
 	return result
 }
 
+func foundationWorkspaceVolume(ctx context.Context, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, claim postgres.FoundationSandboxClaim, create bool) (string, error) {
+	if claim.TargetKind == "kubernetes" {
+		volume := kubernetestarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+			TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID}
+		if create {
+			return kubernetes.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+		}
+		return kubernetes.VerifyFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+	}
+	volume := dockertarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+		TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID}
+	if create {
+		return docker.EnsureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+	}
+	return docker.VerifyFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef, volume)
+}
+
 func foundationNetworkPolicy(claim postgres.FoundationSandboxClaim) *opensandbox.NetworkPolicy {
 	if claim.NetworkPolicyID == "" {
 		return nil
@@ -240,10 +276,12 @@ func classify(err error, attempt int32) (string, string) {
 		terminal, code = true, "opensandbox_runtime_failed"
 	case errors.Is(err, opensandbox.ErrPolicyUnenforced):
 		terminal, code = true, "foundation_network_policy_unenforced"
-	case errors.Is(err, opensandbox.ErrConflict), errors.Is(err, dockertarget.ErrDeploymentConflict):
+	case errors.Is(err, opensandbox.ErrConflict), errors.Is(err, dockertarget.ErrDeploymentConflict), errors.Is(err, kubernetestarget.ErrDeploymentConflict):
 		terminal, code = true, "foundation_ownership_conflict"
 	case errors.Is(err, opensandbox.ErrInvalid), errors.Is(err, dockertarget.ErrDeploymentConfigInvalid),
-		errors.Is(err, dockertarget.ErrCredentialInvalid), errors.Is(err, dockertarget.ErrInvalidEndpoint):
+		errors.Is(err, dockertarget.ErrCredentialInvalid), errors.Is(err, dockertarget.ErrInvalidEndpoint),
+		errors.Is(err, kubernetestarget.ErrDeploymentConfigInvalid), errors.Is(err, kubernetestarget.ErrCredentialInvalid),
+		errors.Is(err, kubernetestarget.ErrInvalidEndpoint):
 		terminal, code = true, "foundation_configuration_invalid"
 	}
 	if terminal || attempt >= 8 {

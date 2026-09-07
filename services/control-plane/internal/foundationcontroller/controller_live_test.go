@@ -158,7 +158,7 @@ func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControl
 	if err != nil {
 		t.Fatal(err)
 	}
-	controller, err := New(store, dockerDirectory, sandboxDirectory)
+	controller, err := New(store, dockerDirectory, nil, sandboxDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if err != nil || claimed.DatabaseOutcome != postgres.DatabaseCommitted || !claimed.Found || claimed.Claim.SandboxID != "sandbox" {
 		t.Fatalf("prepare claim = %#v / %v", claimed, err)
 	}
-	result := ExecuteEffect(ctx, environment.controller.docker, environment.controller.opensandbox, claimed.Claim)
+	result := ExecuteEffect(ctx, environment.controller.docker, nil, environment.controller.opensandbox, claimed.Claim)
 	if result.Err != nil || result.RuntimeState != "Running" {
 		t.Fatalf("prepare physical effect = %#v", result)
 	}

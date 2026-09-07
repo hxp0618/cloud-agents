@@ -20,6 +20,18 @@ func TestParseConfigRequiresTLSOffLoopback(t *testing.T) {
 	if _, err := parseConfig(nil, env); err != nil {
 		t.Fatal(err)
 	}
+	kubernetesOnly := func(name string) string {
+		if name == "CLOUD_AGENTS_PLATFORM_DATABASE_URL" {
+			return "postgres://runtime@db/cloud_agents"
+		}
+		if name == "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY" {
+			return "/run/cloud-agents/kubernetes-credentials"
+		}
+		return ""
+	}
+	if _, err := parseConfig(nil, kubernetesOnly); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := parseConfig([]string{"--listen", ":8090"}, env); err == nil {
 		t.Fatal("plaintext non-loopback listener accepted")
 	}

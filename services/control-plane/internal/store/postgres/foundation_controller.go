@@ -18,7 +18,7 @@ const (
     cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
 	runtime_generation, runtime_spec_digest, ttl_seconds, expires_at
 	, network_policy_uid, network_default_egress, network_allowed_egress, network_preview_enabled
-FROM cloud_agents.claim_foundation_sandbox_v7($1,$2,$3,$4,$5,$6,$7,$8)`
+FROM cloud_agents.claim_foundation_sandbox_v8($1,$2,$3,$4,$5,$6,$7,$8)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
@@ -165,8 +165,8 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 	if service == nil || service.runner == nil {
 		return FoundationSandboxClaimResult{}, ErrNilCoordinationRunner
 	}
-	if ctx == nil || input.TargetKind != "docker" && input.TargetKind != "remote-worker" ||
-		input.TargetKind == "docker" && input.TargetID != "" || input.TargetKind == "remote-worker" && !validMutationIdentifier(input.TargetID) ||
+	if ctx == nil || input.TargetKind != "docker" && input.TargetKind != "kubernetes" && input.TargetKind != "remote-worker" ||
+		(input.TargetKind == "docker" || input.TargetKind == "kubernetes") && input.TargetID != "" || input.TargetKind == "remote-worker" && !validMutationIdentifier(input.TargetID) ||
 		!validMutationIdentifier(input.HolderID) || !validMutationIdentifier(input.HolderIncarnation) ||
 		!validMutationIdentifier(input.ClaimToken) || input.LeaseSeconds < 1 || input.LeaseSeconds > 60 ||
 		!validCoordinationDigest(input.SubjectDigest) || !validMutationIdentifier(input.AuditFactID) {
@@ -318,7 +318,7 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 			validMutationIdentifier(*claim.PhysicalVolumeName) && validMutationIdentifier(*claim.RuntimeID) &&
 			validMutationIdentifier(*claim.RuntimeOperationID) && *claim.RuntimeGeneration > 0 &&
 			*claim.RuntimeGeneration < claim.SandboxGeneration && validCoordinationDigest(*claim.RuntimeSpecDigest)
-	validTarget := claim.TargetKind == "docker" && endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" ||
+	validTarget := (claim.TargetKind == "docker" || claim.TargetKind == "kubernetes") && endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" ||
 		claim.TargetKind == "remote-worker" && endpointErr == nil && endpoint.Scheme == "remote-worker" && endpoint.Host == claim.CredentialRef && endpoint.Path == ""
 	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validTTL && validActionReceipt && validTarget &&
 		validMutationIdentifier(claim.EventID) && validMutationIdentifier(claim.OperationID) &&

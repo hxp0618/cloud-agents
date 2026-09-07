@@ -1,0 +1,54 @@
+{
+  "run": "foundation-k8s-ce5e84a4",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "488278300260aab5ca559412b919addc9e575e97",
+    "dirty": true
+  },
+  "backend": {
+    "kubernetesContext": "orbstack",
+    "kubernetesVersion": "{\n  \"clientVersion\": {\n    \"major\": \"1\",\n    \"minor\": \"33\",\n    \"gitVersion\": \"v1.33.9\",\n    \"gitCommit\": \"69220b617523ac1ba5d070e74c12b5daf5e6c572\",\n    \"gitTreeState\": \"clean\",\n    \"buildDate\": \"2026-02-26T20:22:38Z\",\n    \"goVersion\": \"go1.24.13\",\n    \"compiler\": \"gc\",\n    \"platform\": \"darwin/arm64\"\n  },\n  \"kustomizeVersion\": \"v5.6.0\",\n  \"serverVersion\": {\n    \"major\": \"1\",\n    \"minor\": \"35\",\n    \"emulationMajor\": \"1\",\n    \"emulationMinor\": \"35\",\n    \"minCompatibilityMajor\": \"1\",\n    \"minCompatibilityMinor\": \"34\",\n    \"gitVersion\": \"v1.35.6+orb1\",\n    \"gitCommit\": \"6ffe43029a0c56bfffd91b24535b22c6e37ab9d5\",\n    \"gitTreeState\": \"clean\",\n    \"buildDate\": \"2026-07-31T07:54:36Z\",\n    \"goVersion\": \"go1.25.11\",\n    \"compiler\": \"gc\",\n    \"platform\": \"linux/arm64\"\n  }\n}",
+    "targetNamespace": "foundation-k8s-ce5e84a4",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "schemaHead": "000077",
+    "openSandboxSource": "server/v0.2.2 (207d94c7dc7735c143856fe5c6538b743e478786)",
+    "openSandboxServerImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "openSandboxServerImageID": "sha256:85b5686f2ad863058d3863550c18761f6bb57d0a87c024d1e77ee49d72e78810",
+    "openSandboxControllerImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller:v0.2.0",
+    "openSandboxControllerImageID": "docker-pullable://sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller@sha256:a9a5f73c1785ebd955336ffa313973a35c1a1b662cb7afc4ea82d92021b3532a",
+    "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "egressImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "receipt": {
+    "activities": 3,
+    "adminExecStatus": 403,
+    "audits": 9,
+    "finalCleanupPhase": "complete",
+    "finalObservedState": "stopped",
+    "firstRuntimeId": "5fddbab2-5824-424a-ab9f-cb90eea46411",
+    "operations": 3,
+    "ordinaryUserAdminStatus": 403,
+    "outbox": 4,
+    "rebuiltRuntimeId": "925f8e65-e5d6-46b7-970a-c27d74abde0f",
+    "staleGenerationStatus": 409,
+    "targetApiVersion": "1.35",
+    "targetArchitecture": "arm64",
+    "targetEngineVersion": "v1.35.6+orb1",
+    "targetOS": "linux",
+    "workspaceDigest": "5bbfc69442b4335d6f7247c16053172eb0d6d4b781deb112f15de36e27195a41",
+    "workspaceRetained": true,
+    "workspaceVolume": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247"
+  },
+  "checks": [
+    "generated Admin API registers and probes the real Kubernetes target while an ordinary user receives 403",
+    "generated Admin API publishes a target-bound RuntimeProfile and generated User API exposes only its redacted summary",
+    "generated User API creates the Sandbox and the Control Plane controller creates the owned PVC before OpenSandbox",
+    "pinned OpenSandbox server and controller create a real BatchSandbox workload with the pre-created retained PVC",
+    "generated User Exec writes a proof, rebuilds onto the same PVC, and verifies the exact digest",
+    "generation fences reject stale Exec and Admin cannot use the user content API",
+    "Admin stop reaches cleanup complete with zero BatchSandbox and Pod residue while the retained PVC remains owner-bound",
+    "the harness deletes only its UUID-named namespaces and RBAC resources after collecting evidence"
+  ],
+  "boundary": "Local OrbStack Kubernetes and disposable PostgreSQL only; this proves explicit-target Kubernetes Foundation lifecycle, not Region/Pool placement, capability admission, external Kubernetes, SSH, Codex or Claude Code E2E"
+}
