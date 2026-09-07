@@ -50,6 +50,8 @@ import {
   decodeRemoteWorkerSandboxCommandReceipt,
   decodeRemoteWorkerSandboxExecCommand,
   decodeRemoteWorkerSandboxExecCommandReceipt,
+  decodeRemoteWorkerSandboxFileCommand,
+  decodeRemoteWorkerSandboxFileCommandReceipt,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -149,6 +151,65 @@ describe("generated platform JSON models", () => {
         stdout: "",
         stderr: "",
         executionTimeMillis: 0,
+      }),
+    ).toThrow(TypeError);
+  });
+
+  it("fences RemoteWorker Sandbox Files commands and receipts", () => {
+    const command = {
+      commandId: "rwfile-alpha",
+      eventId: "event-alpha",
+      grantId: "grant-alpha",
+      workspaceId: "workspace-alpha",
+      targetId: "target-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      runtimeId: "runtime-alpha",
+      runtimeOperationId: "operation-alpha",
+      runtimeSpecDigest: `sha256:${"a".repeat(64)}`,
+      action: "write",
+      path: "notes.txt",
+      write: { contentBase64Url: "aGk" },
+      deadline: "2026-09-07T12:01:00Z",
+    };
+    expect(decodeRemoteWorkerSandboxFileCommand(command).write?.contentBase64Url).toBe("aGk");
+    expect(() =>
+      decodeRemoteWorkerSandboxFileCommand({
+        ...command,
+        action: "read",
+        write: undefined,
+        read: { offset: 1, limit: 1048576 },
+      }),
+    ).toThrow(TypeError);
+    expect(
+      decodeRemoteWorkerSandboxFileCommandReceipt({
+        commandId: "rwfile-alpha",
+        eventId: "event-alpha",
+        grantId: "grant-alpha",
+        sandboxId: "sandbox-alpha",
+        sandboxGeneration: 3,
+        action: "read",
+        result: "succeeded",
+        bytesTransferred: 2,
+        read: {
+          fileVersion: `sfv1_${"a".repeat(43)}`,
+          offset: 0,
+          totalBytes: 2,
+          contentBase64Url: "aGk",
+        },
+      }).bytesTransferred,
+    ).toBe(2);
+    expect(() =>
+      decodeRemoteWorkerSandboxFileCommandReceipt({
+        commandId: "rwfile-alpha",
+        eventId: "event-alpha",
+        grantId: "grant-alpha",
+        sandboxId: "sandbox-alpha",
+        sandboxGeneration: 3,
+        action: "read",
+        result: "failed",
+        bytesTransferred: 0,
+        stableErrorCode: "secret_error",
       }),
     ).toThrow(TypeError);
   });

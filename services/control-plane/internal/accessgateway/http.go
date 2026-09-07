@@ -308,12 +308,42 @@ func (server *Server) startFileAccess(request *http.Request, value route, tokenD
 	if err := server.store.StartFileAccess(request.Context(), value.tenant, value.project, value.grant, eventID, action, tokenDigest, request.Header.Get("X-Request-ID")); err != nil {
 		return fileAccess{}, err
 	}
-	client, err := server.client(authority)
-	if err != nil {
-		_ = server.finishFileAccess(request.Context(), value, tokenDigest, eventID, 0, err)
-		return fileAccess{}, err
+	var client *opensandbox.Client
+	if authority.Access.TargetKind == "docker" {
+		client, err = server.client(authority)
+		if err != nil {
+			_ = server.finishFileAccess(request.Context(), value, tokenDigest, eventID, 0, err)
+			return fileAccess{}, err
+		}
 	}
 	return fileAccess{authority: authority, client: client, eventID: eventID}, nil
+}
+
+func remoteFileError(receipt platform.RemoteWorkerSandboxFileCommandReceipt) error {
+	if receipt.Result == "succeeded" {
+		return nil
+	}
+	switch receipt.StableErrorCode {
+	case "sandbox_runtime_unavailable":
+		return opensandbox.ErrRuntimeFailed
+	case "sandbox_file_not_found":
+		return opensandbox.ErrNotFound
+	case "sandbox_file_conflict":
+		return opensandbox.ErrConflict
+	case "sandbox_file_limit":
+		return opensandbox.ErrFileLimit
+	case "sandbox_file_invalid":
+		return opensandbox.ErrInvalid
+	case "sandbox_file_timeout":
+		return context.DeadlineExceeded
+	default:
+		return opensandbox.ErrUnavailable
+	}
+}
+
+func remoteFileRequest(access fileAccess, tokenDigest, requestID, action, path string) postgres.RemoteWorkerSandboxFileRequest {
+	return postgres.RemoteWorkerSandboxFileRequest{Authority: access.authority, EventID: access.eventID,
+		RequestID: requestID, TokenDigest: tokenDigest, Action: action, Path: path}
 }
 
 func (server *Server) finishFileAccess(ctx context.Context, value route, tokenDigest, eventID string, bytesTransferred int64, operationErr error) error {
@@ -346,14 +376,27 @@ func (server *Server) listFiles(writer http.ResponseWriter, request *http.Reques
 		writeGatewayError(writer, err)
 		return
 	}
-	entries, operationErr := access.client.ListFiles(request.Context(), ptyInput(access.authority), validated.Path)
+	result := make([]platform.SandboxFileEntry, 0)
+	var operationErr error
+	if access.client != nil {
+		entries, err := access.client.ListFiles(request.Context(), ptyInput(access.authority), validated.Path)
+		operationErr = err
+		for _, entry := range entries {
+			result = append(result, platform.SandboxFileEntry{Path: entry.Path, Type: entry.Type, SizeBytes: entry.SizeBytes, ModifiedAt: entry.ModifiedAt, FileVersion: entry.FileVersion})
+		}
+	} else {
+		remote, err := server.store.ExecuteRemoteWorkerSandboxFile(request.Context(), remoteFileRequest(access, tokenDigest, request.Header.Get("X-Request-ID"), "list", validated.Path))
+		operationErr = err
+		if operationErr == nil {
+			operationErr = remoteFileError(remote)
+		}
+		if operationErr == nil {
+			result = remote.List.Entries
+		}
+	}
 	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, 0, operationErr); err != nil {
 		writeGatewayError(writer, err)
 		return
-	}
-	result := make([]platform.SandboxFileEntry, 0, len(entries))
-	for _, entry := range entries {
-		result = append(result, platform.SandboxFileEntry{Path: entry.Path, Type: entry.Type, SizeBytes: entry.SizeBytes, ModifiedAt: entry.ModifiedAt, FileVersion: entry.FileVersion})
 	}
 	grant := access.authority
 	body, encodeErr := platform.EncodeSandboxFilePageResponseJSON(common.ResponseEnvelope[platform.SandboxFilePage]{Value: platform.SandboxFilePage{
@@ -393,7 +436,27 @@ func (server *Server) readFile(writer http.ResponseWriter, request *http.Request
 		writeGatewayError(writer, err)
 		return
 	}
-	read, operationErr := access.client.ReadFile(request.Context(), ptyInput(access.authority), validated.Path, validated.Offset, validated.Limit, validated.FileVersion)
+	read := opensandbox.FileRead{Path: validated.Path}
+	var operationErr error
+	if access.client != nil {
+		read, operationErr = access.client.ReadFile(request.Context(), ptyInput(access.authority), validated.Path, validated.Offset, validated.Limit, validated.FileVersion)
+	} else {
+		remoteRequest := remoteFileRequest(access, tokenDigest, request.Header.Get("X-Request-ID"), "read", validated.Path)
+		remoteRequest.Offset, remoteRequest.Limit, remoteRequest.FileVersion = validated.Offset, int64(validated.Limit), validated.FileVersion
+		remote, err := server.store.ExecuteRemoteWorkerSandboxFile(request.Context(), remoteRequest)
+		operationErr = err
+		if operationErr == nil {
+			operationErr = remoteFileError(remote)
+		}
+		if operationErr == nil {
+			content, err := base64.RawURLEncoding.DecodeString(remote.Read.ContentBase64URL)
+			if err != nil {
+				operationErr = opensandbox.ErrUnavailable
+			} else {
+				read.FileVersion, read.Offset, read.TotalBytes, read.Content = remote.Read.FileVersion, remote.Read.Offset, remote.Read.TotalBytes, content
+			}
+		}
+	}
 	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, int64(len(read.Content)), operationErr); err != nil {
 		writeGatewayError(writer, err)
 		return
@@ -440,7 +503,24 @@ func (server *Server) writeFile(writer http.ResponseWriter, request *http.Reques
 		writeGatewayError(writer, err)
 		return
 	}
-	entry, operationErr := access.client.WriteFile(request.Context(), ptyInput(access.authority), validated.Path, content)
+	var entry platform.SandboxFileEntry
+	var operationErr error
+	if access.client != nil {
+		written, err := access.client.WriteFile(request.Context(), ptyInput(access.authority), validated.Path, content)
+		operationErr = err
+		entry = platform.SandboxFileEntry{Path: written.Path, Type: written.Type, SizeBytes: written.SizeBytes, ModifiedAt: written.ModifiedAt, FileVersion: written.FileVersion}
+	} else {
+		remoteRequest := remoteFileRequest(access, tokenDigest, request.Header.Get("X-Request-ID"), "write", validated.Path)
+		remoteRequest.Content = content
+		remote, err := server.store.ExecuteRemoteWorkerSandboxFile(request.Context(), remoteRequest)
+		operationErr = err
+		if operationErr == nil {
+			operationErr = remoteFileError(remote)
+		}
+		if operationErr == nil {
+			entry = remote.Write.Entry
+		}
+	}
 	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, int64(len(content)), operationErr); err != nil {
 		writeGatewayError(writer, err)
 		return
@@ -467,7 +547,16 @@ func (server *Server) deleteFile(writer http.ResponseWriter, request *http.Reque
 		writeGatewayError(writer, err)
 		return
 	}
-	operationErr := access.client.DeleteFile(request.Context(), ptyInput(access.authority), validated.Path)
+	var operationErr error
+	if access.client != nil {
+		operationErr = access.client.DeleteFile(request.Context(), ptyInput(access.authority), validated.Path)
+	} else {
+		remote, err := server.store.ExecuteRemoteWorkerSandboxFile(request.Context(), remoteFileRequest(access, tokenDigest, request.Header.Get("X-Request-ID"), "delete", validated.Path))
+		operationErr = err
+		if operationErr == nil {
+			operationErr = remoteFileError(remote)
+		}
+	}
 	if err := server.finishFileAccess(request.Context(), value, tokenDigest, access.eventID, 0, operationErr); err != nil {
 		writeGatewayError(writer, err)
 		return

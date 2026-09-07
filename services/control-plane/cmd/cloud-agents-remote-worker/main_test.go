@@ -131,3 +131,31 @@ func TestRemoteWorkerSandboxExecStateSurvivesRestartAndAcknowledgement(t *testin
 		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
 	}
 }
+
+func TestRemoteWorkerSandboxFileStateSurvivesRestartAndAcknowledgement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	state := initialNodeState("incarnation-alpha")
+	command := &platform.RemoteWorkerSandboxFileCommand{CommandID: "rwfile-alpha", EventID: "file-alpha",
+		GrantID: "grant-alpha", WorkspaceID: "workspace-alpha", TargetID: "target-alpha",
+		SandboxID: "sandbox-alpha", SandboxGeneration: 3, RuntimeID: "runtime-alpha",
+		RuntimeOperationID: "operation-alpha", RuntimeSpecDigest: "sha256:" + strings.Repeat("a", 64),
+		Action: "list", Path: ".", Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := reconcileHeartbeat(path, &state, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID, SandboxFileCommand: command}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := loadNodeState(path, state.IncarnationID)
+	if err != nil || restarted.SandboxFileCommand == nil || restarted.SandboxFileCommand.CommandID != command.CommandID {
+		t.Fatalf("restarted state=%#v err=%v", restarted, err)
+	}
+	restarted.SandboxFileCommandReceipt = &platform.RemoteWorkerSandboxFileCommandReceipt{CommandID: command.CommandID,
+		EventID: command.EventID, GrantID: command.GrantID, SandboxID: command.SandboxID,
+		SandboxGeneration: command.SandboxGeneration, Action: command.Action, Result: "succeeded",
+		List: &platform.RemoteWorkerSandboxFileListResult{Entries: []platform.SandboxFileEntry{}}}
+	if err := saveNodeState(path, restarted); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID}, time.Now()); err != nil ||
+		restarted.SandboxFileCommand != nil || restarted.SandboxFileCommandReceipt != nil {
+		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
+	}
+}

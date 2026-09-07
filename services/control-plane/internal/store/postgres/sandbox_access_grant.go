@@ -401,6 +401,7 @@ func (store *AccessGatewayStore) resolve(ctx context.Context, tenantID, projectI
 	}
 	var result SandboxAccessGrantAuthority
 	var tenant, project, sandboxID, workspaceID, runtimeID, runtimeOperationID, runtimeSpecDigest, credentialRef string
+	var targetID string
 	var grantGeneration, generation, runtimeGeneration, observedGeneration int64
 	var desiredState, observedState, runtimeState, volumeState, targetKind, operationState, cleanupPhase, specDigest string
 	var writerReleased bool
@@ -415,7 +416,7 @@ func (store *AccessGatewayStore) resolve(ctx context.Context, tenantID, projectI
     sandbox.desired_state, sandbox.observed_state, sandbox.writer_released,
     sandbox.runtime_uid, sandbox.runtime_state, sandbox.runtime_operation_uid,
     sandbox.runtime_generation, sandbox.runtime_spec_digest, sandbox.spec_digest,
-    volume.observed_state, target.target_kind, target.credential_ref,
+    volume.observed_state, target.target_uid, target.target_kind, target.credential_ref,
     operation.state, operation.cleanup_phase
 FROM cloud_agents.sandbox_access_grants AS access_grant
 JOIN cloud_agents.sandbox_sessions AS sandbox
@@ -436,7 +437,7 @@ WHERE access_grant.tenant_id = cloud_agents.require_tenant_id() AND access_grant
 			&tenant, &project, &result.GrantID, &sandboxID, &grantGeneration, &result.ExpiresAt, &result.CreatedAt,
 			&workspaceID, &generation, &observedGeneration, &desiredState, &observedState, &writerReleased,
 			&runtimeID, &runtimeState, &runtimeOperationID, &runtimeGeneration, &runtimeSpecDigest, &specDigest,
-			&volumeState, &targetKind, &credentialRef, &operationState, &cleanupPhase)
+			&volumeState, &targetID, &targetKind, &credentialRef, &operationState, &cleanupPhase)
 	})
 	if err != nil {
 		return SandboxAccessGrantAuthority{}, mapSandboxAccessGrantError(err)
@@ -444,16 +445,18 @@ WHERE access_grant.tenant_id = cloud_agents.require_tenant_id() AND access_grant
 	if tenant != tenantID || project != projectID || result.GrantID != grantID || generation < 1 || grantGeneration != generation ||
 		observedGeneration != generation || desiredState != "running" || observedState != "running" || writerReleased ||
 		runtimeState != "Running" || runtimeGeneration != generation || runtimeSpecDigest != specDigest ||
-		volumeState != "available" || targetKind != "docker" || operationState != "succeeded" || cleanupPhase != "complete" ||
+		volumeState != "available" || targetKind != "docker" && targetKind != "remote-worker" || operationState != "succeeded" || cleanupPhase != "complete" ||
 		!validMutationIdentifier(sandboxID) || !validMutationIdentifier(workspaceID) || !validMutationIdentifier(runtimeID) ||
-		!validMutationIdentifier(runtimeOperationID) || !validMutationIdentifier(credentialRef) || !validCoordinationDigest(runtimeSpecDigest) {
+		!validMutationIdentifier(runtimeOperationID) || !validMutationIdentifier(targetID) ||
+		!validMutationIdentifier(credentialRef) || !validCoordinationDigest(runtimeSpecDigest) {
 		return SandboxAccessGrantAuthority{}, ErrSandboxAccessGrantDenied
 	}
 	result.Access = FoundationSandboxAccess{
 		Scope:       internalcoordination.FoundationScope{TenantID: tenant, ProjectID: project},
 		WorkspaceID: workspaceID, SandboxID: sandboxID, RuntimeID: runtimeID,
 		RuntimeOperationID: runtimeOperationID, RuntimeSpecDigest: runtimeSpecDigest,
-		CredentialRef: credentialRef, Generation: generation, RuntimeGeneration: runtimeGeneration,
+		TargetID: targetID, TargetKind: targetKind, CredentialRef: credentialRef,
+		Generation: generation, RuntimeGeneration: runtimeGeneration,
 	}
 	return result, nil
 }

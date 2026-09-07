@@ -3,12 +3,14 @@ package postgres
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"time"
 
+	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/jackc/pgx/v5"
@@ -21,6 +23,7 @@ type RemoteWorkerHeartbeatResult struct {
 	Command            *internalremoteworker.Command
 	SandboxCommand     *internalremoteworker.SandboxCommand
 	SandboxExecCommand *internalremoteworker.SandboxExecCommand
+	SandboxFileCommand *internalremoteworker.SandboxFileCommand
 }
 
 type RemoteWorkerOperationPage struct {
@@ -82,6 +85,16 @@ FROM cloud_agents.claim_remote_worker_sandbox_exec_v1($1,$2,$3,$4,$5)`
 const settleRemoteWorkerSandboxExecSQL = `SELECT command_state, command_deadline_at
 FROM cloud_agents.settle_remote_worker_sandbox_exec_v1(
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`
+
+const claimRemoteWorkerSandboxFileSQL = `SELECT command_uid, event_uid, grant_uid,
+    workspace_uid, target_uid, sandbox_uid, sandbox_generation, runtime_uid,
+    runtime_operation_uid, runtime_spec_digest, action, file_path, read_offset,
+    read_limit, read_file_version, write_content, command_deadline_at
+FROM cloud_agents.claim_remote_worker_sandbox_file_v1($1,$2,$3,$4,$5)`
+
+const settleRemoteWorkerSandboxFileSQL = `SELECT command_state, command_deadline_at
+FROM cloud_agents.settle_remote_worker_sandbox_file_v1(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`
 
 const lockRemoteWorkerSchedulingSQL = `SELECT cloud_agents.lock_remote_worker_scheduling_v1($1,$2,$3)`
 const transitionRemoteWorkerSchedulingSQL = `SELECT operation_uid, idempotency_key, action, enrollment_uid,
@@ -178,6 +191,11 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
 		}
 	}
+	if input.SandboxFileCommandReceipt != nil {
+		if err := service.settleRemoteWorkerSandboxFile(ctx, result.Node, input.PeerCertificateSHA256, *input.SandboxFileCommandReceipt); err != nil {
+			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
+		}
+	}
 	if result.Node.DesiredState != "active" || result.Node.ObservedState != "active" || !slices.Contains(result.Node.Capabilities, "docker") {
 		return result, nil
 	}
@@ -200,6 +218,9 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 	if !claim.Found {
 		if slices.Contains(result.Node.Capabilities, "exec") {
 			result.SandboxExecCommand, err = service.claimRemoteWorkerSandboxExec(ctx, result.Node, input.PeerCertificateSHA256)
+		}
+		if err == nil && result.SandboxExecCommand == nil && slices.Contains(result.Node.Capabilities, "files") {
+			result.SandboxFileCommand, err = service.claimRemoteWorkerSandboxFile(ctx, result.Node, input.PeerCertificateSHA256)
 		}
 		return result, err
 	}
@@ -280,6 +301,80 @@ func (service *DurableCoordinationService) settleRemoteWorkerSandboxExec(ctx con
 			receipt.Result, exitCode, stdout, stderr, executionTime, stableError, digest).Scan(&state, &deadline)
 	})
 	return err
+}
+
+func (service *DurableCoordinationService) claimRemoteWorkerSandboxFile(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string) (*internalremoteworker.SandboxFileCommand, error) {
+	command := internalremoteworker.SandboxFileCommand{}
+	var readOffset, readLimit *int64
+	var readVersion *string
+	var writeContent []byte
+	var deadline time.Time
+	err := service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, claimRemoteWorkerSandboxFileSQL,
+			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID, subjectDigest).Scan(
+			&command.CommandID, &command.EventID, &command.GrantID, &command.WorkspaceID,
+			&command.TargetID, &command.SandboxID, &command.SandboxGeneration, &command.RuntimeID,
+			&command.RuntimeOperationID, &command.RuntimeSpecDigest, &command.Action, &command.Path,
+			&readOffset, &readLimit, &readVersion, &writeContent, &deadline)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, mapRemoteWorkerNodeError(err)
+	}
+	if command.Action == "read" {
+		if readOffset == nil || readLimit == nil {
+			return nil, ErrCoordinationResultDrift
+		}
+		command.Read = &platform.RemoteWorkerSandboxFileReadCommand{Offset: *readOffset, Limit: *readLimit}
+		if readVersion != nil {
+			command.Read.FileVersion = *readVersion
+		}
+	} else if command.Action == "write" {
+		command.Write = &platform.RemoteWorkerSandboxFileWriteCommand{ContentBase64URL: base64.RawURLEncoding.EncodeToString(writeContent)}
+	} else if readOffset != nil || readLimit != nil || readVersion != nil || writeContent != nil {
+		return nil, ErrCoordinationResultDrift
+	}
+	command.Deadline = deadline.UTC().Format(time.RFC3339Nano)
+	if internalremoteworker.ValidateSandboxFileCommand(command) != nil || command.TargetID != node.TargetID {
+		return nil, ErrCoordinationResultDrift
+	}
+	return &command, nil
+}
+
+func (service *DurableCoordinationService) settleRemoteWorkerSandboxFile(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.SandboxFileCommandReceipt) error {
+	digest, err := internalremoteworker.SandboxFileCommandReceiptDigest(receipt)
+	if err != nil {
+		return ErrCoordinationInvalidInput
+	}
+	var listEntries, readVersion, readOffset, readTotal, readContent, writeEntry, stableError any
+	if receipt.Result == "failed" {
+		stableError = receipt.StableErrorCode
+	} else {
+		switch receipt.Action {
+		case "list":
+			listEntries, err = json.Marshal(receipt.List.Entries)
+		case "read":
+			readVersion, readOffset, readTotal = receipt.Read.FileVersion, receipt.Read.Offset, receipt.Read.TotalBytes
+			readContent, err = base64.RawURLEncoding.Strict().DecodeString(receipt.Read.ContentBase64URL)
+		case "write":
+			writeEntry, err = json.Marshal(receipt.Write.Entry)
+		case "delete":
+		}
+	}
+	if err != nil {
+		return ErrCoordinationInvalidInput
+	}
+	var state string
+	var deadline time.Time
+	return service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, settleRemoteWorkerSandboxFileSQL,
+			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID,
+			subjectDigest, receipt.CommandID, receipt.EventID, receipt.GrantID, receipt.SandboxID,
+			receipt.SandboxGeneration, receipt.Action, receipt.Result, receipt.BytesTransferred,
+			listEntries, readVersion, readOffset, readTotal, readContent, writeEntry, stableError, digest).Scan(&state, &deadline)
+	})
 }
 
 func (service *DurableCoordinationService) settleRemoteWorkerSandbox(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.SandboxCommandReceipt) error {
@@ -511,6 +606,8 @@ func mapRemoteWorkerNodeError(err error) error {
 			return ErrRemoteWorkerSandboxReceiptConflict
 		case "remote worker sandbox exec receipt conflict":
 			return ErrRemoteWorkerSandboxExecReceiptConflict
+		case "remote worker sandbox file receipt conflict":
+			return ErrRemoteWorkerSandboxFileReceiptConflict
 		case "remote worker scheduling idempotency conflict":
 			return ErrRemoteWorkerSchedulingIdempotencyConflict
 		case "remote worker operation is in progress":
@@ -526,7 +623,8 @@ func mapRemoteWorkerNodeError(err error) error {
 		case "remote worker heartbeat input is invalid":
 			return ErrCoordinationInvalidInput
 		case "remote worker sandbox receipt is invalid", "remote worker sandbox exec claim is invalid",
-			"remote worker sandbox exec receipt is invalid":
+			"remote worker sandbox exec receipt is invalid", "remote worker sandbox file claim is invalid",
+			"remote worker sandbox file receipt is invalid":
 			return ErrCoordinationInvalidInput
 		}
 	}
@@ -537,6 +635,7 @@ var ErrRemoteWorkerGenerationConflict = errors.New("remote worker generation con
 var ErrRemoteWorkerCommandReceiptConflict = errors.New("remote worker command receipt conflicts")
 var ErrRemoteWorkerSandboxReceiptConflict = errors.New("remote worker sandbox receipt conflicts")
 var ErrRemoteWorkerSandboxExecReceiptConflict = errors.New("remote worker sandbox exec receipt conflicts")
+var ErrRemoteWorkerSandboxFileReceiptConflict = errors.New("remote worker sandbox file receipt conflicts")
 var ErrRemoteWorkerSchedulingIdempotencyConflict = errors.New("remote worker scheduling idempotency key conflicts")
 var ErrRemoteWorkerOperationInProgress = errors.New("remote worker operation is in progress")
 var ErrRemoteWorkerSchedulingResourceVersionConflict = errors.New("remote worker scheduling resource version conflicts")

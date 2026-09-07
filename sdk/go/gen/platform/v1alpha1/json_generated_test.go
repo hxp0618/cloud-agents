@@ -201,6 +201,25 @@ func TestRemoteWorkerSandboxExecCommandBoundaries(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerSandboxFileCommandBoundaries(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := []byte(`{"commandId":"rwfile-alpha","eventId":"event-alpha","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","action":"write","path":"notes.txt","write":{"contentBase64Url":"aGk"},"deadline":"2026-09-07T12:01:00Z"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxFileCommandJSON(command); err != nil || decoded.Write == nil || decoded.Write.ContentBase64URL != "aGk" {
+		t.Fatalf("file command=%#v error=%v", decoded, err)
+	}
+	readWithoutVersion := []byte(`{"commandId":"rwfile-alpha","eventId":"event-alpha","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","action":"read","path":"notes.txt","read":{"offset":1,"limit":1048576},"deadline":"2026-09-07T12:01:00Z"}`)
+	if _, err := DecodeRemoteWorkerSandboxFileCommandJSON(readWithoutVersion); err == nil {
+		t.Fatal("continued file read accepted without a file version")
+	}
+	receipt := []byte(`{"commandId":"rwfile-alpha","eventId":"event-alpha","grantId":"grant-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"action":"read","result":"succeeded","bytesTransferred":2,"read":{"fileVersion":"sfv1_` + strings.Repeat("a", 43) + `","offset":0,"totalBytes":2,"contentBase64Url":"aGk"}}`)
+	if decoded, err := DecodeRemoteWorkerSandboxFileCommandReceiptJSON(receipt); err != nil || decoded.Read == nil || decoded.BytesTransferred != 2 {
+		t.Fatalf("file receipt=%#v error=%v", decoded, err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxFileCommandReceiptJSON([]byte(`{"commandId":"rwfile-alpha","eventId":"event-alpha","grantId":"grant-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"action":"read","result":"failed","bytesTransferred":0,"stableErrorCode":"secret_error"}`)); err == nil {
+		t.Fatal("file receipt accepted an unbounded stable error")
+	}
+}
+
 func TestRemoteWorkerSandboxLifecycleCommandsFencePhysicalAuthority(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	legacyCreateReceipt := []byte(`{"commandId":"rwsc-create","attempt":1,"operationId":"operation-create","sandboxId":"sandbox-alpha","sandboxGeneration":1,"result":"succeeded","runtimeId":"runtime-alpha","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)

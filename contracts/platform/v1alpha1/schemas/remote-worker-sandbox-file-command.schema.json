@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-file-command.schema.json",
+  "title": "RemoteWorkerSandboxFileCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commandId",
+    "eventId",
+    "grantId",
+    "workspaceId",
+    "targetId",
+    "sandboxId",
+    "sandboxGeneration",
+    "runtimeId",
+    "runtimeOperationId",
+    "runtimeSpecDigest",
+    "action",
+    "path",
+    "deadline"
+  ],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeOperationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeSpecDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "action": { "enum": ["list", "read", "write", "delete"] },
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "limit"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "fileVersion": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" }
+      }
+    },
+    "write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contentBase64Url"],
+      "properties": {
+        "contentBase64Url": { "type": "string", "maxLength": 22369622, "pattern": "^[A-Za-z0-9_-]*$" }
+      }
+    },
+    "deadline": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "read" } }, "required": ["action"] },
+      "then": { "required": ["read"], "not": { "required": ["write"] } }
+    },
+    {
+      "if": { "properties": { "action": { "const": "write" } }, "required": ["action"] },
+      "then": { "required": ["write"], "not": { "required": ["read"] } }
+    },
+    {
+      "if": { "properties": { "action": { "enum": ["list", "delete"] } }, "required": ["action"] },
+      "then": { "not": { "anyOf": [{ "required": ["read"] }, { "required": ["write"] }] } }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "the command is bound to one active Grant and the current Target, Sandbox generation and physical runtime receipt",
+    "path is relative to /workspace; root is valid only for list and a read continuation requires fileVersion",
+    "write content is canonical unpadded base64url and decodes to at most 16 MiB",
+    "runtime endpoints and credentials are absent"
+  ]
+}

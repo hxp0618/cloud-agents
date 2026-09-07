@@ -39,13 +39,15 @@
     "reconcileRequired": { "type": "boolean" },
     "command": { "$ref": "./remote-worker-command.schema.json" },
     "sandboxCommand": { "$ref": "./remote-worker-sandbox-command.schema.json" },
-    "sandboxExecCommand": { "$ref": "./remote-worker-sandbox-exec-command.schema.json" }
+    "sandboxExecCommand": { "$ref": "./remote-worker-sandbox-exec-command.schema.json" },
+    "sandboxFileCommand": { "$ref": "./remote-worker-sandbox-file-command.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "acceptedAt is the database mutation time and expiresAt is exactly 30 seconds later",
     "reconcileRequired is true when observed generation or state differs from the server-owned desired values",
     "command is present only for the current unexpired server-owned node generation",
     "sandboxCommand is present only for a durable Sandbox Operation attempt assigned to this active node",
-    "sandboxExecCommand is present only when no lifecycle command is pending and is bound to the current active Sandbox runtime"
+    "sandboxExecCommand is present only when no lifecycle command is pending and is bound to the current active Sandbox runtime",
+    "sandboxFileCommand is present only when no lifecycle or Exec command is pending and is bound to one active access Grant"
   ]
 }

@@ -404,6 +404,24 @@ try {
   assert.equal(remoteWorkerReceipt.execIncarnationBound, true);
   assert.equal(remoteWorkerReceipt.execCertificateBound, true);
   assert.equal(remoteWorkerReceipt.execContentTableHidden, true);
+  assert.equal(remoteWorkerReceipt.fileBytes, 1900000);
+  assert.equal(remoteWorkerReceipt.fileLargeHeartbeatResponse, true);
+  assert.equal(remoteWorkerReceipt.fileGatewayRestart, true);
+  assert.equal(remoteWorkerReceipt.fileWrongTokenStatus, 403);
+  assert.equal(remoteWorkerReceipt.fileCrossTenantStatus, 403);
+  assert.equal(remoteWorkerReceipt.fileSymlinkStatus, 409);
+  assert.equal(remoteWorkerReceipt.fileAfterDeleteStatus, 404);
+  assert.equal(remoteWorkerReceipt.fileAuthorityMismatchStatus, 409);
+  assert.equal(remoteWorkerReceipt.fileReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.fileReceiptConflictStatus, 409);
+  assert.equal(remoteWorkerReceipt.fileAdminStatus, 403);
+  assert.equal(remoteWorkerReceipt.fileAccessCount, 7);
+  assert.equal(remoteWorkerReceipt.fileFailureCount, 2);
+  assert.equal(remoteWorkerReceipt.fileAdminRedacted, true);
+  assert.equal(remoteWorkerReceipt.fileIncarnationBound, true);
+  assert.equal(remoteWorkerReceipt.fileCertificateBound, true);
+  assert.equal(remoteWorkerReceipt.fileReceiptsSettled, true);
+  assert.equal(remoteWorkerReceipt.fileContentTableHidden, true);
   assert.match(remoteWorkerReceipt.workspaceDigest, /^[0-9a-f]{64}\s+/u);
   assert.equal(remoteWorkerReceipt.observedState, "stopped");
   for (const runtimeId of [remoteWorkerReceipt.runtimeId, remoteWorkerReceipt.rebuiltRuntimeId]) {
@@ -449,17 +467,22 @@ try {
         "non-zero exit, stdout, stderr and duration settle through the public response without infrastructure fields",
         "command delivery is bound to the current incarnation and certificate and accepts only exact request and receipt replay",
         "runtime role cannot read the command/output table directly",
+        "the unchanged generated Files API uses the same short-lived Grant and queues only database-authorized RemoteWorker work",
+        "a 1.9 MiB real write crosses the former 2 MiB heartbeat response limit and survives list plus version-bound paged reads across Gateway restart",
+        "wrong-token, cross-tenant, symlink traversal and read-after-delete paths return 403, 403, 409 and 404",
+        "file receipts are bound to the exact command path plus incarnation/certificate, are exact-replay only, and the runtime role cannot read path or content rows",
+        "Admin Grant diagnostics contain only counters and stable errors, never file paths or content",
         "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
       ],
       boundary:
-        "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec is verified, but Files, PTY, long connection, Kubernetes and SSH customer nodes are not covered",
+        "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec and Files are verified, but PTY, long connection, Kubernetes and SSH customer nodes are not covered",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),
       JSON.stringify(evidence, null, 2) + "\n",
     );
     process.stdout.write(
-      `Verified RemoteWorker Sandbox Exec and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+      `Verified RemoteWorker Sandbox Exec, Files and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
     );
     throw remoteWorkerComplete;
   }

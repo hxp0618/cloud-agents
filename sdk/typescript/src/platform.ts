@@ -563,6 +563,42 @@ export type RemoteWorkerSandboxExecCommand = Readonly<{
   timeoutSeconds: number;
   deadline: string;
 }>;
+export type RemoteWorkerSandboxFileCommand = Readonly<{
+  commandId: string;
+  eventId: string;
+  grantId: string;
+  workspaceId: string;
+  targetId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  runtimeId: string;
+  runtimeOperationId: string;
+  runtimeSpecDigest: `sha256:${string}`;
+  action: "list" | "read" | "write" | "delete";
+  path: string;
+  read?: Readonly<{ offset: number; limit: number; fileVersion?: string }>;
+  write?: Readonly<{ contentBase64Url: string }>;
+  deadline: string;
+}>;
+export type RemoteWorkerSandboxFileCommandReceipt = Readonly<{
+  commandId: string;
+  eventId: string;
+  grantId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  action: "list" | "read" | "write" | "delete";
+  result: "succeeded" | "failed";
+  bytesTransferred: number;
+  list?: Readonly<{ entries: readonly SandboxFileEntry[] }>;
+  read?: Readonly<{
+    fileVersion: string;
+    offset: number;
+    totalBytes: number;
+    contentBase64Url: string;
+  }>;
+  write?: Readonly<{ entry: SandboxFileEntry }>;
+  stableErrorCode?: string;
+}>;
 export type RemoteWorkerHeartbeatRequest = Readonly<{
   incarnationId: string;
   observedGeneration: number;
@@ -576,6 +612,7 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   commandReceipt?: RemoteWorkerCommandReceipt;
   sandboxCommandReceipt?: RemoteWorkerSandboxCommandReceipt;
   sandboxExecCommandReceipt?: RemoteWorkerSandboxExecCommandReceipt;
+  sandboxFileCommandReceipt?: RemoteWorkerSandboxFileCommandReceipt;
 }>;
 export type RemoteWorkerNodeStatus = Readonly<{
   resourceVersion: string;
@@ -613,6 +650,7 @@ export type RemoteWorkerHeartbeat = Readonly<{
   command?: RemoteWorkerCommand;
   sandboxCommand?: RemoteWorkerSandboxCommand;
   sandboxExecCommand?: RemoteWorkerSandboxExecCommand;
+  sandboxFileCommand?: RemoteWorkerSandboxFileCommand;
 }>;
 export type RemoteWorkerNodeSchedulingRequest = Readonly<{
   expectedGeneration: number;
@@ -1962,6 +2000,31 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
         runtimeSpecDigest: scalarResponseShape,
         command: scalarResponseShape,
         timeoutSeconds: scalarResponseShape,
+        deadline: scalarResponseShape,
+      },
+    },
+    sandboxFileCommand: {
+      fields: {
+        commandId: scalarResponseShape,
+        eventId: scalarResponseShape,
+        grantId: scalarResponseShape,
+        workspaceId: scalarResponseShape,
+        targetId: scalarResponseShape,
+        sandboxId: scalarResponseShape,
+        sandboxGeneration: scalarResponseShape,
+        runtimeId: scalarResponseShape,
+        runtimeOperationId: scalarResponseShape,
+        runtimeSpecDigest: scalarResponseShape,
+        action: scalarResponseShape,
+        path: scalarResponseShape,
+        read: {
+          fields: {
+            offset: scalarResponseShape,
+            limit: scalarResponseShape,
+            fileVersion: scalarResponseShape,
+          },
+        },
+        write: { fields: { contentBase64Url: scalarResponseShape } },
         deadline: scalarResponseShape,
       },
     },
@@ -6009,6 +6072,248 @@ export function decodeRemoteWorkerSandboxExecCommand(
     deadline: dateTime(source.deadline, "/deadline"),
   });
 }
+const remoteWorkerSandboxFileStableErrors = [
+  "sandbox_access_unavailable",
+  "sandbox_runtime_unavailable",
+  "sandbox_file_not_found",
+  "sandbox_file_conflict",
+  "sandbox_file_limit",
+  "sandbox_file_invalid",
+  "sandbox_file_timeout",
+] as const;
+export function decodeRemoteWorkerSandboxFileCommandReceipt(
+  value: unknown,
+): RemoteWorkerSandboxFileCommandReceipt {
+  const source = strictRecord(
+      value,
+      [
+        "commandId",
+        "eventId",
+        "grantId",
+        "sandboxId",
+        "sandboxGeneration",
+        "action",
+        "result",
+        "bytesTransferred",
+        "list",
+        "read",
+        "write",
+        "stableErrorCode",
+      ],
+      [
+        "commandId",
+        "eventId",
+        "grantId",
+        "sandboxId",
+        "sandboxGeneration",
+        "action",
+        "result",
+        "bytesTransferred",
+      ],
+    ),
+    action = enumValue(source.action, ["list", "read", "write", "delete"] as const, "/action"),
+    result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+    bytesTransferred = integer(source.bytesTransferred, 0, 16777216, "/bytesTransferred"),
+    receipt = {
+      commandId: identifier(source.commandId, "/commandId"),
+      eventId: identifier(source.eventId, "/eventId"),
+      grantId: identifier(source.grantId, "/grantId"),
+      sandboxId: identifier(source.sandboxId, "/sandboxId"),
+      sandboxGeneration: integer(
+        source.sandboxGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/sandboxGeneration",
+      ),
+      action,
+      result,
+      bytesTransferred,
+    };
+  if (result === "failed") {
+    const stableErrorCode = enumValue(
+      source.stableErrorCode,
+      remoteWorkerSandboxFileStableErrors,
+      "/stableErrorCode",
+    );
+    if (
+      bytesTransferred !== 0 ||
+      source.list !== undefined ||
+      source.read !== undefined ||
+      source.write !== undefined
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/result");
+    return Object.freeze({ ...receipt, stableErrorCode });
+  }
+  if (source.stableErrorCode !== undefined)
+    error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/stableErrorCode");
+  if (action === "list") {
+    const list = strictRecord(source.list, ["entries"], ["entries"], "/list"),
+      rawEntries: unknown[] = Array.isArray(list.entries)
+        ? list.entries
+        : error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/list/entries");
+    if (
+      rawEntries.length > 1000 ||
+      bytesTransferred !== 0 ||
+      source.read !== undefined ||
+      source.write !== undefined
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/list");
+    return Object.freeze({
+      ...receipt,
+      list: Object.freeze({ entries: Object.freeze(rawEntries.map(decodeSandboxFileEntry)) }),
+    });
+  }
+  if (action === "read") {
+    const read = strictRecord(
+        source.read,
+        ["fileVersion", "offset", "totalBytes", "contentBase64Url"],
+        ["fileVersion", "offset", "totalBytes", "contentBase64Url"],
+        "/read",
+      ),
+      fileVersion = sandboxFileVersion(read.fileVersion, "/read/fileVersion"),
+      offset = integer(read.offset, 0, 16777216, "/read/offset"),
+      totalBytes = integer(read.totalBytes, 0, 16777216, "/read/totalBytes"),
+      contentBase64Url = sandboxFileContent(
+        read.contentBase64Url,
+        1048576,
+        "/read/contentBase64Url",
+      ),
+      contentBytes = Math.floor((contentBase64Url.length * 3) / 4);
+    if (
+      source.list !== undefined ||
+      source.write !== undefined ||
+      contentBytes !== bytesTransferred ||
+      totalBytes < offset ||
+      offset + contentBytes > totalBytes
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/read");
+    return Object.freeze({
+      ...receipt,
+      read: Object.freeze({ fileVersion, offset, totalBytes, contentBase64Url }),
+    });
+  }
+  if (action === "write") {
+    const write = strictRecord(source.write, ["entry"], ["entry"], "/write"),
+      entry = decodeSandboxFileEntry(write.entry);
+    if (
+      source.list !== undefined ||
+      source.read !== undefined ||
+      entry.type !== "file" ||
+      entry.sizeBytes !== bytesTransferred
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/write");
+    return Object.freeze({ ...receipt, write: Object.freeze({ entry }) });
+  }
+  if (
+    source.list !== undefined ||
+    source.read !== undefined ||
+    source.write !== undefined ||
+    bytesTransferred !== 0
+  )
+    error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND_RECEIPT", "/action");
+  return Object.freeze(receipt);
+}
+export function decodeRemoteWorkerSandboxFileCommand(
+  value: unknown,
+): RemoteWorkerSandboxFileCommand {
+  const fields = [
+      "commandId",
+      "eventId",
+      "grantId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "action",
+      "path",
+      "read",
+      "write",
+      "deadline",
+    ] as const,
+    required = [
+      "commandId",
+      "eventId",
+      "grantId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "action",
+      "path",
+      "deadline",
+    ] as const,
+    source = strictRecord(value, fields, required),
+    action = enumValue(source.action, ["list", "read", "write", "delete"] as const, "/action"),
+    command = {
+      commandId: identifier(source.commandId, "/commandId"),
+      eventId: identifier(source.eventId, "/eventId"),
+      grantId: identifier(source.grantId, "/grantId"),
+      workspaceId: identifier(source.workspaceId, "/workspaceId"),
+      targetId: identifier(source.targetId, "/targetId"),
+      sandboxId: identifier(source.sandboxId, "/sandboxId"),
+      sandboxGeneration: integer(
+        source.sandboxGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/sandboxGeneration",
+      ),
+      runtimeId: identifier(source.runtimeId, "/runtimeId"),
+      runtimeOperationId: identifier(source.runtimeOperationId, "/runtimeOperationId"),
+      runtimeSpecDigest: digest(
+        source.runtimeSpecDigest,
+        "/runtimeSpecDigest",
+      ) as `sha256:${string}`,
+      action,
+      path: sandboxFilePath(source.path, action === "list"),
+      deadline: dateTime(source.deadline, "/deadline"),
+    };
+  if (action === "read") {
+    const read = strictRecord(
+        source.read,
+        ["offset", "limit", "fileVersion"],
+        ["offset", "limit"],
+        "/read",
+      ),
+      offset = integer(read.offset, 0, 16777216, "/read/offset"),
+      fileVersion =
+        read.fileVersion === undefined
+          ? undefined
+          : sandboxFileVersion(read.fileVersion, "/read/fileVersion");
+    if (source.write !== undefined || (offset > 0 && fileVersion === undefined))
+      error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/read");
+    return Object.freeze({
+      ...command,
+      read: Object.freeze({
+        offset,
+        limit: integer(read.limit, 1, 1048576, "/read/limit"),
+        ...(fileVersion === undefined ? {} : { fileVersion }),
+      }),
+    });
+  }
+  if (action === "write") {
+    const write = strictRecord(source.write, ["contentBase64Url"], ["contentBase64Url"], "/write");
+    if (source.read !== undefined) error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/write");
+    return Object.freeze({
+      ...command,
+      write: Object.freeze({
+        contentBase64Url: sandboxFileContent(
+          write.contentBase64Url,
+          16777216,
+          "/write/contentBase64Url",
+        ),
+      }),
+    });
+  }
+  if (source.read !== undefined || source.write !== undefined)
+    error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/action");
+  return Object.freeze(command);
+}
 export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorkerHeartbeatRequest {
   const source = strictRecord(
     value,
@@ -6025,6 +6330,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "commandReceipt",
       "sandboxCommandReceipt",
       "sandboxExecCommandReceipt",
+      "sandboxFileCommandReceipt",
     ],
     [
       "incarnationId",
@@ -6070,6 +6376,13 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       : {
           sandboxExecCommandReceipt: decodeRemoteWorkerSandboxExecCommandReceipt(
             source.sandboxExecCommandReceipt,
+          ),
+        }),
+    ...(source.sandboxFileCommandReceipt === undefined
+      ? {}
+      : {
+          sandboxFileCommandReceipt: decodeRemoteWorkerSandboxFileCommandReceipt(
+            source.sandboxFileCommandReceipt,
           ),
         }),
   });
@@ -6171,6 +6484,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       "command",
       "sandboxCommand",
       "sandboxExecCommand",
+      "sandboxFileCommand",
     ],
     [
       "apiVersion",
@@ -6233,7 +6547,11 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     sandboxExecCommand =
       source.sandboxExecCommand === undefined
         ? undefined
-        : decodeRemoteWorkerSandboxExecCommand(source.sandboxExecCommand);
+        : decodeRemoteWorkerSandboxExecCommand(source.sandboxExecCommand),
+    sandboxFileCommand =
+      source.sandboxFileCommand === undefined
+        ? undefined
+        : decodeRemoteWorkerSandboxFileCommand(source.sandboxFileCommand);
   if (
     command !== undefined &&
     (command.generation !== generation ||
@@ -6248,11 +6566,22 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     Date.parse(sandboxExecCommand.deadline) <= Date.parse(acceptedAt)
   )
     error("INVALID_REMOTE_WORKER_SANDBOX_EXEC_COMMAND", "/sandboxExecCommand");
+  if (
+    sandboxFileCommand !== undefined &&
+    Date.parse(sandboxFileCommand.deadline) <= Date.parse(acceptedAt)
+  )
+    error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/sandboxFileCommand");
+  if (
+    [sandboxCommand, sandboxExecCommand, sandboxFileCommand].filter((entry) => entry !== undefined)
+      .length > 1
+  )
+    error("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxFileCommand");
   return Object.freeze({
     ...heartbeat,
     ...(command === undefined ? {} : { command }),
     ...(sandboxCommand === undefined ? {} : { sandboxCommand }),
     ...(sandboxExecCommand === undefined ? {} : { sandboxExecCommand }),
+    ...(sandboxFileCommand === undefined ? {} : { sandboxFileCommand }),
   });
 }
 export function decodeRemoteWorkerNodeSchedulingRequest(

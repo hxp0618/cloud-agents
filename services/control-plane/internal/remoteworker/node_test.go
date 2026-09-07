@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
 func TestHeartbeatInputAndNodeStatusValidate(t *testing.T) {
@@ -55,5 +57,28 @@ func TestSandboxExecCommandAndReceiptValidate(t *testing.T) {
 	receipt.Stderr = "x"
 	if receipt.Validate() == nil {
 		t.Fatal("combined Exec output above 1 MiB accepted")
+	}
+}
+
+func TestSandboxFileCommandAndReceiptUseGeneratedValidation(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := SandboxFileCommand{CommandID: "rwfile-alpha", EventID: "event-alpha", GrantID: "grant-alpha",
+		WorkspaceID: "workspace-alpha", TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 3,
+		RuntimeID: "runtime-alpha", RuntimeOperationID: "operation-alpha", RuntimeSpecDigest: digest,
+		Action: "write", Path: "notes.txt", Write: &platformv1alpha1.RemoteWorkerSandboxFileWriteCommand{ContentBase64URL: "aGk"},
+		Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := ValidateSandboxFileCommand(command); err != nil {
+		t.Fatal(err)
+	}
+	receipt := SandboxFileCommandReceipt{CommandID: command.CommandID, EventID: command.EventID, GrantID: command.GrantID,
+		SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration, Action: "delete", Result: "succeeded"}
+	first, err := SandboxFileCommandReceiptDigest(receipt)
+	second, replayErr := SandboxFileCommandReceiptDigest(receipt)
+	if err != nil || replayErr != nil || first == "" || first != second {
+		t.Fatalf("receipt digests=%q/%q errors=%v/%v", first, second, err, replayErr)
+	}
+	receipt.StableErrorCode = "secret_error"
+	if ValidateSandboxFileCommandReceipt(receipt) == nil {
+		t.Fatal("accepted a successful file receipt with a stable error")
 	}
 }

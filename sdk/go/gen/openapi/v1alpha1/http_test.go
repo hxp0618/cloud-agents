@@ -205,6 +205,29 @@ func TestHTTPClientRejectsResponseAboveLimit(t *testing.T) {
 	}
 }
 
+func TestHTTPClientUsesRemoteWorkerHeartbeatLimitOnlyForSuccess(t *testing.T) {
+	body := strings.Repeat("x", maxHTTPJSONResponseBytes+1)
+	status := http.StatusOK
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(status)
+		_, _ = writer.Write([]byte(body))
+	}))
+	defer server.Close()
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := Request{Method: http.MethodPost, Path: "/v1/remote-workers/tenants/tenant-alpha/projects/project-alpha/remote-worker-enrollments/enrollment-alpha:heartbeat"}
+	response, err := client.roundTrip(context.Background(), request)
+	if err != nil || len(response.Body) != len(body) {
+		t.Fatalf("heartbeat bytes=%d err=%v", len(response.Body), err)
+	}
+	status = http.StatusBadGateway
+	if _, err := client.roundTrip(context.Background(), request); err == nil || !strings.Contains(err.Error(), "exceeds the SDK limit") {
+		t.Fatalf("oversized heartbeat error response err=%v", err)
+	}
+}
+
 func TestHTTPClientUsesArtifactLimitOnlyForSuccessfulDownloads(t *testing.T) {
 	artifact := strings.Repeat("x", maxHTTPJSONResponseBytes+1)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

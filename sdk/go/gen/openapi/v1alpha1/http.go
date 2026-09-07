@@ -14,7 +14,10 @@ import (
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
-const maxHTTPJSONResponseBytes = 2 * runtimeprotocol.MaxMessageBytes
+const (
+	maxHTTPJSONResponseBytes              = 2 * runtimeprotocol.MaxMessageBytes
+	maxRemoteWorkerHeartbeatResponseBytes = 24 << 20
+)
 
 var ErrInvalidHTTPClientConfig = errors.New("invalid Cloud Agents HTTP client configuration")
 
@@ -106,6 +109,9 @@ func (transport httpTransport) RoundTrip(ctx context.Context, input Request) (Re
 	maxResponseBytes := maxHTTPJSONResponseBytes
 	if response.StatusCode == http.StatusOK && strings.HasSuffix(input.Path, "/artifact") {
 		maxResponseBytes = MaxManagedAgentArtifactBytes
+	} else if response.StatusCode == http.StatusOK && input.Method == http.MethodPost &&
+		strings.HasPrefix(input.Path, "/v1/remote-workers/tenants/") && strings.HasSuffix(input.Path, ":heartbeat") {
+		maxResponseBytes = maxRemoteWorkerHeartbeatResponseBytes
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, int64(maxResponseBytes)+1))
 	if err != nil {

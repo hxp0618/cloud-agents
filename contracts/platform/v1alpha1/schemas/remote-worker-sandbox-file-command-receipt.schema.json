@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-file-command-receipt.schema.json",
+  "title": "RemoteWorkerSandboxFileCommandReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "eventId", "grantId", "sandboxId", "sandboxGeneration", "action", "result", "bytesTransferred"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "eventId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "action": { "enum": ["list", "read", "write", "delete"] },
+    "result": { "enum": ["succeeded", "failed"] },
+    "bytesTransferred": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries"],
+      "properties": {
+        "entries": { "type": "array", "maxItems": 1000, "items": { "$ref": "sandbox-file-entry.schema.json" } }
+      }
+    },
+    "read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileVersion", "offset", "totalBytes", "contentBase64Url"],
+      "properties": {
+        "fileVersion": { "type": "string", "pattern": "^sfv1_[A-Za-z0-9_-]{43}$" },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+        "totalBytes": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+        "contentBase64Url": { "type": "string", "maxLength": 1398102, "pattern": "^[A-Za-z0-9_-]*$" }
+      }
+    },
+    "write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry"],
+      "properties": { "entry": { "$ref": "sandbox-file-entry.schema.json" } }
+    },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "failed" } }, "required": ["result"] },
+      "then": {
+        "required": ["stableErrorCode"],
+        "properties": { "bytesTransferred": { "const": 0 } },
+        "not": { "anyOf": [{ "required": ["list"] }, { "required": ["read"] }, { "required": ["write"] }] }
+      },
+      "else": { "not": { "required": ["stableErrorCode"] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "const": "list" } }, "required": ["result", "action"] },
+      "then": { "required": ["list"], "properties": { "bytesTransferred": { "const": 0 } }, "not": { "anyOf": [{ "required": ["read"] }, { "required": ["write"] }] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "const": "read" } }, "required": ["result", "action"] },
+      "then": { "required": ["read"], "not": { "anyOf": [{ "required": ["list"] }, { "required": ["write"] }] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "const": "write" } }, "required": ["result", "action"] },
+      "then": { "required": ["write"], "not": { "anyOf": [{ "required": ["list"] }, { "required": ["read"] }] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "const": "delete" } }, "required": ["result", "action"] },
+      "then": { "properties": { "bytesTransferred": { "const": 0 } }, "not": { "anyOf": [{ "required": ["list"] }, { "required": ["read"] }, { "required": ["write"] }] } }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "read content is canonical unpadded base64url and decodes to bytesTransferred bytes",
+    "write bytesTransferred equals the command content size and list/delete transfer zero bytes",
+    "a failed receipt carries one stable error and no file metadata or content",
+    "runtime identifiers, endpoints and credentials are absent"
+  ]
+}

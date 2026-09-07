@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -25,6 +26,8 @@ import (
 
 	api "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgateway"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -40,7 +43,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if runtimeURL == "" || ownerURL == "" {
 		t.Skip("isolated RemoteWorker enrollment PostgreSQL environment not configured")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	runtimePool, err := pgxpool.New(ctx, runtimeURL)
 	if err != nil {
@@ -82,7 +85,11 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foundationHandler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	grantCodec, err := accessgrant.New([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundationHandler, err := NewFoundationHTTPServer(verifier, store, nil, grantCodec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +290,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if _, err := reconnectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-reconnected", heartbeat); err != nil {
 		t.Fatalf("reconnected heartbeat: %v", err)
 	}
-	runRemoteWorkerSandboxLive(t, ctx, owner, admin, user, currentNode, httpServer, create.EnrollmentID,
+	runRemoteWorkerSandboxLive(t, ctx, runtimePool, owner, admin, user, currentNode, httpServer, create.EnrollmentID,
 		rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotated.Value.CertificateSHA256, rotationPrivateKey, heartbeat)
 	drainPreview, err := admin.PreviewAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-preview")
 	if err != nil || drainPreview.Value.Spec.DesiredState != "drained" || drainPreview.Value.Spec.ExpectedGeneration != 1 {
@@ -556,7 +563,7 @@ func remoteWorkerMTLSHTTPClient(t *testing.T, server *httptest.Server, certifica
 	return &http.Client{Transport: clone}
 }
 
-func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, owner *pgxpool.Pool, admin, user, node *api.Client,
+func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, owner *pgxpool.Pool, admin, user, node *api.Client,
 	server *httptest.Server, enrollmentID, incarnationID, certificateChain, certificateSHA256 string, privateKey []byte,
 	heartbeat platform.RemoteWorkerHeartbeatRequest,
 ) {
@@ -779,7 +786,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, owner *pgxpoo
 	}
 	execRequest := platform.SandboxExecRequest{
 		ExpectedGeneration: rebuildCommand.SandboxGeneration,
-		Command:            "sha256sum /workspace/remote-worker-rebuild-proof.txt; printf remote-exec-stderr >&2; exit 7",
+		Command:            "ln -sfn /etc /workspace/remote-files-link; sha256sum /workspace/remote-worker-rebuild-proof.txt; printf remote-exec-stderr >&2; exit 7",
 		TimeoutSeconds:     10,
 	}
 	staleExecRequest := execRequest
@@ -881,6 +888,201 @@ WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, execComm
 		t.Fatalf("RemoteWorker Sandbox Exec authority: state=%q incarnation=%v certificate=%v receipt=%v hidden=%v err=%v",
 			execStateValue, execIncarnationBound, execCertificateBound, execReceiptSettled, execContentTableHidden, err)
 	}
+
+	grant, err := user.CreateSandboxAccessGrant(ctx, "tenant", "project", "remote-sandbox", "request-remote-file-grant", "remote-file-grant-key-1", platform.SandboxAccessGrantCreateRequest{
+		ExpectedGeneration: adminSandbox.Value.Spec.Generation, TTLSeconds: 90,
+	})
+	if err != nil || grant.Value.AccessToken == "" || grant.Value.Generation != adminSandbox.Value.Spec.Generation {
+		t.Fatalf("issue RemoteWorker Files Grant: value=%+v err=%v", grant.Value, err)
+	}
+	gatewayStore, err := postgres.NewAccessGatewayStore(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newGateway := func() *httptest.Server {
+		handler, gatewayErr := accessgateway.New(gatewayStore, sandboxDirectory)
+		if gatewayErr != nil {
+			t.Fatal(gatewayErr)
+		}
+		return httptest.NewServer(handler)
+	}
+	gateway := newGateway()
+	defer func() { gateway.Close() }()
+	grantClient, _ := api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
+	runFile := func(requestID string, call func() error, beforeSettle ...func(platform.RemoteWorkerSandboxFileCommandReceipt)) (string, platform.RemoteWorkerSandboxFileCommandReceipt, error) {
+		done := make(chan error, 1)
+		go func() { done <- call() }()
+		var commandID string
+		for retry := 0; ; retry++ {
+			select {
+			case callErr := <-done:
+				t.Fatalf("RemoteWorker Files request completed before command %s: %v", requestID, callErr)
+			default:
+			}
+			queryErr := owner.QueryRow(ctx, `SELECT command_uid FROM cloud_agents.remote_worker_sandbox_file_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND request_id=$1`, requestID).Scan(&commandID)
+			if queryErr == nil {
+				break
+			}
+			if queryErr != pgx.ErrNoRows || retry == 100 {
+				t.Fatalf("queue RemoteWorker Files command %s: %v", requestID, queryErr)
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		rawState, readErr := os.ReadFile(stateFile)
+		var fileState struct {
+			SandboxFileCommandReceipt *platform.RemoteWorkerSandboxFileCommandReceipt `json:"sandboxFileCommandReceipt"`
+		}
+		if readErr != nil || json.Unmarshal(rawState, &fileState) != nil || fileState.SandboxFileCommandReceipt == nil ||
+			fileState.SandboxFileCommandReceipt.CommandID != commandID {
+			t.Fatalf("execute RemoteWorker Files command %s: state=%s err=%v", requestID, rawState, readErr)
+		}
+		receipt := *fileState.SandboxFileCommandReceipt
+		if len(beforeSettle) != 0 {
+			beforeSettle[0](receipt)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		select {
+		case callErr := <-done:
+			return commandID, receipt, callErr
+		case <-time.After(15 * time.Second):
+			t.Fatalf("RemoteWorker Files command %s did not settle", requestID)
+			return "", platform.RemoteWorkerSandboxFileCommandReceipt{}, context.DeadlineExceeded
+		}
+	}
+
+	fileContent := []byte(strings.Repeat("remote-files-proof-", 100000))
+	var written api.SandboxFileEntryResult
+	writeCommandID, writeReceipt, err := runFile("request-remote-file-write", func() error {
+		var callErr error
+		written, callErr = grantClient.WriteSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-write", platform.SandboxFileWriteRequest{
+			Path: "remote-files-large.bin", ContentBase64URL: base64.RawURLEncoding.EncodeToString(fileContent),
+		})
+		return callErr
+	}, func(receipt platform.RemoteWorkerSandboxFileCommandReceipt) {
+		conflictingReceipt := receipt
+		conflictingWrite := *receipt.Write
+		conflictingWrite.Entry.Path = "remote-files-other.bin"
+		conflictingReceipt.Write = &conflictingWrite
+		heartbeat.SandboxFileCommandReceipt = &conflictingReceipt
+		if _, callErr := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-file-authority-conflict", heartbeat); clientStatus(callErr) != http.StatusConflict {
+			t.Fatalf("mismatched RemoteWorker file receipt status=%d err=%v", clientStatus(callErr), callErr)
+		}
+		heartbeat.SandboxFileCommandReceipt = nil
+	})
+	if err != nil || written.Value.Path != "remote-files-large.bin" || written.Value.SizeBytes != int64(len(fileContent)) ||
+		writeReceipt.BytesTransferred != int64(len(fileContent)) {
+		t.Fatalf("write RemoteWorker file: command=%s value=%+v receipt=%+v err=%v", writeCommandID, written.Value, writeReceipt, err)
+	}
+	var files api.SandboxFilePageResult
+	_, _, err = runFile("request-remote-file-list", func() error {
+		var callErr error
+		files, callErr = grantClient.ListSandboxFiles(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-list", ".")
+		return callErr
+	})
+	foundFile, foundLink := false, false
+	for _, entry := range files.Value.Entries {
+		foundFile = foundFile || entry.Path == "remote-files-large.bin" && entry.Type == "file"
+		foundLink = foundLink || entry.Path == "remote-files-link" && entry.Type == "symlink"
+	}
+	if err != nil || !foundFile || !foundLink {
+		t.Fatalf("list RemoteWorker files: entries=%+v err=%v", files.Value.Entries, err)
+	}
+	var firstPage api.SandboxFileReadPageResult
+	_, _, err = runFile("request-remote-file-read-first", func() error {
+		var callErr error
+		firstPage, callErr = grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-read-first", "remote-files-large.bin", 0, 900000, "")
+		return callErr
+	})
+	firstContent, decodeErr := base64.RawURLEncoding.Strict().DecodeString(firstPage.Value.ContentBase64URL)
+	if err != nil || decodeErr != nil || len(firstContent) != 900000 || firstPage.Value.EOF {
+		t.Fatalf("read first RemoteWorker file page: value=%+v err=%v decode=%v", firstPage.Value, err, decodeErr)
+	}
+	gateway.Close()
+	gateway = newGateway()
+	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
+	var secondPage api.SandboxFileReadPageResult
+	_, _, err = runFile("request-remote-file-read-second", func() error {
+		var callErr error
+		secondPage, callErr = grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-read-second", "remote-files-large.bin", firstPage.Value.NextOffset, 1<<20, firstPage.Value.FileVersion)
+		return callErr
+	})
+	secondContent, decodeErr := base64.RawURLEncoding.Strict().DecodeString(secondPage.Value.ContentBase64URL)
+	if err != nil || decodeErr != nil || !secondPage.Value.EOF || string(append(firstContent, secondContent...)) != string(fileContent) {
+		t.Fatalf("read RemoteWorker file after Gateway restart: value=%+v err=%v decode=%v", secondPage.Value, err, decodeErr)
+	}
+	wrongClient, _ := api.NewHTTPClientWithClient(gateway.URL, "cag1_"+strings.Repeat("x", 43), gateway.Client())
+	if _, err := wrongClient.ListSandboxFiles(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-wrong-token", "."); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("wrong RemoteWorker file Grant status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := grantClient.ListSandboxFiles(ctx, "other-tenant", "project", grant.Value.GrantID, "request-remote-file-cross-tenant", "."); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("cross-tenant RemoteWorker file Grant status=%d err=%v", clientStatus(err), err)
+	}
+	_, _, symlinkErr := runFile("request-remote-file-symlink", func() error {
+		_, callErr := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-symlink", "remote-files-link/passwd", 0, 1, "")
+		return callErr
+	})
+	if clientStatus(symlinkErr) != http.StatusConflict {
+		t.Fatalf("RemoteWorker symlink traversal status=%d err=%v", clientStatus(symlinkErr), symlinkErr)
+	}
+	_, _, err = runFile("request-remote-file-delete", func() error {
+		return grantClient.DeleteSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-delete", "remote-files-large.bin")
+	})
+	if err != nil {
+		t.Fatalf("delete RemoteWorker file: %v", err)
+	}
+	_, _, deletedErr := runFile("request-remote-file-after-delete", func() error {
+		_, callErr := grantClient.ReadSandboxFile(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-after-delete", "remote-files-large.bin", 0, 1, "")
+		return callErr
+	})
+	if clientStatus(deletedErr) != http.StatusNotFound {
+		t.Fatalf("deleted RemoteWorker file status=%d err=%v", clientStatus(deletedErr), deletedErr)
+	}
+
+	heartbeat.SandboxFileCommandReceipt = &writeReceipt
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-file-receipt-replay", heartbeat); err != nil {
+		t.Fatalf("replay RemoteWorker file receipt: %v", err)
+	}
+	conflictingFileReceipt := writeReceipt
+	conflictingWriteResult := *writeReceipt.Write
+	conflictingWriteResult.Entry.FileVersion = "sfv1_" + strings.Repeat("A", 43)
+	conflictingFileReceipt.Write = &conflictingWriteResult
+	heartbeat.SandboxFileCommandReceipt = &conflictingFileReceipt
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-file-receipt-conflict", heartbeat); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("conflicting RemoteWorker file receipt status=%d err=%v", clientStatus(err), err)
+	}
+	heartbeat.SandboxFileCommandReceipt = nil
+	if _, err := user.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "remote-sandbox", "request-remote-file-user-admin", 50, ""); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user RemoteWorker Admin Grant status=%d err=%v", clientStatus(err), err)
+	}
+	grantPage, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "remote-sandbox", "request-remote-file-admin", 50, "")
+	if err != nil || len(grantPage.Value.AccessGrants) != 1 || grantPage.Value.AccessGrants[0].Spec.FileAccessCount != 7 ||
+		grantPage.Value.AccessGrants[0].Spec.FileFailureCount != 2 || grantPage.Value.AccessGrants[0].Spec.LastFileAction != "read" ||
+		grantPage.Value.AccessGrants[0].Spec.LastFileStatus != "failed" || grantPage.Value.AccessGrants[0].Spec.LastFileErrorCode != "NOT_FOUND" {
+		t.Fatalf("RemoteWorker Admin Grant metadata: value=%+v err=%v", grantPage.Value, err)
+	}
+	adminGrantJSON, _ := json.Marshal(grantPage.Value)
+	for _, forbidden := range []string{"remote-files-large.bin", "remote-files-link", "remote-files-proof-", "contentBase64Url"} {
+		if strings.Contains(string(adminGrantJSON), forbidden) {
+			t.Fatalf("RemoteWorker Admin Grant disclosed %q", forbidden)
+		}
+	}
+	var fileCommands, succeededFiles, failedFiles int
+	var fileIncarnationBound, fileCertificateBound, fileReceiptsSettled, fileContentTableHidden bool
+	if err := owner.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE state='succeeded'),
+count(*) FILTER (WHERE state='failed'), bool_and(assigned_incarnation_uid=$1),
+bool_and(delivery_certificate_sha256=$2), bool_and(receipt_digest IS NOT NULL),
+NOT pg_catalog.has_table_privilege('cloud_agents_runtime', 'cloud_agents.remote_worker_sandbox_file_commands', 'SELECT')
+FROM cloud_agents.remote_worker_sandbox_file_commands
+WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateSHA256).Scan(
+		&fileCommands, &succeededFiles, &failedFiles, &fileIncarnationBound, &fileCertificateBound,
+		&fileReceiptsSettled, &fileContentTableHidden,
+	); err != nil || fileCommands != 7 || succeededFiles != 5 || failedFiles != 2 || !fileIncarnationBound ||
+		!fileCertificateBound || !fileReceiptsSettled || !fileContentTableHidden {
+		t.Fatalf("RemoteWorker Files authority: commands=%d succeeded=%d failed=%d incarnation=%v certificate=%v receipts=%v hidden=%v err=%v",
+			fileCommands, succeededFiles, failedFiles, fileIncarnationBound, fileCertificateBound, fileReceiptsSettled, fileContentTableHidden, err)
+	}
 	cleanupStopOperation, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-cleanup-stop", "remote-sandbox-cleanup-stop-key-1", platform.SandboxSessionLifecycleRequest{
 		ExpectedGeneration: adminSandbox.Value.Spec.Generation, ExpectedResourceVersion: adminSandbox.Value.Metadata.ResourceVersion,
 		ConfirmedSandboxID: "remote-sandbox", ComputeDisposition: "delete", WorkspaceDisposition: "retain",
@@ -935,7 +1137,14 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"execReceiptReplay": true, "execReceiptConflictStatus": 409, "execAdminStatus": 403, "execStaleGenerationStatus": 409,
 		"execIncarnationBound": execIncarnationBound,
 		"execCertificateBound": execCertificateBound, "execContentTableHidden": execContentTableHidden,
-		"receiptReplay": true, "stopReceiptReplay": true, "rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
+		"fileCommandId": writeCommandID, "fileBytes": len(fileContent), "fileLargeHeartbeatResponse": true,
+		"fileGatewayRestart": true, "fileWrongTokenStatus": 403, "fileCrossTenantStatus": 403,
+		"fileSymlinkStatus": 409, "fileAfterDeleteStatus": 404, "fileAuthorityMismatchStatus": 409, "fileReceiptReplay": true,
+		"fileReceiptConflictStatus": 409, "fileAdminStatus": 403, "fileAccessCount": fileCommands,
+		"fileFailureCount": failedFiles, "fileAdminRedacted": true, "fileIncarnationBound": fileIncarnationBound,
+		"fileCertificateBound": fileCertificateBound, "fileReceiptsSettled": fileReceiptsSettled,
+		"fileContentTableHidden": fileContentTableHidden,
+		"receiptReplay":          true, "stopReceiptReplay": true, "rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
 		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }

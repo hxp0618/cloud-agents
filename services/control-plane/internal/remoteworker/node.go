@@ -3,6 +3,7 @@ package remoteworker
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
 const (
@@ -49,6 +51,7 @@ type HeartbeatInput struct {
 	CommandReceipt            *CommandReceipt
 	SandboxCommandReceipt     *SandboxCommandReceipt
 	SandboxExecCommandReceipt *SandboxExecCommandReceipt
+	SandboxFileCommandReceipt *SandboxFileCommandReceipt
 }
 
 type CommandReceipt struct {
@@ -96,6 +99,9 @@ type SandboxExecCommand struct {
 	SandboxGeneration, TimeoutSeconds                         int64
 	Deadline                                                  time.Time
 }
+
+type SandboxFileCommand = platformv1alpha1.RemoteWorkerSandboxFileCommand
+type SandboxFileCommandReceipt = platformv1alpha1.RemoteWorkerSandboxFileCommandReceipt
 
 type SchedulingInput struct {
 	Scope                   Scope
@@ -159,7 +165,8 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		invalidCapabilities(input.Capabilities) || invalidCapacity(input.Capacity) ||
 		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil ||
 		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil ||
-		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil {
+		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil ||
+		input.SandboxFileCommandReceipt != nil && ValidateSandboxFileCommandReceipt(*input.SandboxFileCommandReceipt) != nil {
 		return ErrInvalidHeartbeat
 	}
 	return nil
@@ -261,6 +268,35 @@ func (command SandboxExecCommand) Validate() error {
 		}
 	}
 	return nil
+}
+
+func ValidateSandboxFileCommand(command SandboxFileCommand) error {
+	raw, err := json.Marshal(command)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerSandboxFileCommandJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func ValidateSandboxFileCommandReceipt(receipt SandboxFileCommandReceipt) error {
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerSandboxFileCommandReceiptJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func SandboxFileCommandReceiptDigest(receipt SandboxFileCommandReceipt) (string, error) {
+	if ValidateSandboxFileCommandReceipt(receipt) != nil {
+		return "", ErrInvalidHeartbeat
+	}
+	return mutationDigest("remote-worker.sandbox-file-receipt", receipt)
 }
 
 func (receipt CommandReceipt) Validate() error {
