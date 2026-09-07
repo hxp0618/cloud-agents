@@ -70,7 +70,7 @@ const heartbeatRemoteWorkerSQL = `SELECT enrollment_uid, worker_uid, worker_name
 FROM cloud_agents.heartbeat_remote_worker_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`
 
 const settleRemoteWorkerSandboxSQL = `SELECT outbox_state, operation_state, resource_version
-FROM cloud_agents.settle_remote_worker_foundation_sandbox_v2(
+FROM cloud_agents.settle_remote_worker_foundation_sandbox_v3(
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
 
 const lockRemoteWorkerSchedulingSQL = `SELECT cloud_agents.lock_remote_worker_scheduling_v1($1,$2,$3)`

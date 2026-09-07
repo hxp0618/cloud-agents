@@ -8,7 +8,7 @@
   "properties": {
     "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
-    "action": { "enum": ["sandbox.create", "sandbox.stop"] },
+    "action": { "enum": ["sandbox.create", "sandbox.stop", "sandbox.rebuild"] },
     "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },

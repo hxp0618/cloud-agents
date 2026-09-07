@@ -25,7 +25,7 @@
   "properties": {
     "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
-    "action": { "enum": ["sandbox.create", "sandbox.stop"] },
+    "action": { "enum": ["sandbox.create", "sandbox.stop", "sandbox.rebuild"] },
     "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "workspaceName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
@@ -56,15 +56,30 @@
       "if": { "properties": { "action": { "const": "sandbox.stop" } }, "required": ["action"] },
       "then": { "required": ["physicalVolumeName", "runtimeId", "runtimeState", "runtimeOperationId", "runtimeGeneration", "runtimeSpecDigest"] },
       "else": {
-        "not": {
-          "anyOf": [
-            { "required": ["physicalVolumeName"] },
-            { "required": ["runtimeId"] },
-            { "required": ["runtimeState"] },
-            { "required": ["runtimeOperationId"] },
-            { "required": ["runtimeGeneration"] },
-            { "required": ["runtimeSpecDigest"] }
-          ]
+        "if": { "properties": { "action": { "const": "sandbox.rebuild" } }, "required": ["action"] },
+        "then": {
+          "required": ["physicalVolumeName"],
+          "not": {
+            "anyOf": [
+              { "required": ["runtimeId"] },
+              { "required": ["runtimeState"] },
+              { "required": ["runtimeOperationId"] },
+              { "required": ["runtimeGeneration"] },
+              { "required": ["runtimeSpecDigest"] }
+            ]
+          }
+        },
+        "else": {
+          "not": {
+            "anyOf": [
+              { "required": ["physicalVolumeName"] },
+              { "required": ["runtimeId"] },
+              { "required": ["runtimeState"] },
+              { "required": ["runtimeOperationId"] },
+              { "required": ["runtimeGeneration"] },
+              { "required": ["runtimeSpecDigest"] }
+            ]
+          }
         }
       }
     }
@@ -73,6 +88,7 @@
     "the mTLS route supplies tenant, project, enrollment, and incarnation authority",
     "commandId is unique to one durable Operation attempt and the node must not start it after deadline",
     "sandbox.stop is bound to the exact prior runtime and retained physical Workspace volume",
+    "sandbox.rebuild creates a new runtime only on the exact retained physical Workspace volume",
     "the command contains no Control Plane target endpoint or credential reference"
   ]
 }

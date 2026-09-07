@@ -282,8 +282,11 @@ func executePendingSandbox(ctx context.Context, value config, state *nodeState) 
 				CPUMillis: command.CPUMillis, MemoryBytes: command.MemoryBytes, SpecDigest: command.SpecDigest,
 				NetworkPolicyID: command.NetworkPolicyID, NetworkAllowedEgress: command.NetworkAllowedEgress,
 			}
+			if command.Action != "sandbox.create" {
+				claim.PhysicalVolumeName = &command.PhysicalVolumeName
+			}
 			if command.Action == "sandbox.stop" {
-				claim.PhysicalVolumeName, claim.RuntimeID, claim.RuntimeState = &command.PhysicalVolumeName, &command.RuntimeID, command.RuntimeState
+				claim.RuntimeID, claim.RuntimeState = &command.RuntimeID, command.RuntimeState
 				claim.RuntimeOperationID, claim.RuntimeGeneration, claim.RuntimeSpecDigest = &command.RuntimeOperationID, &command.RuntimeGeneration, &command.RuntimeSpecDigest
 			}
 			result = foundationcontroller.ExecuteEffect(effectContext, docker, sandbox, claim)

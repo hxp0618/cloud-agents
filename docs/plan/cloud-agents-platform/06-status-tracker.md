@@ -31,7 +31,8 @@
 - BASE-M3 RemoteWorker Target 投影切片已接通：product-000067 为每个 enrollment 生成 server-owned `remote-worker` DeploymentTarget，数据库时钟与 mTLS heartbeat/certificate authority 驱动 unprobed/ready/offline/reconnect/revoked 状态；普通用户 Admin Target 读取 403，通用 Target Probe/Cleanup/Drain/Resume 均 409，避免绕过 RemoteWorker 生命周期。PostgreSQL 17.6 实测 000066→000067、fresh/no-op、真实 outbound 进程与投影状态；Admin Web 用生成 SDK 展示 placement target 并禁用错误入口。见 [Target 投影证据](evidence/base-m3-remote-worker-target-20260906.md)。本切片尚未向客户节点下发 Workspace/Sandbox workload。
 - BASE-M3 outbound Sandbox create 切片已接通：product-000068 将在线、active 且具备 Docker capability 的 RemoteWorker 纳入 no-Agent RuntimeProfile publish 与 User Sandbox admission；heartbeat 只下发无 endpoint/credential 的持久化 `sandbox.create` attempt，节点使用本地 Docker/OpenSandbox 配置复用 Foundation executor，并以当前 mTLS 指纹结算 Audit。PostgreSQL 17.6 实测 000067→000068、fresh/no-op；OrbStack 上真实独立 RemoteWorker 创建 Running OpenSandbox runtime、保留 Workspace volume、重复两次回执，并精准清理至零测试残留。见 [客户节点 Sandbox create 证据](evidence/base-m3-remote-worker-sandbox-create-20260906.md)。
 - BASE-M3 outbound Sandbox Stop 切片已接通：product-000069 复用同一 durable Operation/outbox 和 Foundation executor，经当前 mTLS 节点下发绑定旧 runtime、generation、spec digest 与保留卷的 `sandbox.stop`；结算同时校验 action/command/target/incarnation，成功后释放 writer 并允许精确回执重放。OrbStack Docker 29.4.0、PostgreSQL 17.6 与真实独立 RemoteWorker 实测物理删除、Admin `stopped`、保留卷、四条节点 Audit 及零测试残留；已有 Admin Web Stop 确认/Operation 流程直接适用并通过生成 SDK、33 项测试和构建。见 [客户节点 Sandbox Stop 证据](evidence/base-m3-remote-worker-sandbox-stop-20260906.md)。
-- 下一项：接通 outbound 客户节点 Sandbox 的 Rebuild，再实现反向 Exec/Files/连接通道、长操作 claim renewal 与 reconnect reconciliation；离线节点停止新调度，重连不盲目重放旧命令。
+- BASE-M3 outbound Sandbox Rebuild 切片已接通：product-000070 让既有 Admin generation/resourceVersion 围栏接受在线 active RemoteWorker，并下发仅绑定保留卷、不携带旧 runtime 的 `sandbox.rebuild`；客户节点复用 Foundation executor 创建新 generation runtime，回执按 action/attempt/Target/incarnation 结算和重放。OrbStack Docker 29.4.0、PostgreSQL 17.6 与真实独立 mTLS RemoteWorker 实测 Stop 前写入、同卷 Rebuild 后 SHA-256 不变、再次 Stop 及零测试残留；已有 Admin Web Rebuild 确认/Operation 流程通过生成 SDK、33 项测试和构建。见 [客户节点 Sandbox Rebuild 证据](evidence/base-m3-remote-worker-sandbox-rebuild-20260907.md)。
+- 下一项：实现反向 Exec/Files/连接通道，再补长操作 claim renewal 与 reconnect reconciliation；离线节点停止新调度，重连不盲目重放旧命令。
 - 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -55,7 +56,7 @@
 | BASE-M0    | VERIFIED    | 固定候选、no-Agent Docker PoC、产品执行接缝、幂等 adopt、失败补偿及对应 Admin 运维投影已有固定证据；不表示底座产品已就绪 |
 | BASE-M1    | VERIFIED    | 真实长期卷、跨进程恢复、失败补偿、手动与 TTL Stop/Rebuild、单写 fencing、Operation/Audit 和 Admin 保留/到期反馈已实测 |
 | BASE-M2    | VERIFIED    | bounded Exec、PTY/Files/private Preview/short-lived SSH、Grant/Gateway、实际网络隔离及对应 Admin 管理已有真实本地 Docker/PostgreSQL 证据 |
-| BASE-M3    | IN PROGRESS | enrollment、短期 mTLS 身份、heartbeat、Target、Drain/Resume 及客户节点 Sandbox create/Stop 已实测；尚缺远端 Rebuild、Exec/Files、NAT 断线与重连 reconciliation |
+| BASE-M3    | IN PROGRESS | enrollment、短期 mTLS 身份、heartbeat、Target、Drain/Resume 及客户节点 Sandbox create/Stop/Rebuild 已实测；尚缺远端 Exec/Files、NAT 断线与重连 reconciliation |
 | BASE-M4    | NOT STARTED | Kubernetes/客户节点能力、容量、强隔离矩阵，以及真实 placement/资源池/限制界面                               |
 | BASE-M5    | NOT STARTED | 快照恢复、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收                                    |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |

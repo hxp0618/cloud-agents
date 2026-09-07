@@ -279,13 +279,30 @@ try {
     startedSinks.push(name);
   }
   await delay(200);
-  const allowedSinkIP = docker("inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", allowedSinkName);
-  const blockedSinkIP = docker("inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", blockedSinkName);
+  const allowedSinkIP = docker(
+    "inspect",
+    "--format",
+    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+    allowedSinkName,
+  );
+  const blockedSinkIP = docker(
+    "inspect",
+    "--format",
+    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+    blockedSinkName,
+  );
   assert.equal(isIP(allowedSinkIP), 4);
   assert.equal(isIP(blockedSinkIP), 4);
   for (const address of [allowedSinkIP, blockedSinkIP]) {
     assert.equal(
-      docker("run", "--rm", sandboxImage, "node", "-e", `fetch("http://${address}:8080").then(async response=>{if(!response.ok||await response.text()!=="allowed\\n")process.exit(1)}).catch(()=>process.exit(1))`),
+      docker(
+        "run",
+        "--rm",
+        sandboxImage,
+        "node",
+        "-e",
+        `fetch("http://${address}:8080").then(async response=>{if(!response.ok||await response.text()!=="allowed\\n")process.exit(1)}).catch(()=>process.exit(1))`,
+      ),
       "",
     );
   }
@@ -372,11 +389,16 @@ try {
   );
   assert.equal(remoteWorkerReceipt.receiptReplay, true);
   assert.equal(remoteWorkerReceipt.stopReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.rebuildReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.cleanupStopReceiptReplay, true);
+  assert.match(remoteWorkerReceipt.workspaceDigest, /^[0-9a-f]{64}\s+/u);
   assert.equal(remoteWorkerReceipt.observedState, "stopped");
-  for (let attempt = 0; ; attempt++) {
-    if (docker("ps", "-aq", "--filter", `label=opensandbox.io/id=${remoteWorkerReceipt.runtimeId}`) === "") break;
-    if (attempt === 100) throw new Error("RemoteWorker Sandbox runtime did not terminate");
-    await delay(100);
+  for (const runtimeId of [remoteWorkerReceipt.runtimeId, remoteWorkerReceipt.rebuiltRuntimeId]) {
+    for (let attempt = 0; ; attempt++) {
+      if (docker("ps", "-aq", "--filter", `label=opensandbox.io/id=${runtimeId}`) === "") break;
+      if (attempt === 100) throw new Error("RemoteWorker Sandbox runtime did not terminate");
+      await delay(100);
+    }
   }
   docker("volume", "rm", remoteWorkerReceipt.volumeName);
 
@@ -638,6 +660,8 @@ try {
       "RemoteWorker settlement and exact receipt replay persist Running state without endpoint or credential bytes in the command",
       "Admin Stop dispatches the exact prior runtime and retained Workspace volume to the authenticated RemoteWorker",
       "RemoteWorker physically deletes compute, settles Stopped with writer release, and accepts exact Stop receipt replay",
+      "Admin Rebuild dispatches the retained Workspace volume and creates a new customer-node runtime",
+      "RemoteWorker Rebuild preserves Workspace bytes, settles Running, accepts exact receipt replay, and is stopped without compute residue",
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
       "real durable claim and physical retained Docker volume",
       "real OpenSandbox create and execd readiness",

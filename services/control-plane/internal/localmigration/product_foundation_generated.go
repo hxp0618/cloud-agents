@@ -167,4 +167,7 @@ var productFoundationRunnerBindings = [...]generatedRunnerBindingSelector{
 	{selectorID: "product-000069", schemaHead: "000069", migrationCount: 69,
 		manifestPath: "services/control-plane/migrations/product/000069/manifest.json", manifestSizeBytes: 160688, manifestRawDigest: "sha256:ef7085feaac16521bd6ca4c6b630c94f46cc22659027ff28e32941bc6524a2b3", manifestDigest: "sha256:7842051b6579dc70d48240eabb2d63a3f57f4b498cae4b3652cec34d7ef9117b",
 		schemaBundlePath: "services/control-plane/migrations/product/000069/schema-bundle.json", schemaBundleSizeBytes: 108665, schemaBundleRawDigest: "sha256:d43a3bb51d03438265833abba4ec028416faf7f636e5755334308ff89ed8d278", schemaBundleDigest: "sha256:fa3cd65a63d2ed05fedeef2f69b81e929c2c35b582c4f9c7678639095457ae92"},
+	{selectorID: "product-000070", schemaHead: "000070", migrationCount: 70,
+		manifestPath: "services/control-plane/migrations/product/000070/manifest.json", manifestSizeBytes: 162997, manifestRawDigest: "sha256:5e817fcd6e3cb9ad9f704a52aeeea33b8f0b56cc44219578b862f0b84fea4fc4", manifestDigest: "sha256:d3f21d45dac04c615cfcae323d6cc850fea39b8b2ae49081af11d23e73dc6a9a",
+		schemaBundlePath: "services/control-plane/migrations/product/000070/schema-bundle.json", schemaBundleSizeBytes: 110226, schemaBundleRawDigest: "sha256:419274a5f9200305ed6cf4bcc401a472a68450f369f39ddfaca3076c22df0180", schemaBundleDigest: "sha256:5de78240f28a5ae86d8bbd9fbc2cc435ce2299239006145a5a3452383d823bf9"},
 }

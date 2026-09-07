@@ -152,14 +152,14 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 
 func (receipt SandboxCommandReceipt) Validate() error {
 	if invalidIdentifier(receipt.CommandID) || receipt.Attempt < 1 || receipt.Attempt > 8 ||
-		(receipt.Action != "sandbox.create" && receipt.Action != "sandbox.stop") ||
+		(receipt.Action != "sandbox.create" && receipt.Action != "sandbox.stop" && receipt.Action != "sandbox.rebuild") ||
 		invalidIdentifier(receipt.OperationID) || invalidIdentifier(receipt.SandboxID) || receipt.SandboxGeneration < 1 ||
 		receipt.Result != "succeeded" && receipt.Result != "failed" ||
 		receipt.RuntimeID != "" && invalidIdentifier(receipt.RuntimeID) ||
 		receipt.VolumeName != "" && (invalidIdentifier(receipt.VolumeName) || len(receipt.VolumeName) > 63) ||
 		receipt.StableErrorCode != "" && invalidIdentifier(receipt.StableErrorCode) ||
 		receipt.Result == "succeeded" && (receipt.VolumeName == "" || receipt.StableErrorCode != "" ||
-			receipt.Action == "sandbox.create" && (receipt.RuntimeID == "" || receipt.RuntimeState != "Running") ||
+			(receipt.Action == "sandbox.create" || receipt.Action == "sandbox.rebuild") && (receipt.RuntimeID == "" || receipt.RuntimeState != "Running") ||
 			receipt.Action == "sandbox.stop" && (receipt.RuntimeID != "" || receipt.RuntimeState != "" || !receipt.CleanupComplete)) ||
 		receipt.Result == "failed" && receipt.StableErrorCode == "" {
 		return ErrInvalidHeartbeat
@@ -169,7 +169,7 @@ func (receipt SandboxCommandReceipt) Validate() error {
 
 func (command SandboxCommand) Validate() error {
 	if invalidIdentifier(command.CommandID) || command.Attempt < 1 || command.Attempt > 8 ||
-		(command.Action != "sandbox.create" && command.Action != "sandbox.stop") ||
+		(command.Action != "sandbox.create" && command.Action != "sandbox.stop" && command.Action != "sandbox.rebuild") ||
 		invalidIdentifier(command.OperationID) || invalidIdentifier(command.WorkspaceID) || invalidIdentifier(command.WorkspaceName) ||
 		invalidIdentifier(command.TargetID) || invalidIdentifier(command.SandboxID) || command.SandboxGeneration < 1 ||
 		len(command.ImageURI) < 1 || len(command.ImageURI) > 1024 || !digest(command.SpecDigest) ||
@@ -192,13 +192,15 @@ func (command SandboxCommand) Validate() error {
 	if len(command.NetworkAllowedEgress) > 64 {
 		return ErrInvalidHeartbeat
 	}
-	priorRuntimeValid := command.PhysicalVolumeName != "" && len(command.PhysicalVolumeName) <= 63 &&
-		!invalidIdentifier(command.PhysicalVolumeName) && !invalidIdentifier(command.RuntimeID) &&
+	validVolume := command.PhysicalVolumeName != "" && len(command.PhysicalVolumeName) <= 63 && !invalidIdentifier(command.PhysicalVolumeName)
+	noRuntime := command.RuntimeID == "" && command.RuntimeState == "" && command.RuntimeOperationID == "" &&
+		command.RuntimeGeneration == 0 && command.RuntimeSpecDigest == ""
+	priorRuntimeValid := validVolume && !invalidIdentifier(command.RuntimeID) &&
 		command.RuntimeState == "Running" && !invalidIdentifier(command.RuntimeOperationID) &&
 		command.RuntimeGeneration > 0 && command.RuntimeGeneration < command.SandboxGeneration && digest(command.RuntimeSpecDigest)
 	if command.Action == "sandbox.stop" && !priorRuntimeValid ||
-		command.Action == "sandbox.create" && (command.PhysicalVolumeName != "" || command.RuntimeID != "" ||
-			command.RuntimeState != "" || command.RuntimeOperationID != "" || command.RuntimeGeneration != 0 || command.RuntimeSpecDigest != "") {
+		command.Action == "sandbox.rebuild" && (!validVolume || !noRuntime) ||
+		command.Action == "sandbox.create" && (command.PhysicalVolumeName != "" || !noRuntime) {
 		return ErrInvalidHeartbeat
 	}
 	return nil

@@ -1,0 +1,54 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "b592799af9cc2c1b2fe184541e6aaf46281c5b2f",
+    "dirty": true
+  },
+  "productMigration": {
+    "id": "000070",
+    "schemaBundleDigest": "sha256:5de78240f28a5ae86d8bbd9fbc2cc435ce2299239006145a5a3452383d823bf9",
+    "manifestDigest": "sha256:d3f21d45dac04c615cfcae323d6cc850fea39b8b2ae49081af11d23e73dc6a9a",
+    "upgradeFrom": "000069",
+    "freshMigrationCount": 70,
+    "noOpReplayCount": 0
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "remoteWorker": {
+    "createOperationId": "op-0bf517702b3fa3735ad3c5e035702f52",
+    "stopOperationId": "op-003976ee7b4323d842d60f27f7d1b76a",
+    "rebuildOperationId": "op-8d8d035df2c6b54c9486c14ec43161b4",
+    "cleanupStopOperationId": "op-328c0b16a1b7b592b62abedcfb2ac728",
+    "runtimeId": "58f87ab5-7d85-4391-8e93-fac504ac0fa8",
+    "rebuiltRuntimeId": "6ebd362b-92cf-4276-9ef5-2369b0ba5d70",
+    "volumeName": "ca-ws-887ca62cff2f8a88152a4cc647d35ad95434d0563208bb7a3d43110f",
+    "workspaceDigest": "64369e3856843eaad19d590ae5eba5153c8683a49002eb4b634ae2ba599e13d0",
+    "rebuildAttempts": 1,
+    "observedState": "stopped",
+    "writerReleased": true,
+    "createReceiptReplay": true,
+    "stopReceiptReplay": true,
+    "rebuildReceiptReplay": true,
+    "cleanupStopReceiptReplay": true,
+    "nodeAuditCount": 8,
+    "nodeAuditSubject": "current mTLS certificate SHA-256"
+  },
+  "cleanup": {
+    "testOwnedRuntimeContainers": 0,
+    "testOwnedWorkspaceVolumes": 0
+  },
+  "checks": [
+    "Admin Rebuild is generation and resource-version fenced and requires an online active RemoteWorker target",
+    "the outbound Rebuild command binds the exact retained physical Workspace volume and contains no stale runtime identity",
+    "the authenticated RemoteWorker creates a new OpenSandbox runtime through its node-local Docker and OpenSandbox configuration",
+    "the rebuilt runtime mounts the same physical volume and reads the exact Workspace SHA-256 written before Stop",
+    "settlement records Running with the new runtime and exact successful Rebuild receipt replay is acknowledged",
+    "a final Admin Stop removes rebuilt compute and leaves only the retained volume for scoped harness cleanup",
+    "claim and settlement Audit facts use the current authenticated mTLS certificate fingerprint",
+    "the command and receipt contain no endpoint, credential reference, Provider credential or Secret bytes"
+  ],
+  "boundary": "Local OrbStack Docker customer-node process and disposable PostgreSQL only; existing Admin Web lifecycle UI is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes node, NAT outage, remote Exec/Files or long-operation claim renewal"
+}

@@ -148,7 +148,7 @@ FROM (
 	transitionFoundationSandboxSQL = `SELECT operation_uid, idempotency_key, action, sandbox_uid,
     sandbox_generation, requested_by, request_id, requested_at, updated_at, operation_state,
     cleanup_phase, stable_error_code, compute_disposition, workspace_disposition
-FROM cloud_agents.transition_foundation_sandbox_v3($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
+FROM cloud_agents.transition_foundation_sandbox_v4($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 )
 
 func (service *DurableCoordinationService) TransitionFoundationSandbox(

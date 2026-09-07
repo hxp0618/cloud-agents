@@ -46,6 +46,7 @@ import {
   decodeRemoteWorkerEnrollment,
   decodeRemoteWorkerHeartbeatRequest,
   decodeRemoteWorkerNodeStatus,
+  decodeRemoteWorkerSandboxCommand,
   decodeRemoteWorkerSandboxCommandReceipt,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
@@ -104,7 +105,7 @@ const platformFixtureRoot = resolve(
 );
 
 describe("generated platform JSON models", () => {
-  it("keeps legacy create receipts while fencing successful RemoteWorker Stop cleanup", () => {
+  it("fences RemoteWorker lifecycle commands while keeping legacy create receipts", () => {
     const base = {
       commandId: "rwsc-alpha",
       attempt: 1,
@@ -134,6 +135,39 @@ describe("generated platform JSON models", () => {
         cleanupComplete: false,
       }),
     ).toThrow(TypeError);
+    const rebuild = {
+      commandId: "rwsc-rebuild",
+      attempt: 1,
+      action: "sandbox.rebuild",
+      operationId: "operation-rebuild",
+      workspaceId: "workspace-alpha",
+      workspaceName: "workspace-alpha",
+      targetId: "target-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      imageUri: `registry.example.test/runtime@sha256:${"a".repeat(64)}`,
+      cpuMillis: 500,
+      memoryBytes: 536870912,
+      specDigest: `sha256:${"b".repeat(64)}`,
+      networkPolicyId: "network-alpha",
+      networkAllowedEgress: [],
+      physicalVolumeName: "volume-alpha",
+      deadline: "2026-09-07T12:01:00Z",
+    };
+    expect(decodeRemoteWorkerSandboxCommand(rebuild).action).toBe("sandbox.rebuild");
+    expect(() =>
+      decodeRemoteWorkerSandboxCommand({ ...rebuild, physicalVolumeName: undefined }),
+    ).toThrow(TypeError);
+    expect(
+      decodeRemoteWorkerSandboxCommandReceipt({
+        ...base,
+        action: "sandbox.rebuild",
+        sandboxGeneration: 3,
+        runtimeId: "runtime-rebuilt",
+        runtimeState: "Running",
+        cleanupComplete: false,
+      }).action,
+    ).toBe("sandbox.rebuild");
   });
 
   it("validates active and revoked RemoteWorker certificate metadata", () => {

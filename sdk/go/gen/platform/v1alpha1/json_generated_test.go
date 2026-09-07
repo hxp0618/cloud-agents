@@ -181,7 +181,7 @@ func TestRemoteWorkerHeartbeatResponseKeepsSandboxCommand(t *testing.T) {
 	}
 }
 
-func TestRemoteWorkerSandboxStopRequiresExactPriorRuntimeAndCleanup(t *testing.T) {
+func TestRemoteWorkerSandboxLifecycleCommandsFencePhysicalAuthority(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	legacyCreateReceipt := []byte(`{"commandId":"rwsc-create","attempt":1,"operationId":"operation-create","sandboxId":"sandbox-alpha","sandboxGeneration":1,"result":"succeeded","runtimeId":"runtime-alpha","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)
 	if decoded, err := DecodeRemoteWorkerSandboxCommandReceiptJSON(legacyCreateReceipt); err != nil || decoded.Action != "sandbox.create" {
@@ -195,12 +195,31 @@ func TestRemoteWorkerSandboxStopRequiresExactPriorRuntimeAndCleanup(t *testing.T
 	if _, err := DecodeRemoteWorkerSandboxCommandJSON(withoutRuntime); err == nil {
 		t.Fatal("stop command accepted without the exact prior runtime")
 	}
+	rebuildCommand := []byte(strings.NewReplacer(
+		`"sandbox.stop"`, `"sandbox.rebuild"`,
+		`,"runtimeId":"runtime-alpha"`, "",
+		`,"runtimeState":"Running"`, "",
+		`,"runtimeOperationId":"operation-create"`, "",
+		`,"runtimeGeneration":1`, "",
+		`,"runtimeSpecDigest":"`+digest+`"`, "",
+	).Replace(string(command)))
+	if decoded, err := DecodeRemoteWorkerSandboxCommandJSON(rebuildCommand); err != nil || decoded.PhysicalVolumeName != "volume-alpha" {
+		t.Fatalf("rebuild command=%#v error=%v", decoded, err)
+	}
+	withoutVolume := []byte(strings.Replace(string(rebuildCommand), `,"physicalVolumeName":"volume-alpha"`, "", 1))
+	if _, err := DecodeRemoteWorkerSandboxCommandJSON(withoutVolume); err == nil {
+		t.Fatal("rebuild command accepted without the retained volume")
+	}
 	receipt := []byte(`{"commandId":"rwsc-stop","attempt":1,"action":"sandbox.stop","operationId":"operation-stop","sandboxId":"sandbox-alpha","sandboxGeneration":2,"result":"succeeded","volumeName":"volume-alpha","cleanupComplete":true}`)
 	if _, err := DecodeRemoteWorkerSandboxCommandReceiptJSON(receipt); err != nil {
 		t.Fatalf("stop receipt error=%v", err)
 	}
 	if _, err := DecodeRemoteWorkerSandboxCommandReceiptJSON([]byte(strings.Replace(string(receipt), "true", "false", 1))); err == nil {
 		t.Fatal("successful stop receipt accepted incomplete cleanup")
+	}
+	rebuildReceipt := []byte(`{"commandId":"rwsc-rebuild","attempt":1,"action":"sandbox.rebuild","operationId":"operation-rebuild","sandboxId":"sandbox-alpha","sandboxGeneration":3,"result":"succeeded","runtimeId":"runtime-rebuilt","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)
+	if _, err := DecodeRemoteWorkerSandboxCommandReceiptJSON(rebuildReceipt); err != nil {
+		t.Fatalf("rebuild receipt error=%v", err)
 	}
 }
 

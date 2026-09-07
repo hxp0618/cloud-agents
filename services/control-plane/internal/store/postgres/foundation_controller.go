@@ -18,7 +18,7 @@ const (
     cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
 	runtime_generation, runtime_spec_digest, ttl_seconds, expires_at
 	, network_policy_uid, network_default_egress, network_allowed_egress, network_preview_enabled
-FROM cloud_agents.claim_foundation_sandbox_v6($1,$2,$3,$4,$5,$6,$7,$8)`
+FROM cloud_agents.claim_foundation_sandbox_v7($1,$2,$3,$4,$5,$6,$7,$8)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
