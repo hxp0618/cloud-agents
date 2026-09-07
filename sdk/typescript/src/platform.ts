@@ -539,6 +539,30 @@ export type RemoteWorkerSandboxCommand = Readonly<{
   runtimeSpecDigest?: `sha256:${string}`;
   deadline: string;
 }>;
+export type RemoteWorkerSandboxExecCommandReceipt = Readonly<{
+  commandId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  result: "succeeded" | "failed";
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  executionTimeMillis: number;
+  stableErrorCode?: string;
+}>;
+export type RemoteWorkerSandboxExecCommand = Readonly<{
+  commandId: string;
+  workspaceId: string;
+  targetId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  runtimeId: string;
+  runtimeOperationId: string;
+  runtimeSpecDigest: `sha256:${string}`;
+  command: string;
+  timeoutSeconds: number;
+  deadline: string;
+}>;
 export type RemoteWorkerHeartbeatRequest = Readonly<{
   incarnationId: string;
   observedGeneration: number;
@@ -551,6 +575,7 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   capacity: RemoteWorkerCapacity;
   commandReceipt?: RemoteWorkerCommandReceipt;
   sandboxCommandReceipt?: RemoteWorkerSandboxCommandReceipt;
+  sandboxExecCommandReceipt?: RemoteWorkerSandboxExecCommandReceipt;
 }>;
 export type RemoteWorkerNodeStatus = Readonly<{
   resourceVersion: string;
@@ -587,6 +612,7 @@ export type RemoteWorkerHeartbeat = Readonly<{
   reconcileRequired: boolean;
   command?: RemoteWorkerCommand;
   sandboxCommand?: RemoteWorkerSandboxCommand;
+  sandboxExecCommand?: RemoteWorkerSandboxExecCommand;
 }>;
 export type RemoteWorkerNodeSchedulingRequest = Readonly<{
   expectedGeneration: number;
@@ -1921,6 +1947,21 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
         runtimeOperationId: scalarResponseShape,
         runtimeGeneration: scalarResponseShape,
         runtimeSpecDigest: scalarResponseShape,
+        deadline: scalarResponseShape,
+      },
+    },
+    sandboxExecCommand: {
+      fields: {
+        commandId: scalarResponseShape,
+        workspaceId: scalarResponseShape,
+        targetId: scalarResponseShape,
+        sandboxId: scalarResponseShape,
+        sandboxGeneration: scalarResponseShape,
+        runtimeId: scalarResponseShape,
+        runtimeOperationId: scalarResponseShape,
+        runtimeSpecDigest: scalarResponseShape,
+        command: scalarResponseShape,
+        timeoutSeconds: scalarResponseShape,
         deadline: scalarResponseShape,
       },
     },
@@ -5850,6 +5891,124 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
     deadline: dateTime(source.deadline, "/deadline"),
   });
 }
+export function decodeRemoteWorkerSandboxExecCommandReceipt(
+  value: unknown,
+): RemoteWorkerSandboxExecCommandReceipt {
+  const source = strictRecord(
+    value,
+    [
+      "commandId",
+      "sandboxId",
+      "sandboxGeneration",
+      "result",
+      "exitCode",
+      "stdout",
+      "stderr",
+      "executionTimeMillis",
+      "stableErrorCode",
+    ],
+    [
+      "commandId",
+      "sandboxId",
+      "sandboxGeneration",
+      "result",
+      "exitCode",
+      "stdout",
+      "stderr",
+      "executionTimeMillis",
+    ],
+  );
+  const result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+    exitCode = integer(source.exitCode, -2147483648, 2147483647, "/exitCode"),
+    stdout = boundedString(source.stdout, 0, 1048576, "/stdout"),
+    stderr = boundedString(source.stderr, 0, 1048576, "/stderr"),
+    executionTimeMillis = integer(source.executionTimeMillis, 0, 65000, "/executionTimeMillis"),
+    stableErrorCode =
+      source.stableErrorCode === undefined
+        ? undefined
+        : identifier(source.stableErrorCode, "/stableErrorCode");
+  if (
+    new TextEncoder().encode(stdout).length + new TextEncoder().encode(stderr).length > 1048576 ||
+    (result === "succeeded"
+      ? stableErrorCode !== undefined
+      : stableErrorCode === undefined ||
+        exitCode !== 0 ||
+        stdout !== "" ||
+        stderr !== "" ||
+        executionTimeMillis !== 0)
+  )
+    error("INVALID_REMOTE_WORKER_SANDBOX_EXEC_COMMAND_RECEIPT", "/result");
+  const receipt = {
+    commandId: identifier(source.commandId, "/commandId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    sandboxGeneration: integer(
+      source.sandboxGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/sandboxGeneration",
+    ),
+    result,
+    exitCode,
+    stdout,
+    stderr,
+    executionTimeMillis,
+  };
+  return Object.freeze(stableErrorCode === undefined ? receipt : { ...receipt, stableErrorCode });
+}
+export function decodeRemoteWorkerSandboxExecCommand(
+  value: unknown,
+): RemoteWorkerSandboxExecCommand {
+  const source = strictRecord(
+    value,
+    [
+      "commandId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "command",
+      "timeoutSeconds",
+      "deadline",
+    ],
+    [
+      "commandId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "command",
+      "timeoutSeconds",
+      "deadline",
+    ],
+  );
+  const command = boundedString(source.command, 1, 8192, "/command");
+  if (command.includes("\0") || new TextEncoder().encode(command).length > 8192)
+    error("INVALID_REMOTE_WORKER_SANDBOX_EXEC_COMMAND", "/command");
+  return Object.freeze({
+    commandId: identifier(source.commandId, "/commandId"),
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    targetId: identifier(source.targetId, "/targetId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    sandboxGeneration: integer(
+      source.sandboxGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/sandboxGeneration",
+    ),
+    runtimeId: identifier(source.runtimeId, "/runtimeId"),
+    runtimeOperationId: identifier(source.runtimeOperationId, "/runtimeOperationId"),
+    runtimeSpecDigest: digest(source.runtimeSpecDigest, "/runtimeSpecDigest") as `sha256:${string}`,
+    command,
+    timeoutSeconds: integer(source.timeoutSeconds, 1, 60, "/timeoutSeconds"),
+    deadline: dateTime(source.deadline, "/deadline"),
+  });
+}
 export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorkerHeartbeatRequest {
   const source = strictRecord(
     value,
@@ -5865,6 +6024,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "capacity",
       "commandReceipt",
       "sandboxCommandReceipt",
+      "sandboxExecCommandReceipt",
     ],
     [
       "incarnationId",
@@ -5903,6 +6063,13 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       : {
           sandboxCommandReceipt: decodeRemoteWorkerSandboxCommandReceipt(
             source.sandboxCommandReceipt,
+          ),
+        }),
+    ...(source.sandboxExecCommandReceipt === undefined
+      ? {}
+      : {
+          sandboxExecCommandReceipt: decodeRemoteWorkerSandboxExecCommandReceipt(
+            source.sandboxExecCommandReceipt,
           ),
         }),
   });
@@ -6003,6 +6170,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       "reconcileRequired",
       "command",
       "sandboxCommand",
+      "sandboxExecCommand",
     ],
     [
       "apiVersion",
@@ -6061,7 +6229,11 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     sandboxCommand =
       source.sandboxCommand === undefined
         ? undefined
-        : decodeRemoteWorkerSandboxCommand(source.sandboxCommand);
+        : decodeRemoteWorkerSandboxCommand(source.sandboxCommand),
+    sandboxExecCommand =
+      source.sandboxExecCommand === undefined
+        ? undefined
+        : decodeRemoteWorkerSandboxExecCommand(source.sandboxExecCommand);
   if (
     command !== undefined &&
     (command.generation !== generation ||
@@ -6071,10 +6243,16 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     error("INVALID_REMOTE_WORKER_COMMAND", "/command");
   if (sandboxCommand !== undefined && Date.parse(sandboxCommand.deadline) <= Date.parse(acceptedAt))
     error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/sandboxCommand");
+  if (
+    sandboxExecCommand !== undefined &&
+    Date.parse(sandboxExecCommand.deadline) <= Date.parse(acceptedAt)
+  )
+    error("INVALID_REMOTE_WORKER_SANDBOX_EXEC_COMMAND", "/sandboxExecCommand");
   return Object.freeze({
     ...heartbeat,
     ...(command === undefined ? {} : { command }),
     ...(sandboxCommand === undefined ? {} : { sandboxCommand }),
+    ...(sandboxExecCommand === undefined ? {} : { sandboxExecCommand }),
   });
 }
 export function decodeRemoteWorkerNodeSchedulingRequest(

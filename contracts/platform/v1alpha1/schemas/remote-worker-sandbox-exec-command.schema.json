@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-exec-command.schema.json",
+  "title": "RemoteWorkerSandboxExecCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commandId",
+    "workspaceId",
+    "targetId",
+    "sandboxId",
+    "sandboxGeneration",
+    "runtimeId",
+    "runtimeOperationId",
+    "runtimeSpecDigest",
+    "command",
+    "timeoutSeconds",
+    "deadline"
+  ],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeOperationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeSpecDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "command": { "type": "string", "minLength": 1, "maxLength": 8192 },
+    "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+    "deadline": { "type": "string", "format": "date-time" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the command is bound to the current Target, Sandbox generation and physical runtime receipt",
+    "the working directory is fixed to /workspace and command must be valid UTF-8 without NUL bytes",
+    "runtime endpoints and credentials are absent"
+  ]
+}

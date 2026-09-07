@@ -9,6 +9,8 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const [output] = process.argv.slice(2);
 assert.ok(output, "usage: node scripts/test-foundation-controller-docker.mjs NEW_OUTPUT_DIRECTORY");
+const remoteWorkerOnly = process.argv.includes("--remote-worker-only");
+const remoteWorkerComplete = Symbol("remote-worker-complete");
 const root = resolve(import.meta.dirname, "..");
 const currentHead = readdirSync(resolve(root, "services/control-plane/migrations/product"))
   .filter((entry) => /^\d{6}$/.test(entry))
@@ -391,6 +393,17 @@ try {
   assert.equal(remoteWorkerReceipt.stopReceiptReplay, true);
   assert.equal(remoteWorkerReceipt.rebuildReceiptReplay, true);
   assert.equal(remoteWorkerReceipt.cleanupStopReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.execExitCode, 7);
+  assert.equal(remoteWorkerReceipt.execWorkspaceDigestVerified, true);
+  assert.equal(remoteWorkerReceipt.execRequestReplay, true);
+  assert.equal(remoteWorkerReceipt.execRequestConflictStatus, 409);
+  assert.equal(remoteWorkerReceipt.execReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.execReceiptConflictStatus, 409);
+  assert.equal(remoteWorkerReceipt.execAdminStatus, 403);
+  assert.equal(remoteWorkerReceipt.execStaleGenerationStatus, 409);
+  assert.equal(remoteWorkerReceipt.execIncarnationBound, true);
+  assert.equal(remoteWorkerReceipt.execCertificateBound, true);
+  assert.equal(remoteWorkerReceipt.execContentTableHidden, true);
   assert.match(remoteWorkerReceipt.workspaceDigest, /^[0-9a-f]{64}\s+/u);
   assert.equal(remoteWorkerReceipt.observedState, "stopped");
   for (const runtimeId of [remoteWorkerReceipt.runtimeId, remoteWorkerReceipt.rebuiltRuntimeId]) {
@@ -401,6 +414,55 @@ try {
     }
   }
   docker("volume", "rm", remoteWorkerReceipt.volumeName);
+  if (remoteWorkerOnly) {
+    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace",
+      ),
+      "",
+    );
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        dirty: true,
+      },
+      backend: {
+        dockerContext: "orbstack",
+        dockerVersion: docker("version", "--format", "{{.Server.Version}}"),
+        postgres: psql("SHOW server_version;"),
+        schemaHead: migration.schema_head,
+      },
+      remoteWorker: remoteWorkerReceipt,
+      checks: [
+        "generated User Exec API queues only the database-authorized exact RemoteWorker Sandbox generation",
+        "authenticated outbound worker receives the command over its existing mTLS heartbeat and executes it in /workspace",
+        "non-zero exit, stdout, stderr and duration settle through the public response without infrastructure fields",
+        "command delivery is bound to the current incarnation and certificate and accepts only exact request and receipt replay",
+        "runtime role cannot read the command/output table directly",
+        "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
+      ],
+      boundary:
+        "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec is verified, but Files, PTY, long connection, Kubernetes and SSH customer nodes are not covered",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    process.stdout.write(
+      `Verified RemoteWorker Sandbox Exec and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw remoteWorkerComplete;
+  }
 
   const commonEnvironment = {
     ...process.env,
@@ -710,6 +772,8 @@ try {
   process.stdout.write(
     `Verified Controller restart/adoption and failure compensation; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
   );
+} catch (error) {
+  if (error !== remoteWorkerComplete) throw error;
 } finally {
   const ownedRuntimeIDs = new Set(prepareReceipt?.runtimeId ? [prepareReceipt.runtimeId] : []);
   if (postgresStarted) {

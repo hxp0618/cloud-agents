@@ -35,3 +35,25 @@ func TestHeartbeatInputAndNodeStatusValidate(t *testing.T) {
 		t.Fatal("accepted observed generation ahead of authority")
 	}
 }
+
+func TestSandboxExecCommandAndReceiptValidate(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := SandboxExecCommand{CommandID: "rwexec-alpha", WorkspaceID: "workspace-alpha", TargetID: "target-alpha",
+		SandboxID: "sandbox-alpha", SandboxGeneration: 3, RuntimeID: "runtime-alpha", RuntimeOperationID: "operation-alpha",
+		RuntimeSpecDigest: digest, Command: "printf bounded", TimeoutSeconds: 10, Deadline: time.Now().Add(time.Minute)}
+	if err := command.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	receipt := SandboxExecCommandReceipt{CommandID: command.CommandID, SandboxID: command.SandboxID,
+		SandboxGeneration: command.SandboxGeneration, Result: "succeeded", ExitCode: 7, Stdout: "proof\n", Stderr: "failed", ExecutionTimeMillis: 1}
+	first, err := SandboxExecCommandReceiptDigest(receipt)
+	second, replayErr := SandboxExecCommandReceiptDigest(receipt)
+	if err != nil || replayErr != nil || first != second || first == "" {
+		t.Fatalf("receipt digests=%q/%q errors=%v/%v", first, second, err, replayErr)
+	}
+	receipt.Stdout = strings.Repeat("x", 1<<20)
+	receipt.Stderr = "x"
+	if receipt.Validate() == nil {
+		t.Fatal("combined Exec output above 1 MiB accepted")
+	}
+}

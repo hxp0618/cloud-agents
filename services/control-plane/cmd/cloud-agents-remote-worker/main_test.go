@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,5 +103,31 @@ func TestRemoteWorkerRejectsExpiredCommandWithoutAdvancingGeneration(t *testing.
 	}
 	if state.ObservedGeneration != 1 || state.ObservedState != "active" || state.CommandReceipt == nil || state.CommandReceipt.Result != "failed" || state.CommandReceipt.StableErrorCode != "remote-worker-command-expired" {
 		t.Fatalf("expired state=%#v", state)
+	}
+}
+
+func TestRemoteWorkerSandboxExecStateSurvivesRestartAndAcknowledgement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	state := initialNodeState("incarnation-alpha")
+	command := &platform.RemoteWorkerSandboxExecCommand{CommandID: "rwexec-alpha", WorkspaceID: "workspace-alpha",
+		TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 3, RuntimeID: "runtime-alpha",
+		RuntimeOperationID: "operation-alpha", RuntimeSpecDigest: "sha256:" + strings.Repeat("a", 64),
+		Command: "printf bounded", TimeoutSeconds: 10, Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := reconcileHeartbeat(path, &state, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID, SandboxExecCommand: command}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := loadNodeState(path, state.IncarnationID)
+	if err != nil || restarted.SandboxExecCommand == nil || restarted.SandboxExecCommand.CommandID != command.CommandID {
+		t.Fatalf("restarted state=%#v err=%v", restarted, err)
+	}
+	restarted.SandboxExecCommandReceipt = &platform.RemoteWorkerSandboxExecCommandReceipt{CommandID: command.CommandID,
+		SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration, Result: "succeeded", ExitCode: 7,
+		Stdout: "proof\n", Stderr: "failed", ExecutionTimeMillis: 1}
+	if err := saveNodeState(path, restarted); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID}, time.Now()); err != nil ||
+		restarted.SandboxExecCommand != nil || restarted.SandboxExecCommandReceipt != nil {
+		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
 	}
 }

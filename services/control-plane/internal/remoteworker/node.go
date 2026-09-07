@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
@@ -33,20 +34,21 @@ type Capacity struct {
 }
 
 type HeartbeatInput struct {
-	Scope                 Scope
-	EnrollmentID          string
-	PeerCertificateSHA256 string
-	IncarnationID         string
-	ObservedGeneration    int64
-	ObservedState         string
-	WorkerVersion         string
-	OS                    string
-	Architecture          string
-	KernelVersion         string
-	Capabilities          []string
-	Capacity              Capacity
-	CommandReceipt        *CommandReceipt
-	SandboxCommandReceipt *SandboxCommandReceipt
+	Scope                     Scope
+	EnrollmentID              string
+	PeerCertificateSHA256     string
+	IncarnationID             string
+	ObservedGeneration        int64
+	ObservedState             string
+	WorkerVersion             string
+	OS                        string
+	Architecture              string
+	KernelVersion             string
+	Capabilities              []string
+	Capacity                  Capacity
+	CommandReceipt            *CommandReceipt
+	SandboxCommandReceipt     *SandboxCommandReceipt
+	SandboxExecCommandReceipt *SandboxExecCommandReceipt
 }
 
 type CommandReceipt struct {
@@ -81,6 +83,18 @@ type SandboxCommand struct {
 	RuntimeGeneration                                          int64
 	NetworkAllowedEgress                                       []string
 	Deadline                                                   time.Time
+}
+
+type SandboxExecCommandReceipt struct {
+	CommandID, SandboxID, Result, Stdout, Stderr, StableErrorCode string
+	SandboxGeneration, ExitCode, ExecutionTimeMillis              int64
+}
+
+type SandboxExecCommand struct {
+	CommandID, WorkspaceID, TargetID, SandboxID               string
+	RuntimeID, RuntimeOperationID, RuntimeSpecDigest, Command string
+	SandboxGeneration, TimeoutSeconds                         int64
+	Deadline                                                  time.Time
 }
 
 type SchedulingInput struct {
@@ -144,7 +158,8 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		invalidIdentifier(input.OS) || invalidIdentifier(input.Architecture) || invalidKernelVersion(input.KernelVersion) ||
 		invalidCapabilities(input.Capabilities) || invalidCapacity(input.Capacity) ||
 		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil ||
-		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil {
+		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil ||
+		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil {
 		return ErrInvalidHeartbeat
 	}
 	return nil
@@ -209,6 +224,43 @@ func (command SandboxCommand) Validate() error {
 func SandboxCommandID(operationID string, attempt int64) string {
 	sum := sha256.Sum256([]byte(operationID + "|" + strconv.FormatInt(attempt, 10)))
 	return "rwsc-" + hex.EncodeToString(sum[:16])
+}
+
+func (receipt SandboxExecCommandReceipt) Validate() error {
+	validFailure := slices.Contains([]string{"sandbox_access_unavailable", "sandbox_runtime_unavailable", "sandbox_exec_output_limit", "sandbox_exec_timeout"}, receipt.StableErrorCode)
+	if invalidIdentifier(receipt.CommandID) || invalidIdentifier(receipt.SandboxID) || receipt.SandboxGeneration < 1 ||
+		receipt.Result != "succeeded" && receipt.Result != "failed" || !utf8.ValidString(receipt.Stdout) || !utf8.ValidString(receipt.Stderr) ||
+		len(receipt.Stdout)+len(receipt.Stderr) > 1<<20 || receipt.ExecutionTimeMillis < 0 || receipt.ExecutionTimeMillis > 65000 ||
+		receipt.Result == "succeeded" && receipt.StableErrorCode != "" ||
+		receipt.Result == "failed" && (!validFailure || receipt.ExitCode != 0 || receipt.Stdout != "" || receipt.Stderr != "" || receipt.ExecutionTimeMillis != 0) {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func SandboxExecCommandReceiptDigest(receipt SandboxExecCommandReceipt) (string, error) {
+	if receipt.Validate() != nil {
+		return "", ErrInvalidHeartbeat
+	}
+	return mutationDigest("remote-worker.sandbox-exec-receipt", receipt.CommandID, receipt.SandboxID,
+		receipt.SandboxGeneration, receipt.Result, receipt.ExitCode, receipt.Stdout, receipt.Stderr,
+		receipt.ExecutionTimeMillis, receipt.StableErrorCode)
+}
+
+func (command SandboxExecCommand) Validate() error {
+	if invalidIdentifier(command.CommandID) || invalidIdentifier(command.WorkspaceID) || invalidIdentifier(command.TargetID) ||
+		invalidIdentifier(command.SandboxID) || command.SandboxGeneration < 1 || invalidIdentifier(command.RuntimeID) ||
+		invalidIdentifier(command.RuntimeOperationID) || !digest(command.RuntimeSpecDigest) || len(command.Command) < 1 ||
+		len(command.Command) > 8192 || !utf8.ValidString(command.Command) || command.TimeoutSeconds < 1 ||
+		command.TimeoutSeconds > 60 || command.Deadline.IsZero() {
+		return ErrInvalidHeartbeat
+	}
+	for _, character := range command.Command {
+		if character == 0 {
+			return ErrInvalidHeartbeat
+		}
+	}
+	return nil
 }
 
 func (receipt CommandReceipt) Validate() error {

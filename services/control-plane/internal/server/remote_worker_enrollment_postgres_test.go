@@ -40,7 +40,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if runtimeURL == "" || ownerURL == "" {
 		t.Skip("isolated RemoteWorker enrollment PostgreSQL environment not configured")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	runtimePool, err := pgxpool.New(ctx, runtimeURL)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
 		"projects.act projects.get targets.act targets.get targets.list audit.list operations.list remote-worker-enrollments.act remote-worker-enrollments.create remote-worker-enrollments.get remote-worker-enrollments.list profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get network-policies.update",
-		"projects.act projects.get environment-profiles.list environments.create",
+		"projects.act projects.get environment-profiles.list environments.create sandboxes.update",
 		"projects.act remote-worker-bootstrap.act",
 	)
 	store, err := postgres.NewDurableCoordinationService(runtimePool)
@@ -763,14 +763,6 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, owner *pgxpoo
 		adminSandbox.Value.Spec.WriterReleased || adminSandbox.Value.Spec.Generation != rebuildCommand.SandboxGeneration {
 		t.Fatalf("RemoteWorker Sandbox rebuilt authority drifted: value=%+v", adminSandbox.Value)
 	}
-	rebuildIdentity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: rebuildCommand.WorkspaceID,
-		Sandbox: rebuildCommand.SandboxID, Operation: rebuildCommand.OperationID,
-		Generation: rebuildCommand.SandboxGeneration, SpecDigest: rebuildCommand.SpecDigest}
-	rebuiltProof, err := runtimeClient.Exec(ctx, opensandbox.ExecInput{Identity: rebuildIdentity, RuntimeID: rebuiltRuntimeID,
-		Command: "sha256sum /workspace/remote-worker-rebuild-proof.txt", Timeout: 10 * time.Second})
-	if err != nil || rebuiltProof.ExitCode != 0 || strings.TrimSpace(rebuiltProof.Stdout) != workspaceDigest {
-		t.Fatalf("verify rebuilt RemoteWorker Workspace proof: result=%+v expected=%q err=%v", rebuiltProof, workspaceDigest, err)
-	}
 	heartbeat.SandboxCommandReceipt = &platform.RemoteWorkerSandboxCommandReceipt{CommandID: rebuildCommand.CommandID,
 		Attempt: rebuildCommand.Attempt, Action: rebuildCommand.Action, OperationID: rebuildCommand.OperationID,
 		SandboxID: rebuildCommand.SandboxID, SandboxGeneration: rebuildCommand.SandboxGeneration,
@@ -780,6 +772,114 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, owner *pgxpoo
 	}
 	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-rebuild-replay-2", heartbeat); err != nil {
 		t.Fatalf("repeat RemoteWorker Sandbox rebuild receipt replay: %v", err)
+	}
+	type sandboxExecOutcome struct {
+		result api.SandboxExecResult
+		err    error
+	}
+	execRequest := platform.SandboxExecRequest{
+		ExpectedGeneration: rebuildCommand.SandboxGeneration,
+		Command:            "sha256sum /workspace/remote-worker-rebuild-proof.txt; printf remote-exec-stderr >&2; exit 7",
+		TimeoutSeconds:     10,
+	}
+	staleExecRequest := execRequest
+	staleExecRequest.ExpectedGeneration--
+	if _, err := user.ExecSandbox(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-exec-stale", staleExecRequest); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("stale RemoteWorker Sandbox Exec status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := admin.ExecSandbox(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-exec-admin", execRequest); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("Admin RemoteWorker Sandbox Exec status=%d err=%v", clientStatus(err), err)
+	}
+	execDone := make(chan sandboxExecOutcome, 1)
+	go func() {
+		result, execErr := user.ExecSandbox(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-exec", execRequest)
+		execDone <- sandboxExecOutcome{result: result, err: execErr}
+	}()
+	var execCommandID string
+	for retry := 0; ; retry++ {
+		select {
+		case outcome := <-execDone:
+			t.Fatalf("queue RemoteWorker Sandbox Exec API: value=%+v err=%v", outcome.result.Value, outcome.err)
+		default:
+		}
+		err = owner.QueryRow(ctx, `SELECT command_uid FROM cloud_agents.remote_worker_sandbox_exec_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND request_id='request-remote-sandbox-exec'`).Scan(&execCommandID)
+		if err == nil {
+			break
+		}
+		if err != pgx.ErrNoRows || retry == 100 {
+			t.Fatalf("queue RemoteWorker Sandbox Exec: %v", err)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	heartbeat.SandboxCommandReceipt = nil
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	state, err = os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var execState struct {
+		SandboxExecCommand        *platform.RemoteWorkerSandboxExecCommand        `json:"sandboxExecCommand"`
+		SandboxExecCommandReceipt *platform.RemoteWorkerSandboxExecCommandReceipt `json:"sandboxExecCommandReceipt"`
+	}
+	if err := json.Unmarshal(state, &execState); err != nil || execState.SandboxExecCommand == nil ||
+		execState.SandboxExecCommandReceipt == nil || execState.SandboxExecCommand.CommandID != execCommandID ||
+		execState.SandboxExecCommandReceipt.CommandID != execCommandID || execState.SandboxExecCommandReceipt.Result != "succeeded" ||
+		execState.SandboxExecCommandReceipt.ExitCode != 7 || strings.TrimSpace(execState.SandboxExecCommandReceipt.Stdout) != workspaceDigest ||
+		execState.SandboxExecCommandReceipt.Stderr != "remote-exec-stderr" {
+		t.Fatalf("execute RemoteWorker Sandbox Exec: state=%s error=%v", state, err)
+	}
+	execReceipt := *execState.SandboxExecCommandReceipt
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	var execResult api.SandboxExecResult
+	select {
+	case outcome := <-execDone:
+		if outcome.err != nil {
+			t.Fatalf("settle RemoteWorker Sandbox Exec: %v", outcome.err)
+		}
+		execResult = outcome.result
+	case <-time.After(15 * time.Second):
+		t.Fatal("RemoteWorker Sandbox Exec did not settle")
+	}
+	if execResult.Value.Generation != rebuildCommand.SandboxGeneration || execResult.Value.ExitCode != 7 ||
+		strings.TrimSpace(execResult.Value.Stdout) != workspaceDigest || execResult.Value.Stderr != "remote-exec-stderr" ||
+		execResult.Value.ExecutionTimeMillis < 0 || execResult.Value.ExecutionTimeMillis > 65000 {
+		t.Fatalf("RemoteWorker Sandbox Exec result=%+v", execResult.Value)
+	}
+	replayedExec, err := user.ExecSandbox(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-exec", execRequest)
+	if err != nil || replayedExec.Value != execResult.Value {
+		t.Fatalf("replay RemoteWorker Sandbox Exec: value=%+v err=%v", replayedExec.Value, err)
+	}
+	conflictingExecRequest := execRequest
+	conflictingExecRequest.Command += " "
+	if _, err := user.ExecSandbox(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-exec", conflictingExecRequest); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("conflicting RemoteWorker Sandbox Exec replay status=%d err=%v", clientStatus(err), err)
+	}
+	heartbeat.SandboxExecCommandReceipt = &execReceipt
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-exec-replay-1", heartbeat); err != nil {
+		t.Fatalf("replay RemoteWorker Sandbox Exec receipt: %v", err)
+	}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-exec-replay-2", heartbeat); err != nil {
+		t.Fatalf("repeat RemoteWorker Sandbox Exec receipt replay: %v", err)
+	}
+	conflictingExecReceipt := execReceipt
+	conflictingExecReceipt.Stderr += "!"
+	heartbeat.SandboxExecCommandReceipt = &conflictingExecReceipt
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-exec-receipt-conflict", heartbeat); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("conflicting RemoteWorker Sandbox Exec receipt status=%d err=%v", clientStatus(err), err)
+	}
+	heartbeat.SandboxExecCommandReceipt = nil
+	var execStateValue string
+	var execIncarnationBound, execCertificateBound, execReceiptSettled, execContentTableHidden bool
+	if err := owner.QueryRow(ctx, `SELECT state, assigned_incarnation_uid=$2,
+delivery_certificate_sha256=$3, receipt_digest IS NOT NULL,
+NOT pg_catalog.has_table_privilege('cloud_agents_runtime', 'cloud_agents.remote_worker_sandbox_exec_commands', 'SELECT')
+FROM cloud_agents.remote_worker_sandbox_exec_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, execCommandID, incarnationID, certificateSHA256).Scan(
+		&execStateValue, &execIncarnationBound, &execCertificateBound, &execReceiptSettled, &execContentTableHidden,
+	); err != nil || execStateValue != "succeeded" || !execIncarnationBound || !execCertificateBound || !execReceiptSettled || !execContentTableHidden {
+		t.Fatalf("RemoteWorker Sandbox Exec authority: state=%q incarnation=%v certificate=%v receipt=%v hidden=%v err=%v",
+			execStateValue, execIncarnationBound, execCertificateBound, execReceiptSettled, execContentTableHidden, err)
 	}
 	cleanupStopOperation, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-cleanup-stop", "remote-sandbox-cleanup-stop-key-1", platform.SandboxSessionLifecycleRequest{
 		ExpectedGeneration: adminSandbox.Value.Spec.Generation, ExpectedResourceVersion: adminSandbox.Value.Metadata.ResourceVersion,
@@ -830,8 +930,12 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"stopOperationId": stopOperation.Value.OperationID, "rebuildOperationId": rebuildOperation.Value.OperationID,
 		"cleanupStopOperationId": cleanupStopOperation.Value.OperationID, "runtimeId": runtimeID,
 		"rebuiltRuntimeId": rebuiltRuntimeID, "volumeName": volumeName, "workspaceDigest": workspaceDigest,
-		"rebuildAttempts": rebuildCommand.Attempt,
-		"receiptReplay":   true, "stopReceiptReplay": true, "rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
+		"rebuildAttempts": rebuildCommand.Attempt, "execCommandId": execCommandID, "execExitCode": execResult.Value.ExitCode,
+		"execWorkspaceDigestVerified": true, "execRequestReplay": true, "execRequestConflictStatus": 409,
+		"execReceiptReplay": true, "execReceiptConflictStatus": 409, "execAdminStatus": 403, "execStaleGenerationStatus": 409,
+		"execIncarnationBound": execIncarnationBound,
+		"execCertificateBound": execCertificateBound, "execContentTableHidden": execContentTableHidden,
+		"receiptReplay": true, "stopReceiptReplay": true, "rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
 		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }

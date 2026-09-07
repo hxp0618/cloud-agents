@@ -29,7 +29,8 @@ type foundationStore interface {
 	ListRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.RuntimeProfilePage, error)
 	ListPublishedRuntimeProfiles(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.PublishedRuntimeProfilePage, error)
 	CreateFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxCreateInput) (internalcoordination.FoundationSandboxSnapshot, error)
-	GetFoundationSandboxAccess(context.Context, string, *authn.VerifiedPrincipal, string, string, int64) (postgres.FoundationSandboxAccess, error)
+	PrepareFoundationSandboxExec(context.Context, string, *authn.VerifiedPrincipal, string, string, int64, string, string, string, int64) (postgres.FoundationSandboxExec, error)
+	WaitRemoteWorkerSandboxExec(context.Context, postgres.FoundationSandboxExec) (postgres.FoundationSandboxExec, error)
 	TransitionFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxLifecycleInput) (internalcoordination.FoundationSandboxLifecycleOperation, error)
 	GetAdminSandbox(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.AdminSandboxSnapshot, error)
 	ListAdminSandboxes(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminSandboxPage, error)
@@ -383,30 +384,51 @@ func (server *FoundationHTTPServer) execSandbox(writer http.ResponseWriter, requ
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	access, err := server.store.GetFoundationSandboxAccess(request.Context(), tenantID, principal, projectID, sandboxID, validated.Body.ExpectedGeneration)
+	requestDigest, err := foundationRequestDigest(validated.Body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	execution, err := server.store.PrepareFoundationSandboxExec(request.Context(), tenantID, principal, projectID, sandboxID,
+		validated.Body.ExpectedGeneration, requestID, requestDigest, validated.Body.Command, validated.Body.TimeoutSeconds)
 	if err != nil {
 		writeFoundationError(writer, err)
 		return
 	}
-	if server.access == nil {
-		writePublicProblem(writer, http.StatusServiceUnavailable, "sandbox_access_unavailable")
-		return
-	}
-	client, err := server.access.Client(access.CredentialRef)
-	if err != nil {
-		writeFoundationError(writer, err)
-		return
-	}
-	result, err := client.Exec(request.Context(), opensandbox.ExecInput{
-		Identity: opensandbox.Identity{Tenant: access.Scope.TenantID, Project: access.Scope.ProjectID,
-			Workspace: access.WorkspaceID, Sandbox: access.SandboxID, Operation: access.RuntimeOperationID,
-			Generation: access.RuntimeGeneration, SpecDigest: access.RuntimeSpecDigest},
-		RuntimeID: access.RuntimeID, Command: validated.Body.Command,
-		Timeout: time.Duration(validated.Body.TimeoutSeconds) * time.Second,
-	})
-	if err != nil {
-		writeFoundationError(writer, err)
-		return
+	access := execution.Access
+	result := opensandbox.ExecResult{}
+	if access.TargetKind == "remote-worker" {
+		execution, err = server.store.WaitRemoteWorkerSandboxExec(request.Context(), execution)
+		if err == nil && execution.State == "failed" {
+			err = remoteWorkerSandboxExecError(execution.StableErrorCode)
+		}
+		if err != nil {
+			writeFoundationError(writer, err)
+			return
+		}
+		result = opensandbox.ExecResult{ExitCode: execution.ExitCode, Stdout: execution.Stdout,
+			Stderr: execution.Stderr, ExecutionTimeMillis: execution.ExecutionTimeMillis}
+	} else {
+		if server.access == nil {
+			writePublicProblem(writer, http.StatusServiceUnavailable, "sandbox_access_unavailable")
+			return
+		}
+		client, clientErr := server.access.Client(access.CredentialRef)
+		if clientErr != nil {
+			writeFoundationError(writer, clientErr)
+			return
+		}
+		result, err = client.Exec(request.Context(), opensandbox.ExecInput{
+			Identity: opensandbox.Identity{Tenant: access.Scope.TenantID, Project: access.Scope.ProjectID,
+				Workspace: access.WorkspaceID, Sandbox: access.SandboxID, Operation: access.RuntimeOperationID,
+				Generation: access.RuntimeGeneration, SpecDigest: access.RuntimeSpecDigest},
+			RuntimeID: access.RuntimeID, Command: validated.Body.Command,
+			Timeout: time.Duration(validated.Body.TimeoutSeconds) * time.Second,
+		})
+		if err != nil {
+			writeFoundationError(writer, err)
+			return
+		}
 	}
 	value := platform.SandboxExecResult{APIVersion: platform.APIVersion, Kind: "SandboxExecResult",
 		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: projectID},
@@ -418,6 +440,21 @@ func (server *FoundationHTTPServer) execSandbox(writer http.ResponseWriter, requ
 		return
 	}
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
+}
+
+func remoteWorkerSandboxExecError(code string) error {
+	switch code {
+	case "sandbox_exec_output_limit":
+		return opensandbox.ErrOutputLimit
+	case "sandbox_exec_timeout":
+		return context.DeadlineExceeded
+	case "sandbox_runtime_unavailable":
+		return opensandbox.ErrRuntimeFailed
+	case "sandbox_access_unavailable":
+		return opensandbox.ErrUnavailable
+	default:
+		return postgres.ErrCoordinationResultDrift
+	}
 }
 
 func (server *FoundationHTTPServer) listAdminSandboxes(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID string, principal *authn.VerifiedPrincipal) {

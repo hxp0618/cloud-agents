@@ -46,11 +46,12 @@
       }
     },
     "commandReceipt": { "$ref": "./remote-worker-command-receipt.schema.json" },
-    "sandboxCommandReceipt": { "$ref": "./remote-worker-sandbox-command-receipt.schema.json" }
+    "sandboxCommandReceipt": { "$ref": "./remote-worker-sandbox-command-receipt.schema.json" },
+    "sandboxExecCommandReceipt": { "$ref": "./remote-worker-sandbox-exec-command-receipt.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "the mTLS SPIFFE identity supplies tenant, project, enrollment, and incarnation authority",
     "the server, not the node, owns desired generation and scheduling state",
-    "commandReceipt and sandboxCommandReceipt are retried until one heartbeat response acknowledges them"
+    "commandReceipt, sandboxCommandReceipt and sandboxExecCommandReceipt are retried until one heartbeat response acknowledges them"
   ]
 }

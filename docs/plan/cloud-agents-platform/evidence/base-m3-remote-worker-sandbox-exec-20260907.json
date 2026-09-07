@@ -1,0 +1,53 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "774b790ef349fa97fa459c24e63485cdb27783e5",
+    "dirty": true
+  },
+  "productMigration": {
+    "id": "000071",
+    "schemaBundleDigest": "sha256:3b1bb4eb61ab662986440395d8c2858f38d9948a0efd1a9612014ccd199bd8b7",
+    "manifestDigest": "sha256:961df6c9d3588b1d123f0cbda6e42204ad1b6ad91e726ce50d6c339ba0eb3b03",
+    "upgradeFrom": "000070",
+    "freshMigrationCount": 71,
+    "noOpReplayCount": 0
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "run": "foundation-controller-be5669c4-f9d4-4bb8-ab3a-0b1666169796",
+  "remoteWorker": {
+    "execCommandId": "rwexec-RMUJHXLLD5ZBQIVQTWQTBDZ22D",
+    "runtimeId": "74b6ebb5-dd6a-44cf-998d-07c430ea62d1",
+    "rebuiltRuntimeId": "af1af585-27eb-4c74-92bd-b7b9ff04b4fb",
+    "volumeName": "ca-ws-887ca62cff2f8a88152a4cc647d35ad95434d0563208bb7a3d43110f",
+    "workspaceDigest": "64369e3856843eaad19d590ae5eba5153c8683a49002eb4b634ae2ba599e13d0",
+    "stderr": "remote-exec-stderr",
+    "exitCode": 7,
+    "requestReplay": true,
+    "requestConflictStatus": 409,
+    "receiptReplay": true,
+    "receiptConflictStatus": 409,
+    "adminStatus": 403,
+    "staleGenerationStatus": 409,
+    "incarnationBound": true,
+    "certificateBound": true,
+    "contentTableHiddenFromRuntime": true,
+    "observedStateAfterCleanup": "stopped"
+  },
+  "cleanup": {
+    "openSandboxRuntimeContainers": 0,
+    "foundationWorkspaceVolumes": 0
+  },
+  "checks": [
+    "the generated User Exec API queues only the database-authorized exact RemoteWorker Sandbox generation",
+    "the authenticated outbound worker receives the command over its existing mTLS heartbeat and executes it in /workspace",
+    "non-zero exit, stdout, stderr and duration settle through the public response without infrastructure fields",
+    "delivery is bound to the current incarnation and certificate and accepts only exact request and receipt replay",
+    "the runtime database role cannot read the command/output table directly",
+    "create, stop, retained-volume rebuild, Exec and final cleanup leave zero test-owned runtime containers and Workspace volumes"
+  ],
+  "boundary": "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec is verified, but Files, PTY, long connection, Kubernetes and SSH customer nodes are not covered"
+}

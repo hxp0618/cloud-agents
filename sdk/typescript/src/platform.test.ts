@@ -48,6 +48,8 @@ import {
   decodeRemoteWorkerNodeStatus,
   decodeRemoteWorkerSandboxCommand,
   decodeRemoteWorkerSandboxCommandReceipt,
+  decodeRemoteWorkerSandboxExecCommand,
+  decodeRemoteWorkerSandboxExecCommandReceipt,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -105,6 +107,52 @@ const platformFixtureRoot = resolve(
 );
 
 describe("generated platform JSON models", () => {
+  it("fences RemoteWorker Sandbox Exec commands and receipts", () => {
+    const command = {
+      commandId: "rwexec-alpha",
+      workspaceId: "workspace-alpha",
+      targetId: "target-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      runtimeId: "runtime-alpha",
+      runtimeOperationId: "operation-alpha",
+      runtimeSpecDigest: `sha256:${"a".repeat(64)}`,
+      command: "printf bounded",
+      timeoutSeconds: 10,
+      deadline: "2026-09-07T12:01:00Z",
+    };
+    expect(decodeRemoteWorkerSandboxExecCommand(command).runtimeOperationId).toBe(
+      "operation-alpha",
+    );
+    expect(() =>
+      decodeRemoteWorkerSandboxExecCommand({ ...command, command: "界".repeat(2731) }),
+    ).toThrow(TypeError);
+    expect(
+      decodeRemoteWorkerSandboxExecCommandReceipt({
+        commandId: "rwexec-alpha",
+        sandboxId: "sandbox-alpha",
+        sandboxGeneration: 3,
+        result: "succeeded",
+        exitCode: 7,
+        stdout: "proof\n",
+        stderr: "failed",
+        executionTimeMillis: 1,
+      }).exitCode,
+    ).toBe(7);
+    expect(() =>
+      decodeRemoteWorkerSandboxExecCommandReceipt({
+        commandId: "rwexec-alpha",
+        sandboxId: "sandbox-alpha",
+        sandboxGeneration: 3,
+        result: "failed",
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        executionTimeMillis: 0,
+      }),
+    ).toThrow(TypeError);
+  });
+
   it("fences RemoteWorker lifecycle commands while keeping legacy create receipts", () => {
     const base = {
       commandId: "rwsc-alpha",

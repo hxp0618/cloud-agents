@@ -467,7 +467,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		writePublicProblem(writer, 401, "authentication_failed")
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 64<<10))
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 8<<20))
 	if err != nil {
 		writePublicProblem(writer, 400, "invalid_request")
 		return
@@ -487,9 +487,10 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		ObservedState: validated.Body.ObservedState,
 		WorkerVersion: validated.Body.WorkerVersion, OS: validated.Body.OS, Architecture: validated.Body.Architecture,
 		KernelVersion: validated.Body.KernelVersion, Capabilities: validated.Body.Capabilities,
-		Capacity:              internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
-		CommandReceipt:        remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
-		SandboxCommandReceipt: remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
+		Capacity:                  internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
+		CommandReceipt:            remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
+		SandboxCommandReceipt:     remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
+		SandboxExecCommandReceipt: remoteWorkerSandboxExecCommandReceipt(validated.Body.SandboxExecCommandReceipt),
 	})
 	if err != nil {
 		writeRemoteWorkerEnrollmentError(writer, err)
@@ -504,8 +505,9 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		DesiredState: node.DesiredState, ObservedState: node.ObservedState, HealthState: node.HealthState,
 		AcceptedAt: node.LastHeartbeatAt.UTC().Format(time.RFC3339Nano), ExpiresAt: node.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
 		NextHeartbeatAfterSeconds: int64(internalremoteworker.HeartbeatInterval / time.Second), ReconcileRequired: result.ReconcileRequired,
-		Command:        remoteWorkerCommandResource(result.Command),
-		SandboxCommand: remoteWorkerSandboxCommandResource(result.SandboxCommand),
+		Command:            remoteWorkerCommandResource(result.Command),
+		SandboxCommand:     remoteWorkerSandboxCommandResource(result.SandboxCommand),
+		SandboxExecCommand: remoteWorkerSandboxExecCommandResource(result.SandboxExecCommand),
 	}})
 	if err != nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -513,6 +515,16 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writeJSONResponse(writer, 200, requestID, responseBody)
+}
+
+func remoteWorkerSandboxExecCommandReceipt(value *platformv1alpha1.RemoteWorkerSandboxExecCommandReceipt) *internalremoteworker.SandboxExecCommandReceipt {
+	if value == nil {
+		return nil
+	}
+	return &internalremoteworker.SandboxExecCommandReceipt{CommandID: value.CommandID, SandboxID: value.SandboxID,
+		SandboxGeneration: value.SandboxGeneration, Result: value.Result, ExitCode: value.ExitCode,
+		Stdout: value.Stdout, Stderr: value.Stderr, ExecutionTimeMillis: value.ExecutionTimeMillis,
+		StableErrorCode: value.StableErrorCode}
 }
 
 func remoteWorkerSandboxCommandReceipt(value *platformv1alpha1.RemoteWorkerSandboxCommandReceipt) *internalremoteworker.SandboxCommandReceipt {
@@ -551,6 +563,17 @@ func remoteWorkerSandboxCommandResource(value *internalremoteworker.SandboxComma
 		NetworkAllowedEgress: value.NetworkAllowedEgress, PhysicalVolumeName: value.PhysicalVolumeName,
 		RuntimeID: value.RuntimeID, RuntimeState: value.RuntimeState, RuntimeOperationID: value.RuntimeOperationID,
 		RuntimeGeneration: value.RuntimeGeneration, RuntimeSpecDigest: value.RuntimeSpecDigest,
+		Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
+}
+
+func remoteWorkerSandboxExecCommandResource(value *internalremoteworker.SandboxExecCommand) *platformv1alpha1.RemoteWorkerSandboxExecCommand {
+	if value == nil {
+		return nil
+	}
+	return &platformv1alpha1.RemoteWorkerSandboxExecCommand{CommandID: value.CommandID, WorkspaceID: value.WorkspaceID,
+		TargetID: value.TargetID, SandboxID: value.SandboxID, SandboxGeneration: value.SandboxGeneration,
+		RuntimeID: value.RuntimeID, RuntimeOperationID: value.RuntimeOperationID,
+		RuntimeSpecDigest: value.RuntimeSpecDigest, Command: value.Command, TimeoutSeconds: value.TimeoutSeconds,
 		Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
 }
 
@@ -901,6 +924,8 @@ func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, 409, "remote_worker_command_receipt_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerSandboxReceiptConflict):
 		writePublicProblem(writer, 409, "remote_worker_sandbox_receipt_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerSandboxExecReceiptConflict):
+		writePublicProblem(writer, 409, "remote_worker_sandbox_exec_receipt_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingIdempotencyConflict):
 		writePublicProblem(writer, 409, "idempotency_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerOperationInProgress):

@@ -325,7 +325,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CreateRemoteWorkerEnrollment",
 		"*DurableCoordinationService.CreateRuntimeProfile",
 		"*DurableCoordinationService.GetAdminSandbox",
-		"*DurableCoordinationService.GetFoundationSandboxAccess",
+		"*DurableCoordinationService.PrepareFoundationSandboxExec",
 		"*DurableCoordinationService.GetRemoteWorkerEnrollment",
 		"*DurableCoordinationService.GetRuntimeProfile",
 		"*DurableCoordinationService.IssueSandboxAccessGrant",

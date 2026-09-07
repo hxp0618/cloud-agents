@@ -2,13 +2,17 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalcoordination "github.com/hxp0618/cloud-agents/services/control-plane/internal/coordination"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type AdminSandboxSnapshot struct {
@@ -37,10 +41,19 @@ type AdminSandboxPage struct {
 }
 
 type FoundationSandboxAccess struct {
-	Scope                                                 internalcoordination.FoundationScope
-	WorkspaceID, SandboxID, RuntimeID, RuntimeOperationID string
-	RuntimeSpecDigest, CredentialRef                      string
-	Generation, RuntimeGeneration                         int64
+	Scope                                        internalcoordination.FoundationScope
+	WorkspaceID, SandboxID, TargetID, TargetKind string
+	RuntimeID, RuntimeOperationID                string
+	RuntimeSpecDigest, CredentialRef             string
+	Generation, RuntimeGeneration                int64
+}
+
+type FoundationSandboxExec struct {
+	Access                                           FoundationSandboxAccess
+	CommandID, SubjectDigest, State, StableErrorCode string
+	Deadline                                         time.Time
+	ExitCode, ExecutionTimeMillis                    int64
+	Stdout, Stderr                                   string
 }
 
 type adminSandboxPageRow struct {
@@ -109,7 +122,7 @@ WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_u
     sandbox.desired_state, sandbox.observed_state, sandbox.writer_released,
     sandbox.runtime_uid, sandbox.runtime_state, sandbox.runtime_operation_uid,
     sandbox.runtime_generation, sandbox.runtime_spec_digest, sandbox.spec_digest,
-    volume.observed_state, target.target_kind, target.credential_ref,
+    volume.observed_state, target.target_uid, target.target_kind, target.credential_ref,
     operation.state, operation.cleanup_phase,
     sandbox.expires_at IS NULL OR sandbox.expires_at > pg_catalog.clock_timestamp()
 FROM cloud_agents.sandbox_sessions AS sandbox
@@ -122,6 +135,13 @@ JOIN cloud_agents.platform_operations AS operation
  AND operation.operation_generation = sandbox.operation_generation
 WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
   AND sandbox.sandbox_uid = $2`
+	requestRemoteWorkerSandboxExecSQL = `SELECT command_uid, command_state, command_deadline_at,
+    exit_code, stdout, stderr, execution_time_millis, stable_error_code
+FROM cloud_agents.request_remote_worker_sandbox_exec_v1(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`
+	getRemoteWorkerSandboxExecSQL = `SELECT command_state, command_deadline_at,
+    exit_code, stdout, stderr, execution_time_millis, stable_error_code
+FROM cloud_agents.get_remote_worker_sandbox_exec_v1($1,$2,$3,$4)`
 	adminSandboxPageCursorSQL = `SELECT 1 FROM cloud_agents.sandbox_sessions
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND sandbox_uid = $2`
 	listAdminSandboxesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(sandbox_row)
@@ -216,56 +236,152 @@ func (service *DurableCoordinationService) GetAdminSandbox(
 	return adminSandboxSnapshot(row, tenantID, projectID)
 }
 
-func (service *DurableCoordinationService) GetFoundationSandboxAccess(
+func (service *DurableCoordinationService) PrepareFoundationSandboxExec(
 	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
-	projectID, sandboxID string, expectedGeneration int64,
-) (FoundationSandboxAccess, error) {
+	projectID, sandboxID string, expectedGeneration int64, requestID, requestDigest, command string, timeoutSeconds int64,
+) (FoundationSandboxExec, error) {
 	if service == nil || service.runner == nil {
-		return FoundationSandboxAccess{}, ErrNilCoordinationRunner
+		return FoundationSandboxExec{}, ErrNilCoordinationRunner
 	}
 	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
-		!validMutationIdentifier(sandboxID) || expectedGeneration < 1 || expectedGeneration > 9007199254740991 {
-		return FoundationSandboxAccess{}, ErrCoordinationInvalidInput
+		!validMutationIdentifier(sandboxID) || expectedGeneration < 1 || expectedGeneration > 9007199254740991 ||
+		!validMutationIdentifier(requestID) || !validCoordinationDigest(requestDigest) || len(command) < 1 ||
+		len(command) > 8192 || !utf8.ValidString(command) || strings.ContainsRune(command, 0) ||
+		timeoutSeconds < 1 || timeoutSeconds > 60 {
+		return FoundationSandboxExec{}, ErrCoordinationInvalidInput
 	}
-	var result FoundationSandboxAccess
+	result := FoundationSandboxExec{CommandID: "rwexec-" + rand.Text()}
 	var tenant, project, desiredState, observedState, runtimeState, volumeState, targetKind string
 	var operationState, cleanupPhase, specDigest string
 	var observedGeneration int64
 	var writerReleased, notExpired bool
 	var runtimeID, runtimeOperationID, runtimeSpecDigest *string
 	var runtimeGeneration *int64
-	err := service.withFoundationOperation(ctx, tenantID, principal, projectID, "projects.act", false,
-		func(operationContext context.Context, handle *tenantReadHandle, _ string) error {
+	err := service.withFoundationOperation(ctx, tenantID, principal, projectID, "projects.act", true,
+		func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 			err := handle.transaction.queryRow(operationContext, getFoundationSandboxAccessSQL, projectID, sandboxID).Scan(
-				&tenant, &project, &result.WorkspaceID, &result.SandboxID, &result.Generation,
+				&tenant, &project, &result.Access.WorkspaceID, &result.Access.SandboxID, &result.Access.Generation,
 				&observedGeneration, &desiredState, &observedState, &writerReleased, &runtimeID,
 				&runtimeState, &runtimeOperationID, &runtimeGeneration, &runtimeSpecDigest, &specDigest,
-				&volumeState, &targetKind, &result.CredentialRef, &operationState, &cleanupPhase, &notExpired)
+				&volumeState, &result.Access.TargetID, &targetKind, &result.Access.CredentialRef,
+				&operationState, &cleanupPhase, &notExpired)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return internalcoordination.ErrFoundationSandboxNotFound
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			if result.Access.Generation != expectedGeneration || desiredState != "running" || observedState != "running" ||
+				observedGeneration != result.Access.Generation || writerReleased || runtimeState != "Running" || volumeState != "available" ||
+				operationState != "succeeded" || cleanupPhase != "complete" || !notExpired {
+				return internalcoordination.ErrFoundationSandboxConflict
+			}
+			if tenant != tenantID || project != projectID || result.Access.SandboxID != sandboxID ||
+				(targetKind != "docker" && targetKind != "remote-worker") || runtimeID == nil || runtimeOperationID == nil ||
+				runtimeGeneration == nil || runtimeSpecDigest == nil || *runtimeGeneration != result.Access.Generation ||
+				*runtimeSpecDigest != specDigest || !validMutationIdentifier(result.Access.WorkspaceID) ||
+				!validMutationIdentifier(result.Access.SandboxID) || !validMutationIdentifier(result.Access.TargetID) ||
+				!validMutationIdentifier(*runtimeID) || !validMutationIdentifier(*runtimeOperationID) ||
+				!validMutationIdentifier(result.Access.CredentialRef) || !validCoordinationDigest(*runtimeSpecDigest) {
+				return ErrCoordinationResultDrift
+			}
+			result.Access.Scope = internalcoordination.FoundationScope{TenantID: tenant, ProjectID: project}
+			result.Access.TargetKind, result.Access.RuntimeID, result.Access.RuntimeOperationID = targetKind, *runtimeID, *runtimeOperationID
+			result.Access.RuntimeGeneration, result.Access.RuntimeSpecDigest = *runtimeGeneration, *runtimeSpecDigest
+			if targetKind == "docker" {
+				result.CommandID = ""
+				return nil
+			}
+			result.SubjectDigest = subjectDigest
+			return scanFoundationSandboxExec(handle.transaction.queryRow(operationContext, requestRemoteWorkerSandboxExecSQL,
+				tenantID, projectID, result.CommandID, result.Access.TargetID, result.Access.WorkspaceID,
+				result.Access.SandboxID, result.Access.Generation, result.Access.RuntimeID,
+				result.Access.RuntimeOperationID, result.Access.RuntimeSpecDigest, command, timeoutSeconds,
+				requestID, requestDigest, subjectDigest), &result, true)
 		})
 	if err != nil {
-		return FoundationSandboxAccess{}, mapRuntimeProfileError(err)
+		return FoundationSandboxExec{}, mapFoundationSandboxExecError(err)
 	}
-	if result.Generation != expectedGeneration || desiredState != "running" || observedState != "running" ||
-		observedGeneration != result.Generation || writerReleased || runtimeState != "Running" || volumeState != "available" ||
-		operationState != "succeeded" || cleanupPhase != "complete" || !notExpired {
-		return FoundationSandboxAccess{}, internalcoordination.ErrFoundationSandboxConflict
-	}
-	if tenant != tenantID || project != projectID || result.SandboxID != sandboxID || targetKind != "docker" ||
-		runtimeID == nil || runtimeOperationID == nil || runtimeGeneration == nil || runtimeSpecDigest == nil ||
-		*runtimeGeneration != result.Generation || *runtimeSpecDigest != specDigest ||
-		!validMutationIdentifier(result.WorkspaceID) || !validMutationIdentifier(result.SandboxID) ||
-		!validMutationIdentifier(*runtimeID) || !validMutationIdentifier(*runtimeOperationID) ||
-		!validMutationIdentifier(result.CredentialRef) || !validCoordinationDigest(*runtimeSpecDigest) {
-		return FoundationSandboxAccess{}, ErrCoordinationResultDrift
-	}
-	result.Scope = internalcoordination.FoundationScope{TenantID: tenant, ProjectID: project}
-	result.RuntimeID, result.RuntimeOperationID = *runtimeID, *runtimeOperationID
-	result.RuntimeGeneration, result.RuntimeSpecDigest = *runtimeGeneration, *runtimeSpecDigest
 	return result, nil
+}
+
+func (service *DurableCoordinationService) WaitRemoteWorkerSandboxExec(ctx context.Context, result FoundationSandboxExec) (FoundationSandboxExec, error) {
+	if service == nil || service.runner == nil {
+		return FoundationSandboxExec{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || result.Access.TargetKind != "remote-worker" || !validMutationIdentifier(result.CommandID) ||
+		!validCoordinationDigest(result.SubjectDigest) || result.Deadline.IsZero() {
+		return FoundationSandboxExec{}, ErrCoordinationInvalidInput
+	}
+	waitContext, cancel := context.WithDeadline(ctx, result.Deadline.Add(2*time.Second))
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for result.State == "pending" || result.State == "delivered" {
+		select {
+		case <-waitContext.Done():
+			return FoundationSandboxExec{}, context.DeadlineExceeded
+		case <-ticker.C:
+		}
+		err := service.runner.WithTenantRead(waitContext, result.Access.Scope.TenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return scanFoundationSandboxExec(handle.transaction.queryRow(readContext, getRemoteWorkerSandboxExecSQL,
+				result.Access.Scope.TenantID, result.Access.Scope.ProjectID, result.CommandID, result.SubjectDigest), &result, false)
+		})
+		if err != nil {
+			return FoundationSandboxExec{}, mapFoundationSandboxExecError(err)
+		}
+	}
+	return result, nil
+}
+
+func scanFoundationSandboxExec(row rowScanner, result *FoundationSandboxExec, includeCommandID bool) error {
+	if row == nil || result == nil {
+		return ErrCoordinationResultDrift
+	}
+	var exitCode, executionTime *int64
+	var stdout, stderr, stableErrorCode *string
+	targets := []any{&result.State, &result.Deadline, &exitCode, &stdout, &stderr, &executionTime, &stableErrorCode}
+	if includeCommandID {
+		targets = append([]any{&result.CommandID}, targets...)
+	}
+	if err := row.Scan(targets...); err != nil {
+		return err
+	}
+	result.ExitCode, result.ExecutionTimeMillis, result.Stdout, result.Stderr, result.StableErrorCode = 0, 0, "", "", ""
+	if result.State == "succeeded" {
+		if exitCode == nil || stdout == nil || stderr == nil || executionTime == nil || stableErrorCode != nil {
+			return ErrCoordinationResultDrift
+		}
+		result.ExitCode, result.ExecutionTimeMillis, result.Stdout, result.Stderr = *exitCode, *executionTime, *stdout, *stderr
+	} else if result.State == "failed" {
+		if exitCode != nil || stdout != nil || stderr != nil || executionTime != nil || stableErrorCode == nil {
+			return ErrCoordinationResultDrift
+		}
+		result.StableErrorCode = *stableErrorCode
+	} else if result.State != "pending" && result.State != "delivered" ||
+		exitCode != nil || stdout != nil || stderr != nil || executionTime != nil || stableErrorCode != nil {
+		return ErrCoordinationResultDrift
+	}
+	return nil
+}
+
+func mapFoundationSandboxExecError(err error) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) {
+		switch postgresError.Message {
+		case "remote worker sandbox exec request conflict", "remote worker sandbox exec unavailable":
+			return internalcoordination.ErrFoundationSandboxConflict
+		case "remote worker sandbox exec was not found":
+			return internalcoordination.ErrFoundationSandboxNotFound
+		case "remote worker sandbox exec request is invalid", "remote worker sandbox exec lookup is invalid":
+			return ErrCoordinationInvalidInput
+		}
+	}
+	return mapRuntimeProfileError(err)
 }
 
 func (service *DurableCoordinationService) ListAdminSandboxes(

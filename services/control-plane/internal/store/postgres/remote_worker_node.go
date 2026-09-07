@@ -16,10 +16,11 @@ import (
 )
 
 type RemoteWorkerHeartbeatResult struct {
-	Node              internalremoteworker.NodeStatus
-	ReconcileRequired bool
-	Command           *internalremoteworker.Command
-	SandboxCommand    *internalremoteworker.SandboxCommand
+	Node               internalremoteworker.NodeStatus
+	ReconcileRequired  bool
+	Command            *internalremoteworker.Command
+	SandboxCommand     *internalremoteworker.SandboxCommand
+	SandboxExecCommand *internalremoteworker.SandboxExecCommand
 }
 
 type RemoteWorkerOperationPage struct {
@@ -72,6 +73,15 @@ FROM cloud_agents.heartbeat_remote_worker_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
 const settleRemoteWorkerSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_remote_worker_foundation_sandbox_v3(
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
+
+const claimRemoteWorkerSandboxExecSQL = `SELECT command_uid, workspace_uid, target_uid,
+    sandbox_uid, sandbox_generation, runtime_uid, runtime_operation_uid,
+    runtime_spec_digest, command_text, timeout_seconds, command_deadline_at
+FROM cloud_agents.claim_remote_worker_sandbox_exec_v1($1,$2,$3,$4,$5)`
+
+const settleRemoteWorkerSandboxExecSQL = `SELECT command_state, command_deadline_at
+FROM cloud_agents.settle_remote_worker_sandbox_exec_v1(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`
 
 const lockRemoteWorkerSchedulingSQL = `SELECT cloud_agents.lock_remote_worker_scheduling_v1($1,$2,$3)`
 const transitionRemoteWorkerSchedulingSQL = `SELECT operation_uid, idempotency_key, action, enrollment_uid,
@@ -163,6 +173,11 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
 		}
 	}
+	if input.SandboxExecCommandReceipt != nil {
+		if err := service.settleRemoteWorkerSandboxExec(ctx, result.Node, input.PeerCertificateSHA256, *input.SandboxExecCommandReceipt); err != nil {
+			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
+		}
+	}
 	if result.Node.DesiredState != "active" || result.Node.ObservedState != "active" || !slices.Contains(result.Node.Capabilities, "docker") {
 		return result, nil
 	}
@@ -179,7 +194,13 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 		ClaimToken: "claim-" + rand.Text(), LeaseSeconds: 60,
 		SubjectDigest: input.PeerCertificateSHA256, AuditFactID: "audit-" + rand.Text(),
 	})
-	if err != nil || !claim.Found {
+	if err != nil {
+		return result, err
+	}
+	if !claim.Found {
+		if slices.Contains(result.Node.Capabilities, "exec") {
+			result.SandboxExecCommand, err = service.claimRemoteWorkerSandboxExec(ctx, result.Node, input.PeerCertificateSHA256)
+		}
 		return result, err
 	}
 	if claim.DatabaseOutcome != DatabaseCommitted {
@@ -216,6 +237,49 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 	}
 	result.SandboxCommand = &command
 	return result, nil
+}
+
+func (service *DurableCoordinationService) claimRemoteWorkerSandboxExec(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string) (*internalremoteworker.SandboxExecCommand, error) {
+	command := internalremoteworker.SandboxExecCommand{}
+	err := service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, claimRemoteWorkerSandboxExecSQL,
+			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID, subjectDigest).Scan(
+			&command.CommandID, &command.WorkspaceID, &command.TargetID, &command.SandboxID,
+			&command.SandboxGeneration, &command.RuntimeID, &command.RuntimeOperationID,
+			&command.RuntimeSpecDigest, &command.Command, &command.TimeoutSeconds, &command.Deadline)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, mapRemoteWorkerNodeError(err)
+	}
+	if command.Validate() != nil || command.TargetID != node.TargetID {
+		return nil, ErrCoordinationResultDrift
+	}
+	return &command, nil
+}
+
+func (service *DurableCoordinationService) settleRemoteWorkerSandboxExec(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.SandboxExecCommandReceipt) error {
+	digest, err := internalremoteworker.SandboxExecCommandReceiptDigest(receipt)
+	if err != nil {
+		return ErrCoordinationInvalidInput
+	}
+	var exitCode, executionTime, stdout, stderr, stableError any
+	if receipt.Result == "succeeded" {
+		exitCode, executionTime, stdout, stderr = receipt.ExitCode, receipt.ExecutionTimeMillis, receipt.Stdout, receipt.Stderr
+	} else {
+		stableError = receipt.StableErrorCode
+	}
+	var state string
+	var deadline time.Time
+	err = service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, settleRemoteWorkerSandboxExecSQL,
+			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID,
+			subjectDigest, receipt.CommandID, receipt.SandboxID, receipt.SandboxGeneration,
+			receipt.Result, exitCode, stdout, stderr, executionTime, stableError, digest).Scan(&state, &deadline)
+	})
+	return err
 }
 
 func (service *DurableCoordinationService) settleRemoteWorkerSandbox(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.SandboxCommandReceipt) error {
@@ -445,6 +509,8 @@ func mapRemoteWorkerNodeError(err error) error {
 			return ErrRemoteWorkerCommandReceiptConflict
 		case "remote worker sandbox receipt conflict":
 			return ErrRemoteWorkerSandboxReceiptConflict
+		case "remote worker sandbox exec receipt conflict":
+			return ErrRemoteWorkerSandboxExecReceiptConflict
 		case "remote worker scheduling idempotency conflict":
 			return ErrRemoteWorkerSchedulingIdempotencyConflict
 		case "remote worker operation is in progress":
@@ -459,7 +525,8 @@ func mapRemoteWorkerNodeError(err error) error {
 			return ErrRemoteWorkerNodeUnavailable
 		case "remote worker heartbeat input is invalid":
 			return ErrCoordinationInvalidInput
-		case "remote worker sandbox receipt is invalid":
+		case "remote worker sandbox receipt is invalid", "remote worker sandbox exec claim is invalid",
+			"remote worker sandbox exec receipt is invalid":
 			return ErrCoordinationInvalidInput
 		}
 	}
@@ -469,6 +536,7 @@ func mapRemoteWorkerNodeError(err error) error {
 var ErrRemoteWorkerGenerationConflict = errors.New("remote worker generation conflicts")
 var ErrRemoteWorkerCommandReceiptConflict = errors.New("remote worker command receipt conflicts")
 var ErrRemoteWorkerSandboxReceiptConflict = errors.New("remote worker sandbox receipt conflicts")
+var ErrRemoteWorkerSandboxExecReceiptConflict = errors.New("remote worker sandbox exec receipt conflicts")
 var ErrRemoteWorkerSchedulingIdempotencyConflict = errors.New("remote worker scheduling idempotency key conflicts")
 var ErrRemoteWorkerOperationInProgress = errors.New("remote worker operation is in progress")
 var ErrRemoteWorkerSchedulingResourceVersionConflict = errors.New("remote worker scheduling resource version conflicts")

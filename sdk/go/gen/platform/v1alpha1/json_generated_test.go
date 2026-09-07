@@ -181,6 +181,26 @@ func TestRemoteWorkerHeartbeatResponseKeepsSandboxCommand(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerSandboxExecCommandBoundaries(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := []byte(`{"commandId":"rwexec-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","command":"printf bounded","timeoutSeconds":10,"deadline":"2026-09-07T12:01:00Z"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxExecCommandJSON(command); err != nil || decoded.RuntimeOperationID != "operation-alpha" {
+		t.Fatalf("exec command=%#v error=%v", decoded, err)
+	}
+	receipt := []byte(`{"commandId":"rwexec-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"result":"succeeded","exitCode":7,"stdout":"proof\\n","stderr":"failed","executionTimeMillis":1}`)
+	if decoded, err := DecodeRemoteWorkerSandboxExecCommandReceiptJSON(receipt); err != nil || decoded.ExitCode != 7 {
+		t.Fatalf("exec receipt=%#v error=%v", decoded, err)
+	}
+	oversized, _ := json.Marshal(RemoteWorkerSandboxExecCommandReceipt{CommandID: "rwexec-alpha", SandboxID: "sandbox-alpha",
+		SandboxGeneration: 3, Result: "succeeded", Stdout: strings.Repeat("x", 1<<20), Stderr: "x"})
+	if _, err := DecodeRemoteWorkerSandboxExecCommandReceiptJSON(oversized); err == nil {
+		t.Fatal("combined RemoteWorker Sandbox Exec output above 1 MiB accepted")
+	}
+	if _, err := DecodeRemoteWorkerSandboxExecCommandReceiptJSON([]byte(`{"commandId":"rwexec-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"result":"failed","exitCode":0,"stdout":"","stderr":"","executionTimeMillis":0}`)); err == nil {
+		t.Fatal("failed RemoteWorker Sandbox Exec receipt accepted without a stable error")
+	}
+}
+
 func TestRemoteWorkerSandboxLifecycleCommandsFencePhysicalAuthority(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	legacyCreateReceipt := []byte(`{"commandId":"rwsc-create","attempt":1,"operationId":"operation-create","sandboxId":"sandbox-alpha","sandboxGeneration":1,"result":"succeeded","runtimeId":"runtime-alpha","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)
