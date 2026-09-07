@@ -741,6 +741,7 @@ type RemoteWorkerHeartbeatRequest struct {
 	KernelVersion                string                                    `json:"kernelVersion"`
 	Capabilities                 []string                                  `json:"capabilities"`
 	Capacity                     RemoteWorkerCapacity                      `json:"capacity"`
+	SandboxCommandID             string                                    `json:"sandboxCommandId,omitempty"`
 	CommandReceipt               *RemoteWorkerCommandReceipt               `json:"commandReceipt,omitempty"`
 	SandboxCommandReceipt        *RemoteWorkerSandboxCommandReceipt        `json:"sandboxCommandReceipt,omitempty"`
 	SandboxExecCommandReceipt    *RemoteWorkerSandboxExecCommandReceipt    `json:"sandboxExecCommandReceipt,omitempty"`
@@ -3851,13 +3852,13 @@ func DecodeRemoteWorkerSandboxPreviewCommandReceiptJSON(data []byte) (RemoteWork
 	return value, nil
 }
 func DecodeRemoteWorkerHeartbeatRequestJSON(data []byte) (RemoteWorkerHeartbeatRequest, error) {
-	allowed := []string{"incarnationId", "observedGeneration", "observedState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "commandReceipt", "sandboxCommandReceipt", "sandboxExecCommandReceipt", "sandboxFileCommandReceipt", "sandboxPtyCommandReceipt", "sandboxPreviewCommandReceipt"}
+	allowed := []string{"incarnationId", "observedGeneration", "observedState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "sandboxCommandId", "commandReceipt", "sandboxCommandReceipt", "sandboxExecCommandReceipt", "sandboxFileCommandReceipt", "sandboxPtyCommandReceipt", "sandboxPreviewCommandReceipt"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed[:9])
 	if err != nil {
 		return RemoteWorkerHeartbeatRequest{}, err
 	}
 	var value RemoteWorkerHeartbeatRequest
-	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || value.ObservedGeneration < 1 || value.ObservedGeneration > 9007199254740991 || value.ObservedState != "active" && value.ObservedState != "drained" || !validRemoteWorkerPlatform(value.WorkerVersion, value.OS, value.Architecture, value.KernelVersion) || !validRemoteWorkerCapabilities(value.Capabilities) || !validRemoteWorkerCapacity(value.Capacity) {
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || value.ObservedGeneration < 1 || value.ObservedGeneration > 9007199254740991 || value.ObservedState != "active" && value.ObservedState != "drained" || !validRemoteWorkerPlatform(value.WorkerVersion, value.OS, value.Architecture, value.KernelVersion) || !validRemoteWorkerCapabilities(value.Capabilities) || !validRemoteWorkerCapacity(value.Capacity) || value.SandboxCommandID != "" && common.ValidateIdentifier(value.SandboxCommandID, "/sandboxCommandId") != nil {
 		return RemoteWorkerHeartbeatRequest{}, common.ContractError("INVALID_REMOTE_WORKER_HEARTBEAT", "")
 	}
 	if raw, ok := fields["commandReceipt"]; ok {

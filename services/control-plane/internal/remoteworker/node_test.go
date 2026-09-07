@@ -28,6 +28,15 @@ func TestHeartbeatInputAndNodeStatusValidate(t *testing.T) {
 	if err := status.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	input.SandboxCommandID = "rwsc-alpha"
+	if err := input.Validate("tenant-alpha"); err != nil {
+		t.Fatalf("valid Sandbox claim renewal rejected: %v", err)
+	}
+	input.SandboxCommandID = "invalid command"
+	if err := input.Validate("tenant-alpha"); err == nil {
+		t.Fatal("accepted invalid Sandbox claim renewal command")
+	}
+	input.SandboxCommandID = ""
 	input.Capabilities = []string{"files", "docker"}
 	if err := input.Validate("tenant-alpha"); err == nil {
 		t.Fatal("accepted non-canonical capabilities")

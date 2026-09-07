@@ -107,6 +107,57 @@ func TestRemoteWorkerRejectsExpiredCommandWithoutAdvancingGeneration(t *testing.
 	}
 }
 
+func TestRemoteWorkerReconnectDoesNotReplayStartedCommands(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	deadline := time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
+	lifecycle := &platform.RemoteWorkerSandboxCommand{CommandID: "rwsc-alpha", Attempt: 1, Action: "sandbox.create",
+		OperationID: "operation-alpha", WorkspaceID: "workspace-alpha", WorkspaceName: "workspace-alpha",
+		TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 1,
+		ImageURI: "registry.example.test/runtime@" + digest, CPUMillis: 500, MemoryBytes: 536870912,
+		SpecDigest: digest, NetworkPolicyID: "network-alpha", NetworkAllowedEgress: []string{"example.test"}, Deadline: deadline}
+	state := initialNodeState("incarnation-alpha")
+	state.SandboxCommand, state.ExecutingCommandID = lifecycle, lifecycle.CommandID
+	if err := saveNodeState(path, state); err != nil {
+		t.Fatal(err)
+	}
+	value := config{stateFile: path}
+	if got := value.heartbeatRequest(state).SandboxCommandID; got != lifecycle.CommandID {
+		t.Fatalf("renewal command = %q", got)
+	}
+	renewals := 0
+	if err := executePendingSandbox(context.Background(), value, &state, func(context.Context) error {
+		renewals++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if state.SandboxCommand != nil || state.SandboxCommandReceipt != nil || state.ExecutingCommandID != "" || renewals != 0 || value.heartbeatRequest(state).SandboxCommandID != "" {
+		t.Fatalf("replayed lifecycle command: state=%#v renewals=%d", state, renewals)
+	}
+
+	execCommand := &platform.RemoteWorkerSandboxExecCommand{CommandID: "rwexec-alpha", WorkspaceID: "workspace-alpha",
+		TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 1, RuntimeID: "runtime-alpha",
+		RuntimeOperationID: "operation-alpha", RuntimeSpecDigest: digest, Command: "touch /workspace/replayed",
+		TimeoutSeconds: 10, Deadline: deadline}
+	state = initialNodeState("incarnation-alpha")
+	state.SandboxExecCommand, state.ExecutingCommandID = execCommand, execCommand.CommandID
+	if err := saveNodeState(path, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := executePendingSandboxExec(context.Background(), value, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.SandboxExecCommandReceipt == nil || state.SandboxExecCommandReceipt.Result != "failed" ||
+		state.SandboxExecCommandReceipt.StableErrorCode != "sandbox_access_unavailable" {
+		t.Fatalf("restarted Exec state=%#v", state)
+	}
+	restarted, err := loadNodeState(path, state.IncarnationID)
+	if err != nil || restarted.SandboxExecCommandReceipt == nil || restarted.ExecutingCommandID != execCommand.CommandID {
+		t.Fatalf("persisted reconnect state=%#v err=%v", restarted, err)
+	}
+}
+
 func TestRemoteWorkerSandboxExecStateSurvivesRestartAndAcknowledgement(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	state := initialNodeState("incarnation-alpha")

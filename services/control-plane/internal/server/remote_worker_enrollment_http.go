@@ -487,6 +487,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		ObservedState: validated.Body.ObservedState,
 		WorkerVersion: validated.Body.WorkerVersion, OS: validated.Body.OS, Architecture: validated.Body.Architecture,
 		KernelVersion: validated.Body.KernelVersion, Capabilities: validated.Body.Capabilities,
+		SandboxCommandID:             validated.Body.SandboxCommandID,
 		Capacity:                     internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
 		CommandReceipt:               remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
 		SandboxCommandReceipt:        remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),

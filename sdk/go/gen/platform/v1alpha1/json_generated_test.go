@@ -181,6 +181,17 @@ func TestRemoteWorkerHeartbeatResponseKeepsSandboxCommand(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerHeartbeatRequestKeepsSandboxClaimRenewal(t *testing.T) {
+	body := []byte(`{"incarnationId":"incarnation-alpha","observedGeneration":1,"observedState":"active","workerVersion":"v0.1.0","os":"linux","architecture":"arm64","kernelVersion":"6.12.1","capabilities":["docker","exec","files"],"capacity":{"cpuMillis":4000,"memoryBytes":8589934592,"diskBytes":42949672960},"sandboxCommandId":"rwsc-alpha"}`)
+	request, err := DecodeRemoteWorkerHeartbeatRequestJSON(body)
+	if err != nil || request.SandboxCommandID != "rwsc-alpha" {
+		t.Fatalf("heartbeat request=%#v error=%v", request, err)
+	}
+	if _, err := DecodeRemoteWorkerHeartbeatRequestJSON(bytes.Replace(body, []byte("rwsc-alpha"), []byte("invalid command"), 1)); err == nil {
+		t.Fatal("accepted invalid Sandbox claim renewal command")
+	}
+}
+
 func TestRemoteWorkerSandboxExecCommandBoundaries(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	command := []byte(`{"commandId":"rwexec-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","command":"printf bounded","timeoutSeconds":10,"deadline":"2026-09-07T12:01:00Z"}`)

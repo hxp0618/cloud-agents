@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -591,6 +592,8 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 		t.Fatal("RemoteWorker Sandbox live environment is incomplete")
 	}
 	t.Setenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", startRemoteWorkerDockerProxy(t))
+	startRemoteWorkerOpenSandboxProxy(t, 50*time.Second)
+	workerServer, setWorkerConnected := startRemoteWorkerControlPlaneProxy(t, server, certificateChain, privateKey)
 	parts := strings.Split(image, "@")
 	if len(parts) != 2 {
 		t.Fatal("RemoteWorker Sandbox image is not digest pinned")
@@ -644,13 +647,90 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 		t.Fatalf("deliver RemoteWorker Sandbox command: value=%+v err=%v available=%v pending=%d queryErr=%v", delivery.Value, err, available, pending, queryErr)
 	}
 	command := delivery.Value.SandboxCommand
+	var claimExpiryBefore time.Time
+	if err := owner.QueryRow(ctx, `SELECT claim_expires_at FROM cloud_agents.outbox_events
+WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.OperationID).Scan(&claimExpiryBefore); err != nil {
+		t.Fatalf("read RemoteWorker Sandbox claim: %v", err)
+	}
+	heartbeat.SandboxCommandID = command.CommandID
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-renew", heartbeat); err != nil {
+		t.Fatalf("renew RemoteWorker Sandbox claim: %v", err)
+	}
+	var claimExpiryAfter, attemptExpiryAfter time.Time
+	if err := owner.QueryRow(ctx, `SELECT event.claim_expires_at, attempt.claim_expires_at
+FROM cloud_agents.outbox_events AS event
+JOIN cloud_agents.operation_attempts AS attempt
+  ON attempt.tenant_id=event.tenant_id AND attempt.operation_id=event.operation_id
+ AND attempt.operation_generation=event.operation_generation AND attempt.attempt_number=event.delivery_attempts
+WHERE event.tenant_id='tenant' AND event.operation_id=$1 AND event.state='claimed'`, command.OperationID).Scan(&claimExpiryAfter, &attemptExpiryAfter); err != nil || !claimExpiryAfter.After(claimExpiryBefore) || !claimExpiryAfter.Equal(attemptExpiryAfter) {
+		t.Fatalf("renewed claim expiry before=%s after=%s attempt=%s err=%v", claimExpiryBefore, claimExpiryAfter, attemptExpiryAfter, err)
+	}
+	heartbeat.SandboxCommandID = "rwsc-wrong"
+	_, err = node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-renew-wrong", heartbeat)
+	failure, ok := err.(*api.ClientError)
+	if !ok || failure.Status != http.StatusConflict {
+		t.Fatalf("wrong RemoteWorker Sandbox renewal error=%T %v", err, err)
+	}
+	heartbeat.SandboxCommandID = ""
 	stateFile := filepath.Join(t.TempDir(), "remote-worker-sandbox-state.json")
 	state, _ := json.Marshal(map[string]any{"incarnationId": incarnationID, "observedGeneration": heartbeat.ObservedGeneration,
 		"observedState": heartbeat.ObservedState, "sandboxCommand": command})
 	if err := os.WriteFile(stateFile, append(state, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	originalCommandID, originalAttempt := command.CommandID, command.Attempt
+	interrupted := remoteWorkerProcessCommand(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile, true)
+	var interruptedOutput bytes.Buffer
+	interrupted.Stdout, interrupted.Stderr = &interruptedOutput, &interruptedOutput
+	if err := interrupted.Start(); err != nil {
+		t.Fatalf("start long RemoteWorker Sandbox command: %v", err)
+	}
+	var longClaimExpiry time.Time
+	renewalDeadline := time.Now().Add(35 * time.Second)
+	for !time.Now().After(renewalDeadline) {
+		if err := owner.QueryRow(ctx, `SELECT claim_expires_at FROM cloud_agents.outbox_events
+WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.OperationID).Scan(&longClaimExpiry); err != nil {
+			t.Fatalf("read long RemoteWorker Sandbox claim: %v", err)
+		}
+		if longClaimExpiry.After(claimExpiryAfter) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !longClaimExpiry.After(claimExpiryAfter) {
+		_ = interrupted.Process.Kill()
+		_ = interrupted.Wait()
+		t.Fatalf("long RemoteWorker Sandbox claim was not renewed: initial=%s current=%s", claimExpiryAfter, longClaimExpiry)
+	}
+	setWorkerConnected(false)
+	if err := interrupted.Wait(); err == nil {
+		t.Fatal("RemoteWorker Sandbox command survived a dropped renewal connection")
+	}
+	stateData, err := os.ReadFile(stateFile)
+	var interruptedState struct {
+		ExecutingCommandID    string                                      `json:"executingCommandId"`
+		SandboxCommand        *json.RawMessage                            `json:"sandboxCommand"`
+		SandboxCommandReceipt *platform.RemoteWorkerSandboxCommandReceipt `json:"sandboxCommandReceipt"`
+	}
+	if err != nil || json.Unmarshal(stateData, &interruptedState) != nil || interruptedState.ExecutingCommandID != "" || interruptedState.SandboxCommand != nil || interruptedState.SandboxCommandReceipt != nil {
+		t.Fatalf("interrupted RemoteWorker state was not cleared: state=%s err=%v output=%s", stateData, err, interruptedOutput.String())
+	}
+	if delay := time.Until(longClaimExpiry) + 100*time.Millisecond; delay > 0 {
+		time.Sleep(delay)
+	}
+	setWorkerConnected(true)
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	stateData, err = os.ReadFile(stateFile)
+	var reconnectedState struct {
+		SandboxCommandReceipt *platform.RemoteWorkerSandboxCommandReceipt `json:"sandboxCommandReceipt"`
+	}
+	if err != nil || json.Unmarshal(stateData, &reconnectedState) != nil || reconnectedState.SandboxCommandReceipt == nil ||
+		reconnectedState.SandboxCommandReceipt.Result != "succeeded" || reconnectedState.SandboxCommandReceipt.Attempt != originalAttempt+1 ||
+		reconnectedState.SandboxCommandReceipt.CommandID == originalCommandID {
+		t.Fatalf("reconnected RemoteWorker did not reconcile a new attempt: state=%s err=%v", stateData, err)
+	}
+	command.CommandID, command.Attempt = reconnectedState.SandboxCommandReceipt.CommandID, reconnectedState.SandboxCommandReceipt.Attempt
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
 	adminSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-get")
 	if err != nil || adminSandbox.Value.Spec.ObservedState != "running" || adminSandbox.Value.Spec.RuntimeID == "" || adminSandbox.Value.Spec.PhysicalVolumeID == "" {
 		t.Fatalf("RemoteWorker Sandbox settlement: value=%+v err=%v", adminSandbox.Value, err)
@@ -1590,7 +1670,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, incarnation
 	}
 	var nodeAuditCount int
 	var exactNodeAuditSubject bool
-	expectedNodeAuditCount := 7 + int(rebuildCommand.Attempt)
+	expectedNodeAuditCount := 6 + int(command.Attempt) + int(rebuildCommand.Attempt)
 	if err := owner.QueryRow(ctx, `SELECT count(*), bool_and(subject_digest = $2)
 FROM cloud_agents.coordination_audit_facts
 WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outbox.delivery_succeeded')`,
@@ -1634,7 +1714,9 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"sshIncarnationBound": sshIncarnationBound, "sshCertificateBound": sshCertificateBound,
 		"sshReceiptsSettled": sshReceiptsSettled, "sshShapeBound": sshShapeBound, "sshPTYBound": sshPTYBound,
 		"sshNonPTYBound": sshNonPTYBound, "sshContentTableHidden": sshContentTableHidden,
-		"receiptReplay": true, "stopReceiptReplay": true, "rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
+		"longClaimRenewed": true, "renewWrongCommandStatus": 409, "reconnectOriginalCommandNotReplayed": true,
+		"reconnectAttempt": command.Attempt, "receiptReplay": true, "stopReceiptReplay": true,
+		"rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
 		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }
@@ -1677,6 +1759,103 @@ func startRemoteWorkerDockerProxy(t *testing.T) string {
 		}
 	}
 	return server.URL
+}
+
+func startRemoteWorkerOpenSandboxProxy(t *testing.T, createDelay time.Duration) {
+	t.Helper()
+	credentialPath := filepath.Join(os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY"),
+		os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF"), "opensandbox.json")
+	data, err := os.ReadFile(credentialPath)
+	var config struct {
+		Endpoint string `json:"endpoint"`
+		APIKey   string `json:"apiKey"`
+	}
+	if err != nil {
+		t.Fatalf("read node-local OpenSandbox credentials: %v", err)
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("decode node-local OpenSandbox credentials: %v", err)
+	}
+	target, err := url.Parse(config.Endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverseProxy := httputil.NewSingleHostReverseProxy(target)
+	var delayOnce sync.Once
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		delayed := false
+		if request.Method == http.MethodPost && request.URL.Path == "/v1/sandboxes" {
+			delayOnce.Do(func() { delayed = true })
+		}
+		if delayed {
+			timer := time.NewTimer(createDelay)
+			defer timer.Stop()
+			select {
+			case <-request.Context().Done():
+				return
+			case <-timer.C:
+			}
+		}
+		reverseProxy.ServeHTTP(writer, request)
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	encoded, err := json.Marshal(map[string]string{"endpoint": server.URL, "apiKey": config.APIKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credentialPath, append(encoded, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func startRemoteWorkerControlPlaneProxy(t *testing.T, upstream *httptest.Server, certificateChain string, privateKey []byte) (*httptest.Server, func(bool)) {
+	t.Helper()
+	certificate, err := tls.X509KeyPair([]byte(certificateChain), privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := upstream.Client().Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("test TLS transport is unavailable")
+	}
+	transport = transport.Clone()
+	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	transport.TLSClientConfig.Certificates = []tls.Certificate{certificate}
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverseProxy := httputil.NewSingleHostReverseProxy(target)
+	reverseProxy.Transport = transport
+	connected := true
+	var lock sync.RWMutex
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		lock.RLock()
+		available := connected
+		lock.RUnlock()
+		if !available {
+			if hijacker, ok := writer.(http.Hijacker); ok {
+				connection, _, hijackErr := hijacker.Hijack()
+				if hijackErr == nil {
+					_ = connection.Close()
+					return
+				}
+			}
+			http.Error(writer, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		reverseProxy.ServeHTTP(writer, request)
+	})
+	server := httptest.NewUnstartedServer(handler)
+	server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ClientAuth: tls.RequireAnyClientCert}
+	server.StartTLS()
+	t.Cleanup(func() { server.Close(); transport.CloseIdleConnections() })
+	return server, func(value bool) {
+		lock.Lock()
+		connected = value
+		lock.Unlock()
+	}
 }
 
 func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte, stateFile string) {

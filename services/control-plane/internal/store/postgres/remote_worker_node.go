@@ -75,6 +75,9 @@ const heartbeatRemoteWorkerSQL = `SELECT enrollment_uid, worker_uid, worker_name
     reconcile_required, command_uid, command_generation, command_desired_state, command_deadline_at
 FROM cloud_agents.heartbeat_remote_worker_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`
 
+const renewRemoteWorkerSandboxSQL = `SELECT cloud_agents.renew_remote_worker_foundation_sandbox_v1(
+    $1,$2,$3,$4,$5,$6)`
+
 const settleRemoteWorkerSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_remote_worker_foundation_sandbox_v3(
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
@@ -202,6 +205,20 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 	}, bindTenantSetting)
 	if err != nil {
 		return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
+	}
+	if input.SandboxCommandID != "" {
+		var expiry time.Time
+		err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return handle.transaction.queryRow(ctx, renewRemoteWorkerSandboxSQL, tenantID,
+				input.Scope.ProjectID, result.Node.TargetID, result.Node.IncarnationID,
+				input.PeerCertificateSHA256, input.SandboxCommandID).Scan(&expiry)
+		})
+		if err != nil {
+			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
+		}
+		if expiry.IsZero() {
+			return RemoteWorkerHeartbeatResult{}, ErrCoordinationResultDrift
+		}
 	}
 	if input.SandboxCommandReceipt != nil {
 		if err := service.settleRemoteWorkerSandbox(ctx, result.Node, input.PeerCertificateSHA256, *input.SandboxCommandReceipt); err != nil {
@@ -775,6 +792,8 @@ func mapRemoteWorkerNodeError(err error) error {
 			return ErrRemoteWorkerCommandReceiptConflict
 		case "remote worker sandbox receipt conflict":
 			return ErrRemoteWorkerSandboxReceiptConflict
+		case "remote worker sandbox renewal conflict", "foundation claim is stale", "foundation attempt claim is stale":
+			return ErrRemoteWorkerSchedulingStateConflict
 		case "remote worker sandbox exec receipt conflict":
 			return ErrRemoteWorkerSandboxExecReceiptConflict
 		case "remote worker sandbox file receipt conflict":
@@ -795,7 +814,7 @@ func mapRemoteWorkerNodeError(err error) error {
 			return ErrRemoteWorkerSchedulingImpactConflict
 		case "remote worker node is unavailable":
 			return ErrRemoteWorkerNodeUnavailable
-		case "remote worker heartbeat input is invalid":
+		case "remote worker heartbeat input is invalid", "remote worker sandbox renewal input is invalid":
 			return ErrCoordinationInvalidInput
 		case "remote worker sandbox receipt is invalid", "remote worker sandbox exec claim is invalid",
 			"remote worker sandbox exec receipt is invalid", "remote worker sandbox file claim is invalid",

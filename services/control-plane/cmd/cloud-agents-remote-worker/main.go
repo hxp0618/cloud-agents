@@ -101,7 +101,7 @@ func parseConfig(args []string) (config, error) {
 }
 
 func (value config) heartbeatRequest(state nodeState) platform.RemoteWorkerHeartbeatRequest {
-	return platform.RemoteWorkerHeartbeatRequest{
+	request := platform.RemoteWorkerHeartbeatRequest{
 		IncarnationID: value.incarnationID, ObservedGeneration: state.ObservedGeneration, ObservedState: state.ObservedState,
 		WorkerVersion: version, OS: runtime.GOOS, Architecture: runtime.GOARCH,
 		KernelVersion: value.kernelVersion, Capabilities: value.capabilities, Capacity: value.capacity,
@@ -111,6 +111,10 @@ func (value config) heartbeatRequest(state nodeState) platform.RemoteWorkerHeart
 		SandboxPTYCommandReceipt:     state.SandboxPTYCommandReceipt,
 		SandboxPreviewCommandReceipt: state.SandboxPreviewCommandReceipt,
 	}
+	if state.SandboxCommand != nil && state.SandboxCommandReceipt == nil && state.ExecutingCommandID == state.SandboxCommand.CommandID {
+		request.SandboxCommandID = state.SandboxCommand.CommandID
+	}
+	return request
 }
 
 type nodeState struct {
@@ -118,6 +122,7 @@ type nodeState struct {
 	ObservedGeneration           int64                                              `json:"observedGeneration"`
 	ObservedState                string                                             `json:"observedState"`
 	LastCommandID                string                                             `json:"lastCommandId,omitempty"`
+	ExecutingCommandID           string                                             `json:"executingCommandId,omitempty"`
 	CommandReceipt               *platform.RemoteWorkerCommandReceipt               `json:"commandReceipt,omitempty"`
 	SandboxCommand               *platform.RemoteWorkerSandboxCommand               `json:"sandboxCommand,omitempty"`
 	SandboxCommandReceipt        *platform.RemoteWorkerSandboxCommandReceipt        `json:"sandboxCommandReceipt,omitempty"`
@@ -138,7 +143,8 @@ func initialNodeState(incarnationID string) nodeState {
 func validateNodeState(value nodeState) error {
 	if common.ValidateIdentifier(value.IncarnationID, "/incarnationId") != nil || value.ObservedGeneration < 1 ||
 		value.ObservedState != "active" && value.ObservedState != "drained" ||
-		value.LastCommandID != "" && common.ValidateIdentifier(value.LastCommandID, "/lastCommandId") != nil {
+		value.LastCommandID != "" && common.ValidateIdentifier(value.LastCommandID, "/lastCommandId") != nil ||
+		value.ExecutingCommandID != "" && common.ValidateIdentifier(value.ExecutingCommandID, "/executingCommandId") != nil {
 		return errInvalidRemoteWorkerConfig
 	}
 	request := platform.RemoteWorkerHeartbeatRequest{IncarnationID: value.IncarnationID, ObservedGeneration: value.ObservedGeneration,
@@ -216,7 +222,47 @@ func validateNodeState(value nodeState) error {
 			return errInvalidRemoteWorkerConfig
 		}
 	}
+	if value.ExecutingCommandID != "" && currentCommandID(value) != value.ExecutingCommandID {
+		return errInvalidRemoteWorkerConfig
+	}
 	return nil
+}
+
+func currentCommandID(value nodeState) string {
+	if value.SandboxCommand != nil {
+		return value.SandboxCommand.CommandID
+	}
+	if value.SandboxExecCommand != nil {
+		return value.SandboxExecCommand.CommandID
+	}
+	if value.SandboxFileCommand != nil {
+		return value.SandboxFileCommand.CommandID
+	}
+	if value.SandboxPTYCommand != nil {
+		return value.SandboxPTYCommand.CommandID
+	}
+	if value.SandboxPreviewCommand != nil {
+		return value.SandboxPreviewCommand.CommandID
+	}
+	return ""
+}
+
+func beginCommandExecution(path string, state *nodeState, commandID string) (bool, error) {
+	if state == nil || commandID == "" {
+		return false, errInvalidRemoteWorkerConfig
+	}
+	if state.ExecutingCommandID == commandID {
+		return false, nil
+	}
+	if state.ExecutingCommandID != "" {
+		return false, errInvalidRemoteWorkerConfig
+	}
+	state.ExecutingCommandID = commandID
+	if err := saveNodeState(path, *state); err != nil {
+		state.ExecutingCommandID = ""
+		return false, err
+	}
+	return true, nil
 }
 
 func loadNodeState(path, incarnationID string) (nodeState, error) {
@@ -297,18 +343,23 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 	state.CommandReceipt = nil
 	if state.SandboxCommandReceipt != nil {
 		state.SandboxCommand, state.SandboxCommandReceipt = nil, nil
+		state.ExecutingCommandID = ""
 	}
 	if state.SandboxExecCommandReceipt != nil {
 		state.SandboxExecCommand, state.SandboxExecCommandReceipt = nil, nil
+		state.ExecutingCommandID = ""
 	}
 	if state.SandboxFileCommandReceipt != nil {
 		state.SandboxFileCommand, state.SandboxFileCommandReceipt = nil, nil
+		state.ExecutingCommandID = ""
 	}
 	if state.SandboxPTYCommandReceipt != nil {
 		state.SandboxPTYCommand, state.SandboxPTYCommandReceipt = nil, nil
+		state.ExecutingCommandID = ""
 	}
 	if state.SandboxPreviewCommandReceipt != nil {
 		state.SandboxPreviewCommand, state.SandboxPreviewCommandReceipt = nil, nil
+		state.ExecutingCommandID = ""
 	}
 	if heartbeat.Command != nil {
 		command := heartbeat.Command
@@ -372,11 +423,57 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 	return nil
 }
 
-func executePendingSandbox(ctx context.Context, value config, state *nodeState) error {
+func executePendingSandbox(ctx context.Context, value config, state *nodeState, renew func(context.Context) error) error {
 	if state == nil || state.SandboxCommand == nil || state.SandboxCommandReceipt != nil {
 		return nil
 	}
-	command := state.SandboxCommand
+	started, err := beginCommandExecution(value.stateFile, state, state.SandboxCommand.CommandID)
+	if err != nil {
+		return err
+	}
+	if !started {
+		state.SandboxCommand = nil
+		state.ExecutingCommandID = ""
+		return saveNodeState(value.stateFile, *state)
+	}
+	effectContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	command := *state.SandboxCommand
+	if deadline, ok := effectContext.Deadline(); ok {
+		command.Deadline = deadline.UTC().Format(time.RFC3339Nano)
+	}
+	result := make(chan platform.RemoteWorkerSandboxCommandReceipt, 1)
+	go func() { result <- executeSandboxCommand(effectContext, value, command) }()
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case receipt := <-result:
+			state.SandboxCommandReceipt = &receipt
+			return saveNodeState(value.stateFile, *state)
+		case <-ticker.C:
+			if renew == nil {
+				return errInvalidRemoteWorkerConfig
+			}
+			if err := renew(ctx); err != nil {
+				cancel()
+				<-result
+				state.SandboxCommand = nil
+				state.ExecutingCommandID = ""
+				if saveErr := saveNodeState(value.stateFile, *state); saveErr != nil {
+					return saveErr
+				}
+				return err
+			}
+		case <-ctx.Done():
+			cancel()
+			<-result
+			return ctx.Err()
+		}
+	}
+}
+
+func executeSandboxCommand(ctx context.Context, value config, command platform.RemoteWorkerSandboxCommand) platform.RemoteWorkerSandboxCommandReceipt {
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	result := foundationcontroller.EffectResult{}
 	if err != nil || !deadline.After(time.Now()) {
@@ -410,7 +507,7 @@ func executePendingSandbox(ctx context.Context, value config, state *nodeState) 
 			cancel()
 		}
 	}
-	receipt := &platform.RemoteWorkerSandboxCommandReceipt{CommandID: command.CommandID, Attempt: command.Attempt,
+	receipt := platform.RemoteWorkerSandboxCommandReceipt{CommandID: command.CommandID, Attempt: command.Attempt,
 		Action: command.Action, OperationID: command.OperationID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
 		RuntimeID: result.RuntimeID, RuntimeState: result.RuntimeState, VolumeName: result.VolumeName,
 		CleanupComplete: result.CleanupComplete}
@@ -420,8 +517,7 @@ func executePendingSandbox(ctx context.Context, value config, state *nodeState) 
 		receipt.Result = "failed"
 		_, receipt.StableErrorCode = foundationcontroller.ClassifyEffect(result.Err, int32(command.Attempt))
 	}
-	state.SandboxCommandReceipt = receipt
-	return saveNodeState(value.stateFile, *state)
+	return receipt
 }
 
 func executePendingSandboxExec(ctx context.Context, value config, state *nodeState) error {
@@ -431,6 +527,15 @@ func executePendingSandboxExec(ctx context.Context, value config, state *nodeSta
 	command := state.SandboxExecCommand
 	receipt := &platform.RemoteWorkerSandboxExecCommandReceipt{CommandID: command.CommandID,
 		SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration, Result: "failed"}
+	started, err := beginCommandExecution(value.stateFile, state, command.CommandID)
+	if err != nil {
+		return err
+	}
+	if !started {
+		receipt.StableErrorCode = "sandbox_access_unavailable"
+		state.SandboxExecCommandReceipt = receipt
+		return saveNodeState(value.stateFile, *state)
+	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
 		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
@@ -489,6 +594,15 @@ func executePendingSandboxFile(ctx context.Context, value config, state *nodeSta
 	receipt := &platform.RemoteWorkerSandboxFileCommandReceipt{CommandID: command.CommandID,
 		EventID: command.EventID, GrantID: command.GrantID, SandboxID: command.SandboxID,
 		SandboxGeneration: command.SandboxGeneration, Action: command.Action, Result: "failed"}
+	started, err := beginCommandExecution(value.stateFile, state, command.CommandID)
+	if err != nil {
+		return err
+	}
+	if !started {
+		receipt.StableErrorCode = "sandbox_access_unavailable"
+		state.SandboxFileCommandReceipt = receipt
+		return saveNodeState(value.stateFile, *state)
+	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
 		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
@@ -583,6 +697,15 @@ func executePendingSandboxPTY(ctx context.Context, value config, state *nodeStat
 	receipt := &platform.RemoteWorkerSandboxPTYCommandReceipt{CommandID: command.CommandID,
 		GrantID: command.GrantID, SandboxID: command.SandboxID,
 		SandboxGeneration: command.SandboxGeneration, Action: command.Action, Result: "failed"}
+	started, err := beginCommandExecution(value.stateFile, state, command.CommandID)
+	if err != nil {
+		return err
+	}
+	if !started {
+		receipt.StableErrorCode = "sandbox_access_unavailable"
+		state.SandboxPTYCommandReceipt = receipt
+		return saveNodeState(value.stateFile, *state)
+	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
 		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
@@ -788,6 +911,15 @@ func executePendingSandboxPreview(ctx context.Context, value config, state *node
 	receipt := &platform.RemoteWorkerSandboxPreviewCommandReceipt{CommandID: command.CommandID,
 		GrantID: command.GrantID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
 		Port: command.Port, Result: "failed"}
+	started, err := beginCommandExecution(value.stateFile, state, command.CommandID)
+	if err != nil {
+		return err
+	}
+	if !started {
+		receipt.StableErrorCode = "sandbox_access_unavailable"
+		state.SandboxPreviewCommandReceipt = receipt
+		return saveNodeState(value.stateFile, *state)
+	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
 		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
@@ -946,7 +1078,23 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := executePendingSandbox(ctx, value, &state); err != nil {
+	heartbeat := func(callContext context.Context) (bool, bool, error) {
+		requestID := fmt.Sprintf("remote-worker-heartbeat-%d", time.Now().UnixNano())
+		response, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, value.heartbeatRequest(state))
+		if callErr != nil {
+			log.Printf("remote worker heartbeat failed: %v", callErr)
+			return false, false, callErr
+		}
+		if err := reconcileHeartbeat(value.stateFile, &state, response.Value, time.Now()); err != nil {
+			return false, false, err
+		}
+		return response.Value.SandboxPTYCommand != nil, response.Value.SandboxPreviewCommand != nil, nil
+	}
+	renew := func(callContext context.Context) error {
+		_, _, err := heartbeat(callContext)
+		return err
+	}
+	if err := executePendingSandbox(ctx, value, &state, renew); err != nil {
 		log.Fatal(err)
 	}
 	if err := executePendingSandboxExec(ctx, value, &state); err != nil {
@@ -963,16 +1111,11 @@ func main() {
 	}
 	accessActiveUntil := time.Time{}
 	err = runHeartbeatLoop(ctx, value.once, func(callContext context.Context) error {
-		requestID := fmt.Sprintf("remote-worker-heartbeat-%d", time.Now().UnixNano())
-		response, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, value.heartbeatRequest(state))
-		if callErr != nil {
-			log.Printf("remote worker heartbeat failed: %v", callErr)
-			return callErr
-		}
-		if err := reconcileHeartbeat(value.stateFile, &state, response.Value, time.Now()); err != nil {
+		ptyActive, previewActive, err := heartbeat(callContext)
+		if err != nil {
 			return err
 		}
-		if err := executePendingSandbox(callContext, value, &state); err != nil {
+		if err := executePendingSandbox(callContext, value, &state, renew); err != nil {
 			return err
 		}
 		if err := executePendingSandboxExec(callContext, value, &state); err != nil {
@@ -981,10 +1124,10 @@ func main() {
 		if err := executePendingSandboxFile(callContext, value, &state); err != nil {
 			return err
 		}
-		if response.Value.SandboxPTYCommand != nil {
+		if ptyActive {
 			accessActiveUntil = time.Now().Add(10 * time.Second)
 		}
-		if response.Value.SandboxPreviewCommand != nil {
+		if previewActive {
 			accessActiveUntil = time.Now().Add(10 * time.Second)
 		}
 		if err := executePendingSandboxPTY(callContext, value, &state); err != nil {

@@ -393,6 +393,10 @@ try {
   assert.equal(remoteWorkerReceipt.stopReceiptReplay, true);
   assert.equal(remoteWorkerReceipt.rebuildReceiptReplay, true);
   assert.equal(remoteWorkerReceipt.cleanupStopReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.longClaimRenewed, true);
+  assert.equal(remoteWorkerReceipt.renewWrongCommandStatus, 409);
+  assert.equal(remoteWorkerReceipt.reconnectOriginalCommandNotReplayed, true);
+  assert.equal(remoteWorkerReceipt.reconnectAttempt, 2);
   assert.equal(remoteWorkerReceipt.execExitCode, 7);
   assert.equal(remoteWorkerReceipt.execWorkspaceDigestVerified, true);
   assert.equal(remoteWorkerReceipt.execRequestReplay, true);
@@ -529,10 +533,12 @@ try {
         "the existing SSH Gateway carries PTY and non-PTY sessions through bounded RemoteWorker commands without a browser or inbound customer-node connection",
         "SSH rejects missing node capability, wrong password, cross-tenant username, direct-tcpip forwarding and environment mutation, preserves exit status, and survives Gateway restart",
         "SSH command delivery is bound to the exact incarnation and certificate, runtime cannot read command rows, and Admin receives metadata without command content or credentials",
+        "a lifecycle effect longer than the original claim renews through the existing mTLS heartbeat, and a wrong command ID is rejected",
+        "a dropped outbound heartbeat clears the uncertain local command; after natural claim expiry, reconnect executes only a new reconciled attempt",
         "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
       ],
       boundary:
-        "Local OrbStack Docker RemoteWorker customer node and disposable PostgreSQL only; Exec, Files, bounded Preview, bounded PTY reconnect and SSH are verified, but streaming Preview, long-duration claim renewal, induced NAT interruption, Kubernetes and external SSH customer nodes are not covered",
+        "Local OrbStack Docker RemoteWorker customer node and disposable PostgreSQL only; long-duration claim renewal, dropped outbound connection and process reconnect are verified, but streaming Preview, Kubernetes and external SSH customer nodes are not covered",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),

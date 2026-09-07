@@ -677,6 +677,7 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   kernelVersion: string;
   capabilities: readonly ("docker" | "exec" | "files" | "preview" | "pty" | "ssh")[];
   capacity: RemoteWorkerCapacity;
+  sandboxCommandId?: string;
   commandReceipt?: RemoteWorkerCommandReceipt;
   sandboxCommandReceipt?: RemoteWorkerSandboxCommandReceipt;
   sandboxExecCommandReceipt?: RemoteWorkerSandboxExecCommandReceipt;
@@ -6831,6 +6832,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "kernelVersion",
       "capabilities",
       "capacity",
+      "sandboxCommandId",
       "commandReceipt",
       "sandboxCommandReceipt",
       "sandboxExecCommandReceipt",
@@ -6867,6 +6869,9 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
   };
   return Object.freeze({
     ...request,
+    ...(source.sandboxCommandId === undefined
+      ? {}
+      : { sandboxCommandId: identifier(source.sandboxCommandId, "/sandboxCommandId") }),
     ...(source.commandReceipt === undefined
       ? {}
       : { commandReceipt: decodeRemoteWorkerCommandReceipt(source.commandReceipt) }),

@@ -445,7 +445,12 @@ describe("generated platform JSON models", () => {
       kernelVersion: "6.12.1",
       capabilities: ["docker", "exec", "files"],
       capacity: { cpuMillis: 4000, memoryBytes: 8589934592, diskBytes: 42949672960 },
+      sandboxCommandId: "rwsc-alpha",
     });
+    expect(request.sandboxCommandId).toBe("rwsc-alpha");
+    expect(() =>
+      decodeRemoteWorkerHeartbeatRequest({ ...request, sandboxCommandId: "invalid command" }),
+    ).toThrow(TypeError);
     const seen: FixtureRequest[] = [];
     const client = new Client(async (input) => {
       seen.push(input);

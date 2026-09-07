@@ -48,6 +48,7 @@ type HeartbeatInput struct {
 	KernelVersion                string
 	Capabilities                 []string
 	Capacity                     Capacity
+	SandboxCommandID             string
 	CommandReceipt               *CommandReceipt
 	SandboxCommandReceipt        *SandboxCommandReceipt
 	SandboxExecCommandReceipt    *SandboxExecCommandReceipt
@@ -169,6 +170,7 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		(input.ObservedState != "active" && input.ObservedState != "drained") ||
 		invalidIdentifier(input.OS) || invalidIdentifier(input.Architecture) || invalidKernelVersion(input.KernelVersion) ||
 		invalidCapabilities(input.Capabilities) || invalidCapacity(input.Capacity) ||
+		input.SandboxCommandID != "" && (invalidIdentifier(input.SandboxCommandID) || input.SandboxCommandReceipt != nil) ||
 		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil ||
 		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil ||
 		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil ||
