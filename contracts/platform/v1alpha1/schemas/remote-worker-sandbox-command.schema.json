@@ -25,7 +25,7 @@
   "properties": {
     "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
-    "action": { "const": "sandbox.create" },
+    "action": { "enum": ["sandbox.create", "sandbox.stop"] },
     "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "workspaceName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
@@ -43,11 +43,36 @@
       "uniqueItems": true,
       "items": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[^\\u0000-\\u0020\\u007F]+$" }
     },
+    "physicalVolumeName": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$" },
+    "runtimeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" },
+    "runtimeState": { "const": "Running" },
+    "runtimeOperationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "runtimeSpecDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "deadline": { "type": "string", "format": "date-time", "maxLength": 64 }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "sandbox.stop" } }, "required": ["action"] },
+      "then": { "required": ["physicalVolumeName", "runtimeId", "runtimeState", "runtimeOperationId", "runtimeGeneration", "runtimeSpecDigest"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["physicalVolumeName"] },
+            { "required": ["runtimeId"] },
+            { "required": ["runtimeState"] },
+            { "required": ["runtimeOperationId"] },
+            { "required": ["runtimeGeneration"] },
+            { "required": ["runtimeSpecDigest"] }
+          ]
+        }
+      }
+    }
+  ],
   "x-cloud-agents-semantic-constraints": [
     "the mTLS route supplies tenant, project, enrollment, and incarnation authority",
     "commandId is unique to one durable Operation attempt and the node must not start it after deadline",
+    "sandbox.stop is bound to the exact prior runtime and retained physical Workspace volume",
     "the command contains no Control Plane target endpoint or credential reference"
   ]
 }

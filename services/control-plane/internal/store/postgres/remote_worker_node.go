@@ -70,8 +70,8 @@ const heartbeatRemoteWorkerSQL = `SELECT enrollment_uid, worker_uid, worker_name
 FROM cloud_agents.heartbeat_remote_worker_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`
 
 const settleRemoteWorkerSandboxSQL = `SELECT outbox_state, operation_state, resource_version
-FROM cloud_agents.settle_remote_worker_foundation_sandbox_v1(
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
+FROM cloud_agents.settle_remote_worker_foundation_sandbox_v2(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
 
 const lockRemoteWorkerSchedulingSQL = `SELECT cloud_agents.lock_remote_worker_scheduling_v1($1,$2,$3)`
 const transitionRemoteWorkerSchedulingSQL = `SELECT operation_uid, idempotency_key, action, enrollment_uid,
@@ -195,6 +195,22 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 		SpecDigest: claim.Claim.SpecDigest, NetworkPolicyID: claim.Claim.NetworkPolicyID,
 		NetworkAllowedEgress: claim.Claim.NetworkAllowedEgress, Deadline: claim.Claim.ClaimExpiresAt,
 	}
+	if claim.Claim.PhysicalVolumeName != nil {
+		command.PhysicalVolumeName = *claim.Claim.PhysicalVolumeName
+	}
+	if claim.Claim.RuntimeID != nil {
+		command.RuntimeID = *claim.Claim.RuntimeID
+	}
+	command.RuntimeState = claim.Claim.RuntimeState
+	if claim.Claim.RuntimeOperationID != nil {
+		command.RuntimeOperationID = *claim.Claim.RuntimeOperationID
+	}
+	if claim.Claim.RuntimeGeneration != nil {
+		command.RuntimeGeneration = *claim.Claim.RuntimeGeneration
+	}
+	if claim.Claim.RuntimeSpecDigest != nil {
+		command.RuntimeSpecDigest = *claim.Claim.RuntimeSpecDigest
+	}
 	if command.Validate() != nil {
 		return RemoteWorkerHeartbeatResult{}, ErrCoordinationResultDrift
 	}
@@ -221,7 +237,7 @@ func (service *DurableCoordinationService) settleRemoteWorkerSandbox(ctx context
 	err := service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
 		return handle.transaction.queryRow(ctx, settleRemoteWorkerSandboxSQL,
 			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID,
-			receipt.CommandID, receipt.Attempt, receipt.OperationID, receipt.SandboxID,
+			receipt.CommandID, receipt.Attempt, receipt.Action, receipt.OperationID, receipt.SandboxID,
 			receipt.SandboxGeneration, transition, optional(receipt.RuntimeID), optional(receipt.RuntimeState),
 			optional(receipt.VolumeName), optional(receipt.StableErrorCode), receipt.CleanupComplete,
 			subjectDigest, "audit-"+rand.Text()).Scan(&outboxState, &operationState, &resourceVersion)

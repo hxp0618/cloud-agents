@@ -496,6 +496,7 @@ export type RemoteWorkerCommand = Readonly<{
 export type RemoteWorkerSandboxCommandReceipt = Readonly<{
   commandId: string;
   attempt: number;
+  action: "sandbox.create" | "sandbox.stop";
   operationId: string;
   sandboxId: string;
   sandboxGeneration: number;
@@ -517,7 +518,7 @@ export type RemoteWorkerSandboxCommandReceipt = Readonly<{
 export type RemoteWorkerSandboxCommand = Readonly<{
   commandId: string;
   attempt: number;
-  action: "sandbox.create";
+  action: "sandbox.create" | "sandbox.stop";
   operationId: string;
   workspaceId: string;
   workspaceName: string;
@@ -530,6 +531,12 @@ export type RemoteWorkerSandboxCommand = Readonly<{
   specDigest: `sha256:${string}`;
   networkPolicyId: string;
   networkAllowedEgress: readonly string[];
+  physicalVolumeName?: string;
+  runtimeId?: string;
+  runtimeState?: "Running";
+  runtimeOperationId?: string;
+  runtimeGeneration?: number;
+  runtimeSpecDigest?: `sha256:${string}`;
   deadline: string;
 }>;
 export type RemoteWorkerHeartbeatRequest = Readonly<{
@@ -1908,6 +1915,12 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
         specDigest: scalarResponseShape,
         networkPolicyId: scalarResponseShape,
         networkAllowedEgress: { item: scalarResponseShape },
+        physicalVolumeName: scalarResponseShape,
+        runtimeId: scalarResponseShape,
+        runtimeState: scalarResponseShape,
+        runtimeOperationId: scalarResponseShape,
+        runtimeGeneration: scalarResponseShape,
+        runtimeSpecDigest: scalarResponseShape,
         deadline: scalarResponseShape,
       },
     },
@@ -5615,6 +5628,7 @@ export function decodeRemoteWorkerSandboxCommandReceipt(
     [
       "commandId",
       "attempt",
+      "action",
       "operationId",
       "sandboxId",
       "sandboxGeneration",
@@ -5635,7 +5649,11 @@ export function decodeRemoteWorkerSandboxCommandReceipt(
       "cleanupComplete",
     ],
   );
-  const result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+  const action =
+      source.action === undefined
+        ? "sandbox.create"
+        : enumValue(source.action, ["sandbox.create", "sandbox.stop"] as const, "/action"),
+    result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
     runtimeId =
       source.runtimeId === undefined ? undefined : identifier(source.runtimeId, "/runtimeId"),
     runtimeState =
@@ -5660,20 +5678,23 @@ export function decodeRemoteWorkerSandboxCommandReceipt(
     stableErrorCode =
       source.stableErrorCode === undefined
         ? undefined
-        : identifier(source.stableErrorCode, "/stableErrorCode");
+        : identifier(source.stableErrorCode, "/stableErrorCode"),
+    cleanupComplete = boolean(source.cleanupComplete, "/cleanupComplete");
   if (
     (volumeName !== undefined && volumeName.length > 63) ||
     (result === "succeeded"
-      ? runtimeId === undefined ||
-        runtimeState !== "Running" ||
-        volumeName === undefined ||
-        stableErrorCode !== undefined
+      ? volumeName === undefined ||
+        stableErrorCode !== undefined ||
+        (action === "sandbox.create" && (runtimeId === undefined || runtimeState !== "Running")) ||
+        (action === "sandbox.stop" &&
+          (runtimeId !== undefined || runtimeState !== undefined || !cleanupComplete))
       : stableErrorCode === undefined)
   )
     error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND_RECEIPT", "/result");
   return Object.freeze({
     commandId: identifier(source.commandId, "/commandId"),
     attempt: integer(source.attempt, 1, 8, "/attempt"),
+    action,
     operationId: identifier(source.operationId, "/operationId"),
     sandboxId: identifier(source.sandboxId, "/sandboxId"),
     sandboxGeneration: integer(
@@ -5687,7 +5708,7 @@ export function decodeRemoteWorkerSandboxCommandReceipt(
     ...(runtimeState === undefined ? {} : { runtimeState }),
     ...(volumeName === undefined ? {} : { volumeName }),
     ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
-    cleanupComplete: boolean(source.cleanupComplete, "/cleanupComplete"),
+    cleanupComplete,
   });
 }
 export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSandboxCommand {
@@ -5707,42 +5728,113 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
       "specDigest",
       "networkPolicyId",
       "networkAllowedEgress",
+      "physicalVolumeName",
+      "runtimeId",
+      "runtimeState",
+      "runtimeOperationId",
+      "runtimeGeneration",
+      "runtimeSpecDigest",
       "deadline",
     ] as const,
-    source = strictRecord(value, fields, fields);
+    required = [
+      "commandId",
+      "attempt",
+      "action",
+      "operationId",
+      "workspaceId",
+      "workspaceName",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "imageUri",
+      "cpuMillis",
+      "memoryBytes",
+      "specDigest",
+      "networkPolicyId",
+      "networkAllowedEgress",
+      "deadline",
+    ] as const,
+    source = strictRecord(value, fields, required);
   const rawEgress: unknown[] = Array.isArray(source.networkAllowedEgress)
     ? source.networkAllowedEgress
     : error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/networkAllowedEgress");
   if (rawEgress.length > 64)
     error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/networkAllowedEgress");
   const networkAllowedEgress = rawEgress.map((entry, index) => {
-    const item = boundedString(entry, 1, 253, `/networkAllowedEgress/${index}`);
-    if (/[\u0000-\u0020\u007f]/u.test(item) || rawEgress.indexOf(item) !== index)
-      error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", `/networkAllowedEgress/${index}`);
-    return item;
-  });
-  if (source.action !== "sandbox.create") error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/action");
+      const item = boundedString(entry, 1, 253, `/networkAllowedEgress/${index}`);
+      if (/[\u0000-\u0020\u007f]/u.test(item) || rawEgress.indexOf(item) !== index)
+        error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", `/networkAllowedEgress/${index}`);
+      return item;
+    }),
+    action = enumValue(source.action, ["sandbox.create", "sandbox.stop"] as const, "/action"),
+    physicalVolumeName =
+      source.physicalVolumeName === undefined
+        ? undefined
+        : identifier(source.physicalVolumeName, "/physicalVolumeName"),
+    runtimeId =
+      source.runtimeId === undefined ? undefined : identifier(source.runtimeId, "/runtimeId"),
+    runtimeState =
+      source.runtimeState === undefined
+        ? undefined
+        : enumValue(source.runtimeState, ["Running"] as const, "/runtimeState"),
+    runtimeOperationId =
+      source.runtimeOperationId === undefined
+        ? undefined
+        : identifier(source.runtimeOperationId, "/runtimeOperationId"),
+    runtimeGeneration =
+      source.runtimeGeneration === undefined
+        ? undefined
+        : integer(source.runtimeGeneration, 1, Number.MAX_SAFE_INTEGER, "/runtimeGeneration"),
+    runtimeSpecDigest =
+      source.runtimeSpecDigest === undefined
+        ? undefined
+        : (digest(source.runtimeSpecDigest, "/runtimeSpecDigest") as `sha256:${string}`),
+    sandboxGeneration = integer(
+      source.sandboxGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/sandboxGeneration",
+    );
+  if (
+    (physicalVolumeName !== undefined && physicalVolumeName.length > 63) ||
+    (action === "sandbox.stop"
+      ? physicalVolumeName === undefined ||
+        runtimeId === undefined ||
+        runtimeState !== "Running" ||
+        runtimeOperationId === undefined ||
+        runtimeGeneration === undefined ||
+        runtimeGeneration >= sandboxGeneration ||
+        runtimeSpecDigest === undefined
+      : physicalVolumeName !== undefined ||
+        runtimeId !== undefined ||
+        runtimeState !== undefined ||
+        runtimeOperationId !== undefined ||
+        runtimeGeneration !== undefined ||
+        runtimeSpecDigest !== undefined)
+  )
+    error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/action");
   return Object.freeze({
     commandId: identifier(source.commandId, "/commandId"),
     attempt: integer(source.attempt, 1, 8, "/attempt"),
-    action: "sandbox.create",
+    action,
     operationId: identifier(source.operationId, "/operationId"),
     workspaceId: identifier(source.workspaceId, "/workspaceId"),
     workspaceName: identifier(source.workspaceName, "/workspaceName"),
     targetId: identifier(source.targetId, "/targetId"),
     sandboxId: identifier(source.sandboxId, "/sandboxId"),
-    sandboxGeneration: integer(
-      source.sandboxGeneration,
-      1,
-      Number.MAX_SAFE_INTEGER,
-      "/sandboxGeneration",
-    ),
+    sandboxGeneration,
     imageUri: runtimeImage(source.imageUri, "/imageUri"),
     cpuMillis: integer(source.cpuMillis, 100, 64000, "/cpuMillis"),
     memoryBytes: integer(source.memoryBytes, 134217728, 1099511627776, "/memoryBytes"),
     specDigest: digest(source.specDigest, "/specDigest") as `sha256:${string}`,
     networkPolicyId: identifier(source.networkPolicyId, "/networkPolicyId"),
     networkAllowedEgress: Object.freeze(networkAllowedEgress),
+    ...(physicalVolumeName === undefined ? {} : { physicalVolumeName }),
+    ...(runtimeId === undefined ? {} : { runtimeId }),
+    ...(runtimeState === undefined ? {} : { runtimeState }),
+    ...(runtimeOperationId === undefined ? {} : { runtimeOperationId }),
+    ...(runtimeGeneration === undefined ? {} : { runtimeGeneration }),
+    ...(runtimeSpecDigest === undefined ? {} : { runtimeSpecDigest }),
     deadline: dateTime(source.deadline, "/deadline"),
   });
 }

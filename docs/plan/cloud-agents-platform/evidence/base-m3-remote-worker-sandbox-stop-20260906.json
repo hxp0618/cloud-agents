@@ -1,0 +1,45 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "9dfd0910bbab2141399194307ecd7c126fb46905",
+    "dirty": true
+  },
+  "productMigration": {
+    "id": "000069",
+    "schemaBundleDigest": "sha256:fa3cd65a63d2ed05fedeef2f69b81e929c2c35b582c4f9c7678639095457ae92",
+    "manifestDigest": "sha256:7842051b6579dc70d48240eabb2d63a3f57f4b498cae4b3652cec34d7ef9117b",
+    "upgradeFrom": "000068",
+    "freshMigrationCount": 69,
+    "noOpReplayCount": 0
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "remoteWorker": {
+    "createOperationId": "op-0bf517702b3fa3735ad3c5e035702f52",
+    "stopOperationId": "op-003976ee7b4323d842d60f27f7d1b76a",
+    "runtimeId": "452973a9-d7a8-4116-b5d3-03de8b66d290",
+    "volumeName": "ca-ws-887ca62cff2f8a88152a4cc647d35ad95434d0563208bb7a3d43110f",
+    "observedState": "stopped",
+    "writerReleased": true,
+    "stopReceiptReplay": true,
+    "nodeAuditCount": 4,
+    "nodeAuditSubject": "current mTLS certificate SHA-256"
+  },
+  "cleanup": {
+    "testOwnedRuntimeContainers": 0,
+    "testOwnedWorkspaceVolumes": 0
+  },
+  "checks": [
+    "Admin Stop is generation and resource-version fenced and retains Workspace data",
+    "outbound command binds the exact prior runtime, runtime generation, spec digest and physical volume",
+    "the authenticated RemoteWorker physically deletes compute through its node-local Docker and OpenSandbox configuration",
+    "settlement clears runtime authority, releases the writer and keeps the physical Workspace volume",
+    "exact successful Stop receipt replay is acknowledged without repeating the physical effect",
+    "claim and settlement Audit facts use the current authenticated mTLS certificate fingerprint",
+    "the command and receipt contain no endpoint, credential reference, Provider credential or Secret bytes"
+  ],
+  "boundary": "Local OrbStack Docker customer-node process and disposable PostgreSQL only; existing Admin Web lifecycle UI is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes node, NAT outage, remote Exec/Files or Rebuild"
+}

@@ -181,6 +181,29 @@ func TestRemoteWorkerHeartbeatResponseKeepsSandboxCommand(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerSandboxStopRequiresExactPriorRuntimeAndCleanup(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	legacyCreateReceipt := []byte(`{"commandId":"rwsc-create","attempt":1,"operationId":"operation-create","sandboxId":"sandbox-alpha","sandboxGeneration":1,"result":"succeeded","runtimeId":"runtime-alpha","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)
+	if decoded, err := DecodeRemoteWorkerSandboxCommandReceiptJSON(legacyCreateReceipt); err != nil || decoded.Action != "sandbox.create" {
+		t.Fatalf("legacy create receipt=%#v error=%v", decoded, err)
+	}
+	command := []byte(`{"commandId":"rwsc-stop","attempt":1,"action":"sandbox.stop","operationId":"operation-stop","workspaceId":"workspace-alpha","workspaceName":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":2,"imageUri":"registry.example.test/runtime@` + digest + `","cpuMillis":500,"memoryBytes":536870912,"specDigest":"` + digest + `","networkPolicyId":"network-alpha","networkAllowedEgress":[],"physicalVolumeName":"volume-alpha","runtimeId":"runtime-alpha","runtimeState":"Running","runtimeOperationId":"operation-create","runtimeGeneration":1,"runtimeSpecDigest":"` + digest + `","deadline":"2026-09-06T12:01:00Z"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxCommandJSON(command); err != nil || decoded.RuntimeID != "runtime-alpha" {
+		t.Fatalf("stop command=%#v error=%v", decoded, err)
+	}
+	withoutRuntime := []byte(strings.Replace(string(command), `,"runtimeId":"runtime-alpha"`, "", 1))
+	if _, err := DecodeRemoteWorkerSandboxCommandJSON(withoutRuntime); err == nil {
+		t.Fatal("stop command accepted without the exact prior runtime")
+	}
+	receipt := []byte(`{"commandId":"rwsc-stop","attempt":1,"action":"sandbox.stop","operationId":"operation-stop","sandboxId":"sandbox-alpha","sandboxGeneration":2,"result":"succeeded","volumeName":"volume-alpha","cleanupComplete":true}`)
+	if _, err := DecodeRemoteWorkerSandboxCommandReceiptJSON(receipt); err != nil {
+		t.Fatalf("stop receipt error=%v", err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxCommandReceiptJSON([]byte(strings.Replace(string(receipt), "true", "false", 1))); err == nil {
+		t.Fatal("successful stop receipt accepted incomplete cleanup")
+	}
+}
+
 func TestGeneratedRuntimeProfileKeepsAdminAndUserBoundaries(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","targetId":"docker-primary","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)

@@ -273,7 +273,7 @@ func executePendingSandbox(ctx context.Context, value config, state *nodeState) 
 			result.Err = sandboxErr
 		} else {
 			effectContext, cancel := context.WithDeadline(ctx, deadline)
-			result = foundationcontroller.ExecuteEffect(effectContext, docker, sandbox, postgres.FoundationSandboxClaim{
+			claim := postgres.FoundationSandboxClaim{
 				TenantID: value.tenantID, ProjectID: value.projectID, TargetKind: "remote-worker",
 				TargetID: command.TargetID, TargetEndpoint: value.dockerEndpoint, CredentialRef: value.credentialRef,
 				Action: command.Action, OperationID: command.OperationID, WorkspaceID: command.WorkspaceID,
@@ -281,12 +281,17 @@ func executePendingSandbox(ctx context.Context, value config, state *nodeState) 
 				SandboxGeneration: command.SandboxGeneration, ImageURI: command.ImageURI,
 				CPUMillis: command.CPUMillis, MemoryBytes: command.MemoryBytes, SpecDigest: command.SpecDigest,
 				NetworkPolicyID: command.NetworkPolicyID, NetworkAllowedEgress: command.NetworkAllowedEgress,
-			})
+			}
+			if command.Action == "sandbox.stop" {
+				claim.PhysicalVolumeName, claim.RuntimeID, claim.RuntimeState = &command.PhysicalVolumeName, &command.RuntimeID, command.RuntimeState
+				claim.RuntimeOperationID, claim.RuntimeGeneration, claim.RuntimeSpecDigest = &command.RuntimeOperationID, &command.RuntimeGeneration, &command.RuntimeSpecDigest
+			}
+			result = foundationcontroller.ExecuteEffect(effectContext, docker, sandbox, claim)
 			cancel()
 		}
 	}
 	receipt := &platform.RemoteWorkerSandboxCommandReceipt{CommandID: command.CommandID, Attempt: command.Attempt,
-		OperationID: command.OperationID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
+		Action: command.Action, OperationID: command.OperationID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
 		RuntimeID: result.RuntimeID, RuntimeState: result.RuntimeState, VolumeName: result.VolumeName,
 		CleanupComplete: result.CleanupComplete}
 	if result.Err == nil {

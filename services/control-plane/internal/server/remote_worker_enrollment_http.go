@@ -519,7 +519,7 @@ func remoteWorkerSandboxCommandReceipt(value *platformv1alpha1.RemoteWorkerSandb
 	if value == nil {
 		return nil
 	}
-	return &internalremoteworker.SandboxCommandReceipt{CommandID: value.CommandID, Attempt: value.Attempt,
+	return &internalremoteworker.SandboxCommandReceipt{CommandID: value.CommandID, Attempt: value.Attempt, Action: value.Action,
 		OperationID: value.OperationID, SandboxID: value.SandboxID, SandboxGeneration: value.SandboxGeneration,
 		Result: value.Result, RuntimeID: value.RuntimeID, RuntimeState: value.RuntimeState,
 		VolumeName: value.VolumeName, StableErrorCode: value.StableErrorCode, CleanupComplete: value.CleanupComplete}
@@ -548,7 +548,10 @@ func remoteWorkerSandboxCommandResource(value *internalremoteworker.SandboxComma
 		WorkspaceName: value.WorkspaceName, TargetID: value.TargetID, SandboxID: value.SandboxID,
 		SandboxGeneration: value.SandboxGeneration, ImageURI: value.ImageURI, CPUMillis: value.CPUMillis,
 		MemoryBytes: value.MemoryBytes, SpecDigest: value.SpecDigest, NetworkPolicyID: value.NetworkPolicyID,
-		NetworkAllowedEgress: value.NetworkAllowedEgress, Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
+		NetworkAllowedEgress: value.NetworkAllowedEgress, PhysicalVolumeName: value.PhysicalVolumeName,
+		RuntimeID: value.RuntimeID, RuntimeState: value.RuntimeState, RuntimeOperationID: value.RuntimeOperationID,
+		RuntimeGeneration: value.RuntimeGeneration, RuntimeSpecDigest: value.RuntimeSpecDigest,
+		Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
 }
 
 func writeRemoteWorkerCertificate(writer http.ResponseWriter, requestID, projectID, enrollmentID string, value internalremoteworker.Snapshot, issuedAt *time.Time) {

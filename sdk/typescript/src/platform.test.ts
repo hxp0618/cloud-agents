@@ -46,6 +46,7 @@ import {
   decodeRemoteWorkerEnrollment,
   decodeRemoteWorkerHeartbeatRequest,
   decodeRemoteWorkerNodeStatus,
+  decodeRemoteWorkerSandboxCommandReceipt,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -103,6 +104,38 @@ const platformFixtureRoot = resolve(
 );
 
 describe("generated platform JSON models", () => {
+  it("keeps legacy create receipts while fencing successful RemoteWorker Stop cleanup", () => {
+    const base = {
+      commandId: "rwsc-alpha",
+      attempt: 1,
+      operationId: "operation-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 2,
+      result: "succeeded",
+      volumeName: "volume-alpha",
+      cleanupComplete: true,
+    };
+    expect(
+      decodeRemoteWorkerSandboxCommandReceipt({
+        ...base,
+        sandboxGeneration: 1,
+        runtimeId: "runtime-alpha",
+        runtimeState: "Running",
+        cleanupComplete: false,
+      }).action,
+    ).toBe("sandbox.create");
+    expect(
+      decodeRemoteWorkerSandboxCommandReceipt({ ...base, action: "sandbox.stop" }).action,
+    ).toBe("sandbox.stop");
+    expect(() =>
+      decodeRemoteWorkerSandboxCommandReceipt({
+        ...base,
+        action: "sandbox.stop",
+        cleanupComplete: false,
+      }),
+    ).toThrow(TypeError);
+  });
+
   it("validates active and revoked RemoteWorker certificate metadata", () => {
     const active = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",

@@ -371,8 +371,8 @@ try {
     "REMOTE_WORKER_SANDBOX",
   );
   assert.equal(remoteWorkerReceipt.receiptReplay, true);
-  assert.equal(remoteWorkerReceipt.observedState, "running");
-  assert.equal((await request(sandboxBase, `/v1/sandboxes/${remoteWorkerReceipt.runtimeId}`, "DELETE")).status, 204);
+  assert.equal(remoteWorkerReceipt.stopReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.observedState, "stopped");
   for (let attempt = 0; ; attempt++) {
     if (docker("ps", "-aq", "--filter", `label=opensandbox.io/id=${remoteWorkerReceipt.runtimeId}`) === "") break;
     if (attempt === 100) throw new Error("RemoteWorker Sandbox runtime did not terminate");
@@ -636,6 +636,8 @@ try {
       "public RuntimeProfile and Sandbox admission",
       "outbound customer-node RemoteWorker claims and physically creates a real Sandbox through the existing durable Operation",
       "RemoteWorker settlement and exact receipt replay persist Running state without endpoint or credential bytes in the command",
+      "Admin Stop dispatches the exact prior runtime and retained Workspace volume to the authenticated RemoteWorker",
+      "RemoteWorker physically deletes compute, settles Stopped with writer release, and accepts exact Stop receipt replay",
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
       "real durable claim and physical retained Docker volume",
       "real OpenSandbox create and execd readiness",

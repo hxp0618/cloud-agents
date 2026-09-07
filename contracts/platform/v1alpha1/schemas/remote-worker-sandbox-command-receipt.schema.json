@@ -8,6 +8,7 @@
   "properties": {
     "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "action": { "enum": ["sandbox.create", "sandbox.stop"] },
     "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
@@ -22,15 +23,28 @@
     {
       "if": { "properties": { "result": { "const": "succeeded" } }, "required": ["result"] },
       "then": {
-        "required": ["runtimeId", "runtimeState", "volumeName"],
-        "properties": { "runtimeState": { "const": "Running" } },
-        "not": { "required": ["stableErrorCode"] }
+        "allOf": [
+          { "not": { "required": ["stableErrorCode"] } },
+          {
+            "if": { "properties": { "action": { "const": "sandbox.stop" } }, "required": ["action"] },
+            "then": {
+              "required": ["volumeName"],
+              "properties": { "cleanupComplete": { "const": true } },
+              "not": { "anyOf": [{ "required": ["runtimeId"] }, { "required": ["runtimeState"] }] }
+            },
+            "else": {
+              "required": ["runtimeId", "runtimeState", "volumeName"],
+              "properties": { "runtimeState": { "const": "Running" } }
+            }
+          }
+        ]
       },
       "else": { "required": ["stableErrorCode"] }
     }
   ],
   "x-cloud-agents-semantic-constraints": [
-    "Control Plane accepts a receipt only for the current mTLS node, target, Operation attempt, and Sandbox generation",
+    "an omitted action is accepted only as the legacy sandbox.create receipt",
+    "Control Plane accepts a receipt only for the current mTLS node, target, action, Operation attempt, and Sandbox generation",
     "an exact settled receipt replay is acknowledged without repeating the physical effect",
     "the receipt contains only physical identifiers and stable status, never endpoint, credential, Workspace file, or user content"
   ]

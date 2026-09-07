@@ -549,6 +549,7 @@ type RemoteWorkerCommand struct {
 type RemoteWorkerSandboxCommandReceipt struct {
 	CommandID         string `json:"commandId"`
 	Attempt           int64  `json:"attempt"`
+	Action            string `json:"action"`
 	OperationID       string `json:"operationId"`
 	SandboxID         string `json:"sandboxId"`
 	SandboxGeneration int64  `json:"sandboxGeneration"`
@@ -575,6 +576,12 @@ type RemoteWorkerSandboxCommand struct {
 	SpecDigest           string   `json:"specDigest"`
 	NetworkPolicyID      string   `json:"networkPolicyId"`
 	NetworkAllowedEgress []string `json:"networkAllowedEgress"`
+	PhysicalVolumeName   string   `json:"physicalVolumeName,omitempty"`
+	RuntimeID            string   `json:"runtimeId,omitempty"`
+	RuntimeState         string   `json:"runtimeState,omitempty"`
+	RuntimeOperationID   string   `json:"runtimeOperationId,omitempty"`
+	RuntimeGeneration    int64    `json:"runtimeGeneration,omitempty"`
+	RuntimeSpecDigest    string   `json:"runtimeSpecDigest,omitempty"`
 	Deadline             string   `json:"deadline"`
 }
 type RemoteWorkerHeartbeatRequest struct {
@@ -1402,7 +1409,7 @@ var networkPolicyPageResponseShape = common.ObjectResponseShape(map[string]commo
 var remoteWorkerEnrollmentPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "remoteWorkerEnrollments": common.ArrayResponseShape(resourceResponseShape("RemoteWorkerEnrollment")), "nextPageToken": common.ScalarResponseShape()})
 var remoteWorkerEnrollmentSecretResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "enrollmentSecret": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var remoteWorkerCertificateResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateChainPem": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "issuedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
-var remoteWorkerHeartbeatResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "acceptedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "nextHeartbeatAfterSeconds": common.ScalarResponseShape(), "reconcileRequired": common.ScalarResponseShape(), "command": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()}), "sandboxCommand": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "attempt": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "specDigest": common.ScalarResponseShape(), "networkPolicyId": common.ScalarResponseShape(), "networkAllowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "deadline": common.ScalarResponseShape()})})
+var remoteWorkerHeartbeatResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "acceptedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "nextHeartbeatAfterSeconds": common.ScalarResponseShape(), "reconcileRequired": common.ScalarResponseShape(), "command": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()}), "sandboxCommand": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "attempt": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "specDigest": common.ScalarResponseShape(), "networkPolicyId": common.ScalarResponseShape(), "networkAllowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "physicalVolumeName": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "runtimeOperationId": common.ScalarResponseShape(), "runtimeGeneration": common.ScalarResponseShape(), "runtimeSpecDigest": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()})})
 var remoteWorkerNodeSchedulingPreviewResponseShape = resourceResponseShape("RemoteWorkerNodeSchedulingPreview")
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -3356,17 +3363,23 @@ func validRemoteWorkerSandboxRuntimeState(value string) bool {
 	return false
 }
 func DecodeRemoteWorkerSandboxCommandReceiptJSON(data []byte) (RemoteWorkerSandboxCommandReceipt, error) {
-	allowed := []string{"commandId", "attempt", "operationId", "sandboxId", "sandboxGeneration", "result", "runtimeId", "runtimeState", "volumeName", "stableErrorCode", "cleanupComplete"}
+	allowed := []string{"commandId", "attempt", "action", "operationId", "sandboxId", "sandboxGeneration", "result", "runtimeId", "runtimeState", "volumeName", "stableErrorCode", "cleanupComplete"}
 	required := []string{"commandId", "attempt", "operationId", "sandboxId", "sandboxGeneration", "result", "cleanupComplete"}
 	if _, err := common.DecodeStrictObject(data, allowed, required); err != nil {
 		return RemoteWorkerSandboxCommandReceipt{}, err
 	}
 	var value RemoteWorkerSandboxCommandReceipt
-	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || value.Attempt < 1 || value.Attempt > 8 || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > 9007199254740991 || value.Result != "succeeded" && value.Result != "failed" || value.RuntimeID != "" && common.ValidateIdentifier(value.RuntimeID, "/runtimeId") != nil || !validRemoteWorkerSandboxRuntimeState(value.RuntimeState) || value.VolumeName != "" && (len(value.VolumeName) > 63 || common.ValidateIdentifier(value.VolumeName, "/volumeName") != nil) || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil {
+	if json.Unmarshal(data, &value) != nil {
+		return RemoteWorkerSandboxCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_COMMAND_RECEIPT", "")
+	}
+	if value.Action == "" {
+		value.Action = "sandbox.create"
+	}
+	if common.ValidateIdentifier(value.CommandID, "/commandId") != nil || value.Attempt < 1 || value.Attempt > 8 || value.Action != "sandbox.create" && value.Action != "sandbox.stop" || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > 9007199254740991 || value.Result != "succeeded" && value.Result != "failed" || value.RuntimeID != "" && common.ValidateIdentifier(value.RuntimeID, "/runtimeId") != nil || !validRemoteWorkerSandboxRuntimeState(value.RuntimeState) || value.VolumeName != "" && (len(value.VolumeName) > 63 || common.ValidateIdentifier(value.VolumeName, "/volumeName") != nil) || value.StableErrorCode != "" && common.ValidateIdentifier(value.StableErrorCode, "/stableErrorCode") != nil {
 		return RemoteWorkerSandboxCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_COMMAND_RECEIPT", "")
 	}
 	if value.Result == "succeeded" {
-		if value.RuntimeID == "" || value.RuntimeState != "Running" || value.VolumeName == "" || value.StableErrorCode != "" {
+		if value.VolumeName == "" || value.StableErrorCode != "" || value.Action == "sandbox.create" && (value.RuntimeID == "" || value.RuntimeState != "Running") || value.Action == "sandbox.stop" && (value.RuntimeID != "" || value.RuntimeState != "" || !value.CleanupComplete) {
 			return RemoteWorkerSandboxCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_COMMAND_RECEIPT", "/result")
 		}
 	} else if value.StableErrorCode == "" {
@@ -3375,13 +3388,18 @@ func DecodeRemoteWorkerSandboxCommandReceiptJSON(data []byte) (RemoteWorkerSandb
 	return value, nil
 }
 func DecodeRemoteWorkerSandboxCommandJSON(data []byte) (RemoteWorkerSandboxCommand, error) {
-	allowed := []string{"commandId", "attempt", "action", "operationId", "workspaceId", "workspaceName", "targetId", "sandboxId", "sandboxGeneration", "imageUri", "cpuMillis", "memoryBytes", "specDigest", "networkPolicyId", "networkAllowedEgress", "deadline"}
-	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+	allowed := []string{"commandId", "attempt", "action", "operationId", "workspaceId", "workspaceName", "targetId", "sandboxId", "sandboxGeneration", "imageUri", "cpuMillis", "memoryBytes", "specDigest", "networkPolicyId", "networkAllowedEgress", "physicalVolumeName", "runtimeId", "runtimeState", "runtimeOperationId", "runtimeGeneration", "runtimeSpecDigest", "deadline"}
+	required := []string{"commandId", "attempt", "action", "operationId", "workspaceId", "workspaceName", "targetId", "sandboxId", "sandboxGeneration", "imageUri", "cpuMillis", "memoryBytes", "specDigest", "networkPolicyId", "networkAllowedEgress", "deadline"}
+	if _, err := common.DecodeStrictObject(data, allowed, required); err != nil {
 		return RemoteWorkerSandboxCommand{}, err
 	}
 	var value RemoteWorkerSandboxCommand
-	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || value.Attempt < 1 || value.Attempt > 8 || value.Action != "sandbox.create" || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdentifier(value.WorkspaceID, "/workspaceId") != nil || common.ValidateIdentifier(value.WorkspaceName, "/workspaceName") != nil || common.ValidateIdentifier(value.TargetID, "/targetId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > 9007199254740991 || len(value.ImageURI) > 1024 || !runtimeImagePattern.MatchString(value.ImageURI) || value.CPUMillis < 100 || value.CPUMillis > 64000 || value.MemoryBytes < 134217728 || value.MemoryBytes > 1099511627776 || !digestPattern.MatchString(value.SpecDigest) || common.ValidateIdentifier(value.NetworkPolicyID, "/networkPolicyId") != nil || !validRemoteWorkerSandboxAllowedEgress(value.NetworkAllowedEgress) || common.ValidateDateTime(value.Deadline, "/deadline") != nil {
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || value.Attempt < 1 || value.Attempt > 8 || value.Action != "sandbox.create" && value.Action != "sandbox.stop" || common.ValidateIdentifier(value.OperationID, "/operationId") != nil || common.ValidateIdentifier(value.WorkspaceID, "/workspaceId") != nil || common.ValidateIdentifier(value.WorkspaceName, "/workspaceName") != nil || common.ValidateIdentifier(value.TargetID, "/targetId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > 9007199254740991 || len(value.ImageURI) > 1024 || !runtimeImagePattern.MatchString(value.ImageURI) || value.CPUMillis < 100 || value.CPUMillis > 64000 || value.MemoryBytes < 134217728 || value.MemoryBytes > 1099511627776 || !digestPattern.MatchString(value.SpecDigest) || common.ValidateIdentifier(value.NetworkPolicyID, "/networkPolicyId") != nil || !validRemoteWorkerSandboxAllowedEgress(value.NetworkAllowedEgress) || common.ValidateDateTime(value.Deadline, "/deadline") != nil {
 		return RemoteWorkerSandboxCommand{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "")
+	}
+	priorValid := value.PhysicalVolumeName != "" && len(value.PhysicalVolumeName) <= 63 && common.ValidateIdentifier(value.PhysicalVolumeName, "/physicalVolumeName") == nil && common.ValidateIdentifier(value.RuntimeID, "/runtimeId") == nil && value.RuntimeState == "Running" && common.ValidateIdentifier(value.RuntimeOperationID, "/runtimeOperationId") == nil && value.RuntimeGeneration > 0 && value.RuntimeGeneration < value.SandboxGeneration && digestPattern.MatchString(value.RuntimeSpecDigest)
+	if value.Action == "sandbox.stop" && !priorValid || value.Action == "sandbox.create" && (value.PhysicalVolumeName != "" || value.RuntimeID != "" || value.RuntimeState != "" || value.RuntimeOperationID != "" || value.RuntimeGeneration != 0 || value.RuntimeSpecDigest != "") {
+		return RemoteWorkerSandboxCommand{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/action")
 	}
 	return value, nil
 }
