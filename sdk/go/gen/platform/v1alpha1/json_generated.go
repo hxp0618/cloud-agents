@@ -1251,6 +1251,15 @@ type WorkspaceSnapshotCreateRequest struct {
 	SourceSandboxID           string `json:"sourceSandboxId"`
 	ExpectedSandboxGeneration int64  `json:"expectedSandboxGeneration"`
 }
+type WorkspaceSnapshotRestoreRequest struct {
+	ExpectedSnapshotResourceVersion string `json:"expectedSnapshotResourceVersion"`
+	WorkspaceID                     string `json:"workspaceId"`
+	WorkspaceName                   string `json:"workspaceName"`
+	SandboxID                       string `json:"sandboxId"`
+	RuntimeProfileID                string `json:"runtimeProfileId"`
+	RuntimeProfileVersion           int64  `json:"runtimeProfileVersion"`
+	TTLSeconds                      int64  `json:"ttlSeconds"`
+}
 type WorkspaceSnapshotSpec struct {
 	ProjectRef                     common.ProjectRef `json:"projectRef"`
 	SourceWorkspaceID              string            `json:"sourceWorkspaceId"`
@@ -1403,7 +1412,7 @@ func DecodeAdminDeniedWriteEventJSON(data []byte) (AdminDeniedWriteEvent, error)
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "")
 	}
 	switch value.Action {
-	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
+	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
 	default:
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "/action")
 	}
@@ -5863,6 +5872,27 @@ func EncodeWorkspaceSnapshotCreateRequestJSON(value WorkspaceSnapshotCreateReque
 		return nil, err
 	}
 	if _, err := DecodeWorkspaceSnapshotCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeWorkspaceSnapshotRestoreRequestJSON(data []byte) (WorkspaceSnapshotRestoreRequest, error) {
+	allowed := []string{"expectedSnapshotResourceVersion", "workspaceId", "workspaceName", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "ttlSeconds"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return WorkspaceSnapshotRestoreRequest{}, err
+	}
+	var value WorkspaceSnapshotRestoreRequest
+	if json.Unmarshal(data, &value) != nil || common.ValidateResourceVersion(value.ExpectedSnapshotResourceVersion, "/expectedSnapshotResourceVersion") != nil || common.ValidateIdentifier(value.WorkspaceID, "/workspaceId") != nil || common.ValidateIdentifier(value.WorkspaceName, "/workspaceName") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || common.ValidateIdentifier(value.RuntimeProfileID, "/runtimeProfileId") != nil || value.RuntimeProfileVersion < 1 || value.RuntimeProfileVersion > 2147483647 || value.TTLSeconds < 60 || value.TTLSeconds > 86400 {
+		return WorkspaceSnapshotRestoreRequest{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT_RESTORE_REQUEST", "")
+	}
+	return value, nil
+}
+func EncodeWorkspaceSnapshotRestoreRequestJSON(value WorkspaceSnapshotRestoreRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeWorkspaceSnapshotRestoreRequestJSON(raw); err != nil {
 		return nil, err
 	}
 	return raw, nil

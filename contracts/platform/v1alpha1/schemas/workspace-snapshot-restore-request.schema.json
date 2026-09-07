@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/workspace-snapshot-restore-request.schema.json",
+  "title": "WorkspaceSnapshotRestoreRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "expectedSnapshotResourceVersion",
+    "workspaceId",
+    "workspaceName",
+    "sandboxId",
+    "runtimeProfileId",
+    "runtimeProfileVersion",
+    "ttlSeconds"
+  ],
+  "properties": {
+    "expectedSnapshotResourceVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeProfileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "The server resolves the source Target, physical snapshot, digest, image, resources and credentials",
+    "The initial Docker backend requires a published RuntimeProfile fixed to the snapshot source Target",
+    "Restore creates a new Workspace volume and Sandbox and never overwrites an existing destination"
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "run": "foundation-controller-d4888ad3-d15b-43b7-b57f-4413bd2b419b",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "92c8f28da4f9dea8e1eff05bbfca34cdc1a2b3ff",
+    "dirty": true,
+    "migrationHead": "000083"
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "snapshot": {
+    "api": {
+      "adminContentRedacted": true,
+      "fencedRebuildStatus": 409,
+      "idempotentReplay": true,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "ordinaryUserStatus": 403,
+      "snapshotId": "snapshot",
+      "sourceWorkspaceId": "workspace",
+      "status": "pending",
+      "writerFenceReserved": true
+    },
+    "controller": {
+      "archiveVerified": true,
+      "contentDigest": "sha256:0f7877fee5f9f1621d8dfe37868b110d73fe3a88481c9b46b230b7b977c02276",
+      "helperStarted": false,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "physicalVolume": "ca-snap-8e5eefa3eae93e0732f80b4aa8cf51d0b290cdbf80f66c1336354f75",
+      "sizeBytes": 2560,
+      "snapshotId": "snapshot",
+      "status": "available",
+      "writerFenceReleased": true
+    }
+  },
+  "restore": {
+    "api": {
+      "adminContentRedacted": true,
+      "idempotentReplay": true,
+      "operationId": "op-a0ca1cf202fbf9cc21387f05907919c5",
+      "ordinaryUserStatus": 403,
+      "sandboxId": "sandbox-restored",
+      "snapshotId": "snapshot",
+      "staleVersionStatus": 409,
+      "workspaceId": "workspace-restored",
+      "writerFenceReserved": true
+    },
+    "controller": {
+      "archiveVerified": true,
+      "generation": 1,
+      "newWorkspace": true,
+      "operationId": "op-a0ca1cf202fbf9cc21387f05907919c5",
+      "runtimeId": "0d110cdc-eded-47a7-91af-2c2476cda98d",
+      "specDigest": "sha256:1c87b4b901bab7241c951fa08fb6768928e657d3ba4893c2609f464d5e01f04a",
+      "status": "running",
+      "volumeName": "ca-ws-6386e3476bc51df65e1873fa2d4b32e67d5f4f86f6b94e6e99a15562",
+      "workspaceDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa"
+    }
+  },
+  "stop": {
+    "api": {
+      "action": "stop",
+      "generation": 2,
+      "operationId": "op-3e0769f2f5c1c1b84b3eb5e0cfddc65d",
+      "ordinaryUserStatus": 403,
+      "priorResourceVersion": "13",
+      "staleFenceStatus": 409,
+      "workspaceDisposition": "retain"
+    },
+    "controller": {
+      "generation": 2,
+      "runtimeDeleted": true,
+      "runtimeId": "0d110cdc-eded-47a7-91af-2c2476cda98d",
+      "status": "stopped",
+      "workspaceVolume": "ca-ws-6386e3476bc51df65e1873fa2d4b32e67d5f4f86f6b94e6e99a15562",
+      "workspaceVolumeDeleted": true,
+      "writerReleased": true
+    }
+  },
+  "checks": [
+    "product migration 000083 applied to disposable PostgreSQL",
+    "ordinary user token received 403 and stale snapshot resourceVersion received 409 from the Admin restore API",
+    "Admin restore replay returned the same durable Sandbox Operation and response excluded snapshot internals, endpoint and credentials",
+    "restore acceptance bound the available snapshot, fixed same-Target published RuntimeProfile, new Workspace and new Sandbox under the existing single-writer fence",
+    "Controller verified exact snapshot ownership and content digest, copied through a never-started helper, and mounted only the new deterministic Workspace volume",
+    "the restored real Sandbox returned the original proof-file SHA-256 from /workspace",
+    "the existing Sandbox stop lifecycle deleted restored compute, released its writer and retained the restored volume until explicit test cleanup",
+    "exact-owned restore helper, snapshot volume, source/restored Workspace volumes and runtime containers were removed after verification"
+  ],
+  "boundary": "Local OrbStack Docker and disposable PostgreSQL only; offline restore to a new same-Target Workspace/Sandbox is verified, while retention cleanup policy, Kubernetes/SSH snapshot backends and browser visual QA remain unverified"
+}

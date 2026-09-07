@@ -2254,6 +2254,58 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/workspace-snapshots/{snapshotId}:restore": {
+      "post": {
+        "operationId": "adminRestoreWorkspaceSnapshot",
+        "x-cloud-agents-required-scope": "snapshots.act",
+        "x-cloud-agents-coordination": "durable-operation",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          {
+            "name": "snapshotId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$"
+            }
+          },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/workspace-snapshot-restore-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Durably accepted restore into a new Workspace and Sandbox",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/sandbox-session.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "adminListEnvironmentProfiles",

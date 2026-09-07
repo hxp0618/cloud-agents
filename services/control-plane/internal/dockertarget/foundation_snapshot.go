@@ -23,8 +23,9 @@ import (
 const maxFoundationSnapshotBytes = 64 << 20
 
 var (
-	ErrSnapshotTooLarge       = errors.New("foundation workspace snapshot exceeds the initial size limit")
-	foundationSnapshotImageRE = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	ErrSnapshotTooLarge        = errors.New("foundation workspace snapshot exceeds the initial size limit")
+	foundationSnapshotImageRE  = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	foundationSnapshotDigestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
 type FoundationWorkspaceSnapshot struct {
@@ -35,6 +36,17 @@ type FoundationWorkspaceSnapshot struct {
 type FoundationWorkspaceSnapshotResult struct {
 	VolumeName, ContentDigest string
 	SizeBytes                 int64
+	CleanupComplete           bool
+}
+
+type FoundationWorkspaceRestore struct {
+	TenantID, ProjectID, TargetID                     string
+	SourceWorkspaceID, SnapshotID, SnapshotVolumeName string
+	ContentDigest, WorkspaceID, ImageURI              string
+}
+
+type FoundationWorkspaceRestoreResult struct {
+	VolumeName, ContentDigest string
 	CleanupComplete           bool
 }
 
@@ -86,6 +98,43 @@ func (input FoundationWorkspaceSnapshot) labels() map[string]string {
 	}
 }
 
+func (input FoundationWorkspaceRestore) valid() bool {
+	for path, value := range map[string]string{
+		"/tenantId": input.TenantID, "/projectId": input.ProjectID, "/targetId": input.TargetID,
+		"/sourceWorkspaceId": input.SourceWorkspaceID, "/snapshotId": input.SnapshotID, "/workspaceId": input.WorkspaceID,
+	} {
+		if commonv1alpha1.ValidateIdentifier(value, path) != nil {
+			return false
+		}
+	}
+	sourceVolume := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID, WorkspaceID: input.SourceWorkspaceID}
+	snapshot := FoundationWorkspaceSnapshot{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID,
+		WorkspaceID: input.SourceWorkspaceID, SnapshotID: input.SnapshotID, SourceVolumeName: sourceVolume.Name(), ImageURI: input.ImageURI}
+	return input.SnapshotVolumeName == snapshot.Name() && foundationSnapshotDigestRE.MatchString(input.ContentDigest) &&
+		foundationSnapshotImageRE.MatchString(input.ImageURI) && len(input.ImageURI) <= 1024
+}
+
+func (input FoundationWorkspaceRestore) helperName() string {
+	hash := sha256.New()
+	for _, value := range []string{input.TenantID, input.ProjectID, input.TargetID, input.SourceWorkspaceID, input.SnapshotID, input.WorkspaceID, "restore"} {
+		_, _ = hash.Write([]byte(value))
+		_, _ = hash.Write([]byte{0})
+	}
+	return "ca-snap-restore-" + hex.EncodeToString(hash.Sum(nil))[:48]
+}
+
+func (input FoundationWorkspaceRestore) labels() map[string]string {
+	return map[string]string{
+		"cloud-agents.dev/managed":   "true",
+		"cloud-agents.dev/resource":  "foundation-workspace-restore",
+		"cloud-agents.dev/tenant":    input.TenantID,
+		"cloud-agents.dev/project":   input.ProjectID,
+		"cloud-agents.dev/target":    input.TargetID,
+		"cloud-agents.dev/workspace": input.WorkspaceID,
+		"cloud-agents.dev/snapshot":  input.SnapshotID,
+	}
+}
+
 // SnapshotFoundationWorkspace copies only the fenced Workspace volume through
 // the Docker archive API. No helper process runs and no credential volume is mounted.
 func (directory *CredentialDirectory) SnapshotFoundationWorkspace(
@@ -130,7 +179,8 @@ func (directory *CredentialDirectory) SnapshotFoundationWorkspace(
 		return result, err
 	}
 	helpersClean = false
-	if err = createSnapshotHelper(ctx, client, base, input, labels); err != nil {
+	if err = createArchiveHelper(ctx, client, base, input.helperName(), input.ImageURI,
+		[]string{input.SourceVolumeName + ":/source:ro", input.Name() + ":/snapshot"}, labels); err != nil {
 		return result, fmt.Errorf("create stopped snapshot helper: %w", err)
 	}
 	archive, err := readDockerArchive(ctx, client, base, input.helperName(), "/source/.")
@@ -151,6 +201,92 @@ func (directory *CredentialDirectory) SnapshotFoundationWorkspace(
 	}
 	result.ContentDigest = digest
 	result.SizeBytes = int64(len(archive))
+	return result, nil
+}
+
+// RestoreFoundationWorkspace copies an exact offline snapshot into one new
+// deterministic Workspace volume. Existing non-identical data is never overwritten.
+func (directory *CredentialDirectory) RestoreFoundationWorkspace(
+	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceRestore,
+) (result FoundationWorkspaceRestoreResult, err error) {
+	if ctx == nil || !input.valid() {
+		return result, ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return result, err
+	}
+	defer transport.CloseIdleConnections()
+	destination := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID, WorkspaceID: input.WorkspaceID}
+	result.VolumeName = destination.Name()
+	labels := input.labels()
+	created := false
+	defer func() {
+		if cleanupErr := removeSnapshotHelper(ctx, client, base, input.helperName(), labels); cleanupErr != nil {
+			result.CleanupComplete = false
+			if err == nil {
+				err = cleanupErr
+			}
+		} else {
+			result.CleanupComplete = true
+		}
+		if err != nil && created {
+			if cleanupErr := removeSnapshotVolume(ctx, client, base, result.VolumeName, destination.labels()); cleanupErr != nil {
+				result.CleanupComplete = false
+			}
+		}
+	}()
+
+	sourceVolume := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID, WorkspaceID: input.SourceWorkspaceID}
+	snapshot := FoundationWorkspaceSnapshot{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID,
+		WorkspaceID: input.SourceWorkspaceID, SnapshotID: input.SnapshotID, SourceVolumeName: sourceVolume.Name(), ImageURI: input.ImageURI}
+	if volume, exists, inspectErr := inspectWorkspaceVolume(ctx, client, base, input.SnapshotVolumeName); inspectErr != nil || !exists || !exactLabels(volume.Labels, snapshot.labels()) {
+		return result, ErrDeploymentConflict
+	}
+	volume, exists, err := inspectWorkspaceVolume(ctx, client, base, result.VolumeName)
+	if err != nil {
+		return result, err
+	}
+	if exists {
+		if !exactLabels(volume.Labels, destination.labels()) {
+			return result, ErrDeploymentConflict
+		}
+	} else {
+		if err = dockerJSON(ctx, client, http.MethodPost, base+"/volumes/create", map[string]any{"Name": result.VolumeName, "Labels": destination.labels()}, http.StatusCreated, &volume); err != nil || volume.Name != result.VolumeName || !exactLabels(volume.Labels, destination.labels()) {
+			return result, ErrDeploymentFailed
+		}
+		created = true
+	}
+	if err = removeSnapshotHelper(ctx, client, base, input.helperName(), labels); err != nil {
+		return result, err
+	}
+	if err = createArchiveHelper(ctx, client, base, input.helperName(), input.ImageURI,
+		[]string{input.SnapshotVolumeName + ":/source:ro", result.VolumeName + ":/workspace"}, labels); err != nil {
+		return result, fmt.Errorf("create stopped restore helper: %w", err)
+	}
+	archive, err := readDockerArchive(ctx, client, base, input.helperName(), "/source/.")
+	if err != nil {
+		return result, fmt.Errorf("read snapshot archive: %w", err)
+	}
+	digest, err := snapshotArchiveDigest(archive)
+	if err != nil || digest != input.ContentDigest {
+		return result, ErrDeploymentConflict
+	}
+	if exists {
+		current, readErr := readDockerArchive(ctx, client, base, input.helperName(), "/workspace/.")
+		currentDigest, digestErr := snapshotArchiveDigest(current)
+		if readErr != nil || digestErr != nil || currentDigest != input.ContentDigest {
+			return result, ErrDeploymentConflict
+		}
+	} else if err = writeDockerArchive(ctx, client, base, input.helperName(), "/workspace", archive); err != nil {
+		return result, fmt.Errorf("write restored archive: %w", err)
+	}
+	verified, err := readDockerArchive(ctx, client, base, input.helperName(), "/workspace/.")
+	verifiedDigest, verifyErr := snapshotArchiveDigest(verified)
+	if err != nil || verifyErr != nil || verifiedDigest != input.ContentDigest {
+		return result, fmt.Errorf("verify restored archive: %w", ErrDeploymentFailed)
+	}
+	result.ContentDigest = verifiedDigest
 	return result, nil
 }
 
@@ -248,15 +384,15 @@ func removeSnapshotVolume(ctx context.Context, client *http.Client, base, name s
 	return nil
 }
 
-func createSnapshotHelper(ctx context.Context, client *http.Client, base string, input FoundationWorkspaceSnapshot, labels map[string]string) error {
+func createArchiveHelper(ctx context.Context, client *http.Client, base, name, image string, binds []string, labels map[string]string) error {
 	body := map[string]any{
-		"Image": input.ImageURI, "Labels": labels,
-		"HostConfig": map[string]any{"Binds": []string{input.SourceVolumeName + ":/source:ro", input.Name() + ":/snapshot"}},
+		"Image": image, "Labels": labels,
+		"HostConfig": map[string]any{"Binds": binds},
 	}
 	var created struct {
 		ID string `json:"Id"`
 	}
-	if err := dockerJSON(ctx, client, http.MethodPost, base+"/containers/create?name="+url.QueryEscape(input.helperName()), body, http.StatusCreated, &created); err != nil || created.ID == "" {
+	if err := dockerJSON(ctx, client, http.MethodPost, base+"/containers/create?name="+url.QueryEscape(name), body, http.StatusCreated, &created); err != nil || created.ID == "" {
 		return ErrDeploymentFailed
 	}
 	return nil

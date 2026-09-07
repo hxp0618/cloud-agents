@@ -92,6 +92,7 @@ export type AdminClient = Pick<
   | "listAdminWorkspaceSnapshots"
   | "createAdminWorkspaceSnapshot"
   | "getAdminWorkspaceSnapshot"
+  | "restoreAdminWorkspaceSnapshot"
 >;
 
 export function remoteWorkerFoundationSupport(

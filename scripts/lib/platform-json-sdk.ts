@@ -351,6 +351,7 @@ function validateJSONSDKAuthority(root: string): void {
     "adminRebuildSandboxSession",
     "adminRegisterDeploymentTarget",
     "adminRegisterWorkerRelease",
+    "adminRestoreWorkspaceSnapshot",
     "adminRevokeRemoteWorkerEnrollment",
     "adminRevokeSandboxAccessGrant",
     "adminRollbackEnvironmentLease",

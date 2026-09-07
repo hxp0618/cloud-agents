@@ -43,6 +43,9 @@ type FoundationSandboxClaim struct {
 	TargetKind                                                            string
 	Action, ImageURI, SpecDigest, RuntimeState                            string
 	PhysicalVolumeName, RuntimeID, RuntimeOperationID, RuntimeSpecDigest  *string
+	RestoreSnapshotID, RestoreSourceWorkspaceID, RestoreSnapshotVolume    *string
+	RestoreContentDigest                                                  *string
+	RestoreSnapshotResourceVersion                                        *int64
 	RuntimeGeneration                                                     *int64
 	TTLSeconds                                                            *int32
 	ExpiresAt                                                             *time.Time
@@ -186,6 +189,21 @@ func (service *DurableCoordinationService) ClaimFoundationSandbox(ctx context.Co
 			result.Found = false
 			return nil
 		}
+		if err != nil {
+			return err
+		}
+		var restoreTarget string
+		err = handle.transaction.queryRow(ctx, `SELECT snapshot_uid,source_workspace_uid,source_physical_snapshot_uid,
+    source_content_digest,snapshot_resource_version,target_uid FROM cloud_agents.workspace_snapshot_restores
+WHERE tenant_id=cloud_agents.require_tenant_id() AND operation_id=$1 AND operation_generation=$2`,
+			claim.OperationID, claim.OperationGeneration).Scan(&claim.RestoreSnapshotID, &claim.RestoreSourceWorkspaceID,
+			&claim.RestoreSnapshotVolume, &claim.RestoreContentDigest, &claim.RestoreSnapshotResourceVersion, &restoreTarget)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err == nil && restoreTarget != claim.TargetID {
+			return ErrCoordinationResultDrift
+		}
 		return err
 	})
 	if errors.Is(err, ErrMutationCommitUnknown) {
@@ -291,17 +309,28 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 	requestDigest := claim.SpecDigest
 	requestErr := error(nil)
 	if claim.Action == "sandbox.create" {
-		input := coordination.FoundationSandboxCreateInput{
-			Scope:       coordination.FoundationScope{TenantID: claim.TenantID, ProjectID: claim.ProjectID},
-			WorkspaceID: claim.WorkspaceID, WorkspaceName: claim.WorkspaceName, SandboxID: claim.SandboxID,
-			RuntimeProfileID: claim.RuntimeProfileID, RuntimeProfileVersion: claim.RuntimeProfileVersion,
-			Mutation: coordination.FoundationMutation{RequestID: "claim", IdempotencyKey: "foundation-claim-check"},
-		}
-		if claim.TTLSeconds == nil {
-			requestDigest, requestErr = coordination.FoundationSandboxCreateDigestV1(input)
+		if claim.RestoreSnapshotID != nil && claim.RestoreSourceWorkspaceID != nil && claim.RestoreSnapshotVolume != nil &&
+			claim.RestoreContentDigest != nil && claim.RestoreSnapshotResourceVersion != nil && claim.TTLSeconds != nil {
+			requestDigest, requestErr = workspaceSnapshotRestoreDigest(WorkspaceSnapshotRestoreInput{
+				Scope:      coordination.FoundationScope{TenantID: claim.TenantID, ProjectID: claim.ProjectID},
+				SnapshotID: *claim.RestoreSnapshotID, ExpectedSnapshotResourceVersion: *claim.RestoreSnapshotResourceVersion,
+				WorkspaceID: claim.WorkspaceID, WorkspaceName: claim.WorkspaceName, SandboxID: claim.SandboxID,
+				RuntimeProfileID: claim.RuntimeProfileID, RuntimeProfileVersion: claim.RuntimeProfileVersion,
+				TTLSeconds: int64(*claim.TTLSeconds),
+			})
 		} else {
-			input.TTLSeconds = int64(*claim.TTLSeconds)
-			requestDigest, requestErr = coordination.FoundationSandboxCreateDigest(input)
+			input := coordination.FoundationSandboxCreateInput{
+				Scope:       coordination.FoundationScope{TenantID: claim.TenantID, ProjectID: claim.ProjectID},
+				WorkspaceID: claim.WorkspaceID, WorkspaceName: claim.WorkspaceName, SandboxID: claim.SandboxID,
+				RuntimeProfileID: claim.RuntimeProfileID, RuntimeProfileVersion: claim.RuntimeProfileVersion,
+				Mutation: coordination.FoundationMutation{RequestID: "claim", IdempotencyKey: "foundation-claim-check"},
+			}
+			if claim.TTLSeconds == nil {
+				requestDigest, requestErr = coordination.FoundationSandboxCreateDigestV1(input)
+			} else {
+				input.TTLSeconds = int64(*claim.TTLSeconds)
+				requestDigest, requestErr = coordination.FoundationSandboxCreateDigest(input)
+			}
 		}
 	}
 	endpoint, endpointErr := url.Parse(claim.TargetEndpoint)
@@ -324,7 +353,20 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 			*claim.RuntimeGeneration < claim.SandboxGeneration && validCoordinationDigest(*claim.RuntimeSpecDigest)
 	validTarget := (claim.TargetKind == "docker" || claim.TargetKind == "kubernetes") && endpointErr == nil && endpoint.Scheme == "https" && endpoint.Host != "" ||
 		claim.TargetKind == "remote-worker" && endpointErr == nil && endpoint.Scheme == "remote-worker" && endpoint.Host == claim.CredentialRef && endpoint.Path == ""
-	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validTTL && validActionReceipt && validTarget &&
+	restoreFields := 0
+	for _, value := range []*string{claim.RestoreSnapshotID, claim.RestoreSourceWorkspaceID, claim.RestoreSnapshotVolume, claim.RestoreContentDigest} {
+		if value != nil {
+			restoreFields++
+		}
+	}
+	if claim.RestoreSnapshotResourceVersion != nil {
+		restoreFields++
+	}
+	validRestore := restoreFields == 0 || restoreFields == 5 && claim.Action == "sandbox.create" && claim.TargetKind == "docker" &&
+		validMutationIdentifier(*claim.RestoreSnapshotID) && validMutationIdentifier(*claim.RestoreSourceWorkspaceID) &&
+		validMutationIdentifier(*claim.RestoreSnapshotVolume) && validCoordinationDigest(*claim.RestoreContentDigest) &&
+		*claim.RestoreSnapshotResourceVersion > 0
+	return resolvedErr == nil && requestErr == nil && requestDigest == claim.SpecDigest && validTTL && validActionReceipt && validTarget && validRestore &&
 		validMutationIdentifier(claim.EventID) && validMutationIdentifier(claim.OperationID) &&
 		validMutationIdentifier(claim.CredentialRef) && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 &&
 		claim.OperationGeneration > 0 && claim.TargetGeneration > 0 && claim.SandboxGeneration > 0 &&

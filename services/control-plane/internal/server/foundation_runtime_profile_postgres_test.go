@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -293,6 +294,10 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	if runtimeURL == "" || ownerURL == "" {
 		t.Skip("isolated foundation Sandbox lifecycle PostgreSQL environment not configured")
 	}
+	sandboxID := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIFECYCLE_SANDBOX_ID")
+	if sandboxID == "" {
+		sandboxID = "sandbox"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	runtimePool, err := pgxpool.New(ctx, runtimeURL)
@@ -326,7 +331,7 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	defer httpServer.Close()
 	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
 	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
-	current, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-lifecycle-get")
+	current, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", sandboxID, "request-lifecycle-get")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,18 +341,18 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	}
 	body := platform.SandboxSessionLifecycleRequest{
 		ExpectedGeneration: current.Value.Spec.Generation, ExpectedResourceVersion: current.Value.Metadata.ResourceVersion,
-		ConfirmedSandboxID: "sandbox", ComputeDisposition: compute, WorkspaceDisposition: "retain",
+		ConfirmedSandboxID: sandboxID, ComputeDisposition: compute, WorkspaceDisposition: "retain",
 	}
 	call := func(client *api.Client, requestID, key string, request platform.SandboxSessionLifecycleRequest) (api.SandboxSessionLifecycleOperationResult, error) {
 		if action == "stop" {
-			return client.StopAdminSandboxSession(ctx, "tenant", "project", "sandbox", requestID, key, request)
+			return client.StopAdminSandboxSession(ctx, "tenant", "project", sandboxID, requestID, key, request)
 		}
-		return client.RebuildAdminSandboxSession(ctx, "tenant", "project", "sandbox", requestID, key, request)
+		return client.RebuildAdminSandboxSession(ctx, "tenant", "project", sandboxID, requestID, key, request)
 	}
 	if _, err := call(user, "request-lifecycle-user-denied", "sandbox-lifecycle-user-key", body); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user lifecycle status=%d err=%v", clientStatus(err), err)
 	}
-	key := fmt.Sprintf("sandbox-lifecycle-%s-g%d-key", action, current.Value.Spec.Generation+1)
+	key := fmt.Sprintf("%s-lifecycle-%s-g%d-key", sandboxID, action, current.Value.Spec.Generation+1)
 	operation, err := call(admin, "request-lifecycle-"+action, key, body)
 	if err != nil || operation.Value.Action != "sandbox."+action || operation.Value.State != "pending" ||
 		operation.Value.SandboxGeneration != current.Value.Spec.Generation+1 || operation.Value.WorkspaceDisposition != "retain" {
@@ -362,9 +367,9 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	}
 	var activities, audits int
 	if err := owner.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM cloud_agents.foundation_sandbox_activity WHERE sandbox_uid='sandbox' AND action=$1 AND operation_uid=$2),
+		(SELECT count(*) FROM cloud_agents.foundation_sandbox_activity WHERE sandbox_uid=$4 AND action=$1 AND operation_uid=$2),
 		(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE operation_id=$2 AND transition=$3)`,
-		"sandbox."+action, operation.Value.OperationID, "sandbox."+action+".accept").Scan(&activities, &audits); err != nil || activities != 1 || audits != 1 {
+		"sandbox."+action, operation.Value.OperationID, "sandbox."+action+".accept", sandboxID).Scan(&activities, &audits); err != nil || activities != 1 || audits != 1 {
 		t.Fatalf("lifecycle durable activity=%d audit=%d err=%v", activities, audits, err)
 	}
 	encoded, _ := json.Marshal(map[string]any{
@@ -372,7 +377,11 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		"generation": operation.Value.SandboxGeneration, "priorResourceVersion": body.ExpectedResourceVersion,
 		"ordinaryUserStatus": 403, "staleFenceStatus": 409, "workspaceDisposition": "retain",
 	})
-	t.Logf("FOUNDATION_LIFECYCLE_API=%s", encoded)
+	marker := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIFECYCLE_MARKER")
+	if marker == "" {
+		marker = "FOUNDATION_LIFECYCLE_API"
+	}
+	t.Logf("%s=%s", marker, encoded)
 }
 
 func TestFoundationWorkspaceSnapshotPostgres(t *testing.T) {
@@ -468,6 +477,114 @@ func TestFoundationWorkspaceSnapshotPostgres(t *testing.T) {
 		"status": created.Value.Spec.Status, "adminContentRedacted": true, "idempotentReplay": true,
 		"writerFenceReserved": true, "fencedRebuildStatus": 409})
 	t.Logf("FOUNDATION_SNAPSHOT_API=%s", encoded)
+}
+
+func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
+	if runtimeURL == "" || ownerURL == "" {
+		t.Skip("isolated foundation Workspace restore PostgreSQL environment not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimePool.Close()
+	ownerConfig, err := pgxpool.ParseConfig(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerConfig.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner")
+		return err
+	}
+	owner, err := pgxpool.NewWithConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	verifier, adminToken, userToken := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
+	available, err := admin.GetAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-restore-source")
+	if err != nil || available.Value.Spec.Status != "available" {
+		t.Fatalf("available snapshot=%+v err=%v", available.Value, err)
+	}
+	sourceProfile, err := admin.GetAdminRuntimeProfile(ctx, "tenant", "project", "profile", 1, "request-restore-profile-source")
+	if err != nil || sourceProfile.Value.Spec.TargetID == "" {
+		t.Fatalf("restore source profile=%+v err=%v", sourceProfile.Value, err)
+	}
+	restoreProfileRequest := platform.RuntimeProfileCreateRequest{ProfileID: "profile-restore", ProfileName: "profile-restore", Version: 1,
+		Description: "Snapshot restore target", TargetID: sourceProfile.Value.Spec.TargetID,
+		WorkloadTrust: sourceProfile.Value.Spec.WorkloadTrust, IsolationRuntime: sourceProfile.Value.Spec.IsolationRuntime,
+		NetworkPolicyRef: sourceProfile.Value.Spec.NetworkPolicyRef, ImageURI: sourceProfile.Value.Spec.ImageURI,
+		ReleaseDigest: sourceProfile.Value.Spec.ReleaseDigest, CPUMillis: sourceProfile.Value.Spec.CPUMillis, MemoryBytes: sourceProfile.Value.Spec.MemoryBytes}
+	createdProfile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-restore-profile-create", "restore-profile-create-key", restoreProfileRequest)
+	if err != nil {
+		t.Fatalf("create restore profile=%+v err=%v", createdProfile.Value, err)
+	}
+	publishedProfile, err := admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "profile-restore", 1,
+		"request-restore-profile-publish", "restore-profile-publish-key",
+		platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: createdProfile.Value.Metadata.ResourceVersion})
+	if err != nil || publishedProfile.Value.Spec.Status != "published" {
+		t.Fatalf("publish restore profile=%+v err=%v", publishedProfile.Value, err)
+	}
+	version, err := strconv.ParseInt(available.Value.Metadata.ResourceVersion, 10, 64)
+	if err != nil || version < 2 {
+		t.Fatalf("snapshot version=%q err=%v", available.Value.Metadata.ResourceVersion, err)
+	}
+	restore := platform.WorkspaceSnapshotRestoreRequest{ExpectedSnapshotResourceVersion: available.Value.Metadata.ResourceVersion,
+		WorkspaceID: "workspace-restored", WorkspaceName: "workspace-restored", SandboxID: "sandbox-restored",
+		RuntimeProfileID: "profile-restore", RuntimeProfileVersion: 1, TTLSeconds: 3600}
+	if _, err := user.RestoreAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-restore-user", "snapshot-restore-user-key", restore); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user restore status=%d err=%v", clientStatus(err), err)
+	}
+	stale := restore
+	stale.ExpectedSnapshotResourceVersion = strconv.FormatInt(version-1, 10)
+	if _, err := admin.RestoreAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-restore-stale", "snapshot-restore-stale-key", stale); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("stale restore status=%d err=%v", clientStatus(err), err)
+	}
+	restored, err := admin.RestoreAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-restore", "workspace-snapshot-restore-key", restore)
+	if err != nil || restored.Value.WorkspaceID != restore.WorkspaceID || restored.Value.SandboxID != restore.SandboxID || restored.Value.ObservedState != "pending" {
+		t.Fatalf("restored sandbox=%+v err=%v", restored.Value, err)
+	}
+	replay, err := admin.RestoreAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-restore-replay", "workspace-snapshot-restore-key", restore)
+	if err != nil || replay.Value.OperationID != restored.Value.OperationID {
+		t.Fatalf("restore replay=%+v err=%v", replay.Value, err)
+	}
+	var restores, audits, writerFences int
+	if err := owner.QueryRow(ctx, `SELECT
+(SELECT count(*) FROM cloud_agents.workspace_snapshot_restores WHERE tenant_id='tenant' AND project_uid='project'
+  AND snapshot_uid='snapshot' AND workspace_uid='workspace-restored' AND sandbox_uid='sandbox-restored'),
+(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE tenant_id='tenant' AND operation_id=$1
+  AND transition='workspace.snapshot.restore.accept'),
+(SELECT count(*) FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND project_uid='project'
+  AND workspace_uid='workspace-restored' AND sandbox_uid='sandbox-restored' AND NOT writer_released)`, restored.Value.OperationID).Scan(&restores, &audits, &writerFences); err != nil || restores != 1 || audits != 1 || writerFences != 1 {
+		t.Fatalf("restore authority=%d audit=%d fence=%d err=%v", restores, audits, writerFences, err)
+	}
+	raw, _ := json.Marshal(restored.Value)
+	for _, forbidden := range []string{"contentDigest", "physicalSnapshot", "endpoint", "credentialRef", "providerCredentialRef", "prompt", "artifact", "fileContent"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("restore response disclosed %q: %s", forbidden, raw)
+		}
+	}
+	encoded, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": restored.Value.OperationID,
+		"workspaceId": restored.Value.WorkspaceID, "sandboxId": restored.Value.SandboxID,
+		"ordinaryUserStatus": 403, "staleVersionStatus": 409, "idempotentReplay": true,
+		"writerFenceReserved": true, "adminContentRedacted": true})
+	t.Logf("FOUNDATION_RESTORE_API=%s", encoded)
 }
 
 func TestFoundationSandboxExecPostgres(t *testing.T) {
@@ -625,7 +742,7 @@ func pgErrorCode(err error) string {
 
 func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, string, string) {
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.create snapshots.get snapshots.list network-policies.update",
+		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.act snapshots.create snapshots.get snapshots.list network-policies.update",
 		"environment-profiles.list environments.create projects.act projects.get sandboxes.update",
 	)
 	return verifier, tokens[0], tokens[1]

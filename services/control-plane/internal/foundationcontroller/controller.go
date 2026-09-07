@@ -277,20 +277,37 @@ func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory
 		return EffectResult{VolumeName: volumeName, CleanupComplete: true}
 	}
 
-	volumeName, err := foundationWorkspaceVolume(ctx, docker, kubernetes, claim, true)
+	client, err := sandbox.Client(claim.CredentialRef)
+	if err != nil {
+		return EffectResult{Err: err}
+	}
+	identity := opensandbox.Identity{Tenant: claim.TenantID, Project: claim.ProjectID,
+		Workspace: claim.WorkspaceID, Sandbox: claim.SandboxID, Operation: claim.OperationID,
+		Generation: claim.SandboxGeneration, SpecDigest: claim.SpecDigest}
+	createVolume := true
+	if claim.RestoreSnapshotID != nil {
+		if _, findErr := client.Find(ctx, identity); findErr == nil {
+			createVolume = false
+		} else if !errors.Is(findErr, opensandbox.ErrNotFound) {
+			return EffectResult{Err: findErr}
+		} else {
+			restored, restoreErr := docker.RestoreFoundationWorkspace(ctx, claim.TargetEndpoint, claim.CredentialRef,
+				dockertarget.FoundationWorkspaceRestore{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+					TargetID: claim.TargetID, SourceWorkspaceID: *claim.RestoreSourceWorkspaceID,
+					SnapshotID: *claim.RestoreSnapshotID, SnapshotVolumeName: *claim.RestoreSnapshotVolume,
+					ContentDigest: *claim.RestoreContentDigest, WorkspaceID: claim.WorkspaceID, ImageURI: claim.ImageURI})
+			if restoreErr != nil {
+				return EffectResult{VolumeName: restored.VolumeName, CleanupComplete: restored.CleanupComplete, Err: restoreErr}
+			}
+		}
+	}
+	volumeName, err := foundationWorkspaceVolume(ctx, docker, kubernetes, claim, createVolume)
 	if err != nil {
 		return EffectResult{Err: err}
 	}
 	if claim.PhysicalVolumeName != nil && volumeName != *claim.PhysicalVolumeName {
 		return EffectResult{Err: dockertarget.ErrDeploymentConflict}
 	}
-	client, err := sandbox.Client(claim.CredentialRef)
-	if err != nil {
-		return EffectResult{VolumeName: volumeName, Err: err}
-	}
-	identity := opensandbox.Identity{Tenant: claim.TenantID, Project: claim.ProjectID,
-		Workspace: claim.WorkspaceID, Sandbox: claim.SandboxID, Operation: claim.OperationID,
-		Generation: claim.SandboxGeneration, SpecDigest: claim.SpecDigest}
 	observation, err := client.Create(ctx, opensandbox.CreateInput{Identity: identity, ImageURI: claim.ImageURI,
 		VolumeName: volumeName, CPUMillis: claim.CPUMillis, MemoryBytes: claim.MemoryBytes,
 		NetworkPolicy: foundationNetworkPolicy(claim)})

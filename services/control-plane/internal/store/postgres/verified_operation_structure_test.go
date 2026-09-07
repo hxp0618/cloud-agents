@@ -340,6 +340,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ListSandboxAccessGrants",
 		"*DurableCoordinationService.ListWorkspaceSnapshots",
 		"*DurableCoordinationService.PreviewRemoteWorkerScheduling",
+		"*DurableCoordinationService.RestoreWorkspaceSnapshot",
 		"*DurableCoordinationService.RevokeSandboxAccessGrant",
 		"*DurableCoordinationService.RevokeRemoteWorkerEnrollment",
 		"*DurableCoordinationService.TransitionFoundationSandbox",

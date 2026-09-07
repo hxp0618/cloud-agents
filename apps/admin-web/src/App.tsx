@@ -35,6 +35,7 @@ import {
   type WorkerReleaseRegisterRequest,
   type WorkspaceSnapshot,
   type WorkspaceSnapshotCreateRequest,
+  type WorkspaceSnapshotRestoreRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import { ResourceRefresh } from "./ResourceRefresh";
 import { SuccessToast } from "./SuccessToast";
@@ -668,6 +669,14 @@ export function App() {
   const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
   const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
   const [snapshotForm, setSnapshotForm] = useState({ snapshotId: "", sourceSandboxId: "" });
+  const [restoreForm, setRestoreForm] = useState({
+    snapshotId: "",
+    workspaceId: "",
+    workspaceName: "",
+    sandboxId: "",
+    runtimeProfileVersionId: "",
+    ttlSeconds: "3600",
+  });
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const operationTriggerRef = useRef<HTMLElement | null>(null);
@@ -730,6 +739,16 @@ export function App() {
   const selectedSandbox = sandboxes.find(({ metadata }) => metadata.uid === selectedSandboxId);
   const selectedStoragePolicy = storagePolicies.find(
     ({ metadata }) => metadata.uid === selectedStoragePolicyId,
+  );
+  const selectedRestoreSnapshot = workspaceSnapshots.find(
+    ({ metadata }) => metadata.uid === restoreForm.snapshotId,
+  );
+  const restoreSourceTargetId = sandboxes.find(
+    ({ spec }) => spec.workspaceId === selectedRestoreSnapshot?.spec.sourceWorkspaceId,
+  )?.spec.targetId;
+  const restoreRuntimeProfiles = runtimeProfiles.filter(
+    ({ spec }) =>
+      spec.status === "published" && "targetId" in spec && spec.targetId === restoreSourceTargetId,
   );
   const selectedStoragePolicyReferenced = profiles.some(
     ({ spec }) => spec.storagePolicyRef === selectedStoragePolicyId,
@@ -1079,6 +1098,14 @@ export function App() {
     setStoragePolicyAudit(Object.freeze([]));
     setStoragePolicyForm(storagePolicyFormFrom());
     setSnapshotForm({ snapshotId: "", sourceSandboxId: "" });
+    setRestoreForm({
+      snapshotId: "",
+      workspaceId: "",
+      workspaceName: "",
+      sandboxId: "",
+      runtimeProfileVersionId: "",
+      ttlSeconds: "3600",
+    });
     setLeaseQuota(undefined);
     setLeaseQuotaAudit(Object.freeze([]));
     setQuotaForm(quotaFormFrom());
@@ -1899,6 +1926,63 @@ export function App() {
       );
       setSnapshotForm({ snapshotId: "", sourceSandboxId: "" });
     });
+  }
+
+  function restoreWorkspaceSnapshot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null || selectedRestoreSnapshot?.spec.status !== "available") return;
+    const profile = restoreRuntimeProfiles.find(
+      ({ metadata }) => metadata.uid === restoreForm.runtimeProfileVersionId,
+    );
+    if (profile === undefined) return;
+    const body: WorkspaceSnapshotRestoreRequest = {
+      expectedSnapshotResourceVersion: selectedRestoreSnapshot.metadata.resourceVersion,
+      workspaceId: restoreForm.workspaceId.trim(),
+      workspaceName: restoreForm.workspaceName.trim(),
+      sandboxId: restoreForm.sandboxId.trim(),
+      runtimeProfileId: profile.spec.profileId,
+      runtimeProfileVersion: profile.spec.version,
+      ttlSeconds: Number(restoreForm.ttlSeconds),
+    };
+    const key = `restore-workspace-snapshot:${selectedRestoreSnapshot.metadata.uid}:${Object.values(body).join(":")}`;
+    void runOperation(
+      key,
+      { key: "operation.restoreWorkspaceSnapshot" },
+      async (signal) => {
+        const accepted = await client.restoreAdminWorkspaceSnapshot(
+          connection.tenantId,
+          connection.projectId,
+          selectedRestoreSnapshot.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        );
+        const restored = await client.getAdminSandboxSession(
+          connection.tenantId,
+          connection.projectId,
+          accepted.value.sandboxId,
+          newRequestId(),
+          signal,
+        );
+        setSandboxes((current) =>
+          Object.freeze([
+            restored.value,
+            ...current.filter(({ metadata }) => metadata.uid !== restored.value.metadata.uid),
+          ]),
+        );
+        setSelectedSandboxId(restored.value.metadata.uid);
+        setRestoreForm({
+          snapshotId: "",
+          workspaceId: "",
+          workspaceName: "",
+          sandboxId: "",
+          runtimeProfileVersionId: "",
+          ttlSeconds: "3600",
+        });
+      },
+      true,
+    );
   }
 
   function selectStoragePolicy(policyId: string) {
@@ -3250,7 +3334,9 @@ export function App() {
                     <h2>{t("workspaceSnapshot.title")}</h2>
                     <p>{t("workspaceSnapshot.description")}</p>
                   </div>
-                  <span className="scope-chip">snapshots.list · snapshots.create</span>
+                  <span className="scope-chip">
+                    snapshots.list · snapshots.create · snapshots.act
+                  </span>
                 </div>
                 <form className="resource-form" onSubmit={createWorkspaceSnapshot}>
                   <div className="form-row">
@@ -3303,6 +3389,116 @@ export function App() {
                     disabled={busy !== null || snapshotForm.sourceSandboxId === ""}
                   >
                     {t("workspaceSnapshot.create")}
+                  </button>
+                </form>
+                <form className="resource-form" onSubmit={restoreWorkspaceSnapshot}>
+                  <div className="form-row">
+                    <label>
+                      <span>{t("workspaceSnapshot.restoreSource")}</span>
+                      <select
+                        required
+                        value={restoreForm.snapshotId}
+                        onChange={(event) =>
+                          setRestoreForm((current) => ({
+                            ...current,
+                            snapshotId: event.target.value,
+                            runtimeProfileVersionId: "",
+                          }))
+                        }
+                      >
+                        <option value="">{t("workspaceSnapshot.selectRestoreSource")}</option>
+                        {workspaceSnapshots
+                          .filter(({ spec }) => spec.status === "available")
+                          .map((snapshot) => (
+                            <option key={snapshot.metadata.uid} value={snapshot.metadata.uid}>
+                              {snapshot.metadata.name} · {snapshot.spec.sourceWorkspaceId}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{t("workspaceSnapshot.restoreProfile")}</span>
+                      <select
+                        required
+                        value={restoreForm.runtimeProfileVersionId}
+                        onChange={(event) =>
+                          setRestoreForm((current) => ({
+                            ...current,
+                            runtimeProfileVersionId: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">{t("workspaceSnapshot.selectRestoreProfile")}</option>
+                        {restoreRuntimeProfiles.map((profile) => (
+                          <option key={profile.metadata.uid} value={profile.metadata.uid}>
+                            {profile.metadata.name} · v{number(profile.spec.version)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="form-row">
+                    {(
+                      [
+                        [
+                          "workspaceId",
+                          "workspaceSnapshot.restoreWorkspaceId",
+                          "workspace-restored",
+                        ],
+                        [
+                          "workspaceName",
+                          "workspaceSnapshot.restoreWorkspaceName",
+                          "Restored workspace",
+                        ],
+                        ["sandboxId", "workspaceSnapshot.restoreSandboxId", "sandbox-restored"],
+                      ] as const
+                    ).map(([field, label, placeholder]) => (
+                      <label key={field}>
+                        <span>{t(label)}</span>
+                        <input
+                          required
+                          maxLength={128}
+                          pattern={targetIdentifierPattern}
+                          spellCheck={false}
+                          value={restoreForm[field]}
+                          placeholder={placeholder}
+                          onChange={(event) =>
+                            setRestoreForm((current) => ({
+                              ...current,
+                              [field]: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    ))}
+                    <label>
+                      <span>{t("workspaceSnapshot.restoreTtl")}</span>
+                      <input
+                        required
+                        type="number"
+                        min={60}
+                        max={86_400}
+                        value={restoreForm.ttlSeconds}
+                        onChange={(event) =>
+                          setRestoreForm((current) => ({
+                            ...current,
+                            ttlSeconds: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="cluster-boundary">{t("workspaceSnapshot.restoreBoundary")}</p>
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={
+                      busy !== null ||
+                      selectedRestoreSnapshot?.spec.status !== "available" ||
+                      restoreForm.runtimeProfileVersionId === ""
+                    }
+                  >
+                    {t("workspaceSnapshot.restore")}
                   </button>
                 </form>
                 <WorkspaceSnapshotTable snapshots={workspaceSnapshots} />

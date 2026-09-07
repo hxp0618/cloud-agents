@@ -45,7 +45,7 @@ type liveControllerEnvironment struct {
 
 func TestLiveFoundationControllerRestart(t *testing.T) {
 	phase := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PHASE")
-	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "snapshot" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
+	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "snapshot" && phase != "restore" && phase != "restore-stop" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
 		t.Skip("live foundation Controller phase is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
@@ -65,6 +65,14 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 	}
 	if phase == "snapshot" {
 		snapshotLiveController(t, ctx, environment)
+		return
+	}
+	if phase == "restore" {
+		restoreLiveController(t, ctx, environment)
+		return
+	}
+	if phase == "restore-stop" {
+		restoreStopLiveController(t, ctx, environment)
 		return
 	}
 	lifecycleLiveController(t, ctx, environment, phase)
@@ -105,6 +113,66 @@ func snapshotLiveController(t *testing.T, ctx context.Context, environment liveC
 		"physicalVolume": physical, "contentDigest": contentDigest, "sizeBytes": sizeBytes,
 		"archiveVerified": true, "helperStarted": false, "status": status, "writerFenceReleased": true})
 	t.Logf("FOUNDATION_LIVE_SNAPSHOT=%s", receipt)
+}
+
+func restoreLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+	t.Helper()
+	expectedDigest := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST")
+	if expectedDigest == "" {
+		t.Fatal("restore proof digest is missing")
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("restore reconcile = %v / %v", worked, err)
+	}
+	current := readLiveSandbox(t, ctx, environment.owner, "sandbox-restored")
+	if current.workspaceID != "workspace-restored" || current.observedState != "running" || current.operationState != "succeeded" ||
+		current.cleanupPhase != "complete" || current.writerReleased || current.runtimeID == "" || current.volumeName == "" || current.generation != 1 {
+		t.Fatalf("restore settlement = %#v", current)
+	}
+	if output := liveCommand(t, ctx, environment, current.runtimeID, "sha256sum /workspace/controller-proof.txt"); !strings.Contains(output, expectedDigest) {
+		t.Fatalf("restored workspace response = %s", output)
+	}
+	status, body := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodGet, "/volumes/"+current.volumeName)
+	var volume struct {
+		Labels map[string]string `json:"Labels"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &volume) != nil || volume.Labels["cloud-agents.dev/resource"] != "foundation-workspace" ||
+		volume.Labels["cloud-agents.dev/workspace"] != "workspace-restored" {
+		t.Fatalf("restored volume status=%d body=%s", status, body)
+	}
+	receipt, _ := json.Marshal(map[string]any{"runtimeId": current.runtimeID, "volumeName": current.volumeName,
+		"workspaceDigest": expectedDigest, "operationId": current.operationID, "specDigest": current.specDigest,
+		"generation": current.generation, "status": current.observedState, "newWorkspace": true, "archiveVerified": true})
+	t.Logf("FOUNDATION_LIVE_RESTORE=%s", receipt)
+}
+
+func restoreStopLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+	t.Helper()
+	priorRuntime := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID")
+	priorOperation := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID")
+	priorSpecDigest := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST")
+	expectedVolume := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME")
+	if priorRuntime == "" || priorOperation == "" || priorSpecDigest == "" || expectedVolume == "" {
+		t.Fatal("restore stop receipt is missing")
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("restore stop reconcile = %v / %v", worked, err)
+	}
+	current := readLiveSandbox(t, ctx, environment.owner, "sandbox-restored")
+	if current.volumeName != expectedVolume || current.observedState != "stopped" || current.operationState != "succeeded" ||
+		current.cleanupPhase != "complete" || !current.writerReleased || current.runtimeID != "" || current.generation != 2 {
+		t.Fatalf("restore stop settlement = %#v", current)
+	}
+	identity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: "workspace-restored",
+		Sandbox: "sandbox-restored", Operation: priorOperation, Generation: 1, SpecDigest: priorSpecDigest}
+	if _, err := environment.sandbox.Find(ctx, identity); !errors.Is(err, opensandbox.ErrNotFound) {
+		t.Fatalf("restored runtime still exists: %v", err)
+	}
+	removeLiveVolume(t, ctx, environment.dockerSocket, current.volumeName, "workspace-restored")
+	receipt, _ := json.Marshal(map[string]any{"runtimeId": priorRuntime, "runtimeDeleted": true,
+		"workspaceVolume": current.volumeName, "workspaceVolumeDeleted": true, "writerReleased": true,
+		"generation": current.generation, "status": current.observedState})
+	t.Logf("FOUNDATION_LIVE_RESTORE_STOP=%s", receipt)
 }
 
 func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControllerEnvironment {

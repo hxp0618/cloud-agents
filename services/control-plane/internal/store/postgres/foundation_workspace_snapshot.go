@@ -26,6 +26,13 @@ type WorkspaceSnapshotCreateInput struct {
 	Mutation                    internalcoordination.FoundationMutation
 }
 
+type WorkspaceSnapshotRestoreInput struct {
+	Scope                                                               internalcoordination.FoundationScope
+	SnapshotID, WorkspaceID, WorkspaceName, SandboxID, RuntimeProfileID string
+	ExpectedSnapshotResourceVersion, RuntimeProfileVersion, TTLSeconds  int64
+	Mutation                                                            internalcoordination.FoundationMutation
+}
+
 type WorkspaceSnapshot struct {
 	Scope                                           internalcoordination.FoundationScope
 	SnapshotID, SourceWorkspaceID, Backend          string
@@ -96,8 +103,9 @@ const workspaceSnapshotColumns = `snapshot.tenant_id, snapshot.project_uid, snap
     snapshot.size_bytes, snapshot.stable_error_code, snapshot.created_at, snapshot.updated_at, snapshot.observed_at`
 
 var (
-	acceptWorkspaceSnapshotSQL = `SELECT cloud_agents.accept_foundation_workspace_snapshot_v1($1,$2,$3,$4,$5,$6,$7)`
-	getWorkspaceSnapshotSQL    = `SELECT ` + workspaceSnapshotColumns + ` FROM cloud_agents.workspace_snapshots AS snapshot
+	acceptWorkspaceSnapshotSQL  = `SELECT cloud_agents.accept_foundation_workspace_snapshot_v1($1,$2,$3,$4,$5,$6,$7)`
+	restoreWorkspaceSnapshotSQL = `SELECT * FROM cloud_agents.accept_foundation_workspace_restore_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
+	getWorkspaceSnapshotSQL     = `SELECT ` + workspaceSnapshotColumns + ` FROM cloud_agents.workspace_snapshots AS snapshot
 WHERE snapshot.tenant_id = cloud_agents.require_tenant_id() AND snapshot.project_uid = $1 AND snapshot.snapshot_uid = $2`
 	workspaceSnapshotPageCursorSQL = `SELECT 1 FROM cloud_agents.workspace_snapshots
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND snapshot_uid = $2`
@@ -118,6 +126,64 @@ FROM cloud_agents.settle_foundation_workspace_snapshot_v1($1,$2,$3,$4,$5,$6,$7,$
 	reapWorkspaceSnapshotSQL = `SELECT tenant_id,event_id,outbox_state,delivery_attempts
 FROM cloud_agents.reap_foundation_workspace_snapshot_claim_v1($1,$2)`
 )
+
+func (input WorkspaceSnapshotRestoreInput) valid(tenantID string) bool {
+	for _, value := range []string{tenantID, input.Scope.TenantID, input.Scope.ProjectID, input.SnapshotID,
+		input.WorkspaceID, input.WorkspaceName, input.SandboxID, input.RuntimeProfileID, input.Mutation.RequestID} {
+		if !validMutationIdentifier(value) {
+			return false
+		}
+	}
+	return input.Scope.TenantID == tenantID && input.ExpectedSnapshotResourceVersion > 0 &&
+		input.RuntimeProfileVersion >= 1 && input.RuntimeProfileVersion <= 2147483647 &&
+		input.TTLSeconds >= 60 && input.TTLSeconds <= 86400 && validIdempotencyKey(input.Mutation.IdempotencyKey)
+}
+
+func workspaceSnapshotRestoreDigest(input WorkspaceSnapshotRestoreInput) (string, error) {
+	canonical, err := json.Marshal(map[string]any{"profileId": internalcoordination.SandboxLifecycleProfileID,
+		"action": "workspace.snapshot.restore", "tenant": input.Scope.TenantID, "project": input.Scope.ProjectID,
+		"snapshot": input.SnapshotID, "expectedSnapshotResourceVersion": input.ExpectedSnapshotResourceVersion,
+		"workspace": input.WorkspaceID, "workspaceName": input.WorkspaceName, "sandbox": input.SandboxID,
+		"runtimeProfile": input.RuntimeProfileID, "runtimeProfileVersion": input.RuntimeProfileVersion,
+		"ttlSeconds": input.TTLSeconds})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(canonical)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func (service *DurableCoordinationService) RestoreWorkspaceSnapshot(ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input WorkspaceSnapshotRestoreInput) (internalcoordination.FoundationSandboxSnapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalcoordination.FoundationSandboxSnapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !input.valid(tenantID) {
+		return internalcoordination.FoundationSandboxSnapshot{}, ErrCoordinationInvalidInput
+	}
+	digest, err := workspaceSnapshotRestoreDigest(input)
+	if err != nil {
+		return internalcoordination.FoundationSandboxSnapshot{}, ErrCoordinationInvalidInput
+	}
+	var result internalcoordination.FoundationSandboxSnapshot
+	err = service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true,
+		func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
+			row := handle.transaction.queryRow(operationContext, restoreWorkspaceSnapshotSQL, input.Scope.ProjectID,
+				input.SnapshotID, input.ExpectedSnapshotResourceVersion, input.WorkspaceID, input.WorkspaceName,
+				input.SandboxID, input.RuntimeProfileID, input.RuntimeProfileVersion, input.TTLSeconds,
+				subjectDigest, input.Mutation.IdempotencyKey, digest)
+			if err := row.Scan(&result.OperationID, &result.WorkspaceID, &result.SandboxID,
+				&result.RuntimeProfileID, &result.RuntimeProfileVersion, &result.Generation,
+				&result.DesiredState, &result.ObservedState, &result.TTLSeconds, &result.ExpiresAt); err != nil {
+				return err
+			}
+			result.Scope = input.Scope
+			if result.Validate() != nil {
+				return ErrCoordinationResultDrift
+			}
+			return nil
+		})
+	return result, mapWorkspaceSnapshotError(err)
+}
 
 func (input WorkspaceSnapshotCreateInput) valid(tenantID string) bool {
 	return input.Scope.TenantID == tenantID && validMutationIdentifier(tenantID) && validMutationIdentifier(input.Scope.ProjectID) &&
@@ -374,8 +440,11 @@ func mapWorkspaceSnapshotError(err error) error {
 	var pgError *pgconn.PgError
 	if errors.As(err, &pgError) {
 		switch pgError.Message {
-		case "workspace snapshot source conflict", "workspace snapshot requires an offline source", "workspace snapshot source is unavailable", "workspace snapshot idempotency conflict":
+		case "workspace snapshot source conflict", "workspace snapshot requires an offline source", "workspace snapshot source is unavailable", "workspace snapshot idempotency conflict",
+			"workspace snapshot restore conflict", "workspace snapshot restore target conflict":
 			return ErrWorkspaceSnapshotConflict
+		case "workspace snapshot was not found":
+			return ErrWorkspaceSnapshotNotFound
 		}
 	}
 	return mapRuntimeProfileError(err)

@@ -91,6 +91,86 @@ func TestSnapshotFoundationWorkspaceCopiesAndVerifiesArchiveWithoutStartingHelpe
 	}
 }
 
+func TestRestoreFoundationWorkspaceCreatesNewVolumeAndNeverStartsHelper(t *testing.T) {
+	image := "registry.test/runtime@sha256:" + strings.Repeat("a", 64)
+	source := FoundationWorkspaceVolume{TenantID: "tenant", ProjectID: "project", TargetID: "target", WorkspaceID: "source"}
+	snapshot := FoundationWorkspaceSnapshot{TenantID: source.TenantID, ProjectID: source.ProjectID, TargetID: source.TargetID,
+		WorkspaceID: source.WorkspaceID, SnapshotID: "snapshot", SourceVolumeName: source.Name(), ImageURI: image}
+	archive := snapshotTestArchive(t, time.Unix(100, 0))
+	digest, err := snapshotArchiveDigest(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := FoundationWorkspaceRestore{TenantID: source.TenantID, ProjectID: source.ProjectID, TargetID: source.TargetID,
+		SourceWorkspaceID: source.WorkspaceID, SnapshotID: snapshot.SnapshotID, SnapshotVolumeName: snapshot.Name(),
+		ContentDigest: digest, WorkspaceID: "restored", ImageURI: image}
+	destination := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID, WorkspaceID: input.WorkspaceID}
+	volumes := map[string]map[string]string{snapshot.Name(): snapshot.labels()}
+	helper, starts, writes := false, 0, 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/volumes/"):
+			name := strings.TrimPrefix(request.URL.Path, "/volumes/")
+			labels, ok := volumes[name]
+			if !ok {
+				http.NotFound(writer, request)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(volumeInspect{Name: name, Labels: labels})
+		case request.Method == http.MethodPost && request.URL.Path == "/volumes/create":
+			var body struct {
+				Name   string            `json:"Name"`
+				Labels map[string]string `json:"Labels"`
+			}
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			volumes[body.Name] = body.Labels
+			writer.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(writer).Encode(volumeInspect{Name: body.Name, Labels: body.Labels})
+		case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/containers/") && strings.HasSuffix(request.URL.Path, "/json"):
+			if !helper {
+				http.NotFound(writer, request)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Config": map[string]any{"Labels": input.labels()}})
+		case request.Method == http.MethodPost && request.URL.Path == "/containers/create":
+			helper = true
+			writer.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(writer, `{"Id":"helper-id"}`)
+		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/containers/"):
+			helper = false
+			writer.WriteHeader(http.StatusNoContent)
+		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/volumes/"):
+			delete(volumes, strings.TrimPrefix(request.URL.Path, "/volumes/"))
+			writer.WriteHeader(http.StatusNoContent)
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/archive"):
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write(archive)
+		case request.Method == http.MethodPut && strings.HasSuffix(request.URL.Path, "/archive"):
+			writes++
+			body, _ := io.ReadAll(request.Body)
+			if !bytes.Equal(body, archive) {
+				t.Errorf("archive mismatch: %q", body)
+			}
+			writer.WriteHeader(http.StatusOK)
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/start"):
+			starts++
+			writer.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	directory := credentialDirectoryForIsolationTest(t, server)
+	result, err := directory.RestoreFoundationWorkspace(context.Background(), server.URL, "docker", input)
+	if err != nil || result.VolumeName != destination.Name() || result.ContentDigest != digest || !result.CleanupComplete {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if starts != 0 || writes != 1 || helper || volumes[destination.Name()] == nil {
+		t.Fatalf("starts=%d writes=%d helper=%t destination=%v", starts, writes, helper, volumes[destination.Name()])
+	}
+}
+
 func snapshotTestArchive(t *testing.T, modified time.Time) []byte {
 	t.Helper()
 	var result bytes.Buffer

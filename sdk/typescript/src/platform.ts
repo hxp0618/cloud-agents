@@ -1224,6 +1224,15 @@ export type WorkspaceSnapshotCreateRequest = Readonly<{
   sourceSandboxId: string;
   expectedSandboxGeneration: number;
 }>;
+export type WorkspaceSnapshotRestoreRequest = Readonly<{
+  expectedSnapshotResourceVersion: string;
+  workspaceId: string;
+  workspaceName: string;
+  sandboxId: string;
+  runtimeProfileId: string;
+  runtimeProfileVersion: number;
+  ttlSeconds: number;
+}>;
 export type WorkspaceSnapshot = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "WorkspaceSnapshot";
@@ -1392,6 +1401,8 @@ const adminDeniedWriteActions = [
   "adminStopSandboxSession",
   "adminRebuildSandboxSession",
   "adminRevokeSandboxAccessGrant",
+  "adminCreateWorkspaceSnapshot",
+  "adminRestoreWorkspaceSnapshot",
   "adminCreateRemoteWorkerEnrollment",
   "adminRevokeRemoteWorkerEnrollment",
   "adminTransitionRemoteWorkerScheduling",
@@ -2551,11 +2562,23 @@ const adminSandboxSessionPageResponseShape: ResponseShape = {
     nextPageToken: scalarResponseShape,
   },
 };
+const workspaceSnapshotResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  sourceWorkspaceId: scalarResponseShape,
+  sourceWorkspaceResourceVersion: scalarResponseShape,
+  backend: scalarResponseShape,
+  consistencyMode: scalarResponseShape,
+  status: scalarResponseShape,
+  operationId: scalarResponseShape,
+  sizeBytes: scalarResponseShape,
+  stableErrorCode: scalarResponseShape,
+  observedAt: scalarResponseShape,
+});
 const workspaceSnapshotPageResponseShape: ResponseShape = {
   fields: {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
-    workspaceSnapshots: { item: resourceResponseShape("WorkspaceSnapshot") },
+    workspaceSnapshots: { item: workspaceSnapshotResponseShape },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -4422,6 +4445,56 @@ export function encodeWorkspaceSnapshotCreateRequest(
   value: WorkspaceSnapshotCreateRequest,
 ): string {
   return JSON.stringify(decodeWorkspaceSnapshotCreateRequest(value));
+}
+export function decodeWorkspaceSnapshotRestoreRequest(
+  value: unknown,
+): WorkspaceSnapshotRestoreRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedSnapshotResourceVersion",
+      "workspaceId",
+      "workspaceName",
+      "sandboxId",
+      "runtimeProfileId",
+      "runtimeProfileVersion",
+      "ttlSeconds",
+    ],
+    [
+      "expectedSnapshotResourceVersion",
+      "workspaceId",
+      "workspaceName",
+      "sandboxId",
+      "runtimeProfileId",
+      "runtimeProfileVersion",
+      "ttlSeconds",
+    ],
+  );
+  const expectedSnapshotResourceVersion = string(
+    source.expectedSnapshotResourceVersion,
+    "/expectedSnapshotResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedSnapshotResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedSnapshotResourceVersion");
+  return Object.freeze({
+    expectedSnapshotResourceVersion,
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    workspaceName: identifier(source.workspaceName, "/workspaceName"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    runtimeProfileId: identifier(source.runtimeProfileId, "/runtimeProfileId"),
+    runtimeProfileVersion: integer(
+      source.runtimeProfileVersion,
+      1,
+      2147483647,
+      "/runtimeProfileVersion",
+    ),
+    ttlSeconds: integer(source.ttlSeconds, 60, 86400, "/ttlSeconds"),
+  });
+}
+export function encodeWorkspaceSnapshotRestoreRequest(
+  value: WorkspaceSnapshotRestoreRequest,
+): string {
+  return JSON.stringify(decodeWorkspaceSnapshotRestoreRequest(value));
 }
 export function decodeEnvironmentLeaseTerminateRequest(
   value: unknown,
@@ -10190,7 +10263,7 @@ export function parseAdminSandboxSessionPage(
   return parseResponse(text, adminSandboxSessionPageResponseShape, decodeAdminSandboxSessionPage);
 }
 export function parseWorkspaceSnapshot(text: string): ResponseEnvelope<WorkspaceSnapshot> {
-  return parseResponse(text, resourceResponseShape("WorkspaceSnapshot"), decodeWorkspaceSnapshot);
+  return parseResponse(text, workspaceSnapshotResponseShape, decodeWorkspaceSnapshot);
 }
 export function parseWorkspaceSnapshotPage(text: string): ResponseEnvelope<WorkspaceSnapshotPage> {
   return parseResponse(text, workspaceSnapshotPageResponseShape, decodeWorkspaceSnapshotPage);
@@ -13552,6 +13625,42 @@ export class Client {
       result.value.metadata.uid !== snapshotId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async restoreAdminWorkspaceSnapshot(
+    tenantId: string,
+    projectId: string,
+    snapshotId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: WorkspaceSnapshotRestoreRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SandboxSession>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(snapshotId, "/snapshotId");
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeWorkspaceSnapshotRestoreRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workspace-snapshots/${snapshotId}:restore`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeWorkspaceSnapshotRestoreRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 202)
+      throw await this.problem("adminRestoreWorkspaceSnapshot", response);
+    const result = parseSandboxSession(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.workspaceId !== checked.workspaceId ||
+      result.value.sandboxId !== checked.sandboxId ||
+      result.value.runtimeProfileId !== checked.runtimeProfileId ||
+      result.value.runtimeProfileVersion !== checked.runtimeProfileVersion
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sandboxId");
     return result;
   }
   async listAdminSandboxAccessGrants(
