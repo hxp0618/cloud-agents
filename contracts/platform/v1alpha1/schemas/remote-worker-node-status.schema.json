@@ -65,14 +65,53 @@
         "diskBytes": { "type": "integer", "minimum": 134217728, "maximum": 8796093022208000 }
       }
     },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regionId", "resourcePoolId", "nodeId"],
+      "properties": {
+        "regionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "resourcePoolId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "nodeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+      }
+    },
+    "reservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reservedCpuMillis",
+        "reservedMemoryBytes",
+        "reservedDiskBytes",
+        "availableCpuMillis",
+        "availableMemoryBytes",
+        "availableDiskBytes"
+      ],
+      "properties": {
+        "state": { "enum": ["available", "exhausted", "overcommitted"] },
+        "reservedCpuMillis": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 },
+        "reservedMemoryBytes": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 },
+        "reservedDiskBytes": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 },
+        "availableCpuMillis": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 },
+        "availableMemoryBytes": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 },
+        "availableDiskBytes": { "type": "integer", "minimum": 0, "maximum": 8796093022208000 }
+      }
+    },
     "firstConnectedAt": { "type": "string", "format": "date-time" },
     "lastHeartbeatAt": { "type": "string", "format": "date-time" },
     "heartbeatExpiresAt": { "type": "string", "format": "date-time" }
+  },
+  "dependentRequired": {
+    "placement": ["reservation"],
+    "reservation": ["placement"]
   },
   "x-cloud-agents-semantic-constraints": [
     "observedGeneration is no greater than generation",
     "capabilities are sorted in canonical order",
     "healthState is calculated using database time; the browser never infers it",
+    "placement and reservation are present together on Admin enrollment reads and omitted from RemoteWorker heartbeat responses",
+    "regionId, resourcePoolId, nodeId, capacity reservation, availability, and state are database-authoritative projections",
+    "reservedDiskBytes counts the actual fixed 20 GiB retained Workspace volume allocation per Workspace",
     "node status contains no endpoint, credential reference, Secret bytes, user content, or Workspace contents"
   ]
 }

@@ -554,6 +554,49 @@ export function RemoteWorkerEnrollmentPanel({
                     {number(selected.spec.node.capacity.diskBytes)} B
                   </dd>
                 </div>
+                {selected.spec.node.placement ? (
+                  <div>
+                    <dt>{t("remoteWorkerEnrollment.node.placement")}</dt>
+                    <dd className="mono">
+                      {selected.spec.node.placement.regionId} ·{" "}
+                      {selected.spec.node.placement.resourcePoolId} ·{" "}
+                      {selected.spec.node.placement.nodeId}
+                    </dd>
+                  </div>
+                ) : null}
+                {selected.spec.node.reservation ? (
+                  <>
+                    <div>
+                      <dt>{t("remoteWorkerEnrollment.node.capacityState")}</dt>
+                      <dd>
+                        <span
+                          className={`phase ${selected.spec.node.reservation.state === "available" ? "success" : selected.spec.node.reservation.state === "exhausted" ? "running" : "danger"}`}
+                        >
+                          <i />
+                          {t(
+                            `remoteWorkerEnrollment.node.capacityState.${selected.spec.node.reservation.state}`,
+                          )}
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("remoteWorkerEnrollment.node.reservedCapacity")}</dt>
+                      <dd>
+                        {number(selected.spec.node.reservation.reservedCpuMillis)} mCPU ·{" "}
+                        {number(selected.spec.node.reservation.reservedMemoryBytes)} B ·{" "}
+                        {number(selected.spec.node.reservation.reservedDiskBytes)} B
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("remoteWorkerEnrollment.node.availableCapacity")}</dt>
+                      <dd>
+                        {number(selected.spec.node.reservation.availableCpuMillis)} mCPU ·{" "}
+                        {number(selected.spec.node.reservation.availableMemoryBytes)} B ·{" "}
+                        {number(selected.spec.node.reservation.availableDiskBytes)} B
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
                 <div>
                   <dt>{t("remoteWorkerEnrollment.node.firstConnected")}</dt>
                   <dd>{dateTime(selected.spec.node.firstConnectedAt)}</dd>

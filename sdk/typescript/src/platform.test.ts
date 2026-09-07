@@ -408,6 +408,20 @@ describe("generated platform JSON models", () => {
           kernelVersion: "6.12.1",
           capabilities: ["docker", "exec", "files"],
           capacity: { cpuMillis: 4000, memoryBytes: 8589934592, diskBytes: 42949672960 },
+          placement: {
+            regionId: "region-local",
+            resourcePoolId: "pool-remote-worker",
+            nodeId: "rwt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          },
+          reservation: {
+            state: "available",
+            reservedCpuMillis: 0,
+            reservedMemoryBytes: 0,
+            reservedDiskBytes: 0,
+            availableCpuMillis: 4000,
+            availableMemoryBytes: 8589934592,
+            availableDiskBytes: 42949672960,
+          },
           firstConnectedAt: "2026-09-06T12:00:30Z",
           lastHeartbeatAt: "2026-09-06T12:00:40Z",
           heartbeatExpiresAt: "2026-09-06T12:01:10Z",
@@ -416,6 +430,21 @@ describe("generated platform JSON models", () => {
     };
     expect(decodeRemoteWorkerEnrollment(active).spec.node?.healthState).toBe("online");
     expect(decodeRemoteWorkerNodeStatus(active.spec.node).capacity.cpuMillis).toBe(4000);
+    expect(decodeRemoteWorkerEnrollment(active).spec.node?.placement?.regionId).toBe(
+      "region-local",
+    );
+    expect(() =>
+      decodeRemoteWorkerEnrollment({
+        ...active,
+        spec: {
+          ...active.spec,
+          node: {
+            ...active.spec.node,
+            placement: { ...active.spec.node.placement, nodeId: "another-node" },
+          },
+        },
+      }),
+    ).toThrow(TypeError);
     const revoked = {
       ...active,
       metadata: { ...active.metadata, resourceVersion: "4", updatedAt: "2026-09-06T12:20:00Z" },

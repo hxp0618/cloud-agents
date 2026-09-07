@@ -798,6 +798,50 @@ WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.Opera
 	if err != nil || adminSandbox.Value.Spec.ObservedState != "running" || adminSandbox.Value.Spec.RuntimeID == "" || adminSandbox.Value.Spec.PhysicalVolumeID == "" {
 		t.Fatalf("RemoteWorker Sandbox settlement: value=%+v err=%v", adminSandbox.Value, err)
 	}
+	adminEnrollment, err := admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-initial")
+	var reservation *platform.RemoteWorkerCapacityReservation
+	var placement *platform.RemoteWorkerNodePlacement
+	if adminEnrollment.Value.Spec.Node != nil {
+		reservation = adminEnrollment.Value.Spec.Node.Reservation
+		placement = adminEnrollment.Value.Spec.Node.Placement
+	}
+	if err != nil || reservation == nil || placement == nil || placement.RegionID != "region-local" ||
+		placement.ResourcePoolID != "pool-remote-worker" || placement.NodeID != adminEnrollment.Value.Spec.TargetID ||
+		reservation.State != "available" || reservation.ReservedCPUMillis != 500 ||
+		reservation.ReservedMemoryBytes != 536870912 || reservation.ReservedDiskBytes != 20<<30 {
+		t.Fatalf("RemoteWorker capacity projection: value=%+v err=%v", adminEnrollment.Value, err)
+	}
+	limitedCapacity := heartbeat
+	limitedCapacity.Capacity = platform.RemoteWorkerCapacity{CPUMillis: 500, MemoryBytes: 536870912, DiskBytes: 20 << 30}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-exhausted", limitedCapacity); err != nil {
+		t.Fatalf("report exhausted RemoteWorker capacity: %v", err)
+	}
+	adminEnrollment, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-exhausted-get")
+	reservation = nil
+	if adminEnrollment.Value.Spec.Node != nil {
+		reservation = adminEnrollment.Value.Spec.Node.Reservation
+	}
+	if err != nil || reservation == nil || reservation.State != "exhausted" ||
+		reservation.AvailableCPUMillis != 0 || reservation.AvailableMemoryBytes != 0 || reservation.AvailableDiskBytes != 0 {
+		t.Fatalf("exhausted RemoteWorker capacity projection: value=%+v err=%v", adminEnrollment.Value, err)
+	}
+	blockedProfiles, err = user.ListRuntimeProfiles(ctx, "tenant", "project", "request-remote-profile-capacity-exhausted", 50, "")
+	if err != nil || len(blockedProfiles.Value.RuntimeProfiles) != 0 {
+		t.Fatalf("exhausted RemoteWorker profile remained public: value=%+v err=%v", blockedProfiles.Value, err)
+	}
+	_, err = user.CreateSandbox(ctx, "tenant", "project", "request-remote-capacity-rejected", "remote-capacity-rejected-key", platform.SandboxSessionCreateRequest{
+		WorkspaceID: "remote-capacity-workspace", WorkspaceName: "remote-capacity-workspace", SandboxID: "remote-capacity-sandbox",
+		RuntimeProfileID: "remote-profile", RuntimeProfileVersion: 1, TTLSeconds: 120,
+	})
+	var rejectedCapacityResidue int
+	queryErr := owner.QueryRow(ctx, `SELECT count(*) FROM cloud_agents.workspaces
+WHERE tenant_id='tenant' AND project_uid='project' AND workspace_uid='remote-capacity-workspace'`).Scan(&rejectedCapacityResidue)
+	if clientStatus(err) != http.StatusConflict || queryErr != nil || rejectedCapacityResidue != 0 {
+		t.Fatalf("RemoteWorker capacity admission: status=%d err=%v residue=%d queryErr=%v", clientStatus(err), err, rejectedCapacityResidue, queryErr)
+	}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-restored", heartbeat); err != nil {
+		t.Fatalf("restore RemoteWorker capacity: %v", err)
+	}
 	heartbeat.SandboxCommandReceipt = &platform.RemoteWorkerSandboxCommandReceipt{CommandID: command.CommandID,
 		Attempt: command.Attempt, Action: command.Action, OperationID: command.OperationID, SandboxID: command.SandboxID,
 		SandboxGeneration: command.SandboxGeneration, Result: "succeeded", RuntimeID: adminSandbox.Value.Spec.RuntimeID,
@@ -1781,8 +1825,9 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"reconnectAttempt": command.Attempt, "receiptReplay": true, "stopReceiptReplay": true,
 		"rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
 		"capabilityAdmissionCases": len(admissionCases), "incompatibleProfileHidden": true,
-		"incompatibleCommandBlocked": true,
-		"nodeAuditCount":             nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
+		"incompatibleCommandBlocked": true, "capacityReservationRejected": true,
+		"regionId": "region-local", "resourcePoolId": "pool-remote-worker",
+		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }
 

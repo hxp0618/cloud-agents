@@ -749,22 +749,38 @@ type RemoteWorkerHeartbeatRequest struct {
 	SandboxPTYCommandReceipt     *RemoteWorkerSandboxPTYCommandReceipt     `json:"sandboxPtyCommandReceipt,omitempty"`
 	SandboxPreviewCommandReceipt *RemoteWorkerSandboxPreviewCommandReceipt `json:"sandboxPreviewCommandReceipt,omitempty"`
 }
+type RemoteWorkerNodePlacement struct {
+	RegionID       string `json:"regionId"`
+	ResourcePoolID string `json:"resourcePoolId"`
+	NodeID         string `json:"nodeId"`
+}
+type RemoteWorkerCapacityReservation struct {
+	State                string `json:"state"`
+	ReservedCPUMillis    int64  `json:"reservedCpuMillis"`
+	ReservedMemoryBytes  int64  `json:"reservedMemoryBytes"`
+	ReservedDiskBytes    int64  `json:"reservedDiskBytes"`
+	AvailableCPUMillis   int64  `json:"availableCpuMillis"`
+	AvailableMemoryBytes int64  `json:"availableMemoryBytes"`
+	AvailableDiskBytes   int64  `json:"availableDiskBytes"`
+}
 type RemoteWorkerNodeStatus struct {
-	ResourceVersion    string               `json:"resourceVersion"`
-	Generation         int64                `json:"generation"`
-	ObservedGeneration int64                `json:"observedGeneration"`
-	DesiredState       string               `json:"desiredState"`
-	ObservedState      string               `json:"observedState"`
-	HealthState        string               `json:"healthState"`
-	WorkerVersion      string               `json:"workerVersion"`
-	OS                 string               `json:"os"`
-	Architecture       string               `json:"architecture"`
-	KernelVersion      string               `json:"kernelVersion"`
-	Capabilities       []string             `json:"capabilities"`
-	Capacity           RemoteWorkerCapacity `json:"capacity"`
-	FirstConnectedAt   string               `json:"firstConnectedAt"`
-	LastHeartbeatAt    string               `json:"lastHeartbeatAt"`
-	HeartbeatExpiresAt string               `json:"heartbeatExpiresAt"`
+	ResourceVersion    string                           `json:"resourceVersion"`
+	Generation         int64                            `json:"generation"`
+	ObservedGeneration int64                            `json:"observedGeneration"`
+	DesiredState       string                           `json:"desiredState"`
+	ObservedState      string                           `json:"observedState"`
+	HealthState        string                           `json:"healthState"`
+	WorkerVersion      string                           `json:"workerVersion"`
+	OS                 string                           `json:"os"`
+	Architecture       string                           `json:"architecture"`
+	KernelVersion      string                           `json:"kernelVersion"`
+	Capabilities       []string                         `json:"capabilities"`
+	Capacity           RemoteWorkerCapacity             `json:"capacity"`
+	Placement          *RemoteWorkerNodePlacement       `json:"placement,omitempty"`
+	Reservation        *RemoteWorkerCapacityReservation `json:"reservation,omitempty"`
+	FirstConnectedAt   string                           `json:"firstConnectedAt"`
+	LastHeartbeatAt    string                           `json:"lastHeartbeatAt"`
+	HeartbeatExpiresAt string                           `json:"heartbeatExpiresAt"`
 }
 type RemoteWorkerHeartbeat struct {
 	APIVersion                string                             `json:"apiVersion"`
@@ -1504,7 +1520,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "NetworkPolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
 	case "RemoteWorkerEnrollment":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "secretClaimedAt": common.ScalarResponseShape(), "enrolledAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "certificateExpiresAt": common.ScalarResponseShape(), "certificateState": common.ScalarResponseShape(), "certificateRevokedAt": common.ScalarResponseShape(), "node": common.ObjectResponseShape(map[string]common.ResponseShape{"resourceVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "workerVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "kernelVersion": common.ScalarResponseShape(), "capabilities": common.ArrayResponseShape(common.ScalarResponseShape()), "capacity": common.ObjectResponseShape(map[string]common.ResponseShape{"cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "diskBytes": common.ScalarResponseShape()}), "firstConnectedAt": common.ScalarResponseShape(), "lastHeartbeatAt": common.ScalarResponseShape(), "heartbeatExpiresAt": common.ScalarResponseShape()})}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "secretClaimedAt": common.ScalarResponseShape(), "enrolledAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "certificateExpiresAt": common.ScalarResponseShape(), "certificateState": common.ScalarResponseShape(), "certificateRevokedAt": common.ScalarResponseShape(), "node": common.ObjectResponseShape(map[string]common.ResponseShape{"resourceVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "workerVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "kernelVersion": common.ScalarResponseShape(), "capabilities": common.ArrayResponseShape(common.ScalarResponseShape()), "capacity": common.ObjectResponseShape(map[string]common.ResponseShape{"cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "diskBytes": common.ScalarResponseShape()}), "placement": common.ObjectResponseShape(map[string]common.ResponseShape{"regionId": common.ScalarResponseShape(), "resourcePoolId": common.ScalarResponseShape(), "nodeId": common.ScalarResponseShape()}), "reservation": common.ObjectResponseShape(map[string]common.ResponseShape{"state": common.ScalarResponseShape(), "reservedCpuMillis": common.ScalarResponseShape(), "reservedMemoryBytes": common.ScalarResponseShape(), "reservedDiskBytes": common.ScalarResponseShape(), "availableCpuMillis": common.ScalarResponseShape(), "availableMemoryBytes": common.ScalarResponseShape(), "availableDiskBytes": common.ScalarResponseShape()}), "firstConnectedAt": common.ScalarResponseShape(), "lastHeartbeatAt": common.ScalarResponseShape(), "heartbeatExpiresAt": common.ScalarResponseShape()})}
 	case "RemoteWorkerNodeSchedulingPreview":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "workerId": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "currentDesiredState": common.ScalarResponseShape(), "currentObservedState": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "expectedGeneration": common.ScalarResponseShape(), "expectedResourceVersion": common.ScalarResponseShape(), "impactDigest": common.ScalarResponseShape(), "impactSummary": common.ScalarResponseShape(), "commandDeadlineSeconds": common.ScalarResponseShape()}
 	case "DeploymentTarget":
@@ -3916,13 +3932,16 @@ func EncodeRemoteWorkerHeartbeatRequestJSON(value RemoteWorkerHeartbeatRequest) 
 	return raw, nil
 }
 func DecodeRemoteWorkerNodeStatusJSON(data []byte) (RemoteWorkerNodeStatus, error) {
-	allowed := []string{"resourceVersion", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "firstConnectedAt", "lastHeartbeatAt", "heartbeatExpiresAt"}
-	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+	allowed := []string{"resourceVersion", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "firstConnectedAt", "lastHeartbeatAt", "heartbeatExpiresAt", "placement", "reservation"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed[:15]); err != nil {
 		return RemoteWorkerNodeStatus{}, err
 	}
 	var value RemoteWorkerNodeStatus
 	if json.Unmarshal(data, &value) != nil || common.ValidateResourceVersion(value.ResourceVersion, "/resourceVersion") != nil || value.Generation < 1 || value.Generation > 9007199254740991 || value.ObservedGeneration < 1 || value.ObservedGeneration > value.Generation || value.DesiredState != "active" && value.DesiredState != "drained" || value.ObservedState != "active" && value.ObservedState != "drained" || value.HealthState != "online" && value.HealthState != "degraded" && value.HealthState != "offline" || !validRemoteWorkerPlatform(value.WorkerVersion, value.OS, value.Architecture, value.KernelVersion) || !validRemoteWorkerCapabilities(value.Capabilities) || !validRemoteWorkerCapacity(value.Capacity) {
 		return RemoteWorkerNodeStatus{}, common.ContractError("INVALID_REMOTE_WORKER_NODE_STATUS", "")
+	}
+	if (value.Placement == nil) != (value.Reservation == nil) || value.Placement != nil && (common.ValidateIdentifier(value.Placement.RegionID, "/placement/regionId") != nil || common.ValidateIdentifier(value.Placement.ResourcePoolID, "/placement/resourcePoolId") != nil || common.ValidateIdentifier(value.Placement.NodeID, "/placement/nodeId") != nil || !validRemoteWorkerCapacityReservation(*value.Reservation, value.Capacity)) {
+		return RemoteWorkerNodeStatus{}, common.ContractError("INVALID_REMOTE_WORKER_CAPACITY_RESERVATION", "/reservation")
 	}
 	first, firstErr := time.Parse(time.RFC3339Nano, value.FirstConnectedAt)
 	last, lastErr := time.Parse(time.RFC3339Nano, value.LastHeartbeatAt)
@@ -3931,6 +3950,18 @@ func DecodeRemoteWorkerNodeStatusJSON(data []byte) (RemoteWorkerNodeStatus, erro
 		return RemoteWorkerNodeStatus{}, common.ContractError("INVALID_REMOTE_WORKER_NODE_STATUS", "/lastHeartbeatAt")
 	}
 	return value, nil
+}
+func validRemoteWorkerCapacityReservation(value RemoteWorkerCapacityReservation, capacity RemoteWorkerCapacity) bool {
+	if value.ReservedCPUMillis < 0 || value.ReservedMemoryBytes < 0 || value.ReservedDiskBytes < 0 || value.AvailableCPUMillis != max(capacity.CPUMillis-value.ReservedCPUMillis, 0) || value.AvailableMemoryBytes != max(capacity.MemoryBytes-value.ReservedMemoryBytes, 0) || value.AvailableDiskBytes != max(capacity.DiskBytes-value.ReservedDiskBytes, 0) {
+		return false
+	}
+	expected := "available"
+	if value.ReservedCPUMillis > capacity.CPUMillis || value.ReservedMemoryBytes > capacity.MemoryBytes || value.ReservedDiskBytes > capacity.DiskBytes {
+		expected = "overcommitted"
+	} else if value.AvailableCPUMillis < 100 || value.AvailableMemoryBytes < 134217728 || value.AvailableDiskBytes < 21474836480 {
+		expected = "exhausted"
+	}
+	return value.State == expected
 }
 func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error) {
 	allowed := []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "acceptedAt", "expiresAt", "nextHeartbeatAfterSeconds", "reconcileRequired", "command", "sandboxCommand", "sandboxExecCommand", "sandboxFileCommand", "sandboxPtyCommand", "sandboxPreviewCommand"}
@@ -4152,7 +4183,7 @@ func DecodeRemoteWorkerEnrollmentJSON(data []byte) (RemoteWorkerEnrollment, erro
 	}
 	if raw, present := specFields["node"]; present {
 		node, nodeErr := DecodeRemoteWorkerNodeStatusJSON(raw)
-		if nodeErr != nil || spec.State != "enrolled" {
+		if nodeErr != nil || spec.State != "enrolled" || node.Placement != nil && node.Placement.NodeID != spec.TargetID {
 			return RemoteWorkerEnrollment{}, common.ContractError("INVALID_REMOTE_WORKER_NODE_STATUS", "/spec/node")
 		}
 		spec.Node = &node

@@ -211,7 +211,7 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 	targetOffset := 2
 	orReplace := len(tokens) > 4 && tokens[1] == "OR" && tokens[2] == "REPLACE"
 	if orReplace {
-		if !oneOf(migrationID, "000005", "000006", "000009", "000078") || tokens[3] != "FUNCTION" {
+		if !oneOf(migrationID, "000005", "000006", "000009", "000078", "000079") || tokens[3] != "FUNCTION" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		kindOffset = 3
@@ -278,6 +278,10 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 			"000078": {
 				"function:unquoted:cloud_agents/unquoted:is_valid_remote_worker_capabilities(unquoted:text)",
 				"function:unquoted:cloud_agents/unquoted:foundation_target_available_v1(unquoted:text,unquoted:text,unquoted:text)",
+			},
+			"000079": {
+				"function:unquoted:cloud_agents/unquoted:foundation_target_available_v1(unquoted:text,unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
 			},
 		}[migrationID]
 		if !oneOf(resolved.TargetIdentity, expectedReplacements...) {

@@ -396,6 +396,9 @@ try {
   assert.equal(remoteWorkerReceipt.capabilityAdmissionCases, 7);
   assert.equal(remoteWorkerReceipt.incompatibleProfileHidden, true);
   assert.equal(remoteWorkerReceipt.incompatibleCommandBlocked, true);
+  assert.equal(remoteWorkerReceipt.capacityReservationRejected, true);
+  assert.equal(remoteWorkerReceipt.regionId, "region-local");
+  assert.equal(remoteWorkerReceipt.resourcePoolId, "pool-remote-worker");
   assert.equal(remoteWorkerReceipt.longClaimRenewed, true);
   assert.equal(remoteWorkerReceipt.renewWrongCommandStatus, 409);
   assert.equal(remoteWorkerReceipt.reconnectOriginalCommandNotReplayed, true);
@@ -519,6 +522,8 @@ try {
       checks: [
         "generated Admin APIs reject RemoteWorker Profile publication for unsupported runtime, architecture, storage, network, CPU, memory and disk declarations",
         "generated User API hides incompatible published Profiles and the database claim path blocks lifecycle delivery after capability drift",
+        "database-authoritative region-local and pool-remote-worker placement reports aggregate CPU, memory and retained Workspace volume reservations",
+        "an individually valid second Sandbox is hidden and rejected when the existing real Sandbox exhausts aggregate node capacity, and its Workspace transaction leaves no residue",
         "generated User Exec API queues only the database-authorized exact RemoteWorker Sandbox generation",
         "authenticated outbound worker receives the command over its existing mTLS heartbeat and executes it in /workspace",
         "non-zero exit, stdout, stderr and duration settle through the public response without infrastructure fields",
@@ -543,7 +548,7 @@ try {
         "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
       ],
       boundary:
-        "Local OrbStack Docker RemoteWorker customer node and disposable PostgreSQL only; architecture is the worker process architecture and capacity checks are per Sandbox, while Region/Pool placement, aggregate reservations, image-manifest architecture, streaming Preview, Kubernetes and external SSH customer nodes are not covered",
+        "Local OrbStack Docker RemoteWorker customer node and disposable PostgreSQL only; one database-authoritative Region/Pool/Node and aggregate CPU/memory/fixed-20-GiB Workspace reservation are covered, while deterministic multi-node selection, image-manifest architecture, strong-isolation runtime, streaming Preview, Kubernetes and external SSH customer nodes are not covered",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),

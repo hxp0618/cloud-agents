@@ -752,7 +752,7 @@ func remoteWorkerNodeStatusResource(value *internalremoteworker.NodeStatus) *pla
 	if value == nil {
 		return nil
 	}
-	return &platformv1alpha1.RemoteWorkerNodeStatus{
+	result := &platformv1alpha1.RemoteWorkerNodeStatus{
 		ResourceVersion: strconv.FormatInt(value.ResourceVersion, 10), Generation: value.Generation,
 		ObservedGeneration: value.ObservedGeneration, DesiredState: value.DesiredState,
 		ObservedState: value.ObservedState, HealthState: value.HealthState, WorkerVersion: value.WorkerVersion,
@@ -763,6 +763,14 @@ func remoteWorkerNodeStatusResource(value *internalremoteworker.NodeStatus) *pla
 		LastHeartbeatAt:    value.LastHeartbeatAt.UTC().Format(time.RFC3339Nano),
 		HeartbeatExpiresAt: value.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
 	}
+	if value.Placement != nil && value.Reservation != nil {
+		result.Placement = &platformv1alpha1.RemoteWorkerNodePlacement{RegionID: value.Placement.RegionID, ResourcePoolID: value.Placement.ResourcePoolID, NodeID: value.Placement.NodeID}
+		result.Reservation = &platformv1alpha1.RemoteWorkerCapacityReservation{State: value.Reservation.State,
+			ReservedCPUMillis: value.Reservation.ReservedCPUMillis, ReservedMemoryBytes: value.Reservation.ReservedMemoryBytes,
+			ReservedDiskBytes: value.Reservation.ReservedDiskBytes, AvailableCPUMillis: value.Reservation.AvailableCPUMillis,
+			AvailableMemoryBytes: value.Reservation.AvailableMemoryBytes, AvailableDiskBytes: value.Reservation.AvailableDiskBytes}
+	}
+	return result
 }
 
 func writeRemoteWorkerEnrollment(writer http.ResponseWriter, status int, requestID string, value internalremoteworker.Snapshot) {

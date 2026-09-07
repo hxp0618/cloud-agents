@@ -35,6 +35,17 @@ type Capacity struct {
 	DiskBytes   int64
 }
 
+type NodePlacement struct {
+	RegionID, ResourcePoolID, NodeID string
+}
+
+type CapacityReservation struct {
+	State                                    string
+	ReservedCPUMillis, ReservedMemoryBytes   int64
+	ReservedDiskBytes, AvailableCPUMillis    int64
+	AvailableMemoryBytes, AvailableDiskBytes int64
+}
+
 type HeartbeatInput struct {
 	Scope                        Scope
 	EnrollmentID                 string
@@ -158,6 +169,8 @@ type NodeStatus struct {
 	KernelVersion      string
 	Capabilities       []string
 	Capacity           Capacity
+	Placement          *NodePlacement
+	Reservation        *CapacityReservation
 	FirstConnectedAt   time.Time
 	LastHeartbeatAt    time.Time
 	HeartbeatExpiresAt time.Time
@@ -466,11 +479,31 @@ func (status NodeStatus) Validate() error {
 		(status.HealthState != "online" && status.HealthState != "degraded" && status.HealthState != "offline") ||
 		!workerVersionPattern.MatchString(status.WorkerVersion) || invalidIdentifier(status.OS) || invalidIdentifier(status.Architecture) ||
 		invalidKernelVersion(status.KernelVersion) || invalidCapabilities(status.Capabilities) || invalidCapacity(status.Capacity) ||
+		(status.Placement == nil) != (status.Reservation == nil) ||
+		status.Placement != nil && (invalidIdentifier(status.Placement.RegionID) || invalidIdentifier(status.Placement.ResourcePoolID) ||
+			invalidIdentifier(status.Placement.NodeID) || status.Placement.NodeID != status.TargetID ||
+			invalidCapacityReservation(*status.Reservation, status.Capacity)) ||
 		status.FirstConnectedAt.IsZero() || status.LastHeartbeatAt.Before(status.FirstConnectedAt) ||
 		!status.HeartbeatExpiresAt.After(status.LastHeartbeatAt) || status.HeartbeatExpiresAt.Sub(status.LastHeartbeatAt) != HeartbeatTTL {
 		return ErrInvalidHeartbeat
 	}
 	return nil
+}
+
+func invalidCapacityReservation(value CapacityReservation, capacity Capacity) bool {
+	if value.ReservedCPUMillis < 0 || value.ReservedMemoryBytes < 0 || value.ReservedDiskBytes < 0 ||
+		value.AvailableCPUMillis != max(capacity.CPUMillis-value.ReservedCPUMillis, 0) ||
+		value.AvailableMemoryBytes != max(capacity.MemoryBytes-value.ReservedMemoryBytes, 0) ||
+		value.AvailableDiskBytes != max(capacity.DiskBytes-value.ReservedDiskBytes, 0) {
+		return true
+	}
+	expected := "available"
+	if value.ReservedCPUMillis > capacity.CPUMillis || value.ReservedMemoryBytes > capacity.MemoryBytes || value.ReservedDiskBytes > capacity.DiskBytes {
+		expected = "overcommitted"
+	} else if value.AvailableCPUMillis < 100 || value.AvailableMemoryBytes < 134_217_728 || value.AvailableDiskBytes < 21_474_836_480 {
+		expected = "exhausted"
+	}
+	return value.State != expected
 }
 
 func invalidCapabilities(values []string) bool {

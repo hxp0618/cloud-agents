@@ -64,6 +64,9 @@ const remoteWorkerNodeAdminColumns = `node_resource_version, node_generation, no
         ELSE 'online' END,
     node_worker_version, node_os, node_architecture, node_kernel_version, node_capabilities,
     node_capacity_cpu_millis, node_capacity_memory_bytes, node_capacity_disk_bytes,
+    capacity.region_uid, capacity.resource_pool_uid, capacity.node_uid, capacity.capacity_state,
+    capacity.reserved_cpu_millis, capacity.reserved_memory_bytes, capacity.reserved_disk_bytes,
+    capacity.available_cpu_millis, capacity.available_memory_bytes, capacity.available_disk_bytes,
     node_first_connected_at, node_last_heartbeat_at, node_heartbeat_expires_at`
 
 const heartbeatRemoteWorkerSQL = `SELECT enrollment_uid, worker_uid, worker_name, incarnation_uid,
@@ -727,6 +730,9 @@ func assignRemoteWorkerNodeStatus(snapshot *internalremoteworker.Snapshot, row r
 			row.NodeObservedState != nil || row.NodeHealthState != nil || row.NodeWorkerVersion != nil ||
 			row.NodeOS != nil || row.NodeArchitecture != nil || row.NodeKernelVersion != nil || row.NodeCapabilities != nil ||
 			row.NodeCapacityCPUMillis != nil || row.NodeCapacityMemory != nil || row.NodeCapacityDisk != nil ||
+			row.NodeRegionID != nil || row.NodeResourcePoolID != nil || row.NodeID != nil || row.NodeCapacityState != nil ||
+			row.NodeReservedCPU != nil || row.NodeReservedMemory != nil || row.NodeReservedDisk != nil ||
+			row.NodeAvailableCPU != nil || row.NodeAvailableMemory != nil || row.NodeAvailableDisk != nil ||
 			row.NodeFirstConnectedAt != nil || row.NodeLastHeartbeatAt != nil || row.NodeHeartbeatExpiresAt != nil {
 			return ErrCoordinationResultDrift
 		}
@@ -736,18 +742,26 @@ func assignRemoteWorkerNodeStatus(snapshot *internalremoteworker.Snapshot, row r
 		row.NodeObservedState == nil || row.NodeHealthState == nil || row.NodeWorkerVersion == nil || row.NodeOS == nil ||
 		row.NodeArchitecture == nil || row.NodeKernelVersion == nil || row.NodeCapabilities == nil ||
 		row.NodeCapacityCPUMillis == nil || row.NodeCapacityMemory == nil || row.NodeCapacityDisk == nil ||
+		row.NodeRegionID == nil || row.NodeResourcePoolID == nil || row.NodeID == nil || row.NodeCapacityState == nil ||
+		row.NodeReservedCPU == nil || row.NodeReservedMemory == nil || row.NodeReservedDisk == nil ||
+		row.NodeAvailableCPU == nil || row.NodeAvailableMemory == nil || row.NodeAvailableDisk == nil ||
 		row.NodeFirstConnectedAt == nil || row.NodeLastHeartbeatAt == nil || row.NodeHeartbeatExpiresAt == nil {
 		return ErrCoordinationResultDrift
 	}
 	node := internalremoteworker.NodeStatus{
 		Scope: snapshot.Scope, EnrollmentID: snapshot.EnrollmentID, WorkerID: snapshot.WorkerID,
-		WorkerName: snapshot.WorkerName, IncarnationID: snapshot.IncarnationID,
+		WorkerName: snapshot.WorkerName, TargetID: snapshot.TargetID, IncarnationID: snapshot.IncarnationID,
 		ResourceVersion: *row.NodeResourceVersion, Generation: *row.NodeGeneration,
 		ObservedGeneration: *row.NodeObservedGeneration, DesiredState: *row.NodeDesiredState,
 		ObservedState: *row.NodeObservedState, HealthState: *row.NodeHealthState,
 		WorkerVersion: *row.NodeWorkerVersion, OS: *row.NodeOS, Architecture: *row.NodeArchitecture,
 		KernelVersion: *row.NodeKernelVersion, Capabilities: row.NodeCapabilities,
-		Capacity:         internalremoteworker.Capacity{CPUMillis: *row.NodeCapacityCPUMillis, MemoryBytes: *row.NodeCapacityMemory, DiskBytes: *row.NodeCapacityDisk},
+		Capacity:  internalremoteworker.Capacity{CPUMillis: *row.NodeCapacityCPUMillis, MemoryBytes: *row.NodeCapacityMemory, DiskBytes: *row.NodeCapacityDisk},
+		Placement: &internalremoteworker.NodePlacement{RegionID: *row.NodeRegionID, ResourcePoolID: *row.NodeResourcePoolID, NodeID: *row.NodeID},
+		Reservation: &internalremoteworker.CapacityReservation{State: *row.NodeCapacityState,
+			ReservedCPUMillis: *row.NodeReservedCPU, ReservedMemoryBytes: *row.NodeReservedMemory,
+			ReservedDiskBytes: *row.NodeReservedDisk, AvailableCPUMillis: *row.NodeAvailableCPU,
+			AvailableMemoryBytes: *row.NodeAvailableMemory, AvailableDiskBytes: *row.NodeAvailableDisk},
 		FirstConnectedAt: *row.NodeFirstConnectedAt, LastHeartbeatAt: *row.NodeLastHeartbeatAt,
 		HeartbeatExpiresAt: *row.NodeHeartbeatExpiresAt,
 	}
@@ -763,7 +777,10 @@ func remoteWorkerNodeRowScanTargets(row *remoteWorkerEnrollmentRow) []any {
 		&row.NodeDesiredState, &row.NodeObservedState, &row.NodeHealthState,
 		&row.NodeWorkerVersion, &row.NodeOS, &row.NodeArchitecture, &row.NodeKernelVersion,
 		&row.NodeCapabilities, &row.NodeCapacityCPUMillis, &row.NodeCapacityMemory,
-		&row.NodeCapacityDisk, &row.NodeFirstConnectedAt, &row.NodeLastHeartbeatAt,
+		&row.NodeCapacityDisk, &row.NodeRegionID, &row.NodeResourcePoolID, &row.NodeID,
+		&row.NodeCapacityState, &row.NodeReservedCPU, &row.NodeReservedMemory, &row.NodeReservedDisk,
+		&row.NodeAvailableCPU, &row.NodeAvailableMemory, &row.NodeAvailableDisk,
+		&row.NodeFirstConnectedAt, &row.NodeLastHeartbeatAt,
 		&row.NodeHeartbeatExpiresAt}
 }
 

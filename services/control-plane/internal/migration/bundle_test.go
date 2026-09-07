@@ -675,6 +675,24 @@ func TestRemoteWorkerCapabilityReplacementTargetsAreExact(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerCapacityReplacementTargetsAreExact(t *testing.T) {
+	t.Parallel()
+	statements, err := SplitPostgreSQLStatements(mustRead(t, filepath.Join(migrationRoot(t), "000079_reserve_remote_worker_foundation_capacity.sql")))
+	if err != nil || len(statements) < 4 {
+		t.Fatalf("split RemoteWorker capacity migration: statements=%d err=%v", len(statements), err)
+	}
+	classifier := NarrowDDLClassifier{}
+	for _, index := range []int{2, 3} {
+		target, targetErr := deriveTargetIdentity(StatementPlan{Command: "CREATE", ObjectKind: "FUNCTION"}, statements[index].Tokens)
+		if _, err := classifier.Classify(MigrationEntry{ID: "000079"}, statements[index]); err != nil {
+			t.Fatalf("exact RemoteWorker capacity replacement %d was rejected: %v target=%q targetErr=%v", index, err, target, targetErr)
+		}
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000078"}, statements[3]); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("RemoteWorker capacity replacement escaped migration identity: %v", err)
+	}
+}
+
 func TestDurableCoordinationOperationEffectIndexIsExactSpecialCase(t *testing.T) {
 	t.Parallel()
 	classifier := NarrowDDLClassifier{}

@@ -694,6 +694,20 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   sandboxPtyCommandReceipt?: RemoteWorkerSandboxPTYCommandReceipt;
   sandboxPreviewCommandReceipt?: RemoteWorkerSandboxPreviewCommandReceipt;
 }>;
+export type RemoteWorkerNodePlacement = Readonly<{
+  regionId: string;
+  resourcePoolId: string;
+  nodeId: string;
+}>;
+export type RemoteWorkerCapacityReservation = Readonly<{
+  state: "available" | "exhausted" | "overcommitted";
+  reservedCpuMillis: number;
+  reservedMemoryBytes: number;
+  reservedDiskBytes: number;
+  availableCpuMillis: number;
+  availableMemoryBytes: number;
+  availableDiskBytes: number;
+}>;
 export type RemoteWorkerNodeStatus = Readonly<{
   resourceVersion: string;
   generation: number;
@@ -716,6 +730,8 @@ export type RemoteWorkerNodeStatus = Readonly<{
     | "workspace-volume"
   )[];
   capacity: RemoteWorkerCapacity;
+  placement?: RemoteWorkerNodePlacement;
+  reservation?: RemoteWorkerCapacityReservation;
   firstConnectedAt: string;
   lastHeartbeatAt: string;
   heartbeatExpiresAt: string;
@@ -1972,6 +1988,24 @@ const remoteWorkerNodeStatusResponseShape: ResponseShape = {
     kernelVersion: scalarResponseShape,
     capabilities: { item: scalarResponseShape },
     capacity: remoteWorkerCapacityResponseShape,
+    placement: {
+      fields: {
+        regionId: scalarResponseShape,
+        resourcePoolId: scalarResponseShape,
+        nodeId: scalarResponseShape,
+      },
+    },
+    reservation: {
+      fields: {
+        state: scalarResponseShape,
+        reservedCpuMillis: scalarResponseShape,
+        reservedMemoryBytes: scalarResponseShape,
+        reservedDiskBytes: scalarResponseShape,
+        availableCpuMillis: scalarResponseShape,
+        availableMemoryBytes: scalarResponseShape,
+        availableDiskBytes: scalarResponseShape,
+      },
+    },
     firstConnectedAt: scalarResponseShape,
     lastHeartbeatAt: scalarResponseShape,
     heartbeatExpiresAt: scalarResponseShape,
@@ -6942,44 +6976,117 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
 export function encodeRemoteWorkerHeartbeatRequest(value: RemoteWorkerHeartbeatRequest): string {
   return JSON.stringify(decodeRemoteWorkerHeartbeatRequest(value));
 }
-export function decodeRemoteWorkerNodeStatus(value: unknown): RemoteWorkerNodeStatus {
+function decodeRemoteWorkerNodePlacement(value: unknown): RemoteWorkerNodePlacement {
   const source = strictRecord(
     value,
-    [
-      "resourceVersion",
-      "generation",
-      "observedGeneration",
-      "desiredState",
-      "observedState",
-      "healthState",
-      "workerVersion",
-      "os",
-      "architecture",
-      "kernelVersion",
-      "capabilities",
-      "capacity",
-      "firstConnectedAt",
-      "lastHeartbeatAt",
-      "heartbeatExpiresAt",
-    ],
-    [
-      "resourceVersion",
-      "generation",
-      "observedGeneration",
-      "desiredState",
-      "observedState",
-      "healthState",
-      "workerVersion",
-      "os",
-      "architecture",
-      "kernelVersion",
-      "capabilities",
-      "capacity",
-      "firstConnectedAt",
-      "lastHeartbeatAt",
-      "heartbeatExpiresAt",
-    ],
+    ["regionId", "resourcePoolId", "nodeId"],
+    ["regionId", "resourcePoolId", "nodeId"],
+    "/placement",
   );
+  return Object.freeze({
+    regionId: identifier(source.regionId, "/placement/regionId"),
+    resourcePoolId: identifier(source.resourcePoolId, "/placement/resourcePoolId"),
+    nodeId: identifier(source.nodeId, "/placement/nodeId"),
+  });
+}
+function decodeRemoteWorkerCapacityReservation(
+  value: unknown,
+  capacity: RemoteWorkerCapacity,
+): RemoteWorkerCapacityReservation {
+  const fields = [
+      "state",
+      "reservedCpuMillis",
+      "reservedMemoryBytes",
+      "reservedDiskBytes",
+      "availableCpuMillis",
+      "availableMemoryBytes",
+      "availableDiskBytes",
+    ] as const,
+    source = strictRecord(value, fields, fields, "/reservation"),
+    reservation = {
+      state: enumValue(
+        source.state,
+        ["available", "exhausted", "overcommitted"] as const,
+        "/reservation/state",
+      ),
+      reservedCpuMillis: integer(
+        source.reservedCpuMillis,
+        0,
+        8796093022208000,
+        "/reservation/reservedCpuMillis",
+      ),
+      reservedMemoryBytes: integer(
+        source.reservedMemoryBytes,
+        0,
+        8796093022208000,
+        "/reservation/reservedMemoryBytes",
+      ),
+      reservedDiskBytes: integer(
+        source.reservedDiskBytes,
+        0,
+        8796093022208000,
+        "/reservation/reservedDiskBytes",
+      ),
+      availableCpuMillis: integer(
+        source.availableCpuMillis,
+        0,
+        8796093022208000,
+        "/reservation/availableCpuMillis",
+      ),
+      availableMemoryBytes: integer(
+        source.availableMemoryBytes,
+        0,
+        8796093022208000,
+        "/reservation/availableMemoryBytes",
+      ),
+      availableDiskBytes: integer(
+        source.availableDiskBytes,
+        0,
+        8796093022208000,
+        "/reservation/availableDiskBytes",
+      ),
+    },
+    available = {
+      cpu: Math.max(capacity.cpuMillis - reservation.reservedCpuMillis, 0),
+      memory: Math.max(capacity.memoryBytes - reservation.reservedMemoryBytes, 0),
+      disk: Math.max(capacity.diskBytes - reservation.reservedDiskBytes, 0),
+    },
+    expected =
+      reservation.reservedCpuMillis > capacity.cpuMillis ||
+      reservation.reservedMemoryBytes > capacity.memoryBytes ||
+      reservation.reservedDiskBytes > capacity.diskBytes
+        ? "overcommitted"
+        : available.cpu < 100 || available.memory < 134217728 || available.disk < 21474836480
+          ? "exhausted"
+          : "available";
+  if (
+    reservation.availableCpuMillis !== available.cpu ||
+    reservation.availableMemoryBytes !== available.memory ||
+    reservation.availableDiskBytes !== available.disk ||
+    reservation.state !== expected
+  )
+    error("INVALID_REMOTE_WORKER_CAPACITY_RESERVATION", "/reservation");
+  return Object.freeze(reservation);
+}
+export function decodeRemoteWorkerNodeStatus(value: unknown): RemoteWorkerNodeStatus {
+  const required = [
+      "resourceVersion",
+      "generation",
+      "observedGeneration",
+      "desiredState",
+      "observedState",
+      "healthState",
+      "workerVersion",
+      "os",
+      "architecture",
+      "kernelVersion",
+      "capabilities",
+      "capacity",
+      "firstConnectedAt",
+      "lastHeartbeatAt",
+      "heartbeatExpiresAt",
+    ] as const,
+    source = strictRecord(value, [...required, "placement", "reservation"], required);
   const resourceVersion = string(source.resourceVersion, "/resourceVersion");
   if (!/^[1-9][0-9]{0,18}$/u.test(resourceVersion))
     error("INVALID_RESOURCE_VERSION", "/resourceVersion");
@@ -6987,12 +7094,23 @@ export function decodeRemoteWorkerNodeStatus(value: unknown): RemoteWorkerNodeSt
     observedGeneration = integer(source.observedGeneration, 1, generation, "/observedGeneration");
   const firstConnectedAt = dateTime(source.firstConnectedAt, "/firstConnectedAt"),
     lastHeartbeatAt = dateTime(source.lastHeartbeatAt, "/lastHeartbeatAt"),
-    heartbeatExpiresAt = dateTime(source.heartbeatExpiresAt, "/heartbeatExpiresAt");
+    heartbeatExpiresAt = dateTime(source.heartbeatExpiresAt, "/heartbeatExpiresAt"),
+    platform = remoteWorkerPlatform(source, ""),
+    placement =
+      source.placement === undefined
+        ? undefined
+        : decodeRemoteWorkerNodePlacement(source.placement),
+    reservation =
+      source.reservation === undefined
+        ? undefined
+        : decodeRemoteWorkerCapacityReservation(source.reservation, platform.capacity);
   if (
     Date.parse(lastHeartbeatAt) < Date.parse(firstConnectedAt) ||
     Date.parse(heartbeatExpiresAt) - Date.parse(lastHeartbeatAt) !== 30000
   )
     error("INVALID_REMOTE_WORKER_NODE_STATUS", "/lastHeartbeatAt");
+  if ((placement === undefined) !== (reservation === undefined))
+    error("INVALID_REMOTE_WORKER_CAPACITY_RESERVATION", "/reservation");
   return Object.freeze({
     resourceVersion,
     generation,
@@ -7008,7 +7126,8 @@ export function decodeRemoteWorkerNodeStatus(value: unknown): RemoteWorkerNodeSt
       ["online", "degraded", "offline"] as const,
       "/healthState",
     ),
-    ...remoteWorkerPlatform(source, ""),
+    ...platform,
+    ...(placement === undefined ? {} : { placement, reservation: reservation! }),
     firstConnectedAt,
     lastHeartbeatAt,
     heartbeatExpiresAt,
@@ -7403,7 +7522,11 @@ export function decodeRemoteWorkerEnrollment(value: unknown): RemoteWorkerEnroll
   )
     error("INVALID_REMOTE_WORKER_ENROLLMENT", "/spec/certificateState");
   const node = spec.node === undefined ? undefined : decodeRemoteWorkerNodeStatus(spec.node);
-  if (node !== undefined && state !== "enrolled")
+  if (
+    node !== undefined &&
+    (state !== "enrolled" ||
+      (node.placement !== undefined && node.placement.nodeId !== spec.targetId))
+  )
     error("INVALID_REMOTE_WORKER_NODE_STATUS", "/spec/node");
   return Object.freeze({
     ...root,

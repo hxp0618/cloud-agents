@@ -66,6 +66,16 @@ type remoteWorkerEnrollmentRow struct {
 	NodeCapacityCPUMillis  *int64     `json:"node_capacity_cpu_millis"`
 	NodeCapacityMemory     *int64     `json:"node_capacity_memory_bytes"`
 	NodeCapacityDisk       *int64     `json:"node_capacity_disk_bytes"`
+	NodeRegionID           *string    `json:"node_region_uid"`
+	NodeResourcePoolID     *string    `json:"node_resource_pool_uid"`
+	NodeID                 *string    `json:"node_uid"`
+	NodeCapacityState      *string    `json:"node_capacity_state"`
+	NodeReservedCPU        *int64     `json:"node_reserved_cpu_millis"`
+	NodeReservedMemory     *int64     `json:"node_reserved_memory_bytes"`
+	NodeReservedDisk       *int64     `json:"node_reserved_disk_bytes"`
+	NodeAvailableCPU       *int64     `json:"node_available_cpu_millis"`
+	NodeAvailableMemory    *int64     `json:"node_available_memory_bytes"`
+	NodeAvailableDisk      *int64     `json:"node_available_disk_bytes"`
 	NodeFirstConnectedAt   *time.Time `json:"node_first_connected_at"`
 	NodeLastHeartbeatAt    *time.Time `json:"node_last_heartbeat_at"`
 	NodeHeartbeatExpiresAt *time.Time `json:"node_heartbeat_expires_at"`
@@ -120,7 +130,10 @@ FROM cloud_agents.rotate_remote_worker_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9
 	revokeRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `
 	FROM cloud_agents.revoke_remote_worker_enrollment_or_certificate_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)`
 	getRemoteWorkerEnrollmentSQL = `SELECT ` + remoteWorkerEnrollmentColumns + `, ` + remoteWorkerNodeAdminColumns + `
-FROM cloud_agents.remote_worker_enrollments
+FROM cloud_agents.remote_worker_enrollments AS enrollment
+LEFT JOIN LATERAL cloud_agents.foundation_remote_worker_capacity_v1(
+    enrollment.tenant_id, enrollment.project_uid, enrollment.target_uid
+) AS capacity ON enrollment.node_resource_version IS NOT NULL
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2`
 	remoteWorkerEnrollmentCursorSQL = `SELECT 1 FROM cloud_agents.remote_worker_enrollments
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid = $2`
@@ -142,8 +155,21 @@ FROM (
             ELSE 'online' END AS node_health_state,
         node_worker_version, node_os, node_architecture, node_kernel_version, node_capabilities,
         node_capacity_cpu_millis, node_capacity_memory_bytes, node_capacity_disk_bytes,
+        capacity.region_uid AS node_region_uid,
+        capacity.resource_pool_uid AS node_resource_pool_uid,
+        capacity.node_uid,
+        capacity.capacity_state AS node_capacity_state,
+        capacity.reserved_cpu_millis AS node_reserved_cpu_millis,
+        capacity.reserved_memory_bytes AS node_reserved_memory_bytes,
+        capacity.reserved_disk_bytes AS node_reserved_disk_bytes,
+        capacity.available_cpu_millis AS node_available_cpu_millis,
+        capacity.available_memory_bytes AS node_available_memory_bytes,
+        capacity.available_disk_bytes AS node_available_disk_bytes,
         node_first_connected_at, node_last_heartbeat_at, node_heartbeat_expires_at
-    FROM cloud_agents.remote_worker_enrollments
+    FROM cloud_agents.remote_worker_enrollments AS enrollment
+    LEFT JOIN LATERAL cloud_agents.foundation_remote_worker_capacity_v1(
+        enrollment.tenant_id, enrollment.project_uid, enrollment.target_uid
+    ) AS capacity ON enrollment.node_resource_version IS NOT NULL
     WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enrollment_uid > $2
     ORDER BY enrollment_uid LIMIT $3
 ) AS enrollment_row`
