@@ -296,8 +296,46 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if _, err := reconnectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-reconnected", heartbeat); err != nil {
 		t.Fatalf("reconnected heartbeat: %v", err)
 	}
-	runRemoteWorkerSandboxLive(t, ctx, runtimePool, owner, admin, user, currentNode, httpServer, create.EnrollmentID,
-		rotationRequest.IncarnationID, rotated.Value.CertificateChainPEM, rotated.Value.CertificateSHA256, rotationPrivateKey, heartbeat)
+	selectedCreate := platform.RemoteWorkerEnrollmentCreateRequest{
+		EnrollmentID: "enrollment-remote-2", WorkerID: "worker-customer-2",
+		WorkerName: "customer-node-2", TTLSeconds: 600,
+	}
+	selectedEnrollment, err := admin.CreateAdminRemoteWorkerEnrollment(ctx, "tenant", "project", "request-enrollment-select-create", "remote-enroll-select-create-key", selectedCreate)
+	if err != nil || selectedEnrollment.Value.Metadata.ResourceVersion != "1" {
+		t.Fatalf("create selected enrollment: value=%+v err=%v", selectedEnrollment.Value, err)
+	}
+	selectedSecret, err := bootstrap.ClaimRemoteWorkerEnrollmentSecret(ctx, "tenant", "project", selectedCreate.EnrollmentID, "request-enrollment-select-claim", "remote-enroll-select-claim-key", platform.RemoteWorkerEnrollmentSecretClaimRequest{ExpectedResourceVersion: "1", ConfirmedEnrollmentID: selectedCreate.EnrollmentID})
+	if err != nil {
+		t.Fatalf("claim selected enrollment: %v", err)
+	}
+	selectedCSR, selectedPrivateKey := remoteWorkerCertificateRequest(t, selectedCreate.EnrollmentID)
+	selectedBootstrap, err := api.NewRemoteWorkerBootstrapHTTPClientWithClient(httpServer.URL, selectedSecret.Value.EnrollmentSecret, httpServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedCertificate, err := selectedBootstrap.IssueRemoteWorkerCertificate(ctx, "tenant", "project", selectedCreate.EnrollmentID, "request-certificate-select-issue", "remote-cert-select-issue-key", platform.RemoteWorkerCertificateIssueRequest{
+		ExpectedResourceVersion: "2", ConfirmedEnrollmentID: selectedCreate.EnrollmentID,
+		IncarnationID: "incarnation-remote-select", CertificateSigningRequestPEM: selectedCSR,
+	})
+	if err != nil {
+		t.Fatalf("issue selected certificate: %v", err)
+	}
+	selectedNode, err := api.NewRemoteWorkerMTLSHTTPClientWithClient(httpServer.URL, remoteWorkerMTLSHTTPClient(t, httpServer, selectedCertificate.Value.CertificateChainPEM, selectedPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedHeartbeat := platform.RemoteWorkerHeartbeatRequest{
+		IncarnationID: selectedCertificate.Value.IncarnationID, ObservedGeneration: 1, ObservedState: "active",
+		WorkerVersion: "v0.1.0", OS: "linux", Architecture: "arm64", KernelVersion: "6.12.1",
+		Capabilities: []string{"docker", "exec", "files", "network-dns-nft", "preview", "pty", "ssh", "workspace-volume"},
+		Capacity:     platform.RemoteWorkerCapacity{CPUMillis: 8000, MemoryBytes: 16 << 30, DiskBytes: 80 << 30},
+	}
+	if _, err := selectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", selectedCreate.EnrollmentID, "request-heartbeat-select", selectedHeartbeat); err != nil {
+		t.Fatalf("selected node heartbeat: %v", err)
+	}
+	runRemoteWorkerSandboxLive(t, ctx, runtimePool, owner, admin, user, selectedNode, httpServer, selectedCreate.EnrollmentID,
+		selectedCertificate.Value.IncarnationID, selectedCertificate.Value.CertificateChainPEM, selectedCertificate.Value.CertificateSHA256,
+		selectedPrivateKey, selectedHeartbeat, currentNode, create.EnrollmentID, heartbeat)
 	drainPreview, err := admin.PreviewAdminRemoteWorkerScheduling(ctx, "tenant", "project", create.EnrollmentID, "request-remote-worker-drain-preview")
 	if err != nil || drainPreview.Value.Spec.DesiredState != "drained" || drainPreview.Value.Spec.ExpectedGeneration != 1 {
 		t.Fatalf("drain preview: value=%+v err=%v", drainPreview.Value, err)
@@ -571,7 +609,8 @@ func remoteWorkerMTLSHTTPClient(t *testing.T, server *httptest.Server, certifica
 
 func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, owner *pgxpool.Pool, admin, user, node *api.Client,
 	server *httptest.Server, enrollmentID, incarnationID, certificateChain, certificateSHA256 string, privateKey []byte,
-	heartbeat platform.RemoteWorkerHeartbeatRequest,
+	heartbeat platform.RemoteWorkerHeartbeatRequest, otherNode *api.Client, otherEnrollmentID string,
+	otherHeartbeat platform.RemoteWorkerHeartbeatRequest,
 ) {
 	t.Helper()
 	binary := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_BINARY")
@@ -598,6 +637,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	if len(parts) != 2 {
 		t.Fatal("RemoteWorker Sandbox image is not digest pinned")
 	}
+	selectedTargetID := internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID)
 	policy, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "remote-network", "request-remote-network", "remote-network-key-1", platform.NetworkPolicySetRequest{
 		ExpectedResourceVersion: "0", PolicyName: "remote-network", UserSummary: "RemoteWorker approved outbound access",
 		DefaultEgress: "restricted", AllowedEgress: []string{allowedEgress}, PreviewEnabled: true,
@@ -660,7 +700,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	}
 	profile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-profile", "remote-profile-key-1", platform.RuntimeProfileCreateRequest{
 		ProfileID: "remote-profile", ProfileName: "remote-profile", Version: 1,
-		Description: "RemoteWorker retained workspace", TargetID: internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID),
+		Description: "RemoteWorker retained workspace", TargetID: selectedTargetID,
 		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
 	})
 	if err != nil || profile.Value.Spec.Status != "draft" {
@@ -670,20 +710,62 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	if err != nil || profile.Value.Spec.Status != "published" {
 		t.Fatalf("publish RemoteWorker RuntimeProfile: value=%+v err=%v", profile.Value, err)
 	}
+	for _, invalid := range []struct {
+		name     string
+		selector platform.RuntimeProfileTargetSelector
+	}{
+		{"region", platform.RuntimeProfileTargetSelector{RegionID: "region-other", ResourcePoolID: "pool-remote-worker", Runtime: "docker", Architecture: "arm64"}},
+		{"pool", platform.RuntimeProfileTargetSelector{RegionID: "region-local", ResourcePoolID: "pool-other", Runtime: "docker", Architecture: "arm64"}},
+		{"architecture", platform.RuntimeProfileTargetSelector{RegionID: "region-local", ResourcePoolID: "pool-remote-worker", Runtime: "docker", Architecture: "amd64"}},
+	} {
+		profileID := "remote-selector-" + invalid.name
+		_, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-"+profileID, "create-"+profileID+"-key", platform.RuntimeProfileCreateRequest{
+			ProfileID: profileID, ProfileName: profileID, Version: 1, Description: "Unavailable RemoteWorker selector",
+			TargetSelector: &invalid.selector, NetworkPolicyRef: "remote-network", ImageURI: image,
+			ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
+		})
+		if clientStatus(err) != http.StatusConflict {
+			t.Fatalf("RemoteWorker selector %s status=%d err=%v", invalid.name, clientStatus(err), err)
+		}
+	}
+	selectorProfile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-selector-profile", "remote-selector-profile-key", platform.RuntimeProfileCreateRequest{
+		ProfileID: "remote-selector-profile", ProfileName: "remote-selector-profile", Version: 1,
+		Description:      "RemoteWorker deterministic placement",
+		TargetSelector:   &platform.RuntimeProfileTargetSelector{RegionID: "region-local", ResourcePoolID: "pool-remote-worker", Runtime: "docker", Architecture: "arm64"},
+		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
+	})
+	if err != nil || selectorProfile.Value.Spec.TargetID != "" || selectorProfile.Value.Spec.TargetSelector == nil {
+		t.Fatalf("create RemoteWorker selector profile: value=%+v err=%v", selectorProfile.Value, err)
+	}
+	selectorProfile, err = admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "remote-selector-profile", 1,
+		"request-remote-selector-profile-publish", "remote-selector-profile-publish-key",
+		platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+	if err != nil || selectorProfile.Value.Spec.Status != "published" {
+		t.Fatalf("publish RemoteWorker selector profile: value=%+v err=%v", selectorProfile.Value, err)
+	}
 	publicProfiles, err := user.ListRuntimeProfiles(ctx, "tenant", "project", "request-remote-profile-list", 50, "")
-	foundProfile := false
+	foundProfile, foundSelectorProfile := false, false
 	for _, item := range publicProfiles.Value.RuntimeProfiles {
 		foundProfile = foundProfile || item.ProfileID == "remote-profile"
+		foundSelectorProfile = foundSelectorProfile || item.ProfileID == "remote-selector-profile"
 	}
-	if err != nil || !foundProfile {
+	if err != nil || !foundProfile || !foundSelectorProfile {
 		t.Fatalf("RemoteWorker RuntimeProfile is not publicly available: value=%+v err=%v", publicProfiles.Value, err)
 	}
 	sandbox, err := user.CreateSandbox(ctx, "tenant", "project", "request-remote-sandbox", "remote-sandbox-key-1", platform.SandboxSessionCreateRequest{
 		WorkspaceID: "remote-workspace", WorkspaceName: "remote-workspace", SandboxID: "remote-sandbox",
-		RuntimeProfileID: "remote-profile", RuntimeProfileVersion: 1, TTLSeconds: 120,
+		RuntimeProfileID: "remote-selector-profile", RuntimeProfileVersion: 1, TTLSeconds: 120,
 	})
 	if err != nil || sandbox.Value.ObservedState != "pending" {
 		t.Fatalf("create RemoteWorker Sandbox: value=%+v err=%v", sandbox.Value, err)
+	}
+	placedSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-placement")
+	if err != nil || placedSandbox.Value.Spec.TargetID != selectedTargetID {
+		t.Fatalf("RemoteWorker Sandbox placement: value=%+v err=%v", placedSandbox.Value, err)
+	}
+	otherDelivery, err := otherNode.HeartbeatRemoteWorker(ctx, "tenant", "project", otherEnrollmentID, "request-remote-sandbox-other-node", otherHeartbeat)
+	if err != nil || otherDelivery.Value.SandboxCommand != nil {
+		t.Fatalf("unselected RemoteWorker received Sandbox command: value=%+v err=%v", otherDelivery.Value, err)
 	}
 	withoutNetwork := heartbeat
 	withoutNetwork.Capabilities = []string{"docker", "exec", "files", "preview", "pty", "ssh", "workspace-volume"}
@@ -692,7 +774,12 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 		t.Fatalf("RemoteWorker Sandbox escaped network capability admission: value=%+v err=%v", blocked.Value, err)
 	}
 	blockedProfiles, err := user.ListRuntimeProfiles(ctx, "tenant", "project", "request-remote-profile-blocked-network", 50, "")
-	if err != nil || len(blockedProfiles.Value.RuntimeProfiles) != 0 {
+	directAvailable, selectorAvailable := false, false
+	for _, item := range blockedProfiles.Value.RuntimeProfiles {
+		directAvailable = directAvailable || item.ProfileID == "remote-profile"
+		selectorAvailable = selectorAvailable || item.ProfileID == "remote-selector-profile"
+	}
+	if err != nil || directAvailable || !selectorAvailable {
 		t.Fatalf("incompatible RemoteWorker profile remained public: value=%+v err=%v", blockedProfiles.Value, err)
 	}
 	delivery, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-delivery", heartbeat)
@@ -816,6 +903,10 @@ WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.Opera
 	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-exhausted", limitedCapacity); err != nil {
 		t.Fatalf("report exhausted RemoteWorker capacity: %v", err)
 	}
+	otherCapacity, err := otherNode.HeartbeatRemoteWorker(ctx, "tenant", "project", otherEnrollmentID, "request-remote-capacity-other-node", otherHeartbeat)
+	if err != nil || otherCapacity.Value.SandboxCommand != nil {
+		t.Fatalf("refresh unselected RemoteWorker capacity: value=%+v err=%v", otherCapacity.Value, err)
+	}
 	adminEnrollment, err = admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-exhausted-get")
 	reservation = nil
 	if adminEnrollment.Value.Spec.Node != nil {
@@ -826,7 +917,12 @@ WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.Opera
 		t.Fatalf("exhausted RemoteWorker capacity projection: value=%+v err=%v", adminEnrollment.Value, err)
 	}
 	blockedProfiles, err = user.ListRuntimeProfiles(ctx, "tenant", "project", "request-remote-profile-capacity-exhausted", 50, "")
-	if err != nil || len(blockedProfiles.Value.RuntimeProfiles) != 0 {
+	directAvailable, selectorAvailable = false, false
+	for _, item := range blockedProfiles.Value.RuntimeProfiles {
+		directAvailable = directAvailable || item.ProfileID == "remote-profile"
+		selectorAvailable = selectorAvailable || item.ProfileID == "remote-selector-profile"
+	}
+	if err != nil || directAvailable || !selectorAvailable {
 		t.Fatalf("exhausted RemoteWorker profile remained public: value=%+v err=%v", blockedProfiles.Value, err)
 	}
 	_, err = user.CreateSandbox(ctx, "tenant", "project", "request-remote-capacity-rejected", "remote-capacity-rejected-key", platform.SandboxSessionCreateRequest{
@@ -893,7 +989,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND workspace_uid='remote-cap
 	}
 	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
 	adminSandbox, err = admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-get-stopped")
-	if err != nil || adminSandbox.Value.Spec.ObservedState != "stopped" || adminSandbox.Value.Spec.RuntimeID != "" ||
+	if err != nil || adminSandbox.Value.Spec.TargetID != selectedTargetID || adminSandbox.Value.Spec.ObservedState != "stopped" || adminSandbox.Value.Spec.RuntimeID != "" ||
 		adminSandbox.Value.Spec.PhysicalVolumeID != volumeName || !adminSandbox.Value.Spec.WriterReleased {
 		t.Fatalf("RemoteWorker Sandbox stop settlement: value=%+v err=%v", adminSandbox.Value, err)
 	}
@@ -958,7 +1054,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND workspace_uid='remote-cap
 			fmt.Sprintf("request-remote-sandbox-get-rebuilt-%d", retry+1))
 	}
 	rebuiltRuntimeID := adminSandbox.Value.Spec.RuntimeID
-	if rebuiltRuntimeID == "" || rebuiltRuntimeID == runtimeID || adminSandbox.Value.Spec.PhysicalVolumeID != volumeName ||
+	if rebuiltRuntimeID == "" || rebuiltRuntimeID == runtimeID || adminSandbox.Value.Spec.TargetID != selectedTargetID || adminSandbox.Value.Spec.PhysicalVolumeID != volumeName ||
 		adminSandbox.Value.Spec.WriterReleased || adminSandbox.Value.Spec.Generation != rebuildCommand.SandboxGeneration {
 		t.Fatalf("RemoteWorker Sandbox rebuilt authority drifted: value=%+v", adminSandbox.Value)
 	}
@@ -1764,7 +1860,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, incarnation
 	}
 	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
 	adminSandbox, err = admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-get-cleaned")
-	if err != nil || adminSandbox.Value.Spec.ObservedState != "stopped" || adminSandbox.Value.Spec.RuntimeID != "" ||
+	if err != nil || adminSandbox.Value.Spec.TargetID != selectedTargetID || adminSandbox.Value.Spec.ObservedState != "stopped" || adminSandbox.Value.Spec.RuntimeID != "" ||
 		adminSandbox.Value.Spec.PhysicalVolumeID != volumeName || !adminSandbox.Value.Spec.WriterReleased {
 		t.Fatalf("rebuilt RemoteWorker Sandbox cleanup Stop settlement: value=%+v err=%v", adminSandbox.Value, err)
 	}
@@ -1827,6 +1923,8 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"capabilityAdmissionCases": len(admissionCases), "incompatibleProfileHidden": true,
 		"incompatibleCommandBlocked": true, "capacityReservationRejected": true,
 		"regionId": "region-local", "resourcePoolId": "pool-remote-worker",
+		"deterministicPlacement": true, "selectedTargetId": selectedTargetID,
+		"otherNodeSkipped": true, "selectorArchitecture": "arm64", "selectorUnavailableRejected": true,
 		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }

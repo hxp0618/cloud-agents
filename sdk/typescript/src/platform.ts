@@ -910,18 +910,28 @@ export type UserEnvironment = Readonly<{
   stableErrorCode?: string;
   expiresAt: string;
 }>;
+export type RuntimeProfileTargetSelector = Readonly<{
+  regionId: string;
+  resourcePoolId: string;
+  runtime: "docker";
+  architecture: "amd64" | "arm64";
+}>;
+type RuntimeProfileTargetSelection = Readonly<
+  | { targetId: string; targetSelector?: never }
+  | { targetId?: never; targetSelector: RuntimeProfileTargetSelector }
+>;
 export type RuntimeProfileCreateRequest = Readonly<{
   profileId: string;
   profileName: string;
   version: number;
   description: string;
-  targetId: string;
   networkPolicyRef: string;
   imageUri: string;
   releaseDigest: `sha256:${string}`;
   cpuMillis: number;
   memoryBytes: number;
-}>;
+}> &
+  RuntimeProfileTargetSelection;
 export type RuntimeProfileTransitionRequest = Readonly<{ expectedResourceVersion: string }>;
 export type RuntimeProfile = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -933,7 +943,6 @@ export type RuntimeProfile = Readonly<{
     version: number;
     description: string;
     status: "draft" | "published" | "disabled";
-    targetId: string;
     networkPolicyRef?: string;
     imageUri: string;
     releaseDigest: `sha256:${string}`;
@@ -941,7 +950,8 @@ export type RuntimeProfile = Readonly<{
     memoryBytes: number;
     publishedAt?: string;
     disabledAt?: string;
-  }>;
+  }> &
+    RuntimeProfileTargetSelection;
 }>;
 export type RuntimeProfilePage = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -2956,6 +2966,33 @@ function profileDescription(value: unknown, path: string): string {
   }
   return text;
 }
+function runtimeProfileTargetSelection(
+  source: Record<string, unknown>,
+  path: string,
+): RuntimeProfileTargetSelection {
+  const direct = source.targetId !== undefined,
+    selected = source.targetSelector !== undefined;
+  if (direct === selected) error("INVALID_RUNTIME_PROFILE_TARGET_SELECTION", path);
+  if (direct) return Object.freeze({ targetId: identifier(source.targetId, `${path}/targetId`) });
+  const selector = strictRecord(
+    source.targetSelector,
+    ["regionId", "resourcePoolId", "runtime", "architecture"],
+    ["regionId", "resourcePoolId", "runtime", "architecture"],
+    `${path}/targetSelector`,
+  );
+  return Object.freeze({
+    targetSelector: Object.freeze({
+      regionId: identifier(selector.regionId, `${path}/targetSelector/regionId`),
+      resourcePoolId: identifier(selector.resourcePoolId, `${path}/targetSelector/resourcePoolId`),
+      runtime: enumValue(selector.runtime, ["docker"] as const, `${path}/targetSelector/runtime`),
+      architecture: enumValue(
+        selector.architecture,
+        ["amd64", "arm64"] as const,
+        `${path}/targetSelector/architecture`,
+      ),
+    }),
+  });
+}
 function runtimeImage(value: unknown, path: string): string {
   const text = boundedString(value, 1, 1024, path);
   if (!/^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$/u.test(text)) error("INVALID_RUNTIME_IMAGE", path);
@@ -3595,6 +3632,7 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
       "version",
       "description",
       "targetId",
+      "targetSelector",
       "networkPolicyRef",
       "imageUri",
       "releaseDigest",
@@ -3606,7 +3644,6 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
       "profileName",
       "version",
       "description",
-      "targetId",
       "networkPolicyRef",
       "imageUri",
       "releaseDigest",
@@ -3622,7 +3659,7 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
     profileName: identifier(source.profileName, "/profileName"),
     version: integer(source.version, 1, 2147483647, "/version"),
     description: profileDescription(source.description, "/description"),
-    targetId: identifier(source.targetId, "/targetId"),
+    ...runtimeProfileTargetSelection(source, ""),
     networkPolicyRef: identifier(source.networkPolicyRef, "/networkPolicyRef"),
     imageUri,
     releaseDigest,
@@ -7918,6 +7955,7 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       "description",
       "status",
       "targetId",
+      "targetSelector",
       "networkPolicyRef",
       "imageUri",
       "releaseDigest",
@@ -7932,7 +7970,6 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       "version",
       "description",
       "status",
-      "targetId",
       "imageUri",
       "releaseDigest",
       "cpuMillis",
@@ -7972,7 +8009,7 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       version: integer(spec.version, 1, 2147483647, "/spec/version"),
       description: profileDescription(spec.description, "/spec/description"),
       status,
-      targetId: identifier(spec.targetId, "/spec/targetId"),
+      ...runtimeProfileTargetSelection(spec, "/spec"),
       ...(spec.networkPolicyRef === undefined
         ? {}
         : { networkPolicyRef: identifier(spec.networkPolicyRef, "/spec/networkPolicyRef") }),

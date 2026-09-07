@@ -693,6 +693,42 @@ func TestRemoteWorkerCapacityReplacementTargetsAreExact(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerNodeSelectionMigrationIsExact(t *testing.T) {
+	t.Parallel()
+	statements, err := SplitPostgreSQLStatements(mustRead(t, filepath.Join(migrationRoot(t), "000080_select_remote_worker_foundation_nodes.sql")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	classifier := NarrowDDLClassifier{}
+	replacements, droppedTargetNotNull, droppedTargetConstraint := 0, false, false
+	for _, statement := range statements {
+		if _, err := classifier.Classify(MigrationEntry{ID: "000080"}, statement); err != nil {
+			t.Fatalf("node selection statement %d was rejected: %v", statement.Index, err)
+		}
+		if bytes.HasPrefix(bytes.TrimSpace(statement.Raw), []byte("CREATE OR REPLACE FUNCTION")) {
+			replacements++
+			if _, err := classifier.Classify(MigrationEntry{ID: "000077"}, statement); !IsCode(err, CodeInvalidSQL) {
+				t.Fatalf("replacement %d escaped migration identity: %v", statement.Index, err)
+			}
+		}
+		if bytes.Contains(statement.Raw, []byte("ALTER COLUMN target_uid DROP NOT NULL")) {
+			droppedTargetNotNull = true
+			if _, err := classifier.Classify(MigrationEntry{ID: "000079"}, statement); !IsCode(err, CodeInvalidSQL) {
+				t.Fatalf("target nullability change escaped migration identity: %v", err)
+			}
+		}
+		if bytes.Contains(statement.Raw, []byte("DROP CONSTRAINT runtime_profiles_target_uid_check")) {
+			droppedTargetConstraint = true
+			if _, err := classifier.Classify(MigrationEntry{ID: "000079"}, statement); !IsCode(err, CodeInvalidSQL) {
+				t.Fatalf("target constraint change escaped migration identity: %v", err)
+			}
+		}
+	}
+	if replacements != 4 || !droppedTargetNotNull || !droppedTargetConstraint {
+		t.Fatalf("node selection migration coverage drifted: replacements=%d drop-not-null=%t drop-constraint=%t", replacements, droppedTargetNotNull, droppedTargetConstraint)
+	}
+}
+
 func TestDurableCoordinationOperationEffectIndexIsExactSpecialCase(t *testing.T) {
 	t.Parallel()
 	classifier := NarrowDDLClassifier{}

@@ -4,13 +4,28 @@
   "title": "RuntimeProfileCreateRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["profileId", "profileName", "version", "description", "targetId", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+  "required": ["profileId", "profileName", "version", "description", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+  "oneOf": [
+    { "required": ["targetId"], "not": { "required": ["targetSelector"] } },
+    { "required": ["targetSelector"], "not": { "required": ["targetId"] } }
+  ],
   "properties": {
     "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "profileName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
     "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
     "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regionId", "resourcePoolId", "runtime", "architecture"],
+      "properties": {
+        "regionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "resourcePoolId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "runtime": { "const": "docker" },
+        "architecture": { "enum": ["amd64", "arm64"] }
+      }
+    },
     "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
     "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
@@ -19,6 +34,8 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "imageUri must end in the exact releaseDigest",
+    "exactly one of targetId or targetSelector is present",
+    "targetSelector is currently limited to the database-authoritative RemoteWorker region-local/pool-remote-worker Docker pool",
     "networkPolicyRef must resolve to an executable restricted or deny policy when the draft is published",
     "a new profileId starts at version 1 and later immutable drafts use the next consecutive version",
     "this Admin-only request never accepts endpoint or credential bytes"

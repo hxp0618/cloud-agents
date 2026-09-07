@@ -313,6 +313,20 @@ func TestGeneratedRuntimeProfileKeepsAdminAndUserBoundaries(t *testing.T) {
 	if err != nil || decoded.Value.Spec.TargetID != "docker-primary" {
 		t.Fatalf("profile=%#v error=%v", decoded.Value, err)
 	}
+	selectorProfile := bytes.Replace(profile, []byte(`"targetId":"docker-primary"`), []byte(`"targetSelector":{"regionId":"region-local","resourcePoolId":"pool-remote-worker","runtime":"docker","architecture":"arm64"}`), 1)
+	selected, err := DecodeRuntimeProfileResponseJSON(selectorProfile)
+	if err != nil || selected.Value.Spec.TargetID != "" || selected.Value.Spec.TargetSelector == nil || selected.Value.Spec.TargetSelector.Architecture != "arm64" {
+		t.Fatalf("selector profile=%#v error=%v", selected.Value, err)
+	}
+	if _, err := DecodeRuntimeProfileResponseJSON(bytes.Replace(selectorProfile, []byte(`"targetSelector":`), []byte(`"targetId":"docker-primary","targetSelector":`), 1)); err == nil {
+		t.Fatal("RuntimeProfile accepted both direct Target and selector authority")
+	}
+	if _, err := DecodeRuntimeProfileResponseJSON(bytes.Replace(selectorProfile, []byte(`"runtime":"docker"`), []byte(`"runtime":"ssh"`), 1)); err == nil {
+		t.Fatal("RuntimeProfile accepted a non-Docker selector runtime")
+	}
+	if _, err := DecodeRuntimeProfileResponseJSON(bytes.Replace(profile, []byte(`,"targetId":"docker-primary"`), nil, 1)); err == nil {
+		t.Fatal("RuntimeProfile accepted missing Target authority")
+	}
 	summary := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","name":"foundation","version":1,"description":"Retained no-agent workspace","status":"published","availability":"available","cpuMillis":500,"memoryBytes":536870912,"workspaceRetention":"retained"}`)
 	if value, err := DecodeRuntimeProfileSummaryJSON(summary); err != nil || value.WorkspaceRetention != "retained" {
 		t.Fatalf("summary=%#v error=%v", value, err)

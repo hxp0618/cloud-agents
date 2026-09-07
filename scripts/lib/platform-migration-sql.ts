@@ -355,6 +355,7 @@ export function classifyMigrationStatement(
         "000077",
         "000078",
         "000079",
+        "000080",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -556,6 +557,15 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
           ],
         ],
+        [
+          "000080",
+          [
+            "function:unquoted:cloud_agents/unquoted:transition_runtime_profile_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_sandbox_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
+            "function:unquoted:cloud_agents/unquoted:transition_foundation_sandbox_v4(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -588,6 +598,16 @@ export function classifyMigrationStatement(
             command[0] === "ADD" && (command[1] === "COLUMN" || command[1] === "CONSTRAINT"),
         );
       const targetIdentity = qualifiedIdentity("table", tokens, 2);
+      const dropRuntimeProfileTargetNotNull =
+        migrationId === "000080" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+        subcommand.join("\0") ===
+          ["ALTER", "COLUMN", "TARGET_UID", "DROP", "NOT", "NULL"].join("\0");
+      const dropRuntimeProfileTargetConstraint =
+        migrationId === "000080" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "RUNTIME_PROFILES_TARGET_UID_CHECK"].join("\0");
       const dropResourceKindConstraint =
         (migrationId === "000003" || migrationId === "000055") &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:resource_changes" &&
@@ -683,6 +703,8 @@ export function classifyMigrationStatement(
       if (
         !exact &&
         !additive &&
+        !dropRuntimeProfileTargetNotNull &&
+        !dropRuntimeProfileTargetConstraint &&
         !dropResourceKindConstraint &&
         !dropAuditFactConstraint &&
         !dropCoordinationRegistryConstraint &&

@@ -51,7 +51,7 @@ func TestRuntimeProfileProjectionAndPublicRedaction(t *testing.T) {
 			t.Fatalf("public profile query projects %q", forbidden)
 		}
 	}
-	for _, authority := range []string{"cloud_agents.require_tenant_id()", "profile.status = 'published'", "cloud_agents.foundation_target_can_reserve_v1"} {
+	for _, authority := range []string{"cloud_agents.require_tenant_id()", "profile.status = 'published'", "cloud_agents.foundation_runtime_profile_available_v1"} {
 		if !strings.Contains(listPublishedRuntimeProfilesSQL, authority) || !strings.Contains(publishedRuntimeProfilePageCursorSQL, authority) {
 			t.Fatalf("public profile authority is missing %q", authority)
 		}
@@ -64,7 +64,7 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 	var snapshot internalcoordination.RuntimeProfileSnapshot
 	if err := scanRuntimeProfile(rowValues(
 		"rp-0123456789abcdef0123456789abcdef", "standard", "standard", int64(1), "No-agent workspace",
-		"draft", "docker-primary", "network-deny", "node@"+digest, digest, int64(1000), int64(536870912), int64(1),
+		"draft", "docker-primary", "", "", "", "", "network-deny", "node@"+digest, digest, int64(1000), int64(536870912), int64(1),
 		now, now, (*time.Time)(nil), (*time.Time)(nil),
 	), internalcoordination.FoundationScope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); err != nil {
 		t.Fatal(err)
@@ -79,7 +79,8 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 			t.Fatalf("%s mapped to %v", input.Message, err)
 		}
 	}
-	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v2") ||
+	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v3") ||
+		!strings.Contains(transitionRuntimeProfileSQL, "transition_runtime_profile_v3") ||
 		!strings.Contains(createFoundationSandboxSQL, "accept_foundation_sandbox_v3") {
 		t.Fatal("runtime profile store is not bound to the migration authority")
 	}

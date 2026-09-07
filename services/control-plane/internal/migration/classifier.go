@@ -211,7 +211,7 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 	targetOffset := 2
 	orReplace := len(tokens) > 4 && tokens[1] == "OR" && tokens[2] == "REPLACE"
 	if orReplace {
-		if !oneOf(migrationID, "000005", "000006", "000009", "000078", "000079") || tokens[3] != "FUNCTION" {
+		if !oneOf(migrationID, "000005", "000006", "000009", "000078", "000079", "000080") || tokens[3] != "FUNCTION" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		kindOffset = 3
@@ -283,6 +283,12 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 				"function:unquoted:cloud_agents/unquoted:foundation_target_available_v1(unquoted:text,unquoted:text,unquoted:text)",
 				"function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
 			},
+			"000080": {
+				"function:unquoted:cloud_agents/unquoted:transition_runtime_profile_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:accept_foundation_sandbox_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
+				"function:unquoted:cloud_agents/unquoted:transition_foundation_sandbox_v4(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+			},
 		}[migrationID]
 		if !oneOf(resolved.TargetIdentity, expectedReplacements...) {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
@@ -317,7 +323,18 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 		if err != nil {
 			return StatementPlan{}, err
 		}
+		addRuntimeProfileTargetSelectorColumn := migrationID == "000080" &&
+			resolved.TargetIdentity == "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+			len(subcommand) == 8 && stringSliceEqual(subcommand[:2], []string{"ADD", "COLUMN"}) &&
+			oneOf(subcommand[2], "TARGET_REGION_UID", "TARGET_RESOURCE_POOL_UID", "TARGET_RUNTIME", "TARGET_ARCHITECTURE") &&
+			stringSliceEqual(subcommand[3:], []string{"TEXT", "NOT", "NULL", "DEFAULT", "$STRING$"})
 		dropCoordinationRegistryConstraint := false
+		dropRuntimeProfileTargetNotNull := migrationID == "000080" &&
+			resolved.TargetIdentity == "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+			stringSliceEqual(subcommand, []string{"ALTER", "COLUMN", "TARGET_UID", "DROP", "NOT", "NULL"})
+		dropRuntimeProfileTargetConstraint := migrationID == "000080" &&
+			resolved.TargetIdentity == "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+			stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "RUNTIME_PROFILES_TARGET_UID_CHECK"})
 		if migrationID == "000009" && len(subcommand) == 3 && subcommand[0] == "DROP" && subcommand[1] == "CONSTRAINT" {
 			allowed := map[string]string{
 				"table:unquoted:cloud_agents/unquoted:platform_operations":      "PLATFORM_OPERATIONS_REGISTRY_DIGEST",
@@ -327,7 +344,7 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 			}
 			dropCoordinationRegistryConstraint = allowed[resolved.TargetIdentity] == subcommand[2]
 		}
-		if !exact && !addConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint && !dropCoordinationRegistryConstraint {
+		if !exact && !addConstraint && !addRuntimeProfileTargetSelectorColumn && !dropRuntimeProfileTargetNotNull && !dropRuntimeProfileTargetConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint && !dropCoordinationRegistryConstraint {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		if dropResourceKindConstraint && resolved.TargetIdentity != "table:unquoted:cloud_agents/unquoted:resource_changes" {

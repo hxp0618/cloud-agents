@@ -191,10 +191,17 @@ func (server *FoundationHTTPServer) createProfile(writer http.ResponseWriter, re
 		return
 	}
 	input := validated.Body
+	var selector *internalcoordination.RuntimeProfileTargetSelector
+	if input.TargetSelector != nil {
+		selector = &internalcoordination.RuntimeProfileTargetSelector{
+			RegionID: input.TargetSelector.RegionID, ResourcePoolID: input.TargetSelector.ResourcePoolID,
+			Runtime: input.TargetSelector.Runtime, Architecture: input.TargetSelector.Architecture,
+		}
+	}
 	result, err := server.store.CreateRuntimeProfile(request.Context(), tenantID, principal, internalcoordination.RuntimeProfileCreateInput{
 		Scope:     internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID},
 		ProfileID: input.ProfileID, ProfileName: input.ProfileName, Version: input.Version,
-		Description: input.Description, TargetID: input.TargetID, ImageURI: input.ImageURI,
+		Description: input.Description, TargetID: input.TargetID, TargetSelector: selector, ImageURI: input.ImageURI,
 		NetworkPolicyID: input.NetworkPolicyRef,
 		ReleaseDigest:   input.ReleaseDigest, CPUMillis: input.CPUMillis, MemoryBytes: input.MemoryBytes,
 		Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
@@ -665,7 +672,7 @@ func runtimeProfileResource(snapshot internalcoordination.RuntimeProfileSnapshot
 	if snapshot.DisabledAt != nil {
 		disabledAt = snapshot.DisabledAt.UTC().Format(time.RFC3339Nano)
 	}
-	return platform.RuntimeProfile{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "RuntimeProfile", Metadata: common.ResourceMetadata{
+	result := platform.RuntimeProfile{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "RuntimeProfile", Metadata: common.ResourceMetadata{
 		UID: snapshot.ProfileVersionID, Name: snapshot.ProfileName,
 		TenantRef:       common.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID},
 		ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -677,6 +684,13 @@ func runtimeProfileResource(snapshot internalcoordination.RuntimeProfileSnapshot
 		ReleaseDigest:    snapshot.ReleaseDigest, CPUMillis: snapshot.CPUMillis, MemoryBytes: snapshot.MemoryBytes,
 		PublishedAt: publishedAt, DisabledAt: disabledAt,
 	}}
+	if snapshot.TargetSelector != nil {
+		result.Spec.TargetSelector = &platform.RuntimeProfileTargetSelector{
+			RegionID: snapshot.TargetSelector.RegionID, ResourcePoolID: snapshot.TargetSelector.ResourcePoolID,
+			Runtime: snapshot.TargetSelector.Runtime, Architecture: snapshot.TargetSelector.Architecture,
+		}
+	}
+	return result
 }
 
 func runtimeProfileSummaryResource(summary internalcoordination.RuntimeProfileSummary) platform.RuntimeProfileSummary {

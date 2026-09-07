@@ -958,35 +958,43 @@ type UserEnvironment struct {
 	StableErrorCode string            `json:"stableErrorCode,omitempty"`
 	ExpiresAt       string            `json:"expiresAt"`
 }
+type RuntimeProfileTargetSelector struct {
+	RegionID       string `json:"regionId"`
+	ResourcePoolID string `json:"resourcePoolId"`
+	Runtime        string `json:"runtime"`
+	Architecture   string `json:"architecture"`
+}
 type RuntimeProfileCreateRequest struct {
-	ProfileID        string `json:"profileId"`
-	ProfileName      string `json:"profileName"`
-	Version          int64  `json:"version"`
-	Description      string `json:"description"`
-	TargetID         string `json:"targetId"`
-	NetworkPolicyRef string `json:"networkPolicyRef"`
-	ImageURI         string `json:"imageUri"`
-	ReleaseDigest    string `json:"releaseDigest"`
-	CPUMillis        int64  `json:"cpuMillis"`
-	MemoryBytes      int64  `json:"memoryBytes"`
+	ProfileID        string                        `json:"profileId"`
+	ProfileName      string                        `json:"profileName"`
+	Version          int64                         `json:"version"`
+	Description      string                        `json:"description"`
+	TargetID         string                        `json:"targetId,omitempty"`
+	TargetSelector   *RuntimeProfileTargetSelector `json:"targetSelector,omitempty"`
+	NetworkPolicyRef string                        `json:"networkPolicyRef"`
+	ImageURI         string                        `json:"imageUri"`
+	ReleaseDigest    string                        `json:"releaseDigest"`
+	CPUMillis        int64                         `json:"cpuMillis"`
+	MemoryBytes      int64                         `json:"memoryBytes"`
 }
 type RuntimeProfileTransitionRequest struct {
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
 }
 type RuntimeProfileSpec struct {
-	ProjectRef       common.ProjectRef `json:"projectRef"`
-	ProfileID        string            `json:"profileId"`
-	Version          int64             `json:"version"`
-	Description      string            `json:"description"`
-	Status           string            `json:"status"`
-	TargetID         string            `json:"targetId"`
-	NetworkPolicyRef string            `json:"networkPolicyRef,omitempty"`
-	ImageURI         string            `json:"imageUri"`
-	ReleaseDigest    string            `json:"releaseDigest"`
-	CPUMillis        int64             `json:"cpuMillis"`
-	MemoryBytes      int64             `json:"memoryBytes"`
-	PublishedAt      string            `json:"publishedAt,omitempty"`
-	DisabledAt       string            `json:"disabledAt,omitempty"`
+	ProjectRef       common.ProjectRef             `json:"projectRef"`
+	ProfileID        string                        `json:"profileId"`
+	Version          int64                         `json:"version"`
+	Description      string                        `json:"description"`
+	Status           string                        `json:"status"`
+	TargetID         string                        `json:"targetId,omitempty"`
+	TargetSelector   *RuntimeProfileTargetSelector `json:"targetSelector,omitempty"`
+	NetworkPolicyRef string                        `json:"networkPolicyRef,omitempty"`
+	ImageURI         string                        `json:"imageUri"`
+	ReleaseDigest    string                        `json:"releaseDigest"`
+	CPUMillis        int64                         `json:"cpuMillis"`
+	MemoryBytes      int64                         `json:"memoryBytes"`
+	PublishedAt      string                        `json:"publishedAt,omitempty"`
+	DisabledAt       string                        `json:"disabledAt,omitempty"`
 }
 type RuntimeProfile struct {
 	ResourceBase
@@ -1510,7 +1518,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "EnvironmentProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "providerKinds": common.ArrayResponseShape(common.ScalarResponseShape()), "cpuLimitMillis": common.ScalarResponseShape(), "memoryLimitBytes": common.ScalarResponseShape(), "storagePolicyRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetRefs": common.ArrayResponseShape(common.ScalarResponseShape()), "providerCredentialRef": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "RuntimeProfile":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetSelector": common.ObjectResponseShape(map[string]common.ResponseShape{"regionId": common.ScalarResponseShape(), "resourcePoolId": common.ScalarResponseShape(), "runtime": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape()}), "networkPolicyRef": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "AdminSandboxSession":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
 	case "AdminSandboxAccessGrant":
@@ -4711,12 +4719,27 @@ func validateRuntimeProfileSummaryValues(profileID string, version int64, descri
 	}
 	return nil
 }
-func validateRuntimeProfileValues(profileID string, version int64, description, targetID, networkPolicyRef, imageURI, releaseDigest string, cpuMillis, memoryBytes int64, path string) error {
+func validateRuntimeProfileTargetSelection(targetID string, selector *RuntimeProfileTargetSelector, path string) error {
+	if (targetID == "") == (selector == nil) {
+		return common.ContractError("INVALID_TARGET_SELECTION", path)
+	}
+	if targetID != "" {
+		if common.ValidateIdentifier(targetID, path+"/targetId") != nil {
+			return common.ContractError("INVALID_IDENTIFIER", path+"/targetId")
+		}
+		return nil
+	}
+	if common.ValidateIdentifier(selector.RegionID, path+"/targetSelector/regionId") != nil || common.ValidateIdentifier(selector.ResourcePoolID, path+"/targetSelector/resourcePoolId") != nil || selector.Runtime != "docker" || selector.Architecture != "amd64" && selector.Architecture != "arm64" {
+		return common.ContractError("INVALID_TARGET_SELECTION", path+"/targetSelector")
+	}
+	return nil
+}
+func validateRuntimeProfileValues(profileID string, version int64, description, targetID string, selector *RuntimeProfileTargetSelector, networkPolicyRef, imageURI, releaseDigest string, cpuMillis, memoryBytes int64, path string) error {
 	if err := validateRuntimeProfileSummaryValues(profileID, version, description, cpuMillis, memoryBytes, path); err != nil {
 		return err
 	}
-	if common.ValidateIdentifier(targetID, path+"/targetId") != nil {
-		return common.ContractError("INVALID_IDENTIFIER", path+"/targetId")
+	if err := validateRuntimeProfileTargetSelection(targetID, selector, path); err != nil {
+		return err
 	}
 	if networkPolicyRef != "" && common.ValidateIdentifier(networkPolicyRef, path+"/networkPolicyRef") != nil {
 		return common.ContractError("INVALID_IDENTIFIER", path+"/networkPolicyRef")
@@ -4730,9 +4753,16 @@ func validateRuntimeProfileValues(profileID string, version int64, description, 
 	return nil
 }
 func DecodeRuntimeProfileCreateRequestJSON(data []byte) (RuntimeProfileCreateRequest, error) {
-	allowed := []string{"profileId", "profileName", "version", "description", "targetId", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
-	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+	allowed := []string{"profileId", "profileName", "version", "description", "targetId", "targetSelector", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
+	required := []string{"profileId", "profileName", "version", "description", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
+	fields, err := common.DecodeStrictObject(data, allowed, required)
+	if err != nil {
 		return RuntimeProfileCreateRequest{}, err
+	}
+	if raw, ok := fields["targetSelector"]; ok {
+		if _, err := common.DecodeStrictObject(raw, []string{"regionId", "resourcePoolId", "runtime", "architecture"}, []string{"regionId", "resourcePoolId", "runtime", "architecture"}); err != nil {
+			return RuntimeProfileCreateRequest{}, err
+		}
 	}
 	var value RuntimeProfileCreateRequest
 	if json.Unmarshal(data, &value) != nil {
@@ -4741,7 +4771,7 @@ func DecodeRuntimeProfileCreateRequestJSON(data []byte) (RuntimeProfileCreateReq
 	if common.ValidateIdentifier(value.ProfileName, "/profileName") != nil || common.ValidateIdentifier(value.NetworkPolicyRef, "/networkPolicyRef") != nil {
 		return RuntimeProfileCreateRequest{}, common.ContractError("INVALID_IDENTIFIER", "")
 	}
-	if err := validateRuntimeProfileValues(value.ProfileID, value.Version, value.Description, value.TargetID, value.NetworkPolicyRef, value.ImageURI, value.ReleaseDigest, value.CPUMillis, value.MemoryBytes, ""); err != nil {
+	if err := validateRuntimeProfileValues(value.ProfileID, value.Version, value.Description, value.TargetID, value.TargetSelector, value.NetworkPolicyRef, value.ImageURI, value.ReleaseDigest, value.CPUMillis, value.MemoryBytes, ""); err != nil {
 		return RuntimeProfileCreateRequest{}, err
 	}
 	return value, nil
@@ -4786,8 +4816,8 @@ func DecodeRuntimeProfileJSON(data []byte) (RuntimeProfile, error) {
 	if err != nil {
 		return RuntimeProfile{}, err
 	}
-	allowed := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes", "publishedAt", "disabledAt"}
-	required := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
+	allowed := []string{"projectRef", "profileId", "version", "description", "status", "targetId", "targetSelector", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes", "publishedAt", "disabledAt"}
+	required := []string{"projectRef", "profileId", "version", "description", "status", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return RuntimeProfile{}, err
@@ -4796,12 +4826,17 @@ func DecodeRuntimeProfileJSON(data []byte) (RuntimeProfile, error) {
 	if err != nil {
 		return RuntimeProfile{}, err
 	}
+	if raw, ok := specFields["targetSelector"]; ok {
+		if _, err := common.DecodeStrictObject(raw, []string{"regionId", "resourcePoolId", "runtime", "architecture"}, []string{"regionId", "resourcePoolId", "runtime", "architecture"}); err != nil {
+			return RuntimeProfile{}, err
+		}
+	}
 	var spec RuntimeProfileSpec
 	if json.Unmarshal(fields["spec"], &spec) != nil {
 		return RuntimeProfile{}, common.ContractError("INVALID_FIELD_TYPE", "/spec")
 	}
 	spec.ProjectRef = project
-	if err := validateRuntimeProfileValues(spec.ProfileID, spec.Version, spec.Description, spec.TargetID, spec.NetworkPolicyRef, spec.ImageURI, spec.ReleaseDigest, spec.CPUMillis, spec.MemoryBytes, "/spec"); err != nil {
+	if err := validateRuntimeProfileValues(spec.ProfileID, spec.Version, spec.Description, spec.TargetID, spec.TargetSelector, spec.NetworkPolicyRef, spec.ImageURI, spec.ReleaseDigest, spec.CPUMillis, spec.MemoryBytes, "/spec"); err != nil {
 		return RuntimeProfile{}, err
 	}
 	if spec.Status != "draft" && spec.Status != "published" && spec.Status != "disabled" {

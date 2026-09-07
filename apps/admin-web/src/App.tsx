@@ -167,6 +167,13 @@ function runtimeProfileForm() {
   };
 }
 
+function runtimeProfileTargetLabel(profile: RuntimeProfile): string {
+  const selector = profile.spec.targetSelector;
+  return selector === undefined
+    ? profile.spec.targetId
+    : `${selector.regionId} / ${selector.resourcePoolId} / ${selector.runtime} / ${selector.architecture}`;
+}
+
 function executableFoundationNetworkPolicy(policy: NetworkPolicy): boolean {
   return (
     (policy.spec.defaultEgress === "deny" ||
@@ -779,17 +786,18 @@ export function App() {
   const visibleRuntimeProfiles =
     normalizedQuery === ""
       ? runtimeProfiles
-      : runtimeProfiles.filter(({ metadata, spec }) =>
-          [
+      : runtimeProfiles.filter((profile) => {
+          const { metadata, spec } = profile;
+          return [
             metadata.uid,
             metadata.name,
             spec.profileId,
             String(spec.version),
             spec.status,
-            spec.targetId,
+            runtimeProfileTargetLabel(profile),
             spec.imageUri,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
+          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+        });
   const visibleSandboxes =
     normalizedQuery === ""
       ? sandboxes
@@ -1683,7 +1691,25 @@ export function App() {
       profileName: runtimeProfileDraft.profileName.trim(),
       version: Number(runtimeProfileDraft.version),
       description: runtimeProfileDraft.description.trim(),
-      targetId: runtimeProfileDraft.targetId,
+      ...(runtimeProfileDraft.targetId === "pool-remote-worker:arm64"
+        ? {
+            targetSelector: {
+              regionId: "region-local",
+              resourcePoolId: "pool-remote-worker",
+              runtime: "docker" as const,
+              architecture: "arm64" as const,
+            },
+          }
+        : runtimeProfileDraft.targetId === "pool-remote-worker:amd64"
+          ? {
+              targetSelector: {
+                regionId: "region-local",
+                resourcePoolId: "pool-remote-worker",
+                runtime: "docker" as const,
+                architecture: "amd64" as const,
+              },
+            }
+          : { targetId: runtimeProfileDraft.targetId }),
       networkPolicyRef: runtimeProfileDraft.networkPolicyRef,
       imageUri: runtimeProfileDraft.imageUri.trim(),
       releaseDigest: runtimeProfileDraft.releaseDigest.trim() as `sha256:${string}`,
@@ -3778,6 +3804,22 @@ export function App() {
                       })
                     }
                   >
+                    {targets.some(
+                      ({ spec }) =>
+                        spec.targetKind === "remote-worker" && spec.architecture === "arm64",
+                    ) ? (
+                      <option value="pool-remote-worker:arm64">
+                        {t("runtimeProfile.remoteWorkerPoolArm64")}
+                      </option>
+                    ) : null}
+                    {targets.some(
+                      ({ spec }) =>
+                        spec.targetKind === "remote-worker" && spec.architecture === "amd64",
+                    ) ? (
+                      <option value="pool-remote-worker:amd64">
+                        {t("runtimeProfile.remoteWorkerPoolAmd64")}
+                      </option>
+                    ) : null}
                     {targets
                       .filter(
                         ({ spec }) =>
@@ -5419,7 +5461,7 @@ function RuntimeProfileTable({
                   <i /> {phaseLabel(profile.spec.status, t)}
                 </span>
               </td>
-              <td className="mono">{profile.spec.targetId}</td>
+              <td className="mono">{runtimeProfileTargetLabel(profile)}</td>
               <td>
                 {number(profile.spec.cpuMillis)} mCPU ·{" "}
                 {number(Math.round(profile.spec.memoryBytes / 1_048_576))} MiB
@@ -6707,7 +6749,7 @@ function RuntimeProfileDetail({
         </div>
         <div>
           <dt>{t("runtimeProfile.target")}</dt>
-          <dd className="mono">{profile.spec.targetId}</dd>
+          <dd className="mono">{runtimeProfileTargetLabel(profile)}</dd>
         </div>
         <div>
           <dt>{t("runtimeProfile.networkPolicy")}</dt>

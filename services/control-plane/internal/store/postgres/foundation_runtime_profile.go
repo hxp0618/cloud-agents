@@ -34,6 +34,10 @@ type runtimeProfilePageRow struct {
 	Description      string     `json:"description"`
 	Status           string     `json:"status"`
 	TargetID         string     `json:"target_uid"`
+	TargetRegionID   string     `json:"target_region_uid"`
+	TargetPoolID     string     `json:"target_resource_pool_uid"`
+	TargetRuntime    string     `json:"target_runtime"`
+	TargetArch       string     `json:"target_architecture"`
 	NetworkPolicyID  string     `json:"network_policy_ref"`
 	ImageURI         string     `json:"image_uri"`
 	ReleaseDigest    string     `json:"release_digest"`
@@ -59,15 +63,17 @@ type publishedRuntimeProfilePageRow struct {
 }
 
 const runtimeProfileColumns = `profile_version_uid, profile_uid, profile_name, profile_version,
-    description, status, target_uid, COALESCE(network_policy_ref, '') AS network_policy_ref,
+    description, status, COALESCE(target_uid, '') AS target_uid,
+    target_region_uid, target_resource_pool_uid, target_runtime, target_architecture,
+    COALESCE(network_policy_ref, '') AS network_policy_ref,
     image_uri, release_digest, cpu_millis, memory_bytes,
     resource_version, created_at, updated_at, published_at, disabled_at`
 
 var (
 	createRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
-FROM cloud_agents.create_runtime_profile_draft_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+FROM cloud_agents.create_runtime_profile_draft_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`
 	transitionRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
-FROM cloud_agents.transition_runtime_profile_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.transition_runtime_profile_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
 FROM cloud_agents.runtime_profiles
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
@@ -86,9 +92,6 @@ FROM (
 ) AS profile_row`
 	publishedRuntimeProfilePageCursorSQL = `SELECT 1
 FROM cloud_agents.runtime_profiles AS profile
-JOIN cloud_agents.deployment_targets AS target
-  ON target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
- AND target.target_uid = profile.target_uid
 JOIN cloud_agents.network_policies AS policy
   ON policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
  AND policy.policy_uid = profile.network_policy_ref
@@ -97,8 +100,11 @@ WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_u
     AND policy.default_egress IN ('restricted', 'deny')
     AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
     AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
-    AND cloud_agents.foundation_target_can_reserve_v1(profile.tenant_id, profile.project_uid,
-        target.target_uid, profile.cpu_millis, profile.memory_bytes, '')`
+    AND cloud_agents.foundation_runtime_profile_available_v1(
+        profile.tenant_id, profile.project_uid, COALESCE(profile.target_uid, ''),
+        profile.target_region_uid, profile.target_resource_pool_uid,
+        profile.target_runtime, profile.target_architecture,
+        profile.cpu_millis, profile.memory_bytes, '')`
 	listPublishedRuntimeProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
     ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
 FROM (
@@ -106,9 +112,6 @@ FROM (
         profile.profile_uid, profile.profile_name, profile.profile_version,
         profile.description, profile.cpu_millis, profile.memory_bytes
     FROM cloud_agents.runtime_profiles AS profile
-    JOIN cloud_agents.deployment_targets AS target
-      ON target.tenant_id = profile.tenant_id AND target.project_uid = profile.project_uid
-     AND target.target_uid = profile.target_uid
     JOIN cloud_agents.network_policies AS policy
       ON policy.tenant_id = profile.tenant_id AND policy.project_uid = profile.project_uid
      AND policy.policy_uid = profile.network_policy_ref
@@ -117,8 +120,11 @@ FROM (
         AND policy.default_egress IN ('restricted', 'deny')
         AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
         AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
-        AND cloud_agents.foundation_target_can_reserve_v1(profile.tenant_id, profile.project_uid,
-            target.target_uid, profile.cpu_millis, profile.memory_bytes, '')
+        AND cloud_agents.foundation_runtime_profile_available_v1(
+            profile.tenant_id, profile.project_uid, COALESCE(profile.target_uid, ''),
+            profile.target_region_uid, profile.target_resource_pool_uid,
+            profile.target_runtime, profile.target_architecture,
+            profile.cpu_millis, profile.memory_bytes, '')
     ORDER BY profile.profile_version_uid
     LIMIT $3
 ) AS profile_row`
@@ -141,10 +147,12 @@ func (service *DurableCoordinationService) CreateRuntimeProfile(
 		return internalcoordination.RuntimeProfileSnapshot{}, ErrCoordinationInvalidInput
 	}
 	var result internalcoordination.RuntimeProfileSnapshot
+	region, pool, runtime, architecture := runtimeProfileTargetSelectorValues(input.TargetSelector)
 	err = service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true, func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 		return scanRuntimeProfile(handle.transaction.queryRow(operationContext, createRuntimeProfileSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID, input.ProfileName, input.Version,
-			input.Description, input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.CPUMillis,
+			input.Description, input.TargetID, region, pool, runtime, architecture,
+			input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.CPUMillis,
 			input.MemoryBytes, input.Mutation.IdempotencyKey, digest, input.Mutation.RequestID, subjectDigest), input.Scope, &result)
 	})
 	return result, mapRuntimeProfileError(err)
@@ -338,13 +346,21 @@ func scanRuntimeProfile(row rowScanner, scope internalcoordination.FoundationSco
 	}
 	var createdAt, updatedAt time.Time
 	var publishedAt, disabledAt *time.Time
+	var targetRegion, targetPool, targetRuntime, targetArchitecture string
 	if err := row.Scan(&result.ProfileVersionID, &result.ProfileID, &result.ProfileName, &result.Version,
-		&result.Description, &result.Status, &result.TargetID, &result.NetworkPolicyID, &result.ImageURI, &result.ReleaseDigest,
+		&result.Description, &result.Status, &result.TargetID,
+		&targetRegion, &targetPool, &targetRuntime, &targetArchitecture,
+		&result.NetworkPolicyID, &result.ImageURI, &result.ReleaseDigest,
 		&result.CPUMillis, &result.MemoryBytes, &result.ResourceVersion, &createdAt, &updatedAt,
 		&publishedAt, &disabledAt); err != nil {
 		return err
 	}
 	result.Scope, result.CreatedAt, result.UpdatedAt = scope, createdAt, updatedAt
+	if result.TargetID == "" {
+		result.TargetSelector = &internalcoordination.RuntimeProfileTargetSelector{
+			RegionID: targetRegion, ResourcePoolID: targetPool, Runtime: targetRuntime, Architecture: targetArchitecture,
+		}
+	}
 	if publishedAt != nil {
 		result.PublishedAt = publishedAt
 	}
@@ -408,6 +424,7 @@ func runtimeProfileSnapshot(row runtimeProfilePageRow) internalcoordination.Runt
 		Scope:            internalcoordination.FoundationScope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 		ProfileVersionID: row.ProfileVersionID, ProfileID: row.ProfileID, ProfileName: row.ProfileName,
 		Version: row.Version, Description: row.Description, Status: row.Status, TargetID: row.TargetID,
+		TargetSelector:  runtimeProfileTargetSelector(row.TargetID, row.TargetRegionID, row.TargetPoolID, row.TargetRuntime, row.TargetArch),
 		NetworkPolicyID: row.NetworkPolicyID,
 		ImageURI:        row.ImageURI, ReleaseDigest: row.ReleaseDigest, CPUMillis: row.CPUMillis,
 		MemoryBytes: row.MemoryBytes, ResourceVersion: row.ResourceVersion,
@@ -420,6 +437,20 @@ func runtimeProfileSnapshot(row runtimeProfilePageRow) internalcoordination.Runt
 		result.DisabledAt = row.DisabledAt
 	}
 	return result
+}
+
+func runtimeProfileTargetSelectorValues(selector *internalcoordination.RuntimeProfileTargetSelector) (string, string, string, string) {
+	if selector == nil {
+		return "", "", "", ""
+	}
+	return selector.RegionID, selector.ResourcePoolID, selector.Runtime, selector.Architecture
+}
+
+func runtimeProfileTargetSelector(targetID, region, pool, runtime, architecture string) *internalcoordination.RuntimeProfileTargetSelector {
+	if targetID != "" {
+		return nil
+	}
+	return &internalcoordination.RuntimeProfileTargetSelector{RegionID: region, ResourcePoolID: pool, Runtime: runtime, Architecture: architecture}
 }
 
 func mapRuntimeProfileError(err error) error {

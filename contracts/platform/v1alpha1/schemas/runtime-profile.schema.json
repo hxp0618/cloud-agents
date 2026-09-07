@@ -12,7 +12,11 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectRef", "profileId", "version", "description", "status", "targetId", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+      "required": ["projectRef", "profileId", "version", "description", "status", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+      "oneOf": [
+        { "required": ["targetId"], "not": { "required": ["targetSelector"] } },
+        { "required": ["targetSelector"], "not": { "required": ["targetId"] } }
+      ],
       "properties": {
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "profileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
@@ -20,6 +24,17 @@
         "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
         "status": { "enum": ["draft", "published", "disabled"] },
         "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "targetSelector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["regionId", "resourcePoolId", "runtime", "architecture"],
+          "properties": {
+            "regionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+            "resourcePoolId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+            "runtime": { "const": "docker" },
+            "architecture": { "enum": ["amd64", "arm64"] }
+          }
+        },
         "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
         "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
@@ -32,7 +47,8 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "draft has no lifecycle timestamp, published has only publishedAt, and disabled has both timestamps",
-    "target, network policy, image and release are Admin-only and immutable for a version",
+    "exactly one of targetId or targetSelector is present",
+    "target, target selector, network policy, image and release are Admin-only and immutable for a version",
     "networkPolicyRef is absent only on legacy versions created before executable network policy authority"
   ]
 }

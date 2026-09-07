@@ -1588,6 +1588,38 @@ describe("generated platform JSON models", () => {
       expiresAt: "2026-09-05T03:01:00Z",
     };
     expect(decodeRuntimeProfile(profile).spec.targetId).toBe("docker-primary");
+    const selectorProfile = {
+      ...profile,
+      spec: {
+        ...profile.spec,
+        targetId: undefined,
+        targetSelector: {
+          regionId: "region-local",
+          resourcePoolId: "pool-remote-worker",
+          runtime: "docker",
+          architecture: "arm64",
+        },
+      },
+    };
+    expect(decodeRuntimeProfile(selectorProfile).spec.targetSelector?.architecture).toBe("arm64");
+    expect(() =>
+      decodeRuntimeProfile({
+        ...selectorProfile,
+        spec: { ...selectorProfile.spec, targetId: "docker-primary" },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeRuntimeProfile({
+        ...selectorProfile,
+        spec: {
+          ...selectorProfile.spec,
+          targetSelector: { ...selectorProfile.spec.targetSelector, runtime: "ssh" },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeRuntimeProfile({ ...profile, spec: { ...profile.spec, targetId: undefined } }),
+    ).toThrow();
     expect(parseRuntimeProfile(JSON.stringify(profile)).value.spec.status).toBe("draft");
     expect(decodeSandboxSession(sandbox).observedState).toBe("pending");
     expect(parseSandboxSession(JSON.stringify(sandbox)).value.operationId).toBe(
@@ -1639,6 +1671,33 @@ describe("generated platform JSON models", () => {
         memoryBytes: 536870912,
       },
     );
+    await client.createAdminRuntimeProfile(
+      "tenant-alpha",
+      "project-alpha",
+      "request-runtime-selector-create",
+      "runtime-selector-key",
+      {
+        profileId: "foundation",
+        profileName: "foundation",
+        version: 1,
+        description: "Retained no-agent workspace",
+        targetSelector: {
+          regionId: "region-local",
+          resourcePoolId: "pool-remote-worker",
+          runtime: "docker",
+          architecture: "arm64",
+        },
+        networkPolicyRef: "network-deny",
+        imageUri: `registry.example.test/runtime@${digest}`,
+        releaseDigest: digest,
+        cpuMillis: 500,
+        memoryBytes: 536870912,
+      },
+    );
+    expect(JSON.parse(seen[1]?.body ?? "{}")).toMatchObject({
+      targetSelector: { regionId: "region-local", resourcePoolId: "pool-remote-worker" },
+    });
+    expect(JSON.parse(seen[1]?.body ?? "{}")).not.toHaveProperty("targetId");
     await client.listAdminRuntimeProfiles(
       "tenant-alpha",
       "project-alpha",
@@ -1664,6 +1723,7 @@ describe("generated platform JSON models", () => {
       },
     );
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",
       "POST /v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/runtime-profiles",

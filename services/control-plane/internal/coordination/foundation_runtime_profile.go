@@ -33,10 +33,15 @@ var (
 type FoundationScope struct{ TenantID, ProjectID string }
 type FoundationMutation struct{ RequestID, IdempotencyKey string }
 
+type RuntimeProfileTargetSelector struct {
+	RegionID, ResourcePoolID, Runtime, Architecture string
+}
+
 type RuntimeProfileCreateInput struct {
 	Scope                               FoundationScope
 	ProfileID, ProfileName, Description string
 	TargetID, NetworkPolicyID           string
+	TargetSelector                      *RuntimeProfileTargetSelector
 	ImageURI, ReleaseDigest             string
 	Version, CPUMillis, MemoryBytes     int64
 	Mutation                            FoundationMutation
@@ -53,6 +58,7 @@ type RuntimeProfileSnapshot struct {
 	Scope                                          FoundationScope
 	ProfileVersionID, ProfileID, ProfileName       string
 	Description, Status, TargetID, NetworkPolicyID string
+	TargetSelector                                 *RuntimeProfileTargetSelector
 	ImageURI                                       string
 	ReleaseDigest                                  string
 	Version, CPUMillis, MemoryBytes                int64
@@ -106,7 +112,7 @@ type FoundationSandboxLifecycleOperation struct {
 func (input RuntimeProfileCreateInput) Validate(tenantID string) error {
 	if !validFoundationScope(input.Scope, tenantID) || !validIdentifier(input.ProfileID) ||
 		!validIdentifier(input.ProfileName) || input.Version < 1 || input.Version > 2147483647 ||
-		invalidRuntimeProfileDescription(input.Description) || !validIdentifier(input.TargetID) ||
+		invalidRuntimeProfileDescription(input.Description) || invalidRuntimeProfileTargetSelection(input.TargetID, input.TargetSelector) ||
 		!validIdentifier(input.NetworkPolicyID) ||
 		len(input.ImageURI) > 1024 || !runtimeProfileImagePattern.MatchString(input.ImageURI) ||
 		!runtimeProfileDigestPattern.MatchString(input.ReleaseDigest) ||
@@ -126,9 +132,10 @@ func RuntimeProfileCreateDigest(input RuntimeProfileCreateInput) (string, error)
 	return foundationDigest(struct {
 		Operation, TenantID, ProjectID, ProfileID, ProfileName, Description string
 		TargetID, NetworkPolicyID, ImageURI, ReleaseDigest                  string
+		TargetSelector                                                      *RuntimeProfileTargetSelector
 		Version, CPUMillis, MemoryBytes                                     int64
 	}{"runtime-profile.create", input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID,
-		input.ProfileName, input.Description, input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest,
+		input.ProfileName, input.Description, input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.TargetSelector,
 		input.Version, input.CPUMillis, input.MemoryBytes})
 }
 
@@ -156,6 +163,7 @@ func RuntimeProfileTransitionDigest(input RuntimeProfileTransitionInput) (string
 func (snapshot RuntimeProfileSnapshot) Validate() error {
 	input := RuntimeProfileCreateInput{Scope: snapshot.Scope, ProfileID: snapshot.ProfileID,
 		ProfileName: snapshot.ProfileName, Description: snapshot.Description, TargetID: snapshot.TargetID,
+		TargetSelector:  snapshot.TargetSelector,
 		NetworkPolicyID: snapshot.NetworkPolicyID,
 		ImageURI:        snapshot.ImageURI, ReleaseDigest: snapshot.ReleaseDigest, Version: snapshot.Version,
 		CPUMillis: snapshot.CPUMillis, MemoryBytes: snapshot.MemoryBytes,
@@ -184,6 +192,14 @@ func (snapshot RuntimeProfileSnapshot) Validate() error {
 		return ErrInvalidRuntimeProfile
 	}
 	return nil
+}
+
+func invalidRuntimeProfileTargetSelection(targetID string, selector *RuntimeProfileTargetSelector) bool {
+	if targetID != "" {
+		return selector != nil || !validIdentifier(targetID)
+	}
+	return selector == nil || !validIdentifier(selector.RegionID) || !validIdentifier(selector.ResourcePoolID) ||
+		selector.Runtime != "docker" || selector.Architecture != "amd64" && selector.Architecture != "arm64"
 }
 
 func (summary RuntimeProfileSummary) Validate() error {
