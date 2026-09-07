@@ -1219,6 +1219,34 @@ export type AdminSandboxSessionPage = Readonly<{
   sandboxSessions: readonly AdminSandboxSession[];
   nextPageToken?: string;
 }>;
+export type WorkspaceSnapshotCreateRequest = Readonly<{
+  snapshotId: string;
+  sourceSandboxId: string;
+  expectedSandboxGeneration: number;
+}>;
+export type WorkspaceSnapshot = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "WorkspaceSnapshot";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    sourceWorkspaceId: string;
+    sourceWorkspaceResourceVersion: string;
+    backend: "docker-volume-v1";
+    consistencyMode: "offline";
+    status: "pending" | "available" | "unknown" | "failed";
+    operationId: string;
+    sizeBytes?: number;
+    stableErrorCode?: string;
+    observedAt?: string;
+  }>;
+}>;
+export type WorkspaceSnapshotPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "WorkspaceSnapshotPage";
+  workspaceSnapshots: readonly WorkspaceSnapshot[];
+  nextPageToken?: string;
+}>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
@@ -2520,6 +2548,14 @@ const adminSandboxSessionPageResponseShape: ResponseShape = {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
     sandboxSessions: { item: adminSandboxSessionResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const workspaceSnapshotPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    workspaceSnapshots: { item: resourceResponseShape("WorkspaceSnapshot") },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -4362,6 +4398,30 @@ export function encodeSandboxSessionLifecycleRequest(
   value: SandboxSessionLifecycleRequest,
 ): string {
   return JSON.stringify(decodeSandboxSessionLifecycleRequest(value));
+}
+export function decodeWorkspaceSnapshotCreateRequest(
+  value: unknown,
+): WorkspaceSnapshotCreateRequest {
+  const source = strictRecord(
+    value,
+    ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration"],
+    ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration"],
+  );
+  return Object.freeze({
+    snapshotId: identifier(source.snapshotId, "/snapshotId"),
+    sourceSandboxId: identifier(source.sourceSandboxId, "/sourceSandboxId"),
+    expectedSandboxGeneration: integer(
+      source.expectedSandboxGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedSandboxGeneration",
+    ),
+  });
+}
+export function encodeWorkspaceSnapshotCreateRequest(
+  value: WorkspaceSnapshotCreateRequest,
+): string {
+  return JSON.stringify(decodeWorkspaceSnapshotCreateRequest(value));
 }
 export function decodeEnvironmentLeaseTerminateRequest(
   value: unknown,
@@ -8445,6 +8505,113 @@ export function decodeAdminSandboxSessionPage(value: unknown): AdminSandboxSessi
       : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
   );
 }
+export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
+  const source = record(value);
+  const root = base(source, "WorkspaceSnapshot");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "sourceWorkspaceId",
+      "sourceWorkspaceResourceVersion",
+      "backend",
+      "consistencyMode",
+      "status",
+      "operationId",
+      "sizeBytes",
+      "stableErrorCode",
+      "observedAt",
+    ],
+    [
+      "projectRef",
+      "sourceWorkspaceId",
+      "sourceWorkspaceResourceVersion",
+      "backend",
+      "consistencyMode",
+      "status",
+      "operationId",
+    ],
+    "/spec",
+  );
+  const sourceWorkspaceResourceVersion = string(
+    spec.sourceWorkspaceResourceVersion,
+    "/spec/sourceWorkspaceResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(sourceWorkspaceResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/spec/sourceWorkspaceResourceVersion");
+  const status = enumValue(
+    spec.status,
+    ["pending", "available", "unknown", "failed"] as const,
+    "/spec/status",
+  );
+  const sizeBytes =
+    spec.sizeBytes === undefined
+      ? undefined
+      : integer(spec.sizeBytes, 0, 67108864, "/spec/sizeBytes");
+  const stableErrorCode =
+    spec.stableErrorCode === undefined
+      ? undefined
+      : identifier(spec.stableErrorCode, "/spec/stableErrorCode");
+  const observedAt =
+    spec.observedAt === undefined ? undefined : dateTime(spec.observedAt, "/spec/observedAt");
+  if (
+    (status === "available" &&
+      (sizeBytes === undefined || stableErrorCode !== undefined || observedAt === undefined)) ||
+    (status === "failed" &&
+      (sizeBytes !== undefined || stableErrorCode === undefined || observedAt === undefined)) ||
+    (status === "unknown" &&
+      (sizeBytes !== undefined || stableErrorCode !== undefined || observedAt === undefined)) ||
+    (status === "pending" &&
+      (sizeBytes !== undefined || stableErrorCode !== undefined || observedAt !== undefined))
+  )
+    error("INVALID_WORKSPACE_SNAPSHOT", "/spec/status");
+  return Object.freeze({
+    ...root,
+    kind: "WorkspaceSnapshot",
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      sourceWorkspaceId: identifier(spec.sourceWorkspaceId, "/spec/sourceWorkspaceId"),
+      sourceWorkspaceResourceVersion,
+      backend: enumValue(spec.backend, ["docker-volume-v1"] as const, "/spec/backend"),
+      consistencyMode: enumValue(
+        spec.consistencyMode,
+        ["offline"] as const,
+        "/spec/consistencyMode",
+      ),
+      status,
+      operationId: identifier(spec.operationId, "/spec/operationId"),
+      ...(sizeBytes === undefined ? {} : { sizeBytes }),
+      ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
+      ...(observedAt === undefined ? {} : { observedAt }),
+    }),
+  });
+}
+export function decodeWorkspaceSnapshotPage(value: unknown): WorkspaceSnapshotPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "workspaceSnapshots", "nextPageToken"],
+    ["apiVersion", "kind", "workspaceSnapshots"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "WorkspaceSnapshotPage" ||
+    !Array.isArray(source.workspaceSnapshots) ||
+    source.workspaceSnapshots.length > 200
+  )
+    error("INVALID_WORKSPACE_SNAPSHOT_PAGE", "/workspaceSnapshots");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "WorkspaceSnapshotPage" as const,
+    workspaceSnapshots: Object.freeze(
+      (source.workspaceSnapshots as unknown[]).map(decodeWorkspaceSnapshot),
+    ),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
 export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
   const source = record(value);
   const root = base(source, "DeploymentTarget");
@@ -10021,6 +10188,12 @@ export function parseAdminSandboxSessionPage(
   text: string,
 ): ResponseEnvelope<AdminSandboxSessionPage> {
   return parseResponse(text, adminSandboxSessionPageResponseShape, decodeAdminSandboxSessionPage);
+}
+export function parseWorkspaceSnapshot(text: string): ResponseEnvelope<WorkspaceSnapshot> {
+  return parseResponse(text, resourceResponseShape("WorkspaceSnapshot"), decodeWorkspaceSnapshot);
+}
+export function parseWorkspaceSnapshotPage(text: string): ResponseEnvelope<WorkspaceSnapshotPage> {
+  return parseResponse(text, workspaceSnapshotPageResponseShape, decodeWorkspaceSnapshotPage);
 }
 export function parseDeploymentTarget(text: string): ResponseEnvelope<DeploymentTarget> {
   return parseResponse(text, deploymentTargetResponseShape, decodeDeploymentTarget);
@@ -13283,6 +13456,100 @@ export class Client {
       result.value.metadata.tenantRef.id !== tenantId ||
       result.value.spec.projectRef.id !== projectId ||
       result.value.metadata.uid !== sandboxId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async listAdminWorkspaceSnapshots(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkspaceSnapshotPage>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workspace-snapshots${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListWorkspaceSnapshots", response);
+    const result = parseWorkspaceSnapshotPage(response.body);
+    if (
+      result.value.workspaceSnapshots.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/workspaceSnapshots");
+    return result;
+  }
+  async createAdminWorkspaceSnapshot(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: WorkspaceSnapshotCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkspaceSnapshot>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeWorkspaceSnapshotCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workspace-snapshots`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeWorkspaceSnapshotCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 202) throw await this.problem("adminCreateWorkspaceSnapshot", response);
+    const result = parseWorkspaceSnapshot(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.metadata.uid !== checked.snapshotId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async getAdminWorkspaceSnapshot(
+    tenantId: string,
+    projectId: string,
+    snapshotId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkspaceSnapshot>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(snapshotId, "/snapshotId");
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workspace-snapshots/${snapshotId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetWorkspaceSnapshot", response);
+    const result = parseWorkspaceSnapshot(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.metadata.uid !== snapshotId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;

@@ -23,6 +23,7 @@ import {
   listAdminSandboxAccessGrants,
   listAdminSandboxes,
   listAdminStoragePolicies,
+  listAdminWorkspaceSnapshots,
   listAdminNetworkPolicies,
   listAdminStoragePolicyAuditEvents,
   listAdminReleases,
@@ -583,6 +584,44 @@ describe("Admin Web boundary", () => {
       "grants:first",
       "grants:next-grant-page",
     ]);
+  });
+
+  it("pages and newest-first sorts workspace snapshot metadata from Admin API", async () => {
+    const tokens: Array<string | undefined> = [];
+    const client = {
+      listAdminWorkspaceSnapshots: async (
+        _tenantId: string,
+        _projectId: string,
+        _requestId: string,
+        _pageSize?: number,
+        pageToken?: string,
+      ) => {
+        tokens.push(pageToken);
+        return {
+          value: {
+            workspaceSnapshots: [
+              {
+                metadata: {
+                  uid: pageToken === undefined ? "older" : "newer",
+                  createdAt:
+                    pageToken === undefined ? "2026-09-08T01:00:00Z" : "2026-09-08T02:00:00Z",
+                },
+              },
+            ],
+            ...(pageToken === undefined ? { nextPageToken: "next-page" } : {}),
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    const snapshots = await listAdminWorkspaceSnapshots(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      new AbortController().signal,
+    );
+    expect(tokens).toEqual([undefined, "next-page"]);
+    expect(snapshots.map(({ metadata }) => metadata.uid)).toEqual(["newer", "older"]);
   });
 
   it("uses only Admin API storage policy and audit pagination", async () => {

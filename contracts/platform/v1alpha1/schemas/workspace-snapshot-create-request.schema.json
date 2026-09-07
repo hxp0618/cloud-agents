@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/workspace-snapshot-create-request.schema.json",
+  "title": "WorkspaceSnapshotCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration"],
+  "properties": {
+    "snapshotId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sourceSandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "expectedSandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "The source Workspace must be available on a ready Docker Target and have no active writer",
+    "The server compares expectedSandboxGeneration with the stopped writer authority before accepting an offline snapshot",
+    "The accepted operation reserves the existing single-writer slot until terminal settlement so rebuild and new writer admission cannot overlap the copy"
+  ]
+}

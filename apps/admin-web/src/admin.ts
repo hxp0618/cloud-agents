@@ -24,6 +24,7 @@ import {
   type RemoteWorkerNodeStatus,
   type Worker,
   type WorkerRelease,
+  type WorkspaceSnapshot,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import type { MessageKey } from "./i18n";
@@ -88,6 +89,9 @@ export type AdminClient = Pick<
   | "revokeAdminSandboxAccessGrant"
   | "stopAdminSandboxSession"
   | "rebuildAdminSandboxSession"
+  | "listAdminWorkspaceSnapshots"
+  | "createAdminWorkspaceSnapshot"
+  | "getAdminWorkspaceSnapshot"
 >;
 
 export function remoteWorkerFoundationSupport(
@@ -817,6 +821,38 @@ export async function listAdminStoragePolicies(
   } while (pageToken !== undefined);
   return Object.freeze(
     policies.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  );
+}
+
+export async function listAdminWorkspaceSnapshots(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  signal: AbortSignal,
+): Promise<readonly WorkspaceSnapshot[]> {
+  const snapshots: WorkspaceSnapshot[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminWorkspaceSnapshots(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    snapshots.push(...page.value.workspaceSnapshots);
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenTokens.has(pageToken)) throw new AdminUIError("error.workspaceSnapshotPageToken");
+      seenTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+  return Object.freeze(
+    snapshots.toSorted((left, right) =>
+      right.metadata.createdAt.localeCompare(left.metadata.createdAt),
+    ),
   );
 }
 

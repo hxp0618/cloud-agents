@@ -11,8 +11,13 @@ const [output] = process.argv.slice(2);
 assert.ok(output, "usage: node scripts/test-foundation-controller-docker.mjs NEW_OUTPUT_DIRECTORY");
 const remoteWorkerOnly = process.argv.includes("--remote-worker-only");
 const gvisorOnly = process.argv.includes("--gvisor-only");
-assert.ok(!(remoteWorkerOnly && gvisorOnly), "choose one focused RemoteWorker mode");
+const snapshotOnly = process.argv.includes("--snapshot-only");
+assert.ok(
+  [remoteWorkerOnly, gvisorOnly, snapshotOnly].filter(Boolean).length <= 1,
+  "choose one focused mode",
+);
 const remoteWorkerComplete = Symbol("remote-worker-complete");
+const snapshotComplete = Symbol("snapshot-complete");
 const root = resolve(import.meta.dirname, "..");
 const currentHead = readdirSync(resolve(root, "services/control-plane/migrations/product"))
   .filter((entry) => /^\d{6}$/.test(entry))
@@ -881,6 +886,112 @@ try {
   const stopReceipt = lifecycleController("stop", "FOUNDATION_LIVE_STOP");
   assert.equal(stopReceipt.generation, stopAPIReceipt.generation);
   assert.equal(stopReceipt.workspaceVolume, prepareReceipt.volumeName);
+  const snapshotAPIReceipt = parseMarker(
+    execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationWorkspaceSnapshotPostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+        },
+        timeout: 120_000,
+      },
+    ),
+    "FOUNDATION_SNAPSHOT_API",
+  );
+  const snapshotControllerReceipt = parseMarker(
+    execFileSync(
+      controllerTestBinary,
+      ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot" },
+        timeout: 180_000,
+      },
+    ),
+    "FOUNDATION_LIVE_SNAPSHOT",
+  );
+  assert.equal(snapshotControllerReceipt.operationId, snapshotAPIReceipt.operationId);
+  assert.equal(snapshotControllerReceipt.status, "available");
+  if (snapshotOnly) {
+    const snapshotInfo = JSON.parse(
+      docker("volume", "inspect", snapshotControllerReceipt.physicalVolume),
+    )[0];
+    assert.equal(
+      snapshotInfo.Labels?.["cloud-agents.dev/resource"],
+      "foundation-workspace-snapshot",
+    );
+    assert.equal(snapshotInfo.Labels?.["cloud-agents.dev/snapshot"], "snapshot");
+    docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
+    docker("volume", "rm", prepareReceipt.volumeName);
+    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace",
+      ),
+      "",
+    );
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace-snapshot",
+      ),
+      "",
+    );
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        dirty: true,
+        migrationHead: currentHead,
+      },
+      backend: {
+        dockerContext: "orbstack",
+        dockerVersion: docker("version", "--format", "{{.Server.Version}}"),
+        postgres: psql("SHOW server_version;"),
+      },
+      prepare: prepareReceipt,
+      recover: recoverReceipt,
+      stop: { api: stopAPIReceipt, controller: stopReceipt },
+      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+      checks: [
+        "product migration 000082 applied to disposable PostgreSQL",
+        "ordinary user token received 403 from Admin Workspace Snapshot API",
+        "Admin create replay returned the same durable Operation and metadata-only responses excluded physical volume, digest, endpoint and credentials",
+        "source Sandbox was stopped, observed stopped and writer-released before acceptance",
+        "acceptance reserved the existing single-writer slot until terminal settlement; Admin rebuild returned 409 while the snapshot was pending",
+        "Controller claimed the operation and copied the real Docker Workspace through a never-started helper",
+        "normalized path, type, mode, link target and file-byte archive digests matched after Docker unpack and repack",
+        "snapshot Operation settled succeeded/complete and the snapshot metadata settled available",
+        "terminal settlement released the source Workspace writer fence",
+        "exact-owned helper, snapshot volume, runtime containers and Workspace volume were removed after verification",
+      ],
+      boundary:
+        "Local OrbStack Docker and disposable PostgreSQL only; snapshot creation is verified, while restore, retention policy, Kubernetes/SSH snapshot backends and browser visual QA remain unverified",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    process.stdout.write(
+      `Verified offline Docker Workspace Snapshot; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw snapshotComplete;
+  }
   const rebuildAPIReceipt = lifecycleAPI("rebuild");
   const rebuildReceipt = lifecycleController("rebuild", "FOUNDATION_LIVE_REBUILD");
   assert.equal(rebuildReceipt.generation, rebuildAPIReceipt.generation);
@@ -1002,6 +1113,12 @@ try {
   );
   assert.equal(finalRebuildReceipt.generation, finalRebuildAPIReceipt.generation);
   assert.equal(finalRebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
+  const snapshotInfo = JSON.parse(
+    docker("volume", "inspect", snapshotControllerReceipt.physicalVolume),
+  )[0];
+  assert.equal(snapshotInfo.Labels?.["cloud-agents.dev/resource"], "foundation-workspace-snapshot");
+  assert.equal(snapshotInfo.Labels?.["cloud-agents.dev/snapshot"], "snapshot");
+  docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
   assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
   assert.equal(
     docker(
@@ -1044,6 +1161,7 @@ try {
     remoteWorker: remoteWorkerReceipt,
     recover: recoverReceipt,
     stop: { api: stopAPIReceipt, controller: stopReceipt },
+    snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
     rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
     exec: execReceipt,
     pty: ptyReceipt,
@@ -1061,6 +1179,8 @@ try {
       "Admin Rebuild dispatches the retained Workspace volume and creates a new customer-node runtime",
       "RemoteWorker Rebuild preserves Workspace bytes, settles Running, accepts exact receipt replay, and is stopped without compute residue",
       "generated Admin Sandbox list/detail, ordinary-user 403, and response redaction",
+      "generated Admin Workspace Snapshot create/list/detail, ordinary-user 403, idempotent replay, and metadata-only response",
+      "offline writer fence, durable claim, stopped helper, Docker archive copy, byte-for-byte archive verification, and exact-owned snapshot volume",
       "real durable claim and physical retained Docker volume",
       "real OpenSandbox create and execd readiness",
       "RuntimeProfile Network Policy is sent to OpenSandbox and verified through the authenticated egress sidecar as dns+nft",
@@ -1109,7 +1229,7 @@ try {
     `Verified Controller restart/adoption and failure compensation; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
   );
 } catch (error) {
-  if (error !== remoteWorkerComplete) throw error;
+  if (error !== remoteWorkerComplete && error !== snapshotComplete) throw error;
 } finally {
   const ownedRuntimeIDs = new Set(prepareReceipt?.runtimeId ? [prepareReceipt.runtimeId] : []);
   if (postgresStarted) {
@@ -1174,6 +1294,24 @@ try {
       ["workspace", "workspace-terminal", "workspace-foreign", "remote-workspace"].includes(
         info.Labels?.["cloud-agents.dev/workspace"],
       )
+    ) {
+      docker("volume", "rm", volume);
+    }
+  }
+  for (const volume of docker(
+    "volume",
+    "ls",
+    "-q",
+    "--filter",
+    "label=cloud-agents.dev/resource=foundation-workspace-snapshot",
+  )
+    .split("\n")
+    .filter(Boolean)) {
+    const info = JSON.parse(docker("volume", "inspect", volume))[0];
+    if (
+      info.Labels?.["cloud-agents.dev/tenant"] === "tenant" &&
+      info.Labels?.["cloud-agents.dev/project"] === "project" &&
+      info.Labels?.["cloud-agents.dev/snapshot"] === "snapshot"
     ) {
       docker("volume", "rm", volume);
     }

@@ -33,6 +33,8 @@ import {
   type WorkerHealthObservation,
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
+  type WorkspaceSnapshot,
+  type WorkspaceSnapshotCreateRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import { ResourceRefresh } from "./ResourceRefresh";
 import { SuccessToast } from "./SuccessToast";
@@ -61,6 +63,7 @@ import {
   listAdminRuntimeProfiles,
   listAdminSandboxAccessGrants,
   listAdminSandboxes,
+  listAdminWorkspaceSnapshots,
   listAdminReleases,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
@@ -565,6 +568,9 @@ export function App() {
   );
   const [selectedRuntimeProfileVersionId, setSelectedRuntimeProfileVersionId] = useState("");
   const [sandboxes, setSandboxes] = useState<readonly AdminSandboxSession[]>(Object.freeze([]));
+  const [workspaceSnapshots, setWorkspaceSnapshots] = useState<readonly WorkspaceSnapshot[]>(
+    Object.freeze([]),
+  );
   const [selectedSandboxId, setSelectedSandboxId] = useState("");
   const [sandboxAccessGrants, setSandboxAccessGrants] = useState<
     readonly AdminSandboxAccessGrant[]
@@ -661,6 +667,7 @@ export function App() {
   });
   const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
   const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
+  const [snapshotForm, setSnapshotForm] = useState({ snapshotId: "", sourceSandboxId: "" });
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const operationTriggerRef = useRef<HTMLElement | null>(null);
@@ -912,6 +919,9 @@ export function App() {
     const sandboxLifecyclePending = sandboxes.some(({ spec }) =>
       ["pending", "unknown"].includes(spec.observedState),
     );
+    const snapshotPending = workspaceSnapshots.some(({ spec }) =>
+      ["pending", "unknown"].includes(spec.status),
+    );
     const lifecyclePending =
       targets.some(({ spec }) => spec.observedPhase === "probing") ||
       leases.some(
@@ -920,7 +930,8 @@ export function App() {
           spec.observedPhase === "terminating" ||
           ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
       ) ||
-      sandboxLifecyclePending;
+      sandboxLifecyclePending ||
+      snapshotPending;
     const observeHealth =
       (page === "workers" || page === "overview") &&
       workers.some(({ spec }) => spec.state === "ready");
@@ -943,21 +954,33 @@ export function App() {
           sandboxLifecyclePending
             ? listAdminSandboxes(client, connection.tenantId, connection.projectId, signal)
             : Promise.resolve(sandboxes),
+          snapshotPending
+            ? listAdminWorkspaceSnapshots(client, connection.tenantId, connection.projectId, signal)
+            : Promise.resolve(workspaceSnapshots),
         ])
-          .then(([loadedTargets, loadedLeases, loadedWorkers, loadedSandboxes]) => {
-            if (controller.signal.aborted) return;
-            setTargets(loadedTargets.targets);
-            setSelectedTargetId(loadedTargets.selectedTargetId);
-            setLeases(loadedLeases.leases);
-            setSelectedLeaseId(loadedLeases.selectedLeaseId);
-            setWorkers(loadedWorkers);
-            setSandboxes(loadedSandboxes);
-            setSelectedWorkerId((current) =>
-              loadedWorkers.some(({ metadata }) => metadata.uid === current)
-                ? current
-                : (loadedWorkers[0]?.metadata.uid ?? ""),
-            );
-          })
+          .then(
+            ([
+              loadedTargets,
+              loadedLeases,
+              loadedWorkers,
+              loadedSandboxes,
+              loadedWorkspaceSnapshots,
+            ]) => {
+              if (controller.signal.aborted) return;
+              setTargets(loadedTargets.targets);
+              setSelectedTargetId(loadedTargets.selectedTargetId);
+              setLeases(loadedLeases.leases);
+              setSelectedLeaseId(loadedLeases.selectedLeaseId);
+              setWorkers(loadedWorkers);
+              setSandboxes(loadedSandboxes);
+              setWorkspaceSnapshots(loadedWorkspaceSnapshots);
+              setSelectedWorkerId((current) =>
+                loadedWorkers.some(({ metadata }) => metadata.uid === current)
+                  ? current
+                  : (loadedWorkers[0]?.metadata.uid ?? ""),
+              );
+            },
+          )
           .catch((cause: unknown) => {
             if (!controller.signal.aborted) setError(adminFailure(cause));
           })
@@ -981,6 +1004,7 @@ export function App() {
     targets,
     workers,
     sandboxes,
+    workspaceSnapshots,
     page,
   ]);
 
@@ -1044,6 +1068,7 @@ export function App() {
     setRuntimeProfiles(Object.freeze([]));
     setSelectedRuntimeProfileVersionId("");
     setSandboxes(Object.freeze([]));
+    setWorkspaceSnapshots(Object.freeze([]));
     setSelectedSandboxId("");
     setSandboxAccessGrants(Object.freeze([]));
     setSandboxGrantRevoke(null);
@@ -1053,6 +1078,7 @@ export function App() {
     setSelectedStoragePolicyId("");
     setStoragePolicyAudit(Object.freeze([]));
     setStoragePolicyForm(storagePolicyFormFrom());
+    setSnapshotForm({ snapshotId: "", sourceSandboxId: "" });
     setLeaseQuota(undefined);
     setLeaseQuotaAudit(Object.freeze([]));
     setQuotaForm(quotaFormFrom());
@@ -1110,6 +1136,7 @@ export function App() {
         loadedProfiles,
         loadedRuntimeProfiles,
         loadedSandboxes,
+        loadedWorkspaceSnapshots,
         loadedStoragePolicies,
         loadedNetworkPolicies,
         loadedQuota,
@@ -1128,6 +1155,12 @@ export function App() {
           signal,
         ),
         listAdminSandboxes(nextClient, nextConnection.tenantId, nextConnection.projectId, signal),
+        listAdminWorkspaceSnapshots(
+          nextClient,
+          nextConnection.tenantId,
+          nextConnection.projectId,
+          signal,
+        ),
         listAdminStoragePolicies(
           nextClient,
           nextConnection.tenantId,
@@ -1177,6 +1210,7 @@ export function App() {
       setSelectedRuntimeProfileVersionId(loadedRuntimeProfiles[0]?.metadata.uid ?? "");
       setSandboxes(loadedSandboxes);
       setSelectedSandboxId(loadedSandboxes[0]?.metadata.uid ?? "");
+      setWorkspaceSnapshots(loadedWorkspaceSnapshots);
       setStoragePolicies(loadedStoragePolicies);
       setNetworkPolicies(loadedNetworkPolicies);
       setSelectedStoragePolicyId(loadedStoragePolicies[0]?.metadata.uid ?? "");
@@ -1268,6 +1302,7 @@ export function App() {
         loadedProfiles,
         loadedRuntimeProfiles,
         loadedSandboxes,
+        loadedWorkspaceSnapshots,
         loadedStoragePolicies,
         loadedNetworkPolicies,
         loadedQuota,
@@ -1281,6 +1316,7 @@ export function App() {
         loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
         listAdminRuntimeProfiles(client, connection.tenantId, connection.projectId, signal),
         listAdminSandboxes(client, connection.tenantId, connection.projectId, signal),
+        listAdminWorkspaceSnapshots(client, connection.tenantId, connection.projectId, signal),
         listAdminStoragePolicies(client, connection.tenantId, connection.projectId, signal),
         listAdminNetworkPolicies(client, connection.tenantId, connection.projectId, signal),
         loadAdminProjectLeaseQuota(client, connection.tenantId, connection.projectId, signal),
@@ -1317,6 +1353,7 @@ export function App() {
           ? current
           : (loadedSandboxes[0]?.metadata.uid ?? ""),
       );
+      setWorkspaceSnapshots(loadedWorkspaceSnapshots);
       setStoragePolicies(loadedStoragePolicies);
       setNetworkPolicies(loadedNetworkPolicies);
       setSelectedStoragePolicyId((current) =>
@@ -1826,6 +1863,41 @@ export function App() {
           signal,
         ),
       );
+    });
+  }
+
+  function createWorkspaceSnapshot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (client === null) return;
+    const source = sandboxes.find(({ metadata }) => metadata.uid === snapshotForm.sourceSandboxId);
+    if (
+      source === undefined ||
+      !source.spec.writerReleased ||
+      source.spec.observedState !== "stopped"
+    )
+      return;
+    const body: WorkspaceSnapshotCreateRequest = {
+      snapshotId: snapshotForm.snapshotId.trim(),
+      sourceSandboxId: source.metadata.uid,
+      expectedSandboxGeneration: source.spec.generation,
+    };
+    const key = `create-workspace-snapshot:${body.snapshotId}:${body.sourceSandboxId}:${body.expectedSandboxGeneration}`;
+    void runOperation(key, { key: "operation.createWorkspaceSnapshot" }, async (signal) => {
+      const result = await client.createAdminWorkspaceSnapshot(
+        connection.tenantId,
+        connection.projectId,
+        newRequestId(),
+        idempotencyKey(key),
+        body,
+        signal,
+      );
+      setWorkspaceSnapshots((current) =>
+        Object.freeze([
+          result.value,
+          ...current.filter(({ metadata }) => metadata.uid !== result.value.metadata.uid),
+        ]),
+      );
+      setSnapshotForm({ snapshotId: "", sourceSandboxId: "" });
     });
   }
 
@@ -2526,25 +2598,25 @@ export function App() {
                     ? t("page.targets.title")
                     : page === "remoteWorkers"
                       ? t("page.remoteWorkers.title")
-                    : page === "sandboxes"
-                      ? t("page.sandboxes.title")
-                      : page === "workers"
-                        ? t("page.workers.title")
-                        : page === "releases"
-                          ? t("page.releases.title")
-                          : page === "profiles"
-                            ? t("page.profiles.title")
-                            : page === "runtimeProfiles"
-                              ? t("page.runtimeProfiles.title")
-                              : page === "storage"
-                                ? t("page.storagePolicies.title")
-                                : page === "network"
-                                  ? t("page.networkPolicies.title")
-                                  : page === "quotas"
-                                    ? t("page.quotas.title")
-                                    : page === "leases"
-                                      ? t("page.leases.title")
-                                      : t("page.maintenance.title")}
+                      : page === "sandboxes"
+                        ? t("page.sandboxes.title")
+                        : page === "workers"
+                          ? t("page.workers.title")
+                          : page === "releases"
+                            ? t("page.releases.title")
+                            : page === "profiles"
+                              ? t("page.profiles.title")
+                              : page === "runtimeProfiles"
+                                ? t("page.runtimeProfiles.title")
+                                : page === "storage"
+                                  ? t("page.storagePolicies.title")
+                                  : page === "network"
+                                    ? t("page.networkPolicies.title")
+                                    : page === "quotas"
+                                      ? t("page.quotas.title")
+                                      : page === "leases"
+                                        ? t("page.leases.title")
+                                        : t("page.maintenance.title")}
               </h1>
               <p>
                 {page === "overview"
@@ -2553,25 +2625,25 @@ export function App() {
                     ? t("page.targets.description")
                     : page === "remoteWorkers"
                       ? t("page.remoteWorkers.description")
-                    : page === "sandboxes"
-                      ? t("page.sandboxes.description")
-                      : page === "workers"
-                        ? t("page.workers.description")
-                        : page === "releases"
-                          ? t("page.releases.description")
-                          : page === "profiles"
-                            ? t("page.profiles.description")
-                            : page === "runtimeProfiles"
-                              ? t("page.runtimeProfiles.description")
-                              : page === "storage"
-                                ? t("page.storagePolicies.description")
-                                : page === "network"
-                                  ? t("page.networkPolicies.description")
-                                  : page === "quotas"
-                                    ? t("page.quotas.description")
-                                    : page === "leases"
-                                      ? t("page.leases.description")
-                                      : t("page.maintenance.description")}
+                      : page === "sandboxes"
+                        ? t("page.sandboxes.description")
+                        : page === "workers"
+                          ? t("page.workers.description")
+                          : page === "releases"
+                            ? t("page.releases.description")
+                            : page === "profiles"
+                              ? t("page.profiles.description")
+                              : page === "runtimeProfiles"
+                                ? t("page.runtimeProfiles.description")
+                                : page === "storage"
+                                  ? t("page.storagePolicies.description")
+                                  : page === "network"
+                                    ? t("page.networkPolicies.description")
+                                    : page === "quotas"
+                                      ? t("page.quotas.description")
+                                      : page === "leases"
+                                        ? t("page.leases.description")
+                                        : t("page.maintenance.description")}
               </p>
             </div>
             <div className="heading-actions">
@@ -3171,6 +3243,70 @@ export function App() {
                   onSelect={selectStoragePolicy}
                 />
               </div>
+
+              <section className="panel overview-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>{t("workspaceSnapshot.title")}</h2>
+                    <p>{t("workspaceSnapshot.description")}</p>
+                  </div>
+                  <span className="scope-chip">snapshots.list · snapshots.create</span>
+                </div>
+                <form className="resource-form" onSubmit={createWorkspaceSnapshot}>
+                  <div className="form-row">
+                    <label>
+                      <span>{t("workspaceSnapshot.id")}</span>
+                      <input
+                        required
+                        maxLength={128}
+                        spellCheck={false}
+                        value={snapshotForm.snapshotId}
+                        onChange={(event) =>
+                          setSnapshotForm((current) => ({
+                            ...current,
+                            snapshotId: event.target.value,
+                          }))
+                        }
+                        placeholder="snapshot-before-upgrade"
+                      />
+                    </label>
+                    <label>
+                      <span>{t("workspaceSnapshot.source")}</span>
+                      <select
+                        required
+                        value={snapshotForm.sourceSandboxId}
+                        onChange={(event) =>
+                          setSnapshotForm((current) => ({
+                            ...current,
+                            sourceSandboxId: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">{t("workspaceSnapshot.selectSource")}</option>
+                        {sandboxes
+                          .filter(
+                            ({ spec }) => spec.writerReleased && spec.observedState === "stopped",
+                          )
+                          .map((sandbox) => (
+                            <option key={sandbox.metadata.uid} value={sandbox.metadata.uid}>
+                              {sandbox.spec.workspaceName} · {sandbox.metadata.uid} · g
+                              {number(sandbox.spec.generation)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="cluster-boundary">{t("workspaceSnapshot.offlineBoundary")}</p>
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={busy !== null || snapshotForm.sourceSandboxId === ""}
+                  >
+                    {t("workspaceSnapshot.create")}
+                  </button>
+                </form>
+                <WorkspaceSnapshotTable snapshots={workspaceSnapshots} />
+              </section>
 
               <section className="panel overview-panel">
                 <div className="panel-heading">
@@ -3816,13 +3952,13 @@ export function App() {
                       })
                     }
                   >
-                    {(
-                      ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] as const
-                    ).map((value) => (
-                      <option key={value} value={value}>
-                        {t(`runtimeProfile.workloadTrust.${value}`)}
-                      </option>
-                    ))}
+                    {(["trusted-single-tenant", "dedicated-node", "shared-untrusted"] as const).map(
+                      (value) => (
+                        <option key={value} value={value}>
+                          {t(`runtimeProfile.workloadTrust.${value}`)}
+                        </option>
+                      ),
+                    )}
                   </select>
                 </label>
                 <label>
@@ -5421,6 +5557,56 @@ function ReleaseTable({ releases }: Readonly<{ releases: readonly WorkerRelease[
                 </span>
               </td>
               <td>{dateTime(release.spec.approvedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function WorkspaceSnapshotTable({
+  snapshots,
+}: Readonly<{ snapshots: readonly WorkspaceSnapshot[] }>) {
+  const { t, number, dateTime } = useI18n();
+  if (snapshots.length === 0)
+    return <div className="table-empty">{t("workspaceSnapshot.empty")}</div>;
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("workspaceSnapshot.id")}</th>
+            <th>{t("workspaceSnapshot.sourceWorkspace")}</th>
+            <th>{t("table.status")}</th>
+            <th>{t("workspaceSnapshot.size")}</th>
+            <th>{t("workspaceSnapshot.operation")}</th>
+            <th>{t("table.updated")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {snapshots.map((snapshot) => (
+            <tr key={snapshot.metadata.uid}>
+              <td>
+                <strong>{snapshot.metadata.name}</strong>
+                <small className="mono">rv{snapshot.metadata.resourceVersion}</small>
+              </td>
+              <td>
+                <span className="mono">{snapshot.spec.sourceWorkspaceId}</span>
+                <small>rv{snapshot.spec.sourceWorkspaceResourceVersion}</small>
+              </td>
+              <td>
+                <span className={`phase ${phaseTone(snapshot.spec.status)}`}>
+                  <i /> {phaseLabel(snapshot.spec.status, t)}
+                </span>
+              </td>
+              <td>
+                {snapshot.spec.sizeBytes === undefined
+                  ? "—"
+                  : `${number(snapshot.spec.sizeBytes)} B`}
+              </td>
+              <td className="mono">{snapshot.spec.operationId}</td>
+              <td>{dateTime(snapshot.metadata.updatedAt)}</td>
             </tr>
           ))}
         </tbody>

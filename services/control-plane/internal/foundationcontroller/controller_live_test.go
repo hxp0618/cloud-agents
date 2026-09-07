@@ -45,7 +45,7 @@ type liveControllerEnvironment struct {
 
 func TestLiveFoundationControllerRestart(t *testing.T) {
 	phase := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PHASE")
-	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
+	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "snapshot" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
 		t.Skip("live foundation Controller phase is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
@@ -63,7 +63,48 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 		ttlLiveController(t, ctx, environment)
 		return
 	}
+	if phase == "snapshot" {
+		snapshotLiveController(t, ctx, environment)
+		return
+	}
 	lifecycleLiveController(t, ctx, environment, phase)
+}
+
+func snapshotLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+	t.Helper()
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("snapshot reconcile = %v / %v", worked, err)
+	}
+	var status, physical, contentDigest, operationID, operationState, cleanupPhase string
+	var sizeBytes int64
+	var writerReleased bool
+	err := environment.owner.QueryRow(ctx, `SELECT snapshot.status,snapshot.physical_snapshot_uid,snapshot.content_digest,
+		snapshot.size_bytes,snapshot.operation_id,operation.state,operation.cleanup_phase,source.writer_released
+		FROM cloud_agents.workspace_snapshots snapshot JOIN cloud_agents.platform_operations operation
+		ON operation.tenant_id=snapshot.tenant_id AND operation.operation_id=snapshot.operation_id
+		AND operation.operation_generation=snapshot.operation_generation
+		JOIN cloud_agents.sandbox_sessions source ON source.tenant_id=snapshot.tenant_id
+		AND source.project_uid=snapshot.project_uid AND source.sandbox_uid=snapshot.source_sandbox_uid
+		WHERE snapshot.tenant_id='tenant' AND snapshot.project_uid='project' AND snapshot.snapshot_uid='snapshot'`).Scan(
+		&status, &physical, &contentDigest, &sizeBytes, &operationID, &operationState, &cleanupPhase, &writerReleased)
+	if err != nil || status != "available" || operationState != "succeeded" || cleanupPhase != "complete" ||
+		!strings.HasPrefix(contentDigest, "sha256:") || sizeBytes <= 0 || !writerReleased {
+		t.Fatalf("snapshot settlement=%s/%s/%s/%d/%s writerReleased=%t err=%v", status, operationState, cleanupPhase, sizeBytes, contentDigest, writerReleased, err)
+	}
+	statusCode, body := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodGet, "/volumes/"+physical)
+	var volume struct {
+		Name   string            `json:"Name"`
+		Labels map[string]string `json:"Labels"`
+	}
+	if statusCode != http.StatusOK || json.Unmarshal(body, &volume) != nil || volume.Name != physical ||
+		volume.Labels["cloud-agents.dev/resource"] != "foundation-workspace-snapshot" ||
+		volume.Labels["cloud-agents.dev/snapshot"] != "snapshot" || volume.Labels["cloud-agents.dev/workspace"] != "workspace" {
+		t.Fatalf("snapshot volume status=%d body=%s", statusCode, body)
+	}
+	receipt, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": operationID,
+		"physicalVolume": physical, "contentDigest": contentDigest, "sizeBytes": sizeBytes,
+		"archiveVerified": true, "helperStarted": false, "status": status, "writerFenceReleased": true})
+	t.Logf("FOUNDATION_LIVE_SNAPSHOT=%s", receipt)
 }
 
 func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControllerEnvironment {

@@ -1246,6 +1246,33 @@ type AdminSandboxSessionPage struct {
 	SandboxSessions []AdminSandboxSession `json:"sandboxSessions"`
 	NextPageToken   string                `json:"nextPageToken,omitempty"`
 }
+type WorkspaceSnapshotCreateRequest struct {
+	SnapshotID                string `json:"snapshotId"`
+	SourceSandboxID           string `json:"sourceSandboxId"`
+	ExpectedSandboxGeneration int64  `json:"expectedSandboxGeneration"`
+}
+type WorkspaceSnapshotSpec struct {
+	ProjectRef                     common.ProjectRef `json:"projectRef"`
+	SourceWorkspaceID              string            `json:"sourceWorkspaceId"`
+	SourceWorkspaceResourceVersion string            `json:"sourceWorkspaceResourceVersion"`
+	Backend                        string            `json:"backend"`
+	ConsistencyMode                string            `json:"consistencyMode"`
+	Status                         string            `json:"status"`
+	OperationID                    string            `json:"operationId"`
+	SizeBytes                      *int64            `json:"sizeBytes,omitempty"`
+	StableErrorCode                string            `json:"stableErrorCode,omitempty"`
+	ObservedAt                     string            `json:"observedAt,omitempty"`
+}
+type WorkspaceSnapshot struct {
+	ResourceBase
+	Spec WorkspaceSnapshotSpec `json:"spec"`
+}
+type WorkspaceSnapshotPage struct {
+	APIVersion         string              `json:"apiVersion"`
+	Kind               string              `json:"kind"`
+	WorkspaceSnapshots []WorkspaceSnapshot `json:"workspaceSnapshots"`
+	NextPageToken      string              `json:"nextPageToken,omitempty"`
+}
 type DeploymentTargetRegisterRequest struct {
 	TargetID      string `json:"targetId"`
 	TargetName    string `json:"targetName"`
@@ -1613,6 +1640,7 @@ var environmentProfileSummaryPageResponseShape = common.ObjectResponseShape(map[
 var userEnvironmentResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "environmentId": common.ScalarResponseShape(), "profileId": common.ScalarResponseShape(), "profileVersion": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var runtimeProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(resourceResponseShape("RuntimeProfile")), "nextPageToken": common.ScalarResponseShape()})
 var adminSandboxSessionPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "sandboxSessions": common.ArrayResponseShape(resourceResponseShape("AdminSandboxSession")), "nextPageToken": common.ScalarResponseShape()})
+var workspaceSnapshotPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "workspaceSnapshots": common.ArrayResponseShape(resourceResponseShape("WorkspaceSnapshot")), "nextPageToken": common.ScalarResponseShape()})
 var runtimeProfileSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "name": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "availability": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape()})
 var runtimeProfileSummaryPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "runtimeProfiles": common.ArrayResponseShape(runtimeProfileSummaryResponseShape), "nextPageToken": common.ScalarResponseShape()})
 var sandboxSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
@@ -5813,6 +5841,122 @@ func EncodeAdminSandboxSessionPageResponseJSON(value common.ResponseEnvelope[Adm
 		return nil, err
 	}
 	if _, err := DecodeAdminSandboxSessionPageJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
+func DecodeWorkspaceSnapshotCreateRequestJSON(data []byte) (WorkspaceSnapshotCreateRequest, error) {
+	allowed := []string{"snapshotId", "sourceSandboxId", "expectedSandboxGeneration"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return WorkspaceSnapshotCreateRequest{}, err
+	}
+	var value WorkspaceSnapshotCreateRequest
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.SnapshotID, "/snapshotId") != nil || common.ValidateIdentifier(value.SourceSandboxID, "/sourceSandboxId") != nil || value.ExpectedSandboxGeneration < 1 || value.ExpectedSandboxGeneration > 9007199254740991 {
+		return WorkspaceSnapshotCreateRequest{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT_REQUEST", "")
+	}
+	return value, nil
+}
+func EncodeWorkspaceSnapshotCreateRequestJSON(value WorkspaceSnapshotCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeWorkspaceSnapshotCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeWorkspaceSnapshotJSON(data []byte) (WorkspaceSnapshot, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	base, err := checkResourceBase(fields, "WorkspaceSnapshot")
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	allowed := []string{"projectRef", "sourceWorkspaceId", "sourceWorkspaceResourceVersion", "backend", "consistencyMode", "status", "operationId", "sizeBytes", "stableErrorCode", "observedAt"}
+	required := []string{"projectRef", "sourceWorkspaceId", "sourceWorkspaceResourceVersion", "backend", "consistencyMode", "status", "operationId"}
+	specFields, err := strictSpec(fields["spec"], allowed, required)
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	var spec WorkspaceSnapshotSpec
+	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SourceWorkspaceID, "/spec/sourceWorkspaceId") != nil || common.ValidateIdentifier(spec.OperationID, "/spec/operationId") != nil || spec.Backend != "docker-volume-v1" || spec.ConsistencyMode != "offline" || spec.Status != "pending" && spec.Status != "available" && spec.Status != "unknown" && spec.Status != "failed" {
+		return WorkspaceSnapshot{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT", "/spec")
+	}
+	version, parseErr := strconv.ParseInt(spec.SourceWorkspaceResourceVersion, 10, 64)
+	if parseErr != nil || version < 1 {
+		return WorkspaceSnapshot{}, common.ContractError("INVALID_RESOURCE_VERSION", "/spec/sourceWorkspaceResourceVersion")
+	}
+	spec.ProjectRef, err = common.DecodeProjectRefJSON(specFields["projectRef"])
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	_, hasSize := specFields["sizeBytes"]
+	_, hasError := specFields["stableErrorCode"]
+	_, hasObserved := specFields["observedAt"]
+	if hasSize && (spec.SizeBytes == nil || *spec.SizeBytes < 0 || *spec.SizeBytes > 67108864) || hasError && common.ValidateIdentifier(spec.StableErrorCode, "/spec/stableErrorCode") != nil || hasObserved && common.ValidateDateTime(spec.ObservedAt, "/spec/observedAt") != nil || spec.Status == "available" && (!hasSize || hasError || !hasObserved) || spec.Status == "failed" && (hasSize || !hasError || !hasObserved) || spec.Status == "unknown" && (hasSize || hasError || !hasObserved) || spec.Status == "pending" && (hasSize || hasError || hasObserved) {
+		return WorkspaceSnapshot{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT", "/spec/status")
+	}
+	return WorkspaceSnapshot{ResourceBase: base, Spec: spec}, nil
+}
+func DecodeWorkspaceSnapshotResponseJSON(data []byte) (common.ResponseEnvelope[WorkspaceSnapshot], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, resourceResponseShape("WorkspaceSnapshot"))
+	if err != nil {
+		return common.ResponseEnvelope[WorkspaceSnapshot]{}, err
+	}
+	value, err := DecodeWorkspaceSnapshotJSON(raw)
+	return common.ResponseEnvelope[WorkspaceSnapshot]{Value: value, Unknown: sidecar}, err
+}
+func EncodeWorkspaceSnapshotResponseJSON(value common.ResponseEnvelope[WorkspaceSnapshot]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeWorkspaceSnapshotJSON(raw); err != nil {
+		return nil, err
+	}
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeWorkspaceSnapshotPageJSON(data []byte) (WorkspaceSnapshotPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "workspaceSnapshots", "nextPageToken"}, []string{"apiVersion", "kind", "workspaceSnapshots"})
+	if err != nil {
+		return WorkspaceSnapshotPage{}, err
+	}
+	var page WorkspaceSnapshotPage
+	var raw []json.RawMessage
+	if json.Unmarshal(data, &page) != nil || page.APIVersion != APIVersion || page.Kind != "WorkspaceSnapshotPage" || json.Unmarshal(fields["workspaceSnapshots"], &raw) != nil || raw == nil || len(raw) > 200 {
+		return WorkspaceSnapshotPage{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT_PAGE", "")
+	}
+	page.WorkspaceSnapshots = make([]WorkspaceSnapshot, 0, len(raw))
+	for _, item := range raw {
+		value, err := DecodeWorkspaceSnapshotJSON(item)
+		if err != nil {
+			return WorkspaceSnapshotPage{}, err
+		}
+		page.WorkspaceSnapshots = append(page.WorkspaceSnapshots, value)
+	}
+	if _, ok := fields["nextPageToken"]; ok && common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+		return WorkspaceSnapshotPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return page, nil
+}
+func DecodeWorkspaceSnapshotPageResponseJSON(data []byte) (common.ResponseEnvelope[WorkspaceSnapshotPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, workspaceSnapshotPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[WorkspaceSnapshotPage]{}, err
+	}
+	value, err := DecodeWorkspaceSnapshotPageJSON(raw)
+	return common.ResponseEnvelope[WorkspaceSnapshotPage]{Value: value, Unknown: sidecar}, err
+}
+func EncodeWorkspaceSnapshotPageResponseJSON(value common.ResponseEnvelope[WorkspaceSnapshotPage]) ([]byte, error) {
+	raw, err := json.Marshal(value.Value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeWorkspaceSnapshotPageJSON(raw); err != nil {
 		return nil, err
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)

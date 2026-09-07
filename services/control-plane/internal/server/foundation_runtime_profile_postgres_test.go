@@ -375,6 +375,101 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	t.Logf("FOUNDATION_LIFECYCLE_API=%s", encoded)
 }
 
+func TestFoundationWorkspaceSnapshotPostgres(t *testing.T) {
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
+	if runtimeURL == "" || ownerURL == "" {
+		t.Skip("isolated foundation Workspace snapshot PostgreSQL environment not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimePool.Close()
+	ownerConfig, err := pgxpool.ParseConfig(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerConfig.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner")
+		return err
+	}
+	owner, err := pgxpool.NewWithConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	verifier, adminToken, userToken := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
+	sandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-snapshot-source")
+	if err != nil || sandbox.Value.Spec.ObservedState != "stopped" || !sandbox.Value.Spec.WriterReleased {
+		t.Fatalf("snapshot source=%+v err=%v", sandbox.Value.Spec, err)
+	}
+	request := platform.WorkspaceSnapshotCreateRequest{SnapshotID: "snapshot", SourceSandboxID: "sandbox", ExpectedSandboxGeneration: sandbox.Value.Spec.Generation}
+	if _, err := user.CreateAdminWorkspaceSnapshot(ctx, "tenant", "project", "request-snapshot-user", "snapshot-user-denied-key", request); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user snapshot status=%d err=%v", clientStatus(err), err)
+	}
+	created, err := admin.CreateAdminWorkspaceSnapshot(ctx, "tenant", "project", "request-snapshot-create", "workspace-snapshot-create-key", request)
+	if err != nil || created.Value.Spec.Status != "pending" || created.Value.Spec.SourceWorkspaceID != sandbox.Value.Spec.WorkspaceID || created.Value.Spec.ConsistencyMode != "offline" {
+		t.Fatalf("created snapshot=%+v err=%v", created.Value, err)
+	}
+	replay, err := admin.CreateAdminWorkspaceSnapshot(ctx, "tenant", "project", "request-snapshot-replay", "workspace-snapshot-create-key", request)
+	if err != nil || replay.Value.Spec.OperationID != created.Value.Spec.OperationID {
+		t.Fatalf("snapshot replay=%+v err=%v", replay.Value, err)
+	}
+	var snapshots, outbox, audits, writerFences int
+	if err := owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM cloud_agents.workspace_snapshots WHERE tenant_id='tenant' AND snapshot_uid='snapshot' AND status='pending'),
+		(SELECT count(*) FROM cloud_agents.outbox_events WHERE tenant_id='tenant' AND aggregate_kind='workspaceSnapshot' AND aggregate_id='snapshot' AND state='pending'),
+		(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE tenant_id='tenant' AND operation_id=$1 AND transition='workspace.snapshot.accept'),
+		(SELECT count(*) FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND project_uid='project'
+		  AND sandbox_uid='sandbox' AND desired_state='stopped' AND observed_state='stopped' AND NOT writer_released)`, created.Value.Spec.OperationID).Scan(&snapshots, &outbox, &audits, &writerFences); err != nil || snapshots != 1 || outbox != 1 || audits != 1 || writerFences != 1 {
+		t.Fatalf("snapshot authority=%d/%d/%d fence=%d err=%v", snapshots, outbox, audits, writerFences, err)
+	}
+	rebuild := platform.SandboxSessionLifecycleRequest{
+		ExpectedGeneration: sandbox.Value.Spec.Generation, ExpectedResourceVersion: sandbox.Value.Metadata.ResourceVersion,
+		ConfirmedSandboxID: "sandbox", ComputeDisposition: "create", WorkspaceDisposition: "retain",
+	}
+	if _, err := admin.RebuildAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-snapshot-fenced-rebuild", "snapshot-fenced-rebuild-key", rebuild); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("snapshot-fenced rebuild status=%d err=%v", clientStatus(err), err)
+	}
+	rawRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/v1/admin/tenants/tenant/projects/project/workspace-snapshots/snapshot", nil)
+	rawRequest.Header.Set("Authorization", "Bearer "+adminToken)
+	rawRequest.Header.Set("X-Request-ID", "request-snapshot-redaction")
+	rawResponse, err := httpServer.Client().Do(rawRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawBody, _ := io.ReadAll(rawResponse.Body)
+	rawResponse.Body.Close()
+	if rawResponse.StatusCode != http.StatusOK {
+		t.Fatalf("snapshot GET status=%d body=%s", rawResponse.StatusCode, rawBody)
+	}
+	for _, forbidden := range []string{"physicalSnapshot", "contentDigest", "sourcePhysical", "imageUri", "endpoint", "credentialRef", "providerCredentialRef", "prompt", "artifact", "fileContent"} {
+		if strings.Contains(string(rawBody), forbidden) {
+			t.Fatalf("snapshot response disclosed %q: %s", forbidden, rawBody)
+		}
+	}
+	encoded, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": created.Value.Spec.OperationID,
+		"sourceWorkspaceId": created.Value.Spec.SourceWorkspaceID, "ordinaryUserStatus": 403,
+		"status": created.Value.Spec.Status, "adminContentRedacted": true, "idempotentReplay": true,
+		"writerFenceReserved": true, "fencedRebuildStatus": 409})
+	t.Logf("FOUNDATION_SNAPSHOT_API=%s", encoded)
+}
+
 func TestFoundationSandboxExecPostgres(t *testing.T) {
 	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
 	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
@@ -530,7 +625,7 @@ func pgErrorCode(err error) string {
 
 func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, string, string) {
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list network-policies.update",
+		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.create snapshots.get snapshots.list network-policies.update",
 		"environment-profiles.list environments.create projects.act projects.get sandboxes.update",
 	)
 	return verifier, tokens[0], tokens[1]

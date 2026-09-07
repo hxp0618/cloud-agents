@@ -357,6 +357,7 @@ export function classifyMigrationStatement(
         "000079",
         "000080",
         "000081",
+        "000082",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -575,6 +576,16 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
           ],
         ],
+        [
+          "000082",
+          [
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -618,7 +629,7 @@ export function classifyMigrationStatement(
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "RUNTIME_PROFILES_TARGET_UID_CHECK"].join("\0");
       const dropResourceKindConstraint =
-        (migrationId === "000003" || migrationId === "000055") &&
+        (migrationId === "000003" || migrationId === "000055" || migrationId === "000082") &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:resource_changes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"].join("\0");

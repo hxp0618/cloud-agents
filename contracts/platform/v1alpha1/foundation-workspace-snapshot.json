@@ -1,0 +1,12 @@
+{
+  "profileId": "foundationWorkspaceSnapshot/v1alpha1",
+  "resourceKind": "workspaceSnapshot",
+  "outboxEventClass": "operation_effect",
+  "externalSideEffect": "docker_archive_under_durable_claim",
+  "canonicalization": "RFC8785_ASCII_safe_integers",
+  "consistencyMode": "offline",
+  "writerFence": "sandbox-single-writer-reservation",
+  "maximumArchiveBytes": 67108864,
+  "requiredFinalizers": ["workspace-snapshot-copy"],
+  "secretMaterial": "excluded"
+}

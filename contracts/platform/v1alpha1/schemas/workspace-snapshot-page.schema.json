@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/workspace-snapshot-page.schema.json",
+  "title": "WorkspaceSnapshotPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "workspaceSnapshots"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "WorkspaceSnapshotPage" },
+    "workspaceSnapshots": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "workspace-snapshot.schema.json" }
+    },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

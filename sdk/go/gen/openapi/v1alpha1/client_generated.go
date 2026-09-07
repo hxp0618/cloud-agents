@@ -195,6 +195,8 @@ type SandboxFileReadPageResult = common.ResponseEnvelope[platform.SandboxFileRea
 type SandboxSessionLifecycleOperationResult = common.ResponseEnvelope[platform.SandboxSessionLifecycleOperation]
 type AdminSandboxSessionResult = common.ResponseEnvelope[platform.AdminSandboxSession]
 type AdminSandboxSessionPageResult = common.ResponseEnvelope[platform.AdminSandboxSessionPage]
+type WorkspaceSnapshotResult = common.ResponseEnvelope[platform.WorkspaceSnapshot]
+type WorkspaceSnapshotPageResult = common.ResponseEnvelope[platform.WorkspaceSnapshotPage]
 type DeploymentTargetResult = common.ResponseEnvelope[platform.DeploymentTarget]
 type DeploymentTargetPageResult = common.ResponseEnvelope[platform.DeploymentTargetPage]
 type MaintenanceOperationResult = common.ResponseEnvelope[platform.MaintenanceOperation]
@@ -2225,6 +2227,88 @@ func (client *Client) GetAdminSandboxSession(ctx context.Context, tenantID, proj
 	}
 	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != sandboxID {
 		return AdminSandboxSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminWorkspaceSnapshots(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (WorkspaceSnapshotPageResult, error) {
+	if pageSize == 0 {
+		pageSize = 50
+	}
+	input, err := ValidateListAdminWorkspaceSnapshotsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		return WorkspaceSnapshotPageResult{}, err
+	}
+	query := url.Values{}
+	query.Set("pageSize", strconv.Itoa(input.PageSize))
+	if input.PageToken != "" {
+		query.Set("pageToken", input.PageToken)
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/workspace-snapshots?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return WorkspaceSnapshotPageResult{}, err
+	}
+	if response.Status != 200 {
+		return WorkspaceSnapshotPageResult{}, client.problemError("adminListWorkspaceSnapshots", response)
+	}
+	value, err := platform.DecodeWorkspaceSnapshotPageResponseJSON(response.Body)
+	if err != nil {
+		return WorkspaceSnapshotPageResult{}, err
+	}
+	for _, snapshot := range value.Value.WorkspaceSnapshots {
+		if snapshot.Metadata.TenantRef.ID != tenantID || snapshot.Spec.ProjectRef.ID != projectID {
+			return WorkspaceSnapshotPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/workspaceSnapshots")
+		}
+	}
+	return value, nil
+}
+func (client *Client) CreateAdminWorkspaceSnapshot(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.WorkspaceSnapshotCreateRequest) (WorkspaceSnapshotResult, error) {
+	bodyBytes, err := platform.EncodeWorkspaceSnapshotCreateRequestJSON(body)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	input, err := ValidateCreateAdminWorkspaceSnapshotServerRequest(tenantID, projectID, requestID, idempotencyKey, bodyBytes)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/workspace-snapshots", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if response.Status != 202 {
+		return WorkspaceSnapshotResult{}, client.problemError("adminCreateWorkspaceSnapshot", response)
+	}
+	value, err := platform.DecodeWorkspaceSnapshotResponseJSON(response.Body)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != input.Body.SnapshotID {
+		return WorkspaceSnapshotResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetAdminWorkspaceSnapshot(ctx context.Context, tenantID, projectID, snapshotID, requestID string) (WorkspaceSnapshotResult, error) {
+	if _, err := ValidateGetAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapshotID, requestID); err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/workspace-snapshots/" + snapshotID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if response.Status != 200 {
+		return WorkspaceSnapshotResult{}, client.problemError("adminGetWorkspaceSnapshot", response)
+	}
+	value, err := platform.DecodeWorkspaceSnapshotResponseJSON(response.Body)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != snapshotID {
+		return WorkspaceSnapshotResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
 }
@@ -5666,6 +5750,68 @@ func ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID,
 		return GetAdminSandboxSessionServerInput{}, err
 	}
 	return GetAdminSandboxSessionServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID}, nil
+}
+
+type ListAdminWorkspaceSnapshotsServerInput struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListAdminWorkspaceSnapshotsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListAdminWorkspaceSnapshotsServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return ListAdminWorkspaceSnapshotsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListAdminWorkspaceSnapshotsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListAdminWorkspaceSnapshotsServerInput{}, err
+		}
+	}
+	return ListAdminWorkspaceSnapshotsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type CreateAdminWorkspaceSnapshotServerInput struct {
+	TenantID       string
+	ProjectID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.WorkspaceSnapshotCreateRequest
+}
+
+func ValidateCreateAdminWorkspaceSnapshotServerRequest(tenantID, projectID, requestID, idempotencyKey string, body []byte) (CreateAdminWorkspaceSnapshotServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return CreateAdminWorkspaceSnapshotServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CreateAdminWorkspaceSnapshotServerInput{}, err
+	}
+	value, err := platform.DecodeWorkspaceSnapshotCreateRequestJSON(body)
+	if err != nil {
+		return CreateAdminWorkspaceSnapshotServerInput{}, err
+	}
+	return CreateAdminWorkspaceSnapshotServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
+}
+
+type GetAdminWorkspaceSnapshotServerInput struct {
+	TenantID   string
+	ProjectID  string
+	SnapshotID string
+	RequestID  string
+}
+
+func ValidateGetAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapshotID, requestID string) (GetAdminWorkspaceSnapshotServerInput, error) {
+	if err := validateEnvironmentProfilePath(tenantID, projectID, "", 0, requestID); err != nil {
+		return GetAdminWorkspaceSnapshotServerInput{}, err
+	}
+	if err := common.ValidateIdentifier(snapshotID, "/snapshotId"); err != nil {
+		return GetAdminWorkspaceSnapshotServerInput{}, err
+	}
+	return GetAdminWorkspaceSnapshotServerInput{TenantID: tenantID, ProjectID: projectID, SnapshotID: snapshotID, RequestID: requestID}, nil
 }
 
 type ListAdminSandboxAccessGrantsServerInput struct {

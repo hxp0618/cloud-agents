@@ -33,9 +33,10 @@ type Controller struct {
 }
 
 type EffectResult struct {
-	RuntimeID, RuntimeState, VolumeName string
-	CleanupComplete                     bool
-	Err                                 error
+	RuntimeID, RuntimeState, VolumeName, ContentDigest string
+	SizeBytes                                          int64
+	CleanupComplete                                    bool
+	Err                                                error
 }
 
 func New(store *postgres.DurableCoordinationService, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory) (*Controller, error) {
@@ -76,6 +77,12 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 		return false, errors.New("foundation controller is unavailable")
 	}
 	subject := digest("foundation-controller")
+	if controller.docker != nil {
+		worked, err := controller.runWorkspaceSnapshotOne(ctx, subject)
+		if worked || err != nil {
+			return worked, err
+		}
+	}
 	reaped, err := controller.store.ReapFoundationSandbox(ctx, subject, randomIdentifier("audit"))
 	if err != nil {
 		return false, err
@@ -137,6 +144,82 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 		return true, errors.New("foundation settlement outcome is unknown")
 	}
 	return true, nil
+}
+
+func (controller *Controller) runWorkspaceSnapshotOne(ctx context.Context, subject string) (bool, error) {
+	reaped, err := controller.store.ReapWorkspaceSnapshot(ctx, subject, randomIdentifier("audit"))
+	if err != nil {
+		return false, err
+	}
+	if reaped.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("workspace snapshot reaper outcome is unknown")
+	}
+	if reaped.Found {
+		return true, nil
+	}
+	claimResult, err := controller.store.ClaimWorkspaceSnapshot(ctx, controller.holder, controller.incarnation,
+		randomIdentifier("claim"), int32(claimLease/time.Second), subject, randomIdentifier("audit"))
+	if err != nil {
+		return false, err
+	}
+	if claimResult.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("workspace snapshot claim outcome is unknown")
+	}
+	if !claimResult.Found {
+		return false, nil
+	}
+	claim := claimResult.Claim
+	result, err := controller.executeSnapshotWithRenewal(ctx, &claim)
+	if err != nil {
+		return true, err
+	}
+	transition, code := classify(result.Err, claim.DeliveryAttempts)
+	settled, err := controller.store.SettleWorkspaceSnapshot(ctx, postgres.WorkspaceSnapshotSettlement{
+		Claim: claim, Transition: transition, SnapshotVolume: result.VolumeName,
+		ContentDigest: result.ContentDigest, SizeBytes: result.SizeBytes, StableErrorCode: code,
+		CleanupComplete: result.CleanupComplete, SubjectDigest: subject, AuditFactID: randomIdentifier("audit"),
+	})
+	if err != nil {
+		return true, err
+	}
+	if settled.DatabaseOutcome != postgres.DatabaseCommitted {
+		return true, errors.New("workspace snapshot settlement outcome is unknown")
+	}
+	return true, nil
+}
+
+func (controller *Controller) executeSnapshotWithRenewal(ctx context.Context, claim *postgres.WorkspaceSnapshotClaim) (EffectResult, error) {
+	effectCtx, cancel := context.WithTimeout(ctx, effectTimeout)
+	defer cancel()
+	results := make(chan EffectResult, 1)
+	go func() {
+		result, err := controller.docker.SnapshotFoundationWorkspace(effectCtx, claim.TargetEndpoint, claim.CredentialRef,
+			dockertarget.FoundationWorkspaceSnapshot{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+				TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID, SnapshotID: claim.SnapshotID,
+				SourceVolumeName: claim.SourceVolumeName, ImageURI: claim.ImageURI})
+		results <- EffectResult{VolumeName: result.VolumeName, ContentDigest: result.ContentDigest,
+			SizeBytes: result.SizeBytes, CleanupComplete: result.CleanupComplete, Err: err}
+	}()
+	ticker := time.NewTicker(renewInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case result := <-results:
+			if ctx.Err() != nil {
+				return EffectResult{}, ctx.Err()
+			}
+			return result, nil
+		case <-ticker.C:
+			expiry, err := controller.store.RenewWorkspaceSnapshot(ctx, *claim, int32(claimLease/time.Second))
+			if err != nil {
+				cancel()
+				return EffectResult{}, err
+			}
+			claim.ClaimExpiresAt = expiry
+		case <-ctx.Done():
+			return EffectResult{}, ctx.Err()
+		}
+	}
 }
 
 func (controller *Controller) executeWithRenewal(ctx context.Context, claim *postgres.FoundationSandboxClaim) (EffectResult, error) {
@@ -280,6 +363,8 @@ func classify(err error, attempt int32) (string, string) {
 		terminal, code = true, "foundation_network_policy_unenforced"
 	case errors.Is(err, dockertarget.ErrIsolationUnenforced):
 		terminal, code = true, "foundation_isolation_unenforced"
+	case errors.Is(err, dockertarget.ErrSnapshotTooLarge):
+		terminal, code = true, "workspace_snapshot_too_large"
 	case errors.Is(err, opensandbox.ErrConflict), errors.Is(err, dockertarget.ErrDeploymentConflict), errors.Is(err, kubernetestarget.ErrDeploymentConflict):
 		terminal, code = true, "foundation_ownership_conflict"
 	case errors.Is(err, opensandbox.ErrInvalid), errors.Is(err, dockertarget.ErrDeploymentConfigInvalid),
