@@ -52,6 +52,8 @@ import {
   decodeRemoteWorkerSandboxExecCommandReceipt,
   decodeRemoteWorkerSandboxFileCommand,
   decodeRemoteWorkerSandboxFileCommandReceipt,
+  decodeRemoteWorkerSandboxPTYCommand,
+  decodeRemoteWorkerSandboxPTYCommandReceipt,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -212,6 +214,42 @@ describe("generated platform JSON models", () => {
         stableErrorCode: "secret_error",
       }),
     ).toThrow(TypeError);
+  });
+
+  it("fences RemoteWorker Sandbox PTY frames and receipts", () => {
+    const command = {
+      commandId: "rwpty-alpha",
+      grantId: "grant-alpha",
+      workspaceId: "workspace-alpha",
+      targetId: "target-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      runtimeId: "runtime-alpha",
+      runtimeOperationId: "operation-alpha",
+      runtimeSpecDigest: `sha256:${"a".repeat(64)}`,
+      action: "exchange",
+      sessionId: "session-alpha",
+      since: 0,
+      takeover: false,
+      input: { messageType: "binary", payloadBase64Url: "AGhp" },
+      deadline: "2026-09-07T12:01:00Z",
+    };
+    expect(decodeRemoteWorkerSandboxPTYCommand(command).since).toBe(0);
+    const receipt = {
+      commandId: "rwpty-alpha",
+      grantId: "grant-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      action: "exchange",
+      result: "succeeded",
+      bytesTransferred: 3,
+      sessionId: "session-alpha",
+      running: true,
+      outputOffset: 2,
+      frames: [{ messageType: "binary", payloadBase64Url: "AWhp" }],
+    };
+    expect(decodeRemoteWorkerSandboxPTYCommandReceipt(receipt).frames).toHaveLength(1);
+    expect(() => decodeRemoteWorkerSandboxPTYCommandReceipt({ ...receipt, bytesTransferred: 2 })).toThrow(TypeError);
   });
 
   it("fences RemoteWorker lifecycle commands while keeping legacy create receipts", () => {

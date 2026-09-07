@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-pty-command-receipt.schema.json",
+  "title": "RemoteWorkerSandboxPTYCommandReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "grantId", "sandboxId", "sandboxGeneration", "action", "result", "bytesTransferred"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "action": { "enum": ["create", "get", "delete", "exchange"] },
+    "result": { "enum": ["succeeded", "failed"] },
+    "bytesTransferred": { "type": "integer", "minimum": 0, "maximum": 1052672 },
+    "sessionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "running": { "type": "boolean" },
+    "outputOffset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "frames": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageType", "payloadBase64Url"],
+        "properties": {
+          "messageType": { "enum": ["binary", "text"] },
+          "payloadBase64Url": { "type": "string", "maxLength": 1403563, "pattern": "^[A-Za-z0-9_-]*$" }
+        }
+      }
+    },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "failed" } }, "required": ["result"] },
+      "then": {
+        "required": ["stableErrorCode"],
+        "properties": { "bytesTransferred": { "const": 0 } },
+        "not": { "anyOf": [{ "required": ["sessionId"] }, { "required": ["running"] }, { "required": ["outputOffset"] }, { "required": ["frames"] }] }
+      },
+      "else": { "not": { "required": ["stableErrorCode"] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "enum": ["create", "get"] } }, "required": ["result", "action"] },
+      "then": { "required": ["sessionId", "running", "outputOffset"], "properties": { "bytesTransferred": { "const": 0 } }, "not": { "required": ["frames"] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "const": "delete" } }, "required": ["result", "action"] },
+      "then": { "required": ["sessionId"], "properties": { "bytesTransferred": { "const": 0 } }, "not": { "anyOf": [{ "required": ["running"] }, { "required": ["outputOffset"] }, { "required": ["frames"] }] } }
+    },
+    {
+      "if": { "properties": { "result": { "const": "succeeded" }, "action": { "const": "exchange" } }, "required": ["result", "action"] },
+      "then": { "required": ["sessionId", "running", "outputOffset", "frames"] }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "bytesTransferred equals the decoded WebSocket frame payload bytes and is bounded across all frames",
+    "create/get/exchange return only session state and cursor metadata; exchange additionally returns bounded data frames",
+    "a failed receipt carries one stable error and no session metadata or terminal content",
+    "runtime identifiers, endpoints and credentials are absent"
+  ]
+}

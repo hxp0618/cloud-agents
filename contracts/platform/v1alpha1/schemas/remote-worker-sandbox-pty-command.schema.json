@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-pty-command.schema.json",
+  "title": "RemoteWorkerSandboxPTYCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commandId",
+    "grantId",
+    "workspaceId",
+    "targetId",
+    "sandboxId",
+    "sandboxGeneration",
+    "runtimeId",
+    "runtimeOperationId",
+    "runtimeSpecDigest",
+    "action",
+    "deadline"
+  ],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeOperationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeSpecDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "action": { "enum": ["create", "get", "delete", "exchange"] },
+    "sessionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "since": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "takeover": { "type": "boolean" },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageType", "payloadBase64Url"],
+      "properties": {
+        "messageType": { "enum": ["binary", "text"] },
+        "payloadBase64Url": { "type": "string", "maxLength": 87382, "pattern": "^[A-Za-z0-9_-]*$" }
+      }
+    },
+    "deadline": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "create" } }, "required": ["action"] },
+      "then": { "not": { "anyOf": [{ "required": ["sessionId"] }, { "required": ["since"] }, { "required": ["takeover"] }, { "required": ["input"] }] } }
+    },
+    {
+      "if": { "properties": { "action": { "enum": ["get", "delete"] } }, "required": ["action"] },
+      "then": { "required": ["sessionId"], "not": { "anyOf": [{ "required": ["since"] }, { "required": ["takeover"] }, { "required": ["input"] }] } }
+    },
+    {
+      "if": { "properties": { "action": { "const": "exchange" } }, "required": ["action"] },
+      "then": { "required": ["sessionId", "since", "takeover"] }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "the command is bound to one active Grant and the current Target, Sandbox generation and physical runtime receipt",
+    "exchange input is one canonical unpadded base64url WebSocket data frame of at most 64 KiB; an omitted input polls output",
+    "the RemoteWorker connects only to its node-local OpenSandbox endpoint and returns bounded frames over the existing outbound heartbeat",
+    "runtime endpoints and credentials are absent"
+  ]
+}

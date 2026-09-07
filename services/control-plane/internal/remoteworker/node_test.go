@@ -82,3 +82,29 @@ func TestSandboxFileCommandAndReceiptUseGeneratedValidation(t *testing.T) {
 		t.Fatal("accepted a successful file receipt with a stable error")
 	}
 }
+
+func TestSandboxPTYCommandAndReceiptUseGeneratedValidation(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	since, takeover := int64(0), false
+	command := SandboxPTYCommand{CommandID: "rwpty-alpha", GrantID: "grant-alpha", WorkspaceID: "workspace-alpha",
+		TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 3, RuntimeID: "runtime-alpha",
+		RuntimeOperationID: "operation-alpha", RuntimeSpecDigest: digest, Action: "exchange", SessionID: "session-alpha",
+		Since: &since, Takeover: &takeover, Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := ValidateSandboxPTYCommand(command); err != nil {
+		t.Fatal(err)
+	}
+	running, outputOffset := true, int64(0)
+	frames := []platformv1alpha1.RemoteWorkerSandboxPTYFrame{}
+	receipt := SandboxPTYCommandReceipt{CommandID: command.CommandID, GrantID: command.GrantID,
+		SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration, Action: command.Action,
+		Result: "succeeded", SessionID: command.SessionID, Running: &running, OutputOffset: &outputOffset, Frames: &frames}
+	first, err := SandboxPTYCommandReceiptDigest(receipt)
+	second, replayErr := SandboxPTYCommandReceiptDigest(receipt)
+	if err != nil || replayErr != nil || first == "" || first != second {
+		t.Fatalf("receipt digests=%q/%q errors=%v/%v", first, second, err, replayErr)
+	}
+	receipt.BytesTransferred = 1
+	if ValidateSandboxPTYCommandReceipt(receipt) == nil {
+		t.Fatal("accepted a PTY receipt with a mismatched byte count")
+	}
+}

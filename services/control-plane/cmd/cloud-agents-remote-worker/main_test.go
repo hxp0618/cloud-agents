@@ -11,6 +11,7 @@ import (
 	"time"
 
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 )
 
 func TestHeartbeatLoopReconnectsWithBoundedBackoff(t *testing.T) {
@@ -157,5 +158,46 @@ func TestRemoteWorkerSandboxFileStateSurvivesRestartAndAcknowledgement(t *testin
 	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID}, time.Now()); err != nil ||
 		restarted.SandboxFileCommand != nil || restarted.SandboxFileCommandReceipt != nil {
 		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
+	}
+}
+
+func TestRemoteWorkerSandboxPTYStateSurvivesRestartAndAcknowledgement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	state := initialNodeState("incarnation-alpha")
+	since, takeover := int64(0), false
+	command := &platform.RemoteWorkerSandboxPTYCommand{CommandID: "rwpty-alpha", GrantID: "grant-alpha",
+		WorkspaceID: "workspace-alpha", TargetID: "target-alpha", SandboxID: "sandbox-alpha",
+		SandboxGeneration: 3, RuntimeID: "runtime-alpha", RuntimeOperationID: "operation-alpha",
+		RuntimeSpecDigest: "sha256:" + strings.Repeat("a", 64), Action: "exchange", SessionID: "session-alpha",
+		Since: &since, Takeover: &takeover, Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := reconcileHeartbeat(path, &state, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID, SandboxPTYCommand: command}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := loadNodeState(path, state.IncarnationID)
+	if err != nil || restarted.SandboxPTYCommand == nil || restarted.SandboxPTYCommand.CommandID != command.CommandID {
+		t.Fatalf("restarted state=%#v err=%v", restarted, err)
+	}
+	frames := []platform.RemoteWorkerSandboxPTYFrame{}
+	restarted.SandboxPTYCommandReceipt = &platform.RemoteWorkerSandboxPTYCommandReceipt{CommandID: command.CommandID,
+		GrantID: command.GrantID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
+		Action: command.Action, Result: "succeeded", SessionID: command.SessionID, Running: boolPointer(true),
+		OutputOffset: int64Pointer(0), Frames: &frames}
+	if err := saveNodeState(path, restarted); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID}, time.Now()); err != nil ||
+		restarted.SandboxPTYCommand != nil || restarted.SandboxPTYCommandReceipt != nil {
+		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
+	}
+}
+
+func TestBoundSandboxPTYBinaryFramePreservesReplayCursor(t *testing.T) {
+	payload := append([]byte{3, 0, 0, 0, 0, 0, 0, 4, 0}, []byte("0123456789")...)
+	bounded, offset, truncated, err := boundSandboxPTYBinaryFrame(payload, 0, 12)
+	if err != nil || !truncated || len(bounded) != 12 || offset != 1027 {
+		t.Fatalf("bounded=%v offset=%d truncated=%v err=%v", bounded, offset, truncated, err)
+	}
+	if _, _, _, err := boundSandboxPTYBinaryFrame(payload, 2048, 12); !errors.Is(err, opensandbox.ErrUnavailable) {
+		t.Fatalf("accepted replay cursor regression: %v", err)
 	}
 }

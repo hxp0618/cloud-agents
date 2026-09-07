@@ -492,6 +492,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		SandboxCommandReceipt:     remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
 		SandboxExecCommandReceipt: remoteWorkerSandboxExecCommandReceipt(validated.Body.SandboxExecCommandReceipt),
 		SandboxFileCommandReceipt: validated.Body.SandboxFileCommandReceipt,
+		SandboxPTYCommandReceipt:  validated.Body.SandboxPTYCommandReceipt,
 	})
 	if err != nil {
 		writeRemoteWorkerEnrollmentError(writer, err)
@@ -510,6 +511,7 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		SandboxCommand:     remoteWorkerSandboxCommandResource(result.SandboxCommand),
 		SandboxExecCommand: remoteWorkerSandboxExecCommandResource(result.SandboxExecCommand),
 		SandboxFileCommand: result.SandboxFileCommand,
+		SandboxPTYCommand:  result.SandboxPTYCommand,
 	}})
 	if err != nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -930,6 +932,8 @@ func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, 409, "remote_worker_sandbox_exec_receipt_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerSandboxFileReceiptConflict):
 		writePublicProblem(writer, 409, "remote_worker_sandbox_file_receipt_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerSandboxPTYReceiptConflict):
+		writePublicProblem(writer, 409, "remote_worker_sandbox_pty_receipt_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingIdempotencyConflict):
 		writePublicProblem(writer, 409, "idempotency_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerOperationInProgress):

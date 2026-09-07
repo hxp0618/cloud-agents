@@ -220,6 +220,21 @@ func TestRemoteWorkerSandboxFileCommandBoundaries(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerSandboxPTYCommandBoundaries(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := []byte(`{"commandId":"rwpty-alpha","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","action":"exchange","sessionId":"session-alpha","since":0,"takeover":false,"input":{"messageType":"binary","payloadBase64Url":"AGhp"},"deadline":"2026-09-07T12:01:00Z"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxPTYCommandJSON(command); err != nil || decoded.Since == nil || *decoded.Since != 0 || decoded.Input == nil {
+		t.Fatalf("PTY command=%#v error=%v", decoded, err)
+	}
+	receipt := []byte(`{"commandId":"rwpty-alpha","grantId":"grant-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"action":"exchange","result":"succeeded","bytesTransferred":3,"sessionId":"session-alpha","running":true,"outputOffset":2,"frames":[{"messageType":"binary","payloadBase64Url":"AWhp"}]}`)
+	if decoded, err := DecodeRemoteWorkerSandboxPTYCommandReceiptJSON(receipt); err != nil || decoded.Frames == nil || decoded.BytesTransferred != 3 {
+		t.Fatalf("PTY receipt=%#v error=%v", decoded, err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxPTYCommandReceiptJSON([]byte(strings.Replace(string(receipt), `"bytesTransferred":3`, `"bytesTransferred":2`, 1))); err == nil {
+		t.Fatal("PTY receipt accepted a mismatched decoded byte count")
+	}
+}
+
 func TestRemoteWorkerSandboxLifecycleCommandsFencePhysicalAuthority(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	legacyCreateReceipt := []byte(`{"commandId":"rwsc-create","attempt":1,"operationId":"operation-create","sandboxId":"sandbox-alpha","sandboxGeneration":1,"result":"succeeded","runtimeId":"runtime-alpha","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)

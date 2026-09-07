@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	openapi "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
@@ -198,12 +199,17 @@ func (server *Server) create(writer http.ResponseWriter, request *http.Request, 
 		writeGatewayError(writer, err)
 		return
 	}
-	client, err := server.client(authority)
-	if err != nil {
-		writeGatewayError(writer, err)
-		return
+	var client *opensandbox.Client
+	var created opensandbox.PTYObservation
+	if authority.Access.TargetKind == "remote-worker" {
+		created, err = server.executeRemotePTY(request.Context(), authority, tokenDigest,
+			request.Header.Get("X-Request-ID"), "create", "", 0, false, nil)
+	} else {
+		client, err = server.client(authority)
+		if err == nil {
+			created, err = client.CreatePTY(request.Context(), ptyInput(authority))
+		}
 	}
-	created, err := client.CreatePTY(request.Context(), ptyInput(authority))
 	if err != nil {
 		writeGatewayError(writer, err)
 		return
@@ -212,7 +218,14 @@ func (server *Server) create(writer http.ResponseWriter, request *http.Request, 
 	if err != nil {
 		cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), 5*time.Second)
 		defer cancel()
-		_ = client.DeletePTY(cleanupContext, ptyInput(authority), created.SessionID)
+		if client != nil {
+			_ = client.DeletePTY(cleanupContext, ptyInput(authority), created.SessionID)
+		} else if commandID, commandErr := newPTYCommandID(); commandErr == nil {
+			_, _ = server.store.ExecuteRemoteWorkerSandboxPTY(cleanupContext, postgres.RemoteWorkerSandboxPTYRequest{
+				Authority: authority, CommandID: commandID, RequestID: request.Header.Get("X-Request-ID"),
+				TokenDigest: tokenDigest, Action: "delete", SessionID: created.SessionID,
+			})
+		}
 		writeGatewayError(writer, err)
 		return
 	}
@@ -225,12 +238,17 @@ func (server *Server) get(writer http.ResponseWriter, request *http.Request, rou
 		writeGatewayError(writer, err)
 		return
 	}
-	client, err := server.client(session.Grant)
-	if err != nil {
-		writeGatewayError(writer, err)
-		return
+	var observation opensandbox.PTYObservation
+	if session.Grant.Access.TargetKind == "remote-worker" {
+		observation, err = server.executeRemotePTY(request.Context(), session.Grant, tokenDigest,
+			request.Header.Get("X-Request-ID"), "get", route.session, 0, false, nil)
+	} else {
+		var client *opensandbox.Client
+		client, err = server.client(session.Grant)
+		if err == nil {
+			observation, err = client.GetPTY(request.Context(), ptyInput(session.Grant), route.session)
+		}
 	}
-	observation, err := client.GetPTY(request.Context(), ptyInput(session.Grant), route.session)
 	if err != nil {
 		writeGatewayError(writer, err)
 		return
@@ -244,12 +262,17 @@ func (server *Server) delete(writer http.ResponseWriter, request *http.Request, 
 		writeGatewayError(writer, err)
 		return
 	}
-	client, err := server.client(session.Grant)
-	if err != nil {
-		writeGatewayError(writer, err)
-		return
+	if session.Grant.Access.TargetKind == "remote-worker" {
+		_, err = server.executeRemotePTY(request.Context(), session.Grant, tokenDigest,
+			request.Header.Get("X-Request-ID"), "delete", route.session, 0, false, nil)
+	} else {
+		var client *opensandbox.Client
+		client, err = server.client(session.Grant)
+		if err == nil {
+			err = client.DeletePTY(request.Context(), ptyInput(session.Grant), route.session)
+		}
 	}
-	if err := client.DeletePTY(request.Context(), ptyInput(session.Grant), route.session); err != nil && !errors.Is(err, opensandbox.ErrNotFound) {
+	if err != nil && !errors.Is(err, opensandbox.ErrNotFound) {
 		writeGatewayError(writer, err)
 		return
 	}
@@ -258,6 +281,62 @@ func (server *Server) delete(writer http.ResponseWriter, request *http.Request, 
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func newPTYCommandID() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return "rwpty-" + hex.EncodeToString(random[:]), nil
+}
+
+func (server *Server) executeRemotePTY(ctx context.Context, authority postgres.SandboxAccessGrantAuthority,
+	tokenDigest, requestID, action, sessionID string, since int64, takeover bool,
+	input *platform.RemoteWorkerSandboxPTYFrame,
+) (opensandbox.PTYObservation, error) {
+	commandID, err := newPTYCommandID()
+	if err != nil {
+		return opensandbox.PTYObservation{}, err
+	}
+	receipt, err := server.store.ExecuteRemoteWorkerSandboxPTY(ctx, postgres.RemoteWorkerSandboxPTYRequest{
+		Authority: authority, CommandID: commandID, RequestID: requestID, TokenDigest: tokenDigest,
+		Action: action, SessionID: sessionID, Since: since, Takeover: takeover, Input: input,
+	})
+	if err != nil {
+		return opensandbox.PTYObservation{}, err
+	}
+	if err := remotePTYError(receipt); err != nil {
+		return opensandbox.PTYObservation{}, err
+	}
+	observation := opensandbox.PTYObservation{SessionID: receipt.SessionID}
+	if receipt.Running != nil {
+		observation.Running = *receipt.Running
+	}
+	if receipt.OutputOffset != nil {
+		observation.OutputOffset = *receipt.OutputOffset
+	}
+	return observation, nil
+}
+
+func remotePTYError(receipt platform.RemoteWorkerSandboxPTYCommandReceipt) error {
+	if receipt.Result == "succeeded" {
+		return nil
+	}
+	switch receipt.StableErrorCode {
+	case "sandbox_runtime_unavailable":
+		return opensandbox.ErrRuntimeFailed
+	case "sandbox_pty_not_found":
+		return opensandbox.ErrNotFound
+	case "sandbox_pty_conflict":
+		return opensandbox.ErrConflict
+	case "sandbox_pty_output_limit":
+		return opensandbox.ErrOutputLimit
+	case "sandbox_pty_invalid":
+		return opensandbox.ErrInvalid
+	default:
+		return opensandbox.ErrUnavailable
+	}
 }
 
 type fileAccess struct {
@@ -704,6 +783,10 @@ func (server *Server) webSocket(writer http.ResponseWriter, request *http.Reques
 		writeGatewayError(writer, err)
 		return
 	}
+	if session.Grant.Access.TargetKind == "remote-worker" {
+		server.remotePTYWebSocket(writer, request, route, tokenDigest, session)
+		return
+	}
 	client, err := server.client(session.Grant)
 	if err != nil {
 		writeGatewayError(writer, err)
@@ -753,6 +836,113 @@ func (server *Server) webSocket(writer http.ResponseWriter, request *http.Reques
 		}
 	}()
 	proxy.ServeHTTP(writer, request.WithContext(authorizedContext))
+}
+
+type remotePTYInput struct {
+	frame *platform.RemoteWorkerSandboxPTYFrame
+	err   error
+}
+
+func (server *Server) remotePTYWebSocket(writer http.ResponseWriter, request *http.Request, route route,
+	tokenDigest string, session postgres.SandboxPTYSessionAuthority,
+) {
+	connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+	if err != nil {
+		return
+	}
+	defer connection.Close()
+	connection.SetReadLimit(64 << 10)
+	authorizedContext, cancel := context.WithCancel(request.Context())
+	defer cancel()
+	inputs := make(chan remotePTYInput, 1)
+	go func() {
+		defer cancel()
+		for {
+			messageType, payload, readErr := connection.ReadMessage()
+			if readErr != nil {
+				select {
+				case inputs <- remotePTYInput{err: readErr}:
+				default:
+				}
+				return
+			}
+			if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage || len(payload) > 64<<10 {
+				select {
+				case inputs <- remotePTYInput{err: opensandbox.ErrInvalid}:
+				default:
+				}
+				return
+			}
+			frameType := "binary"
+			if messageType == websocket.TextMessage {
+				frameType = "text"
+			}
+			select {
+			case inputs <- remotePTYInput{frame: &platform.RemoteWorkerSandboxPTYFrame{
+				MessageType: frameType, PayloadBase64URL: base64.RawURLEncoding.EncodeToString(payload)}}:
+			case <-authorizedContext.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-authorizedContext.Done():
+				return
+			case <-ticker.C:
+				if _, err := server.store.ResolvePTYSession(authorizedContext, route.tenant, route.project, route.grant, route.session, tokenDigest); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	since, _ := strconv.ParseInt(request.URL.Query().Get("since"), 10, 64)
+	takeover := request.URL.Query().Get("takeover") == "1"
+	for {
+		var input *platform.RemoteWorkerSandboxPTYFrame
+		select {
+		case <-authorizedContext.Done():
+			return
+		case received := <-inputs:
+			if received.err != nil {
+				return
+			}
+			input = received.frame
+		case <-time.After(100 * time.Millisecond):
+		}
+		commandID, err := newPTYCommandID()
+		if err != nil {
+			return
+		}
+		receipt, err := server.store.ExecuteRemoteWorkerSandboxPTY(authorizedContext, postgres.RemoteWorkerSandboxPTYRequest{
+			Authority: session.Grant, CommandID: commandID, RequestID: request.Header.Get("X-Request-ID"),
+			TokenDigest: tokenDigest, Action: "exchange", SessionID: route.session,
+			Since: since, Takeover: takeover, Input: input,
+		})
+		if err != nil || remotePTYError(receipt) != nil || receipt.OutputOffset == nil || receipt.Running == nil || receipt.Frames == nil {
+			return
+		}
+		for _, frame := range *receipt.Frames {
+			payload, decodeErr := base64.RawURLEncoding.Strict().DecodeString(frame.PayloadBase64URL)
+			messageType := websocket.BinaryMessage
+			if frame.MessageType == "text" {
+				messageType = websocket.TextMessage
+			}
+			if decodeErr != nil || connection.WriteMessage(messageType, payload) != nil {
+				return
+			}
+		}
+		since, takeover = *receipt.OutputOffset, true
+		if !*receipt.Running {
+			_ = connection.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+			return
+		}
+	}
 }
 
 func writeSession(writer http.ResponseWriter, status int, session postgres.SandboxPTYSessionAuthority, observation opensandbox.PTYObservation) {

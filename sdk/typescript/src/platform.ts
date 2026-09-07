@@ -599,6 +599,41 @@ export type RemoteWorkerSandboxFileCommandReceipt = Readonly<{
   write?: Readonly<{ entry: SandboxFileEntry }>;
   stableErrorCode?: string;
 }>;
+export type RemoteWorkerSandboxPTYFrame = Readonly<{
+  messageType: "binary" | "text";
+  payloadBase64Url: string;
+}>;
+export type RemoteWorkerSandboxPTYCommand = Readonly<{
+  commandId: string;
+  grantId: string;
+  workspaceId: string;
+  targetId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  runtimeId: string;
+  runtimeOperationId: string;
+  runtimeSpecDigest: `sha256:${string}`;
+  action: "create" | "get" | "delete" | "exchange";
+  sessionId?: string;
+  since?: number;
+  takeover?: boolean;
+  input?: RemoteWorkerSandboxPTYFrame;
+  deadline: string;
+}>;
+export type RemoteWorkerSandboxPTYCommandReceipt = Readonly<{
+  commandId: string;
+  grantId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  action: "create" | "get" | "delete" | "exchange";
+  result: "succeeded" | "failed";
+  bytesTransferred: number;
+  sessionId?: string;
+  running?: boolean;
+  outputOffset?: number;
+  frames?: readonly RemoteWorkerSandboxPTYFrame[];
+  stableErrorCode?: string;
+}>;
 export type RemoteWorkerHeartbeatRequest = Readonly<{
   incarnationId: string;
   observedGeneration: number;
@@ -613,6 +648,7 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   sandboxCommandReceipt?: RemoteWorkerSandboxCommandReceipt;
   sandboxExecCommandReceipt?: RemoteWorkerSandboxExecCommandReceipt;
   sandboxFileCommandReceipt?: RemoteWorkerSandboxFileCommandReceipt;
+  sandboxPtyCommandReceipt?: RemoteWorkerSandboxPTYCommandReceipt;
 }>;
 export type RemoteWorkerNodeStatus = Readonly<{
   resourceVersion: string;
@@ -651,6 +687,7 @@ export type RemoteWorkerHeartbeat = Readonly<{
   sandboxCommand?: RemoteWorkerSandboxCommand;
   sandboxExecCommand?: RemoteWorkerSandboxExecCommand;
   sandboxFileCommand?: RemoteWorkerSandboxFileCommand;
+  sandboxPtyCommand?: RemoteWorkerSandboxPTYCommand;
 }>;
 export type RemoteWorkerNodeSchedulingRequest = Readonly<{
   expectedGeneration: number;
@@ -2025,6 +2062,27 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
           },
         },
         write: { fields: { contentBase64Url: scalarResponseShape } },
+        deadline: scalarResponseShape,
+      },
+    },
+    sandboxPtyCommand: {
+      fields: {
+        commandId: scalarResponseShape,
+        grantId: scalarResponseShape,
+        workspaceId: scalarResponseShape,
+        targetId: scalarResponseShape,
+        sandboxId: scalarResponseShape,
+        sandboxGeneration: scalarResponseShape,
+        runtimeId: scalarResponseShape,
+        runtimeOperationId: scalarResponseShape,
+        runtimeSpecDigest: scalarResponseShape,
+        action: scalarResponseShape,
+        sessionId: scalarResponseShape,
+        since: scalarResponseShape,
+        takeover: scalarResponseShape,
+        input: {
+          fields: { messageType: scalarResponseShape, payloadBase64Url: scalarResponseShape },
+        },
         deadline: scalarResponseShape,
       },
     },
@@ -6314,6 +6372,222 @@ export function decodeRemoteWorkerSandboxFileCommand(
     error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/action");
   return Object.freeze(command);
 }
+function decodeRemoteWorkerSandboxPTYFrame(
+  value: unknown,
+  maximum: number,
+  path: string,
+): RemoteWorkerSandboxPTYFrame {
+  const source = strictRecord(
+    value,
+    ["messageType", "payloadBase64Url"],
+    ["messageType", "payloadBase64Url"],
+    path,
+  );
+  return Object.freeze({
+    messageType: enumValue(source.messageType, ["binary", "text"] as const, `${path}/messageType`),
+    payloadBase64Url: sandboxFileContent(
+      source.payloadBase64Url,
+      maximum,
+      `${path}/payloadBase64Url`,
+    ),
+  });
+}
+export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorkerSandboxPTYCommand {
+  const fields = [
+      "commandId",
+      "grantId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "action",
+      "sessionId",
+      "since",
+      "takeover",
+      "input",
+      "deadline",
+    ] as const,
+    required = [
+      "commandId",
+      "grantId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "action",
+      "deadline",
+    ] as const,
+    source = strictRecord(value, fields, required),
+    action = enumValue(source.action, ["create", "get", "delete", "exchange"] as const, "/action"),
+    command = {
+      commandId: identifier(source.commandId, "/commandId"),
+      grantId: identifier(source.grantId, "/grantId"),
+      workspaceId: identifier(source.workspaceId, "/workspaceId"),
+      targetId: identifier(source.targetId, "/targetId"),
+      sandboxId: identifier(source.sandboxId, "/sandboxId"),
+      sandboxGeneration: integer(
+        source.sandboxGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/sandboxGeneration",
+      ),
+      runtimeId: identifier(source.runtimeId, "/runtimeId"),
+      runtimeOperationId: identifier(source.runtimeOperationId, "/runtimeOperationId"),
+      runtimeSpecDigest: digest(
+        source.runtimeSpecDigest,
+        "/runtimeSpecDigest",
+      ) as `sha256:${string}`,
+      action,
+      deadline: dateTime(source.deadline, "/deadline"),
+    };
+  if (action === "create") {
+    if (
+      source.sessionId !== undefined ||
+      source.since !== undefined ||
+      source.takeover !== undefined ||
+      source.input !== undefined
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action");
+    return Object.freeze(command);
+  }
+  const sessionId = identifier(source.sessionId, "/sessionId");
+  if (action === "get" || action === "delete") {
+    if (source.since !== undefined || source.takeover !== undefined || source.input !== undefined)
+      error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action");
+    return Object.freeze({ ...command, sessionId });
+  }
+  const since = integer(source.since, 0, Number.MAX_SAFE_INTEGER, "/since"),
+    takeover = boolean(source.takeover, "/takeover"),
+    input =
+      source.input === undefined
+        ? undefined
+        : decodeRemoteWorkerSandboxPTYFrame(source.input, 65536, "/input");
+  return Object.freeze({
+    ...command,
+    sessionId,
+    since,
+    takeover,
+    ...(input === undefined ? {} : { input }),
+  });
+}
+const remoteWorkerSandboxPTYStableErrors = [
+  "sandbox_access_unavailable",
+  "sandbox_runtime_unavailable",
+  "sandbox_pty_not_found",
+  "sandbox_pty_conflict",
+  "sandbox_pty_output_limit",
+  "sandbox_pty_invalid",
+  "sandbox_pty_timeout",
+] as const;
+export function decodeRemoteWorkerSandboxPTYCommandReceipt(
+  value: unknown,
+): RemoteWorkerSandboxPTYCommandReceipt {
+  const source = strictRecord(
+      value,
+      [
+        "commandId",
+        "grantId",
+        "sandboxId",
+        "sandboxGeneration",
+        "action",
+        "result",
+        "bytesTransferred",
+        "sessionId",
+        "running",
+        "outputOffset",
+        "frames",
+        "stableErrorCode",
+      ],
+      [
+        "commandId",
+        "grantId",
+        "sandboxId",
+        "sandboxGeneration",
+        "action",
+        "result",
+        "bytesTransferred",
+      ],
+    ),
+    action = enumValue(source.action, ["create", "get", "delete", "exchange"] as const, "/action"),
+    result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+    bytesTransferred = integer(source.bytesTransferred, 0, 1052672, "/bytesTransferred"),
+    receipt = {
+      commandId: identifier(source.commandId, "/commandId"),
+      grantId: identifier(source.grantId, "/grantId"),
+      sandboxId: identifier(source.sandboxId, "/sandboxId"),
+      sandboxGeneration: integer(
+        source.sandboxGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/sandboxGeneration",
+      ),
+      action,
+      result,
+      bytesTransferred,
+    };
+  if (result === "failed") {
+    const stableErrorCode = enumValue(
+      source.stableErrorCode,
+      remoteWorkerSandboxPTYStableErrors,
+      "/stableErrorCode",
+    );
+    if (
+      bytesTransferred !== 0 ||
+      source.sessionId !== undefined ||
+      source.running !== undefined ||
+      source.outputOffset !== undefined ||
+      source.frames !== undefined
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/result");
+    return Object.freeze({ ...receipt, stableErrorCode });
+  }
+  if (source.stableErrorCode !== undefined)
+    error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/stableErrorCode");
+  const sessionId = identifier(source.sessionId, "/sessionId");
+  if (action === "delete") {
+    if (
+      bytesTransferred !== 0 ||
+      source.running !== undefined ||
+      source.outputOffset !== undefined ||
+      source.frames !== undefined
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/action");
+    return Object.freeze({ ...receipt, sessionId });
+  }
+  const running = boolean(source.running, "/running"),
+    outputOffset = integer(source.outputOffset, 0, Number.MAX_SAFE_INTEGER, "/outputOffset");
+  if (action !== "exchange") {
+    if (bytesTransferred !== 0 || source.frames !== undefined)
+      error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/action");
+    return Object.freeze({ ...receipt, sessionId, running, outputOffset });
+  }
+  const rawFrames: unknown[] = Array.isArray(source.frames)
+    ? source.frames
+    : error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/frames");
+  if (rawFrames.length > 256) error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/frames");
+  const frames = rawFrames.map((frame, index) =>
+      decodeRemoteWorkerSandboxPTYFrame(frame, 1052672, `/frames/${index}`),
+    ),
+    size = frames.reduce(
+      (total, frame) => total + Math.floor((frame.payloadBase64Url.length * 3) / 4),
+      0,
+    );
+  if (size !== bytesTransferred || size > 1052672)
+    error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND_RECEIPT", "/bytesTransferred");
+  return Object.freeze({
+    ...receipt,
+    sessionId,
+    running,
+    outputOffset,
+    frames: Object.freeze(frames),
+  });
+}
 export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorkerHeartbeatRequest {
   const source = strictRecord(
     value,
@@ -6331,6 +6605,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "sandboxCommandReceipt",
       "sandboxExecCommandReceipt",
       "sandboxFileCommandReceipt",
+      "sandboxPtyCommandReceipt",
     ],
     [
       "incarnationId",
@@ -6383,6 +6658,13 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       : {
           sandboxFileCommandReceipt: decodeRemoteWorkerSandboxFileCommandReceipt(
             source.sandboxFileCommandReceipt,
+          ),
+        }),
+    ...(source.sandboxPtyCommandReceipt === undefined
+      ? {}
+      : {
+          sandboxPtyCommandReceipt: decodeRemoteWorkerSandboxPTYCommandReceipt(
+            source.sandboxPtyCommandReceipt,
           ),
         }),
   });
@@ -6485,6 +6767,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       "sandboxCommand",
       "sandboxExecCommand",
       "sandboxFileCommand",
+      "sandboxPtyCommand",
     ],
     [
       "apiVersion",
@@ -6551,7 +6834,11 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     sandboxFileCommand =
       source.sandboxFileCommand === undefined
         ? undefined
-        : decodeRemoteWorkerSandboxFileCommand(source.sandboxFileCommand);
+        : decodeRemoteWorkerSandboxFileCommand(source.sandboxFileCommand),
+    sandboxPtyCommand =
+      source.sandboxPtyCommand === undefined
+        ? undefined
+        : decodeRemoteWorkerSandboxPTYCommand(source.sandboxPtyCommand);
   if (
     command !== undefined &&
     (command.generation !== generation ||
@@ -6572,16 +6859,23 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
   )
     error("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/sandboxFileCommand");
   if (
-    [sandboxCommand, sandboxExecCommand, sandboxFileCommand].filter((entry) => entry !== undefined)
-      .length > 1
+    sandboxPtyCommand !== undefined &&
+    Date.parse(sandboxPtyCommand.deadline) <= Date.parse(acceptedAt)
   )
-    error("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxFileCommand");
+    error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/sandboxPtyCommand");
+  if (
+    [sandboxCommand, sandboxExecCommand, sandboxFileCommand, sandboxPtyCommand].filter(
+      (entry) => entry !== undefined,
+    ).length > 1
+  )
+    error("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxPtyCommand");
   return Object.freeze({
     ...heartbeat,
     ...(command === undefined ? {} : { command }),
     ...(sandboxCommand === undefined ? {} : { sandboxCommand }),
     ...(sandboxExecCommand === undefined ? {} : { sandboxExecCommand }),
     ...(sandboxFileCommand === undefined ? {} : { sandboxFileCommand }),
+    ...(sandboxPtyCommand === undefined ? {} : { sandboxPtyCommand }),
   });
 }
 export function decodeRemoteWorkerNodeSchedulingRequest(

@@ -123,6 +123,8 @@ const PLATFORM_SCHEMAS = [
   "remote-worker-sandbox-exec-command.schema.json",
   "remote-worker-sandbox-file-command-receipt.schema.json",
   "remote-worker-sandbox-file-command.schema.json",
+  "remote-worker-sandbox-pty-command-receipt.schema.json",
+  "remote-worker-sandbox-pty-command.schema.json",
   "remote-worker-sandbox-command-receipt.schema.json",
   "remote-worker-sandbox-command.schema.json",
   "remote-worker-heartbeat-request.schema.json",

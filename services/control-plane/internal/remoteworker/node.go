@@ -52,6 +52,7 @@ type HeartbeatInput struct {
 	SandboxCommandReceipt     *SandboxCommandReceipt
 	SandboxExecCommandReceipt *SandboxExecCommandReceipt
 	SandboxFileCommandReceipt *SandboxFileCommandReceipt
+	SandboxPTYCommandReceipt  *SandboxPTYCommandReceipt
 }
 
 type CommandReceipt struct {
@@ -102,6 +103,8 @@ type SandboxExecCommand struct {
 
 type SandboxFileCommand = platformv1alpha1.RemoteWorkerSandboxFileCommand
 type SandboxFileCommandReceipt = platformv1alpha1.RemoteWorkerSandboxFileCommandReceipt
+type SandboxPTYCommand = platformv1alpha1.RemoteWorkerSandboxPTYCommand
+type SandboxPTYCommandReceipt = platformv1alpha1.RemoteWorkerSandboxPTYCommandReceipt
 
 type SchedulingInput struct {
 	Scope                   Scope
@@ -166,7 +169,8 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil ||
 		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil ||
 		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil ||
-		input.SandboxFileCommandReceipt != nil && ValidateSandboxFileCommandReceipt(*input.SandboxFileCommandReceipt) != nil {
+		input.SandboxFileCommandReceipt != nil && ValidateSandboxFileCommandReceipt(*input.SandboxFileCommandReceipt) != nil ||
+		input.SandboxPTYCommandReceipt != nil && ValidateSandboxPTYCommandReceipt(*input.SandboxPTYCommandReceipt) != nil {
 		return ErrInvalidHeartbeat
 	}
 	return nil
@@ -297,6 +301,35 @@ func SandboxFileCommandReceiptDigest(receipt SandboxFileCommandReceipt) (string,
 		return "", ErrInvalidHeartbeat
 	}
 	return mutationDigest("remote-worker.sandbox-file-receipt", receipt)
+}
+
+func ValidateSandboxPTYCommand(command SandboxPTYCommand) error {
+	raw, err := json.Marshal(command)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerSandboxPTYCommandJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func ValidateSandboxPTYCommandReceipt(receipt SandboxPTYCommandReceipt) error {
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerSandboxPTYCommandReceiptJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func SandboxPTYCommandReceiptDigest(receipt SandboxPTYCommandReceipt) (string, error) {
+	if ValidateSandboxPTYCommandReceipt(receipt) != nil {
+		return "", ErrInvalidHeartbeat
+	}
+	return mutationDigest("remote-worker.sandbox-pty-receipt", receipt)
 }
 
 func (receipt CommandReceipt) Validate() error {

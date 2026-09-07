@@ -5,12 +5,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gorilla/websocket"
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	api "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
@@ -105,6 +108,7 @@ func (value config) heartbeatRequest(state nodeState) platform.RemoteWorkerHeart
 		CommandReceipt: state.CommandReceipt, SandboxCommandReceipt: state.SandboxCommandReceipt,
 		SandboxExecCommandReceipt: state.SandboxExecCommandReceipt,
 		SandboxFileCommandReceipt: state.SandboxFileCommandReceipt,
+		SandboxPTYCommandReceipt:  state.SandboxPTYCommandReceipt,
 	}
 }
 
@@ -120,6 +124,8 @@ type nodeState struct {
 	SandboxExecCommandReceipt *platform.RemoteWorkerSandboxExecCommandReceipt `json:"sandboxExecCommandReceipt,omitempty"`
 	SandboxFileCommand        *platform.RemoteWorkerSandboxFileCommand        `json:"sandboxFileCommand,omitempty"`
 	SandboxFileCommandReceipt *platform.RemoteWorkerSandboxFileCommandReceipt `json:"sandboxFileCommandReceipt,omitempty"`
+	SandboxPTYCommand         *platform.RemoteWorkerSandboxPTYCommand         `json:"sandboxPtyCommand,omitempty"`
+	SandboxPTYCommandReceipt  *platform.RemoteWorkerSandboxPTYCommandReceipt  `json:"sandboxPtyCommandReceipt,omitempty"`
 }
 
 func initialNodeState(incarnationID string) nodeState {
@@ -134,7 +140,7 @@ func validateNodeState(value nodeState) error {
 	}
 	request := platform.RemoteWorkerHeartbeatRequest{IncarnationID: value.IncarnationID, ObservedGeneration: value.ObservedGeneration,
 		ObservedState: value.ObservedState, WorkerVersion: "state", OS: "state", Architecture: "state", KernelVersion: "state",
-		Capabilities: []string{"exec"}, Capacity: platform.RemoteWorkerCapacity{CPUMillis: 100, MemoryBytes: 134217728, DiskBytes: 134217728}, CommandReceipt: value.CommandReceipt, SandboxCommandReceipt: value.SandboxCommandReceipt, SandboxExecCommandReceipt: value.SandboxExecCommandReceipt, SandboxFileCommandReceipt: value.SandboxFileCommandReceipt}
+		Capabilities: []string{"exec"}, Capacity: platform.RemoteWorkerCapacity{CPUMillis: 100, MemoryBytes: 134217728, DiskBytes: 134217728}, CommandReceipt: value.CommandReceipt, SandboxCommandReceipt: value.SandboxCommandReceipt, SandboxExecCommandReceipt: value.SandboxExecCommandReceipt, SandboxFileCommandReceipt: value.SandboxFileCommandReceipt, SandboxPTYCommandReceipt: value.SandboxPTYCommandReceipt}
 	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil {
 		return errInvalidRemoteWorkerConfig
 	}
@@ -152,6 +158,10 @@ func validateNodeState(value nodeState) error {
 	}
 	if value.SandboxFileCommand == nil && value.SandboxFileCommandReceipt != nil || value.SandboxFileCommand != nil && value.SandboxFileCommandReceipt != nil && value.SandboxFileCommand.CommandID != value.SandboxFileCommandReceipt.CommandID ||
 		value.SandboxCommand != nil && value.SandboxFileCommand != nil || value.SandboxExecCommand != nil && value.SandboxFileCommand != nil {
+		return errInvalidRemoteWorkerConfig
+	}
+	if value.SandboxPTYCommand == nil && value.SandboxPTYCommandReceipt != nil || value.SandboxPTYCommand != nil && value.SandboxPTYCommandReceipt != nil && value.SandboxPTYCommand.CommandID != value.SandboxPTYCommandReceipt.CommandID ||
+		value.SandboxCommand != nil && value.SandboxPTYCommand != nil || value.SandboxExecCommand != nil && value.SandboxPTYCommand != nil || value.SandboxFileCommand != nil && value.SandboxPTYCommand != nil {
 		return errInvalidRemoteWorkerConfig
 	}
 	if value.SandboxCommand != nil {
@@ -178,6 +188,15 @@ func validateNodeState(value nodeState) error {
 			return errInvalidRemoteWorkerConfig
 		}
 		if _, err := platform.DecodeRemoteWorkerSandboxFileCommandJSON(raw); err != nil {
+			return errInvalidRemoteWorkerConfig
+		}
+	}
+	if value.SandboxPTYCommand != nil {
+		raw, err := json.Marshal(value.SandboxPTYCommand)
+		if err != nil {
+			return errInvalidRemoteWorkerConfig
+		}
+		if _, err := platform.DecodeRemoteWorkerSandboxPTYCommandJSON(raw); err != nil {
 			return errInvalidRemoteWorkerConfig
 		}
 	}
@@ -251,10 +270,13 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 	}
 	if heartbeat.SandboxCommand != nil && heartbeat.SandboxExecCommand != nil ||
 		heartbeat.SandboxCommand != nil && heartbeat.SandboxFileCommand != nil ||
-		heartbeat.SandboxExecCommand != nil && heartbeat.SandboxFileCommand != nil {
+		heartbeat.SandboxCommand != nil && heartbeat.SandboxPTYCommand != nil ||
+		heartbeat.SandboxExecCommand != nil && heartbeat.SandboxFileCommand != nil ||
+		heartbeat.SandboxExecCommand != nil && heartbeat.SandboxPTYCommand != nil ||
+		heartbeat.SandboxFileCommand != nil && heartbeat.SandboxPTYCommand != nil {
 		return errInvalidRemoteWorkerConfig
 	}
-	changed := state.CommandReceipt != nil || state.SandboxCommandReceipt != nil || state.SandboxExecCommandReceipt != nil || state.SandboxFileCommandReceipt != nil
+	changed := state.CommandReceipt != nil || state.SandboxCommandReceipt != nil || state.SandboxExecCommandReceipt != nil || state.SandboxFileCommandReceipt != nil || state.SandboxPTYCommandReceipt != nil
 	state.CommandReceipt = nil
 	if state.SandboxCommandReceipt != nil {
 		state.SandboxCommand, state.SandboxCommandReceipt = nil, nil
@@ -264,6 +286,9 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 	}
 	if state.SandboxFileCommandReceipt != nil {
 		state.SandboxFileCommand, state.SandboxFileCommandReceipt = nil, nil
+	}
+	if state.SandboxPTYCommandReceipt != nil {
+		state.SandboxPTYCommand, state.SandboxPTYCommandReceipt = nil, nil
 	}
 	if heartbeat.Command != nil {
 		command := heartbeat.Command
@@ -287,24 +312,31 @@ func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.Remote
 		changed = true
 	}
 	if heartbeat.SandboxCommand != nil {
-		if state.SandboxExecCommand != nil || state.SandboxCommand != nil && state.SandboxCommand.CommandID != heartbeat.SandboxCommand.CommandID {
+		if state.SandboxExecCommand != nil || state.SandboxFileCommand != nil || state.SandboxPTYCommand != nil || state.SandboxCommand != nil && state.SandboxCommand.CommandID != heartbeat.SandboxCommand.CommandID {
 			return errInvalidRemoteWorkerConfig
 		}
 		state.SandboxCommand = heartbeat.SandboxCommand
 		changed = true
 	}
 	if heartbeat.SandboxExecCommand != nil {
-		if state.SandboxCommand != nil || state.SandboxFileCommand != nil || state.SandboxExecCommand != nil && state.SandboxExecCommand.CommandID != heartbeat.SandboxExecCommand.CommandID {
+		if state.SandboxCommand != nil || state.SandboxFileCommand != nil || state.SandboxPTYCommand != nil || state.SandboxExecCommand != nil && state.SandboxExecCommand.CommandID != heartbeat.SandboxExecCommand.CommandID {
 			return errInvalidRemoteWorkerConfig
 		}
 		state.SandboxExecCommand = heartbeat.SandboxExecCommand
 		changed = true
 	}
 	if heartbeat.SandboxFileCommand != nil {
-		if state.SandboxCommand != nil || state.SandboxExecCommand != nil || state.SandboxFileCommand != nil && state.SandboxFileCommand.CommandID != heartbeat.SandboxFileCommand.CommandID {
+		if state.SandboxCommand != nil || state.SandboxExecCommand != nil || state.SandboxPTYCommand != nil || state.SandboxFileCommand != nil && state.SandboxFileCommand.CommandID != heartbeat.SandboxFileCommand.CommandID {
 			return errInvalidRemoteWorkerConfig
 		}
 		state.SandboxFileCommand = heartbeat.SandboxFileCommand
+		changed = true
+	}
+	if heartbeat.SandboxPTYCommand != nil {
+		if state.SandboxCommand != nil || state.SandboxExecCommand != nil || state.SandboxFileCommand != nil || state.SandboxPTYCommand != nil && state.SandboxPTYCommand.CommandID != heartbeat.SandboxPTYCommand.CommandID {
+			return errInvalidRemoteWorkerConfig
+		}
+		state.SandboxPTYCommand = heartbeat.SandboxPTYCommand
 		changed = true
 	}
 	if changed {
@@ -516,6 +548,227 @@ func sandboxFileStableError(err error) string {
 	}
 }
 
+func executePendingSandboxPTY(ctx context.Context, value config, state *nodeState) error {
+	if state == nil || state.SandboxPTYCommand == nil || state.SandboxPTYCommandReceipt != nil {
+		return nil
+	}
+	command := state.SandboxPTYCommand
+	receipt := &platform.RemoteWorkerSandboxPTYCommandReceipt{CommandID: command.CommandID,
+		GrantID: command.GrantID, SandboxID: command.SandboxID,
+		SandboxGeneration: command.SandboxGeneration, Action: command.Action, Result: "failed"}
+	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
+	if err == nil && deadline.After(time.Now()) {
+		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
+		var client *opensandbox.Client
+		if directoryErr == nil {
+			client, directoryErr = directory.Client(value.credentialRef)
+		}
+		if directoryErr == nil {
+			ptyContext, cancel := context.WithDeadline(ctx, deadline)
+			input := opensandbox.PTYInput{Identity: opensandbox.Identity{Tenant: value.tenantID,
+				Project: value.projectID, Workspace: command.WorkspaceID, Sandbox: command.SandboxID,
+				Operation: command.RuntimeOperationID, Generation: command.SandboxGeneration,
+				SpecDigest: command.RuntimeSpecDigest}, RuntimeID: command.RuntimeID}
+			switch command.Action {
+			case "create":
+				var observation opensandbox.PTYObservation
+				observation, err = client.CreatePTY(ptyContext, input)
+				if err == nil {
+					receipt.SessionID, receipt.Running, receipt.OutputOffset = observation.SessionID, boolPointer(false), int64Pointer(0)
+				}
+			case "get":
+				var observation opensandbox.PTYObservation
+				observation, err = client.GetPTY(ptyContext, input, command.SessionID)
+				if err == nil {
+					receipt.SessionID, receipt.Running, receipt.OutputOffset = observation.SessionID, boolPointer(observation.Running), int64Pointer(observation.OutputOffset)
+				}
+			case "delete":
+				err = client.DeletePTY(ptyContext, input, command.SessionID)
+				if errors.Is(err, opensandbox.ErrNotFound) {
+					err = nil
+				}
+				if err == nil {
+					receipt.SessionID = command.SessionID
+				}
+			case "exchange":
+				var frames []platform.RemoteWorkerSandboxPTYFrame
+				var outputOffset int64
+				var running bool
+				frames, outputOffset, running, err = exchangeSandboxPTY(ptyContext, client, input, *command)
+				if err == nil {
+					receipt.SessionID, receipt.Running, receipt.OutputOffset, receipt.Frames =
+						command.SessionID, boolPointer(running), int64Pointer(outputOffset), &frames
+					for _, frame := range frames {
+						payload, _ := base64.RawURLEncoding.DecodeString(frame.PayloadBase64URL)
+						receipt.BytesTransferred += int64(len(payload))
+					}
+				}
+			default:
+				err = opensandbox.ErrInvalid
+			}
+			cancel()
+		} else {
+			err = directoryErr
+		}
+	} else {
+		err = context.DeadlineExceeded
+	}
+	if err == nil {
+		receipt.Result = "succeeded"
+	} else {
+		receipt.BytesTransferred, receipt.SessionID, receipt.Running, receipt.OutputOffset, receipt.Frames = 0, "", nil, nil, nil
+		receipt.StableErrorCode = sandboxPTYStableError(err)
+	}
+	state.SandboxPTYCommandReceipt = receipt
+	return saveNodeState(value.stateFile, *state)
+}
+
+func exchangeSandboxPTY(ctx context.Context, client *opensandbox.Client, input opensandbox.PTYInput, command platform.RemoteWorkerSandboxPTYCommand) ([]platform.RemoteWorkerSandboxPTYFrame, int64, bool, error) {
+	if client == nil || command.Since == nil || command.Takeover == nil {
+		return nil, 0, false, opensandbox.ErrInvalid
+	}
+	target, headers, err := client.PTYWebSocketTarget(ctx, input, command.SessionID)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	switch target.Scheme {
+	case "http":
+		target.Scheme = "ws"
+	case "https":
+		target.Scheme = "wss"
+	default:
+		return nil, 0, false, opensandbox.ErrUnavailable
+	}
+	query := target.Query()
+	query.Set("since", fmt.Sprintf("%d", *command.Since))
+	if *command.Takeover {
+		query.Set("takeover", "1")
+	}
+	target.RawQuery = query.Encode()
+	connection, response, err := (&websocket.Dialer{HandshakeTimeout: 5 * time.Second}).DialContext(ctx, target.String(), headers)
+	if response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
+	if err != nil {
+		return nil, 0, false, opensandbox.ErrUnavailable
+	}
+	defer connection.Close()
+	connection.SetReadLimit(1052672)
+	if command.Input != nil {
+		payload, decodeErr := base64.RawURLEncoding.Strict().DecodeString(command.Input.PayloadBase64URL)
+		messageType := websocket.BinaryMessage
+		if command.Input.MessageType == "text" {
+			messageType = websocket.TextMessage
+		}
+		if decodeErr != nil || connection.WriteMessage(messageType, payload) != nil {
+			return nil, 0, false, opensandbox.ErrUnavailable
+		}
+	}
+	frames := make([]platform.RemoteWorkerSandboxPTYFrame, 0)
+	bytesTransferred, outputOffset, running := 0, *command.Since, true
+	for len(frames) < 256 {
+		readDeadline := time.Now().Add(250 * time.Millisecond)
+		if deadline, ok := ctx.Deadline(); ok && deadline.Before(readDeadline) {
+			readDeadline = deadline
+		}
+		_ = connection.SetReadDeadline(readDeadline)
+		messageType, payload, readErr := connection.ReadMessage()
+		if readErr != nil {
+			var networkError net.Error
+			if errors.As(readErr, &networkError) && networkError.Timeout() || websocket.IsCloseError(readErr, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				break
+			}
+			return nil, 0, false, opensandbox.ErrUnavailable
+		}
+		if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
+			return nil, 0, false, opensandbox.ErrOutputLimit
+		}
+		truncated := false
+		if messageType == websocket.BinaryMessage {
+			if 1052672-bytesTransferred <= 9 {
+				break
+			}
+			payload, outputOffset, truncated, err = boundSandboxPTYBinaryFrame(payload, outputOffset, 1052672-bytesTransferred)
+			if err != nil {
+				return nil, 0, false, err
+			}
+		} else {
+			if bytesTransferred+len(payload) > 1052672 {
+				return nil, 0, false, opensandbox.ErrOutputLimit
+			}
+			if strings.Contains(string(payload), `"type":"exit"`) {
+				running = false
+			}
+		}
+		frameType := "binary"
+		if messageType == websocket.TextMessage {
+			frameType = "text"
+		}
+		frames = append(frames, platform.RemoteWorkerSandboxPTYFrame{MessageType: frameType,
+			PayloadBase64URL: base64.RawURLEncoding.EncodeToString(payload)})
+		bytesTransferred += len(payload)
+		if truncated {
+			break
+		}
+	}
+	return frames, outputOffset, running, nil
+}
+
+func boundSandboxPTYBinaryFrame(payload []byte, outputOffset int64, maximum int) ([]byte, int64, bool, error) {
+	if len(payload) == 0 || outputOffset < 0 || outputOffset > 9007199254740991 {
+		return nil, 0, false, opensandbox.ErrUnavailable
+	}
+	header, start := 1, outputOffset
+	switch payload[0] {
+	case 1, 2:
+	case 3:
+		header = 9
+		if len(payload) < header {
+			return nil, 0, false, opensandbox.ErrUnavailable
+		}
+		start = int64(binary.BigEndian.Uint64(payload[1:9]))
+		if start < outputOffset || start > 9007199254740991 {
+			return nil, 0, false, opensandbox.ErrUnavailable
+		}
+	default:
+		return nil, 0, false, opensandbox.ErrUnavailable
+	}
+	if maximum <= header {
+		return nil, 0, false, opensandbox.ErrOutputLimit
+	}
+	truncated := len(payload) > maximum
+	if truncated {
+		payload = payload[:maximum]
+	}
+	contentBytes := int64(len(payload) - header)
+	if start > 9007199254740991-contentBytes {
+		return nil, 0, false, opensandbox.ErrUnavailable
+	}
+	return payload, start + contentBytes, truncated, nil
+}
+
+func boolPointer(value bool) *bool    { return &value }
+func int64Pointer(value int64) *int64 { return &value }
+
+func sandboxPTYStableError(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "sandbox_pty_timeout"
+	case errors.Is(err, opensandbox.ErrNotFound):
+		return "sandbox_pty_not_found"
+	case errors.Is(err, opensandbox.ErrConflict):
+		return "sandbox_pty_conflict"
+	case errors.Is(err, opensandbox.ErrOutputLimit):
+		return "sandbox_pty_output_limit"
+	case errors.Is(err, opensandbox.ErrInvalid):
+		return "sandbox_pty_invalid"
+	case errors.Is(err, opensandbox.ErrRuntimeFailed):
+		return "sandbox_runtime_unavailable"
+	default:
+		return "sandbox_access_unavailable"
+	}
+}
+
 func newClient(value config) (*api.Client, error) {
 	certificate, err := tls.LoadX509KeyPair(value.certificate, value.privateKey)
 	if err != nil {
@@ -598,6 +851,10 @@ func main() {
 	if err := executePendingSandboxFile(ctx, value, &state); err != nil {
 		log.Fatal(err)
 	}
+	if err := executePendingSandboxPTY(ctx, value, &state); err != nil {
+		log.Fatal(err)
+	}
+	ptyActiveUntil := time.Time{}
 	err = runHeartbeatLoop(ctx, value.once, func(callContext context.Context) error {
 		requestID := fmt.Sprintf("remote-worker-heartbeat-%d", time.Now().UnixNano())
 		response, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, value.heartbeatRequest(state))
@@ -614,8 +871,19 @@ func main() {
 		if err := executePendingSandboxExec(callContext, value, &state); err != nil {
 			return err
 		}
-		return executePendingSandboxFile(callContext, value, &state)
-	}, waitContext)
+		if err := executePendingSandboxFile(callContext, value, &state); err != nil {
+			return err
+		}
+		if response.Value.SandboxPTYCommand != nil {
+			ptyActiveUntil = time.Now().Add(10 * time.Second)
+		}
+		return executePendingSandboxPTY(callContext, value, &state)
+	}, func(waitContextValue context.Context, delay time.Duration) error {
+		if delay == 5*time.Second && time.Now().Before(ptyActiveUntil) {
+			delay = 100 * time.Millisecond
+		}
+		return waitContext(waitContextValue, delay)
+	})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatal(err)
 	}
