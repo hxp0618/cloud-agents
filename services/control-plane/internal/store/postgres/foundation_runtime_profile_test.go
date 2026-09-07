@@ -51,7 +51,7 @@ func TestRuntimeProfileProjectionAndPublicRedaction(t *testing.T) {
 			t.Fatalf("public profile query projects %q", forbidden)
 		}
 	}
-	for _, authority := range []string{"cloud_agents.require_tenant_id()", "profile.status = 'published'", "cloud_agents.foundation_target_available_v1"} {
+	for _, authority := range []string{"cloud_agents.require_tenant_id()", "profile.status = 'published'", "cloud_agents.foundation_target_available_v2"} {
 		if !strings.Contains(listPublishedRuntimeProfilesSQL, authority) || !strings.Contains(publishedRuntimeProfilePageCursorSQL, authority) {
 			t.Fatalf("public profile authority is missing %q", authority)
 		}

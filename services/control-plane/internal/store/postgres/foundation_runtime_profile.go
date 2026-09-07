@@ -97,7 +97,8 @@ WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_u
     AND policy.default_egress IN ('restricted', 'deny')
     AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
     AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
-    AND cloud_agents.foundation_target_available_v1(profile.tenant_id, profile.project_uid, target.target_uid)`
+    AND cloud_agents.foundation_target_available_v2(profile.tenant_id, profile.project_uid,
+        target.target_uid, profile.cpu_millis, profile.memory_bytes)`
 	listPublishedRuntimeProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
     ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
 FROM (
@@ -116,7 +117,8 @@ FROM (
         AND policy.default_egress IN ('restricted', 'deny')
         AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
         AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
-        AND cloud_agents.foundation_target_available_v1(profile.tenant_id, profile.project_uid, target.target_uid)
+        AND cloud_agents.foundation_target_available_v2(profile.tenant_id, profile.project_uid,
+            target.target_uid, profile.cpu_millis, profile.memory_bytes)
     ORDER BY profile.profile_version_uid
     LIMIT $3
 ) AS profile_row`

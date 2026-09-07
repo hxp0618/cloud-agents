@@ -42,7 +42,18 @@
       "minItems": 1,
       "maxItems": 16,
       "uniqueItems": true,
-      "items": { "enum": ["docker", "exec", "files", "pty", "preview", "ssh"] }
+      "items": {
+        "enum": [
+          "docker",
+          "exec",
+          "files",
+          "network-dns-nft",
+          "preview",
+          "pty",
+          "ssh",
+          "workspace-volume"
+        ]
+      }
     },
     "capacity": {
       "type": "object",

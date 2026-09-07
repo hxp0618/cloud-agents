@@ -25,7 +25,7 @@ var (
 	ErrInvalidHeartbeat  = errors.New("remote worker heartbeat is invalid")
 	workerVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 	capabilitySet        = map[string]struct{}{
-		"docker": {}, "exec": {}, "files": {}, "preview": {}, "pty": {}, "ssh": {},
+		"docker": {}, "exec": {}, "files": {}, "network-dns-nft": {}, "preview": {}, "pty": {}, "ssh": {}, "workspace-volume": {},
 	}
 )
 

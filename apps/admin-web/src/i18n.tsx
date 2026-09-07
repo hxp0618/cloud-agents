@@ -197,6 +197,19 @@ const enUS = {
   "remoteWorkerEnrollment.node.firstConnected": "First connected",
   "remoteWorkerEnrollment.node.lastHeartbeat": "Last heartbeat",
   "remoteWorkerEnrollment.node.heartbeatExpires": "Heartbeat expires",
+  "remoteWorkerEnrollment.node.foundation.title": "Foundation admission",
+  "remoteWorkerEnrollment.node.foundation.runtime": "Runtime",
+  "remoteWorkerEnrollment.node.foundation.architecture": "Architecture",
+  "remoteWorkerEnrollment.node.foundation.storage": "Workspace storage",
+  "remoteWorkerEnrollment.node.foundation.network": "Network policy",
+  "remoteWorkerEnrollment.node.foundation.supported": "Supported",
+  "remoteWorkerEnrollment.node.foundation.unsupported": "Unsupported",
+  "remoteWorkerEnrollment.node.foundation.runtimeRequirement": "Requires docker capability",
+  "remoteWorkerEnrollment.node.foundation.architectureRequirement": "Requires amd64 or arm64",
+  "remoteWorkerEnrollment.node.foundation.storageRequirement":
+    "Requires workspace-volume and at least 20 GiB disk",
+  "remoteWorkerEnrollment.node.foundation.networkRequirement":
+    "Requires network-dns-nft capability",
   "remoteWorkerEnrollment.node.boundary":
     "Health is calculated by Control Plane database time. The browser does not infer liveness and receives no credential bytes or user content.",
   "remoteWorkerEnrollment.drain": "Drain node",
@@ -1065,6 +1078,18 @@ const zhCN = {
   "remoteWorkerEnrollment.node.firstConnected": "首次连接",
   "remoteWorkerEnrollment.node.lastHeartbeat": "最近心跳",
   "remoteWorkerEnrollment.node.heartbeatExpires": "心跳过期时间",
+  "remoteWorkerEnrollment.node.foundation.title": "Foundation 准入",
+  "remoteWorkerEnrollment.node.foundation.runtime": "运行时",
+  "remoteWorkerEnrollment.node.foundation.architecture": "架构",
+  "remoteWorkerEnrollment.node.foundation.storage": "Workspace 存储",
+  "remoteWorkerEnrollment.node.foundation.network": "网络策略",
+  "remoteWorkerEnrollment.node.foundation.supported": "支持",
+  "remoteWorkerEnrollment.node.foundation.unsupported": "不支持",
+  "remoteWorkerEnrollment.node.foundation.runtimeRequirement": "需要 docker 能力",
+  "remoteWorkerEnrollment.node.foundation.architectureRequirement": "需要 amd64 或 arm64",
+  "remoteWorkerEnrollment.node.foundation.storageRequirement":
+    "需要 workspace-volume 能力及至少 20 GiB 磁盘",
+  "remoteWorkerEnrollment.node.foundation.networkRequirement": "需要 network-dns-nft 能力",
   "remoteWorkerEnrollment.node.boundary":
     "健康状态由 Control Plane 按数据库时间计算；浏览器不自行推断存活状态，也不会收到凭据原文或用户内容。",
   "remoteWorkerEnrollment.drain": "排空节点",

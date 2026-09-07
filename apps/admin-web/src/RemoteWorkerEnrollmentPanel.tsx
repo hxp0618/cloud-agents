@@ -12,6 +12,7 @@ import {
   listAdminRemoteWorkerOperations,
   newIdempotencyKey,
   newRequestId,
+  remoteWorkerFoundationSupport,
   replaceRemoteWorkerEnrollment,
   targetIdentifierPattern,
   type AdminClient,
@@ -105,6 +106,9 @@ export function RemoteWorkerEnrollmentPanel({
     ttlSeconds: "900",
   });
   const selected = enrollments.find(({ metadata }) => metadata.uid === selectedId);
+  const foundationSupport = selected?.spec.node
+    ? remoteWorkerFoundationSupport(selected.spec.node)
+    : null;
 
   async function load(signal: AbortSignal, preferredId = selectedId) {
     const values = await listAdminRemoteWorkerEnrollments(
@@ -563,6 +567,52 @@ export function RemoteWorkerEnrollmentPanel({
                   <dd>{dateTime(selected.spec.node.heartbeatExpiresAt)}</dd>
                 </div>
               </dl>
+              {foundationSupport ? (
+                <>
+                  <h3>{t("remoteWorkerEnrollment.node.foundation.title")}</h3>
+                  <dl className="detail-grid">
+                    {(
+                      [
+                        [
+                          "remoteWorkerEnrollment.node.foundation.runtime",
+                          foundationSupport.runtime,
+                          "remoteWorkerEnrollment.node.foundation.runtimeRequirement",
+                        ],
+                        [
+                          "remoteWorkerEnrollment.node.foundation.architecture",
+                          foundationSupport.architecture,
+                          "remoteWorkerEnrollment.node.foundation.architectureRequirement",
+                        ],
+                        [
+                          "remoteWorkerEnrollment.node.foundation.storage",
+                          foundationSupport.storage,
+                          "remoteWorkerEnrollment.node.foundation.storageRequirement",
+                        ],
+                        [
+                          "remoteWorkerEnrollment.node.foundation.network",
+                          foundationSupport.network,
+                          "remoteWorkerEnrollment.node.foundation.networkRequirement",
+                        ],
+                      ] as const
+                    ).map(([label, supported, requirement]) => (
+                      <div key={label}>
+                        <dt>{t(label)}</dt>
+                        <dd>
+                          <span className={`phase ${supported ? "success" : "danger"}`}>
+                            <i />
+                            {t(
+                              supported
+                                ? "remoteWorkerEnrollment.node.foundation.supported"
+                                : "remoteWorkerEnrollment.node.foundation.unsupported",
+                            )}
+                          </span>{" "}
+                          <small>{t(requirement)}</small>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
+              ) : null}
               <p className="cluster-boundary">{t("remoteWorkerEnrollment.node.boundary")}</p>
               <button
                 className="button outline"

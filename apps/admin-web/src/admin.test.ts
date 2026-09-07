@@ -34,6 +34,7 @@ import {
   listAdminWorkers,
   loadAdminProjectLeaseQuota,
   readSavedAdminConnection,
+  remoteWorkerFoundationSupport,
   schedulingRequestFromPreview,
   summarizeClusterHosts,
   writeSavedAdminConnection,
@@ -41,6 +42,28 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("shows the same RemoteWorker Foundation baseline enforced by Control Plane", () => {
+    const node = {
+      architecture: "arm64",
+      capabilities: ["docker", "network-dns-nft", "workspace-volume"],
+      capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3, diskBytes: 20 * 1024 ** 3 },
+    } satisfies Parameters<typeof remoteWorkerFoundationSupport>[0];
+    expect(remoteWorkerFoundationSupport(node)).toEqual({
+      runtime: true,
+      architecture: true,
+      storage: true,
+      network: true,
+    });
+    expect(
+      remoteWorkerFoundationSupport({
+        ...node,
+        architecture: "riscv64",
+        capabilities: ["docker"],
+        capacity: { ...node.capacity, diskBytes: 20 * 1024 ** 3 - 1 },
+      }),
+    ).toEqual({ runtime: true, architecture: false, storage: false, network: false });
+  });
+
   it("offers Sandbox lifecycle actions only from fully settled physical states", () => {
     const sandbox = (spec: Record<string, unknown>) =>
       ({

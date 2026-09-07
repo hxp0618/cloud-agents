@@ -3470,7 +3470,7 @@ func validRemoteWorkerCapabilities(values []string) bool {
 	if len(values) < 1 || len(values) > 16 {
 		return false
 	}
-	allowed := map[string]bool{"docker": true, "exec": true, "files": true, "preview": true, "pty": true, "ssh": true}
+	allowed := map[string]bool{"docker": true, "exec": true, "files": true, "network-dns-nft": true, "preview": true, "pty": true, "ssh": true, "workspace-volume": true}
 	for index, value := range values {
 		if !allowed[value] || index > 0 && values[index-1] >= value {
 			return false

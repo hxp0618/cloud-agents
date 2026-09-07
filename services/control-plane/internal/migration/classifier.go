@@ -211,7 +211,7 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 	targetOffset := 2
 	orReplace := len(tokens) > 4 && tokens[1] == "OR" && tokens[2] == "REPLACE"
 	if orReplace {
-		if !oneOf(migrationID, "000005", "000006", "000009") || tokens[3] != "FUNCTION" {
+		if !oneOf(migrationID, "000005", "000006", "000009", "000078") || tokens[3] != "FUNCTION" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		kindOffset = 3
@@ -274,6 +274,10 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 				"function:unquoted:cloud_agents/unquoted:append_coordination_audit(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:timestamptz)",
 				"function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
 				"function:unquoted:cloud_agents/unquoted:transition_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+			},
+			"000078": {
+				"function:unquoted:cloud_agents/unquoted:is_valid_remote_worker_capabilities(unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:foundation_target_available_v1(unquoted:text,unquoted:text,unquoted:text)",
 			},
 		}[migrationID]
 		if !oneOf(resolved.TargetIdentity, expectedReplacements...) {

@@ -657,6 +657,24 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerCapabilityReplacementTargetsAreExact(t *testing.T) {
+	t.Parallel()
+	statements, err := SplitPostgreSQLStatements(mustRead(t, filepath.Join(migrationRoot(t), "000078_admit_remote_worker_foundation_capabilities.sql")))
+	if err != nil || len(statements) < 3 {
+		t.Fatalf("split RemoteWorker capability migration: statements=%d err=%v", len(statements), err)
+	}
+	classifier := NarrowDDLClassifier{}
+	for _, index := range []int{0, 2} {
+		target, targetErr := deriveTargetIdentity(StatementPlan{Command: "CREATE", ObjectKind: "FUNCTION"}, statements[index].Tokens)
+		if _, err := classifier.Classify(MigrationEntry{ID: "000078"}, statements[index]); err != nil {
+			t.Fatalf("exact RemoteWorker replacement %d was rejected: %v target=%q targetErr=%v", index, err, target, targetErr)
+		}
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000077"}, statements[0]); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("RemoteWorker replacement escaped migration identity: %v", err)
+	}
+}
+
 func TestDurableCoordinationOperationEffectIndexIsExactSpecialCase(t *testing.T) {
 	t.Parallel()
 	classifier := NarrowDDLClassifier{}

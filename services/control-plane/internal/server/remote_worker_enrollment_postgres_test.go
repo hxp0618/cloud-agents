@@ -233,7 +233,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	heartbeat := platform.RemoteWorkerHeartbeatRequest{
 		IncarnationID: certificateRequest.IncarnationID, ObservedGeneration: 1, ObservedState: "active",
 		WorkerVersion: "v0.1.0", OS: "linux", Architecture: "arm64", KernelVersion: "6.12.1",
-		Capabilities: []string{"docker", "exec", "files", "preview", "pty", "ssh"},
+		Capabilities: []string{"docker", "exec", "files", "network-dns-nft", "preview", "pty", "ssh", "workspace-volume"},
 		Capacity:     platform.RemoteWorkerCapacity{CPUMillis: 4000, MemoryBytes: 8 << 30, DiskBytes: 40 << 30},
 	}
 	accepted, err := oldNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-initial", heartbeat)
@@ -605,6 +605,59 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	if err != nil || policy.Value.Metadata.ResourceVersion != "1" {
 		t.Fatalf("create RemoteWorker network policy: value=%+v err=%v", policy.Value, err)
 	}
+	admissionProfile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-admission-profile", "remote-admission-profile-key", platform.RuntimeProfileCreateRequest{
+		ProfileID: "remote-admission", ProfileName: "remote-admission", Version: 1,
+		Description: "RemoteWorker capability admission", TargetID: internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID),
+		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
+	})
+	if err != nil || admissionProfile.Value.Spec.Status != "draft" {
+		t.Fatalf("create RemoteWorker admission profile: value=%+v err=%v", admissionProfile.Value, err)
+	}
+	admissionCases := []struct {
+		name   string
+		mutate func(*platform.RemoteWorkerHeartbeatRequest)
+	}{
+		{"runtime", func(value *platform.RemoteWorkerHeartbeatRequest) {
+			value.Capabilities = []string{"exec", "files", "network-dns-nft", "preview", "pty", "ssh", "workspace-volume"}
+		}},
+		{"architecture", func(value *platform.RemoteWorkerHeartbeatRequest) { value.Architecture = "riscv64" }},
+		{"storage", func(value *platform.RemoteWorkerHeartbeatRequest) {
+			value.Capabilities = []string{"docker", "exec", "files", "network-dns-nft", "preview", "pty", "ssh"}
+		}},
+		{"network", func(value *platform.RemoteWorkerHeartbeatRequest) {
+			value.Capabilities = []string{"docker", "exec", "files", "preview", "pty", "ssh", "workspace-volume"}
+		}},
+		{"cpu", func(value *platform.RemoteWorkerHeartbeatRequest) { value.Capacity.CPUMillis = 400 }},
+		{"memory", func(value *platform.RemoteWorkerHeartbeatRequest) { value.Capacity.MemoryBytes = 256 << 20 }},
+		{"disk", func(value *platform.RemoteWorkerHeartbeatRequest) { value.Capacity.DiskBytes = 10 << 30 }},
+	}
+	for _, test := range admissionCases {
+		incompatible := heartbeat
+		test.mutate(&incompatible)
+		if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-admission-heartbeat-"+test.name, incompatible); err != nil {
+			t.Fatalf("set incompatible RemoteWorker %s: %v", test.name, err)
+		}
+		_, err := admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "remote-admission", 1,
+			"request-remote-admission-publish-"+test.name, "remote-admission-publish-key-"+test.name,
+			platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+		if clientStatus(err) != http.StatusConflict {
+			t.Fatalf("RemoteWorker %s admission status=%d err=%v", test.name, clientStatus(err), err)
+		}
+	}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-admission-heartbeat-ready", heartbeat); err != nil {
+		t.Fatalf("restore compatible RemoteWorker admission: %v", err)
+	}
+	admissionProfile, err = admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "remote-admission", 1,
+		"request-remote-admission-publish-ready", "remote-admission-publish-key-ready",
+		platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+	if err != nil || admissionProfile.Value.Spec.Status != "published" {
+		t.Fatalf("publish compatible RemoteWorker admission profile: value=%+v err=%v", admissionProfile.Value, err)
+	}
+	if _, err := admin.DisableAdminRuntimeProfile(ctx, "tenant", "project", "remote-admission", 1,
+		"request-remote-admission-disable", "remote-admission-disable-key",
+		platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "2"}); err != nil {
+		t.Fatalf("disable RemoteWorker admission profile: %v", err)
+	}
 	profile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-profile", "remote-profile-key-1", platform.RuntimeProfileCreateRequest{
 		ProfileID: "remote-profile", ProfileName: "remote-profile", Version: 1,
 		Description: "RemoteWorker retained workspace", TargetID: internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID),
@@ -631,6 +684,16 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	})
 	if err != nil || sandbox.Value.ObservedState != "pending" {
 		t.Fatalf("create RemoteWorker Sandbox: value=%+v err=%v", sandbox.Value, err)
+	}
+	withoutNetwork := heartbeat
+	withoutNetwork.Capabilities = []string{"docker", "exec", "files", "preview", "pty", "ssh", "workspace-volume"}
+	blocked, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-blocked-network", withoutNetwork)
+	if err != nil || blocked.Value.SandboxCommand != nil {
+		t.Fatalf("RemoteWorker Sandbox escaped network capability admission: value=%+v err=%v", blocked.Value, err)
+	}
+	blockedProfiles, err := user.ListRuntimeProfiles(ctx, "tenant", "project", "request-remote-profile-blocked-network", 50, "")
+	if err != nil || len(blockedProfiles.Value.RuntimeProfiles) != 0 {
+		t.Fatalf("incompatible RemoteWorker profile remained public: value=%+v err=%v", blockedProfiles.Value, err)
 	}
 	delivery, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-sandbox-delivery", heartbeat)
 	if err != nil || delivery.Value.SandboxCommand == nil {
@@ -1517,7 +1580,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig("other-tenant:project:"+grant.Value.GrantID, grant.Value.AccessToken, hostSigner)); err == nil {
 		t.Fatal("cross-tenant RemoteWorker SSH username was accepted")
 	}
-	heartbeat.Capabilities = []string{"docker", "exec", "files", "preview", "pty"}
+	heartbeat.Capabilities = []string{"docker", "exec", "files", "network-dns-nft", "preview", "pty", "workspace-volume"}
 	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-without-capability", heartbeat); err != nil {
 		t.Fatal("remove RemoteWorker SSH capability", err)
 	}
@@ -1537,7 +1600,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err := owner.QueryRow(ctx, `SELECT count(*) FROM cloud_agents.remote_worker_sandbox_pty_commands WHERE ssh_session`).Scan(&rejectedSSHCommands); err != nil || rejectedSSHCommands != 0 {
 		t.Fatalf("RemoteWorker SSH capability rejection queued commands=%d err=%v", rejectedSSHCommands, err)
 	}
-	heartbeat.Capabilities = []string{"docker", "exec", "files", "preview", "pty", "ssh"}
+	heartbeat.Capabilities = []string{"docker", "exec", "files", "network-dns-nft", "preview", "pty", "ssh", "workspace-volume"}
 	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-capability-restore", heartbeat); err != nil {
 		t.Fatal("restore RemoteWorker SSH capability", err)
 	}
@@ -1717,7 +1780,9 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"longClaimRenewed": true, "renewWrongCommandStatus": 409, "reconnectOriginalCommandNotReplayed": true,
 		"reconnectAttempt": command.Attempt, "receiptReplay": true, "stopReceiptReplay": true,
 		"rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
-		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
+		"capabilityAdmissionCases": len(admissionCases), "incompatibleProfileHidden": true,
+		"incompatibleCommandBlocked": true,
+		"nodeAuditCount":             nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }
 
@@ -1915,7 +1980,7 @@ func remoteWorkerProcessCommand(t *testing.T, ctx context.Context, binary string
 		"--docker-endpoint=" + remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", "https://docker.example.test"),
 		"--credential-directory=" + remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY", "/tmp"),
 		"--credential-ref=" + remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF", "fixture-only"),
-		"--kernel-version=6.12.1", "--capabilities=docker,exec,files,preview,pty,ssh",
+		"--kernel-version=6.12.1", "--capabilities=docker,exec,files,network-dns-nft,preview,pty,ssh,workspace-volume",
 		"--capacity-cpu-millis=4000", "--capacity-memory-bytes=8589934592",
 		"--capacity-disk-bytes=42949672960",
 	}

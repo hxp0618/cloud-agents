@@ -675,7 +675,16 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   os: string;
   architecture: string;
   kernelVersion: string;
-  capabilities: readonly ("docker" | "exec" | "files" | "preview" | "pty" | "ssh")[];
+  capabilities: readonly (
+    | "docker"
+    | "exec"
+    | "files"
+    | "network-dns-nft"
+    | "preview"
+    | "pty"
+    | "ssh"
+    | "workspace-volume"
+  )[];
   capacity: RemoteWorkerCapacity;
   sandboxCommandId?: string;
   commandReceipt?: RemoteWorkerCommandReceipt;
@@ -696,7 +705,16 @@ export type RemoteWorkerNodeStatus = Readonly<{
   os: string;
   architecture: string;
   kernelVersion: string;
-  capabilities: readonly ("docker" | "exec" | "files" | "preview" | "pty" | "ssh")[];
+  capabilities: readonly (
+    | "docker"
+    | "exec"
+    | "files"
+    | "network-dns-nft"
+    | "preview"
+    | "pty"
+    | "ssh"
+    | "workspace-volume"
+  )[];
   capacity: RemoteWorkerCapacity;
   firstConnectedAt: string;
   lastHeartbeatAt: string;
@@ -5761,7 +5779,16 @@ function remoteWorkerCapabilities(
   const capabilities = source.map((entry, index) =>
     enumValue(
       entry,
-      ["docker", "exec", "files", "preview", "pty", "ssh"] as const,
+      [
+        "docker",
+        "exec",
+        "files",
+        "network-dns-nft",
+        "preview",
+        "pty",
+        "ssh",
+        "workspace-volume",
+      ] as const,
       `${path}/${index}`,
     ),
   );

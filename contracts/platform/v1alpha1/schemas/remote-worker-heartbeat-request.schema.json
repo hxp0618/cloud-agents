@@ -33,7 +33,18 @@
       "minItems": 1,
       "maxItems": 16,
       "uniqueItems": true,
-      "items": { "enum": ["docker", "exec", "files", "pty", "preview", "ssh"] }
+      "items": {
+        "enum": [
+          "docker",
+          "exec",
+          "files",
+          "network-dns-nft",
+          "preview",
+          "pty",
+          "ssh",
+          "workspace-volume"
+        ]
+      }
     },
     "capacity": {
       "type": "object",
@@ -48,10 +59,18 @@
     "sandboxCommandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "commandReceipt": { "$ref": "./remote-worker-command-receipt.schema.json" },
     "sandboxCommandReceipt": { "$ref": "./remote-worker-sandbox-command-receipt.schema.json" },
-    "sandboxExecCommandReceipt": { "$ref": "./remote-worker-sandbox-exec-command-receipt.schema.json" },
-    "sandboxFileCommandReceipt": { "$ref": "./remote-worker-sandbox-file-command-receipt.schema.json" },
-    "sandboxPtyCommandReceipt": { "$ref": "./remote-worker-sandbox-pty-command-receipt.schema.json" },
-    "sandboxPreviewCommandReceipt": { "$ref": "./remote-worker-sandbox-preview-command-receipt.schema.json" }
+    "sandboxExecCommandReceipt": {
+      "$ref": "./remote-worker-sandbox-exec-command-receipt.schema.json"
+    },
+    "sandboxFileCommandReceipt": {
+      "$ref": "./remote-worker-sandbox-file-command-receipt.schema.json"
+    },
+    "sandboxPtyCommandReceipt": {
+      "$ref": "./remote-worker-sandbox-pty-command-receipt.schema.json"
+    },
+    "sandboxPreviewCommandReceipt": {
+      "$ref": "./remote-worker-sandbox-preview-command-receipt.schema.json"
+    }
   },
   "x-cloud-agents-semantic-constraints": [
     "the mTLS SPIFFE identity supplies tenant, project, enrollment, and incarnation authority",

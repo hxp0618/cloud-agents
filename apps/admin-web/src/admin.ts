@@ -21,6 +21,7 @@ import {
   type StoragePolicy,
   type NetworkPolicy,
   type RemoteWorkerEnrollment,
+  type RemoteWorkerNodeStatus,
   type Worker,
   type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -88,6 +89,18 @@ export type AdminClient = Pick<
   | "stopAdminSandboxSession"
   | "rebuildAdminSandboxSession"
 >;
+
+export function remoteWorkerFoundationSupport(
+  node: Pick<RemoteWorkerNodeStatus, "architecture" | "capabilities" | "capacity">,
+) {
+  return {
+    runtime: node.capabilities.includes("docker"),
+    architecture: node.architecture === "amd64" || node.architecture === "arm64",
+    storage:
+      node.capabilities.includes("workspace-volume") && node.capacity.diskBytes >= 20 * 1024 ** 3,
+    network: node.capabilities.includes("network-dns-nft"),
+  } as const;
+}
 
 export type SandboxLifecycleAction = "stop" | "rebuild";
 
