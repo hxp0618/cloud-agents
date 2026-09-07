@@ -18,13 +18,14 @@ import (
 )
 
 type RemoteWorkerHeartbeatResult struct {
-	Node               internalremoteworker.NodeStatus
-	ReconcileRequired  bool
-	Command            *internalremoteworker.Command
-	SandboxCommand     *internalremoteworker.SandboxCommand
-	SandboxExecCommand *internalremoteworker.SandboxExecCommand
-	SandboxFileCommand *internalremoteworker.SandboxFileCommand
-	SandboxPTYCommand  *internalremoteworker.SandboxPTYCommand
+	Node                  internalremoteworker.NodeStatus
+	ReconcileRequired     bool
+	Command               *internalremoteworker.Command
+	SandboxCommand        *internalremoteworker.SandboxCommand
+	SandboxExecCommand    *internalremoteworker.SandboxExecCommand
+	SandboxFileCommand    *internalremoteworker.SandboxFileCommand
+	SandboxPTYCommand     *internalremoteworker.SandboxPTYCommand
+	SandboxPreviewCommand *internalremoteworker.SandboxPreviewCommand
 }
 
 type RemoteWorkerOperationPage struct {
@@ -106,6 +107,16 @@ FROM cloud_agents.claim_remote_worker_sandbox_pty_v1($1,$2,$3,$4,$5)`
 const settleRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at
 FROM cloud_agents.settle_remote_worker_sandbox_pty_v1(
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
+
+const claimRemoteWorkerSandboxPreviewSQL = `SELECT command_uid, grant_uid, workspace_uid,
+    target_uid, sandbox_uid, sandbox_generation, runtime_uid, runtime_operation_uid,
+    runtime_spec_digest, port, method, request_path, raw_query, request_headers,
+    request_body, command_deadline_at
+FROM cloud_agents.claim_remote_worker_sandbox_preview_v1($1,$2,$3,$4,$5)`
+
+const settleRemoteWorkerSandboxPreviewSQL = `SELECT command_state, command_deadline_at
+FROM cloud_agents.settle_remote_worker_sandbox_preview_v1(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
 
 const lockRemoteWorkerSchedulingSQL = `SELECT cloud_agents.lock_remote_worker_scheduling_v1($1,$2,$3)`
 const transitionRemoteWorkerSchedulingSQL = `SELECT operation_uid, idempotency_key, action, enrollment_uid,
@@ -212,6 +223,11 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
 		}
 	}
+	if input.SandboxPreviewCommandReceipt != nil {
+		if err := service.settleRemoteWorkerSandboxPreview(ctx, result.Node, input.PeerCertificateSHA256, *input.SandboxPreviewCommandReceipt); err != nil {
+			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
+		}
+	}
 	if result.Node.DesiredState != "active" || result.Node.ObservedState != "active" || !slices.Contains(result.Node.Capabilities, "docker") {
 		return result, nil
 	}
@@ -240,6 +256,9 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 		}
 		if err == nil && result.SandboxExecCommand == nil && result.SandboxFileCommand == nil && slices.Contains(result.Node.Capabilities, "pty") {
 			result.SandboxPTYCommand, err = service.claimRemoteWorkerSandboxPTY(ctx, result.Node, input.PeerCertificateSHA256)
+		}
+		if err == nil && result.SandboxExecCommand == nil && result.SandboxFileCommand == nil && result.SandboxPTYCommand == nil && slices.Contains(result.Node.Capabilities, "preview") {
+			result.SandboxPreviewCommand, err = service.claimRemoteWorkerSandboxPreview(ctx, result.Node, input.PeerCertificateSHA256)
 		}
 		return result, err
 	}
@@ -468,6 +487,64 @@ func (service *DurableCoordinationService) settleRemoteWorkerSandboxPTY(ctx cont
 			subjectDigest, receipt.CommandID, receipt.GrantID, receipt.SandboxID,
 			receipt.SandboxGeneration, receipt.Action, receipt.Result, receipt.BytesTransferred,
 			session, running, outputOffset, frames, stableError, digest).Scan(&state, &deadline)
+	})
+}
+
+func (service *DurableCoordinationService) claimRemoteWorkerSandboxPreview(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string) (*internalremoteworker.SandboxPreviewCommand, error) {
+	command := internalremoteworker.SandboxPreviewCommand{}
+	var headersJSON, body []byte
+	var deadline time.Time
+	err := service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, claimRemoteWorkerSandboxPreviewSQL,
+			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID, subjectDigest).Scan(
+			&command.CommandID, &command.GrantID, &command.WorkspaceID, &command.TargetID,
+			&command.SandboxID, &command.SandboxGeneration, &command.RuntimeID,
+			&command.RuntimeOperationID, &command.RuntimeSpecDigest, &command.Port,
+			&command.Method, &command.Path, &command.RawQuery, &headersJSON, &body, &deadline)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, mapRemoteWorkerNodeError(err)
+	}
+	if json.Unmarshal(headersJSON, &command.Headers) != nil || command.Headers == nil {
+		return nil, ErrCoordinationResultDrift
+	}
+	command.BodyBase64URL = base64.RawURLEncoding.EncodeToString(body)
+	command.Deadline = deadline.UTC().Format(time.RFC3339Nano)
+	if internalremoteworker.ValidateSandboxPreviewCommand(command) != nil || command.TargetID != node.TargetID {
+		return nil, ErrCoordinationResultDrift
+	}
+	return &command, nil
+}
+
+func (service *DurableCoordinationService) settleRemoteWorkerSandboxPreview(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.SandboxPreviewCommandReceipt) error {
+	digest, err := internalremoteworker.SandboxPreviewCommandReceiptDigest(receipt)
+	if err != nil {
+		return ErrCoordinationInvalidInput
+	}
+	var status, headers, body, stableError any
+	if receipt.Result == "failed" {
+		stableError = receipt.StableErrorCode
+	} else {
+		status = *receipt.StatusCode
+		headers, err = json.Marshal(*receipt.Headers)
+		if err == nil {
+			body, err = base64.RawURLEncoding.Strict().DecodeString(*receipt.BodyBase64URL)
+		}
+	}
+	if err != nil {
+		return ErrCoordinationInvalidInput
+	}
+	var state string
+	var deadline time.Time
+	return service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, settleRemoteWorkerSandboxPreviewSQL,
+			node.Scope.TenantID, node.Scope.ProjectID, node.TargetID, node.IncarnationID,
+			subjectDigest, receipt.CommandID, receipt.GrantID, receipt.SandboxID,
+			receipt.SandboxGeneration, receipt.Port, receipt.Result, receipt.BytesTransferred,
+			status, headers, body, stableError, digest).Scan(&state, &deadline)
 	})
 }
 
@@ -704,6 +781,8 @@ func mapRemoteWorkerNodeError(err error) error {
 			return ErrRemoteWorkerSandboxFileReceiptConflict
 		case "remote worker sandbox PTY receipt conflict":
 			return ErrRemoteWorkerSandboxPTYReceiptConflict
+		case "remote worker sandbox Preview receipt conflict":
+			return ErrRemoteWorkerSandboxPreviewReceiptConflict
 		case "remote worker scheduling idempotency conflict":
 			return ErrRemoteWorkerSchedulingIdempotencyConflict
 		case "remote worker operation is in progress":
@@ -721,7 +800,8 @@ func mapRemoteWorkerNodeError(err error) error {
 		case "remote worker sandbox receipt is invalid", "remote worker sandbox exec claim is invalid",
 			"remote worker sandbox exec receipt is invalid", "remote worker sandbox file claim is invalid",
 			"remote worker sandbox file receipt is invalid", "remote worker sandbox PTY claim is invalid",
-			"remote worker sandbox PTY receipt is invalid":
+			"remote worker sandbox PTY receipt is invalid", "remote worker sandbox Preview claim is invalid",
+			"remote worker sandbox Preview receipt is invalid":
 			return ErrCoordinationInvalidInput
 		}
 	}
@@ -734,6 +814,7 @@ var ErrRemoteWorkerSandboxReceiptConflict = errors.New("remote worker sandbox re
 var ErrRemoteWorkerSandboxExecReceiptConflict = errors.New("remote worker sandbox exec receipt conflicts")
 var ErrRemoteWorkerSandboxFileReceiptConflict = errors.New("remote worker sandbox file receipt conflicts")
 var ErrRemoteWorkerSandboxPTYReceiptConflict = errors.New("remote worker sandbox PTY receipt conflicts")
+var ErrRemoteWorkerSandboxPreviewReceiptConflict = errors.New("remote worker sandbox Preview receipt conflicts")
 var ErrRemoteWorkerSchedulingIdempotencyConflict = errors.New("remote worker scheduling idempotency key conflicts")
 var ErrRemoteWorkerOperationInProgress = errors.New("remote worker operation is in progress")
 var ErrRemoteWorkerSchedulingResourceVersionConflict = errors.New("remote worker scheduling resource version conflicts")

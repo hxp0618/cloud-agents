@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-preview-command.schema.json",
+  "title": "RemoteWorkerSandboxPreviewCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "grantId", "workspaceId", "targetId", "sandboxId", "sandboxGeneration", "runtimeId", "runtimeOperationId", "runtimeSpecDigest", "port", "method", "path", "rawQuery", "headers", "bodyBase64Url", "deadline"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeOperationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "runtimeSpecDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "port": { "type": "integer", "minimum": 1024, "maximum": 65535, "not": { "const": 44772 } },
+    "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+    "path": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "rawQuery": { "type": "string", "maxLength": 4096 },
+    "headers": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/header" }
+    },
+    "bodyBase64Url": { "type": "string", "maxLength": 1398102, "pattern": "^[A-Za-z0-9_-]*$" },
+    "deadline": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" },
+        "value": { "type": "string", "maxLength": 4096 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "path starts with slash and rawQuery excludes fragments and control bytes",
+    "headers are canonical, bounded and exclude credentials, forwarding and hop-by-hop fields",
+    "bodyBase64Url is canonical unpadded base64url for at most 1 MiB",
+    "the node connects only to the verified node-local OpenSandbox server proxy; endpoints and credentials are absent"
+  ]
+}

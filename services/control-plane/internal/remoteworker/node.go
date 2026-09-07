@@ -36,23 +36,24 @@ type Capacity struct {
 }
 
 type HeartbeatInput struct {
-	Scope                     Scope
-	EnrollmentID              string
-	PeerCertificateSHA256     string
-	IncarnationID             string
-	ObservedGeneration        int64
-	ObservedState             string
-	WorkerVersion             string
-	OS                        string
-	Architecture              string
-	KernelVersion             string
-	Capabilities              []string
-	Capacity                  Capacity
-	CommandReceipt            *CommandReceipt
-	SandboxCommandReceipt     *SandboxCommandReceipt
-	SandboxExecCommandReceipt *SandboxExecCommandReceipt
-	SandboxFileCommandReceipt *SandboxFileCommandReceipt
-	SandboxPTYCommandReceipt  *SandboxPTYCommandReceipt
+	Scope                        Scope
+	EnrollmentID                 string
+	PeerCertificateSHA256        string
+	IncarnationID                string
+	ObservedGeneration           int64
+	ObservedState                string
+	WorkerVersion                string
+	OS                           string
+	Architecture                 string
+	KernelVersion                string
+	Capabilities                 []string
+	Capacity                     Capacity
+	CommandReceipt               *CommandReceipt
+	SandboxCommandReceipt        *SandboxCommandReceipt
+	SandboxExecCommandReceipt    *SandboxExecCommandReceipt
+	SandboxFileCommandReceipt    *SandboxFileCommandReceipt
+	SandboxPTYCommandReceipt     *SandboxPTYCommandReceipt
+	SandboxPreviewCommandReceipt *SandboxPreviewCommandReceipt
 }
 
 type CommandReceipt struct {
@@ -105,6 +106,8 @@ type SandboxFileCommand = platformv1alpha1.RemoteWorkerSandboxFileCommand
 type SandboxFileCommandReceipt = platformv1alpha1.RemoteWorkerSandboxFileCommandReceipt
 type SandboxPTYCommand = platformv1alpha1.RemoteWorkerSandboxPTYCommand
 type SandboxPTYCommandReceipt = platformv1alpha1.RemoteWorkerSandboxPTYCommandReceipt
+type SandboxPreviewCommand = platformv1alpha1.RemoteWorkerSandboxPreviewCommand
+type SandboxPreviewCommandReceipt = platformv1alpha1.RemoteWorkerSandboxPreviewCommandReceipt
 
 type SchedulingInput struct {
 	Scope                   Scope
@@ -170,7 +173,8 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil ||
 		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil ||
 		input.SandboxFileCommandReceipt != nil && ValidateSandboxFileCommandReceipt(*input.SandboxFileCommandReceipt) != nil ||
-		input.SandboxPTYCommandReceipt != nil && ValidateSandboxPTYCommandReceipt(*input.SandboxPTYCommandReceipt) != nil {
+		input.SandboxPTYCommandReceipt != nil && ValidateSandboxPTYCommandReceipt(*input.SandboxPTYCommandReceipt) != nil ||
+		input.SandboxPreviewCommandReceipt != nil && ValidateSandboxPreviewCommandReceipt(*input.SandboxPreviewCommandReceipt) != nil {
 		return ErrInvalidHeartbeat
 	}
 	return nil
@@ -330,6 +334,35 @@ func SandboxPTYCommandReceiptDigest(receipt SandboxPTYCommandReceipt) (string, e
 		return "", ErrInvalidHeartbeat
 	}
 	return mutationDigest("remote-worker.sandbox-pty-receipt", receipt)
+}
+
+func ValidateSandboxPreviewCommand(command SandboxPreviewCommand) error {
+	raw, err := json.Marshal(command)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerSandboxPreviewCommandJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func ValidateSandboxPreviewCommandReceipt(receipt SandboxPreviewCommandReceipt) error {
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerSandboxPreviewCommandReceiptJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+
+func SandboxPreviewCommandReceiptDigest(receipt SandboxPreviewCommandReceipt) (string, error) {
+	if ValidateSandboxPreviewCommandReceipt(receipt) != nil {
+		return "", ErrInvalidHeartbeat
+	}
+	return mutationDigest("remote-worker.sandbox-preview-receipt", receipt)
 }
 
 func (receipt CommandReceipt) Validate() error {

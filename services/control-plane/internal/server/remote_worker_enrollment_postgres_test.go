@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -228,7 +229,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	heartbeat := platform.RemoteWorkerHeartbeatRequest{
 		IncarnationID: certificateRequest.IncarnationID, ObservedGeneration: 1, ObservedState: "active",
 		WorkerVersion: "v0.1.0", OS: "linux", Architecture: "arm64", KernelVersion: "6.12.1",
-		Capabilities: []string{"docker", "exec", "files", "pty"},
+		Capabilities: []string{"docker", "exec", "files", "preview", "pty"},
 		Capacity:     platform.RemoteWorkerCapacity{CPUMillis: 4000, MemoryBytes: 8 << 30, DiskBytes: 40 << 30},
 	}
 	accepted, err := oldNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-initial", heartbeat)
@@ -593,7 +594,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	}
 	policy, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "remote-network", "request-remote-network", "remote-network-key-1", platform.NetworkPolicySetRequest{
 		ExpectedResourceVersion: "0", PolicyName: "remote-network", UserSummary: "RemoteWorker approved outbound access",
-		DefaultEgress: "restricted", AllowedEgress: []string{allowedEgress}, PreviewEnabled: false,
+		DefaultEgress: "restricted", AllowedEgress: []string{allowedEgress}, PreviewEnabled: true,
 	})
 	if err != nil || policy.Value.Metadata.ResourceVersion != "1" {
 		t.Fatalf("create RemoteWorker network policy: value=%+v err=%v", policy.Value, err)
@@ -787,7 +788,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	}
 	execRequest := platform.SandboxExecRequest{
 		ExpectedGeneration: rebuildCommand.SandboxGeneration,
-		Command:            "ln -sfn /etc /workspace/remote-files-link; sha256sum /workspace/remote-worker-rebuild-proof.txt; printf remote-exec-stderr >&2; exit 7",
+		Command:            `ln -sfn /etc /workspace/remote-files-link; node -e 'const http=require("http");http.createServer((req,res)=>{let body="";req.on("data",chunk=>body+=chunk);req.on("end",()=>{res.setHeader("content-type","application/json");res.setHeader("set-cookie","secret=value");res.end(JSON.stringify({method:req.method,url:req.url,body,authorization:req.headers.authorization||"",proxyAuthorization:req.headers["proxy-authorization"]||"",cookie:req.headers.cookie||"",apiKey:req.headers["open-sandbox-api-key"]||"",forwarded:req.headers.forwarded||req.headers["x-forwarded-for"]||"",public:req.headers["x-public"]||""}));});}).listen(3000,"0.0.0.0");' >/workspace/remote-preview.log 2>&1 & sleep 0.2; sha256sum /workspace/remote-worker-rebuild-proof.txt; printf remote-exec-stderr >&2; exit 7`,
 		TimeoutSeconds:     10,
 	}
 	staleExecRequest := execRequest
@@ -993,6 +994,179 @@ ORDER BY created_at, command_uid LIMIT 1`, requestID).Scan(&commandID)
 			t.Fatalf("RemoteWorker PTY command %s did not settle", requestID)
 			return "", platform.RemoteWorkerSandboxPTYCommandReceipt{}, context.DeadlineExceeded
 		}
+	}
+	type previewOutcome struct {
+		status  int
+		headers http.Header
+		body    []byte
+		err     error
+	}
+	runPreview := func(requestID, method, target, token string, body []byte, beforeSettle ...func(platform.RemoteWorkerSandboxPreviewCommandReceipt)) (string, platform.RemoteWorkerSandboxPreviewCommandReceipt, previewOutcome) {
+		done := make(chan previewOutcome, 1)
+		go func() {
+			request, requestErr := http.NewRequestWithContext(ctx, method, gateway.URL+target, bytes.NewReader(body))
+			if requestErr != nil {
+				done <- previewOutcome{err: requestErr}
+				return
+			}
+			request.Header.Set("Authorization", "Bearer "+token)
+			request.Header.Set("Proxy-Authorization", "Basic must-not-reach-sandbox")
+			request.Header.Set("Cookie", "private-cookie=must-not-reach-sandbox")
+			request.Header.Set("Forwarded", "for=must-not-reach-sandbox")
+			request.Header.Set("X-Forwarded-For", "must-not-reach-sandbox")
+			request.Header.Set("X-Public", "visible")
+			request.Header.Set("X-Request-ID", requestID)
+			response, requestErr := gateway.Client().Do(request)
+			if requestErr != nil {
+				done <- previewOutcome{err: requestErr}
+				return
+			}
+			defer response.Body.Close()
+			responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))
+			done <- previewOutcome{status: response.StatusCode, headers: response.Header.Clone(), body: responseBody, err: readErr}
+		}()
+		var commandID string
+		for retry := 0; ; retry++ {
+			select {
+			case outcome := <-done:
+				t.Fatalf("RemoteWorker Preview request completed before command %s: status=%d body=%q err=%v", requestID, outcome.status, outcome.body, outcome.err)
+			default:
+			}
+			queryErr := owner.QueryRow(ctx, `SELECT command_uid FROM cloud_agents.remote_worker_sandbox_preview_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND request_id=$1`, requestID).Scan(&commandID)
+			if queryErr == nil {
+				break
+			}
+			if queryErr != pgx.ErrNoRows || retry == 100 {
+				t.Fatalf("queue RemoteWorker Preview command %s: %v", requestID, queryErr)
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		rawState, readErr := os.ReadFile(stateFile)
+		var previewState struct {
+			SandboxPreviewCommandReceipt *platform.RemoteWorkerSandboxPreviewCommandReceipt `json:"sandboxPreviewCommandReceipt"`
+		}
+		if readErr != nil || json.Unmarshal(rawState, &previewState) != nil || previewState.SandboxPreviewCommandReceipt == nil || previewState.SandboxPreviewCommandReceipt.CommandID != commandID {
+			t.Fatalf("execute RemoteWorker Preview command %s: state=%s err=%v", requestID, rawState, readErr)
+		}
+		receipt := *previewState.SandboxPreviewCommandReceipt
+		if len(beforeSettle) != 0 {
+			beforeSettle[0](receipt)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		select {
+		case outcome := <-done:
+			return commandID, receipt, outcome
+		case <-time.After(15 * time.Second):
+			t.Fatalf("RemoteWorker Preview command %s did not settle", requestID)
+			return "", platform.RemoteWorkerSandboxPreviewCommandReceipt{}, previewOutcome{err: context.DeadlineExceeded}
+		}
+	}
+	preview, err := grantClient.RegisterSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-preview-register", 3000)
+	if err != nil || preview.Value.Port != 3000 || !strings.HasSuffix(preview.Value.ProxyPath, "/preview-ports/3000/proxy") {
+		t.Fatalf("register RemoteWorker Preview: value=%+v err=%v", preview.Value, err)
+	}
+	previewCommandID, previewReceipt, previewResult := runPreview("request-remote-preview-post", http.MethodPost,
+		preview.Value.ProxyPath+"/hello?value=alpha", grant.Value.AccessToken, []byte("preview-request-body"),
+		func(receipt platform.RemoteWorkerSandboxPreviewCommandReceipt) {
+			conflictingReceipt := receipt
+			conflictingReceipt.GrantID = "other-grant"
+			heartbeat.SandboxPreviewCommandReceipt = &conflictingReceipt
+			if _, callErr := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-preview-authority-conflict", heartbeat); clientStatus(callErr) != http.StatusConflict {
+				t.Fatalf("mismatched RemoteWorker Preview receipt status=%d err=%v", clientStatus(callErr), callErr)
+			}
+			heartbeat.SandboxPreviewCommandReceipt = nil
+		})
+	var previewPayload map[string]string
+	if json.Unmarshal(previewResult.body, &previewPayload) != nil || previewResult.err != nil || previewResult.status != http.StatusOK ||
+		previewPayload["method"] != http.MethodPost || previewPayload["url"] != "/hello?value=alpha" ||
+		previewPayload["body"] != "preview-request-body" || previewPayload["public"] != "visible" ||
+		previewPayload["authorization"] != "" || previewPayload["proxyAuthorization"] != "" || previewPayload["cookie"] != "" ||
+		previewPayload["apiKey"] != "" || strings.Contains(previewPayload["forwarded"], "must-not-reach") ||
+		previewResult.headers.Get("Set-Cookie") != "" || previewResult.headers.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("RemoteWorker Preview post: command=%s receipt=%+v status=%d headers=%v payload=%v body=%q err=%v",
+			previewCommandID, previewReceipt, previewResult.status, previewResult.headers, previewPayload, previewResult.body, previewResult.err)
+	}
+	heartbeat.SandboxPreviewCommandReceipt = &previewReceipt
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-preview-receipt-replay", heartbeat); err != nil {
+		t.Fatalf("replay RemoteWorker Preview receipt: %v", err)
+	}
+	conflictingPreviewReceipt := previewReceipt
+	conflictingPreviewStatus := *previewReceipt.StatusCode + 1
+	conflictingPreviewReceipt.StatusCode = &conflictingPreviewStatus
+	heartbeat.SandboxPreviewCommandReceipt = &conflictingPreviewReceipt
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-preview-receipt-conflict", heartbeat); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("conflicting RemoteWorker Preview receipt status=%d err=%v", clientStatus(err), err)
+	}
+	heartbeat.SandboxPreviewCommandReceipt = nil
+	previewStatus := func(requestID, target, token string) int {
+		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, gateway.URL+target, http.NoBody)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("X-Request-ID", requestID)
+		response, requestErr := gateway.Client().Do(request)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		return response.StatusCode
+	}
+	if status := previewStatus("request-remote-preview-wrong-token", preview.Value.ProxyPath, "cag1_"+strings.Repeat("x", 43)); status != http.StatusForbidden {
+		t.Fatalf("wrong RemoteWorker Preview token status=%d", status)
+	}
+	crossTenantPreviewPath := strings.Replace(preview.Value.ProxyPath, "/tenants/tenant/", "/tenants/other-tenant/", 1)
+	if status := previewStatus("request-remote-preview-cross-tenant", crossTenantPreviewPath, grant.Value.AccessToken); status != http.StatusForbidden {
+		t.Fatalf("cross-tenant RemoteWorker Preview status=%d", status)
+	}
+	unregisteredPreviewPath := strings.Replace(preview.Value.ProxyPath, "/preview-ports/3000/", "/preview-ports/3001/", 1)
+	if status := previewStatus("request-remote-preview-unregistered", unregisteredPreviewPath, grant.Value.AccessToken); status != http.StatusNotFound {
+		t.Fatalf("unregistered RemoteWorker Preview status=%d", status)
+	}
+	internalPreviewPath := strings.Replace(preview.Value.ProxyPath, "/preview-ports/3000/", "/preview-ports/44772/", 1)
+	if status := previewStatus("request-remote-preview-internal", internalPreviewPath, grant.Value.AccessToken); status != http.StatusNotFound {
+		t.Fatalf("internal RemoteWorker Preview status=%d", status)
+	}
+	gateway.Close()
+	gateway = newGateway()
+	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
+	_, _, previewRestart := runPreview("request-remote-preview-restart", http.MethodGet, preview.Value.ProxyPath+"/after-restart", grant.Value.AccessToken, nil)
+	if previewRestart.err != nil || previewRestart.status != http.StatusOK {
+		t.Fatalf("RemoteWorker Preview Gateway restart status=%d body=%q err=%v", previewRestart.status, previewRestart.body, previewRestart.err)
+	}
+	previewGrantPage, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "remote-sandbox", "request-remote-preview-admin", 50, "")
+	if err != nil || len(previewGrantPage.Value.AccessGrants) != 1 || len(previewGrantPage.Value.AccessGrants[0].Spec.PreviewPorts) != 1 || previewGrantPage.Value.AccessGrants[0].Spec.PreviewPorts[0] != 3000 {
+		t.Fatalf("RemoteWorker Preview Admin metadata: value=%+v err=%v", previewGrantPage.Value, err)
+	}
+	adminPreviewJSON, _ := json.Marshal(previewGrantPage.Value)
+	for _, forbidden := range []string{"preview-request-body", "/hello", "x-public", "bodyBase64Url"} {
+		if strings.Contains(string(adminPreviewJSON), forbidden) {
+			t.Fatalf("RemoteWorker Preview Admin metadata disclosed %q", forbidden)
+		}
+	}
+	var previewCommands, succeededPreviews int
+	var previewIncarnationBound, previewCertificateBound, previewReceiptsSettled, previewContentTableHidden bool
+	if err := owner.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE state='succeeded'),
+bool_and(assigned_incarnation_uid=$1), bool_and(delivery_certificate_sha256=$2),
+bool_and(receipt_digest IS NOT NULL),
+NOT pg_catalog.has_table_privilege('cloud_agents_runtime', 'cloud_agents.remote_worker_sandbox_preview_commands', 'SELECT')
+FROM cloud_agents.remote_worker_sandbox_preview_commands
+WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateSHA256).Scan(
+		&previewCommands, &succeededPreviews, &previewIncarnationBound, &previewCertificateBound,
+		&previewReceiptsSettled, &previewContentTableHidden,
+	); err != nil || previewCommands != 2 || succeededPreviews != previewCommands || !previewIncarnationBound ||
+		!previewCertificateBound || !previewReceiptsSettled || !previewContentTableHidden {
+		t.Fatalf("RemoteWorker Preview authority: commands=%d succeeded=%d incarnation=%v certificate=%v receipts=%v hidden=%v err=%v",
+			previewCommands, succeededPreviews, previewIncarnationBound, previewCertificateBound, previewReceiptsSettled, previewContentTableHidden, err)
+	}
+	if err := grantClient.RevokeSandboxPreviewPort(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-preview-revoke", 3000); err != nil {
+		t.Fatalf("revoke RemoteWorker Preview: %v", err)
+	}
+	if status := previewStatus("request-remote-preview-after-revoke", preview.Value.ProxyPath, grant.Value.AccessToken); status != http.StatusNotFound {
+		t.Fatalf("revoked RemoteWorker Preview status=%d", status)
 	}
 
 	fileContent := []byte(strings.Repeat("remote-files-proof-", 100000))
@@ -1305,7 +1479,14 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"fileFailureCount": failedFiles, "fileAdminRedacted": true, "fileIncarnationBound": fileIncarnationBound,
 		"fileCertificateBound": fileCertificateBound, "fileReceiptsSettled": fileReceiptsSettled,
 		"fileContentTableHidden": fileContentTableHidden,
-		"ptyCreateCommandId":     ptyCreateCommandID, "ptyExchangeCommandId": ptyExchangeCommandID,
+		"previewCommandId":       previewCommandID, "previewCommandCount": previewCommands,
+		"previewGatewayRestart": true, "previewWrongTokenStatus": 403, "previewCrossTenantStatus": 403,
+		"previewUnregisteredStatus": 404, "previewInternalPortStatus": 404, "previewAfterRevokeStatus": 404,
+		"previewAuthorityMismatchStatus": 409, "previewReceiptReplay": true, "previewReceiptConflictStatus": 409,
+		"previewAdminRedacted": true, "previewIncarnationBound": previewIncarnationBound,
+		"previewCertificateBound": previewCertificateBound, "previewReceiptsSettled": previewReceiptsSettled,
+		"previewContentTableHidden": previewContentTableHidden,
+		"ptyCreateCommandId":        ptyCreateCommandID, "ptyExchangeCommandId": ptyExchangeCommandID,
 		"ptyOutputOffset": observedPTY.Value.OutputOffset, "ptyGatewayRestart": true, "ptyCursorReplay": true,
 		"ptyWrongTokenStatus": 403, "ptyCrossTenantStatus": 403, "ptyAuthorityMismatchStatus": 409,
 		"ptyReceiptReplay": true, "ptyReceiptConflictStatus": 409, "ptyAfterDeleteStatus": 403,
@@ -1375,7 +1556,7 @@ func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary s
 		"--docker-endpoint="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", "https://docker.example.test"),
 		"--credential-directory="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY", "/tmp"),
 		"--credential-ref="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF", "fixture-only"),
-		"--kernel-version=6.12.1", "--capabilities=docker,exec,files,pty",
+		"--kernel-version=6.12.1", "--capabilities=docker,exec,files,preview,pty",
 		"--capacity-cpu-millis=4000", "--capacity-memory-bytes=8589934592",
 		"--capacity-disk-bytes=42949672960", "--once",
 	)

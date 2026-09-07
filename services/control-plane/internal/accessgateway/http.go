@@ -695,6 +695,10 @@ func (server *Server) proxyPreview(writer http.ResponseWriter, request *http.Req
 		writeGatewayError(writer, err)
 		return
 	}
+	if registered.Grant.Access.TargetKind == "remote-worker" {
+		server.proxyRemotePreview(writer, request, value, tokenDigest, registered.Grant)
+		return
+	}
 	client, err := server.client(registered.Grant)
 	if err != nil {
 		writeGatewayError(writer, err)
@@ -748,6 +752,69 @@ func (server *Server) proxyPreview(writer http.ResponseWriter, request *http.Req
 		}
 	}()
 	proxy.ServeHTTP(writer, request.WithContext(authorizedContext))
+}
+
+func (server *Server) proxyRemotePreview(writer http.ResponseWriter, request *http.Request, value route, tokenDigest string, authority postgres.SandboxAccessGrantAuthority) {
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writeProblem(writer, http.StatusRequestEntityTooLarge, "SANDBOX_PREVIEW_INPUT_LIMIT")
+		return
+	}
+	headers, err := opensandbox.CanonicalPreviewHeaders(request.Header)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	commandHeaders := make([]platform.RemoteWorkerSandboxPreviewHeader, len(headers))
+	for index, header := range headers {
+		commandHeaders[index] = platform.RemoteWorkerSandboxPreviewHeader{Name: header.Name, Value: header.Value}
+	}
+	requestPath := value.suffix
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	receipt, err := server.store.ExecuteRemoteWorkerSandboxPreview(request.Context(), postgres.RemoteWorkerSandboxPreviewRequest{
+		Authority: authority, CommandID: "rwpreview-" + rand.Text(), RequestID: request.Header.Get("X-Request-ID"),
+		TokenDigest: tokenDigest, Method: request.Method, Path: requestPath, RawQuery: request.URL.RawQuery,
+		Port: int64(value.port), Headers: commandHeaders, Body: body,
+	})
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	if err := remotePreviewError(receipt); err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	for _, header := range *receipt.Headers {
+		writer.Header().Add(header.Name, header.Value)
+	}
+	writer.Header().Del("Set-Cookie")
+	writer.Header().Set("Cache-Control", "private, no-store")
+	writer.Header().Set("Referrer-Policy", "no-referrer")
+	writer.WriteHeader(int(*receipt.StatusCode))
+	body, _ = base64.RawURLEncoding.DecodeString(*receipt.BodyBase64URL)
+	_, _ = writer.Write(body)
+}
+
+func remotePreviewError(receipt platform.RemoteWorkerSandboxPreviewCommandReceipt) error {
+	if receipt.Result == "succeeded" {
+		return nil
+	}
+	switch receipt.StableErrorCode {
+	case "sandbox_runtime_unavailable":
+		return opensandbox.ErrRuntimeFailed
+	case "sandbox_preview_not_found":
+		return opensandbox.ErrNotFound
+	case "sandbox_preview_input_limit":
+		return opensandbox.ErrFileLimit
+	case "sandbox_preview_output_limit":
+		return opensandbox.ErrOutputLimit
+	case "sandbox_preview_invalid":
+		return opensandbox.ErrInvalid
+	default:
+		return opensandbox.ErrUnavailable
+	}
 }
 
 func writeGatewayJSON(writer http.ResponseWriter, status int, body []byte, err error) {

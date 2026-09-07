@@ -235,6 +235,24 @@ func TestRemoteWorkerSandboxPTYCommandBoundaries(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerSandboxPreviewCommandBoundaries(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := []byte(`{"commandId":"rwpreview-alpha","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","port":3000,"method":"POST","path":"/hello","rawQuery":"value=alpha","headers":[{"name":"content-type","value":"text/plain"},{"name":"x-public","value":"visible"}],"bodyBase64Url":"aGk","deadline":"2026-09-07T12:01:00Z"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxPreviewCommandJSON(command); err != nil || decoded.Port != 3000 || len(decoded.Headers) != 2 {
+		t.Fatalf("Preview command=%#v error=%v", decoded, err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxPreviewCommandJSON([]byte(strings.Replace(string(command), `"content-type"`, `"authorization"`, 1))); err == nil {
+		t.Fatal("Preview command accepted a credential header")
+	}
+	receipt := []byte(`{"commandId":"rwpreview-alpha","grantId":"grant-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"port":3000,"result":"succeeded","bytesTransferred":2,"statusCode":201,"headers":[],"bodyBase64Url":"aGk"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxPreviewCommandReceiptJSON(receipt); err != nil || decoded.StatusCode == nil || *decoded.StatusCode != 201 {
+		t.Fatalf("Preview receipt=%#v error=%v", decoded, err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxPreviewCommandReceiptJSON([]byte(strings.Replace(string(receipt), `"bytesTransferred":2`, `"bytesTransferred":1`, 1))); err == nil {
+		t.Fatal("Preview receipt accepted a mismatched decoded byte count")
+	}
+}
+
 func TestRemoteWorkerSandboxLifecycleCommandsFencePhysicalAuthority(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	legacyCreateReceipt := []byte(`{"commandId":"rwsc-create","attempt":1,"operationId":"operation-create","sandboxId":"sandbox-alpha","sandboxGeneration":1,"result":"succeeded","runtimeId":"runtime-alpha","runtimeState":"Running","volumeName":"volume-alpha","cleanupComplete":false}`)

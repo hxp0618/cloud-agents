@@ -41,7 +41,8 @@
     "sandboxCommand": { "$ref": "./remote-worker-sandbox-command.schema.json" },
     "sandboxExecCommand": { "$ref": "./remote-worker-sandbox-exec-command.schema.json" },
     "sandboxFileCommand": { "$ref": "./remote-worker-sandbox-file-command.schema.json" },
-    "sandboxPtyCommand": { "$ref": "./remote-worker-sandbox-pty-command.schema.json" }
+    "sandboxPtyCommand": { "$ref": "./remote-worker-sandbox-pty-command.schema.json" },
+    "sandboxPreviewCommand": { "$ref": "./remote-worker-sandbox-preview-command.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "acceptedAt is the database mutation time and expiresAt is exactly 30 seconds later",
@@ -50,6 +51,7 @@
     "sandboxCommand is present only for a durable Sandbox Operation attempt assigned to this active node",
     "sandboxExecCommand is present only when no lifecycle command is pending and is bound to the current active Sandbox runtime",
     "sandboxFileCommand is present only when no lifecycle or Exec command is pending and is bound to one active access Grant",
-    "sandboxPtyCommand is present only when no lifecycle, Exec or Files command is pending and is bound to one active access Grant"
+    "sandboxPtyCommand is present only when no lifecycle, Exec or Files command is pending and is bound to one active access Grant",
+    "sandboxPreviewCommand is present only when no higher-priority command is pending and is bound to one active registered Preview port"
   ]
 }

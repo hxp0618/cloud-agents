@@ -41,6 +41,7 @@ var (
 	platformID          = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$`)
 	digest              = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	runtimeImage        = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	previewHeaderName   = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9a-z-]+$")
 )
 
 type Identity struct {
@@ -176,6 +177,14 @@ func (input CreateInput) valid() bool {
 type Client struct {
 	endpoint, key string
 	http          *http.Client
+}
+
+type PreviewHeader struct{ Name, Value string }
+
+type PreviewResponse struct {
+	StatusCode int
+	Headers    []PreviewHeader
+	Body       []byte
 }
 
 func New(endpoint, key string) (*Client, error) {
@@ -496,6 +505,100 @@ func (c *Client) PreviewHTTPProxyTarget(ctx context.Context, input PTYInput, por
 		return nil, nil, err
 	}
 	return c.serverProxyTarget(ctx, input.RuntimeID, port)
+}
+
+func CanonicalPreviewHeaders(source http.Header) ([]PreviewHeader, error) {
+	blocked := map[string]bool{"authorization": true, "connection": true, "content-length": true, "cookie": true, "forwarded": true, "host": true, "keep-alive": true, "open-sandbox-api-key": true, "proxy-authenticate": true, "proxy-authorization": true, "proxy-connection": true, "set-cookie": true, "te": true, "trailer": true, "transfer-encoding": true, "upgrade": true, "x-forwarded-for": true, "x-forwarded-host": true, "x-forwarded-proto": true, "x-real-ip": true}
+	for _, value := range source.Values("Connection") {
+		for _, name := range strings.Split(value, ",") {
+			blocked[strings.ToLower(strings.TrimSpace(name))] = true
+		}
+	}
+	values := make([]PreviewHeader, 0, len(source))
+	for name, entries := range source {
+		name = strings.ToLower(name)
+		if blocked[name] || len(name) < 1 || len(name) > 128 || !previewHeaderName.MatchString(name) {
+			continue
+		}
+		for _, value := range entries {
+			if len(value) > 4096 || !utf8.ValidString(value) || strings.ContainsAny(value, "\r\n\x00") {
+				return nil, ErrInvalid
+			}
+			values = append(values, PreviewHeader{Name: name, Value: value})
+		}
+	}
+	if len(values) > 64 {
+		return nil, ErrOutputLimit
+	}
+	sort.Slice(values, func(i, j int) bool {
+		if values[i].Name != values[j].Name {
+			return values[i].Name < values[j].Name
+		}
+		return values[i].Value < values[j].Value
+	})
+	unique := values[:0]
+	for _, value := range values {
+		if len(unique) == 0 || unique[len(unique)-1] != value {
+			unique = append(unique, value)
+		}
+	}
+	return unique, nil
+}
+
+func (c *Client) ProxyPreview(ctx context.Context, input PTYInput, port int32, method, suffix, rawQuery string, headers []PreviewHeader, body []byte) (PreviewResponse, error) {
+	if c == nil || ctx == nil || len(body) > 1<<20 || !strings.HasPrefix(suffix, "/") || strings.ContainsAny(suffix, "?#\x00\r\n") || strings.ContainsAny(rawQuery, "#\x00\r\n") || !slices.Contains([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}, method) {
+		return PreviewResponse{}, ErrInvalid
+	}
+	target, privateHeaders, err := c.PreviewHTTPProxyTarget(ctx, input, port)
+	if err != nil {
+		return PreviewResponse{}, err
+	}
+	if suffix != "/" {
+		target.Path = strings.TrimSuffix(target.Path, "/") + suffix
+	}
+	target.RawPath, target.RawQuery = "", rawQuery
+	request, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return PreviewResponse{}, ErrInvalid
+	}
+	publicHeaders := make(http.Header)
+	for _, header := range headers {
+		publicHeaders.Add(header.Name, header.Value)
+	}
+	checkedHeaders, err := CanonicalPreviewHeaders(publicHeaders)
+	if err != nil {
+		return PreviewResponse{}, err
+	}
+	for _, header := range checkedHeaders {
+		request.Header.Add(header.Name, header.Value)
+	}
+	for name, values := range privateHeaders {
+		request.Header.Del(name)
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
+	}
+	request.Host = target.Host
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return PreviewResponse{}, ctx.Err()
+		}
+		return PreviewResponse{}, ErrUnavailable
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))
+	if err != nil {
+		return PreviewResponse{}, ErrUnavailable
+	}
+	if len(data) > 4<<20 {
+		return PreviewResponse{}, ErrOutputLimit
+	}
+	responseHeaders, err := CanonicalPreviewHeaders(response.Header)
+	if err != nil {
+		return PreviewResponse{}, err
+	}
+	return PreviewResponse{StatusCode: response.StatusCode, Headers: responseHeaders, Body: data}, nil
 }
 
 func (c *Client) serverProxyTarget(ctx context.Context, runtimeID string, port int32) (*url.URL, http.Header, error) {

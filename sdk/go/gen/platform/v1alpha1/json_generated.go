@@ -108,6 +108,7 @@ var (
 	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
 	sshUsernamePattern           = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$`)
 	fileVersionPattern           = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
+	previewHeaderNamePattern     = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9a-z-]+$")
 	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
 	previewProxyPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
 	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
@@ -694,21 +695,57 @@ type RemoteWorkerSandboxPTYCommandReceipt struct {
 	Frames            *[]RemoteWorkerSandboxPTYFrame `json:"frames,omitempty"`
 	StableErrorCode   string                         `json:"stableErrorCode,omitempty"`
 }
+type RemoteWorkerSandboxPreviewHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+type RemoteWorkerSandboxPreviewCommand struct {
+	CommandID          string                             `json:"commandId"`
+	GrantID            string                             `json:"grantId"`
+	WorkspaceID        string                             `json:"workspaceId"`
+	TargetID           string                             `json:"targetId"`
+	SandboxID          string                             `json:"sandboxId"`
+	SandboxGeneration  int64                              `json:"sandboxGeneration"`
+	RuntimeID          string                             `json:"runtimeId"`
+	RuntimeOperationID string                             `json:"runtimeOperationId"`
+	RuntimeSpecDigest  string                             `json:"runtimeSpecDigest"`
+	Port               int64                              `json:"port"`
+	Method             string                             `json:"method"`
+	Path               string                             `json:"path"`
+	RawQuery           string                             `json:"rawQuery"`
+	Headers            []RemoteWorkerSandboxPreviewHeader `json:"headers"`
+	BodyBase64URL      string                             `json:"bodyBase64Url"`
+	Deadline           string                             `json:"deadline"`
+}
+type RemoteWorkerSandboxPreviewCommandReceipt struct {
+	CommandID         string                              `json:"commandId"`
+	GrantID           string                              `json:"grantId"`
+	SandboxID         string                              `json:"sandboxId"`
+	SandboxGeneration int64                               `json:"sandboxGeneration"`
+	Port              int64                               `json:"port"`
+	Result            string                              `json:"result"`
+	BytesTransferred  int64                               `json:"bytesTransferred"`
+	StatusCode        *int64                              `json:"statusCode,omitempty"`
+	Headers           *[]RemoteWorkerSandboxPreviewHeader `json:"headers,omitempty"`
+	BodyBase64URL     *string                             `json:"bodyBase64Url,omitempty"`
+	StableErrorCode   string                              `json:"stableErrorCode,omitempty"`
+}
 type RemoteWorkerHeartbeatRequest struct {
-	IncarnationID             string                                 `json:"incarnationId"`
-	ObservedGeneration        int64                                  `json:"observedGeneration"`
-	ObservedState             string                                 `json:"observedState"`
-	WorkerVersion             string                                 `json:"workerVersion"`
-	OS                        string                                 `json:"os"`
-	Architecture              string                                 `json:"architecture"`
-	KernelVersion             string                                 `json:"kernelVersion"`
-	Capabilities              []string                               `json:"capabilities"`
-	Capacity                  RemoteWorkerCapacity                   `json:"capacity"`
-	CommandReceipt            *RemoteWorkerCommandReceipt            `json:"commandReceipt,omitempty"`
-	SandboxCommandReceipt     *RemoteWorkerSandboxCommandReceipt     `json:"sandboxCommandReceipt,omitempty"`
-	SandboxExecCommandReceipt *RemoteWorkerSandboxExecCommandReceipt `json:"sandboxExecCommandReceipt,omitempty"`
-	SandboxFileCommandReceipt *RemoteWorkerSandboxFileCommandReceipt `json:"sandboxFileCommandReceipt,omitempty"`
-	SandboxPTYCommandReceipt  *RemoteWorkerSandboxPTYCommandReceipt  `json:"sandboxPtyCommandReceipt,omitempty"`
+	IncarnationID                string                                    `json:"incarnationId"`
+	ObservedGeneration           int64                                     `json:"observedGeneration"`
+	ObservedState                string                                    `json:"observedState"`
+	WorkerVersion                string                                    `json:"workerVersion"`
+	OS                           string                                    `json:"os"`
+	Architecture                 string                                    `json:"architecture"`
+	KernelVersion                string                                    `json:"kernelVersion"`
+	Capabilities                 []string                                  `json:"capabilities"`
+	Capacity                     RemoteWorkerCapacity                      `json:"capacity"`
+	CommandReceipt               *RemoteWorkerCommandReceipt               `json:"commandReceipt,omitempty"`
+	SandboxCommandReceipt        *RemoteWorkerSandboxCommandReceipt        `json:"sandboxCommandReceipt,omitempty"`
+	SandboxExecCommandReceipt    *RemoteWorkerSandboxExecCommandReceipt    `json:"sandboxExecCommandReceipt,omitempty"`
+	SandboxFileCommandReceipt    *RemoteWorkerSandboxFileCommandReceipt    `json:"sandboxFileCommandReceipt,omitempty"`
+	SandboxPTYCommandReceipt     *RemoteWorkerSandboxPTYCommandReceipt     `json:"sandboxPtyCommandReceipt,omitempty"`
+	SandboxPreviewCommandReceipt *RemoteWorkerSandboxPreviewCommandReceipt `json:"sandboxPreviewCommandReceipt,omitempty"`
 }
 type RemoteWorkerNodeStatus struct {
 	ResourceVersion    string               `json:"resourceVersion"`
@@ -728,26 +765,27 @@ type RemoteWorkerNodeStatus struct {
 	HeartbeatExpiresAt string               `json:"heartbeatExpiresAt"`
 }
 type RemoteWorkerHeartbeat struct {
-	APIVersion                string                          `json:"apiVersion"`
-	Kind                      string                          `json:"kind"`
-	ProjectRef                common.ProjectRef               `json:"projectRef"`
-	EnrollmentID              string                          `json:"enrollmentId"`
-	WorkerID                  string                          `json:"workerId"`
-	IncarnationID             string                          `json:"incarnationId"`
-	Generation                int64                           `json:"generation"`
-	ObservedGeneration        int64                           `json:"observedGeneration"`
-	DesiredState              string                          `json:"desiredState"`
-	ObservedState             string                          `json:"observedState"`
-	HealthState               string                          `json:"healthState"`
-	AcceptedAt                string                          `json:"acceptedAt"`
-	ExpiresAt                 string                          `json:"expiresAt"`
-	NextHeartbeatAfterSeconds int64                           `json:"nextHeartbeatAfterSeconds"`
-	ReconcileRequired         bool                            `json:"reconcileRequired"`
-	Command                   *RemoteWorkerCommand            `json:"command,omitempty"`
-	SandboxCommand            *RemoteWorkerSandboxCommand     `json:"sandboxCommand,omitempty"`
-	SandboxExecCommand        *RemoteWorkerSandboxExecCommand `json:"sandboxExecCommand,omitempty"`
-	SandboxFileCommand        *RemoteWorkerSandboxFileCommand `json:"sandboxFileCommand,omitempty"`
-	SandboxPTYCommand         *RemoteWorkerSandboxPTYCommand  `json:"sandboxPtyCommand,omitempty"`
+	APIVersion                string                             `json:"apiVersion"`
+	Kind                      string                             `json:"kind"`
+	ProjectRef                common.ProjectRef                  `json:"projectRef"`
+	EnrollmentID              string                             `json:"enrollmentId"`
+	WorkerID                  string                             `json:"workerId"`
+	IncarnationID             string                             `json:"incarnationId"`
+	Generation                int64                              `json:"generation"`
+	ObservedGeneration        int64                              `json:"observedGeneration"`
+	DesiredState              string                             `json:"desiredState"`
+	ObservedState             string                             `json:"observedState"`
+	HealthState               string                             `json:"healthState"`
+	AcceptedAt                string                             `json:"acceptedAt"`
+	ExpiresAt                 string                             `json:"expiresAt"`
+	NextHeartbeatAfterSeconds int64                              `json:"nextHeartbeatAfterSeconds"`
+	ReconcileRequired         bool                               `json:"reconcileRequired"`
+	Command                   *RemoteWorkerCommand               `json:"command,omitempty"`
+	SandboxCommand            *RemoteWorkerSandboxCommand        `json:"sandboxCommand,omitempty"`
+	SandboxExecCommand        *RemoteWorkerSandboxExecCommand    `json:"sandboxExecCommand,omitempty"`
+	SandboxFileCommand        *RemoteWorkerSandboxFileCommand    `json:"sandboxFileCommand,omitempty"`
+	SandboxPTYCommand         *RemoteWorkerSandboxPTYCommand     `json:"sandboxPtyCommand,omitempty"`
+	SandboxPreviewCommand     *RemoteWorkerSandboxPreviewCommand `json:"sandboxPreviewCommand,omitempty"`
 }
 type RemoteWorkerNodeSchedulingRequest struct {
 	ExpectedGeneration      int64  `json:"expectedGeneration"`
@@ -1526,6 +1564,11 @@ var remoteWorkerEnrollmentPageResponseShape = common.ObjectResponseShape(map[str
 var remoteWorkerEnrollmentSecretResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "enrollmentSecret": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var remoteWorkerCertificateResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateChainPem": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "issuedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var remoteWorkerHeartbeatResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "acceptedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "nextHeartbeatAfterSeconds": common.ScalarResponseShape(), "reconcileRequired": common.ScalarResponseShape(), "command": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()}), "sandboxCommand": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "attempt": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "operationId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "specDigest": common.ScalarResponseShape(), "networkPolicyId": common.ScalarResponseShape(), "networkAllowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "physicalVolumeName": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "runtimeOperationId": common.ScalarResponseShape(), "runtimeGeneration": common.ScalarResponseShape(), "runtimeSpecDigest": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()}), "sandboxExecCommand": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeOperationId": common.ScalarResponseShape(), "runtimeSpecDigest": common.ScalarResponseShape(), "command": common.ScalarResponseShape(), "timeoutSeconds": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()}), "sandboxFileCommand": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "eventId": common.ScalarResponseShape(), "grantId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeOperationId": common.ScalarResponseShape(), "runtimeSpecDigest": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "path": common.ScalarResponseShape(), "read": common.ObjectResponseShape(map[string]common.ResponseShape{"offset": common.ScalarResponseShape(), "limit": common.ScalarResponseShape(), "fileVersion": common.ScalarResponseShape()}), "write": common.ObjectResponseShape(map[string]common.ResponseShape{"contentBase64Url": common.ScalarResponseShape()}), "deadline": common.ScalarResponseShape()}), "sandboxPtyCommand": common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "grantId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeOperationId": common.ScalarResponseShape(), "runtimeSpecDigest": common.ScalarResponseShape(), "action": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "since": common.ScalarResponseShape(), "takeover": common.ScalarResponseShape(), "input": common.ObjectResponseShape(map[string]common.ResponseShape{"messageType": common.ScalarResponseShape(), "payloadBase64Url": common.ScalarResponseShape()}), "deadline": common.ScalarResponseShape()})})
+
+func init() {
+	remoteWorkerHeartbeatResponseShape.Fields["sandboxPreviewCommand"] = common.ObjectResponseShape(map[string]common.ResponseShape{"commandId": common.ScalarResponseShape(), "grantId": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeOperationId": common.ScalarResponseShape(), "runtimeSpecDigest": common.ScalarResponseShape(), "port": common.ScalarResponseShape(), "method": common.ScalarResponseShape(), "path": common.ScalarResponseShape(), "rawQuery": common.ScalarResponseShape(), "headers": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"name": common.ScalarResponseShape(), "value": common.ScalarResponseShape()})), "bodyBase64Url": common.ScalarResponseShape(), "deadline": common.ScalarResponseShape()})
+}
+
 var remoteWorkerNodeSchedulingPreviewResponseShape = resourceResponseShape("RemoteWorkerNodeSchedulingPreview")
 var environmentProfilePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -3729,8 +3772,85 @@ func DecodeRemoteWorkerSandboxPTYCommandReceiptJSON(data []byte) (RemoteWorkerSa
 	}
 	return value, nil
 }
+func validRemoteWorkerSandboxPreviewHeaders(values []RemoteWorkerSandboxPreviewHeader) bool {
+	if len(values) > 64 {
+		return false
+	}
+	previous := ""
+	for _, value := range values {
+		if len(value.Name) < 1 || len(value.Name) > 128 || !previewHeaderNamePattern.MatchString(value.Name) || len(value.Value) > 4096 || !utf8.ValidString(value.Value) || strings.ContainsAny(value.Value, "\r\n\x00") {
+			return false
+		}
+		switch value.Name {
+		case "authorization", "connection", "content-length", "cookie", "forwarded", "host", "keep-alive", "open-sandbox-api-key", "proxy-authenticate", "proxy-authorization", "proxy-connection", "set-cookie", "te", "trailer", "transfer-encoding", "upgrade", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip":
+			return false
+		}
+		key := value.Name + "\x00" + value.Value
+		if previous != "" && previous >= key {
+			return false
+		}
+		previous = key
+	}
+	return true
+}
+func validRemoteWorkerSandboxPreviewTarget(pathValue, rawQuery string) bool {
+	if len(pathValue) < 1 || len(pathValue) > 2048 || pathValue[0] != '/' || len(rawQuery) > 4096 || !utf8.ValidString(pathValue) || !utf8.ValidString(rawQuery) || strings.ContainsAny(pathValue, "?#") || strings.Contains(rawQuery, "#") {
+		return false
+	}
+	for _, value := range pathValue + rawQuery {
+		if value < 0x20 || value == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+func DecodeRemoteWorkerSandboxPreviewCommandJSON(data []byte) (RemoteWorkerSandboxPreviewCommand, error) {
+	allowed := []string{"commandId", "grantId", "workspaceId", "targetId", "sandboxId", "sandboxGeneration", "runtimeId", "runtimeOperationId", "runtimeSpecDigest", "port", "method", "path", "rawQuery", "headers", "bodyBase64Url", "deadline"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return RemoteWorkerSandboxPreviewCommand{}, err
+	}
+	var value RemoteWorkerSandboxPreviewCommand
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.WorkspaceID, "/workspaceId") != nil || common.ValidateIdentifier(value.TargetID, "/targetId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > 9007199254740991 || common.ValidateIdentifier(value.RuntimeID, "/runtimeId") != nil || common.ValidateIdentifier(value.RuntimeOperationID, "/runtimeOperationId") != nil || !digestPattern.MatchString(value.RuntimeSpecDigest) || value.Port < 1024 || value.Port > 65535 || value.Port == 44772 || value.Method != "GET" && value.Method != "POST" && value.Method != "PUT" && value.Method != "PATCH" && value.Method != "DELETE" || !validRemoteWorkerSandboxPreviewTarget(value.Path, value.RawQuery) || value.Headers == nil || !validRemoteWorkerSandboxPreviewHeaders(value.Headers) || common.ValidateDateTime(value.Deadline, "/deadline") != nil {
+		return RemoteWorkerSandboxPreviewCommand{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND", "")
+	}
+	if _, err := decodeSandboxFileContent(value.BodyBase64URL, 1<<20); err != nil {
+		return RemoteWorkerSandboxPreviewCommand{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND", "/bodyBase64Url")
+	}
+	return value, nil
+}
+func validRemoteWorkerSandboxPreviewStableError(value string) bool {
+	switch value {
+	case "sandbox_access_unavailable", "sandbox_runtime_unavailable", "sandbox_preview_not_found", "sandbox_preview_invalid", "sandbox_preview_input_limit", "sandbox_preview_output_limit", "sandbox_preview_timeout":
+		return true
+	}
+	return false
+}
+func DecodeRemoteWorkerSandboxPreviewCommandReceiptJSON(data []byte) (RemoteWorkerSandboxPreviewCommandReceipt, error) {
+	allowed := []string{"commandId", "grantId", "sandboxId", "sandboxGeneration", "port", "result", "bytesTransferred", "statusCode", "headers", "bodyBase64Url", "stableErrorCode"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed[:7]); err != nil {
+		return RemoteWorkerSandboxPreviewCommandReceipt{}, err
+	}
+	var value RemoteWorkerSandboxPreviewCommandReceipt
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.CommandID, "/commandId") != nil || common.ValidateIdentifier(value.GrantID, "/grantId") != nil || common.ValidateIdentifier(value.SandboxID, "/sandboxId") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > 9007199254740991 || value.Port < 1024 || value.Port > 65535 || value.Port == 44772 || value.Result != "succeeded" && value.Result != "failed" || value.BytesTransferred < 0 || value.BytesTransferred > 4<<20 {
+		return RemoteWorkerSandboxPreviewCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "")
+	}
+	if value.Result == "failed" {
+		if !validRemoteWorkerSandboxPreviewStableError(value.StableErrorCode) || value.BytesTransferred != 0 || value.StatusCode != nil || value.Headers != nil || value.BodyBase64URL != nil {
+			return RemoteWorkerSandboxPreviewCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/result")
+		}
+		return value, nil
+	}
+	if value.StableErrorCode != "" || value.StatusCode == nil || *value.StatusCode < 100 || *value.StatusCode > 599 || value.Headers == nil || !validRemoteWorkerSandboxPreviewHeaders(*value.Headers) || value.BodyBase64URL == nil {
+		return RemoteWorkerSandboxPreviewCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/result")
+	}
+	body, err := decodeSandboxFileContent(*value.BodyBase64URL, 4<<20)
+	if err != nil || int64(len(body)) != value.BytesTransferred {
+		return RemoteWorkerSandboxPreviewCommandReceipt{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/bodyBase64Url")
+	}
+	return value, nil
+}
 func DecodeRemoteWorkerHeartbeatRequestJSON(data []byte) (RemoteWorkerHeartbeatRequest, error) {
-	allowed := []string{"incarnationId", "observedGeneration", "observedState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "commandReceipt", "sandboxCommandReceipt", "sandboxExecCommandReceipt", "sandboxFileCommandReceipt", "sandboxPtyCommandReceipt"}
+	allowed := []string{"incarnationId", "observedGeneration", "observedState", "workerVersion", "os", "architecture", "kernelVersion", "capabilities", "capacity", "commandReceipt", "sandboxCommandReceipt", "sandboxExecCommandReceipt", "sandboxFileCommandReceipt", "sandboxPtyCommandReceipt", "sandboxPreviewCommandReceipt"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed[:9])
 	if err != nil {
 		return RemoteWorkerHeartbeatRequest{}, err
@@ -3774,6 +3894,13 @@ func DecodeRemoteWorkerHeartbeatRequestJSON(data []byte) (RemoteWorkerHeartbeatR
 		}
 		value.SandboxPTYCommandReceipt = &receipt
 	}
+	if raw, ok := fields["sandboxPreviewCommandReceipt"]; ok {
+		receipt, receiptErr := DecodeRemoteWorkerSandboxPreviewCommandReceiptJSON(raw)
+		if receiptErr != nil {
+			return RemoteWorkerHeartbeatRequest{}, receiptErr
+		}
+		value.SandboxPreviewCommandReceipt = &receipt
+	}
 	return value, nil
 }
 func EncodeRemoteWorkerHeartbeatRequestJSON(value RemoteWorkerHeartbeatRequest) ([]byte, error) {
@@ -3804,7 +3931,7 @@ func DecodeRemoteWorkerNodeStatusJSON(data []byte) (RemoteWorkerNodeStatus, erro
 	return value, nil
 }
 func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error) {
-	allowed := []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "acceptedAt", "expiresAt", "nextHeartbeatAfterSeconds", "reconcileRequired", "command", "sandboxCommand", "sandboxExecCommand", "sandboxFileCommand", "sandboxPtyCommand"}
+	allowed := []string{"apiVersion", "kind", "projectRef", "enrollmentId", "workerId", "incarnationId", "generation", "observedGeneration", "desiredState", "observedState", "healthState", "acceptedAt", "expiresAt", "nextHeartbeatAfterSeconds", "reconcileRequired", "command", "sandboxCommand", "sandboxExecCommand", "sandboxFileCommand", "sandboxPtyCommand", "sandboxPreviewCommand"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed[:15])
 	if err != nil {
 		return RemoteWorkerHeartbeat{}, err
@@ -3830,6 +3957,7 @@ func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error)
 		}
 		value.Command = &command
 	}
+	sandboxCommands := 0
 	if raw, ok := fields["sandboxCommand"]; ok {
 		command, commandErr := DecodeRemoteWorkerSandboxCommandJSON(raw)
 		deadline, deadlineErr := time.Parse(time.RFC3339Nano, command.Deadline)
@@ -3837,6 +3965,7 @@ func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error)
 			return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/sandboxCommand")
 		}
 		value.SandboxCommand = &command
+		sandboxCommands++
 	}
 	if raw, ok := fields["sandboxExecCommand"]; ok {
 		command, commandErr := DecodeRemoteWorkerSandboxExecCommandJSON(raw)
@@ -3845,6 +3974,7 @@ func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error)
 			return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_EXEC_COMMAND", "/sandboxExecCommand")
 		}
 		value.SandboxExecCommand = &command
+		sandboxCommands++
 	}
 	if raw, ok := fields["sandboxFileCommand"]; ok {
 		command, commandErr := DecodeRemoteWorkerSandboxFileCommandJSON(raw)
@@ -3853,6 +3983,7 @@ func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error)
 			return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_FILE_COMMAND", "/sandboxFileCommand")
 		}
 		value.SandboxFileCommand = &command
+		sandboxCommands++
 	}
 	if raw, ok := fields["sandboxPtyCommand"]; ok {
 		command, commandErr := DecodeRemoteWorkerSandboxPTYCommandJSON(raw)
@@ -3861,9 +3992,19 @@ func DecodeRemoteWorkerHeartbeatJSON(data []byte) (RemoteWorkerHeartbeat, error)
 			return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/sandboxPtyCommand")
 		}
 		value.SandboxPTYCommand = &command
+		sandboxCommands++
 	}
-	if value.SandboxCommand != nil && (value.SandboxExecCommand != nil || value.SandboxFileCommand != nil || value.SandboxPTYCommand != nil) || value.SandboxExecCommand != nil && (value.SandboxFileCommand != nil || value.SandboxPTYCommand != nil) || value.SandboxFileCommand != nil && value.SandboxPTYCommand != nil {
-		return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxPtyCommand")
+	if raw, ok := fields["sandboxPreviewCommand"]; ok {
+		command, commandErr := DecodeRemoteWorkerSandboxPreviewCommandJSON(raw)
+		deadline, deadlineErr := time.Parse(time.RFC3339Nano, command.Deadline)
+		if commandErr != nil || deadlineErr != nil || !deadline.After(accepted) {
+			return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND", "/sandboxPreviewCommand")
+		}
+		value.SandboxPreviewCommand = &command
+		sandboxCommands++
+	}
+	if sandboxCommands > 1 {
+		return RemoteWorkerHeartbeat{}, common.ContractError("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxPreviewCommand")
 	}
 	return value, nil
 }

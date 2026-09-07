@@ -54,6 +54,8 @@ import {
   decodeRemoteWorkerSandboxFileCommandReceipt,
   decodeRemoteWorkerSandboxPTYCommand,
   decodeRemoteWorkerSandboxPTYCommandReceipt,
+  decodeRemoteWorkerSandboxPreviewCommand,
+  decodeRemoteWorkerSandboxPreviewCommandReceipt,
   decodeRuntimeProfile,
   decodeRuntimeProfileSummary,
   decodeSandboxExecRequest,
@@ -250,6 +252,51 @@ describe("generated platform JSON models", () => {
     };
     expect(decodeRemoteWorkerSandboxPTYCommandReceipt(receipt).frames).toHaveLength(1);
     expect(() => decodeRemoteWorkerSandboxPTYCommandReceipt({ ...receipt, bytesTransferred: 2 })).toThrow(TypeError);
+  });
+
+  it("fences RemoteWorker Sandbox Preview content and headers", () => {
+    const command = {
+      commandId: "rwpreview-alpha",
+      grantId: "grant-alpha",
+      workspaceId: "workspace-alpha",
+      targetId: "target-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      runtimeId: "runtime-alpha",
+      runtimeOperationId: "operation-alpha",
+      runtimeSpecDigest: `sha256:${"a".repeat(64)}`,
+      port: 3000,
+      method: "POST",
+      path: "/hello",
+      rawQuery: "value=alpha",
+      headers: [
+        { name: "content-type", value: "text/plain" },
+        { name: "x-public", value: "visible" },
+      ],
+      bodyBase64Url: "aGk",
+      deadline: "2026-09-07T12:01:00Z",
+    };
+    expect(decodeRemoteWorkerSandboxPreviewCommand(command).port).toBe(3000);
+    expect(() =>
+      decodeRemoteWorkerSandboxPreviewCommand({
+        ...command,
+        headers: [{ name: "authorization", value: "Bearer secret" }],
+      }),
+    ).toThrow(TypeError);
+    const receipt = {
+      commandId: "rwpreview-alpha",
+      grantId: "grant-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      port: 3000,
+      result: "succeeded",
+      bytesTransferred: 2,
+      statusCode: 201,
+      headers: [],
+      bodyBase64Url: "aGk",
+    };
+    expect(decodeRemoteWorkerSandboxPreviewCommandReceipt(receipt).statusCode).toBe(201);
+    expect(() => decodeRemoteWorkerSandboxPreviewCommandReceipt({ ...receipt, bytesTransferred: 1 })).toThrow(TypeError);
   });
 
   it("fences RemoteWorker lifecycle commands while keeping legacy create receipts", () => {

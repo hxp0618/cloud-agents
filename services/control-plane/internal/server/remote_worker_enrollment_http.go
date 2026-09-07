@@ -487,12 +487,13 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		ObservedState: validated.Body.ObservedState,
 		WorkerVersion: validated.Body.WorkerVersion, OS: validated.Body.OS, Architecture: validated.Body.Architecture,
 		KernelVersion: validated.Body.KernelVersion, Capabilities: validated.Body.Capabilities,
-		Capacity:                  internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
-		CommandReceipt:            remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
-		SandboxCommandReceipt:     remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
-		SandboxExecCommandReceipt: remoteWorkerSandboxExecCommandReceipt(validated.Body.SandboxExecCommandReceipt),
-		SandboxFileCommandReceipt: validated.Body.SandboxFileCommandReceipt,
-		SandboxPTYCommandReceipt:  validated.Body.SandboxPTYCommandReceipt,
+		Capacity:                     internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
+		CommandReceipt:               remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
+		SandboxCommandReceipt:        remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
+		SandboxExecCommandReceipt:    remoteWorkerSandboxExecCommandReceipt(validated.Body.SandboxExecCommandReceipt),
+		SandboxFileCommandReceipt:    validated.Body.SandboxFileCommandReceipt,
+		SandboxPTYCommandReceipt:     validated.Body.SandboxPTYCommandReceipt,
+		SandboxPreviewCommandReceipt: validated.Body.SandboxPreviewCommandReceipt,
 	})
 	if err != nil {
 		writeRemoteWorkerEnrollmentError(writer, err)
@@ -507,11 +508,12 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		DesiredState: node.DesiredState, ObservedState: node.ObservedState, HealthState: node.HealthState,
 		AcceptedAt: node.LastHeartbeatAt.UTC().Format(time.RFC3339Nano), ExpiresAt: node.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
 		NextHeartbeatAfterSeconds: int64(internalremoteworker.HeartbeatInterval / time.Second), ReconcileRequired: result.ReconcileRequired,
-		Command:            remoteWorkerCommandResource(result.Command),
-		SandboxCommand:     remoteWorkerSandboxCommandResource(result.SandboxCommand),
-		SandboxExecCommand: remoteWorkerSandboxExecCommandResource(result.SandboxExecCommand),
-		SandboxFileCommand: result.SandboxFileCommand,
-		SandboxPTYCommand:  result.SandboxPTYCommand,
+		Command:               remoteWorkerCommandResource(result.Command),
+		SandboxCommand:        remoteWorkerSandboxCommandResource(result.SandboxCommand),
+		SandboxExecCommand:    remoteWorkerSandboxExecCommandResource(result.SandboxExecCommand),
+		SandboxFileCommand:    result.SandboxFileCommand,
+		SandboxPTYCommand:     result.SandboxPTYCommand,
+		SandboxPreviewCommand: result.SandboxPreviewCommand,
 	}})
 	if err != nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -934,6 +936,8 @@ func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {
 		writePublicProblem(writer, 409, "remote_worker_sandbox_file_receipt_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerSandboxPTYReceiptConflict):
 		writePublicProblem(writer, 409, "remote_worker_sandbox_pty_receipt_conflict")
+	case errors.Is(err, postgres.ErrRemoteWorkerSandboxPreviewReceiptConflict):
+		writePublicProblem(writer, 409, "remote_worker_sandbox_preview_receipt_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerSchedulingIdempotencyConflict):
 		writePublicProblem(writer, 409, "idempotency_conflict")
 	case errors.Is(err, postgres.ErrRemoteWorkerOperationInProgress):

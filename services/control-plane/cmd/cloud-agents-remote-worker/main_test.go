@@ -191,6 +191,35 @@ func TestRemoteWorkerSandboxPTYStateSurvivesRestartAndAcknowledgement(t *testing
 	}
 }
 
+func TestRemoteWorkerSandboxPreviewStateSurvivesRestartAndAcknowledgement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	state := initialNodeState("incarnation-alpha")
+	command := &platform.RemoteWorkerSandboxPreviewCommand{CommandID: "rwpreview-alpha", GrantID: "grant-alpha",
+		WorkspaceID: "workspace-alpha", TargetID: "target-alpha", SandboxID: "sandbox-alpha",
+		SandboxGeneration: 3, RuntimeID: "runtime-alpha", RuntimeOperationID: "operation-alpha",
+		RuntimeSpecDigest: "sha256:" + strings.Repeat("a", 64), Port: 3000, Method: "GET", Path: "/",
+		Headers: []platform.RemoteWorkerSandboxPreviewHeader{}, Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := reconcileHeartbeat(path, &state, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID, SandboxPreviewCommand: command}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := loadNodeState(path, state.IncarnationID)
+	if err != nil || restarted.SandboxPreviewCommand == nil || restarted.SandboxPreviewCommand.CommandID != command.CommandID {
+		t.Fatalf("restarted state=%#v err=%v", restarted, err)
+	}
+	status, body := int64(200), ""
+	headers := []platform.RemoteWorkerSandboxPreviewHeader{}
+	restarted.SandboxPreviewCommandReceipt = &platform.RemoteWorkerSandboxPreviewCommandReceipt{CommandID: command.CommandID,
+		GrantID: command.GrantID, SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration,
+		Port: command.Port, Result: "succeeded", StatusCode: &status, Headers: &headers, BodyBase64URL: &body}
+	if err := saveNodeState(path, restarted); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileHeartbeat(path, &restarted, platform.RemoteWorkerHeartbeat{IncarnationID: state.IncarnationID}, time.Now()); err != nil ||
+		restarted.SandboxPreviewCommand != nil || restarted.SandboxPreviewCommandReceipt != nil {
+		t.Fatalf("acknowledged state=%#v err=%v", restarted, err)
+	}
+}
+
 func TestBoundSandboxPTYBinaryFramePreservesReplayCursor(t *testing.T) {
 	payload := append([]byte{3, 0, 0, 0, 0, 0, 0, 4, 0}, []byte("0123456789")...)
 	bounded, offset, truncated, err := boundSandboxPTYBinaryFrame(payload, 0, 12)

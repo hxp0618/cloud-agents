@@ -634,6 +634,38 @@ export type RemoteWorkerSandboxPTYCommandReceipt = Readonly<{
   frames?: readonly RemoteWorkerSandboxPTYFrame[];
   stableErrorCode?: string;
 }>;
+export type RemoteWorkerSandboxPreviewHeader = Readonly<{ name: string; value: string }>;
+export type RemoteWorkerSandboxPreviewCommand = Readonly<{
+  commandId: string;
+  grantId: string;
+  workspaceId: string;
+  targetId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  runtimeId: string;
+  runtimeOperationId: string;
+  runtimeSpecDigest: `sha256:${string}`;
+  port: number;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  path: string;
+  rawQuery: string;
+  headers: readonly RemoteWorkerSandboxPreviewHeader[];
+  bodyBase64Url: string;
+  deadline: string;
+}>;
+export type RemoteWorkerSandboxPreviewCommandReceipt = Readonly<{
+  commandId: string;
+  grantId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  port: number;
+  result: "succeeded" | "failed";
+  bytesTransferred: number;
+  statusCode?: number;
+  headers?: readonly RemoteWorkerSandboxPreviewHeader[];
+  bodyBase64Url?: string;
+  stableErrorCode?: string;
+}>;
 export type RemoteWorkerHeartbeatRequest = Readonly<{
   incarnationId: string;
   observedGeneration: number;
@@ -649,6 +681,7 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   sandboxExecCommandReceipt?: RemoteWorkerSandboxExecCommandReceipt;
   sandboxFileCommandReceipt?: RemoteWorkerSandboxFileCommandReceipt;
   sandboxPtyCommandReceipt?: RemoteWorkerSandboxPTYCommandReceipt;
+  sandboxPreviewCommandReceipt?: RemoteWorkerSandboxPreviewCommandReceipt;
 }>;
 export type RemoteWorkerNodeStatus = Readonly<{
   resourceVersion: string;
@@ -688,6 +721,7 @@ export type RemoteWorkerHeartbeat = Readonly<{
   sandboxExecCommand?: RemoteWorkerSandboxExecCommand;
   sandboxFileCommand?: RemoteWorkerSandboxFileCommand;
   sandboxPtyCommand?: RemoteWorkerSandboxPTYCommand;
+  sandboxPreviewCommand?: RemoteWorkerSandboxPreviewCommand;
 }>;
 export type RemoteWorkerNodeSchedulingRequest = Readonly<{
   expectedGeneration: number;
@@ -6588,6 +6622,192 @@ export function decodeRemoteWorkerSandboxPTYCommandReceipt(
     frames: Object.freeze(frames),
   });
 }
+const remoteWorkerSandboxPreviewForbiddenHeaders = new Set([
+  "authorization",
+  "connection",
+  "content-length",
+  "cookie",
+  "forwarded",
+  "host",
+  "keep-alive",
+  "open-sandbox-api-key",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "set-cookie",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+]);
+function remoteWorkerSandboxPreviewHeaders(
+  value: unknown,
+  path: string,
+): readonly RemoteWorkerSandboxPreviewHeader[] {
+  const source: unknown[] = Array.isArray(value)
+    ? value
+    : error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_HEADERS", path);
+  if (source.length > 64) error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_HEADERS", path);
+  let previous = "";
+  const headers = source.map((entry, index) => {
+    const item = strictRecord(entry, ["name", "value"], ["name", "value"], `${path}/${index}`),
+      name = boundedString(item.name, 1, 128, `${path}/${index}/name`),
+      value = boundedString(item.value, 0, 4096, `${path}/${index}/value`),
+      key = `${name}\u0000${value}`;
+    if (
+      !/^[!#$%&'*+.^_`|~0-9a-z-]+$/u.test(name) ||
+      remoteWorkerSandboxPreviewForbiddenHeaders.has(name) ||
+      /[\u0000\r\n]/u.test(value) ||
+      (previous !== "" && previous >= key)
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_HEADERS", `${path}/${index}`);
+    previous = key;
+    return Object.freeze({ name, value });
+  });
+  return Object.freeze(headers);
+}
+export function decodeRemoteWorkerSandboxPreviewCommand(
+  value: unknown,
+): RemoteWorkerSandboxPreviewCommand {
+  const fields = [
+      "commandId",
+      "grantId",
+      "workspaceId",
+      "targetId",
+      "sandboxId",
+      "sandboxGeneration",
+      "runtimeId",
+      "runtimeOperationId",
+      "runtimeSpecDigest",
+      "port",
+      "method",
+      "path",
+      "rawQuery",
+      "headers",
+      "bodyBase64Url",
+      "deadline",
+    ] as const,
+    source = strictRecord(value, fields, fields),
+    path = boundedString(source.path, 1, 2048, "/path"),
+    rawQuery = boundedString(source.rawQuery, 0, 4096, "/rawQuery");
+  if (
+    !path.startsWith("/") ||
+    /[?#\u0000-\u001f\u007f]/u.test(path) ||
+    /[#\u0000-\u001f\u007f]/u.test(rawQuery)
+  )
+    error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND", "/path");
+  const port = integer(source.port, 1024, 65535, "/port");
+  if (port === 44772) error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND", "/port");
+  return Object.freeze({
+    commandId: identifier(source.commandId, "/commandId"),
+    grantId: identifier(source.grantId, "/grantId"),
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    targetId: identifier(source.targetId, "/targetId"),
+    sandboxId: identifier(source.sandboxId, "/sandboxId"),
+    sandboxGeneration: integer(
+      source.sandboxGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/sandboxGeneration",
+    ),
+    runtimeId: identifier(source.runtimeId, "/runtimeId"),
+    runtimeOperationId: identifier(source.runtimeOperationId, "/runtimeOperationId"),
+    runtimeSpecDigest: digest(source.runtimeSpecDigest, "/runtimeSpecDigest") as `sha256:${string}`,
+    port,
+    method: enumValue(source.method, ["GET", "POST", "PUT", "PATCH", "DELETE"] as const, "/method"),
+    path,
+    rawQuery,
+    headers: remoteWorkerSandboxPreviewHeaders(source.headers, "/headers"),
+    bodyBase64Url: sandboxFileContent(source.bodyBase64Url, 1048576, "/bodyBase64Url"),
+    deadline: dateTime(source.deadline, "/deadline"),
+  });
+}
+const remoteWorkerSandboxPreviewStableErrors = [
+  "sandbox_access_unavailable",
+  "sandbox_runtime_unavailable",
+  "sandbox_preview_not_found",
+  "sandbox_preview_invalid",
+  "sandbox_preview_input_limit",
+  "sandbox_preview_output_limit",
+  "sandbox_preview_timeout",
+] as const;
+export function decodeRemoteWorkerSandboxPreviewCommandReceipt(
+  value: unknown,
+): RemoteWorkerSandboxPreviewCommandReceipt {
+  const source = strictRecord(
+      value,
+      [
+        "commandId",
+        "grantId",
+        "sandboxId",
+        "sandboxGeneration",
+        "port",
+        "result",
+        "bytesTransferred",
+        "statusCode",
+        "headers",
+        "bodyBase64Url",
+        "stableErrorCode",
+      ],
+      [
+        "commandId",
+        "grantId",
+        "sandboxId",
+        "sandboxGeneration",
+        "port",
+        "result",
+        "bytesTransferred",
+      ],
+    ),
+    port = integer(source.port, 1024, 65535, "/port"),
+    result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+    bytesTransferred = integer(source.bytesTransferred, 0, 4194304, "/bytesTransferred"),
+    receipt = {
+      commandId: identifier(source.commandId, "/commandId"),
+      grantId: identifier(source.grantId, "/grantId"),
+      sandboxId: identifier(source.sandboxId, "/sandboxId"),
+      sandboxGeneration: integer(
+        source.sandboxGeneration,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/sandboxGeneration",
+      ),
+      port,
+      result,
+      bytesTransferred,
+    };
+  if (port === 44772) error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/port");
+  if (result === "failed") {
+    const stableErrorCode = enumValue(
+      source.stableErrorCode,
+      remoteWorkerSandboxPreviewStableErrors,
+      "/stableErrorCode",
+    );
+    if (
+      bytesTransferred !== 0 ||
+      source.statusCode !== undefined ||
+      source.headers !== undefined ||
+      source.bodyBase64Url !== undefined
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/result");
+    return Object.freeze({ ...receipt, stableErrorCode });
+  }
+  if (source.stableErrorCode !== undefined)
+    error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/stableErrorCode");
+  const bodyBase64Url = sandboxFileContent(source.bodyBase64Url, 4194304, "/bodyBase64Url");
+  if (Math.floor((bodyBase64Url.length * 3) / 4) !== bytesTransferred)
+    error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND_RECEIPT", "/bytesTransferred");
+  return Object.freeze({
+    ...receipt,
+    statusCode: integer(source.statusCode, 100, 599, "/statusCode"),
+    headers: remoteWorkerSandboxPreviewHeaders(source.headers, "/headers"),
+    bodyBase64Url,
+  });
+}
 export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorkerHeartbeatRequest {
   const source = strictRecord(
     value,
@@ -6606,6 +6826,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "sandboxExecCommandReceipt",
       "sandboxFileCommandReceipt",
       "sandboxPtyCommandReceipt",
+      "sandboxPreviewCommandReceipt",
     ],
     [
       "incarnationId",
@@ -6665,6 +6886,13 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       : {
           sandboxPtyCommandReceipt: decodeRemoteWorkerSandboxPTYCommandReceipt(
             source.sandboxPtyCommandReceipt,
+          ),
+        }),
+    ...(source.sandboxPreviewCommandReceipt === undefined
+      ? {}
+      : {
+          sandboxPreviewCommandReceipt: decodeRemoteWorkerSandboxPreviewCommandReceipt(
+            source.sandboxPreviewCommandReceipt,
           ),
         }),
   });
@@ -6768,6 +6996,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       "sandboxExecCommand",
       "sandboxFileCommand",
       "sandboxPtyCommand",
+      "sandboxPreviewCommand",
     ],
     [
       "apiVersion",
@@ -6838,7 +7067,11 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     sandboxPtyCommand =
       source.sandboxPtyCommand === undefined
         ? undefined
-        : decodeRemoteWorkerSandboxPTYCommand(source.sandboxPtyCommand);
+        : decodeRemoteWorkerSandboxPTYCommand(source.sandboxPtyCommand),
+    sandboxPreviewCommand =
+      source.sandboxPreviewCommand === undefined
+        ? undefined
+        : decodeRemoteWorkerSandboxPreviewCommand(source.sandboxPreviewCommand);
   if (
     command !== undefined &&
     (command.generation !== generation ||
@@ -6864,11 +7097,20 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
   )
     error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/sandboxPtyCommand");
   if (
-    [sandboxCommand, sandboxExecCommand, sandboxFileCommand, sandboxPtyCommand].filter(
-      (entry) => entry !== undefined,
-    ).length > 1
+    sandboxPreviewCommand !== undefined &&
+    Date.parse(sandboxPreviewCommand.deadline) <= Date.parse(acceptedAt)
   )
-    error("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxPtyCommand");
+    error("INVALID_REMOTE_WORKER_SANDBOX_PREVIEW_COMMAND", "/sandboxPreviewCommand");
+  if (
+    [
+      sandboxCommand,
+      sandboxExecCommand,
+      sandboxFileCommand,
+      sandboxPtyCommand,
+      sandboxPreviewCommand,
+    ].filter((entry) => entry !== undefined).length > 1
+  )
+    error("INVALID_REMOTE_WORKER_HEARTBEAT", "/sandboxPreviewCommand");
   return Object.freeze({
     ...heartbeat,
     ...(command === undefined ? {} : { command }),
@@ -6876,6 +7118,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     ...(sandboxExecCommand === undefined ? {} : { sandboxExecCommand }),
     ...(sandboxFileCommand === undefined ? {} : { sandboxFileCommand }),
     ...(sandboxPtyCommand === undefined ? {} : { sandboxPtyCommand }),
+    ...(sandboxPreviewCommand === undefined ? {} : { sandboxPreviewCommand }),
   });
 }
 export function decodeRemoteWorkerNodeSchedulingRequest(

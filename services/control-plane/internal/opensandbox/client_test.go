@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -482,6 +483,16 @@ func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 				endpoint = "https://example.com/proxy/3000"
 			}
 			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": endpoint, "headers": map[string]string{"X-Route": "owned"}})
+		case "/v1/sandboxes/physical-1/proxy/3000/hello":
+			body, _ := io.ReadAll(request.Body)
+			if request.Method != http.MethodPost || request.URL.RawQuery != "value=alpha" || string(body) != "request-body" || request.Header.Get("Authorization") != "" || request.Header.Get("Cookie") != "" || request.Header.Get("X-Route") != "owned" || request.Header.Get("OPEN-SANDBOX-API-KEY") != "private-key" {
+				t.Errorf("preview request method=%s query=%s headers=%v body=%q", request.Method, request.URL.RawQuery, request.Header, body)
+			}
+			writer.Header().Add("X-Result", "ready")
+			writer.Header().Add("X-Result", "ready")
+			writer.Header().Set("Set-Cookie", "secret=value")
+			writer.WriteHeader(http.StatusCreated)
+			_, _ = writer.Write([]byte("response-body"))
 		default:
 			http.NotFound(writer, request)
 		}
@@ -492,6 +503,10 @@ func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 	if err != nil || target.String() != server.URL+"/v1/sandboxes/physical-1/proxy/3000" ||
 		headers.Get("X-Route") != "owned" || headers.Get("OPEN-SANDBOX-API-KEY") != "private-key" {
 		t.Fatalf("target=%v headers=%v err=%v", target, headers, err)
+	}
+	response, err := client.ProxyPreview(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 3000, http.MethodPost, "/hello", "value=alpha", []PreviewHeader{{Name: "authorization", Value: "Bearer secret"}, {Name: "cookie", Value: "secret=value"}, {Name: "x-public", Value: "visible"}}, []byte("request-body"))
+	if err != nil || response.StatusCode != http.StatusCreated || string(response.Body) != "response-body" || countPreviewHeader(response.Headers, PreviewHeader{Name: "x-result", Value: "ready"}) != 1 || slices.ContainsFunc(response.Headers, func(value PreviewHeader) bool { return value.Name == "set-cookie" }) {
+		t.Fatalf("preview response=%+v err=%v", response, err)
 	}
 	bareTarget = true
 	if target, _, err = client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 3000); err != nil || target.String() != server.URL+"/v1/sandboxes/physical-1/proxy/3000" {
@@ -504,6 +519,16 @@ func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 	if _, _, err := client.PreviewHTTPProxyTarget(context.Background(), PTYInput{Identity: id, RuntimeID: "physical-1"}, 44772); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("internal port error = %v", err)
 	}
+}
+
+func countPreviewHeader(values []PreviewHeader, target PreviewHeader) int {
+	count := 0
+	for _, value := range values {
+		if value == target {
+			count++
+		}
+	}
+	return count
 }
 
 func TestFilesStayInsideWorkspaceAndPreserveVersions(t *testing.T) {

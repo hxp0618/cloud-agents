@@ -108,3 +108,29 @@ func TestSandboxPTYCommandAndReceiptUseGeneratedValidation(t *testing.T) {
 		t.Fatal("accepted a PTY receipt with a mismatched byte count")
 	}
 }
+
+func TestSandboxPreviewCommandAndReceiptUseGeneratedValidation(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := SandboxPreviewCommand{CommandID: "rwpreview-alpha", GrantID: "grant-alpha", WorkspaceID: "workspace-alpha",
+		TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 3, RuntimeID: "runtime-alpha",
+		RuntimeOperationID: "operation-alpha", RuntimeSpecDigest: digest, Port: 3000, Method: "POST", Path: "/hello",
+		RawQuery: "value=alpha", Headers: []platformv1alpha1.RemoteWorkerSandboxPreviewHeader{}, BodyBase64URL: "aGk",
+		Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := ValidateSandboxPreviewCommand(command); err != nil {
+		t.Fatal(err)
+	}
+	status, body := int64(201), "aGk"
+	headers := []platformv1alpha1.RemoteWorkerSandboxPreviewHeader{}
+	receipt := SandboxPreviewCommandReceipt{CommandID: command.CommandID, GrantID: command.GrantID,
+		SandboxID: command.SandboxID, SandboxGeneration: command.SandboxGeneration, Port: command.Port,
+		Result: "succeeded", BytesTransferred: 2, StatusCode: &status, Headers: &headers, BodyBase64URL: &body}
+	first, err := SandboxPreviewCommandReceiptDigest(receipt)
+	second, replayErr := SandboxPreviewCommandReceiptDigest(receipt)
+	if err != nil || replayErr != nil || first == "" || first != second {
+		t.Fatalf("receipt digests=%q/%q errors=%v/%v", first, second, err, replayErr)
+	}
+	receipt.BytesTransferred = 1
+	if ValidateSandboxPreviewCommandReceipt(receipt) == nil {
+		t.Fatal("accepted a Preview receipt with a mismatched byte count")
+	}
+}

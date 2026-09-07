@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-sandbox-preview-command-receipt.schema.json",
+  "title": "RemoteWorkerSandboxPreviewCommandReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "grantId", "sandboxId", "sandboxGeneration", "port", "result", "bytesTransferred"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "grantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "port": { "type": "integer", "minimum": 1024, "maximum": 65535, "not": { "const": 44772 } },
+    "result": { "enum": ["succeeded", "failed"] },
+    "bytesTransferred": { "type": "integer", "minimum": 0, "maximum": 4194304 },
+    "statusCode": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "headers": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "remote-worker-sandbox-preview-command.schema.json#/$defs/header" }
+    },
+    "bodyBase64Url": { "type": "string", "maxLength": 5592406, "pattern": "^[A-Za-z0-9_-]*$" },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "succeeded" } }, "required": ["result"] },
+      "then": { "required": ["statusCode", "headers", "bodyBase64Url"], "not": { "required": ["stableErrorCode"] } },
+      "else": {
+        "required": ["stableErrorCode"],
+        "properties": { "bytesTransferred": { "const": 0 } },
+        "not": { "anyOf": [{ "required": ["statusCode"] }, { "required": ["headers"] }, { "required": ["bodyBase64Url"] }] }
+      }
+    }
+  ],
+  "x-cloud-agents-semantic-constraints": [
+    "bytesTransferred equals decoded body bytes",
+    "successful headers are canonical and exclude Set-Cookie, credentials, forwarding and hop-by-hop fields",
+    "a failed receipt carries one bounded stable error and no Preview content",
+    "runtime identifiers, endpoints and credentials are absent"
+  ]
+}

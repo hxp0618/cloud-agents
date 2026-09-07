@@ -422,6 +422,21 @@ try {
   assert.equal(remoteWorkerReceipt.fileCertificateBound, true);
   assert.equal(remoteWorkerReceipt.fileReceiptsSettled, true);
   assert.equal(remoteWorkerReceipt.fileContentTableHidden, true);
+  assert.equal(remoteWorkerReceipt.previewCommandCount, 2);
+  assert.equal(remoteWorkerReceipt.previewGatewayRestart, true);
+  assert.equal(remoteWorkerReceipt.previewWrongTokenStatus, 403);
+  assert.equal(remoteWorkerReceipt.previewCrossTenantStatus, 403);
+  assert.equal(remoteWorkerReceipt.previewUnregisteredStatus, 404);
+  assert.equal(remoteWorkerReceipt.previewInternalPortStatus, 404);
+  assert.equal(remoteWorkerReceipt.previewAfterRevokeStatus, 404);
+  assert.equal(remoteWorkerReceipt.previewAuthorityMismatchStatus, 409);
+  assert.equal(remoteWorkerReceipt.previewReceiptReplay, true);
+  assert.equal(remoteWorkerReceipt.previewReceiptConflictStatus, 409);
+  assert.equal(remoteWorkerReceipt.previewAdminRedacted, true);
+  assert.equal(remoteWorkerReceipt.previewIncarnationBound, true);
+  assert.equal(remoteWorkerReceipt.previewCertificateBound, true);
+  assert.equal(remoteWorkerReceipt.previewReceiptsSettled, true);
+  assert.equal(remoteWorkerReceipt.previewContentTableHidden, true);
   assert.ok(remoteWorkerReceipt.ptyOutputOffset > 0);
   assert.equal(remoteWorkerReceipt.ptyGatewayRestart, true);
   assert.equal(remoteWorkerReceipt.ptyCursorReplay, true);
@@ -488,20 +503,23 @@ try {
         "wrong-token, cross-tenant, symlink traversal and read-after-delete paths return 403, 403, 409 and 404",
         "file receipts are bound to the exact command path plus incarnation/certificate, are exact-replay only, and the runtime role cannot read path or content rows",
         "Admin Grant diagnostics contain only counters and stable errors, never file paths or content",
+        "the unchanged Preview API and Access Gateway carry bounded HTTP requests through outbound heartbeat commands without exposing a node endpoint",
+        "Preview strips credentials, forwarding and Set-Cookie headers, survives Gateway restart, and rejects wrong-token, cross-tenant, unregistered, internal and revoked access",
+        "Preview receipts are bound to the exact incarnation and certificate, are exact-replay only, and neither runtime nor Admin can read request or response content",
         "the unchanged PTY API and Access Gateway carry real WebSocket frames through outbound heartbeat commands without exposing a node endpoint",
         "PTY survives Gateway restart, replays from an absolute cursor, and rejects wrong-token, cross-tenant, authority-mismatched, changed-receipt and deleted-session access",
         "PTY commands are bound to the current incarnation and certificate, the runtime role cannot read frame rows, and Admin sees only the session count",
         "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
       ],
       boundary:
-        "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec, Files and bounded PTY reconnect are verified, but long-duration claim renewal, induced NAT interruption, Kubernetes and SSH customer nodes are not covered",
+        "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec, Files, bounded Preview and bounded PTY reconnect are verified, but streaming Preview, long-duration claim renewal, induced NAT interruption, Kubernetes and SSH customer nodes are not covered",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),
       JSON.stringify(evidence, null, 2) + "\n",
     );
     process.stdout.write(
-      `Verified RemoteWorker Sandbox Exec, Files, PTY and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+      `Verified RemoteWorker Sandbox Exec, Files, Preview, PTY and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
     );
     throw remoteWorkerComplete;
   }
