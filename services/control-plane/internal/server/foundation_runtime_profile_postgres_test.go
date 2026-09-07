@@ -134,6 +134,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	create := platform.RuntimeProfileCreateRequest{
 		ProfileID: "profile", ProfileName: "profile", Version: 1,
 		Description: "No-agent retained workspace", TargetID: "target",
+		WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
 		NetworkPolicyRef: "network-restricted",
 		ImageURI:         successImage, ReleaseDigest: release,
 		CPUMillis: 500, MemoryBytes: 536870912,

@@ -28,6 +28,11 @@ func TestHeartbeatInputAndNodeStatusValidate(t *testing.T) {
 	if err := status.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	input.Capabilities = []string{"docker", "isolation-gvisor", "network-internal-deny"}
+	if err := input.Validate("tenant-alpha"); err != nil {
+		t.Fatalf("strong-isolation capabilities rejected: %v", err)
+	}
+	input.Capabilities = status.Capabilities
 	input.SandboxCommandID = "rwsc-alpha"
 	if err := input.Validate("tenant-alpha"); err != nil {
 		t.Fatalf("valid Sandbox claim renewal rejected: %v", err)

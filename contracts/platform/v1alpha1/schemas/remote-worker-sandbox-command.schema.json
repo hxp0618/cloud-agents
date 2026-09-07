@@ -14,6 +14,8 @@
     "targetId",
     "sandboxId",
     "sandboxGeneration",
+    "workloadTrust",
+    "isolationRuntime",
     "imageUri",
     "cpuMillis",
     "memoryBytes",
@@ -32,6 +34,8 @@
     "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "sandboxGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "workloadTrust": { "enum": ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] },
+    "isolationRuntime": { "enum": ["runc", "gvisor"] },
     "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
     "cpuMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
     "memoryBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },
@@ -89,6 +93,7 @@
     "commandId is unique to one durable Operation attempt and the node must not start it after deadline",
     "sandbox.stop is bound to the exact prior runtime and retained physical Workspace volume",
     "sandbox.rebuild creates a new runtime only on the exact retained physical Workspace volume",
+    "shared-untrusted is valid only with gvisor and an empty deny-only egress authority",
     "the command contains no Control Plane target endpoint or credential reference"
   ]
 }

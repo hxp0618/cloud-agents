@@ -41,6 +41,7 @@ var (
 	ErrDeploymentConfigInvalid     = errors.New("docker target deployment configuration is invalid")
 	ErrDeploymentConflict          = errors.New("docker target deployment conflicts with an existing workload")
 	ErrDeploymentFailed            = errors.New("docker target deployment failed")
+	ErrIsolationUnenforced         = errors.New("docker target isolation is not enforced")
 	ErrWorkerUnavailable           = errors.New("docker target worker is unavailable")
 	volumeNamePattern              = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	anonymousVolumeNamePattern     = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -93,10 +94,16 @@ type containerInspect struct {
 	State struct {
 		Running bool `json:"Running"`
 	} `json:"State"`
+	HostConfig struct {
+		Runtime string `json:"Runtime"`
+	} `json:"HostConfig"`
 	NetworkSettings struct {
 		Ports map[string][]struct {
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
+		Networks map[string]struct {
+			NetworkID string `json:"NetworkID"`
+		} `json:"Networks"`
 	} `json:"NetworkSettings"`
 	Mounts []struct {
 		Type        string `json:"Type"`

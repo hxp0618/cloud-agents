@@ -356,6 +356,7 @@ export function classifyMigrationStatement(
         "000078",
         "000079",
         "000080",
+        "000081",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -564,6 +565,14 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:accept_foundation_sandbox_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
             "function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
             "function:unquoted:cloud_agents/unquoted:transition_foundation_sandbox_v4(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000081",
+          [
+            "function:unquoted:cloud_agents/unquoted:is_valid_remote_worker_capabilities(unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_sandbox_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:guard_remote_worker_foundation_admission_v1()",
           ],
         ],
       ]).get(migrationId);

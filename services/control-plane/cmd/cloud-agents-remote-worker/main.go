@@ -493,6 +493,7 @@ func executeSandboxCommand(ctx context.Context, value config, command platform.R
 				Action: command.Action, OperationID: command.OperationID, WorkspaceID: command.WorkspaceID,
 				WorkspaceName: command.WorkspaceName, SandboxID: command.SandboxID,
 				SandboxGeneration: command.SandboxGeneration, ImageURI: command.ImageURI,
+				WorkloadTrust: command.WorkloadTrust, IsolationRuntime: command.IsolationRuntime,
 				CPUMillis: command.CPUMillis, MemoryBytes: command.MemoryBytes, SpecDigest: command.SpecDigest,
 				NetworkPolicyID: command.NetworkPolicyID, NetworkAllowedEgress: command.NetworkAllowedEgress,
 			}

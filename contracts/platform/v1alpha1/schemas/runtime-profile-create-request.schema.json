@@ -4,7 +4,7 @@
   "title": "RuntimeProfileCreateRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["profileId", "profileName", "version", "description", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+  "required": ["profileId", "profileName", "version", "description", "workloadTrust", "isolationRuntime", "networkPolicyRef", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
   "oneOf": [
     { "required": ["targetId"], "not": { "required": ["targetSelector"] } },
     { "required": ["targetSelector"], "not": { "required": ["targetId"] } }
@@ -14,6 +14,8 @@
     "profileName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
     "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "workloadTrust": { "enum": ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] },
+    "isolationRuntime": { "enum": ["runc", "gvisor"] },
     "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "targetSelector": {
       "type": "object",
@@ -35,6 +37,8 @@
   "x-cloud-agents-semantic-constraints": [
     "imageUri must end in the exact releaseDigest",
     "exactly one of targetId or targetSelector is present",
+    "trusted-single-tenant and dedicated-node require runc; shared-untrusted requires gvisor",
+    "shared-untrusted requires a deny policy with no allowed egress and a capable RemoteWorker node",
     "targetSelector is currently limited to the database-authoritative RemoteWorker region-local/pool-remote-worker Docker pool",
     "networkPolicyRef must resolve to an executable restricted or deny policy when the draft is published",
     "a new profileId starts at version 1 and later immutable drafts use the next consecutive version",

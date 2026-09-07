@@ -40,6 +40,7 @@ type RuntimeProfileTargetSelector struct {
 type RuntimeProfileCreateInput struct {
 	Scope                               FoundationScope
 	ProfileID, ProfileName, Description string
+	WorkloadTrust, IsolationRuntime     string
 	TargetID, NetworkPolicyID           string
 	TargetSelector                      *RuntimeProfileTargetSelector
 	ImageURI, ReleaseDigest             string
@@ -58,6 +59,7 @@ type RuntimeProfileSnapshot struct {
 	Scope                                          FoundationScope
 	ProfileVersionID, ProfileID, ProfileName       string
 	Description, Status, TargetID, NetworkPolicyID string
+	WorkloadTrust, IsolationRuntime                string
 	TargetSelector                                 *RuntimeProfileTargetSelector
 	ImageURI                                       string
 	ReleaseDigest                                  string
@@ -113,6 +115,7 @@ func (input RuntimeProfileCreateInput) Validate(tenantID string) error {
 	if !validFoundationScope(input.Scope, tenantID) || !validIdentifier(input.ProfileID) ||
 		!validIdentifier(input.ProfileName) || input.Version < 1 || input.Version > 2147483647 ||
 		invalidRuntimeProfileDescription(input.Description) || invalidRuntimeProfileTargetSelection(input.TargetID, input.TargetSelector) ||
+		invalidRuntimeIsolation(input.WorkloadTrust, input.IsolationRuntime) ||
 		!validIdentifier(input.NetworkPolicyID) ||
 		len(input.ImageURI) > 1024 || !runtimeProfileImagePattern.MatchString(input.ImageURI) ||
 		!runtimeProfileDigestPattern.MatchString(input.ReleaseDigest) ||
@@ -131,11 +134,13 @@ func RuntimeProfileCreateDigest(input RuntimeProfileCreateInput) (string, error)
 	}
 	return foundationDigest(struct {
 		Operation, TenantID, ProjectID, ProfileID, ProfileName, Description string
+		WorkloadTrust, IsolationRuntime                                     string
 		TargetID, NetworkPolicyID, ImageURI, ReleaseDigest                  string
 		TargetSelector                                                      *RuntimeProfileTargetSelector
 		Version, CPUMillis, MemoryBytes                                     int64
 	}{"runtime-profile.create", input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID,
-		input.ProfileName, input.Description, input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.TargetSelector,
+		input.ProfileName, input.Description, input.WorkloadTrust, input.IsolationRuntime,
+		input.TargetID, input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.TargetSelector,
 		input.Version, input.CPUMillis, input.MemoryBytes})
 }
 
@@ -163,6 +168,7 @@ func RuntimeProfileTransitionDigest(input RuntimeProfileTransitionInput) (string
 func (snapshot RuntimeProfileSnapshot) Validate() error {
 	input := RuntimeProfileCreateInput{Scope: snapshot.Scope, ProfileID: snapshot.ProfileID,
 		ProfileName: snapshot.ProfileName, Description: snapshot.Description, TargetID: snapshot.TargetID,
+		WorkloadTrust: snapshot.WorkloadTrust, IsolationRuntime: snapshot.IsolationRuntime,
 		TargetSelector:  snapshot.TargetSelector,
 		NetworkPolicyID: snapshot.NetworkPolicyID,
 		ImageURI:        snapshot.ImageURI, ReleaseDigest: snapshot.ReleaseDigest, Version: snapshot.Version,
@@ -200,6 +206,12 @@ func invalidRuntimeProfileTargetSelection(targetID string, selector *RuntimeProf
 	}
 	return selector == nil || !validIdentifier(selector.RegionID) || !validIdentifier(selector.ResourcePoolID) ||
 		selector.Runtime != "docker" || selector.Architecture != "amd64" && selector.Architecture != "arm64"
+}
+
+func invalidRuntimeIsolation(workloadTrust, isolationRuntime string) bool {
+	return (workloadTrust != "trusted-single-tenant" && workloadTrust != "dedicated-node" && workloadTrust != "shared-untrusted") ||
+		(isolationRuntime != "runc" && isolationRuntime != "gvisor") ||
+		(workloadTrust == "shared-untrusted") != (isolationRuntime == "gvisor")
 }
 
 func (summary RuntimeProfileSummary) Validate() error {

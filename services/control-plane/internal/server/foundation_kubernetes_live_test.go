@@ -139,6 +139,7 @@ func TestFoundationKubernetesLifecycle(t *testing.T) {
 	}
 	createdProfile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-profile-create", "kubernetes-profile-create-key", platform.RuntimeProfileCreateRequest{
 		ProfileID: "profile", ProfileName: "profile", Version: 1, Description: "Kubernetes retained workspace",
+		WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
 		TargetID: "target", NetworkPolicyRef: "network-deny", ImageURI: imageURI, ReleaseDigest: releaseDigest,
 		CPUMillis: 500, MemoryBytes: 536870912,
 	})

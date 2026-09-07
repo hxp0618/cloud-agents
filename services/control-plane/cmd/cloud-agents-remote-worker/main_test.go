@@ -114,6 +114,7 @@ func TestRemoteWorkerReconnectDoesNotReplayStartedCommands(t *testing.T) {
 	lifecycle := &platform.RemoteWorkerSandboxCommand{CommandID: "rwsc-alpha", Attempt: 1, Action: "sandbox.create",
 		OperationID: "operation-alpha", WorkspaceID: "workspace-alpha", WorkspaceName: "workspace-alpha",
 		TargetID: "target-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 1,
+		WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
 		ImageURI: "registry.example.test/runtime@" + digest, CPUMillis: 500, MemoryBytes: 536870912,
 		SpecDigest: digest, NetworkPolicyID: "network-alpha", NetworkAllowedEgress: []string{"example.test"}, Deadline: deadline}
 	state := initialNodeState("incarnation-alpha")

@@ -17,7 +17,8 @@ func TestRuntimeProfileProjectionAndPublicRedaction(t *testing.T) {
 	row := runtimeProfilePageRow{
 		TenantID: "tenant-alpha", ProjectID: "project-alpha", ProfileVersionID: "rp-0123456789abcdef0123456789abcdef",
 		ProfileID: "standard", ProfileName: "standard", Version: 1, Description: "No-agent workspace",
-		Status: "published", TargetID: "docker-primary", NetworkPolicyID: "network-deny",
+		Status: "published", WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
+		TargetID: "docker-primary", NetworkPolicyID: "network-deny",
 		ImageURI: "node@" + digest, ReleaseDigest: digest,
 		CPUMillis: 1000, MemoryBytes: 536870912, ResourceVersion: 2, CreatedAt: now, UpdatedAt: now, PublishedAt: &now,
 	}
@@ -51,7 +52,7 @@ func TestRuntimeProfileProjectionAndPublicRedaction(t *testing.T) {
 			t.Fatalf("public profile query projects %q", forbidden)
 		}
 	}
-	for _, authority := range []string{"cloud_agents.require_tenant_id()", "profile.status = 'published'", "cloud_agents.foundation_runtime_profile_available_v1"} {
+	for _, authority := range []string{"cloud_agents.require_tenant_id()", "profile.status = 'published'", "cloud_agents.foundation_runtime_profile_available_v2"} {
 		if !strings.Contains(listPublishedRuntimeProfilesSQL, authority) || !strings.Contains(publishedRuntimeProfilePageCursorSQL, authority) {
 			t.Fatalf("public profile authority is missing %q", authority)
 		}
@@ -64,7 +65,7 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 	var snapshot internalcoordination.RuntimeProfileSnapshot
 	if err := scanRuntimeProfile(rowValues(
 		"rp-0123456789abcdef0123456789abcdef", "standard", "standard", int64(1), "No-agent workspace",
-		"draft", "docker-primary", "", "", "", "", "network-deny", "node@"+digest, digest, int64(1000), int64(536870912), int64(1),
+		"draft", "trusted-single-tenant", "runc", "docker-primary", "", "", "", "", "network-deny", "node@"+digest, digest, int64(1000), int64(536870912), int64(1),
 		now, now, (*time.Time)(nil), (*time.Time)(nil),
 	), internalcoordination.FoundationScope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot); err != nil {
 		t.Fatal(err)
@@ -79,8 +80,8 @@ func TestRuntimeProfileScanAndConflictMapping(t *testing.T) {
 			t.Fatalf("%s mapped to %v", input.Message, err)
 		}
 	}
-	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v3") ||
-		!strings.Contains(transitionRuntimeProfileSQL, "transition_runtime_profile_v3") ||
+	if !strings.Contains(createRuntimeProfileSQL, "create_runtime_profile_draft_v4") ||
+		!strings.Contains(transitionRuntimeProfileSQL, "transition_runtime_profile_v4") ||
 		!strings.Contains(createFoundationSandboxSQL, "accept_foundation_sandbox_v3") {
 		t.Fatal("runtime profile store is not bound to the migration authority")
 	}

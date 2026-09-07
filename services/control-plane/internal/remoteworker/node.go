@@ -25,7 +25,7 @@ var (
 	ErrInvalidHeartbeat  = errors.New("remote worker heartbeat is invalid")
 	workerVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 	capabilitySet        = map[string]struct{}{
-		"docker": {}, "exec": {}, "files": {}, "network-dns-nft": {}, "preview": {}, "pty": {}, "ssh": {}, "workspace-volume": {},
+		"dedicated-node": {}, "docker": {}, "exec": {}, "files": {}, "isolation-gvisor": {}, "network-dns-nft": {}, "network-internal-deny": {}, "preview": {}, "pty": {}, "ssh": {}, "workspace-volume": {},
 	}
 )
 
@@ -94,6 +94,7 @@ type SandboxCommandReceipt struct {
 type SandboxCommand struct {
 	CommandID, Action, OperationID, WorkspaceID, WorkspaceName string
 	TargetID, SandboxID, ImageURI, SpecDigest, NetworkPolicyID string
+	WorkloadTrust, IsolationRuntime                            string
 	PhysicalVolumeName, RuntimeID, RuntimeState                string
 	RuntimeOperationID, RuntimeSpecDigest                      string
 	Attempt, SandboxGeneration, CPUMillis, MemoryBytes         int64
@@ -217,6 +218,9 @@ func (command SandboxCommand) Validate() error {
 		(command.Action != "sandbox.create" && command.Action != "sandbox.stop" && command.Action != "sandbox.rebuild") ||
 		invalidIdentifier(command.OperationID) || invalidIdentifier(command.WorkspaceID) || invalidIdentifier(command.WorkspaceName) ||
 		invalidIdentifier(command.TargetID) || invalidIdentifier(command.SandboxID) || command.SandboxGeneration < 1 ||
+		(command.WorkloadTrust != "trusted-single-tenant" && command.WorkloadTrust != "dedicated-node" && command.WorkloadTrust != "shared-untrusted") ||
+		(command.IsolationRuntime != "runc" && command.IsolationRuntime != "gvisor") ||
+		(command.WorkloadTrust == "shared-untrusted") != (command.IsolationRuntime == "gvisor") ||
 		len(command.ImageURI) < 1 || len(command.ImageURI) > 1024 || !digest(command.SpecDigest) ||
 		invalidIdentifier(command.NetworkPolicyID) || command.CPUMillis < 100 || command.CPUMillis > 64000 ||
 		command.MemoryBytes < 134_217_728 || command.MemoryBytes > 1_099_511_627_776 || command.Deadline.IsZero() {
@@ -235,6 +239,9 @@ func (command SandboxCommand) Validate() error {
 		}
 	}
 	if len(command.NetworkAllowedEgress) > 64 {
+		return ErrInvalidHeartbeat
+	}
+	if command.IsolationRuntime == "gvisor" && len(command.NetworkAllowedEgress) != 0 {
 		return ErrInvalidHeartbeat
 	}
 	validVolume := command.PhysicalVolumeName != "" && len(command.PhysicalVolumeName) <= 63 && !invalidIdentifier(command.PhysicalVolumeName)

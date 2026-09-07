@@ -22,6 +22,7 @@ type AdminSandboxSnapshot struct {
 	WorkspaceID, WorkspaceName, VolumeID, TargetID        string
 	WorkspaceObservedState                                string
 	RuntimeProfileID                                      string
+	WorkloadTrust, IsolationRuntime                       string
 	NetworkPolicyID, NetworkPolicyEnforcement             string
 	DesiredState, ObservedState                           string
 	RuntimeState                                          string
@@ -71,6 +72,8 @@ type adminSandboxPageRow struct {
 	WorkspaceObservedState string     `json:"workspace_observed_state"`
 	RuntimeProfileID       string     `json:"runtime_profile_uid"`
 	RuntimeProfileVersion  int64      `json:"runtime_profile_version"`
+	WorkloadTrust          string     `json:"workload_trust"`
+	IsolationRuntime       string     `json:"isolation_runtime"`
 	NetworkPolicyID        string     `json:"network_policy_ref"`
 	TargetID               string     `json:"target_uid"`
 	Generation             int64      `json:"generation"`
@@ -94,7 +97,9 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     sandbox.operation_id, operation.state AS operation_state, operation.cleanup_phase,
     sandbox.workspace_uid, workspace.workspace_name, volume.volume_uid, volume.physical_volume_uid,
     volume.retention, volume.observed_state AS workspace_observed_state,
-    sandbox.runtime_profile_uid, sandbox.runtime_profile_version, volume.target_uid,
+    sandbox.runtime_profile_uid, sandbox.runtime_profile_version,
+    COALESCE(profile.workload_trust, 'trusted-single-tenant') AS workload_trust,
+    COALESCE(profile.isolation_runtime, 'runc') AS isolation_runtime, volume.target_uid,
 	COALESCE(profile.network_policy_ref, '') AS network_policy_ref,
     sandbox.generation, sandbox.observed_generation, sandbox.desired_state, sandbox.observed_state,
     sandbox.writer_released, sandbox.ttl_seconds, sandbox.expires_at, activity.lifecycle_trigger,
@@ -431,7 +436,8 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 	return row.Scan(&value.TenantID, &value.ProjectID, &value.SandboxID, &value.OperationID,
 		&value.OperationState, &value.CleanupPhase, &value.WorkspaceID, &value.WorkspaceName,
 		&value.VolumeID, &value.PhysicalVolumeID, &value.WorkspaceRetention, &value.WorkspaceObservedState,
-		&value.RuntimeProfileID, &value.RuntimeProfileVersion, &value.TargetID, &value.NetworkPolicyID,
+		&value.RuntimeProfileID, &value.RuntimeProfileVersion, &value.WorkloadTrust, &value.IsolationRuntime,
+		&value.TargetID, &value.NetworkPolicyID,
 		&value.Generation,
 		&value.ObservedGeneration, &value.DesiredState, &value.ObservedState, &value.WriterReleased,
 		&value.TTLSeconds, &value.ExpiresAt, &value.LifecycleTrigger, &value.RuntimeID,
@@ -446,6 +452,7 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 		CleanupPhase: row.CleanupPhase, WorkspaceID: row.WorkspaceID, WorkspaceName: row.WorkspaceName,
 		VolumeID: row.VolumeID, PhysicalVolumeID: row.PhysicalVolumeID, WorkspaceObservedState: row.WorkspaceObservedState,
 		RuntimeProfileID: row.RuntimeProfileID, RuntimeProfileVersion: row.RuntimeProfileVersion,
+		WorkloadTrust: row.WorkloadTrust, IsolationRuntime: row.IsolationRuntime,
 		NetworkPolicyID: row.NetworkPolicyID,
 		TargetID:        row.TargetID, Generation: row.Generation, ObservedGeneration: row.ObservedGeneration,
 		DesiredState: row.DesiredState, ObservedState: row.ObservedState, WriterReleased: row.WriterReleased,
@@ -491,6 +498,11 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 		}
 	}
 	if value.NetworkPolicyID != "" && !validMutationIdentifier(value.NetworkPolicyID) {
+		return false
+	}
+	if (value.WorkloadTrust != "trusted-single-tenant" && value.WorkloadTrust != "dedicated-node" && value.WorkloadTrust != "shared-untrusted") ||
+		(value.IsolationRuntime != "runc" && value.IsolationRuntime != "gvisor") ||
+		(value.WorkloadTrust == "shared-untrusted") != (value.IsolationRuntime == "gvisor") {
 		return false
 	}
 	switch value.NetworkPolicyEnforcement {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { isIP } from "node:net";
@@ -10,6 +10,8 @@ import { setTimeout as delay } from "node:timers/promises";
 const [output] = process.argv.slice(2);
 assert.ok(output, "usage: node scripts/test-foundation-controller-docker.mjs NEW_OUTPUT_DIRECTORY");
 const remoteWorkerOnly = process.argv.includes("--remote-worker-only");
+const gvisorOnly = process.argv.includes("--gvisor-only");
+assert.ok(!(remoteWorkerOnly && gvisorOnly), "choose one focused RemoteWorker mode");
 const remoteWorkerComplete = Symbol("remote-worker-complete");
 const root = resolve(import.meta.dirname, "..");
 const currentHead = readdirSync(resolve(root, "services/control-plane/migrations/product"))
@@ -23,6 +25,9 @@ const build = mkdtempSync(resolve(tmpdir(), "cloud-agents-foundation-controller-
 const run = `foundation-controller-${randomUUID()}`;
 const postgresName = `${run}-postgres`;
 const sandboxServerName = `${run}-opensandbox`;
+const dindName = `${run}-dind`;
+const dindSocketVolume = `${run}-dind-run`;
+const gvisorNetwork = `${run}-internal-deny`;
 const allowedSinkName = `${run}-allowed-sink`;
 const blockedSinkName = `${run}-blocked-sink`;
 const sandboxServerPort = 18891;
@@ -35,6 +40,14 @@ const egressImage =
 const sandboxImage = "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5";
 const failureImage =
   "rancher/mirrored-pause:3.6@sha256:74c4244427b7312c5b901fe0f67cbc53683d06f4f24c6faee65d4182bf0fa893";
+const dindImage = "docker@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e";
+const registryImage = "registry:2";
+const registryImageID = "sha256:33eeff39e0aaabe61ca826fd7502396183462451be0783133e1a8fa944fc7350";
+const runscPath =
+  process.env.CLOUD_AGENTS_GVISOR_RUNSC ??
+  "/tmp/cloud-agents-gvisor-release-20260622.0-aarch64/runsc";
+const runscSHA512 =
+  "6d43f7c99dc182ad3750390c811537ee312fca5938245c65f0c5a23b9d38e8b7fddc1f49a816e6696d708582d813ac2d87ee98f7b46b8a6f5e6241c9eba69443";
 const apiKey = randomUUID();
 const docker = (...args) =>
   execFileSync("docker", ["--context", "orbstack", ...args], {
@@ -59,7 +72,12 @@ const psql = (query, user = "postgres", database = "foundation_live") =>
       "-d",
       database,
     ],
-    { encoding: "utf8", input: query, timeout: 120_000, stdio: ["pipe", "pipe", "pipe"] },
+    {
+      encoding: "utf8",
+      input: query,
+      timeout: 120_000,
+      stdio: ["pipe", "pipe", "pipe"],
+    },
   ).trim();
 const mappedPort = (name, port) => {
   const address = docker("port", name, `${port}/tcp`).split("\n")[0];
@@ -90,7 +108,12 @@ const request = async (base, path, method = "GET") => {
 
 let postgresStarted = false;
 let sandboxServerStarted = false;
+let dindStarted = false;
 let sandboxBase = "";
+let dindAddress = "";
+let innerDocker;
+let remoteSandboxImage = sandboxImage;
+let remoteExecdImage = execdImage;
 let prepareReceipt;
 let remoteWorkerReceipt;
 const startedSinks = [];
@@ -118,8 +141,12 @@ try {
     egressImage,
     sandboxImage,
     failureImage,
+    ...(gvisorOnly ? [dindImage, registryImage] : []),
   ]) {
     docker("image", "inspect", image);
+  }
+  if (gvisorOnly) {
+    assert.equal(docker("image", "inspect", registryImage, "--format", "{{.Id}}"), registryImageID);
   }
   const dockerHost = docker(
     "context",
@@ -233,7 +260,10 @@ try {
       ],
       {
         encoding: "utf8",
-        env: { ...process.env, CLOUD_AGENTS_PLATFORM_DATABASE_URL: migrationURL },
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_PLATFORM_DATABASE_URL: migrationURL,
+        },
         timeout: 180_000,
       },
     ),
@@ -265,72 +295,176 @@ try {
       'ready','1.52','29.4.0','linux','arm64','',clock_timestamp(),1,'foundation-live-target-key',
       'sha256:${"d".repeat(64)}',clock_timestamp(),clock_timestamp());`);
 
-  for (const name of [allowedSinkName, blockedSinkName]) {
-    docker(
-      "run",
-      "-d",
-      "--name",
-      name,
-      "--label",
-      `cloud-agents-foundation-controller-test=${run}`,
-      sandboxImage,
-      "node",
-      "-e",
-      'require("http").createServer((request,response)=>response.end("allowed\\n")).listen(8080,"0.0.0.0")',
-    );
-    startedSinks.push(name);
-  }
-  await delay(200);
-  const allowedSinkIP = docker(
-    "inspect",
-    "--format",
-    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-    allowedSinkName,
-  );
-  const blockedSinkIP = docker(
-    "inspect",
-    "--format",
-    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-    blockedSinkName,
-  );
-  assert.equal(isIP(allowedSinkIP), 4);
-  assert.equal(isIP(blockedSinkIP), 4);
-  for (const address of [allowedSinkIP, blockedSinkIP]) {
-    assert.equal(
+  let allowedSinkIP = "";
+  let blockedSinkIP = "";
+  if (!gvisorOnly) {
+    for (const name of [allowedSinkName, blockedSinkName]) {
       docker(
         "run",
-        "--rm",
+        "-d",
+        "--name",
+        name,
+        "--label",
+        `cloud-agents-foundation-controller-test=${run}`,
         sandboxImage,
         "node",
         "-e",
-        `fetch("http://${address}:8080").then(async response=>{if(!response.ok||await response.text()!=="allowed\\n")process.exit(1)}).catch(()=>process.exit(1))`,
-      ),
-      "",
+        'require("http").createServer((request,response)=>response.end("allowed\\n")).listen(8080,"0.0.0.0")',
+      );
+      startedSinks.push(name);
+    }
+    await delay(200);
+    allowedSinkIP = docker(
+      "inspect",
+      "--format",
+      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+      allowedSinkName,
     );
+    blockedSinkIP = docker(
+      "inspect",
+      "--format",
+      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+      blockedSinkName,
+    );
+    assert.equal(isIP(allowedSinkIP), 4);
+    assert.equal(isIP(blockedSinkIP), 4);
+    for (const address of [allowedSinkIP, blockedSinkIP]) {
+      assert.equal(
+        docker(
+          "run",
+          "--rm",
+          sandboxImage,
+          "node",
+          "-e",
+          `fetch("http://${address}:8080").then(async response=>{if(!response.ok||await response.text()!=="allowed\\n")process.exit(1)}).catch(()=>process.exit(1))`,
+        ),
+        "",
+      );
+    }
+
+    const serverOutput = execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationRuntimeProfilePostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_FOUNDATION_SUCCESS_IMAGE_URI: sandboxImage,
+          CLOUD_AGENTS_FOUNDATION_FAILURE_IMAGE_URI: failureImage,
+          CLOUD_AGENTS_FOUNDATION_ALLOWED_EGRESS: `${allowedSinkIP}/32`,
+        },
+        timeout: 120_000,
+      },
+    );
+    assert.ok(serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"));
   }
 
-  const serverOutput = execFileSync(
-    serverTestBinary,
-    ["-test.run", "^TestFoundationRuntimeProfilePostgres$", "-test.v"],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
-        CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
-        CLOUD_AGENTS_FOUNDATION_SUCCESS_IMAGE_URI: sandboxImage,
-        CLOUD_AGENTS_FOUNDATION_FAILURE_IMAGE_URI: failureImage,
-        CLOUD_AGENTS_FOUNDATION_ALLOWED_EGRESS: `${allowedSinkIP}/32`,
-      },
-      timeout: 120_000,
-    },
-  );
-  assert.ok(serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"));
+  let sandboxDockerGateway = dockerGateway;
+  if (gvisorOnly) {
+    const runsc = readFileSync(runscPath);
+    assert.equal(createHash("sha512").update(runsc).digest("hex"), runscSHA512);
+    docker("volume", "create", dindSocketVolume);
+    docker(
+      "run",
+      "-d",
+      "--privileged",
+      "--name",
+      dindName,
+      "--label",
+      `cloud-agents-foundation-controller-test=${run}`,
+      "-e",
+      "DOCKER_TLS_CERTDIR=",
+      "-p",
+      "127.0.0.1::2375",
+      "-p",
+      `127.0.0.1:${sandboxServerPort}:8080`,
+      "--mount",
+      `type=bind,src=${runscPath},dst=/usr/local/bin/runsc,readonly`,
+      "--mount",
+      `type=volume,src=${dindSocketVolume},dst=/var/run`,
+      dindImage,
+      "--host=tcp://0.0.0.0:2375",
+      "--host=unix:///var/run/docker.sock",
+      "--tls=false",
+      "--add-runtime=runsc=/usr/local/bin/runsc",
+    );
+    dindStarted = true;
+    dindAddress = `127.0.0.1:${mappedPort(dindName, 2375)}`;
+    innerDocker = (...args) =>
+      execFileSync("docker", ["-H", `tcp://${dindAddress}`, ...args], {
+        encoding: "utf8",
+        timeout: 180_000,
+      }).trim();
+    for (let attempt = 0; ; attempt++) {
+      try {
+        assert.equal(innerDocker("info", "--format", "{{json .Runtimes.runsc}}") !== "null", true);
+        break;
+      } catch {
+        if (attempt === 300) throw new Error("gVisor DinD did not start");
+        await delay(100);
+      }
+    }
+    const archive = resolve(build, "gvisor-images.tar");
+    docker(
+      "image",
+      "save",
+      "-o",
+      archive,
+      "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd:v1.0.21",
+      "node:22-bookworm-slim",
+      registryImage,
+    );
+    innerDocker("image", "load", "-i", archive);
+    innerDocker("run", "-d", "--name", `${run}-registry`, "-p", "5000:5000", registryImage);
+    await delay(300);
+    innerDocker(
+      "tag",
+      "node:22-bookworm-slim",
+      "localhost:5000/cloud-agents/node:22-bookworm-slim",
+    );
+    innerDocker("push", "localhost:5000/cloud-agents/node:22-bookworm-slim");
+    remoteSandboxImage = innerDocker(
+      "image",
+      "inspect",
+      "localhost:5000/cloud-agents/node:22-bookworm-slim",
+      "--format",
+      "{{index .RepoDigests 0}}",
+    );
+    innerDocker(
+      "tag",
+      "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd:v1.0.21",
+      "localhost:5000/cloud-agents/execd:v1.0.21",
+    );
+    innerDocker("push", "localhost:5000/cloud-agents/execd:v1.0.21");
+    remoteExecdImage = innerDocker(
+      "image",
+      "inspect",
+      "localhost:5000/cloud-agents/execd:v1.0.21",
+      "--format",
+      "{{index .RepoDigests 0}}",
+    );
+    innerDocker(
+      "network",
+      "create",
+      "--internal",
+      "--opt",
+      "com.docker.network.bridge.enable_icc=false",
+      gvisorNetwork,
+    );
+    const network = JSON.parse(innerDocker("network", "inspect", gvisorNetwork))[0];
+    assert.equal(network.Internal, true);
+    assert.equal(network.Options["com.docker.network.bridge.enable_icc"], "false");
+    sandboxDockerGateway = "127.0.0.1";
+  }
 
   const configPath = resolve(build, "opensandbox.toml");
   writeFileSync(
     configPath,
-    `[server]\nhost="0.0.0.0"\neip="127.0.0.1"\nport=8080\napi_key="${apiKey}"\n[runtime]\ntype="docker"\nexecd_image="${execdImage}"\n[docker]\nnetwork_mode="bridge"\nhost_ip="${dockerGateway}"\nport_range_min=49310\nport_range_max=49520\n[egress]\nimage="${egressImage}"\nmode="dns+nft"\n[storage]\nallowed_host_paths=[]\n[store]\ntype="sqlite"\npath="/tmp/opensandbox.db"\n`,
+    gvisorOnly
+      ? `[server]\nhost="0.0.0.0"\neip="127.0.0.1"\nport=8080\napi_key="${apiKey}"\n[runtime]\ntype="docker"\nexecd_image="${remoteExecdImage}"\n[docker]\nnetwork_mode="${gvisorNetwork}"\nhost_ip="${sandboxDockerGateway}"\nport_range_min=49310\nport_range_max=49520\n[secure_runtime]\ntype="gvisor"\ndocker_runtime="runsc"\n[storage]\nallowed_host_paths=[]\n[store]\ntype="sqlite"\npath="/tmp/opensandbox.db"\n`
+      : `[server]\nhost="0.0.0.0"\neip="127.0.0.1"\nport=8080\napi_key="${apiKey}"\n[runtime]\ntype="docker"\nexecd_image="${execdImage}"\n[docker]\nnetwork_mode="bridge"\nhost_ip="${dockerGateway}"\nport_range_min=49310\nport_range_max=49520\n[egress]\nimage="${egressImage}"\nmode="dns+nft"\n[storage]\nallowed_host_paths=[]\n[store]\ntype="sqlite"\npath="/tmp/opensandbox.db"\n`,
     { mode: 0o600 },
   );
 
@@ -341,19 +475,29 @@ try {
     sandboxServerName,
     "--label",
     `cloud-agents-foundation-controller-test=${run}`,
-    "-p",
-    `127.0.0.1:${sandboxServerPort}:8080`,
+    ...(gvisorOnly
+      ? ["--network", `container:${dindName}`]
+      : ["-p", `127.0.0.1:${sandboxServerPort}:8080`]),
     "--mount",
     `type=bind,src=${configPath},dst=/etc/opensandbox/config.toml,readonly`,
     "--mount",
-    "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock",
+    gvisorOnly
+      ? `type=volume,src=${dindSocketVolume},dst=/var/run`
+      : "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock",
     serverImage,
   );
   sandboxServerStarted = true;
   sandboxBase = `http://127.0.0.1:${sandboxServerPort}`;
   for (let attempt = 0; ; attempt++) {
     try {
-      if ((await fetch(sandboxBase + "/health", { signal: AbortSignal.timeout(1000) })).ok) break;
+      if (
+        (
+          await fetch(sandboxBase + "/health", {
+            signal: AbortSignal.timeout(1000),
+          })
+        ).ok
+      )
+        break;
     } catch {}
     if (attempt === 300) throw new Error("OpenSandbox did not start");
     await delay(100);
@@ -378,17 +522,95 @@ try {
           CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
           CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
           CLOUD_AGENTS_REMOTE_WORKER_BINARY: remoteWorkerBinary,
-          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET: dockerSocket,
+          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET: gvisorOnly ? "" : dockerSocket,
+          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ADDRESS: gvisorOnly ? dindAddress : "",
           CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY: credentialDirectory,
           CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF: "fixture-only",
-          CLOUD_AGENTS_REMOTE_WORKER_SUCCESS_IMAGE_URI: sandboxImage,
-          CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS: `${allowedSinkIP}/32`,
+          CLOUD_AGENTS_REMOTE_WORKER_SUCCESS_IMAGE_URI: remoteSandboxImage,
+          CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS: gvisorOnly ? "" : `${allowedSinkIP}/32`,
+          CLOUD_AGENTS_REMOTE_WORKER_ISOLATION_RUNTIME: gvisorOnly ? "gvisor" : "runc",
         },
         timeout: 180_000,
       },
     ),
-    "REMOTE_WORKER_SANDBOX",
+    gvisorOnly ? "REMOTE_WORKER_GVISOR" : "REMOTE_WORKER_SANDBOX",
   );
+  if (gvisorOnly) {
+    assert.equal(remoteWorkerReceipt.workloadTrust, "shared-untrusted");
+    assert.equal(remoteWorkerReceipt.isolationRuntime, "gvisor");
+    assert.equal(remoteWorkerReceipt.capabilityRejected, true);
+    assert.equal(remoteWorkerReceipt.publicProfileRedacted, true);
+    assert.equal(remoteWorkerReceipt.physicalIsolationVerified, true);
+    assert.equal(remoteWorkerReceipt.outboundEgressBlocked, true);
+    assert.match(remoteWorkerReceipt.kernelAndDmesg, /4\.19\.0-gvisor/u);
+    assert.match(remoteWorkerReceipt.kernelAndDmesg, /gVisor/u);
+    assert.equal(remoteWorkerReceipt.observedState, "stopped");
+    assert.equal(innerDocker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    innerDocker("volume", "rm", remoteWorkerReceipt.volumeName);
+    assert.equal(
+      innerDocker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace",
+      ),
+      "",
+    );
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        dirty: true,
+      },
+      backend: {
+        hostDockerContext: "orbstack",
+        hostDockerVersion: docker("version", "--format", "{{.Server.Version}}"),
+        isolatedDockerVersion: innerDocker("version", "--format", "{{.Server.Version}}"),
+        isolatedDockerArchitecture: innerDocker("info", "--format", "{{.Architecture}}"),
+        postgres: psql("SHOW server_version;"),
+        schemaHead: migration.schema_head,
+      },
+      candidate: {
+        dindImage,
+        runscRelease: "release-20260622.0",
+        runscSHA512,
+        serverImage,
+        registryImageID,
+        sandboxImage: remoteSandboxImage,
+        execdImage: remoteExecdImage,
+      },
+      remoteWorker: remoteWorkerReceipt,
+      checks: [
+        "shared-untrusted RuntimeProfile is accepted only for a Remote Worker reporting isolation-gvisor and network-internal-deny",
+        "generated User API exposes only the published Profile summary and strips trust, runtime, Target and Network Policy authority",
+        "the outbound Remote Worker receives shared-untrusted plus gvisor in the durable Sandbox command",
+        "OpenSandbox creates the real workload with Docker runtime runsc on exactly one internal network with inter-container communication disabled",
+        "the workload reports Linux 4.19.0-gvisor and gVisor startup through its emulated kernel",
+        "the internal deny network blocks outbound HTTP without an OpenSandbox egress sidecar or browser-direct infrastructure connection",
+        "Admin Sandbox metadata reports workload trust and isolation runtime without Prompt, file, Artifact or credential bytes",
+        "generated Admin Stop deletes compute, releases the writer, retains then explicitly removes the owned Workspace volume",
+        "zero test-owned inner runtime containers and Workspace volumes remain",
+      ],
+      boundary:
+        "Disposable arm64 DinD customer node under OrbStack with fixed gVisor runsc, internal deny-only Docker network and PostgreSQL; outbound egress and Private Preview are intentionally unsupported for shared-untrusted workloads, and this does not qualify Kubernetes or external SSH strong isolation",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    process.stdout.write(
+      `Verified shared-untrusted gVisor Sandbox and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw remoteWorkerComplete;
+  }
   assert.equal(remoteWorkerReceipt.receiptReplay, true);
   assert.equal(remoteWorkerReceipt.stopReceiptReplay, true);
   assert.equal(remoteWorkerReceipt.rebuildReceiptReplay, true);
@@ -514,7 +736,10 @@ try {
           cwd: root,
           encoding: "utf8",
         }).trim(),
-        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
         dirty: true,
       },
       backend: {
@@ -582,7 +807,10 @@ try {
     ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
     {
       encoding: "utf8",
-      env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "prepare" },
+      env: {
+        ...commonEnvironment,
+        CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "prepare",
+      },
       timeout: 180_000,
     },
   );
@@ -793,7 +1021,10 @@ try {
         cwd: root,
         encoding: "utf8",
       }).trim(),
-      head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+      head: execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim(),
       dirty: true,
     },
     backend: {
@@ -817,7 +1048,10 @@ try {
     exec: execReceipt,
     pty: ptyReceipt,
     ttl: ttlReceipt,
-    finalRebuild: { api: finalRebuildAPIReceipt, controller: finalRebuildReceipt },
+    finalRebuild: {
+      api: finalRebuildAPIReceipt,
+      controller: finalRebuildReceipt,
+    },
     checks: [
       "public RuntimeProfile and Sandbox admission",
       "outbound customer-node RemoteWorker claims and physically creates a real Sandbox through the existing durable Operation",
@@ -944,7 +1178,37 @@ try {
       docker("volume", "rm", volume);
     }
   }
+  if (dindStarted && innerDocker !== undefined) {
+    try {
+      for (const container of innerDocker("ps", "-aq", "--filter", "label=opensandbox.io/id")
+        .split("\n")
+        .filter(Boolean)) {
+        innerDocker("rm", "-f", container);
+      }
+      for (const volume of innerDocker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace",
+      )
+        .split("\n")
+        .filter(Boolean)) {
+        const info = JSON.parse(innerDocker("volume", "inspect", volume))[0];
+        if (
+          info.Labels?.["cloud-agents.dev/tenant"] === "tenant" &&
+          info.Labels?.["cloud-agents.dev/project"] === "project"
+        ) {
+          innerDocker("volume", "rm", volume);
+        }
+      }
+    } catch {}
+  }
   if (sandboxServerStarted) docker("rm", "-f", "-v", sandboxServerName);
+  if (dindStarted) docker("rm", "-f", "-v", dindName);
+  try {
+    docker("volume", "rm", dindSocketVolume);
+  } catch {}
   for (const sink of startedSinks) docker("rm", "-f", sink);
   if (postgresStarted) docker("rm", "-f", "-v", postgresName);
   rmSync(build, { recursive: true, force: true });

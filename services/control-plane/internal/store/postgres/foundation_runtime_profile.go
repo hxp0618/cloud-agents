@@ -33,6 +33,8 @@ type runtimeProfilePageRow struct {
 	Version          int64      `json:"profile_version"`
 	Description      string     `json:"description"`
 	Status           string     `json:"status"`
+	WorkloadTrust    string     `json:"workload_trust"`
+	IsolationRuntime string     `json:"isolation_runtime"`
 	TargetID         string     `json:"target_uid"`
 	TargetRegionID   string     `json:"target_region_uid"`
 	TargetPoolID     string     `json:"target_resource_pool_uid"`
@@ -63,7 +65,7 @@ type publishedRuntimeProfilePageRow struct {
 }
 
 const runtimeProfileColumns = `profile_version_uid, profile_uid, profile_name, profile_version,
-    description, status, COALESCE(target_uid, '') AS target_uid,
+    description, status, workload_trust, isolation_runtime, COALESCE(target_uid, '') AS target_uid,
     target_region_uid, target_resource_pool_uid, target_runtime, target_architecture,
     COALESCE(network_policy_ref, '') AS network_policy_ref,
     image_uri, release_digest, cpu_millis, memory_bytes,
@@ -71,9 +73,9 @@ const runtimeProfileColumns = `profile_version_uid, profile_uid, profile_name, p
 
 var (
 	createRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
-FROM cloud_agents.create_runtime_profile_draft_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`
+FROM cloud_agents.create_runtime_profile_draft_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`
 	transitionRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
-FROM cloud_agents.transition_runtime_profile_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+FROM cloud_agents.transition_runtime_profile_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getRuntimeProfileSQL = `SELECT ` + runtimeProfileColumns + `
 FROM cloud_agents.runtime_profiles
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
@@ -100,10 +102,12 @@ WHERE profile.tenant_id = cloud_agents.require_tenant_id() AND profile.project_u
     AND policy.default_egress IN ('restricted', 'deny')
     AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
     AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
-    AND cloud_agents.foundation_runtime_profile_available_v1(
+    AND cloud_agents.foundation_runtime_profile_available_v2(
         profile.tenant_id, profile.project_uid, COALESCE(profile.target_uid, ''),
         profile.target_region_uid, profile.target_resource_pool_uid,
         profile.target_runtime, profile.target_architecture,
+        profile.workload_trust, profile.isolation_runtime,
+        profile.network_policy_ref,
         profile.cpu_millis, profile.memory_bytes, '')`
 	listPublishedRuntimeProfilesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(profile_row)
     ORDER BY profile_row.profile_version_uid), '[]'::jsonb)
@@ -120,10 +124,12 @@ FROM (
         AND policy.default_egress IN ('restricted', 'deny')
         AND policy.allowlist_policy_ref IS NULL AND policy.dns_policy_ref IS NULL
         AND policy.proxy_policy_ref IS NULL AND NOT policy.ingress_enabled
-        AND cloud_agents.foundation_runtime_profile_available_v1(
+        AND cloud_agents.foundation_runtime_profile_available_v2(
             profile.tenant_id, profile.project_uid, COALESCE(profile.target_uid, ''),
             profile.target_region_uid, profile.target_resource_pool_uid,
             profile.target_runtime, profile.target_architecture,
+            profile.workload_trust, profile.isolation_runtime,
+            profile.network_policy_ref,
             profile.cpu_millis, profile.memory_bytes, '')
     ORDER BY profile.profile_version_uid
     LIMIT $3
@@ -151,7 +157,7 @@ func (service *DurableCoordinationService) CreateRuntimeProfile(
 	err = service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true, func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 		return scanRuntimeProfile(handle.transaction.queryRow(operationContext, createRuntimeProfileSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.ProfileID, input.ProfileName, input.Version,
-			input.Description, input.TargetID, region, pool, runtime, architecture,
+			input.Description, input.WorkloadTrust, input.IsolationRuntime, input.TargetID, region, pool, runtime, architecture,
 			input.NetworkPolicyID, input.ImageURI, input.ReleaseDigest, input.CPUMillis,
 			input.MemoryBytes, input.Mutation.IdempotencyKey, digest, input.Mutation.RequestID, subjectDigest), input.Scope, &result)
 	})
@@ -348,7 +354,7 @@ func scanRuntimeProfile(row rowScanner, scope internalcoordination.FoundationSco
 	var publishedAt, disabledAt *time.Time
 	var targetRegion, targetPool, targetRuntime, targetArchitecture string
 	if err := row.Scan(&result.ProfileVersionID, &result.ProfileID, &result.ProfileName, &result.Version,
-		&result.Description, &result.Status, &result.TargetID,
+		&result.Description, &result.Status, &result.WorkloadTrust, &result.IsolationRuntime, &result.TargetID,
 		&targetRegion, &targetPool, &targetRuntime, &targetArchitecture,
 		&result.NetworkPolicyID, &result.ImageURI, &result.ReleaseDigest,
 		&result.CPUMillis, &result.MemoryBytes, &result.ResourceVersion, &createdAt, &updatedAt,
@@ -424,6 +430,7 @@ func runtimeProfileSnapshot(row runtimeProfilePageRow) internalcoordination.Runt
 		Scope:            internalcoordination.FoundationScope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 		ProfileVersionID: row.ProfileVersionID, ProfileID: row.ProfileID, ProfileName: row.ProfileName,
 		Version: row.Version, Description: row.Description, Status: row.Status, TargetID: row.TargetID,
+		WorkloadTrust: row.WorkloadTrust, IsolationRuntime: row.IsolationRuntime,
 		TargetSelector:  runtimeProfileTargetSelector(row.TargetID, row.TargetRegionID, row.TargetPoolID, row.TargetRuntime, row.TargetArch),
 		NetworkPolicyID: row.NetworkPolicyID,
 		ImageURI:        row.ImageURI, ReleaseDigest: row.ReleaseDigest, CPUMillis: row.CPUMillis,

@@ -291,6 +291,7 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 		OperationID: claim.Claim.OperationID, WorkspaceID: claim.Claim.WorkspaceID,
 		WorkspaceName: claim.Claim.WorkspaceName, TargetID: claim.Claim.TargetID,
 		SandboxID: claim.Claim.SandboxID, SandboxGeneration: claim.Claim.SandboxGeneration,
+		WorkloadTrust: claim.Claim.WorkloadTrust, IsolationRuntime: claim.Claim.IsolationRuntime,
 		ImageURI: claim.Claim.ImageURI, CPUMillis: claim.Claim.CPUMillis, MemoryBytes: claim.Claim.MemoryBytes,
 		SpecDigest: claim.Claim.SpecDigest, NetworkPolicyID: claim.Claim.NetworkPolicyID,
 		NetworkAllowedEgress: claim.Claim.NetworkAllowedEgress, Deadline: claim.Claim.ClaimExpiresAt,

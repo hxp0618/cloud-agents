@@ -369,7 +369,7 @@ func TestGeneratedOpenAPIClientManagesStoragePolicies(t *testing.T) {
 }
 
 func TestGeneratedOpenAPIClientManagesNetworkPolicies(t *testing.T) {
-	policyBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicy","metadata":{"uid":"network-public","name":"network-public","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T04:00:00Z","updatedAt":"2026-09-05T04:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"Public internet access","defaultEgress":"public","ingressEnabled":false,"previewEnabled":false}}`)
+	policyBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicy","metadata":{"uid":"network-public","name":"network-public","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T04:00:00Z","updatedAt":"2026-09-05T04:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"userSummary":"Public internet access","defaultEgress":"public","allowedEgress":[],"ingressEnabled":false,"previewEnabled":false}}`)
 	pageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"NetworkPolicyPage","networkPolicies":[` + string(policyBody) + `]}`)
 	auditBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"AdminAuditEventPage","events":[]}`)
 	var seen []Request
@@ -395,7 +395,7 @@ func TestGeneratedOpenAPIClientManagesNetworkPolicies(t *testing.T) {
 	}
 	if _, err := client.SetAdminNetworkPolicy(ctx, "tenant-alpha", "project-alpha", "network-public", "request-network-set", "network-set-key-0001", platform.NetworkPolicySetRequest{
 		ExpectedResourceVersion: "0", PolicyName: "network-public", UserSummary: "Public internet access",
-		DefaultEgress: "public", IngressEnabled: false, PreviewEnabled: false,
+		DefaultEgress: "public", AllowedEgress: []string{}, IngressEnabled: false, PreviewEnabled: false,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +436,7 @@ func TestGeneratedOpenAPIClientCreatesAndGetsUserEnvironment(t *testing.T) {
 
 func TestGeneratedOpenAPIClientFoundationRuntimeProfileAndSandbox(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
-	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","targetId":"docker-primary","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)
+	profile := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfile","metadata":{"uid":"rp-0123456789abcdef0123456789abcdef","name":"foundation","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-09-05T03:00:00Z","updatedAt":"2026-09-05T03:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","version":1,"description":"Retained no-agent workspace","status":"draft","workloadTrust":"trusted-single-tenant","isolationRuntime":"runc","targetId":"docker-primary","networkPolicyRef":"network-deny","imageUri":"registry.example.test/runtime@` + digest + `","releaseDigest":"` + digest + `","cpuMillis":500,"memoryBytes":536870912}}`)
 	adminPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfilePage","runtimeProfiles":[` + string(profile) + `]}`)
 	publicPage := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummaryPage","runtimeProfiles":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RuntimeProfileSummary","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"profileId":"foundation","name":"foundation","version":1,"description":"Retained no-agent workspace","status":"published","availability":"available","cpuMillis":500,"memoryBytes":536870912,"workspaceRetention":"retained"}]}`)
 	sandbox := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"SandboxSession","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"operationId":"operation-sandbox","workspaceId":"workspace","sandboxId":"sandbox","runtimeProfileId":"foundation","runtimeProfileVersion":1,"generation":1,"desiredState":"running","observedState":"pending","expiresAt":"2026-09-05T03:01:00Z"}`)
@@ -460,6 +460,7 @@ func TestGeneratedOpenAPIClientFoundationRuntimeProfileAndSandbox(t *testing.T) 
 	body := platform.RuntimeProfileCreateRequest{
 		ProfileID: "foundation", ProfileName: "foundation", Version: 1,
 		Description: "Retained no-agent workspace", TargetID: "docker-primary",
+		WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc", NetworkPolicyRef: "network-deny",
 		ImageURI: "registry.example.test/runtime@" + digest, ReleaseDigest: digest,
 		CPUMillis: 500, MemoryBytes: 536870912,
 	}

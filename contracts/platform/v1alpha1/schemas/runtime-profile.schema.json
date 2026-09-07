@@ -12,7 +12,7 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["projectRef", "profileId", "version", "description", "status", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
+      "required": ["projectRef", "profileId", "version", "description", "status", "workloadTrust", "isolationRuntime", "imageUri", "releaseDigest", "cpuMillis", "memoryBytes"],
       "oneOf": [
         { "required": ["targetId"], "not": { "required": ["targetSelector"] } },
         { "required": ["targetSelector"], "not": { "required": ["targetId"] } }
@@ -23,6 +23,8 @@
         "version": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
         "description": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
         "status": { "enum": ["draft", "published", "disabled"] },
+        "workloadTrust": { "enum": ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] },
+        "isolationRuntime": { "enum": ["runc", "gvisor"] },
         "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "targetSelector": {
           "type": "object",
@@ -48,6 +50,7 @@
   "x-cloud-agents-semantic-constraints": [
     "draft has no lifecycle timestamp, published has only publishedAt, and disabled has both timestamps",
     "exactly one of targetId or targetSelector is present",
+    "trusted-single-tenant and dedicated-node require runc; shared-untrusted requires gvisor",
     "target, target selector, network policy, image and release are Admin-only and immutable for a version",
     "networkPolicyRef is absent only on legacy versions created before executable network policy authority"
   ]

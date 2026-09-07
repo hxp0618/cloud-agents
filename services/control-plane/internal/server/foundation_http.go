@@ -201,7 +201,8 @@ func (server *FoundationHTTPServer) createProfile(writer http.ResponseWriter, re
 	result, err := server.store.CreateRuntimeProfile(request.Context(), tenantID, principal, internalcoordination.RuntimeProfileCreateInput{
 		Scope:     internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID},
 		ProfileID: input.ProfileID, ProfileName: input.ProfileName, Version: input.Version,
-		Description: input.Description, TargetID: input.TargetID, TargetSelector: selector, ImageURI: input.ImageURI,
+		Description: input.Description, WorkloadTrust: input.WorkloadTrust, IsolationRuntime: input.IsolationRuntime,
+		TargetID: input.TargetID, TargetSelector: selector, ImageURI: input.ImageURI,
 		NetworkPolicyID: input.NetworkPolicyRef,
 		ReleaseDigest:   input.ReleaseDigest, CPUMillis: input.CPUMillis, MemoryBytes: input.MemoryBytes,
 		Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
@@ -679,7 +680,8 @@ func runtimeProfileResource(snapshot internalcoordination.RuntimeProfileSnapshot
 	}}, Spec: platform.RuntimeProfileSpec{
 		ProjectRef: common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
 		ProfileID:  snapshot.ProfileID, Version: snapshot.Version, Description: snapshot.Description,
-		Status: snapshot.Status, TargetID: snapshot.TargetID, ImageURI: snapshot.ImageURI,
+		Status: snapshot.Status, WorkloadTrust: snapshot.WorkloadTrust, IsolationRuntime: snapshot.IsolationRuntime,
+		TargetID: snapshot.TargetID, ImageURI: snapshot.ImageURI,
 		NetworkPolicyRef: snapshot.NetworkPolicyID,
 		ReleaseDigest:    snapshot.ReleaseDigest, CPUMillis: snapshot.CPUMillis, MemoryBytes: snapshot.MemoryBytes,
 		PublishedAt: publishedAt, DisabledAt: disabledAt,
@@ -767,6 +769,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 		WorkspaceID: snapshot.WorkspaceID, WorkspaceName: snapshot.WorkspaceName, VolumeID: snapshot.VolumeID,
 		PhysicalVolumeID: physicalVolumeID, WorkspaceRetention: "retained", WorkspaceObservedState: snapshot.WorkspaceObservedState,
 		RuntimeProfileID: snapshot.RuntimeProfileID, RuntimeProfileVersion: snapshot.RuntimeProfileVersion,
+		WorkloadTrust: snapshot.WorkloadTrust, IsolationRuntime: snapshot.IsolationRuntime,
 		NetworkPolicyRef: snapshot.NetworkPolicyID, NetworkPolicyEnforcement: snapshot.NetworkPolicyEnforcement,
 		TargetID: snapshot.TargetID, Generation: snapshot.Generation, ObservedGeneration: snapshot.ObservedGeneration,
 		DesiredState: snapshot.DesiredState, ObservedState: snapshot.ObservedState, WriterReleased: snapshot.WriterReleased,

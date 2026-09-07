@@ -35,10 +35,13 @@
       "uniqueItems": true,
       "items": {
         "enum": [
+          "dedicated-node",
           "docker",
           "exec",
           "files",
+          "isolation-gvisor",
           "network-dns-nft",
+          "network-internal-deny",
           "preview",
           "pty",
           "ssh",

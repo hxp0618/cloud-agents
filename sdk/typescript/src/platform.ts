@@ -525,6 +525,8 @@ export type RemoteWorkerSandboxCommand = Readonly<{
   targetId: string;
   sandboxId: string;
   sandboxGeneration: number;
+  workloadTrust: "trusted-single-tenant" | "dedicated-node" | "shared-untrusted";
+  isolationRuntime: "runc" | "gvisor";
   imageUri: string;
   cpuMillis: number;
   memoryBytes: number;
@@ -676,10 +678,13 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
   architecture: string;
   kernelVersion: string;
   capabilities: readonly (
+    | "dedicated-node"
     | "docker"
     | "exec"
     | "files"
+    | "isolation-gvisor"
     | "network-dns-nft"
+    | "network-internal-deny"
     | "preview"
     | "pty"
     | "ssh"
@@ -720,10 +725,13 @@ export type RemoteWorkerNodeStatus = Readonly<{
   architecture: string;
   kernelVersion: string;
   capabilities: readonly (
+    | "dedicated-node"
     | "docker"
     | "exec"
     | "files"
+    | "isolation-gvisor"
     | "network-dns-nft"
+    | "network-internal-deny"
     | "preview"
     | "pty"
     | "ssh"
@@ -925,6 +933,8 @@ export type RuntimeProfileCreateRequest = Readonly<{
   profileName: string;
   version: number;
   description: string;
+  workloadTrust: "trusted-single-tenant" | "dedicated-node" | "shared-untrusted";
+  isolationRuntime: "runc" | "gvisor";
   networkPolicyRef: string;
   imageUri: string;
   releaseDigest: `sha256:${string}`;
@@ -943,6 +953,8 @@ export type RuntimeProfile = Readonly<{
     version: number;
     description: string;
     status: "draft" | "published" | "disabled";
+    workloadTrust: "trusted-single-tenant" | "dedicated-node" | "shared-untrusted";
+    isolationRuntime: "runc" | "gvisor";
     networkPolicyRef?: string;
     imageUri: string;
     releaseDigest: `sha256:${string}`;
@@ -1174,6 +1186,8 @@ export type AdminSandboxSession = Readonly<{
     workspaceObservedState: "pending" | "available" | "unknown" | "failed";
     runtimeProfileId: string;
     runtimeProfileVersion: number;
+    workloadTrust: "trusted-single-tenant" | "dedicated-node" | "shared-untrusted";
+    isolationRuntime: "runc" | "gvisor";
     targetId: string;
     networkPolicyRef?: string;
     networkPolicyEnforcement: "legacy" | "pending" | "enforced" | "failed" | "stopped";
@@ -2108,6 +2122,8 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
         targetId: scalarResponseShape,
         sandboxId: scalarResponseShape,
         sandboxGeneration: scalarResponseShape,
+        workloadTrust: scalarResponseShape,
+        isolationRuntime: scalarResponseShape,
         imageUri: scalarResponseShape,
         cpuMillis: scalarResponseShape,
         memoryBytes: scalarResponseShape,
@@ -2269,6 +2285,8 @@ const runtimeProfileResponseShape = resourceResponseShape({
   version: scalarResponseShape,
   description: scalarResponseShape,
   status: scalarResponseShape,
+  workloadTrust: scalarResponseShape,
+  isolationRuntime: scalarResponseShape,
   targetId: scalarResponseShape,
   networkPolicyRef: scalarResponseShape,
   imageUri: scalarResponseShape,
@@ -2479,6 +2497,8 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
   workspaceObservedState: scalarResponseShape,
   runtimeProfileId: scalarResponseShape,
   runtimeProfileVersion: scalarResponseShape,
+  workloadTrust: scalarResponseShape,
+  isolationRuntime: scalarResponseShape,
   targetId: scalarResponseShape,
   networkPolicyRef: scalarResponseShape,
   networkPolicyEnforcement: scalarResponseShape,
@@ -2992,6 +3012,21 @@ function runtimeProfileTargetSelection(
       ),
     }),
   });
+}
+function runtimeIsolation(source: Record<string, unknown>, path: string) {
+  const workloadTrust = enumValue(
+      source.workloadTrust,
+      ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] as const,
+      `${path}/workloadTrust`,
+    ),
+    isolationRuntime = enumValue(
+      source.isolationRuntime,
+      ["runc", "gvisor"] as const,
+      `${path}/isolationRuntime`,
+    );
+  if ((workloadTrust === "shared-untrusted") !== (isolationRuntime === "gvisor"))
+    error("INVALID_RUNTIME_ISOLATION", `${path}/isolationRuntime`);
+  return { workloadTrust, isolationRuntime };
 }
 function runtimeImage(value: unknown, path: string): string {
   const text = boundedString(value, 1, 1024, path);
@@ -3631,6 +3666,8 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
       "profileName",
       "version",
       "description",
+      "workloadTrust",
+      "isolationRuntime",
       "targetId",
       "targetSelector",
       "networkPolicyRef",
@@ -3644,6 +3681,8 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
       "profileName",
       "version",
       "description",
+      "workloadTrust",
+      "isolationRuntime",
       "networkPolicyRef",
       "imageUri",
       "releaseDigest",
@@ -3659,6 +3698,7 @@ export function decodeRuntimeProfileCreateRequest(value: unknown): RuntimeProfil
     profileName: identifier(source.profileName, "/profileName"),
     version: integer(source.version, 1, 2147483647, "/version"),
     description: profileDescription(source.description, "/description"),
+    ...runtimeIsolation(source, ""),
     ...runtimeProfileTargetSelection(source, ""),
     networkPolicyRef: identifier(source.networkPolicyRef, "/networkPolicyRef"),
     imageUri,
@@ -5851,10 +5891,13 @@ function remoteWorkerCapabilities(
     enumValue(
       entry,
       [
+        "dedicated-node",
         "docker",
         "exec",
         "files",
+        "isolation-gvisor",
         "network-dns-nft",
+        "network-internal-deny",
         "preview",
         "pty",
         "ssh",
@@ -6023,6 +6066,8 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
       "targetId",
       "sandboxId",
       "sandboxGeneration",
+      "workloadTrust",
+      "isolationRuntime",
       "imageUri",
       "cpuMillis",
       "memoryBytes",
@@ -6047,6 +6092,8 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
       "targetId",
       "sandboxId",
       "sandboxGeneration",
+      "workloadTrust",
+      "isolationRuntime",
       "imageUri",
       "cpuMillis",
       "memoryBytes",
@@ -6056,6 +6103,7 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
       "deadline",
     ] as const,
     source = strictRecord(value, fields, required);
+  const isolation = runtimeIsolation(source, "");
   const rawEgress: unknown[] = Array.isArray(source.networkAllowedEgress)
     ? source.networkAllowedEgress
     : error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/networkAllowedEgress");
@@ -6107,6 +6155,8 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
       runtimeOperationId === undefined &&
       runtimeGeneration === undefined &&
       runtimeSpecDigest === undefined;
+  if (isolation.isolationRuntime === "gvisor" && networkAllowedEgress.length !== 0)
+    error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/networkAllowedEgress");
   if (
     action === "sandbox.stop"
       ? !validVolume ||
@@ -6131,6 +6181,7 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
     targetId: identifier(source.targetId, "/targetId"),
     sandboxId: identifier(source.sandboxId, "/sandboxId"),
     sandboxGeneration,
+    ...isolation,
     imageUri: runtimeImage(source.imageUri, "/imageUri"),
     cpuMillis: integer(source.cpuMillis, 100, 64000, "/cpuMillis"),
     memoryBytes: integer(source.memoryBytes, 134217728, 1099511627776, "/memoryBytes"),
@@ -7954,6 +8005,8 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       "version",
       "description",
       "status",
+      "workloadTrust",
+      "isolationRuntime",
       "targetId",
       "targetSelector",
       "networkPolicyRef",
@@ -7970,6 +8023,8 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       "version",
       "description",
       "status",
+      "workloadTrust",
+      "isolationRuntime",
       "imageUri",
       "releaseDigest",
       "cpuMillis",
@@ -8009,6 +8064,7 @@ export function decodeRuntimeProfile(value: unknown): RuntimeProfile {
       version: integer(spec.version, 1, 2147483647, "/spec/version"),
       description: profileDescription(spec.description, "/spec/description"),
       status,
+      ...runtimeIsolation(spec, "/spec"),
       ...runtimeProfileTargetSelection(spec, "/spec"),
       ...(spec.networkPolicyRef === undefined
         ? {}
@@ -8205,6 +8261,8 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "workspaceObservedState",
     "runtimeProfileId",
     "runtimeProfileVersion",
+    "workloadTrust",
+    "isolationRuntime",
     "targetId",
     "networkPolicyRef",
     "networkPolicyEnforcement",
@@ -8300,6 +8358,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
       2147483647,
       "/spec/runtimeProfileVersion",
     ),
+    ...runtimeIsolation(spec, "/spec"),
     targetId: identifier(spec.targetId, "/spec/targetId"),
     ...(networkPolicyRef === undefined ? {} : { networkPolicyRef }),
     networkPolicyEnforcement,

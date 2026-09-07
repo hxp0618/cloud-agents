@@ -15,10 +15,11 @@ const (
     operation_id, operation_generation, action, project_uid, workspace_uid, workspace_name, volume_uid,
     physical_volume_uid, target_uid, target_generation, target_endpoint, credential_ref, sandbox_uid,
     sandbox_generation, image_uri, runtime_profile_uid, runtime_profile_version,
+    workload_trust, isolation_runtime,
     cpu_millis, memory_bytes, spec_digest, runtime_uid, runtime_state, runtime_operation_uid,
 	runtime_generation, runtime_spec_digest, ttl_seconds, expires_at
 	, network_policy_uid, network_default_egress, network_allowed_egress, network_preview_enabled
-FROM cloud_agents.claim_foundation_sandbox_v8($1,$2,$3,$4,$5,$6,$7,$8)`
+FROM cloud_agents.claim_foundation_sandbox_v9($1,$2,$3,$4,$5,$6,$7,$8)`
 	renewFoundationSandboxSQL  = `SELECT cloud_agents.renew_foundation_sandbox_claim_v1($1,$2,$3,$4,$5,$6,$7)`
 	settleFoundationSandboxSQL = `SELECT outbox_state, operation_state, resource_version
 FROM cloud_agents.settle_foundation_sandbox_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
@@ -49,6 +50,7 @@ type FoundationSandboxClaim struct {
 	OperationGeneration, TargetGeneration, SandboxGeneration              int64
 	RuntimeProfileID                                                      string
 	RuntimeProfileVersion                                                 int64
+	WorkloadTrust, IsolationRuntime                                       string
 	NetworkPolicyID, NetworkDefaultEgress                                 string
 	NetworkAllowedEgress                                                  []string
 	NetworkPreviewEnabled                                                 bool
@@ -211,6 +213,7 @@ func scanFoundationSandboxClaim(row rowScanner, claim *FoundationSandboxClaim) e
 		&claim.WorkspaceName, &claim.VolumeID, &claim.PhysicalVolumeName, &claim.TargetID, &claim.TargetGeneration,
 		&claim.TargetEndpoint, &claim.CredentialRef, &claim.SandboxID, &claim.SandboxGeneration,
 		&claim.ImageURI, &claim.RuntimeProfileID, &claim.RuntimeProfileVersion,
+		&claim.WorkloadTrust, &claim.IsolationRuntime,
 		&claim.CPUMillis, &claim.MemoryBytes, &claim.SpecDigest, &claim.RuntimeID,
 		&claim.RuntimeState, &claim.RuntimeOperationID, &claim.RuntimeGeneration,
 		&claim.RuntimeSpecDigest, &claim.TTLSeconds, &claim.ExpiresAt,
@@ -281,6 +284,7 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 		WorkspaceName: claim.WorkspaceName, Volume: claim.VolumeID, Target: claim.TargetID,
 		Sandbox: claim.SandboxID, ImageURI: claim.ImageURI, CPUMillis: claim.CPUMillis,
 		MemoryBytes: claim.MemoryBytes, NetworkPolicyID: claim.NetworkPolicyID,
+		WorkloadTrust: claim.WorkloadTrust, IsolationRuntime: claim.IsolationRuntime,
 		NetworkDefaultEgress: claim.NetworkDefaultEgress, NetworkAllowedEgress: claim.NetworkAllowedEgress,
 		NetworkPreviewEnabled: claim.NetworkPreviewEnabled,
 	})

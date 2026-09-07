@@ -1,0 +1,49 @@
+{
+  "run": "foundation-controller-29408702-3952-480b-9c49-1081ddc2335b",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "f0e7d5c7232f2fd12e34a95061822a4257c2ddb3",
+    "dirty": true
+  },
+  "backend": {
+    "hostDockerContext": "orbstack",
+    "hostDockerVersion": "29.4.0",
+    "isolatedDockerVersion": "29.8.0",
+    "isolatedDockerArchitecture": "aarch64",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "schemaHead": "000081"
+  },
+  "candidate": {
+    "dindImage": "docker@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e",
+    "runscRelease": "release-20260622.0",
+    "runscSHA512": "6d43f7c99dc182ad3750390c811537ee312fca5938245c65f0c5a23b9d38e8b7fddc1f49a816e6696d708582d813ac2d87ee98f7b46b8a6f5e6241c9eba69443",
+    "serverImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "registryImageID": "sha256:33eeff39e0aaabe61ca826fd7502396183462451be0783133e1a8fa944fc7350",
+    "sandboxImage": "node@sha256:2b6ebdd6a962b828a58375dfac7de903e4838b14b742ea8ab8254df5e0fe633f",
+    "execdImage": "localhost:5000/cloud-agents/execd@sha256:8427657717c9756563c5ff7b4a3631c81be7cec2f736a7a005657e568854d0db"
+  },
+  "remoteWorker": {
+    "capabilityRejected": true,
+    "isolationRuntime": "gvisor",
+    "kernelAndDmesg": "kernel=4.19.0-gvisor[    0.000000] Starting gVisor...[    0.137666] Creating process schedule...[    0.266240] Mounting deweydecimalfs...[    0.345583] Politicking the oom killer...[    0.383337] Adversarially training Redcode AI...[    0.419969] Reticulating splines...[    0.423360] Recruiting cron-ies...[    0.514443] Rewriting operating system in Javascript...[    0.889778] Committing treasure map to memory...[    1.056350] Checking naughty and nice process list...[    1.102568] Letting the watchdogs out...[    1.414998] Ready!egress=blocked",
+    "observedState": "stopped",
+    "outboundEgressBlocked": true,
+    "physicalIsolationVerified": true,
+    "publicProfileRedacted": true,
+    "runtimeId": "70e3f41c-dff6-45e6-b11d-d880a053db56",
+    "volumeName": "ca-ws-983c9ebadf5ab1d054e147d63384f85c8f672275cb12a343d39660f1",
+    "workloadTrust": "shared-untrusted"
+  },
+  "checks": [
+    "shared-untrusted RuntimeProfile is accepted only for a Remote Worker reporting isolation-gvisor and network-internal-deny",
+    "generated User API exposes only the published Profile summary and strips trust, runtime, Target and Network Policy authority",
+    "the outbound Remote Worker receives shared-untrusted plus gvisor in the durable Sandbox command",
+    "OpenSandbox creates the real workload with Docker runtime runsc on exactly one internal network with inter-container communication disabled",
+    "the workload reports Linux 4.19.0-gvisor and gVisor startup through its emulated kernel",
+    "the internal deny network blocks outbound HTTP without an OpenSandbox egress sidecar or browser-direct infrastructure connection",
+    "Admin Sandbox metadata reports workload trust and isolation runtime without Prompt, file, Artifact or credential bytes",
+    "generated Admin Stop deletes compute, releases the writer, retains then explicitly removes the owned Workspace volume",
+    "zero test-owned inner runtime containers and Workspace volumes remain"
+  ],
+  "boundary": "Disposable arm64 DinD customer node under OrbStack with fixed gVisor runsc, internal deny-only Docker network and PostgreSQL; outbound egress and Private Preview are intentionally unsupported for shared-untrusted workloads, and this does not qualify Kubernetes or external SSH strong isolation"
+}

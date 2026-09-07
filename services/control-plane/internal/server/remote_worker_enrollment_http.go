@@ -566,6 +566,7 @@ func remoteWorkerSandboxCommandResource(value *internalremoteworker.SandboxComma
 		Action: value.Action, OperationID: value.OperationID, WorkspaceID: value.WorkspaceID,
 		WorkspaceName: value.WorkspaceName, TargetID: value.TargetID, SandboxID: value.SandboxID,
 		SandboxGeneration: value.SandboxGeneration, ImageURI: value.ImageURI, CPUMillis: value.CPUMillis,
+		WorkloadTrust: value.WorkloadTrust, IsolationRuntime: value.IsolationRuntime,
 		MemoryBytes: value.MemoryBytes, SpecDigest: value.SpecDigest, NetworkPolicyID: value.NetworkPolicyID,
 		NetworkAllowedEgress: value.NetworkAllowedEgress, PhysicalVolumeName: value.PhysicalVolumeName,
 		RuntimeID: value.RuntimeID, RuntimeState: value.RuntimeState, RuntimeOperationID: value.RuntimeOperationID,

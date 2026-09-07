@@ -18,6 +18,7 @@ var foundationImage = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}
 // It carries no endpoint, credentials, commands or Workspace content.
 type FoundationResolved struct {
 	Tenant, Project, Workspace, WorkspaceName, Volume, Target, Sandbox, ImageURI string
+	WorkloadTrust, IsolationRuntime                                              string
 	NetworkPolicyID, NetworkDefaultEgress                                        string
 	NetworkAllowedEgress                                                         []string
 	NetworkPreviewEnabled                                                        bool
@@ -45,6 +46,7 @@ func BindFoundationIntent(r FoundationResolved) (FoundationIntent, error) {
 		}
 	}
 	if len(r.ImageURI) > 1024 || !foundationImage.MatchString(r.ImageURI) ||
+		invalidRuntimeIsolation(r.WorkloadTrust, r.IsolationRuntime) ||
 		r.CPUMillis < 100 || r.CPUMillis > 64000 || r.MemoryBytes < 134217728 || r.MemoryBytes > 1099511627776 {
 		return FoundationIntent{}, ErrInvalidFoundationIntent
 	}
@@ -61,12 +63,16 @@ func BindFoundationIntent(r FoundationResolved) (FoundationIntent, error) {
 			return FoundationIntent{}, ErrInvalidFoundationIntent
 		}
 	}
+	if r.IsolationRuntime == "gvisor" && (r.NetworkDefaultEgress != networkpolicy.DefaultEgressDeny || len(r.NetworkAllowedEgress) != 0 || r.NetworkPreviewEnabled) {
+		return FoundationIntent{}, ErrInvalidFoundationIntent
+	}
 	// All strings are ASCII with no JSON/HTML escapes; all integers are < 2^53.
 	// encoding/json's sorted map keys therefore match RFC8785 for this closed domain.
 	canonical, err := json.Marshal(map[string]any{
 		"tenant": r.Tenant, "project": r.Project, "workspace": r.Workspace,
 		"workspaceName": r.WorkspaceName, "volume": r.Volume, "target": r.Target,
 		"sandbox": r.Sandbox, "imageURI": r.ImageURI, "cpuMillis": r.CPUMillis,
+		"workloadTrust": r.WorkloadTrust, "isolationRuntime": r.IsolationRuntime,
 		"memoryBytes": r.MemoryBytes, "networkPolicyId": r.NetworkPolicyID,
 		"networkDefaultEgress": r.NetworkDefaultEgress, "networkAllowedEgress": r.NetworkAllowedEgress,
 		"networkPreviewEnabled": r.NetworkPreviewEnabled, "profileId": SandboxLifecycleProfileID,

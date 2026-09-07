@@ -33,6 +33,7 @@ import (
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgateway"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -330,6 +331,9 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 		Capabilities: []string{"docker", "exec", "files", "network-dns-nft", "preview", "pty", "ssh", "workspace-volume"},
 		Capacity:     platform.RemoteWorkerCapacity{CPUMillis: 8000, MemoryBytes: 16 << 30, DiskBytes: 80 << 30},
 	}
+	if os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_ISOLATION_RUNTIME") == "gvisor" {
+		selectedHeartbeat.Capabilities = []string{"docker", "exec", "files", "isolation-gvisor", "network-dns-nft", "network-internal-deny", "preview", "pty", "ssh", "workspace-volume"}
+	}
 	if _, err := selectedNode.HeartbeatRemoteWorker(ctx, "tenant", "project", selectedCreate.EnrollmentID, "request-heartbeat-select", selectedHeartbeat); err != nil {
 		t.Fatalf("selected node heartbeat: %v", err)
 	}
@@ -616,8 +620,16 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	binary := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_BINARY")
 	image := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_SUCCESS_IMAGE_URI")
 	allowedEgress := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS")
-	liveValues := []string{image, allowedEgress, os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET"),
+	isolationRuntime := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_ISOLATION_RUNTIME")
+	dockerAuthority := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET")
+	if address := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ADDRESS"); address != "" {
+		dockerAuthority = address
+	}
+	liveValues := []string{image, dockerAuthority,
 		os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY"), os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF")}
+	if isolationRuntime != "gvisor" {
+		liveValues = append(liveValues, allowedEgress)
+	}
 	liveCount := 0
 	for _, value := range liveValues {
 		if value != "" {
@@ -631,13 +643,22 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 		t.Fatal("RemoteWorker Sandbox live environment is incomplete")
 	}
 	t.Setenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", startRemoteWorkerDockerProxy(t))
-	startRemoteWorkerOpenSandboxProxy(t, 50*time.Second)
+	createDelay := 50 * time.Second
+	if isolationRuntime == "gvisor" {
+		createDelay = 0
+	}
+	startRemoteWorkerOpenSandboxProxy(t, createDelay)
 	workerServer, setWorkerConnected := startRemoteWorkerControlPlaneProxy(t, server, certificateChain, privateKey)
 	parts := strings.Split(image, "@")
 	if len(parts) != 2 {
 		t.Fatal("RemoteWorker Sandbox image is not digest pinned")
 	}
 	selectedTargetID := internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID)
+	if isolationRuntime == "gvisor" {
+		runRemoteWorkerSharedUntrustedLive(t, ctx, admin, user, node, workerServer, binary, enrollmentID, incarnationID,
+			certificateChain, privateKey, heartbeat, image, parts[1], selectedTargetID)
+		return
+	}
 	policy, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "remote-network", "request-remote-network", "remote-network-key-1", platform.NetworkPolicySetRequest{
 		ExpectedResourceVersion: "0", PolicyName: "remote-network", UserSummary: "RemoteWorker approved outbound access",
 		DefaultEgress: "restricted", AllowedEgress: []string{allowedEgress}, PreviewEnabled: true,
@@ -648,6 +669,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	admissionProfile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-admission-profile", "remote-admission-profile-key", platform.RuntimeProfileCreateRequest{
 		ProfileID: "remote-admission", ProfileName: "remote-admission", Version: 1,
 		Description: "RemoteWorker capability admission", TargetID: internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: "tenant", ProjectID: "project"}, enrollmentID),
+		WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
 		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
 	})
 	if err != nil || admissionProfile.Value.Spec.Status != "draft" {
@@ -701,6 +723,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	profile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-profile", "remote-profile-key-1", platform.RuntimeProfileCreateRequest{
 		ProfileID: "remote-profile", ProfileName: "remote-profile", Version: 1,
 		Description: "RemoteWorker retained workspace", TargetID: selectedTargetID,
+		WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
 		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
 	})
 	if err != nil || profile.Value.Spec.Status != "draft" {
@@ -721,6 +744,7 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 		profileID := "remote-selector-" + invalid.name
 		_, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-"+profileID, "create-"+profileID+"-key", platform.RuntimeProfileCreateRequest{
 			ProfileID: profileID, ProfileName: profileID, Version: 1, Description: "Unavailable RemoteWorker selector",
+			WorkloadTrust: "trusted-single-tenant", IsolationRuntime: "runc",
 			TargetSelector: &invalid.selector, NetworkPolicyRef: "remote-network", ImageURI: image,
 			ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
 		})
@@ -731,6 +755,8 @@ func runRemoteWorkerSandboxLive(t *testing.T, ctx context.Context, runtimePool, 
 	selectorProfile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-remote-selector-profile", "remote-selector-profile-key", platform.RuntimeProfileCreateRequest{
 		ProfileID: "remote-selector-profile", ProfileName: "remote-selector-profile", Version: 1,
 		Description:      "RemoteWorker deterministic placement",
+		WorkloadTrust:    "trusted-single-tenant",
+		IsolationRuntime: "runc",
 		TargetSelector:   &platform.RuntimeProfileTargetSelector{RegionID: "region-local", ResourcePoolID: "pool-remote-worker", Runtime: "docker", Architecture: "arm64"},
 		NetworkPolicyRef: "remote-network", ImageURI: image, ReleaseDigest: parts[1], CPUMillis: 500, MemoryBytes: 536870912,
 	})
@@ -1929,19 +1955,153 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
 }
 
+func runRemoteWorkerSharedUntrustedLive(t *testing.T, ctx context.Context, admin, user, node *api.Client,
+	server *httptest.Server, binary, enrollmentID, incarnationID, certificateChain string, privateKey []byte,
+	heartbeat platform.RemoteWorkerHeartbeatRequest, image, releaseDigest, targetID string,
+) {
+	t.Helper()
+	policy, err := admin.SetAdminNetworkPolicy(ctx, "tenant", "project", "gvisor-deny", "request-gvisor-network", "gvisor-network-key-1", platform.NetworkPolicySetRequest{
+		ExpectedResourceVersion: "0", PolicyName: "gvisor-deny", UserSummary: "Shared untrusted deny-only network",
+		DefaultEgress: "deny", AllowedEgress: []string{}, IngressEnabled: false, PreviewEnabled: false,
+	})
+	if err != nil || policy.Value.Metadata.ResourceVersion != "1" {
+		t.Fatalf("create gVisor network policy: value=%+v err=%v", policy.Value, err)
+	}
+	profile, err := admin.CreateAdminRuntimeProfile(ctx, "tenant", "project", "request-gvisor-profile", "gvisor-profile-key-1", platform.RuntimeProfileCreateRequest{
+		ProfileID: "gvisor-shared", ProfileName: "gvisor-shared", Version: 1,
+		Description: "Shared untrusted gVisor workspace", WorkloadTrust: "shared-untrusted", IsolationRuntime: "gvisor",
+		TargetID: targetID, NetworkPolicyRef: "gvisor-deny", ImageURI: image, ReleaseDigest: releaseDigest,
+		CPUMillis: 500, MemoryBytes: 536870912,
+	})
+	if err != nil || profile.Value.Spec.WorkloadTrust != "shared-untrusted" || profile.Value.Spec.IsolationRuntime != "gvisor" {
+		t.Fatalf("create gVisor profile: value=%+v err=%v", profile.Value, err)
+	}
+	withoutGVisor := heartbeat
+	withoutGVisor.Capabilities = make([]string, 0, len(heartbeat.Capabilities)-1)
+	for _, capability := range heartbeat.Capabilities {
+		if capability != "isolation-gvisor" {
+			withoutGVisor.Capabilities = append(withoutGVisor.Capabilities, capability)
+		}
+	}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-gvisor-capability-missing", withoutGVisor); err != nil {
+		t.Fatalf("report node without gVisor capability: %v", err)
+	}
+	_, err = admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "gvisor-shared", 1, "request-gvisor-publish-blocked", "gvisor-publish-blocked-key", platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+	capabilityRejected := clientStatus(err) == http.StatusConflict
+	if !capabilityRejected {
+		t.Fatalf("publish without gVisor capability: status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-gvisor-capability-restored", heartbeat); err != nil {
+		t.Fatalf("restore gVisor capability: %v", err)
+	}
+	profile, err = admin.PublishAdminRuntimeProfile(ctx, "tenant", "project", "gvisor-shared", 1, "request-gvisor-publish", "gvisor-publish-key-1", platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: "1"})
+	if err != nil || profile.Value.Spec.Status != "published" {
+		t.Fatalf("publish gVisor profile: value=%+v err=%v", profile.Value, err)
+	}
+	publicProfiles, err := user.ListRuntimeProfiles(ctx, "tenant", "project", "request-gvisor-profile-list", 50, "")
+	publicJSON, _ := json.Marshal(publicProfiles.Value)
+	publicRedacted := err == nil && bytes.Contains(publicJSON, []byte(`"profileId":"gvisor-shared"`)) &&
+		!bytes.Contains(publicJSON, []byte("workloadTrust")) && !bytes.Contains(publicJSON, []byte("isolationRuntime")) &&
+		!bytes.Contains(publicJSON, []byte("targetId")) && !bytes.Contains(publicJSON, []byte("networkPolicyRef"))
+	if !publicRedacted {
+		t.Fatalf("public gVisor profile authority leaked: value=%s err=%v", publicJSON, err)
+	}
+	created, err := user.CreateSandbox(ctx, "tenant", "project", "request-gvisor-sandbox", "gvisor-sandbox-key-1", platform.SandboxSessionCreateRequest{
+		WorkspaceID: "gvisor-workspace", WorkspaceName: "gvisor-workspace", SandboxID: "gvisor-sandbox",
+		RuntimeProfileID: "gvisor-shared", RuntimeProfileVersion: 1, TTLSeconds: 120,
+	})
+	if err != nil || created.Value.ObservedState != "pending" {
+		t.Fatalf("create gVisor Sandbox: value=%+v err=%v", created.Value, err)
+	}
+	delivery, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-gvisor-sandbox-delivery", heartbeat)
+	if err != nil || delivery.Value.SandboxCommand == nil {
+		t.Fatalf("deliver gVisor Sandbox command: value=%+v err=%v", delivery.Value, err)
+	}
+	command := delivery.Value.SandboxCommand
+	if command.WorkloadTrust != "shared-untrusted" || command.IsolationRuntime != "gvisor" || len(command.NetworkAllowedEgress) != 0 {
+		t.Fatalf("gVisor command authority drifted: value=%+v", command)
+	}
+	stateFile := filepath.Join(t.TempDir(), "remote-worker-gvisor-state.json")
+	state, _ := json.Marshal(map[string]any{"incarnationId": incarnationID, "observedGeneration": heartbeat.ObservedGeneration,
+		"observedState": heartbeat.ObservedState, "sandboxCommand": command})
+	if err := os.WriteFile(stateFile, append(state, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	adminSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "gvisor-sandbox", "request-gvisor-sandbox-get")
+	if err != nil || adminSandbox.Value.Spec.ObservedState != "running" || adminSandbox.Value.Spec.RuntimeID == "" ||
+		adminSandbox.Value.Spec.WorkloadTrust != "shared-untrusted" || adminSandbox.Value.Spec.IsolationRuntime != "gvisor" {
+		t.Fatalf("settle gVisor Sandbox: value=%+v err=%v", adminSandbox.Value, err)
+	}
+	dockerDirectory, err := dockertarget.NewCredentialDirectory(os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY"))
+	if err == nil {
+		err = dockerDirectory.VerifyFoundationSandboxIsolation(ctx, os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT"), os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF"), adminSandbox.Value.Spec.RuntimeID)
+	}
+	if err != nil {
+		t.Fatalf("verify physical gVisor isolation: %v", err)
+	}
+	sandboxDirectory, err := opensandbox.NewCredentialDirectory(os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeClient, err := sandboxDirectory.Client(os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: command.WorkspaceID,
+		Sandbox: command.SandboxID, Operation: command.OperationID, Generation: command.SandboxGeneration, SpecDigest: command.SpecDigest}
+	probe, err := runtimeClient.Exec(ctx, opensandbox.ExecInput{Identity: identity, RuntimeID: adminSandbox.Value.Spec.RuntimeID,
+		Command: `printf 'kernel='; uname -r; dmesg | head -20; node -e 'fetch("http://1.1.1.1",{signal:AbortSignal.timeout(1500)}).then(()=>process.exit(7)).catch(()=>console.log("egress=blocked"))'`, Timeout: 10 * time.Second})
+	if err != nil || probe.ExitCode != 0 || !strings.Contains(probe.Stdout, "gVisor") || !strings.Contains(probe.Stdout, "egress=blocked") {
+		t.Fatalf("gVisor runtime probe: result=%+v err=%v", probe, err)
+	}
+	runtimeID, volumeName := adminSandbox.Value.Spec.RuntimeID, adminSandbox.Value.Spec.PhysicalVolumeID
+	stop, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "gvisor-sandbox", "request-gvisor-sandbox-stop", "gvisor-sandbox-stop-key-1", platform.SandboxSessionLifecycleRequest{
+		ExpectedGeneration: adminSandbox.Value.Spec.Generation, ExpectedResourceVersion: adminSandbox.Value.Metadata.ResourceVersion,
+		ConfirmedSandboxID: "gvisor-sandbox", ComputeDisposition: "delete", WorkspaceDisposition: "retain",
+	})
+	if err != nil || stop.Value.State != "pending" {
+		t.Fatalf("accept gVisor Sandbox stop: value=%+v err=%v", stop.Value, err)
+	}
+	stopDelivery, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-gvisor-sandbox-stop-delivery", heartbeat)
+	if err != nil || stopDelivery.Value.SandboxCommand == nil || stopDelivery.Value.SandboxCommand.Action != "sandbox.stop" {
+		t.Fatalf("deliver gVisor Sandbox stop: value=%+v err=%v", stopDelivery.Value, err)
+	}
+	state, _ = json.Marshal(map[string]any{"incarnationId": incarnationID, "observedGeneration": heartbeat.ObservedGeneration,
+		"observedState": heartbeat.ObservedState, "sandboxCommand": stopDelivery.Value.SandboxCommand})
+	if err := os.WriteFile(stateFile, append(state, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	adminSandbox, err = admin.GetAdminSandboxSession(ctx, "tenant", "project", "gvisor-sandbox", "request-gvisor-sandbox-stopped")
+	if err != nil || adminSandbox.Value.Spec.ObservedState != "stopped" || adminSandbox.Value.Spec.RuntimeID != "" || !adminSandbox.Value.Spec.WriterReleased {
+		t.Fatalf("settle gVisor Sandbox stop: value=%+v err=%v", adminSandbox.Value, err)
+	}
+	marker, _ := json.Marshal(map[string]any{"runtimeId": runtimeID, "volumeName": volumeName,
+		"workloadTrust": "shared-untrusted", "isolationRuntime": "gvisor", "capabilityRejected": capabilityRejected,
+		"publicProfileRedacted": publicRedacted, "physicalIsolationVerified": true, "kernelAndDmesg": strings.TrimSpace(probe.Stdout),
+		"outboundEgressBlocked": true, "observedState": adminSandbox.Value.Spec.ObservedState})
+	fmt.Printf("REMOTE_WORKER_GVISOR=%s\n", marker)
+}
+
 func startRemoteWorkerDockerProxy(t *testing.T) string {
 	t.Helper()
 	socket := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET")
+	address := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ADDRESS")
 	credentialDirectory := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY")
 	credentialRef := os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF")
-	if socket == "" || credentialDirectory == "" || credentialRef == "" {
+	if socket == "" && address == "" || credentialDirectory == "" || credentialRef == "" {
 		t.Fatal("RemoteWorker Docker proxy environment is incomplete")
 	}
-	if info, err := os.Stat(socket); err != nil || info.Mode()&os.ModeSocket == 0 {
-		t.Fatalf("RemoteWorker Docker socket is unavailable: %v", err)
+	network, target := "tcp", address
+	if address == "" {
+		if info, err := os.Stat(socket); err != nil || info.Mode()&os.ModeSocket == 0 {
+			t.Fatalf("RemoteWorker Docker socket is unavailable: %v", err)
+		}
+		network, target = "unix", socket
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		return (&net.Dialer{}).DialContext(ctx, network, target)
 	}}
 	proxy := &httputil.ReverseProxy{Director: func(request *http.Request) {
 		request.URL.Scheme, request.URL.Host, request.Host = "http", "docker", "docker"

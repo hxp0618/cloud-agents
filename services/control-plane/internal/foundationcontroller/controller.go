@@ -220,13 +220,15 @@ func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory
 			observation.RuntimeState = ready.RuntimeState
 		}
 		err = waitErr
-		if err == nil && claim.NetworkPolicyID != "" {
+		if err == nil && claim.IsolationRuntime == "gvisor" {
+			err = docker.VerifyFoundationSandboxIsolation(ctx, claim.TargetEndpoint, claim.CredentialRef, observation.RuntimeID)
+		} else if err == nil && claim.NetworkPolicyID != "" {
 			err = client.VerifyNetworkPolicy(ctx, identity, observation.RuntimeID, foundationNetworkPolicy(claim))
 		}
 	}
 	result := EffectResult{RuntimeID: observation.RuntimeID, RuntimeState: observation.RuntimeState,
 		VolumeName: volumeName, Err: err}
-	if (errors.Is(err, opensandbox.ErrRuntimeFailed) || errors.Is(err, opensandbox.ErrPolicyUnenforced)) && observation.RuntimeID != "" {
+	if (errors.Is(err, opensandbox.ErrRuntimeFailed) || errors.Is(err, opensandbox.ErrPolicyUnenforced) || errors.Is(err, dockertarget.ErrIsolationUnenforced)) && observation.RuntimeID != "" {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if cleanupErr := client.Delete(cleanupCtx, identity, observation.RuntimeID); cleanupErr == nil {
@@ -256,7 +258,7 @@ func foundationWorkspaceVolume(ctx context.Context, docker *dockertarget.Credent
 }
 
 func foundationNetworkPolicy(claim postgres.FoundationSandboxClaim) *opensandbox.NetworkPolicy {
-	if claim.NetworkPolicyID == "" {
+	if claim.NetworkPolicyID == "" || claim.IsolationRuntime == "gvisor" {
 		return nil
 	}
 	policy := &opensandbox.NetworkPolicy{DefaultAction: "deny", Egress: make([]opensandbox.NetworkRule, len(claim.NetworkAllowedEgress))}
@@ -276,6 +278,8 @@ func classify(err error, attempt int32) (string, string) {
 		terminal, code = true, "opensandbox_runtime_failed"
 	case errors.Is(err, opensandbox.ErrPolicyUnenforced):
 		terminal, code = true, "foundation_network_policy_unenforced"
+	case errors.Is(err, dockertarget.ErrIsolationUnenforced):
+		terminal, code = true, "foundation_isolation_unenforced"
 	case errors.Is(err, opensandbox.ErrConflict), errors.Is(err, dockertarget.ErrDeploymentConflict), errors.Is(err, kubernetestarget.ErrDeploymentConflict):
 		terminal, code = true, "foundation_ownership_conflict"
 	case errors.Is(err, opensandbox.ErrInvalid), errors.Is(err, dockertarget.ErrDeploymentConfigInvalid),

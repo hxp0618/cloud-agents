@@ -104,6 +104,8 @@ type TargetKind = DeploymentTarget["spec"]["targetKind"];
 type RegisterTargetKind = DeploymentTargetRegisterRequest["targetKind"];
 type ProfileTransition = "publish" | "disable";
 type LeaseReleaseTransition = "upgrade" | "rollback";
+type WorkloadTrust = RuntimeProfile["spec"]["workloadTrust"];
+type IsolationRuntime = RuntimeProfile["spec"]["isolationRuntime"];
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
 type OperationNotice = LocalizedMessage & Readonly<{ accepted?: boolean }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
@@ -158,6 +160,7 @@ function runtimeProfileForm() {
     profileName: "",
     version: "1",
     description: "",
+    workloadTrust: "trusted-single-tenant" as WorkloadTrust,
     targetId: "",
     networkPolicyRef: "",
     imageUri: "",
@@ -167,6 +170,10 @@ function runtimeProfileForm() {
   };
 }
 
+function isolationRuntimeForTrust(workloadTrust: WorkloadTrust): IsolationRuntime {
+  return workloadTrust === "shared-untrusted" ? "gvisor" : "runc";
+}
+
 function runtimeProfileTargetLabel(profile: RuntimeProfile): string {
   const selector = profile.spec.targetSelector;
   return selector === undefined
@@ -174,7 +181,17 @@ function runtimeProfileTargetLabel(profile: RuntimeProfile): string {
     : `${selector.regionId} / ${selector.resourcePoolId} / ${selector.runtime} / ${selector.architecture}`;
 }
 
-function executableFoundationNetworkPolicy(policy: NetworkPolicy): boolean {
+function executableFoundationNetworkPolicy(
+  policy: NetworkPolicy,
+  workloadTrust: WorkloadTrust,
+): boolean {
+  if (
+    workloadTrust === "shared-untrusted" &&
+    (policy.spec.defaultEgress !== "deny" ||
+      policy.spec.allowedEgress.length !== 0 ||
+      policy.spec.previewEnabled)
+  )
+    return false;
   return (
     (policy.spec.defaultEgress === "deny" ||
       (policy.spec.defaultEgress === "restricted" && policy.spec.allowedEgress.length > 0)) &&
@@ -1691,6 +1708,8 @@ export function App() {
       profileName: runtimeProfileDraft.profileName.trim(),
       version: Number(runtimeProfileDraft.version),
       description: runtimeProfileDraft.description.trim(),
+      workloadTrust: runtimeProfileDraft.workloadTrust,
+      isolationRuntime: isolationRuntimeForTrust(runtimeProfileDraft.workloadTrust),
       ...(runtimeProfileDraft.targetId === "pool-remote-worker:arm64"
         ? {
             targetSelector: {
@@ -2607,17 +2626,23 @@ export function App() {
                         current.targetId ||
                         targets.find(
                           ({ spec }) =>
-                            (spec.targetKind === "docker" || spec.targetKind === "remote-worker") &&
+                            (spec.targetKind === "remote-worker" ||
+                              (current.workloadTrust === "trusted-single-tenant" &&
+                                spec.targetKind === "docker")) &&
                             spec.observedPhase === "ready",
                         )?.metadata.uid ||
                         targets.find(
                           ({ spec }) =>
-                            spec.targetKind === "docker" || spec.targetKind === "remote-worker",
+                            spec.targetKind === "remote-worker" ||
+                            (current.workloadTrust === "trusted-single-tenant" &&
+                              spec.targetKind === "docker"),
                         )?.metadata.uid ||
                         "",
                       networkPolicyRef:
                         current.networkPolicyRef ||
-                        networkPolicies.find(executableFoundationNetworkPolicy)?.metadata.uid ||
+                        networkPolicies.find((policy) =>
+                          executableFoundationNetworkPolicy(policy, current.workloadTrust),
+                        )?.metadata.uid ||
                         "",
                     }));
                     setCreatingRuntimeProfile(true);
@@ -2628,7 +2653,9 @@ export function App() {
                       ({ spec }) =>
                         spec.targetKind === "docker" || spec.targetKind === "remote-worker",
                     ) ||
-                    !networkPolicies.some(executableFoundationNetworkPolicy)
+                    !networkPolicies.some((policy) =>
+                      executableFoundationNetworkPolicy(policy, "trusted-single-tenant"),
+                    )
                   }
                 >
                   {t("action.createRuntimeProfile")}
@@ -3777,6 +3804,47 @@ export function App() {
               </div>
               <div className="form-row">
                 <label>
+                  <span>{t("runtimeProfile.workloadTrust")}</span>
+                  <select
+                    value={runtimeProfileDraft.workloadTrust}
+                    onChange={(event) =>
+                      setRuntimeProfileDraft({
+                        ...runtimeProfileDraft,
+                        workloadTrust: event.target.value as WorkloadTrust,
+                        targetId: "",
+                        networkPolicyRef: "",
+                      })
+                    }
+                  >
+                    {(
+                      ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] as const
+                    ).map((value) => (
+                      <option key={value} value={value}>
+                        {t(`runtimeProfile.workloadTrust.${value}`)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>{t("runtimeProfile.isolationRuntime")}</span>
+                  <select
+                    aria-readonly="true"
+                    disabled
+                    value={isolationRuntimeForTrust(runtimeProfileDraft.workloadTrust)}
+                  >
+                    <option value={isolationRuntimeForTrust(runtimeProfileDraft.workloadTrust)}>
+                      {t(
+                        `runtimeProfile.isolationRuntime.${isolationRuntimeForTrust(runtimeProfileDraft.workloadTrust)}`,
+                      )}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              {runtimeProfileDraft.workloadTrust === "shared-untrusted" ? (
+                <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
+              ) : null}
+              <div className="form-row">
+                <label>
                   <span>{t("profile.version")}</span>
                   <input
                     type="number"
@@ -3804,6 +3872,9 @@ export function App() {
                       })
                     }
                   >
+                    <option value="" disabled>
+                      {t("runtimeProfile.selectTarget")}
+                    </option>
                     {targets.some(
                       ({ spec }) =>
                         spec.targetKind === "remote-worker" && spec.architecture === "arm64",
@@ -3823,7 +3894,9 @@ export function App() {
                     {targets
                       .filter(
                         ({ spec }) =>
-                          spec.targetKind === "docker" || spec.targetKind === "remote-worker",
+                          spec.targetKind === "remote-worker" ||
+                          (runtimeProfileDraft.workloadTrust === "trusted-single-tenant" &&
+                            spec.targetKind === "docker"),
                       )
                       .map((target) => (
                         <option key={target.metadata.uid} value={target.metadata.uid}>
@@ -3845,11 +3918,18 @@ export function App() {
                     })
                   }
                 >
-                  {networkPolicies.filter(executableFoundationNetworkPolicy).map((policy) => (
-                    <option key={policy.metadata.uid} value={policy.metadata.uid}>
-                      {policy.metadata.name} · {policy.spec.userSummary}
-                    </option>
-                  ))}
+                  <option value="" disabled>
+                    {t("runtimeProfile.selectNetworkPolicy")}
+                  </option>
+                  {networkPolicies
+                    .filter((policy) =>
+                      executableFoundationNetworkPolicy(policy, runtimeProfileDraft.workloadTrust),
+                    )
+                    .map((policy) => (
+                      <option key={policy.metadata.uid} value={policy.metadata.uid}>
+                        {policy.metadata.name} · {policy.spec.userSummary}
+                      </option>
+                    ))}
                 </select>
                 <small>{t("runtimeProfile.networkPolicyHelp")}</small>
               </label>
@@ -5436,6 +5516,7 @@ function RuntimeProfileTable({
             <th>{t("table.name")}</th>
             <th>{t("table.version")}</th>
             <th>{t("table.status")}</th>
+            <th>{t("runtimeProfile.isolation")}</th>
             <th>{t("table.target")}</th>
             <th>{t("table.capacity")}</th>
             <th>{t("table.updated")}</th>
@@ -5460,6 +5541,10 @@ function RuntimeProfileTable({
                 <span className={`phase ${phaseTone(profile.spec.status)}`}>
                   <i /> {phaseLabel(profile.spec.status, t)}
                 </span>
+              </td>
+              <td>
+                {t(`runtimeProfile.workloadTrust.${profile.spec.workloadTrust}`)} ·{" "}
+                {t(`runtimeProfile.isolationRuntime.${profile.spec.isolationRuntime}`)}
               </td>
               <td className="mono">{runtimeProfileTargetLabel(profile)}</td>
               <td>
@@ -6748,6 +6833,14 @@ function RuntimeProfileDetail({
           <dd>{profile.spec.description}</dd>
         </div>
         <div>
+          <dt>{t("runtimeProfile.workloadTrust")}</dt>
+          <dd>{t(`runtimeProfile.workloadTrust.${profile.spec.workloadTrust}`)}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.isolationRuntime")}</dt>
+          <dd>{t(`runtimeProfile.isolationRuntime.${profile.spec.isolationRuntime}`)}</dd>
+        </div>
+        <div>
           <dt>{t("runtimeProfile.target")}</dt>
           <dd className="mono">{runtimeProfileTargetLabel(profile)}</dd>
         </div>
@@ -6795,6 +6888,9 @@ function RuntimeProfileDetail({
           </dd>
         </div>
       </dl>
+      {profile.spec.isolationRuntime === "gvisor" ? (
+        <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
+      ) : null}
       {profile.spec.status === "draft" ? (
         <section className="action-block">
           <h3>{t("profile.publishTitle")}</h3>
@@ -6877,6 +6973,14 @@ function SandboxDetail({
           <dd className="mono">
             {sandbox.spec.runtimeProfileId} · v{number(sandbox.spec.runtimeProfileVersion)}
           </dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.workloadTrust")}</dt>
+          <dd>{t(`runtimeProfile.workloadTrust.${sandbox.spec.workloadTrust}`)}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.isolationRuntime")}</dt>
+          <dd>{t(`runtimeProfile.isolationRuntime.${sandbox.spec.isolationRuntime}`)}</dd>
         </div>
         <div>
           <dt>{t("sandbox.target")}</dt>
@@ -6976,6 +7080,9 @@ function SandboxDetail({
           </div>
         )}
       </dl>
+      {sandbox.spec.isolationRuntime === "gvisor" ? (
+        <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
+      ) : null}
       <section className="activity-block" aria-labelledby="sandbox-grants-title">
         <div className="activity-heading">
           <h3 id="sandbox-grants-title">{t("sandbox.grants.title")}</h3>
