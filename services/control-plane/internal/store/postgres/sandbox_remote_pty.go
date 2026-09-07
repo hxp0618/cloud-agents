@@ -19,6 +19,8 @@ type RemoteWorkerSandboxPTYRequest struct {
 	SessionID            string
 	Since                int64
 	Takeover             bool
+	PTY                  *bool
+	SSH                  bool
 	Input                *platform.RemoteWorkerSandboxPTYFrame
 }
 
@@ -31,8 +33,8 @@ type remoteWorkerSandboxPTYResult struct {
 const requestRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at,
     bytes_transferred, result_session_uid, result_running, result_output_offset,
     result_frames, stable_error_code
-FROM cloud_agents.request_remote_worker_sandbox_pty_v1(
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`
+FROM cloud_agents.request_remote_worker_sandbox_pty_v2(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`
 
 const getRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at,
     bytes_transferred, result_session_uid, result_running, result_output_offset,
@@ -46,15 +48,21 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxPTY(ctx context.Conte
 		!validCoordinationDigest(input.TokenDigest) ||
 		(input.Action != "create" && input.Action != "get" && input.Action != "delete" && input.Action != "exchange") ||
 		input.Action != "create" && !validMutationIdentifier(input.SessionID) ||
-		input.Action == "exchange" && (input.Since < 0 || input.Since > 9007199254740991) {
+		input.Action == "create" && (input.SessionID != "" || input.Since != 0 || input.Takeover || input.PTY != nil || input.Input != nil) ||
+		input.Action != "exchange" && (input.PTY != nil || input.Input != nil) ||
+		input.Action == "exchange" && (input.Since < 0 || input.Since > 9007199254740991 || input.SSH && input.PTY == nil) ||
+		!input.SSH && input.PTY != nil {
 		return platform.RemoteWorkerSandboxPTYCommandReceipt{}, ErrCoordinationInvalidInput
 	}
-	var session, since, takeover, messageType, payload any
+	var session, since, takeover, messageType, payload, pty any
 	switch input.Action {
 	case "get", "delete":
 		session = input.SessionID
 	case "exchange":
 		session, since, takeover = input.SessionID, input.Since, input.Takeover
+		if input.PTY != nil {
+			pty = *input.PTY
+		}
 		if input.Input != nil {
 			raw, err := base64.RawURLEncoding.Strict().DecodeString(input.Input.PayloadBase64URL)
 			if err != nil || len(raw) > 64<<10 || base64.RawURLEncoding.EncodeToString(raw) != input.Input.PayloadBase64URL ||
@@ -73,7 +81,8 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxPTY(ctx context.Conte
 			access.Scope.TenantID, access.Scope.ProjectID, input.CommandID, input.Authority.GrantID,
 			input.TokenDigest, access.TargetID, access.WorkspaceID, access.SandboxID,
 			access.Generation, access.RuntimeID, access.RuntimeOperationID, access.RuntimeSpecDigest,
-			input.Action, session, since, takeover, messageType, payload, input.RequestID), &result)
+			input.Action, session, since, takeover, messageType, payload, input.SSH, pty,
+			input.RequestID), &result)
 	})
 	if err != nil {
 		return platform.RemoteWorkerSandboxPTYCommandReceipt{}, mapRemoteWorkerSandboxPTYError(err)

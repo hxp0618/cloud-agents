@@ -453,6 +453,23 @@ try {
   assert.equal(remoteWorkerReceipt.ptyCertificateBound, true);
   assert.equal(remoteWorkerReceipt.ptyReceiptsSettled, true);
   assert.equal(remoteWorkerReceipt.ptyContentTableHidden, true);
+  assert.equal(remoteWorkerReceipt.sshExitCode, 7);
+  assert.equal(remoteWorkerReceipt.sshGatewayRestart, true);
+  assert.equal(remoteWorkerReceipt.sshWrongPassword, true);
+  assert.equal(remoteWorkerReceipt.sshCrossTenant, true);
+  assert.equal(remoteWorkerReceipt.sshCapabilityRejected, true);
+  assert.equal(remoteWorkerReceipt.sshDirectTCPIPRejected, true);
+  assert.equal(remoteWorkerReceipt.sshEnvironmentRejected, true);
+  assert.ok(remoteWorkerReceipt.sshCommandCount >= 6);
+  assert.ok(remoteWorkerReceipt.sshInputCommandCount >= 2);
+  assert.equal(remoteWorkerReceipt.sshAdminRedacted, true);
+  assert.equal(remoteWorkerReceipt.sshIncarnationBound, true);
+  assert.equal(remoteWorkerReceipt.sshCertificateBound, true);
+  assert.equal(remoteWorkerReceipt.sshReceiptsSettled, true);
+  assert.equal(remoteWorkerReceipt.sshShapeBound, true);
+  assert.equal(remoteWorkerReceipt.sshPTYBound, true);
+  assert.equal(remoteWorkerReceipt.sshNonPTYBound, true);
+  assert.equal(remoteWorkerReceipt.sshContentTableHidden, true);
   assert.match(remoteWorkerReceipt.workspaceDigest, /^[0-9a-f]{64}\s+/u);
   assert.equal(remoteWorkerReceipt.observedState, "stopped");
   for (const runtimeId of [remoteWorkerReceipt.runtimeId, remoteWorkerReceipt.rebuiltRuntimeId]) {
@@ -509,17 +526,20 @@ try {
         "the unchanged PTY API and Access Gateway carry real WebSocket frames through outbound heartbeat commands without exposing a node endpoint",
         "PTY survives Gateway restart, replays from an absolute cursor, and rejects wrong-token, cross-tenant, authority-mismatched, changed-receipt and deleted-session access",
         "PTY commands are bound to the current incarnation and certificate, the runtime role cannot read frame rows, and Admin sees only the session count",
+        "the existing SSH Gateway carries PTY and non-PTY sessions through bounded RemoteWorker commands without a browser or inbound customer-node connection",
+        "SSH rejects missing node capability, wrong password, cross-tenant username, direct-tcpip forwarding and environment mutation, preserves exit status, and survives Gateway restart",
+        "SSH command delivery is bound to the exact incarnation and certificate, runtime cannot read command rows, and Admin receives metadata without command content or credentials",
         "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
       ],
       boundary:
-        "Local OrbStack Docker customer-node process and disposable PostgreSQL only; RemoteWorker Exec, Files, bounded Preview and bounded PTY reconnect are verified, but streaming Preview, long-duration claim renewal, induced NAT interruption, Kubernetes and SSH customer nodes are not covered",
+        "Local OrbStack Docker RemoteWorker customer node and disposable PostgreSQL only; Exec, Files, bounded Preview, bounded PTY reconnect and SSH are verified, but streaming Preview, long-duration claim renewal, induced NAT interruption, Kubernetes and external SSH customer nodes are not covered",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),
       JSON.stringify(evidence, null, 2) + "\n",
     );
     process.stdout.write(
-      `Verified RemoteWorker Sandbox Exec, Files, Preview, PTY and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+      `Verified RemoteWorker Sandbox Exec, Files, Preview, PTY, SSH and cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
     );
     throw remoteWorkerComplete;
   }

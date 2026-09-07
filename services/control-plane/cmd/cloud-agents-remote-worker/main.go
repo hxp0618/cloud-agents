@@ -671,6 +671,9 @@ func exchangeSandboxPTY(ctx context.Context, client *opensandbox.Client, input o
 	if *command.Takeover {
 		query.Set("takeover", "1")
 	}
+	if command.PTY != nil && !*command.PTY {
+		query.Set("pty", "0")
+	}
 	target.RawQuery = query.Encode()
 	connection, response, err := (&websocket.Dialer{HandshakeTimeout: 5 * time.Second}).DialContext(ctx, target.String(), headers)
 	if response != nil && response.Body != nil {

@@ -31,6 +31,7 @@
     "sessionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "since": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
     "takeover": { "type": "boolean" },
+    "pty": { "type": "boolean" },
     "input": {
       "type": "object",
       "additionalProperties": false,
@@ -45,11 +46,11 @@
   "allOf": [
     {
       "if": { "properties": { "action": { "const": "create" } }, "required": ["action"] },
-      "then": { "not": { "anyOf": [{ "required": ["sessionId"] }, { "required": ["since"] }, { "required": ["takeover"] }, { "required": ["input"] }] } }
+      "then": { "not": { "anyOf": [{ "required": ["sessionId"] }, { "required": ["since"] }, { "required": ["takeover"] }, { "required": ["pty"] }, { "required": ["input"] }] } }
     },
     {
       "if": { "properties": { "action": { "enum": ["get", "delete"] } }, "required": ["action"] },
-      "then": { "required": ["sessionId"], "not": { "anyOf": [{ "required": ["since"] }, { "required": ["takeover"] }, { "required": ["input"] }] } }
+      "then": { "required": ["sessionId"], "not": { "anyOf": [{ "required": ["since"] }, { "required": ["takeover"] }, { "required": ["pty"] }, { "required": ["input"] }] } }
     },
     {
       "if": { "properties": { "action": { "const": "exchange" } }, "required": ["action"] },
@@ -58,6 +59,7 @@
   ],
   "x-cloud-agents-semantic-constraints": [
     "the command is bound to one active Grant and the current Target, Sandbox generation and physical runtime receipt",
+    "pty is optional only for exchange and defaults to true for existing PTY clients",
     "exchange input is one canonical unpadded base64url WebSocket data frame of at most 64 KiB; an omitted input polls output",
     "the RemoteWorker connects only to its node-local OpenSandbox endpoint and returns bounded frames over the existing outbound heartbeat",
     "runtime endpoints and credentials are absent"

@@ -678,6 +678,7 @@ type RemoteWorkerSandboxPTYCommand struct {
 	SessionID          string                       `json:"sessionId,omitempty"`
 	Since              *int64                       `json:"since,omitempty"`
 	Takeover           *bool                        `json:"takeover,omitempty"`
+	PTY                *bool                        `json:"pty,omitempty"`
 	Input              *RemoteWorkerSandboxPTYFrame `json:"input,omitempty"`
 	Deadline           string                       `json:"deadline"`
 }
@@ -3687,7 +3688,7 @@ func decodeRemoteWorkerSandboxPTYFrame(value RemoteWorkerSandboxPTYFrame, maximu
 	return len(payload), nil
 }
 func DecodeRemoteWorkerSandboxPTYCommandJSON(data []byte) (RemoteWorkerSandboxPTYCommand, error) {
-	allowed := []string{"commandId", "grantId", "workspaceId", "targetId", "sandboxId", "sandboxGeneration", "runtimeId", "runtimeOperationId", "runtimeSpecDigest", "action", "sessionId", "since", "takeover", "input", "deadline"}
+	allowed := []string{"commandId", "grantId", "workspaceId", "targetId", "sandboxId", "sandboxGeneration", "runtimeId", "runtimeOperationId", "runtimeSpecDigest", "action", "sessionId", "since", "takeover", "pty", "input", "deadline"}
 	required := []string{"commandId", "grantId", "workspaceId", "targetId", "sandboxId", "sandboxGeneration", "runtimeId", "runtimeOperationId", "runtimeSpecDigest", "action", "deadline"}
 	if _, err := common.DecodeStrictObject(data, allowed, required); err != nil {
 		return RemoteWorkerSandboxPTYCommand{}, err
@@ -3703,11 +3704,11 @@ func DecodeRemoteWorkerSandboxPTYCommandJSON(data []byte) (RemoteWorkerSandboxPT
 	}
 	switch value.Action {
 	case "create":
-		if value.SessionID != "" || value.Since != nil || value.Takeover != nil || value.Input != nil {
+		if value.SessionID != "" || value.Since != nil || value.Takeover != nil || value.PTY != nil || value.Input != nil {
 			return RemoteWorkerSandboxPTYCommand{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action")
 		}
 	case "get", "delete":
-		if common.ValidateIdentifier(value.SessionID, "/sessionId") != nil || value.Since != nil || value.Takeover != nil || value.Input != nil {
+		if common.ValidateIdentifier(value.SessionID, "/sessionId") != nil || value.Since != nil || value.Takeover != nil || value.PTY != nil || value.Input != nil {
 			return RemoteWorkerSandboxPTYCommand{}, common.ContractError("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action")
 		}
 	case "exchange":

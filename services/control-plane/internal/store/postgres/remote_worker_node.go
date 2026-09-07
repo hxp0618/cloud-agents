@@ -101,8 +101,8 @@ FROM cloud_agents.settle_remote_worker_sandbox_file_v1(
 const claimRemoteWorkerSandboxPTYSQL = `SELECT command_uid, grant_uid, workspace_uid,
     target_uid, sandbox_uid, sandbox_generation, runtime_uid, runtime_operation_uid,
     runtime_spec_digest, action, session_uid, since_offset, takeover,
-    input_message_type, input_payload, command_deadline_at
-FROM cloud_agents.claim_remote_worker_sandbox_pty_v1($1,$2,$3,$4,$5)`
+    input_message_type, input_payload, pty_enabled, command_deadline_at
+FROM cloud_agents.claim_remote_worker_sandbox_pty_v2($1,$2,$3,$4,$5)`
 
 const settleRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at
 FROM cloud_agents.settle_remote_worker_sandbox_pty_v1(
@@ -419,7 +419,7 @@ func (service *DurableCoordinationService) claimRemoteWorkerSandboxPTY(ctx conte
 	command := internalremoteworker.SandboxPTYCommand{}
 	var session, messageType *string
 	var since *int64
-	var takeover *bool
+	var takeover, pty *bool
 	var inputPayload []byte
 	var deadline time.Time
 	err := service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
@@ -428,7 +428,7 @@ func (service *DurableCoordinationService) claimRemoteWorkerSandboxPTY(ctx conte
 			&command.CommandID, &command.GrantID, &command.WorkspaceID, &command.TargetID,
 			&command.SandboxID, &command.SandboxGeneration, &command.RuntimeID,
 			&command.RuntimeOperationID, &command.RuntimeSpecDigest, &command.Action,
-			&session, &since, &takeover, &messageType, &inputPayload, &deadline)
+			&session, &since, &takeover, &messageType, &inputPayload, &pty, &deadline)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -439,7 +439,7 @@ func (service *DurableCoordinationService) claimRemoteWorkerSandboxPTY(ctx conte
 	if session != nil {
 		command.SessionID = *session
 	}
-	command.Since, command.Takeover = since, takeover
+	command.Since, command.Takeover, command.PTY = since, takeover, pty
 	if messageType != nil {
 		if inputPayload == nil {
 			return nil, ErrCoordinationResultDrift

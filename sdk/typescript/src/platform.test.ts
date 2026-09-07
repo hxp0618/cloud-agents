@@ -233,10 +233,11 @@ describe("generated platform JSON models", () => {
       sessionId: "session-alpha",
       since: 0,
       takeover: false,
+      pty: false,
       input: { messageType: "binary", payloadBase64Url: "AGhp" },
       deadline: "2026-09-07T12:01:00Z",
     };
-    expect(decodeRemoteWorkerSandboxPTYCommand(command).since).toBe(0);
+    expect(decodeRemoteWorkerSandboxPTYCommand(command).pty).toBe(false);
     const receipt = {
       commandId: "rwpty-alpha",
       grantId: "grant-alpha",
@@ -251,7 +252,9 @@ describe("generated platform JSON models", () => {
       frames: [{ messageType: "binary", payloadBase64Url: "AWhp" }],
     };
     expect(decodeRemoteWorkerSandboxPTYCommandReceipt(receipt).frames).toHaveLength(1);
-    expect(() => decodeRemoteWorkerSandboxPTYCommandReceipt({ ...receipt, bytesTransferred: 2 })).toThrow(TypeError);
+    expect(() =>
+      decodeRemoteWorkerSandboxPTYCommandReceipt({ ...receipt, bytesTransferred: 2 }),
+    ).toThrow(TypeError);
   });
 
   it("fences RemoteWorker Sandbox Preview content and headers", () => {
@@ -296,7 +299,9 @@ describe("generated platform JSON models", () => {
       bodyBase64Url: "aGk",
     };
     expect(decodeRemoteWorkerSandboxPreviewCommandReceipt(receipt).statusCode).toBe(201);
-    expect(() => decodeRemoteWorkerSandboxPreviewCommandReceipt({ ...receipt, bytesTransferred: 1 })).toThrow(TypeError);
+    expect(() =>
+      decodeRemoteWorkerSandboxPreviewCommandReceipt({ ...receipt, bytesTransferred: 1 }),
+    ).toThrow(TypeError);
   });
 
   it("fences RemoteWorker lifecycle commands while keeping legacy create receipts", () => {

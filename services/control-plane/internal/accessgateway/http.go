@@ -295,18 +295,11 @@ func (server *Server) executeRemotePTY(ctx context.Context, authority postgres.S
 	tokenDigest, requestID, action, sessionID string, since int64, takeover bool,
 	input *platform.RemoteWorkerSandboxPTYFrame,
 ) (opensandbox.PTYObservation, error) {
-	commandID, err := newPTYCommandID()
-	if err != nil {
-		return opensandbox.PTYObservation{}, err
-	}
-	receipt, err := server.store.ExecuteRemoteWorkerSandboxPTY(ctx, postgres.RemoteWorkerSandboxPTYRequest{
-		Authority: authority, CommandID: commandID, RequestID: requestID, TokenDigest: tokenDigest,
+	receipt, err := server.executeRemotePTYReceipt(ctx, postgres.RemoteWorkerSandboxPTYRequest{
+		Authority: authority, RequestID: requestID, TokenDigest: tokenDigest,
 		Action: action, SessionID: sessionID, Since: since, Takeover: takeover, Input: input,
 	})
 	if err != nil {
-		return opensandbox.PTYObservation{}, err
-	}
-	if err := remotePTYError(receipt); err != nil {
 		return opensandbox.PTYObservation{}, err
 	}
 	observation := opensandbox.PTYObservation{SessionID: receipt.SessionID}
@@ -317,6 +310,25 @@ func (server *Server) executeRemotePTY(ctx context.Context, authority postgres.S
 		observation.OutputOffset = *receipt.OutputOffset
 	}
 	return observation, nil
+}
+
+func (server *Server) executeRemotePTYReceipt(ctx context.Context, request postgres.RemoteWorkerSandboxPTYRequest) (platform.RemoteWorkerSandboxPTYCommandReceipt, error) {
+	commandID, err := newPTYCommandID()
+	if err != nil {
+		return platform.RemoteWorkerSandboxPTYCommandReceipt{}, err
+	}
+	request.CommandID = commandID
+	if request.RequestID == "" {
+		request.RequestID = commandID
+	}
+	receipt, err := server.store.ExecuteRemoteWorkerSandboxPTY(ctx, request)
+	if err != nil {
+		return platform.RemoteWorkerSandboxPTYCommandReceipt{}, err
+	}
+	if err := remotePTYError(receipt); err != nil {
+		return platform.RemoteWorkerSandboxPTYCommandReceipt{}, err
+	}
+	return receipt, nil
 }
 
 func remotePTYError(receipt platform.RemoteWorkerSandboxPTYCommandReceipt) error {

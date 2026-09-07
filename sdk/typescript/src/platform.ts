@@ -617,6 +617,7 @@ export type RemoteWorkerSandboxPTYCommand = Readonly<{
   sessionId?: string;
   since?: number;
   takeover?: boolean;
+  pty?: boolean;
   input?: RemoteWorkerSandboxPTYFrame;
   deadline: string;
 }>;
@@ -6441,6 +6442,7 @@ export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorke
       "sessionId",
       "since",
       "takeover",
+      "pty",
       "input",
       "deadline",
     ] as const,
@@ -6485,6 +6487,7 @@ export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorke
       source.sessionId !== undefined ||
       source.since !== undefined ||
       source.takeover !== undefined ||
+      source.pty !== undefined ||
       source.input !== undefined
     )
       error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action");
@@ -6492,12 +6495,18 @@ export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorke
   }
   const sessionId = identifier(source.sessionId, "/sessionId");
   if (action === "get" || action === "delete") {
-    if (source.since !== undefined || source.takeover !== undefined || source.input !== undefined)
+    if (
+      source.since !== undefined ||
+      source.takeover !== undefined ||
+      source.pty !== undefined ||
+      source.input !== undefined
+    )
       error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action");
     return Object.freeze({ ...command, sessionId });
   }
   const since = integer(source.since, 0, Number.MAX_SAFE_INTEGER, "/since"),
     takeover = boolean(source.takeover, "/takeover"),
+    pty = source.pty === undefined ? undefined : boolean(source.pty, "/pty"),
     input =
       source.input === undefined
         ? undefined
@@ -6507,6 +6516,7 @@ export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorke
     sessionId,
     since,
     takeover,
+    ...(pty === undefined ? {} : { pty }),
     ...(input === undefined ? {} : { input }),
   });
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
@@ -22,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +37,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/ssh"
 )
 
 // Real generated Admin/bootstrap/node clients, verified mTLS identity,
@@ -229,7 +232,7 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	heartbeat := platform.RemoteWorkerHeartbeatRequest{
 		IncarnationID: certificateRequest.IncarnationID, ObservedGeneration: 1, ObservedState: "active",
 		WorkerVersion: "v0.1.0", OS: "linux", Architecture: "arm64", KernelVersion: "6.12.1",
-		Capabilities: []string{"docker", "exec", "files", "preview", "pty"},
+		Capabilities: []string{"docker", "exec", "files", "preview", "pty", "ssh"},
 		Capacity:     platform.RemoteWorkerCapacity{CPUMillis: 4000, MemoryBytes: 8 << 30, DiskBytes: 40 << 30},
 	}
 	accepted, err := oldNode.HeartbeatRemoteWorker(ctx, "tenant", "project", create.EnrollmentID, "request-heartbeat-initial", heartbeat)
@@ -1418,6 +1421,138 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 		t.Fatalf("RemoteWorker PTY authority: commands=%d succeeded=%d incarnation=%v certificate=%v receipts=%v hidden=%v err=%v",
 			ptyCommands, succeededPTY, ptyIncarnationBound, ptyCertificateBound, ptyReceiptsSettled, ptyContentTableHidden, err)
 	}
+
+	_, hostPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostSigner, err := ssh.NewSignerFromKey(hostPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshAddress, stopSSH := startSSHGateway(t, ctx, gatewayStore, sandboxDirectory, hostSigner)
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, "cag1_"+strings.Repeat("x", 43), hostSigner)); err == nil {
+		t.Fatal("wrong RemoteWorker SSH Grant password was accepted")
+	}
+	if _, err := ssh.Dial("tcp", sshAddress, sshClientConfig("other-tenant:project:"+grant.Value.GrantID, grant.Value.AccessToken, hostSigner)); err == nil {
+		t.Fatal("cross-tenant RemoteWorker SSH username was accepted")
+	}
+	heartbeat.Capabilities = []string{"docker", "exec", "files", "preview", "pty"}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-without-capability", heartbeat); err != nil {
+		t.Fatal("remove RemoteWorker SSH capability", err)
+	}
+	disabledClient, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
+	if err != nil {
+		t.Fatal("RemoteWorker SSH Grant authentication failed", err)
+	}
+	disabledSession, err := disabledClient.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := disabledSession.CombinedOutput("printf REMOTE_SSH_CAPABILITY_BYPASS"); err == nil {
+		t.Fatal("RemoteWorker SSH command was accepted without the node capability")
+	}
+	_ = disabledClient.Close()
+	var rejectedSSHCommands int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FROM cloud_agents.remote_worker_sandbox_pty_commands WHERE ssh_session`).Scan(&rejectedSSHCommands); err != nil || rejectedSSHCommands != 0 {
+		t.Fatalf("RemoteWorker SSH capability rejection queued commands=%d err=%v", rejectedSSHCommands, err)
+	}
+	heartbeat.Capabilities = []string{"docker", "exec", "files", "preview", "pty", "ssh"}
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-capability-restore", heartbeat); err != nil {
+		t.Fatal("restore RemoteWorker SSH capability", err)
+	}
+	stopRemoteWorker := startRemoteWorkerProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	sshClient, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
+	if err != nil {
+		t.Fatal("RemoteWorker SSH Grant authentication failed", err)
+	}
+	if forwarded, err := sshClient.Dial("tcp", "127.0.0.1:22"); err == nil {
+		_ = forwarded.Close()
+		t.Fatal("RemoteWorker SSH direct-tcpip forwarding was accepted")
+	}
+	sshSession, err := sshClient.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sshSession.Setenv("CAG_SHOULD_NOT_EXIST", "true"); err == nil {
+		t.Fatal("RemoteWorker SSH environment mutation was accepted")
+	}
+	if err := sshSession.RequestPty("xterm-256color", 40, 120, ssh.TerminalModes{}); err != nil {
+		t.Fatal("RemoteWorker SSH PTY request failed", err)
+	}
+	sshInput, err := sshSession.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshOutputReader, err := sshSession.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sshSession.Shell(); err != nil {
+		t.Fatal("RemoteWorker SSH shell failed", err)
+	}
+	sshOutputDone := make(chan []byte, 1)
+	go func() {
+		output, _ := io.ReadAll(io.LimitReader(sshOutputReader, 1<<20))
+		sshOutputDone <- output
+	}()
+	_, _ = io.WriteString(sshInput, "printf 'REMOTE_SSH_DIR=%s\\n' \"$PWD\"; exit 7\n")
+	sshErr := sshSession.Wait()
+	sshOutput := <-sshOutputDone
+	_ = sshClient.Close()
+	exitError, exited := sshErr.(*ssh.ExitError)
+	if !exited || exitError.ExitStatus() != 7 || !strings.Contains(string(sshOutput), "REMOTE_SSH_DIR=/workspace") {
+		t.Fatalf("RemoteWorker SSH output=%q err=%v", sshOutput, sshErr)
+	}
+	stopSSH()
+	sshAddress, stopSSH = startSSHGateway(t, ctx, gatewayStore, sandboxDirectory, hostSigner)
+	defer stopSSH()
+	sshClient, err = ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
+	if err != nil {
+		t.Fatal("RemoteWorker SSH Grant did not survive Gateway restart", err)
+	}
+	sshSession, err = sshClient.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshCommand := `printf 'REMOTE_SSH_RESTART=%s\n' "$PWD"; printf 'REMOTE_SSH_ERR\n' >&2`
+	sshOutput, err = sshSession.CombinedOutput(sshCommand)
+	_ = sshClient.Close()
+	if err != nil || !strings.Contains(string(sshOutput), "REMOTE_SSH_RESTART=/workspace") || !strings.Contains(string(sshOutput), "REMOTE_SSH_ERR") {
+		t.Fatalf("RemoteWorker SSH after Gateway restart output=%q err=%v", sshOutput, err)
+	}
+	stopRemoteWorker()
+	sshGrantPage, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "remote-sandbox", "request-remote-ssh-admin", 50, "")
+	if err != nil || len(sshGrantPage.Value.AccessGrants) != 1 || sshGrantPage.Value.AccessGrants[0].Spec.PTYSessionCount != 3 {
+		t.Fatalf("RemoteWorker SSH Admin metadata: value=%+v err=%v", sshGrantPage.Value, err)
+	}
+	adminSSHJSON, _ := json.Marshal(sshGrantPage.Value)
+	for _, forbidden := range []string{"REMOTE_SSH_DIR", "REMOTE_SSH_ERR", "REMOTE_SSH_RESTART", "payloadBase64Url", "providerCredentialRef", "credentialRef"} {
+		if strings.Contains(string(adminSSHJSON), forbidden) {
+			t.Fatalf("RemoteWorker SSH Admin metadata disclosed %q", forbidden)
+		}
+	}
+	var sshCommands, succeededSSH, sshInputCommands int
+	var sshIncarnationBound, sshCertificateBound, sshReceiptsSettled, sshShapeBound, sshPTYBound, sshNonPTYBound, sshContentTableHidden bool
+	if err := owner.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE state='succeeded'),
+count(*) FILTER (WHERE action='exchange' AND input_message_type='binary' AND pg_catalog.octet_length(input_payload) > 1),
+bool_and(assigned_incarnation_uid=$1), bool_and(delivery_certificate_sha256=$2),
+bool_and(receipt_digest IS NOT NULL),
+bool_and((action='create' AND pty_enabled IS NULL)
+ OR (action='exchange' AND pty_enabled IS NOT NULL)
+ OR (action='delete' AND pty_enabled IS NULL)),
+bool_or(action='exchange' AND pty_enabled),
+bool_or(action='exchange' AND NOT pty_enabled),
+NOT pg_catalog.has_table_privilege('cloud_agents_runtime', 'cloud_agents.remote_worker_sandbox_pty_commands', 'SELECT')
+FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, incarnationID, certificateSHA256).Scan(
+		&sshCommands, &succeededSSH, &sshInputCommands, &sshIncarnationBound, &sshCertificateBound,
+		&sshReceiptsSettled, &sshShapeBound, &sshPTYBound, &sshNonPTYBound, &sshContentTableHidden,
+	); err != nil || sshCommands < 6 || succeededSSH != sshCommands || sshInputCommands < 2 || !sshIncarnationBound ||
+		!sshCertificateBound || !sshReceiptsSettled || !sshShapeBound || !sshPTYBound || !sshNonPTYBound || !sshContentTableHidden {
+		t.Fatalf("RemoteWorker SSH authority: commands=%d succeeded=%d inputs=%d incarnation=%v certificate=%v receipts=%v shape=%v pty=%v nonpty=%v hidden=%v err=%v",
+			sshCommands, succeededSSH, sshInputCommands, sshIncarnationBound, sshCertificateBound, sshReceiptsSettled, sshShapeBound, sshPTYBound, sshNonPTYBound, sshContentTableHidden, err)
+	}
 	cleanupStopOperation, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-cleanup-stop", "remote-sandbox-cleanup-stop-key-1", platform.SandboxSessionLifecycleRequest{
 		ExpectedGeneration: adminSandbox.Value.Spec.Generation, ExpectedResourceVersion: adminSandbox.Value.Metadata.ResourceVersion,
 		ConfirmedSandboxID: "remote-sandbox", ComputeDisposition: "delete", WorkspaceDisposition: "retain",
@@ -1493,6 +1628,12 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"ptySessionCount": 1, "ptyAdminRedacted": true, "ptyCommandCount": ptyCommands,
 		"ptyIncarnationBound": ptyIncarnationBound, "ptyCertificateBound": ptyCertificateBound,
 		"ptyReceiptsSettled": ptyReceiptsSettled, "ptyContentTableHidden": ptyContentTableHidden,
+		"sshExitCode": 7, "sshGatewayRestart": true, "sshWrongPassword": true, "sshCrossTenant": true,
+		"sshCapabilityRejected": true, "sshDirectTCPIPRejected": true, "sshEnvironmentRejected": true,
+		"sshCommandCount": sshCommands, "sshInputCommandCount": sshInputCommands, "sshAdminRedacted": true,
+		"sshIncarnationBound": sshIncarnationBound, "sshCertificateBound": sshCertificateBound,
+		"sshReceiptsSettled": sshReceiptsSettled, "sshShapeBound": sshShapeBound, "sshPTYBound": sshPTYBound,
+		"sshNonPTYBound": sshNonPTYBound, "sshContentTableHidden": sshContentTableHidden,
 		"receiptReplay": true, "stopReceiptReplay": true, "rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
 		"nodeAuditCount": nodeAuditCount, "observedState": adminSandbox.Value.Spec.ObservedState})
 	fmt.Printf("REMOTE_WORKER_SANDBOX=%s\n", marker)
@@ -1540,6 +1681,45 @@ func startRemoteWorkerDockerProxy(t *testing.T) string {
 
 func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte, stateFile string) {
 	t.Helper()
+	command := remoteWorkerProcessCommand(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile, true)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("outbound RemoteWorker process: %v: %s", err, output)
+	}
+	t.Log("outbound RemoteWorker process heartbeat passed")
+}
+
+func startRemoteWorkerProcess(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte, stateFile string) func() {
+	t.Helper()
+	command := remoteWorkerProcessCommand(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile, false)
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal("start outbound RemoteWorker process", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			_ = command.Process.Signal(os.Interrupt)
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("outbound RemoteWorker process stopped: %v: %s", err, output.String())
+				}
+			case <-time.After(5 * time.Second):
+				_ = command.Process.Kill()
+				<-done
+				t.Errorf("outbound RemoteWorker process did not stop: %s", output.String())
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return stop
+}
+
+func remoteWorkerProcessCommand(t *testing.T, ctx context.Context, binary string, server *httptest.Server, enrollmentID, incarnationID, certificateChain string, privateKey []byte, stateFile string, once bool) *exec.Cmd {
+	t.Helper()
 	directory := t.TempDir()
 	certificateFile := filepath.Join(directory, "node.pem")
 	privateKeyFile := filepath.Join(directory, "node-key.pem")
@@ -1548,22 +1728,22 @@ func runRemoteWorkerHeartbeatProcess(t *testing.T, ctx context.Context, binary s
 	if serverCertificate == nil || os.WriteFile(certificateFile, []byte(certificateChain), 0o600) != nil || os.WriteFile(privateKeyFile, privateKey, 0o600) != nil || os.WriteFile(serverCAFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverCertificate.Raw}), 0o600) != nil {
 		t.Fatal("write RemoteWorker process TLS material")
 	}
-	command := exec.CommandContext(ctx, binary,
-		"--control-plane-url="+server.URL, "--tenant=tenant", "--project=project",
-		"--enrollment="+enrollmentID, "--incarnation="+incarnationID,
-		"--certificate="+certificateFile, "--private-key="+privateKeyFile, "--server-ca="+serverCAFile,
-		"--state-file="+stateFile,
-		"--docker-endpoint="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", "https://docker.example.test"),
-		"--credential-directory="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY", "/tmp"),
-		"--credential-ref="+remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF", "fixture-only"),
-		"--kernel-version=6.12.1", "--capabilities=docker,exec,files,preview,pty",
+	arguments := []string{
+		"--control-plane-url=" + server.URL, "--tenant=tenant", "--project=project",
+		"--enrollment=" + enrollmentID, "--incarnation=" + incarnationID,
+		"--certificate=" + certificateFile, "--private-key=" + privateKeyFile, "--server-ca=" + serverCAFile,
+		"--state-file=" + stateFile,
+		"--docker-endpoint=" + remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT", "https://docker.example.test"),
+		"--credential-directory=" + remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY", "/tmp"),
+		"--credential-ref=" + remoteWorkerRuntimeEnv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF", "fixture-only"),
+		"--kernel-version=6.12.1", "--capabilities=docker,exec,files,preview,pty,ssh",
 		"--capacity-cpu-millis=4000", "--capacity-memory-bytes=8589934592",
-		"--capacity-disk-bytes=42949672960", "--once",
-	)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("outbound RemoteWorker process: %v: %s", err, output)
+		"--capacity-disk-bytes=42949672960",
 	}
-	t.Log("outbound RemoteWorker process heartbeat passed")
+	if once {
+		arguments = append(arguments, "--once")
+	}
+	return exec.CommandContext(ctx, binary, arguments...)
 }
 
 func remoteWorkerRuntimeEnv(name, fallback string) string {
