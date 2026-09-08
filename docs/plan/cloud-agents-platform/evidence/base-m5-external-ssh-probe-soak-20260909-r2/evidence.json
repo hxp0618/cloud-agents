@@ -1,0 +1,104 @@
+{
+  "run": "foundation-controller-c0875b1c-4fd8-4f35-9f63-f9c9ee9cad4f",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "dc20ce39da05250175e7bc5fab108819163e1f07",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "backend": {
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "externalHostCount": 2,
+    "remoteOS": "linux",
+    "remoteArchitecture": "amd64",
+    "remoteDockerAvailable": false
+  },
+  "controlPlaneRestart": {
+    "before": {
+      "auditCounts": {
+        "ssh-live-1": 33,
+        "ssh-live-2": 33
+      },
+      "cycles": 16,
+      "deniedLatencyMilliseconds": {
+        "max": 1.892,
+        "p50": 0.596,
+        "p95": 1.892
+      },
+      "deniedRequests": 16,
+      "facts": {
+        "ssh-live-1": "2.0|OpenSSH_10.0p2 Debian-7+deb13u4|linux|amd64",
+        "ssh-live-2": "2.0|OpenSSH_10.0p2 Debian-7+deb13u4|linux|amd64"
+      },
+      "hostKeyMismatchStableError": "ssh-host-key-mismatch",
+      "operationCounts": {
+        "ssh-live-1": 17,
+        "ssh-live-2": 17
+      },
+      "phase": "before-restart",
+      "probeLatencyMilliseconds": {
+        "max": 2615.664,
+        "p50": 1914.307,
+        "p95": 2602.243
+      },
+      "probeRequests": 32,
+      "readLatencyMilliseconds": {
+        "max": 9.814,
+        "p50": 6.238,
+        "p95": 9.169
+      },
+      "readRequests": 32,
+      "recoveryToFirstSuccessMilliseconds": 3393.574,
+      "targetCount": 2
+    },
+    "after": {
+      "auditCounts": {
+        "ssh-live-1": 50,
+        "ssh-live-2": 50
+      },
+      "cycles": 16,
+      "deniedLatencyMilliseconds": {
+        "max": 1.006,
+        "p50": 0.705,
+        "p95": 1.006
+      },
+      "deniedRequests": 16,
+      "facts": {
+        "ssh-live-1": "2.0|OpenSSH_10.0p2 Debian-7+deb13u4|linux|amd64",
+        "ssh-live-2": "2.0|OpenSSH_10.0p2 Debian-7+deb13u4|linux|amd64"
+      },
+      "hostKeyMismatchStableError": "ssh-host-key-mismatch",
+      "operationCounts": {
+        "ssh-live-1": 33,
+        "ssh-live-2": 33
+      },
+      "phase": "after-restart",
+      "probeLatencyMilliseconds": {
+        "max": 2663.881,
+        "p50": 1969.817,
+        "p95": 2526.386
+      },
+      "probeRequests": 32,
+      "readLatencyMilliseconds": {
+        "max": 9.149,
+        "p50": 6.452,
+        "p95": 8.964
+      },
+      "readRequests": 32,
+      "recoveryToFirstSuccessMilliseconds": 2398.76,
+      "targetCount": 2
+    },
+    "totalRequests": 160,
+    "recoveryToFirstSuccessfulProbeMilliseconds": 2398.76
+  },
+  "checks": [
+    "product migration 000088 applied to disposable PostgreSQL",
+    "two external SSH servers accepted only their existing key-only aliases and already-pinned host keys",
+    "two separate Control Plane test processes used generated SDK and production Admin handlers against one PostgreSQL authority",
+    "64 real SSH probes, 64 Admin reads and 32 ordinary-user 403 responses completed with measured P50/P95/max latency",
+    "the external OS, architecture and SSH server facts remained stable across the Control Plane process restart",
+    "a real external endpoint with the other host's pinned key failed closed and persisted ssh-host-key-mismatch",
+    "Operation and Audit pages retained every probe; no remote file, package, service or container was changed"
+  ],
+  "boundary": "Two preconfigured external SSH servers and disposable local PostgreSQL only; this proves old SSH Target registration/probe compatibility, host-key fencing and bounded reconnection across Control Plane process restart, not remote Docker Worker deployment, Provider execution, SSH-server restart, throughput SLO or multi-Region recovery"
+}

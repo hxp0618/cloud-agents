@@ -1,0 +1,4 @@
+=== RUN   TestFoundationSSHProbeSoakPostgres
+    foundation_ssh_live_test.go:152: FOUNDATION_SSH_SOAK={"auditCounts":{"ssh-live-1":50,"ssh-live-2":50},"cycles":16,"deniedLatencyMilliseconds":{"max":1.006,"p50":0.705,"p95":1.006},"deniedRequests":16,"facts":{"ssh-live-1":"2.0|OpenSSH_10.0p2 Debian-7+deb13u4|linux|amd64","ssh-live-2":"2.0|OpenSSH_10.0p2 Debian-7+deb13u4|linux|amd64"},"hostKeyMismatchStableError":"ssh-host-key-mismatch","operationCounts":{"ssh-live-1":33,"ssh-live-2":33},"phase":"after-restart","probeLatencyMilliseconds":{"max":2663.881,"p50":1969.817,"p95":2526.386},"probeRequests":32,"readLatencyMilliseconds":{"max":9.149,"p50":6.452,"p95":8.964},"readRequests":32,"recoveryToFirstSuccessMilliseconds":2398.76,"targetCount":2}
+--- PASS: TestFoundationSSHProbeSoakPostgres (66.34s)
+PASS

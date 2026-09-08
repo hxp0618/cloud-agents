@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { isIP } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -15,6 +25,7 @@ const snapshotOnly = process.argv.includes("--snapshot-only");
 const snapshotRestoreOnly = process.argv.includes("--snapshot-restore-only");
 const snapshotCleanupOnly = process.argv.includes("--snapshot-cleanup-only");
 const faultSoakOnly = process.argv.includes("--fault-soak-only");
+const sshProbeOnly = process.argv.includes("--ssh-probe-only");
 assert.ok(
   [
     remoteWorkerOnly,
@@ -23,11 +34,13 @@ assert.ok(
     snapshotRestoreOnly,
     snapshotCleanupOnly,
     faultSoakOnly,
+    sshProbeOnly,
   ].filter(Boolean).length <= 1,
   "choose one focused mode",
 );
 const remoteWorkerComplete = Symbol("remote-worker-complete");
 const snapshotComplete = Symbol("snapshot-complete");
+const sshProbeComplete = Symbol("ssh-probe-complete");
 const root = resolve(import.meta.dirname, "..");
 const currentHead = readdirSync(resolve(root, "services/control-plane/migrations/product"))
   .filter((entry) => /^\d{6}$/.test(entry))
@@ -309,6 +322,207 @@ try {
     ) VALUES ('tenant','tenant','project','target','target','docker','https://127.0.0.1:1','fixture-only',1,
       'ready','1.52','29.4.0','linux','arm64','',clock_timestamp(),1,'foundation-live-target-key',
       'sha256:${"d".repeat(64)}',clock_timestamp(),clock_timestamp());`);
+
+  if (sshProbeOnly) {
+    const aliases = (process.env.CLOUD_AGENTS_FOUNDATION_SSH_ALIASES ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    assert.equal(aliases.length, 2, "set exactly two comma-separated SSH aliases");
+    const credentialDirectory = resolve(build, "ssh-live-credentials");
+    mkdirSync(credentialDirectory, { mode: 0o700 });
+    const expandSSHPath = (value) => value.replace(/^~/u, homedir()).replaceAll("%d", homedir());
+    const targets = aliases.map((alias, index) => {
+      const config = new Map();
+      for (const line of execFileSync("ssh", ["-G", alias], {
+        encoding: "utf8",
+        timeout: 10_000,
+      }).split("\n")) {
+        const separator = line.indexOf(" ");
+        if (separator > 0 && !config.has(line.slice(0, separator))) {
+          config.set(line.slice(0, separator), line.slice(separator + 1).trim());
+        }
+      }
+      const user = config.get("user");
+      const host = config.get("hostname");
+      const port = config.get("port") ?? "22";
+      const identity = expandSSHPath(config.get("identityfile") ?? "");
+      assert.match(user ?? "", /^[A-Za-z0-9._-]+$/u);
+      assert.match(host ?? "", /^[A-Za-z0-9.:-]+$/u);
+      assert.match(port, /^[1-9][0-9]{0,4}$/u);
+      assert.ok(existsSync(identity));
+      const remoteFacts = execFileSync(
+        "ssh",
+        [
+          "-T",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=10",
+          alias,
+          "uname -s; uname -m; if command -v docker >/dev/null; then echo docker; else echo no-docker; fi",
+        ],
+        { encoding: "utf8", timeout: 30_000 },
+      )
+        .trim()
+        .split("\n");
+      assert.deepEqual(remoteFacts, ["Linux", "x86_64", "no-docker"]);
+      const scan = execFileSync("ssh-keyscan", ["-T", "10", "-p", port, "-t", "ed25519", host], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 30_000,
+      })
+        .trim()
+        .split("\n")
+        .find((line) => !line.startsWith("#"));
+      assert.ok(scan);
+      const scanParts = scan.trim().split(/\s+/u);
+      assert.equal(scanParts[1], "ssh-ed25519");
+      const pinnedKey = `${scanParts[1]} ${scanParts[2]}`;
+      const lookups = [port === "22" ? host : `[${host}]:${port}`, host, alias];
+      const knownHostFiles = [
+        ...(config.get("userknownhostsfile") ?? "").split(/\s+/u),
+        ...(config.get("globalknownhostsfile") ?? "").split(/\s+/u),
+      ]
+        .filter(Boolean)
+        .map(expandSSHPath)
+        .filter(existsSync);
+      const pinned = knownHostFiles.some((file) =>
+        lookups.some((lookup) => {
+          const found = spawnSync("ssh-keygen", ["-F", lookup, "-f", file], {
+            encoding: "utf8",
+            timeout: 10_000,
+          });
+          return (found.stdout ?? "")
+            .split("\n")
+            .some((line) => line.trim().split(/\s+/u).slice(1, 3).join(" ") === pinnedKey);
+        }),
+      );
+      assert.ok(pinned, `scanned host key for SSH alias ${index + 1} was not already pinned`);
+      const credentialRef = `ssh-live-${index + 1}`;
+      copyFileSync(identity, resolve(credentialDirectory, `${credentialRef}.key`));
+      chmodSync(resolve(credentialDirectory, `${credentialRef}.key`), 0o600);
+      writeFileSync(resolve(credentialDirectory, `${credentialRef}.user`), `${user}\n`, {
+        mode: 0o600,
+      });
+      writeFileSync(
+        resolve(credentialDirectory, `${credentialRef}.host-key.pub`),
+        `${pinnedKey}\n`,
+        { mode: 0o600 },
+      );
+      return {
+        targetId: `ssh-live-${index + 1}`,
+        targetName: `ssh-live-${index + 1}`,
+        endpoint: `ssh://${host.includes(":") ? `[${host}]` : host}:${port}`,
+        credentialRef,
+        pinnedKey,
+      };
+    });
+    assert.notEqual(targets[0].pinnedKey, targets[1].pinnedKey);
+    const mismatch = {
+      targetId: "ssh-host-key-negative",
+      targetName: "ssh-host-key-negative",
+      endpoint: targets[0].endpoint,
+      credentialRef: "ssh-host-key-negative",
+    };
+    copyFileSync(
+      resolve(credentialDirectory, `${targets[0].credentialRef}.key`),
+      resolve(credentialDirectory, `${mismatch.credentialRef}.key`),
+    );
+    writeFileSync(
+      resolve(credentialDirectory, `${mismatch.credentialRef}.user`),
+      readFileSync(resolve(credentialDirectory, `${targets[0].credentialRef}.user`)),
+      { mode: 0o600 },
+    );
+    writeFileSync(
+      resolve(credentialDirectory, `${mismatch.credentialRef}.host-key.pub`),
+      `${targets[1].pinnedKey}\n`,
+      { mode: 0o600 },
+    );
+    chmodSync(resolve(credentialDirectory, `${mismatch.credentialRef}.key`), 0o600);
+    const input = JSON.stringify({
+      targets: targets.map(({ pinnedKey: _pinnedKey, ...target }) => target),
+      mismatch,
+    });
+    const runSSHSoak = (phase) =>
+      execFileSync(
+        serverTestBinary,
+        ["-test.run", "^TestFoundationSSHProbeSoakPostgres$", "-test.v"],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            CLOUD_AGENTS_FOUNDATION_SSH_RUNTIME_DATABASE_URL: runtimeURL,
+            CLOUD_AGENTS_FOUNDATION_SSH_CREDENTIAL_DIRECTORY: credentialDirectory,
+            CLOUD_AGENTS_FOUNDATION_SSH_TARGETS: input,
+            CLOUD_AGENTS_FOUNDATION_SSH_PHASE: phase,
+          },
+          timeout: 180_000,
+        },
+      );
+    const beforeOutput = runSSHSoak("before-restart");
+    const before = parseMarker(beforeOutput, "FOUNDATION_SSH_SOAK");
+    const afterOutput = runSSHSoak("after-restart");
+    const after = parseMarker(afterOutput, "FOUNDATION_SSH_SOAK");
+    for (const receipt of [before, after]) {
+      assert.equal(receipt.cycles, 16);
+      assert.equal(receipt.targetCount, 2);
+      assert.equal(receipt.probeRequests, 32);
+      assert.equal(receipt.readRequests, 32);
+      assert.equal(receipt.deniedRequests, 16);
+      assert.equal(receipt.hostKeyMismatchStableError, "ssh-host-key-mismatch");
+    }
+    assert.deepEqual(after.facts, before.facts);
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        dirty: true,
+        migrationHead: migration.schema_head,
+      },
+      backend: {
+        postgres: psql("SHOW server_version;"),
+        externalHostCount: targets.length,
+        remoteOS: "linux",
+        remoteArchitecture: "amd64",
+        remoteDockerAvailable: false,
+      },
+      controlPlaneRestart: {
+        before,
+        after,
+        totalRequests: 160,
+        recoveryToFirstSuccessfulProbeMilliseconds: after.recoveryToFirstSuccessMilliseconds,
+      },
+      checks: [
+        `product migration ${migration.schema_head} applied to disposable PostgreSQL`,
+        "two external SSH servers accepted only their existing key-only aliases and already-pinned host keys",
+        "two separate Control Plane test processes used generated SDK and production Admin handlers against one PostgreSQL authority",
+        "64 real SSH probes, 64 Admin reads and 32 ordinary-user 403 responses completed with measured P50/P95/max latency",
+        "the external OS, architecture and SSH server facts remained stable across the Control Plane process restart",
+        "a real external endpoint with the other host's pinned key failed closed and persisted ssh-host-key-mismatch",
+        "Operation and Audit pages retained every probe; no remote file, package, service or container was changed",
+      ],
+      boundary:
+        "Two preconfigured external SSH servers and disposable local PostgreSQL only; this proves old SSH Target registration/probe compatibility, host-key fencing and bounded reconnection across Control Plane process restart, not remote Docker Worker deployment, Provider execution, SSH-server restart, throughput SLO or multi-Region recovery",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    writeFileSync(resolve(evidenceDirectory, "before-restart.log"), beforeOutput);
+    writeFileSync(resolve(evidenceDirectory, "after-restart.log"), afterOutput);
+    process.stdout.write(
+      `Verified external SSH Target probe/soak; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw sshProbeComplete;
+  }
 
   let allowedSinkIP = "";
   let blockedSinkIP = "";
@@ -1723,7 +1937,8 @@ try {
     `Verified Controller restart/adoption and failure compensation; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
   );
 } catch (error) {
-  if (error !== remoteWorkerComplete && error !== snapshotComplete) throw error;
+  if (error !== remoteWorkerComplete && error !== snapshotComplete && error !== sshProbeComplete)
+    throw error;
 } finally {
   const ownedRuntimeIDs = new Set(prepareReceipt?.runtimeId ? [prepareReceipt.runtimeId] : []);
   if (postgresStarted) {
@@ -1841,10 +2056,10 @@ try {
     } catch {}
   }
   if (sandboxServerStarted) docker("rm", "-f", "-v", sandboxServerName);
-  if (dindStarted) docker("rm", "-f", "-v", dindName);
-  try {
+  if (dindStarted) {
+    docker("rm", "-f", "-v", dindName);
     docker("volume", "rm", dindSocketVolume);
-  } catch {}
+  }
   for (const sink of startedSinks) docker("rm", "-f", sink);
   if (postgresStarted) docker("rm", "-f", "-v", postgresName);
   rmSync(build, { recursive: true, force: true });
