@@ -1,0 +1,95 @@
+{
+  "run": "cloud-agents-compose-smoke-31584",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "0eb1350c87219fde5fb96accba7acea4d0a1b43b",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.3.0-dev.87",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-compose-admin-r3",
+    "sourceCommit": "0eb1350c87219fde5fb96accba7acea4d0a1b43b",
+    "sourceDirty": true,
+    "artifactCount": 20,
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000084.tar",
+      "sizeBytes": 994816,
+      "sha256": "sha256:6813645d8c32e7c108d098b00008780e6ceb36aa856df0406660a0d19e0e80e6"
+    },
+    "migrationArtifact": {
+      "filename": "cloud-agents-migrations-000084.tar",
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    }
+  },
+  "backend": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "dockerComposeVersion": "v5.1.2",
+    "postgresImage": "postgres:17.6-bookworm",
+    "imagePlatform": "linux/arm64",
+    "cliTarget": "darwin-arm64",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v22.23.1",
+    "openSandboxServer": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "openSandboxExecd": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "openSandboxEgress": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "result": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-platform-000084-compose-admin-r3",
+    "terminal": "real PTY",
+    "status": "passed",
+    "projectId": "project-2fde604e9ef099aad6125e5a2181196c",
+    "profile": "compose-docker-profile:v1",
+    "environmentId": "environment-0cc46b1599b67da3345de72ee27f3312",
+    "adminWeb": {
+      "sameOriginAdminRequests": 17,
+      "ordinaryUserAdminStatus": 403,
+      "locales": [
+        "en-US"
+      ],
+      "themes": [
+        "dark",
+        "light"
+      ],
+      "viewportWidths": [
+        1440,
+        390
+      ],
+      "consoleErrorsAfterAdminConnect": 0,
+      "tokensPersistedInBrowserStorage": false
+    },
+    "gatewayRoutes": [
+      "files",
+      "pty",
+      "preview",
+      "ssh"
+    ],
+    "finalDockerWorkers": 0,
+    "finalOpenSandboxRuntimeContainers": 0,
+    "finalOpenSandboxEgressContainers": 0,
+    "finalOpenSandboxManagedVolumes": 0,
+    "finalTestOwnedComposeContainers": 0,
+    "finalTestOwnedComposeVolumes": 0,
+    "finalTestOwnedComposeNetworks": 0
+  },
+  "checks": [
+    "the release build regenerated the TypeScript SDK and independent Vite Admin Web before creating the deployment package",
+    "the deployment package contains the built Admin assets, Node standard-library server, non-root Dockerfile, Compose service and reproducible browser harness; packaged files matched the source byte for byte",
+    "the Admin Web server accepts only HTTPS or loopback HTTP upstreams, proxies only /v1/admin, strips browser Cookie and forwarding headers, strips upstream Set-Cookie and applies a same-origin Content Security Policy",
+    "the packaged Admin Web ran as uid 1000 with a read-only root filesystem, all Linux capabilities dropped, no-new-privileges and no Docker socket, target credential or Provider credential mounts",
+    "the Admin Web container received only the deployment-owned Control Plane CA and reached the internal HTTPS Control Plane by service name",
+    "a real browser loaded the packaged UI, sent 17 requests only to same-origin /v1/admin routes, rendered the real project context and reported no Admin-connect console errors",
+    "the ordinary User token reached the same-origin Admin proxy and was rejected by Control Plane with 403",
+    "the browser switched to en-US, switched dark to light theme, rendered without horizontal overflow at 1440 and 390 pixels, exposed mobile navigation and persisted neither token",
+    "Control Plane and Access Gateway restarts retained authority; backup/restore restarted Control Plane, Gateway and Admin Web successfully",
+    "the existing real Files, PTY, Preview and strict-host-key SSH paths still passed in the same run",
+    "Environment termination and cleanup removed all test Workers; trap cleanup left no test-owned Compose containers, volumes, networks or OpenSandbox resources",
+    "Node proxy tests passed 2 tests; platform release tests passed 19 tests and 157 expectations; Admin Web typecheck/build and package tests passed"
+  ],
+  "boundary": "Local OrbStack Docker, fixed OpenSandbox, disposable PostgreSQL and a real local Brave browser only. The Kubernetes Target remains a synthetic API fixture and no real Provider credentials were supplied, so Codex and Claude Code still stop at the deliberate runtime_open_failed boundary. This does not verify Helm Admin Web delivery, customer-node bootstrap, N/N-1 package upgrade or rollback, usage and operational acceptance, OIDC ingress, identity or certificate rotation, real Kubernetes or SSH customer targets, or BASE-READY."
+}

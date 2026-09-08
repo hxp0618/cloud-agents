@@ -24,6 +24,15 @@ The script performs these existing steps in order:
    retries fail without partial changes.
 3. Run `docker compose --env-file .env up --build` and remain attached.
 
+Open `http://127.0.0.1:4174` for the independent Admin Web. The browser talks only
+to its own origin; the Admin Web container forwards `/v1/admin` to the Control
+Plane and rejects other `/v1` routes. Set `CLOUD_AGENTS_CONTROL_PLANE_CA` to the
+CA that issued the internal Control Plane certificate. The container runs as uid
+`1000` with a read-only root filesystem and receives no Docker socket, target
+credentials, or Provider credentials. Keep the default loopback bind for local
+operation; a public deployment must put a deployment-owned TLS/OIDC ingress in
+front of this service.
+
 Create a consistent custom-format logical backup without writing it inside a
 container:
 

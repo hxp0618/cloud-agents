@@ -101,7 +101,7 @@ cleanup() {
   fi
   if [ -f "$environment_file" ]; then
     if [ "$status" -ne 0 ]; then
-      compose logs --no-color --tail=200 access-gateway access-gateway-ssh-key access-grant-key control-plane worker migrate postgres >&2 || true
+      compose logs --no-color --tail=200 admin-web access-gateway access-gateway-ssh-key access-grant-key control-plane worker migrate postgres >&2 || true
     fi
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
@@ -166,7 +166,7 @@ cleanup() {
     kill "$kubernetes_api_pid" >/dev/null 2>&1 || true
     wait "$kubernetes_api_pid" 2>/dev/null || true
   fi
-  docker image rm "${project}-access-gateway" "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
+  docker image rm "${project}-admin-web" "${project}-access-gateway" "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
   rm -rf -- "$smoke_directory"
   exit "$status"
 }
@@ -355,6 +355,7 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
   "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
+  "snapshots.act", "snapshots.create", "snapshots.delete", "snapshots.get", "snapshots.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
   "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get", "sandboxes.update",
@@ -425,6 +426,7 @@ const values = [
   `CLOUD_AGENTS_DEPLOY_DIR=${deploy}`,
   `CLOUD_AGENTS_PLATFORM=${platform}`,
   "CLOUD_AGENTS_CONTROL_PLANE_BIND=127.0.0.1:",
+  "CLOUD_AGENTS_ADMIN_WEB_BIND=127.0.0.1:",
   "CLOUD_AGENTS_WORKER_BIND=127.0.0.1:",
   "CLOUD_AGENTS_POSTGRES_DB=cloud_agents",
   `CLOUD_AGENTS_POSTGRES_INSTALL_PASSWORD=${password}`,
@@ -460,6 +462,7 @@ const values = [
   `CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR=${state}/kubernetes-target-credentials`,
   `CLOUD_AGENTS_SSH_CREDENTIALS_DIR=${state}/ssh-target-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR=${state}/control-plane-tls`,
+  `CLOUD_AGENTS_CONTROL_PLANE_CA=${state}/ca.crt`,
   `CLOUD_AGENTS_ACCESS_GATEWAY_TLS_DIR=${state}/access-gateway-tls`,
   `CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY=${state}/access-gateway-ssh-host-key`,
   `CLOUD_AGENTS_WORKER_TLS_DIR=${state}/worker-tls`,
@@ -604,6 +607,7 @@ compose --profile tenant-bootstrap run --rm tenant-bootstrap >/dev/null
 compose up -d --build >/dev/null
 
 endpoint=
+admin_web_endpoint=
 gateway_endpoint=
 gateway_ssh_port=
 wait_ready() {
@@ -641,14 +645,38 @@ wait_gateway() {
     sleep 1
   done
 }
+wait_admin_web() {
+  admin_web_endpoint=$(compose port admin-web 4174)
+  if [ -z "$admin_web_endpoint" ]; then
+    echo "Compose Admin Web port is unavailable" >&2
+    exit 1
+  fi
+  attempt=0
+  until curl --silent --show-error --fail "http://$admin_web_endpoint/healthz" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+      compose logs --no-color --tail=200 admin-web control-plane >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
 wait_ready
 wait_gateway
+wait_admin_web
 gateway_container=$(compose ps -q access-gateway)
 test "$(docker inspect --format '{{.Config.User}}' "$gateway_container")" = "65532:65532"
 test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$gateway_container")" = true
 test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$gateway_container")" = '["ALL"]'
 case "$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$gateway_container")" in
   *'/var/run/docker.sock'*) echo "Access Gateway received direct Docker authority" >&2; exit 1 ;;
+esac
+admin_web_container=$(compose ps -q admin-web)
+test "$(docker inspect --format '{{.Config.User}}' "$admin_web_container")" = "1000:1000"
+test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$admin_web_container")" = true
+test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$admin_web_container")" = '["ALL"]'
+case "$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$admin_web_container")" in
+  *'/var/run/docker.sock'* | *'credentials'*) echo "Admin Web received infrastructure authority" >&2; exit 1 ;;
 esac
 cloud_agentsctl() {
   "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
@@ -1820,6 +1848,10 @@ for (const action of ["target.drain", "target.upgrade", "target.rollback", "targ
 }
 NODE
 
+node "$smoke_directory/deployment/scripts/test-platform-compose-admin-web.mjs" \
+  "http://$admin_web_endpoint" "$smoke_directory/token" "$smoke_directory/user-token" \
+  tenant-compose-smoke "$project_id"
+
 foundation_network_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-foundation"
 foundation_network_body='{"expectedResourceVersion":"0","policyName":"network-foundation","userSummary":"Private Preview without outbound network","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":true}'
 control_plane_api "$smoke_directory/admin-curl.conf" PUT "$foundation_network_path" \
@@ -2289,6 +2321,7 @@ fi
 compose up -d >/dev/null
 wait_ready
 wait_gateway
+wait_admin_web
 restored_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
   --request-id compose-smoke-restored-execution execution get)
@@ -2297,4 +2330,4 @@ case "$restored_output" in
   *) echo "Compose restore omitted the durable execution" >&2; exit 1 ;;
 esac
 
-echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, gateway=files+pty+preview+ssh, docker-workers=0, opensandbox-resources=0)"
+echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, admin-web=browser, gateway=files+pty+preview+ssh, docker-workers=0, opensandbox-resources=0)"

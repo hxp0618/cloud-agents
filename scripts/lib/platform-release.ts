@@ -103,7 +103,11 @@ export function parsePlatformReleaseOptions(
       "Usage: bun scripts/cloud-agents-platform-release.ts --version <semver> --output-dir <new-directory>",
     );
   }
-  return { outputDirectory: resolve(cwd, outputDirectory), version, allowDirty };
+  return {
+    outputDirectory: resolve(cwd, outputDirectory),
+    version,
+    allowDirty,
+  };
 }
 
 export function platformReleaseArtifact(
@@ -144,7 +148,10 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
     paths.add(migration.catalog_contract.path);
   }
   return createDeterministicUstar(
-    [...paths].map((path) => ({ path, data: readFileSync(resolve(root, path)) })),
+    [...paths].map((path) => ({
+      path,
+      data: readFileSync(resolve(root, path)),
+    })),
   );
 }
 
@@ -157,12 +164,16 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/compose/docker-compose.yml",
     "deploy/compose/provision.sql",
     "deploy/compose/runtime.env.example",
+    "deploy/admin-web/server.mjs",
+    ...readTree(root, "apps/admin-web/dist"),
+    "deploy/docker/admin-web.Dockerfile",
     "deploy/docker/access-gateway.Dockerfile",
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/worker.Dockerfile",
     "scripts/prepare-platform-docker-target.sh",
     "scripts/prepare-platform-kubernetes-target.sh",
+    "scripts/test-platform-compose-admin-web.mjs",
     "scripts/test-platform-agent-interactions.sh",
     "scripts/test-platform-kubernetes-target.sh",
     "scripts/test-platform-ssh-target.sh",
@@ -174,7 +185,9 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     paths.map((path) => ({
       path: path.startsWith("services/")
         ? path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/")
-        : path,
+        : path.startsWith("apps/admin-web/dist/")
+          ? path.replace("apps/admin-web/", "deploy/admin-web/")
+          : path,
       data:
         path === "deploy/docker/migrate.Dockerfile"
           ? Buffer.from(
@@ -202,7 +215,10 @@ export function buildPlatformContractPackage(root: string): Uint8Array {
     "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb",
   ];
   return createDeterministicUstar(
-    [...new Set(paths)].map((path) => ({ path, data: readFileSync(resolve(root, path)) })),
+    [...new Set(paths)].map((path) => ({
+      path,
+      data: readFileSync(resolve(root, path)),
+    })),
   );
 }
 
@@ -326,7 +342,10 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
         target,
       })),
     ),
-    ...PLATFORM_RELEASE_CLI_TARGETS.map((target) => ({ name: "cloud-agentsctl", target })),
+    ...PLATFORM_RELEASE_CLI_TARGETS.map((target) => ({
+      name: "cloud-agentsctl",
+      target,
+    })),
     { name: "cloud-agent-runtime", target: "portable" },
     { name: "cloud-agents-migrations", target: "portable" },
     { name: "cloud-agents-deployment", target: "portable" },

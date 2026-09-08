@@ -74,6 +74,8 @@ artifacts.push(
   ),
 );
 
+run("bun", ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
+run("bun", ["run", "--cwd", "apps/admin-web", "build"], repositoryRoot);
 const deploymentOutput = join(options.outputDirectory, PLATFORM_RELEASE_DEPLOYMENT);
 const deploymentBytes = buildPlatformDeploymentPackage(repositoryRoot);
 writeFileSync(deploymentOutput, deploymentBytes, { mode: 0o444 });
@@ -117,7 +119,6 @@ artifacts.push(
   platformReleaseArtifact("cloud-agents-go-sdk", "portable", PLATFORM_RELEASE_GO_SDK, sdkBytes),
 );
 
-run("bun", ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
 const typescriptSDKOutput = join(options.outputDirectory, PLATFORM_RELEASE_TYPESCRIPT_SDK);
 const typescriptSDKBytes = buildPlatformTypeScriptSDKPackage(repositoryRoot, options.version);
 writeFileSync(typescriptSDKOutput, typescriptSDKBytes, { mode: 0o444 });

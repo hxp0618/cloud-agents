@@ -65,7 +65,10 @@ describe("platform release", () => {
     };
     expect(() => validatePlatformReleaseManifest(manifest)).not.toThrow();
     expect(() =>
-      validatePlatformReleaseManifest({ ...manifest, artifacts: artifacts.slice(1) }),
+      validatePlatformReleaseManifest({
+        ...manifest,
+        artifacts: artifacts.slice(1),
+      }),
     ).toThrow(/artifacts/);
   });
 
@@ -110,6 +113,10 @@ describe("platform release", () => {
     const entries = readDeterministicUstar(new Uint8Array(archive));
     expect(entries.map(({ path }) => path)).toEqual([
       "LICENSE",
+      "deploy/admin-web/dist/assets/index-CQUuSaJ-.css",
+      "deploy/admin-web/dist/assets/index-mbFNO75Y.js",
+      "deploy/admin-web/dist/index.html",
+      "deploy/admin-web/server.mjs",
       "deploy/bootstrap/database.sql",
       "deploy/bootstrap/roles.sql",
       "deploy/compose/.env.example",
@@ -119,6 +126,7 @@ describe("platform release", () => {
       "deploy/compose/provision.sql",
       "deploy/compose/runtime.env.example",
       "deploy/docker/access-gateway.Dockerfile",
+      "deploy/docker/admin-web.Dockerfile",
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
@@ -136,6 +144,7 @@ describe("platform release", () => {
       "scripts/prepare-platform-docker-target.sh",
       "scripts/prepare-platform-kubernetes-target.sh",
       "scripts/test-platform-agent-interactions.sh",
+      "scripts/test-platform-compose-admin-web.mjs",
       "scripts/test-platform-kubernetes-target.sh",
       "scripts/test-platform-ssh-target.sh",
     ]);
@@ -215,6 +224,18 @@ describe("platform release", () => {
     expect(compose).not.toContain("/var/run/docker.sock");
   });
 
+  it("packages the non-root Admin Web with an Admin-only same-origin API", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const dockerfile = readFileSync("deploy/docker/admin-web.Dockerfile", "utf8");
+    const server = readFileSync("deploy/admin-web/server.mjs", "utf8");
+    expect(dockerfile).toContain("USER 1000:1000");
+    expect(compose).toContain("CLOUD_AGENTS_ADMIN_WEB_UPSTREAM: https://control-plane:8080");
+    expect(compose).toContain("CLOUD_AGENTS_CONTROL_PLANE_CA");
+    expect(server).toContain("/^\\/v1\\/admin(?:\\/|$)/u");
+    expect(server).toContain('url.pathname.startsWith("/v1/")');
+    expect(compose).not.toContain("/var/run/docker.sock");
+  });
+
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     const up = readFileSync("deploy/compose/cloud-agents-up.sh", "utf8");
@@ -284,7 +305,7 @@ describe("platform release", () => {
     expect(migrationJob).toContain("readOnlyRootFilesystem: true");
     expect(migrationJob).toContain("drop: [ALL]");
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
-    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(4);
+    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(5);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY");
