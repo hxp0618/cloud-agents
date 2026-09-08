@@ -17,6 +17,7 @@ spec:
         {{- include "cloud-agents.labels" . | nindent 8 }}
         app.kubernetes.io/component: tenant-bootstrap
     spec:
+      automountServiceAccountToken: false
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true

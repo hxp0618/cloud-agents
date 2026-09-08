@@ -16,6 +16,7 @@ spec:
         {{- include "cloud-agents.labels" . | nindent 8 }}
         app.kubernetes.io/component: migrate
     spec:
+      automountServiceAccountToken: false
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true

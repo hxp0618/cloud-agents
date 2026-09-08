@@ -36,10 +36,31 @@ spec:
         {{- include "cloud-agents.labels" . | nindent 8 }}
         app.kubernetes.io/component: control-plane
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: install-access-grant-key
+          image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
+          imagePullPolicy: {{ .Values.images.migrate.pullPolicy }}
+          command: ["/usr/bin/install"]
+          args: ["--mode=0400", "/source/access-grant.key", "/target/access-grant.key"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: access-grant-source
+              mountPath: /source
+              readOnly: true
+            - name: access-grant
+              mountPath: /target
       containers:
         - name: control-plane
           image: {{ include "cloud-agents.image" .Values.images.controlPlane | quote }}
@@ -89,6 +110,8 @@ spec:
             {{- end }}
             - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
               value: /workspace
+            - name: CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE
+              value: /run/cloud-agents/secrets/access-grant.key
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
               valueFrom:
                 secretKeyRef:
@@ -137,6 +160,9 @@ spec:
             - name: worker-ca
               mountPath: /run/cloud-agents/worker-ca
               readOnly: true
+            - name: access-grant
+              mountPath: /run/cloud-agents/secrets
+              readOnly: true
             {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
             - name: kubernetes-target-credentials
               mountPath: /run/cloud-agents/kubernetes-target-credentials
@@ -171,6 +197,16 @@ spec:
             items:
               - key: ca.crt
                 path: ca.crt
+        - name: access-grant-source
+          secret:
+            secretName: {{ .Values.accessGrant.secretName }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.accessGrant.key }}
+                path: access-grant.key
+        - name: access-grant
+          emptyDir:
+            medium: Memory
         {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
         - name: kubernetes-target-credentials
           secret:

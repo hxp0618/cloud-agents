@@ -10,7 +10,7 @@ trap 'rm -f -- "$rendered"' EXIT HUP INT TERM
 
 helm lint "$chart"
 helm template cloud-agents "$chart" >"$rendered"
-for image in control-plane worker migrate; do
+for image in control-plane worker migrate access-gateway admin-web; do
   grep -Fq "image: \"cloud-agents/$image:0.2.0\"" "$rendered"
 done
 grep -Fq "fsGroup: 1000" "$rendered"
@@ -20,13 +20,26 @@ grep -Fq "mountPath: /tmp" "$rendered"
 grep -Fq "emptyDir: {}" "$rendered"
 grep -A1 -F -- "- --runtime-max-sessions" "$rendered" | grep -Fq -- '- "4"'
 grep -A1 -F -- "- --max-concurrent-requests" "$rendered" | grep -Fq -- '- "128"'
+grep -Fq "name: install-access-grant-key" "$rendered"
+grep -Fq "name: install-ssh-host-key" "$rendered"
+grep -Fq "value: /run/cloud-agents/secrets/access-grant.key" "$rendered"
+grep -Fq "value: https://cloud-agents-cloud-agents-control-plane:8080" "$rendered"
+grep -Fq "value: /run/cloud-agents/control-plane-ca.crt" "$rendered"
+test "$(grep -Fc "automountServiceAccountToken: false" "$rendered")" -ge 6
+test "$(grep -Fc "readOnlyRootFilesystem: true" "$rendered")" -ge 7
+if grep -Fq "/var/run/docker.sock" "$rendered"; then
+  echo "Helm workloads received direct Docker authority" >&2
+  exit 1
+fi
 
 helm template cloud-agents "$chart" \
   --set-string images.controlPlane.digest="$digest" \
   --set-string images.worker.digest="$digest" \
-  --set-string images.migrate.digest="$digest" >"$rendered"
+  --set-string images.migrate.digest="$digest" \
+  --set-string images.accessGateway.digest="$digest" \
+  --set-string images.adminWeb.digest="$digest" >"$rendered"
 
-for image in control-plane worker migrate; do
+for image in control-plane worker migrate access-gateway admin-web; do
   grep -Fq "image: \"cloud-agents/$image@$digest\"" "$rendered"
 done
 
@@ -48,6 +61,14 @@ if helm template cloud-agents "$chart" --set runtime.maxSessions=0 >/dev/null 2>
 fi
 if helm template cloud-agents "$chart" --set controlPlane.maxConcurrentRequests=0 >/dev/null 2>&1; then
   echo "invalid Control Plane max concurrent requests passed Helm values validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set accessGateway.replicas=2 >/dev/null 2>&1; then
+  echo "invalid Access Gateway replicas passed Helm values validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set adminWeb.replicas=0 >/dev/null 2>&1; then
+  echo "invalid Admin Web replicas passed Helm values validation" >&2
   exit 1
 fi
 if helm template cloud-agents "$chart" --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca >/dev/null 2>&1; then

@@ -14,6 +14,16 @@ images:
     tag: 0.2.0
     digest: ""
     pullPolicy: IfNotPresent
+  accessGateway:
+    repository: cloud-agents/access-gateway
+    tag: 0.2.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  adminWeb:
+    repository: cloud-agents/admin-web
+    tag: 0.2.0
+    digest: ""
+    pullPolicy: IfNotPresent
 
 database:
   secretName: cloud-agents-database
@@ -29,10 +39,15 @@ auth:
   secretName: cloud-agents-auth
   configKey: auth.json
 
+accessGrant:
+  secretName: cloud-agents-access-grant
+  key: access-grant.key
+
 tls:
   controlPlaneSecretName: cloud-agents-control-plane-tls
   workerSecretName: cloud-agents-worker-tls
   workerClientSecretName: cloud-agents-worker-client-tls
+  accessGatewaySecretName: cloud-agents-access-gateway-tls
 
 admission:
   secretName: cloud-agents-admission
@@ -59,7 +74,7 @@ controlPlane:
   resources: {}
 
 deploymentTargets:
-  kubernetesCredentialSecretName: ""
+  kubernetesCredentialSecretName: cloud-agents-kubernetes-targets
   sshCredentialSecretName: ""
 
 remoteWorker:
@@ -70,6 +85,25 @@ worker:
   replicas: 1
   service:
     port: 8091
+  resources: {}
+
+accessGateway:
+  replicas: 1
+  sshHostKeySecretName: cloud-agents-access-gateway-ssh
+  sshHostKeyKey: ssh-host-key
+  service:
+    type: ClusterIP
+    httpsPort: 8090
+    sshPort: 2222
+  resources: {}
+
+adminWeb:
+  replicas: 1
+  controlPlaneCASecretName: cloud-agents-control-plane-tls
+  controlPlaneCAKey: ca.crt
+  service:
+    type: ClusterIP
+    port: 4174
   resources: {}
 
 networkPolicy:

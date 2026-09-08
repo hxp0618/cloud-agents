@@ -30,7 +30,7 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlane", "worker", "migrate"],
+      "required": ["controlPlane", "worker", "migrate", "accessGateway", "adminWeb"],
       "properties": {
         "controlPlane": {
           "$ref": "#/definitions/image"
@@ -40,6 +40,31 @@
         },
         "migrate": {
           "$ref": "#/definitions/image"
+        },
+        "accessGateway": {
+          "$ref": "#/definitions/image"
+        },
+        "adminWeb": {
+          "$ref": "#/definitions/image"
+        }
+      }
+    },
+    "accessGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secretName", "key"],
+      "properties": {
+        "secretName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
         }
       }
     },
@@ -147,6 +172,48 @@
         "replicas": {
           "type": "integer",
           "const": 1
+        }
+      }
+    },
+    "accessGateway": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "const": 1
+        },
+        "sshHostKeySecretName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "sshHostKeyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      }
+    },
+    "adminWeb": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "const": 1
+        },
+        "controlPlaneCASecretName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "controlPlaneCAKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
         }
       }
     }

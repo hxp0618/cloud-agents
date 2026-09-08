@@ -1,0 +1,114 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "47f460d7033ef94bdb4c30f4fd6cfc8191c71370",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.3.0-dev.89",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-helm-admin-r5",
+    "sourceCommit": "47f460d7033ef94bdb4c30f4fd6cfc8191c71370",
+    "sourceDirty": true,
+    "artifactCount": 20,
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000084.tar",
+      "sizeBytes": 1036800,
+      "sha256": "sha256:6ab5368f9932f1507d08c2bb202d6d23bbf4aff2e54090b8ba866a03cc02ab02"
+    },
+    "migrationArtifact": {
+      "filename": "cloud-agents-migrations-000084.tar",
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "allChecksumsPassed": true,
+    "packagedHelmAndSmokeFilesMatchedSource": true
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "postgresImage": "postgres:17.6-bookworm",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v22.23.1"
+  },
+  "result": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh scripts/test-platform-helm.sh /tmp/cloud-agents-platform-000084-helm-admin-r5",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-platform-000084-helm-admin-r5.log",
+      "sha256": "sha256:7adfe2041a4cbd56fdbea0b127d0febc3b1a340c9981a9386854c551d0130de2"
+    },
+    "schemaLedger": {
+      "count": 84,
+      "first": "000001",
+      "last": "000084"
+    },
+    "readyDeployments": [
+      "control-plane",
+      "worker",
+      "access-gateway",
+      "admin-web"
+    ],
+    "workspacePVC": {
+      "phase": "Bound",
+      "capacity": "1Gi",
+      "accessMode": "ReadWriteOnce",
+      "storageClass": "local-path"
+    },
+    "adminWeb": {
+      "sameOriginAdminRequests": 14,
+      "ordinaryUserAdminStatus": 403,
+      "locales": [
+        "en-US"
+      ],
+      "themes": [
+        "dark",
+        "light"
+      ],
+      "viewportWidths": [
+        1440,
+        390
+      ],
+      "consoleErrorsAfterAdminConnect": 0,
+      "tokensPersistedInBrowserStorage": false
+    },
+    "accessGateway": {
+      "httpsHealth": "passed",
+      "sshHostKeyFingerprintMatchedDeploymentSecret": true
+    },
+    "adminAndGatewayRestart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestImageTags": 0
+  },
+  "checks": [
+    "the current dirty source produced one local 20-artifact candidate without publishing or pushing anything",
+    "all candidate checksums passed and every packaged Helm or Helm-smoke file matched the working-tree source by SHA-256",
+    "the real smoke extracted and ran the packaged chart, bootstrap SQL, Admin browser harness, Dockerfiles and binaries rather than reading those deployment inputs from the repository",
+    "the pre-install migration and tenant bootstrap hooks completed against a chart-external disposable PostgreSQL 17.6 Pod and the ledger read back exactly 84 migrations from 000001 through 000084",
+    "Control Plane, Worker, Access Gateway and Admin Web Deployments became Ready on the real OrbStack Kubernetes API",
+    "Control Plane and Access Gateway non-root init containers copied projected private keys into memory-backed volumes with mode 0400; both serving processes started successfully",
+    "all four serving Pods disabled ServiceAccount token mounting, used read-only root filesystems, denied privilege escalation, dropped every Linux capability and had no Docker socket",
+    "the Admin Web Pod mounted only the Control Plane CA, contained no target or Provider credential mount and reached the internal HTTPS Control Plane Service",
+    "a real browser sent 14 requests only to same-origin /v1/admin routes, rendered the real project, reported no post-connect console errors, switched dark to light and had no horizontal overflow at widths 1440 and 390",
+    "the ordinary User token reached the Admin Web proxy with a valid request ID and Control Plane rejected it with 403",
+    "the Access Gateway passed HTTPS health and served the exact deployment-owned SSH host key after restart",
+    "the test deleted only its exactly labelled namespace and removed its PVC, PV and local image tags"
+  ],
+  "verification": {
+    "helmStatic": "sh scripts/test-cloud-agents-helm.sh passed",
+    "helmRender": "helm template plus kubectl apply --dry-run=client passed",
+    "releaseTests": "scripts/lib/platform-release.test.ts passed 19 tests",
+    "format": "targeted oxfmt check passed",
+    "shellSyntax": "sh -n scripts/test-platform-helm.sh passed",
+    "diffCheck": "git diff --check passed"
+  },
+  "boundary": "This is a real local Kubernetes installation using the packaged Helm path, local release images, a chart-external disposable PostgreSQL Pod and a real local Brave browser. It proves installation, current migrations, component readiness, Admin API isolation, Gateway TLS/SSH identity, restart recovery and exact test cleanup. It did not publish images, use a managed external PostgreSQL/S3 service, configure OIDC or public ingress, enforce-test NetworkPolicy with an independent probe, create a Kubernetes Deployment Target or Sandbox workload, exercise Gateway Files/PTY/Preview, supply real Provider credentials, run backup/restore, perform N/N-1 upgrade/rollback, or rotate identities/certificates. It is not BASE-READY."
+}

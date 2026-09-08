@@ -35,6 +35,7 @@ spec:
         {{- include "cloud-agents.labels" . | nindent 8 }}
         app.kubernetes.io/component: worker
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

@@ -174,6 +174,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "scripts/prepare-platform-docker-target.sh",
     "scripts/prepare-platform-kubernetes-target.sh",
     "scripts/test-platform-compose-admin-web.mjs",
+    "scripts/test-platform-helm.sh",
     "scripts/test-platform-agent-interactions.sh",
     "scripts/test-platform-kubernetes-target.sh",
     "scripts/test-platform-ssh-target.sh",

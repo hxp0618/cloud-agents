@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-admin-web
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-web
+spec:
+  type: {{ .Values.adminWeb.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: admin-web
+  ports:
+    - name: http
+      port: {{ .Values.adminWeb.service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-admin-web
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-web
+spec:
+  replicas: {{ .Values.adminWeb.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: admin-web
+  template:
+    metadata:
+      labels:
+        {{- include "cloud-agents.labels" . | nindent 8 }}
+        app.kubernetes.io/component: admin-web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: admin-web
+          image: {{ include "cloud-agents.image" .Values.images.adminWeb | quote }}
+          imagePullPolicy: {{ .Values.images.adminWeb.pullPolicy }}
+          env:
+            - name: CLOUD_AGENTS_ADMIN_WEB_UPSTREAM
+              value: https://{{ include "cloud-agents.fullname" . }}-control-plane:{{ .Values.controlPlane.service.port }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /run/cloud-agents/control-plane-ca.crt
+          ports:
+            - name: http
+              containerPort: 4174
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml .Values.adminWeb.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: control-plane-ca
+              mountPath: /run/cloud-agents/control-plane-ca.crt
+              subPath: control-plane-ca.crt
+              readOnly: true
+      volumes:
+        - name: control-plane-ca
+          secret:
+            secretName: {{ .Values.adminWeb.controlPlaneCASecretName }}
+            items:
+              - key: {{ .Values.adminWeb.controlPlaneCAKey }}
+                path: control-plane-ca.crt

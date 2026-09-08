@@ -131,8 +131,11 @@ describe("platform release", () => {
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
       "deploy/helm/cloud-agents/Chart.yaml",
+      "deploy/helm/cloud-agents/README.md",
       "deploy/helm/cloud-agents/files/tenant-bootstrap.sql",
       "deploy/helm/cloud-agents/templates/_helpers.tpl",
+      "deploy/helm/cloud-agents/templates/access-gateway.yaml",
+      "deploy/helm/cloud-agents/templates/admin-web.yaml",
       "deploy/helm/cloud-agents/templates/control-plane.yaml",
       "deploy/helm/cloud-agents/templates/migrate-job.yaml",
       "deploy/helm/cloud-agents/templates/network-policy.yaml",
@@ -145,6 +148,7 @@ describe("platform release", () => {
       "scripts/prepare-platform-kubernetes-target.sh",
       "scripts/test-platform-agent-interactions.sh",
       "scripts/test-platform-compose-admin-web.mjs",
+      "scripts/test-platform-helm.sh",
       "scripts/test-platform-kubernetes-target.sh",
       "scripts/test-platform-ssh-target.sh",
     ]);
@@ -285,16 +289,26 @@ describe("platform release", () => {
 
   it("selects matching OCI base and binary architectures", () => {
     const users = {
+      "access-gateway": "USER 65532:65532",
+      "admin-web": "USER 1000:1000",
       "control-plane": "USER 65532:65532",
       worker: "USER 1000:1000",
       migrate: "USER 999:999",
     } as const;
-    for (const name of ["control-plane", "worker", "migrate"] as const) {
+    for (const name of [
+      "access-gateway",
+      "admin-web",
+      "control-plane",
+      "worker",
+      "migrate",
+    ] as const) {
       const dockerfile = readFileSync(`deploy/docker/${name}.Dockerfile`, "utf8");
-      expect(dockerfile).toContain("ARG TARGETOS");
-      expect(dockerfile).toContain("ARG TARGETARCH");
-      expect(dockerfile).toContain("${TARGETOS}-${TARGETARCH}");
-      expect(dockerfile).not.toContain("ARG TARGET=");
+      if (name !== "admin-web") {
+        expect(dockerfile).toContain("ARG TARGETOS");
+        expect(dockerfile).toContain("ARG TARGETARCH");
+        expect(dockerfile).toContain("${TARGETOS}-${TARGETARCH}");
+        expect(dockerfile).not.toContain("ARG TARGET=");
+      }
       expect(dockerfile).toContain(users[name]);
     }
     const migrationJob = readFileSync(
