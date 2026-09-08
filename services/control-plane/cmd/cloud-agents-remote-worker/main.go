@@ -30,6 +30,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/foundationcontroller"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
+	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
@@ -39,22 +40,25 @@ var (
 )
 
 type config struct {
-	controlPlaneURL     string
-	tenantID            string
-	projectID           string
-	enrollmentID        string
-	incarnationID       string
-	certificate         string
-	privateKey          string
-	serverCA            string
-	stateFile           string
-	dockerEndpoint      string
-	credentialDirectory string
-	credentialRef       string
-	kernelVersion       string
-	capabilities        []string
-	capacity            platform.RemoteWorkerCapacity
-	once                bool
+	controlPlaneURL                string
+	tenantID                       string
+	projectID                      string
+	enrollmentID                   string
+	incarnationID                  string
+	certificate                    string
+	privateKey                     string
+	certificateResourceVersionFile string
+	certificateRotationBefore      time.Duration
+	rotateCertificateOnce          bool
+	serverCA                       string
+	stateFile                      string
+	dockerEndpoint                 string
+	credentialDirectory            string
+	credentialRef                  string
+	kernelVersion                  string
+	capabilities                   []string
+	capacity                       platform.RemoteWorkerCapacity
+	once                           bool
 }
 
 func parseConfig(args []string) (config, error) {
@@ -69,6 +73,9 @@ func parseConfig(args []string) (config, error) {
 	set.StringVar(&value.incarnationID, "incarnation", "", "RemoteWorker incarnation identifier")
 	set.StringVar(&value.certificate, "certificate", "", "client certificate PEM file")
 	set.StringVar(&value.privateKey, "private-key", "", "client private key PEM file")
+	set.StringVar(&value.certificateResourceVersionFile, "certificate-resource-version-file", "", "durable certificate resource version file")
+	set.DurationVar(&value.certificateRotationBefore, "certificate-rotation-before", defaultCertificateRotationBefore, "rotate this long before certificate expiry")
+	set.BoolVar(&value.rotateCertificateOnce, "rotate-certificate-once", false, "force one certificate rotation before the first heartbeat")
 	set.StringVar(&value.serverCA, "server-ca", "", "Control Plane CA certificate PEM file")
 	set.StringVar(&value.stateFile, "state-file", "", "durable RemoteWorker state file")
 	set.StringVar(&value.dockerEndpoint, "docker-endpoint", "", "node-local Docker HTTPS endpoint")
@@ -91,7 +98,13 @@ func parseConfig(args []string) (config, error) {
 		slices.Contains(value.capabilities, "docker") && runtimeConfigMissing ||
 		strings.TrimSpace(value.controlPlaneURL) != value.controlPlaneURL ||
 		strings.TrimSpace(value.certificate) != value.certificate || strings.TrimSpace(value.privateKey) != value.privateKey || strings.TrimSpace(value.serverCA) != value.serverCA || strings.TrimSpace(value.stateFile) != value.stateFile ||
-		strings.TrimSpace(value.dockerEndpoint) != value.dockerEndpoint || strings.TrimSpace(value.credentialDirectory) != value.credentialDirectory {
+		strings.TrimSpace(value.dockerEndpoint) != value.dockerEndpoint || strings.TrimSpace(value.credentialDirectory) != value.credentialDirectory ||
+		strings.TrimSpace(value.certificateResourceVersionFile) != value.certificateResourceVersionFile {
+		return config{}, errInvalidRemoteWorkerConfig
+	}
+	if value.certificateResourceVersionFile != "" && (value.certificate != value.privateKey || !filepath.IsAbs(value.certificate) || !filepath.IsAbs(value.certificateResourceVersionFile) ||
+		value.certificateRotationBefore <= 0 || value.certificateRotationBefore >= internalremoteworker.CertificateLifetime) ||
+		value.rotateCertificateOnce && value.certificateResourceVersionFile == "" {
 		return config{}, errInvalidRemoteWorkerConfig
 	}
 	if _, err := platform.EncodeRemoteWorkerHeartbeatRequestJSON(request); err != nil {
@@ -290,40 +303,7 @@ func saveNodeState(path string, value nodeState) error {
 	if err != nil {
 		return err
 	}
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(directory, ".remote-worker-state-*")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err == nil {
-		_, err = temporary.Write(append(data, '\n'))
-	}
-	if err == nil {
-		err = temporary.Sync()
-	}
-	if closeErr := temporary.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(temporaryPath, path)
-	}
-	if err != nil {
-		return err
-	}
-	dir, err := os.Open(directory)
-	if err != nil {
-		return err
-	}
-	err = dir.Sync()
-	if closeErr := dir.Close(); err == nil {
-		err = closeErr
-	}
-	return err
+	return writePrivateFile(path, append(data, '\n'))
 }
 
 func reconcileHeartbeat(path string, state *nodeState, heartbeat platform.RemoteWorkerHeartbeat, now time.Time) error {
@@ -1073,13 +1053,40 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	certificateExpiresAt := time.Time{}
+	if value.certificateResourceVersionFile != "" {
+		certificateExpiresAt, err = certificateNotAfter(value.certificate, value.privateKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err = readCertificateResourceVersion(value.certificateResourceVersionFile); err != nil {
+			log.Fatal(err)
+		}
+	}
 	state, err := loadNodeState(value.stateFile, value.incarnationID)
 	if err != nil {
 		log.Fatal(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	rotateIdentity := func(callContext context.Context) error {
+		if value.certificateResourceVersionFile != "" && certificateRotationDue(certificateExpiresAt, time.Now(), value.certificateRotationBefore, value.rotateCertificateOnce) {
+			var replacementClient *api.Client
+			replacementClient, certificateExpiresAt, err = rotateCertificate(callContext, client, value)
+			if err != nil {
+				return err
+			}
+			client = replacementClient
+			value.rotateCertificateOnce = false
+			log.Printf("remote worker certificate rotated; expires at %s", certificateExpiresAt.UTC().Format(time.RFC3339))
+		}
+		return nil
+	}
 	heartbeat := func(callContext context.Context) (bool, bool, error) {
+		if err := rotateIdentity(callContext); err != nil {
+			log.Printf("remote worker certificate rotation failed: %v", err)
+			return false, false, err
+		}
 		requestID := fmt.Sprintf("remote-worker-heartbeat-%d", time.Now().UnixNano())
 		response, callErr := client.HeartbeatRemoteWorker(callContext, value.tenantID, value.projectID, value.enrollmentID, requestID, value.heartbeatRequest(state))
 		if callErr != nil {
@@ -1094,6 +1101,9 @@ func main() {
 	renew := func(callContext context.Context) error {
 		_, _, err := heartbeat(callContext)
 		return err
+	}
+	if err := rotateIdentity(ctx); err != nil {
+		log.Fatal(err)
 	}
 	if err := executePendingSandbox(ctx, value, &state, renew); err != nil {
 		log.Fatal(err)

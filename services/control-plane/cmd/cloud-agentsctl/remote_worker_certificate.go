@@ -1,39 +1,18 @@
 package main
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 )
 
 func newRemoteWorkerCertificateRequest(enrollmentID, incarnationID string, expectedResourceVersion int64) (platform.RemoteWorkerCertificateIssueRequest, []byte, error) {
-	if enrollmentID == "" || incarnationID == "" || expectedResourceVersion < 1 {
-		return platform.RemoteWorkerCertificateIssueRequest{}, nil, errors.New("RemoteWorker certificate input is invalid")
-	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return platform.RemoteWorkerCertificateIssueRequest{}, nil, errors.New("cannot generate RemoteWorker private key")
-	}
-	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: enrollmentID}}, key)
-	if err != nil {
-		return platform.RemoteWorkerCertificateIssueRequest{}, nil, errors.New("cannot generate RemoteWorker CSR")
-	}
-	keyRaw, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		return platform.RemoteWorkerCertificateIssueRequest{}, nil, errors.New("cannot encode RemoteWorker private key")
-	}
-	return platform.RemoteWorkerCertificateIssueRequest{ExpectedResourceVersion: strconv.FormatInt(expectedResourceVersion, 10), ConfirmedEnrollmentID: enrollmentID, IncarnationID: incarnationID, CertificateSigningRequestPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr}))}, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyRaw}), nil
+	return internalremoteworker.NewCertificateIssueRequest(enrollmentID, incarnationID, expectedResourceVersion)
 }
 
 func reserveRemoteWorkerIdentityFile(path string) (*os.File, error) {

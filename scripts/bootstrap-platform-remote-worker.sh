@@ -73,6 +73,7 @@ esac
   exit 2
 }
 certificate_version=$((enrollment_version + 1))
+certificate_resource_version=$((certificate_version + 1))
 bootstrap_idempotency_key=$CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT
 while [ "${#bootstrap_idempotency_key}" -lt 16 ]; do
   bootstrap_idempotency_key="${bootstrap_idempotency_key}0"
@@ -92,11 +93,15 @@ esac
 umask 077
 staging_directory=$(mktemp -d "$parent_directory/.cloud-agents-remote-worker.XXXXXX")
 secret_claimed=false
+identity_issued=false
 cleanup() {
   status=$?
   trap - 0 HUP INT TERM
   if [ "$status" -ne 0 ]; then
-    if [ "$secret_claimed" = true ]; then
+    if [ "$identity_issued" = true ]; then
+      rm -f -- "$staging_directory/enrollment-secret" "$staging_directory/claim-response.json"
+      echo "installation finalization failed; issued identity retained in $staging_directory" >&2
+    elif [ "$secret_claimed" = true ]; then
       echo "certificate issuance failed; enrollment material retained in $staging_directory for retry" >&2
     else
       case "$staging_directory" in
@@ -151,8 +156,11 @@ unset claim_response enrollment_secret
   --expected-resource-version "$certificate_version" \
   --incarnation "$CLOUD_AGENTS_REMOTE_WORKER_INCARNATION" \
   --identity-file "$staging_directory/identity.pem" >/dev/null
+identity_issued=true
 rm -f -- "$staging_directory/enrollment-secret"
 secret_claimed=false
+printf '%s\n' "$certificate_resource_version" >"$staging_directory/identity.resource-version"
+chmod 0600 "$staging_directory/identity.resource-version"
 
 shell_quote() {
   printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\"'\"'/g")"
@@ -168,6 +176,7 @@ shell_quote() {
     "--incarnation=$CLOUD_AGENTS_REMOTE_WORKER_INCARNATION" \
     "--certificate=$install_directory/identity.pem" \
     "--private-key=$install_directory/identity.pem" \
+    "--certificate-resource-version-file=$install_directory/identity.resource-version" \
     "--server-ca=$install_directory/control-plane-ca.pem" \
     "--state-file=$install_directory/state.json" \
     "--docker-endpoint=$docker_endpoint" \

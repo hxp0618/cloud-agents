@@ -51,3 +51,14 @@ func TestCertificateAuthorityIssuesBoundClientIdentity(t *testing.T) {
 		t.Fatal("certificate outliving its CA was issued")
 	}
 }
+
+func TestCertificateIssueRequestBindsPrivateKey(t *testing.T) {
+	request, privateKey, err := NewCertificateIssueRequest("enrollment-alpha", "incarnation-alpha", 3)
+	if err != nil || ValidateCertificateIssuePrivateKey(request, privateKey) != nil {
+		t.Fatalf("generated request/key rejected: %v", err)
+	}
+	_, otherPrivateKey, err := NewCertificateIssueRequest("enrollment-alpha", "incarnation-alpha", 3)
+	if err != nil || ValidateCertificateIssuePrivateKey(request, otherPrivateKey) == nil {
+		t.Fatal("request accepted an unrelated private key")
+	}
+}

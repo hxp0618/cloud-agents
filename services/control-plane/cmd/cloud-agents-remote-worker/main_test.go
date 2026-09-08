@@ -62,6 +62,13 @@ func TestParseConfigBuildsCanonicalHeartbeat(t *testing.T) {
 	if _, err := parseConfig(withoutDocker); err != nil {
 		t.Fatalf("non-Docker heartbeat config rejected: %v", err)
 	}
+	rotating := append([]string{}, withoutDocker...)
+	rotating[6] = "--private-key=/tmp/node.pem"
+	rotating = append(rotating, "--certificate-resource-version-file=/tmp/identity.resource-version", "--rotate-certificate-once")
+	rotationConfig, err := parseConfig(rotating)
+	if err != nil || !rotationConfig.rotateCertificateOnce || rotationConfig.certificateRotationBefore != defaultCertificateRotationBefore {
+		t.Fatalf("rotating heartbeat config rejected: %#v err=%v", rotationConfig, err)
+	}
 }
 
 func TestRemoteWorkerCommandStateSurvivesRestartAndDeduplicates(t *testing.T) {

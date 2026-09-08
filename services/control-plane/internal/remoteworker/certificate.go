@@ -1,6 +1,7 @@
 package remoteworker
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -15,8 +16,11 @@ import (
 	"errors"
 	"math/big"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
 const CertificateLifetime = 15 * time.Minute
@@ -57,6 +61,58 @@ type PeerIdentity struct {
 	EnrollmentID      string
 	IncarnationID     string
 	CertificateSHA256 string
+}
+
+func NewCertificateIssueRequest(enrollmentID, incarnationID string, expectedResourceVersion int64) (platform.RemoteWorkerCertificateIssueRequest, []byte, error) {
+	if invalidIdentifier(enrollmentID) || invalidIdentifier(incarnationID) || expectedResourceVersion < 1 {
+		return platform.RemoteWorkerCertificateIssueRequest{}, nil, ErrInvalidCertificateRequest
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return platform.RemoteWorkerCertificateIssueRequest{}, nil, err
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: enrollmentID}}, key)
+	if err != nil {
+		return platform.RemoteWorkerCertificateIssueRequest{}, nil, err
+	}
+	keyRaw, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return platform.RemoteWorkerCertificateIssueRequest{}, nil, err
+	}
+	return platform.RemoteWorkerCertificateIssueRequest{
+		ExpectedResourceVersion:      strconv.FormatInt(expectedResourceVersion, 10),
+		ConfirmedEnrollmentID:        enrollmentID,
+		IncarnationID:                incarnationID,
+		CertificateSigningRequestPEM: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr})),
+	}, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyRaw}), nil
+}
+
+func ValidateCertificateIssuePrivateKey(request platform.RemoteWorkerCertificateIssueRequest, privateKeyPEM []byte) error {
+	if invalidIdentifier(request.ConfirmedEnrollmentID) || invalidIdentifier(request.IncarnationID) {
+		return ErrInvalidCertificateRequest
+	}
+	version, err := strconv.ParseInt(request.ExpectedResourceVersion, 10, 64)
+	csrBlock, csrRest := pem.Decode([]byte(request.CertificateSigningRequestPEM))
+	keyBlock, keyRest := pem.Decode(privateKeyPEM)
+	if err != nil || version < 1 || csrBlock == nil || csrBlock.Type != "CERTIFICATE REQUEST" || len(csrBlock.Headers) != 0 || len(strings.TrimSpace(string(csrRest))) != 0 ||
+		keyBlock == nil || keyBlock.Type != "PRIVATE KEY" || len(keyBlock.Headers) != 0 || len(strings.TrimSpace(string(keyRest))) != 0 {
+		return ErrInvalidCertificateRequest
+	}
+	csr, err := x509.ParseCertificateRequest(csrBlock.Bytes)
+	if err != nil || csr.CheckSignature() != nil {
+		return ErrInvalidCertificateRequest
+	}
+	key, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	signer, ok := key.(crypto.Signer)
+	if err != nil || !ok {
+		return ErrInvalidCertificateRequest
+	}
+	csrPublic, csrErr := x509.MarshalPKIXPublicKey(csr.PublicKey)
+	keyPublic, keyErr := x509.MarshalPKIXPublicKey(signer.Public())
+	if csrErr != nil || keyErr != nil || !bytes.Equal(csrPublic, keyPublic) {
+		return ErrInvalidCertificateRequest
+	}
+	return nil
 }
 
 func NewCertificateAuthority(certificatePEM, privateKeyPEM []byte, trustDomain string) (*CertificateAuthority, error) {

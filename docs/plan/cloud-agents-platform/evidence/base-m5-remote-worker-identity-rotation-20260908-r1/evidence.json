@@ -1,0 +1,117 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "96c45e7fe1cea8dfa34d54acb1f972056eb62d0b",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.1.0-alpha.100",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-identity-rotation-r5",
+    "sourceCommit": "96c45e7fe1cea8dfa34d54acb1f972056eb62d0b",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "deploymentArtifact": {
+      "sizeBytes": 1064960,
+      "sha256": "sha256:d5c2e573a333df95ef43d8a8474e6e0acc05e479ea83cecc705bffa6da4ebad6"
+    },
+    "migrationArtifact": {
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "remoteWorkerArtifacts": [
+      {
+        "target": "linux-amd64",
+        "sizeBytes": 15028485,
+        "sha256": "sha256:b7ad9009e68e78fbb2ad692029d76c22b0a3b06937d0da1fe1ff9624fb0543c8"
+      },
+      {
+        "target": "linux-arm64",
+        "sizeBytes": 13921344,
+        "sha256": "sha256:b6f01399248c49f0e5e48f7ebd730a891a39b98bb7fbd7a6fa16239460aa866a"
+      }
+    ],
+    "allChecksumsPassed": true,
+    "packagedBootstrapRunbookAndSmokeMatchedSource": true
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "customerNodeImage": "debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "postgresImage": "postgres:17.6-bookworm",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v22.23.1"
+  },
+  "result": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh <packaged>/scripts/test-platform-helm.sh /tmp/cloud-agents-platform-000084-identity-rotation-r5",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-platform-000084-identity-rotation-r5.log",
+      "sizeBytes": 538,
+      "sha256": "sha256:66abe18f9ef2fddba9b05a02891182d530353d90e22645875b0cbea6d755f8a3",
+      "containsEnrollmentSecretPrivateKeyOrPendingKey": false
+    },
+    "schemaLedger": {
+      "count": 84,
+      "first": "000001",
+      "last": "000084"
+    },
+    "customerNode": {
+      "freshLinuxFilesystem": true,
+      "certificateLifetimeMinutes": 15,
+      "defaultRotationBeforeExpiryMinutes": 5,
+      "rotationTrigger": "forced-once-through-production-path",
+      "initialResourceVersion": "3",
+      "rotatedResourceVersion": "4",
+      "certificateDigestChanged": true,
+      "newCertificateHeartbeat": "passed",
+      "newCertificateProcessRestart": "passed",
+      "oldCertificateHeartbeatStatus": 401,
+      "pendingRequestRemoved": true,
+      "identityMode": "0600",
+      "resourceVersionFileMode": "0600",
+      "publishedPorts": 0
+    },
+    "adminWeb": {
+      "sameOriginAdminRequests": 15,
+      "ordinaryUserAdminStatus": 403,
+      "locales": ["en-US"],
+      "themes": ["dark", "light"],
+      "viewportWidths": [1440, 390],
+      "tokensPersistedInBrowserStorage": false
+    },
+    "accessGatewayTLSAndSSH": "passed",
+    "adminAndGatewayRestart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "checks": [
+    "the current dirty source produced one local 22-artifact candidate without publishing or pushing anything",
+    "all candidate checksums passed and the packaged bootstrap script, runbook and Helm smoke matched the working-tree source byte for byte",
+    "the bootstrap persisted only the initial resource version and locally generated identity, then removed the one-time enrollment Secret",
+    "the RemoteWorker used the existing mTLS rotation API with a deterministic idempotency key and a mode-0600 replay-safe pending request",
+    "the real Helm Control Plane advanced the enrollment from resource version 3 to 4 and exposed only the changed certificate digest and lifecycle metadata to Admin",
+    "the replacement identity completed heartbeat before and after a process restart while the previous identity received AUTHENTICATION_FAILED with HTTP 401",
+    "the rotation pending request was removed after local identity and resource-version persistence",
+    "the real browser, ordinary-user 403, Access Gateway, restart and exact cleanup checks passed after rotation"
+  ],
+  "verification": {
+    "focusedGoTests": "cloud-agents-remote-worker, cloud-agentsctl and internal/remoteworker passed",
+    "focusedGoRace": "cloud-agents-remote-worker, cloud-agentsctl and internal/remoteworker passed",
+    "postgresRotationRegression": "TestRemoteWorkerEnrollmentPostgres passed",
+    "helmLint": "passed",
+    "releaseTests": "scripts/lib/platform-release.test.ts passed 19 tests",
+    "shellSyntax": "bootstrap and Helm smoke sh -n passed",
+    "diffCheck": "git diff --check passed"
+  },
+  "boundary": "This proves the packaged RemoteWorker leaf-certificate rotation path against the real Helm Control Plane and PostgreSQL on OrbStack, including local crash-replay material, atomic file replacement, new-identity reconnect, old-identity rejection and exact cleanup. The real run forced one rotation through the production path instead of waiting for the default five-minute-before-expiry wall-clock threshold; the threshold decision and pending-request restart behavior have focused unit tests. The customer node was a local fixed-digest Debian container with only the exec capability, not an external NAT host, and no Sandbox workload ran. This does not cover RemoteWorker CA trust-root rollover, Control Plane/Worker/Gateway service-certificate rotation, OIDC/JWKS or master-key rotation, external PostgreSQL/S3, HA, public ingress, real Provider credentials or published images. The candidate came from a dirty local tree and is not BASE-READY."
+}

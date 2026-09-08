@@ -132,11 +132,17 @@ and CSR locally, and removes the Secret after certificate issuance. It refuses
 an existing install directory and never prints Secret or key bytes. If issuance
 fails after the one-time claim, the mode-`0600` Secret remains in the reported
 staging directory so the operator can retry rather than lose the enrollment.
+If certificate issuance succeeds but local installation finalization fails, the
+script removes the one-time Secret and retains the issued identity in the
+reported staging directory.
 Run `/srv/cloud-agents-remote-worker/run.sh` under the node's existing service
 supervisor. The process opens no listener and connects only outbound; Docker and
-runtime credentials remain node-local. The current bootstrap installs the
-short-lived initial identity but does not yet automate certificate rotation, so
-it is not by itself BASE-READY evidence.
+runtime credentials remain node-local. The process rotates its 15-minute mTLS
+identity five minutes before expiry, atomically replaces each local identity
+and resource-version file, and retains a mode-`0600` pending request only
+while an exact API replay may still be required after an uncertain response.
+The supervisor should restart a failed process with the same install directory;
+Admin revoke remains authoritative and prevents further rotation or heartbeat.
 
 For a Docker deployment target, point `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR` at
 a deployment-owned directory. Each registered target `credentialRef` selects a

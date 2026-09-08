@@ -102,6 +102,7 @@ gateway_forward_pid=
 verified=false
 migration_summary=
 upgrade_summary=not-requested
+identity_summary=not-tested
 
 cleanup() {
   status=$?
@@ -144,7 +145,16 @@ cleanup() {
     "$previous_control_plane_image" "$previous_worker_image" "$previous_migrate_image" \
     "$previous_gateway_image" "$previous_admin_web_image"; do
     [ -n "$image" ] || continue
-    docker image rm "$image" >/dev/null 2>&1 || status=1
+    docker image inspect "$image" >/dev/null 2>&1 || continue
+    image_remove_attempt=0
+    until docker image rm "$image" >/dev/null 2>&1; do
+      image_remove_attempt=$((image_remove_attempt + 1))
+      if [ "$image_remove_attempt" -ge 10 ]; then
+        status=1
+        break
+      fi
+      sleep 1
+    done
   done
   if [ -n "$(docker ps -aq --filter "label=cloud-agents.dev/test-run=$namespace")" ]; then
     echo "test-owned customer node remains after cleanup" >&2
@@ -155,7 +165,7 @@ cleanup() {
     *) echo "refusing to remove unexpected Helm smoke directory" >&2; status=1 ;;
   esac
   if [ "$status" -eq 0 ] && [ "$verified" = true ]; then
-    echo "Helm Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-admin=403, customer-node=outbound, gateway=TLS+SSH, upgrade=$upgrade_summary, restart=passed, cleanup=zero)"
+    echo "Helm Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-admin=403, customer-node=outbound, identity=$identity_summary, gateway=TLS+SSH, upgrade=$upgrade_summary, restart=passed, cleanup=zero)"
   fi
   exit "$status"
 }
@@ -586,7 +596,7 @@ test ! -e "$smoke_directory/customer-node/install/enrollment-secret"
 test ! -e "$smoke_directory/customer-node/install/claim-response.json"
 docker run --rm --platform "$image_platform" \
   --volume "$smoke_directory/customer-node:/node-output:ro" "$customer_node_image" sh -c \
-  'test "$(stat -c %a /node-output/install)" = 700 && test "$(stat -c %a /node-output/install/identity.pem)" = 600 && test "$(stat -c %a /node-output/install/control-plane-ca.pem)" = 400 && test "$(stat -c %a /node-output/install/run.sh)" = 500'
+  'test "$(stat -c %a /node-output/install)" = 700 && test "$(stat -c %a /node-output/install/identity.pem)" = 600 && test "$(stat -c %a /node-output/install/identity.resource-version)" = 600 && test "$(cat /node-output/install/identity.resource-version)" = 3 && test "$(stat -c %a /node-output/install/control-plane-ca.pem)" = 400 && test "$(stat -c %a /node-output/install/run.sh)" = 500'
 docker run --detach --platform "$image_platform" --name "$customer_node_container" \
   --label "cloud-agents.dev/test-run=$namespace" \
   --add-host host.docker.internal:host-gateway \
@@ -618,6 +628,50 @@ if (JSON.stringify(value).includes("carw1_")) process.exit(1);
   fi
   sleep 1
 done
+
+initial_certificate_sha256=$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (value.metadata?.resourceVersion !== "3" || typeof value.spec?.certificateSha256 !== "string") process.exit(1);
+process.stdout.write(value.spec.certificateSha256);
+' "$smoke_directory/remote-worker-online.json")
+docker rm --force "$customer_node_container" >/dev/null
+cp "$smoke_directory/customer-node/install/identity.pem" "$smoke_directory/customer-node/old-identity.pem"
+docker run --rm --platform "$image_platform" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh --rotate-certificate-once --once >/dev/null
+test ! -e "$smoke_directory/customer-node/install/identity.resource-version.pending"
+test "$(sed -n '1p' "$smoke_directory/customer-node/install/identity.resource-version")" = 4
+if docker run --rm --platform "$image_platform" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh \
+    --certificate=/node-output/old-identity.pem --private-key=/node-output/old-identity.pem \
+    --certificate-resource-version-file= --state-file=/node-output/old-state.json --once \
+    >"$smoke_directory/old-identity.log" 2>&1; then
+  echo "rotated RemoteWorker identity remained valid for heartbeat" >&2
+  exit 1
+fi
+grep -q 'AUTHENTICATION_FAILED' "$smoke_directory/old-identity.log"
+curl --silent --show-error --fail-with-body \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
+  --header 'X-Request-ID: helm-smoke-remote-worker-rotated' \
+  "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/remote-worker-enrollments/$remote_worker_enrollment" \
+  >"$smoke_directory/remote-worker-rotated.json"
+node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (value.metadata?.resourceVersion !== "4" || value.spec?.certificateState !== "active" || value.spec?.certificateSha256 === process.argv[2] || value.spec?.node?.healthState !== "online") process.exit(1);
+' "$smoke_directory/remote-worker-rotated.json" "$initial_certificate_sha256"
+docker run --detach --platform "$image_platform" --name "$customer_node_container" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh >/dev/null
+identity_summary=rotated+old-rejected
 
 kill "$admin_forward_pid" "$gateway_forward_pid" >/dev/null 2>&1 || true
 wait "$admin_forward_pid" "$gateway_forward_pid" 2>/dev/null || true
