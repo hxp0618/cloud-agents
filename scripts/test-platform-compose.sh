@@ -101,7 +101,7 @@ cleanup() {
   fi
   if [ -f "$environment_file" ]; then
     if [ "$status" -ne 0 ]; then
-      compose logs --no-color --tail=200 admin-web access-gateway access-gateway-ssh-key access-grant-key control-plane worker migrate postgres >&2 || true
+      compose logs --no-color --tail=200 user-web admin-web access-gateway access-gateway-ssh-key access-grant-key control-plane worker migrate postgres >&2 || true
     fi
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
@@ -166,7 +166,7 @@ cleanup() {
     kill "$kubernetes_api_pid" >/dev/null 2>&1 || true
     wait "$kubernetes_api_pid" 2>/dev/null || true
   fi
-  docker image rm "${project}-admin-web" "${project}-access-gateway" "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
+  docker image rm "${project}-user-web" "${project}-admin-web" "${project}-access-gateway" "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
   rm -rf -- "$smoke_directory"
   exit "$status"
 }
@@ -426,6 +426,7 @@ const values = [
   `CLOUD_AGENTS_DEPLOY_DIR=${deploy}`,
   `CLOUD_AGENTS_PLATFORM=${platform}`,
   "CLOUD_AGENTS_CONTROL_PLANE_BIND=127.0.0.1:",
+  "CLOUD_AGENTS_USER_WEB_BIND=127.0.0.1:",
   "CLOUD_AGENTS_ADMIN_WEB_BIND=127.0.0.1:",
   "CLOUD_AGENTS_WORKER_BIND=127.0.0.1:",
   "CLOUD_AGENTS_POSTGRES_DB=cloud_agents",
@@ -647,6 +648,10 @@ wait_gateway() {
 }
 wait_admin_web() {
   admin_web_endpoint=$(compose port admin-web 4174)
+  case "$admin_web_endpoint" in
+    0.0.0.0:*) admin_web_endpoint=127.0.0.1:${admin_web_endpoint##*:} ;;
+    \[::\]:*) admin_web_endpoint=127.0.0.1:${admin_web_endpoint##*:} ;;
+  esac
   if [ -z "$admin_web_endpoint" ]; then
     echo "Compose Admin Web port is unavailable" >&2
     exit 1
@@ -661,8 +666,29 @@ wait_admin_web() {
     sleep 1
   done
 }
+wait_user_web() {
+  user_web_endpoint=$(compose port user-web 4173)
+  case "$user_web_endpoint" in
+    0.0.0.0:*) user_web_endpoint=127.0.0.1:${user_web_endpoint##*:} ;;
+    \[::\]:*) user_web_endpoint=127.0.0.1:${user_web_endpoint##*:} ;;
+  esac
+  if [ -z "$user_web_endpoint" ]; then
+    echo "Compose User Web port is unavailable" >&2
+    exit 1
+  fi
+  attempt=0
+  until curl --silent --show-error --fail "http://$user_web_endpoint/healthz" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+      compose logs --no-color --tail=200 user-web control-plane >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
 wait_ready
 wait_gateway
+wait_user_web
 wait_admin_web
 gateway_container=$(compose ps -q access-gateway)
 test "$(docker inspect --format '{{.Config.User}}' "$gateway_container")" = "65532:65532"
@@ -670,6 +696,13 @@ test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$gateway_conta
 test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$gateway_container")" = '["ALL"]'
 case "$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$gateway_container")" in
   *'/var/run/docker.sock'*) echo "Access Gateway received direct Docker authority" >&2; exit 1 ;;
+esac
+user_web_container=$(compose ps -q user-web)
+test "$(docker inspect --format '{{.Config.User}}' "$user_web_container")" = "1000:1000"
+test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$user_web_container")" = true
+test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$user_web_container")" = '["ALL"]'
+case "$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$user_web_container")" in
+  *'/var/run/docker.sock'* | *'credentials'*) echo "User Web received infrastructure authority" >&2; exit 1 ;;
 esac
 admin_web_container=$(compose ps -q admin-web)
 test "$(docker inspect --format '{{.Config.User}}' "$admin_web_container")" = "1000:1000"
@@ -699,6 +732,53 @@ control_plane_api() {
   curl --silent --show-error --fail-with-body --cacert "$smoke_directory/ca.crt" \
     --config "$auth_config" --request "$method" --header "X-Request-ID: $request_id" \
     --header "Content-Type: application/json" "$@" "https://$endpoint$path"
+}
+admin_lease_release_operation() {
+  action=$1
+  preview_path=$2
+  request_id=$3
+  idempotency_key=$4
+  request_body_file=$5
+  output_file=$6
+  retry_preview_file=$7
+  attempt=1
+  while :; do
+    status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+      --config "$smoke_directory/admin-curl.conf" --request POST \
+      --header "X-Request-ID: $request_id" --header "Idempotency-Key: $idempotency_key" \
+      --header "Content-Type: application/json" --data-binary "@$request_body_file" \
+      --output "$output_file" --write-out '%{http_code}' \
+      "https://$endpoint$lease_release_path:$action")
+    if [ "$status" -eq 200 ]; then
+      return
+    fi
+    if [ "$status" -ne 409 ] || ! grep -q '"code":"LEASE_RESOURCE_VERSION_CONFLICT"' "$output_file" || [ "$attempt" -ge 3 ]; then
+      echo "Compose Worker $action failed with HTTP $status" >&2
+      cat "$output_file" >&2
+      return 1
+    fi
+    echo "Compose Worker $action hit a concurrent Lease update; refreshing its authority preview" >&2
+    sleep 1
+    control_plane_api "$smoke_directory/admin-curl.conf" GET "$preview_path" \
+      "$request_id-retry-preview-$attempt" >"$retry_preview_file"
+    CLOUD_AGENTS_COMPOSE_PREVIEW_FILE="$retry_preview_file" CLOUD_AGENTS_COMPOSE_ACTION="$action" node <<'NODE' >"$request_body_file"
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_FILE, "utf8"));
+const spec = value.spec;
+if (spec?.action !== process.env.CLOUD_AGENTS_COMPOSE_ACTION ||
+    spec.expectedResourceVersion !== value.metadata?.resourceVersion ||
+    !/^sha256:[0-9a-f]{64}$/.test(spec?.impactDigest)) {
+  throw new Error("refreshed Admin Lease authority preview is invalid");
+}
+process.stdout.write(JSON.stringify({
+  releaseDigest: spec.targetReleaseDigest,
+  expectedGeneration: spec.expectedGeneration,
+  expectedResourceVersion: spec.expectedResourceVersion,
+  impactDigest: spec.impactDigest,
+}));
+NODE
+    attempt=$((attempt + 1))
+  done
 }
 
 docker run -d --name "$registry_container" -p 127.0.0.1::5000 registry:2 >/dev/null
@@ -1669,9 +1749,12 @@ if [ "$user_admin_upgrade_status" -ne 403 ] || \
   exit 1
 fi
 upgrade_operation_file="$smoke_directory/lease-upgrade-operation.json"
-control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:upgrade" \
-  compose-smoke-lease-upgrade --header "Idempotency-Key: compose-smoke-lease-upgrade" \
-  --data "$upgrade_request_body" >"$upgrade_operation_file"
+upgrade_request_file="$smoke_directory/lease-upgrade-request.json"
+printf '%s' "$upgrade_request_body" >"$upgrade_request_file"
+admin_lease_release_operation upgrade \
+  "$lease_release_path:upgrade-preview?releaseDigest=sha256%3A${worker_upgrade_release_digest#sha256:}" \
+  compose-smoke-lease-upgrade compose-smoke-lease-upgrade \
+  "$upgrade_request_file" "$upgrade_operation_file" "$upgrade_preview_file"
 CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$upgrade_operation_file" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION_FILE, "utf8"));
@@ -1684,7 +1767,7 @@ NODE
 upgrade_replay_file="$smoke_directory/lease-upgrade-operation-replayed.json"
 control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:upgrade" \
   compose-smoke-lease-upgrade --header "Idempotency-Key: compose-smoke-lease-upgrade" \
-  --data "$upgrade_request_body" >"$upgrade_replay_file"
+  --data-binary "@$upgrade_request_file" >"$upgrade_replay_file"
 if ! cmp -s "$upgrade_operation_file" "$upgrade_replay_file"; then
   echo "Compose Worker upgrade was not idempotent" >&2
   exit 1
@@ -1736,9 +1819,11 @@ process.stdout.write(JSON.stringify({
 NODE
 )
 rollback_operation_file="$smoke_directory/lease-rollback-operation.json"
-control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:rollback" \
-  compose-smoke-lease-rollback --header "Idempotency-Key: compose-smoke-lease-rollback" \
-  --data "$rollback_request_body" >"$rollback_operation_file"
+rollback_request_file="$smoke_directory/lease-rollback-request.json"
+printf '%s' "$rollback_request_body" >"$rollback_request_file"
+admin_lease_release_operation rollback "$lease_release_path:rollback-preview" \
+  compose-smoke-lease-rollback compose-smoke-lease-rollback \
+  "$rollback_request_file" "$rollback_operation_file" "$rollback_preview_file"
 CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$rollback_operation_file" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION_FILE, "utf8"));
@@ -1750,7 +1835,7 @@ NODE
 rollback_replay_file="$smoke_directory/lease-rollback-operation-replayed.json"
 control_plane_api "$smoke_directory/admin-curl.conf" POST "$lease_release_path:rollback" \
   compose-smoke-lease-rollback --header "Idempotency-Key: compose-smoke-lease-rollback" \
-  --data "$rollback_request_body" >"$rollback_replay_file"
+  --data-binary "@$rollback_request_file" >"$rollback_replay_file"
 if ! cmp -s "$rollback_operation_file" "$rollback_replay_file"; then
   echo "Compose Worker rollback was not idempotent" >&2
   exit 1
@@ -1851,6 +1936,21 @@ NODE
 node "$smoke_directory/deployment/scripts/test-platform-compose-admin-web.mjs" \
   "http://$admin_web_endpoint" "$smoke_directory/token" "$smoke_directory/user-token" \
   tenant-compose-smoke "$project_id"
+user_web_status=$(curl --silent --show-error --output "$smoke_directory/user-web-profiles.json" \
+  --write-out '%{http_code}' --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/user-token")" \
+  --header 'X-Request-ID: compose-user-web-profile-list' \
+  "http://$user_web_endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=1")
+test "$user_web_status" = 200 || {
+  echo "Compose User Web did not proxy the User API: $user_web_status" >&2
+  exit 1
+}
+user_web_admin_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/token")" \
+  "http://$user_web_endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/deployment-targets?pageSize=1")
+test "$user_web_admin_status" = 404 || {
+  echo "Compose User Web exposed the Admin API: $user_web_admin_status" >&2
+  exit 1
+}
 
 foundation_network_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-foundation"
 foundation_network_body='{"expectedResourceVersion":"0","policyName":"network-foundation","userSummary":"Private Preview without outbound network","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":true}'
@@ -2321,6 +2421,7 @@ fi
 compose up -d >/dev/null
 wait_ready
 wait_gateway
+wait_user_web
 wait_admin_web
 restored_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
@@ -2330,4 +2431,4 @@ case "$restored_output" in
   *) echo "Compose restore omitted the durable execution" >&2; exit 1 ;;
 esac
 
-echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, admin-web=browser, gateway=files+pty+preview+ssh, docker-workers=0, opensandbox-resources=0)"
+echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, user-web=same-origin, admin-web=browser, gateway=files+pty+preview+ssh, docker-workers=0, opensandbox-resources=0)"

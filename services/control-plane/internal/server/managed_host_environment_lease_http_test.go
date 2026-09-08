@@ -362,6 +362,13 @@ func TestAdminEnvironmentLeaseUpgradeReturnsForbiddenWithoutLeaseActScope(t *tes
 	}
 }
 
+func TestAdminEnvironmentLeaseUpgradeMapsSerializationRaceToConflict(t *testing.T) {
+	status, code := adminEnvironmentLeaseUpgradeErrorStatus(postgres.ErrCoordinationRejected)
+	if status != http.StatusConflict || code != "lease_resource_version_conflict" {
+		t.Fatalf("status/code = %d/%q", status, code)
+	}
+}
+
 func TestAdminEnvironmentLeaseHTTPReturnsForbiddenWithoutLeaseScope(t *testing.T) {
 	verifier := &managedHostEnvironmentLeaseVerifierFake{failAt: 2}
 	handler, err := NewAdminEnvironmentLeaseHTTPServer(verifier, &managedHostEnvironmentLeaseStoreFake{}, nil, nil, nil, dockertarget.WorkerTrust{})

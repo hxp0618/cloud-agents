@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { createAdminWebServer } from "./server.mjs";
+import { createWebServer } from "../web/server.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "cloud-agents-admin-web-"));
 mkdirSync(join(directory, "assets"));
@@ -32,40 +32,50 @@ const upstream = createServer((request, response) => {
   });
 });
 await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
-const proxy = createAdminWebServer({
+const adminProxy = createWebServer({
   root: directory,
   upstream: `http://127.0.0.1:${upstream.address().port}`,
+  scope: "admin",
 });
-await new Promise((resolve) => proxy.listen(0, "127.0.0.1", resolve));
-const origin = `http://127.0.0.1:${proxy.address().port}`;
+await new Promise((resolve) => adminProxy.listen(0, "127.0.0.1", resolve));
+const adminOrigin = `http://127.0.0.1:${adminProxy.address().port}`;
+const userProxy = createWebServer({
+  root: directory,
+  upstream: `http://127.0.0.1:${upstream.address().port}`,
+  scope: "user",
+});
+await new Promise((resolve) => userProxy.listen(0, "127.0.0.1", resolve));
+const userOrigin = `http://127.0.0.1:${userProxy.address().port}`;
 
 before(() =>
   assert.throws(() =>
-    createAdminWebServer({
+    createWebServer({
       root: directory,
       upstream: "http://control-plane:8080",
+      scope: "admin",
     }),
   ),
 );
 after(async () => {
   await Promise.all([
-    new Promise((resolve) => proxy.close(resolve)),
+    new Promise((resolve) => adminProxy.close(resolve)),
+    new Promise((resolve) => userProxy.close(resolve)),
     new Promise((resolve) => upstream.close(resolve)),
   ]);
   rmSync(directory, { recursive: true, force: true });
 });
 
 test("serves the SPA with browser security headers", async () => {
-  const response = await fetch(`${origin}/targets`);
+  const response = await fetch(`${adminOrigin}/targets`);
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "<main>Admin Web</main>");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.match(response.headers.get("content-security-policy"), /connect-src 'self'/u);
-  assert.equal((await fetch(`${origin}/assets/app.js`)).headers.get("x-frame-options"), "DENY");
+  assert.equal((await fetch(`${userOrigin}/assets/app.js`)).headers.get("x-frame-options"), "DENY");
 });
 
 test("proxies only Admin API headers and strips response cookies", async () => {
-  const response = await fetch(`${origin}/v1/admin/tenants/t1?x=1`, {
+  const response = await fetch(`${adminOrigin}/v1/admin/tenants/t1?x=1`, {
     method: "POST",
     headers: {
       authorization: "Bearer admin",
@@ -86,6 +96,17 @@ test("proxies only Admin API headers and strips response cookies", async () => {
   assert.equal(received.headers.cookie, undefined);
   assert.equal(received.headers["x-forwarded-for"], undefined);
   assert.equal(received.body, '{"value":1}');
-  const denied = await fetch(`${origin}/v1/tenants/t1`);
+  const denied = await fetch(`${adminOrigin}/v1/tenants/t1`);
   assert.equal(denied.status, 404);
+});
+
+test("proxies only User API routes from the User Web origin", async () => {
+  const response = await fetch(`${userOrigin}/v1/tenants/t1/projects/p1/sessions`, {
+    headers: { authorization: "Bearer user", cookie: "browser-secret=1" },
+  });
+  assert.equal(response.status, 201);
+  assert.equal(received.url, "/v1/tenants/t1/projects/p1/sessions");
+  assert.equal(received.headers.authorization, "Bearer user");
+  assert.equal(received.headers.cookie, undefined);
+  assert.equal((await fetch(`${userOrigin}/v1/admin/tenants/t1`)).status, 404);
 });

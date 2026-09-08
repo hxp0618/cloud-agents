@@ -197,7 +197,7 @@ func (server *Server) serveSSHSession(ctx context.Context, channel ssh.Channel, 
 			switch request.Type {
 			case "pty-req":
 				var value sshPTYRequest
-				valid := terminal == nil && ssh.Unmarshal(request.Payload, &value) == nil && validTerminal(value)
+				valid := terminal == nil && ssh.Unmarshal(request.Payload, &value) == nil && validTerminal(&value)
 				_ = request.Reply(valid, nil)
 				if valid {
 					terminal = &value
@@ -233,9 +233,18 @@ func (server *Server) serveSSHSession(ctx context.Context, channel ssh.Channel, 
 	}
 }
 
-func validTerminal(value sshPTYRequest) bool {
-	return len(value.Term) > 0 && len(value.Term) <= 128 && utf8.ValidString(value.Term) &&
-		value.Columns > 0 && value.Columns <= 1000 && value.Rows > 0 && value.Rows <= 1000 && len(value.Modes) <= 4096
+func validTerminal(value *sshPTYRequest) bool {
+	if value == nil || len(value.Term) == 0 || len(value.Term) > 128 || !utf8.ValidString(value.Term) ||
+		value.Columns > 1000 || value.Rows > 1000 || len(value.Modes) > 4096 {
+		return false
+	}
+	if value.Columns == 0 {
+		value.Columns = 80
+	}
+	if value.Rows == 0 {
+		value.Rows = 24
+	}
+	return true
 }
 
 func validSSHCommand(command string) bool {

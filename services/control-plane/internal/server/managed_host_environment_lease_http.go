@@ -1051,6 +1051,8 @@ func adminEnvironmentLeaseUpgradeErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "lease_generation_conflict"
 	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseResourceVersionConflict):
 		return http.StatusConflict, "lease_resource_version_conflict"
+	case errors.Is(err, postgres.ErrCoordinationRejected):
+		return http.StatusConflict, "lease_resource_version_conflict"
 	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseStateConflict):
 		return http.StatusConflict, "lease_state_conflict"
 	case errors.Is(err, postgres.ErrAdminEnvironmentLeaseTargetNotDrained):

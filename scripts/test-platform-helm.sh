@@ -97,17 +97,20 @@ worker_image=cloud-agents/helm-smoke-worker:$image_tag
 migrate_image=cloud-agents/helm-smoke-migrate:$image_tag
 gateway_image=cloud-agents/helm-smoke-access-gateway:$image_tag
 admin_web_image=cloud-agents/helm-smoke-admin-web:$image_tag
+user_web_image=cloud-agents/helm-smoke-user-web:$image_tag
 previous_control_plane_image=
 previous_worker_image=
 previous_migrate_image=
 previous_gateway_image=
 previous_admin_web_image=
+previous_user_web_image=
 if [ -n "$previous_image_tag" ]; then
   previous_control_plane_image=cloud-agents/helm-smoke-control-plane:$previous_image_tag
   previous_worker_image=cloud-agents/helm-smoke-worker:$previous_image_tag
   previous_migrate_image=cloud-agents/helm-smoke-migrate:$previous_image_tag
   previous_gateway_image=cloud-agents/helm-smoke-access-gateway:$previous_image_tag
   previous_admin_web_image=cloud-agents/helm-smoke-admin-web:$previous_image_tag
+  previous_user_web_image=cloud-agents/helm-smoke-user-web:$previous_image_tag
 fi
 customer_node_image=debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 customer_node_container=cloud-agents-helm-smoke-node-$$
@@ -116,7 +119,9 @@ control_plane_port=$((admin_port + 1))
 gateway_port=$((admin_port + 2))
 gateway_ssh_port=$((admin_port + 3))
 worker_port=$((admin_port + 4))
+user_port=$((admin_port + 5))
 admin_forward_pid=
+user_forward_pid=
 control_plane_forward_pid=
 gateway_forward_pid=
 worker_forward_pid=
@@ -130,7 +135,7 @@ cleanup() {
   status=$?
   trap - 0 HUP INT TERM
   set +e
-  for pid in "$admin_forward_pid" "$control_plane_forward_pid" "$gateway_forward_pid" "$worker_forward_pid"; do
+  for pid in "$user_forward_pid" "$admin_forward_pid" "$control_plane_forward_pid" "$gateway_forward_pid" "$worker_forward_pid"; do
     if [ -n "$pid" ]; then
       kill "$pid" >/dev/null 2>&1
       wait "$pid" 2>/dev/null
@@ -163,9 +168,9 @@ cleanup() {
     echo "test-owned persistent volume remains after namespace cleanup" >&2
     status=1
   fi
-  for image in "$control_plane_image" "$worker_image" "$migrate_image" "$gateway_image" "$admin_web_image" \
+  for image in "$control_plane_image" "$worker_image" "$migrate_image" "$gateway_image" "$admin_web_image" "$user_web_image" \
     "$previous_control_plane_image" "$previous_worker_image" "$previous_migrate_image" \
-    "$previous_gateway_image" "$previous_admin_web_image"; do
+    "$previous_gateway_image" "$previous_admin_web_image" "$previous_user_web_image"; do
     [ -n "$image" ] || continue
     docker image inspect "$image" >/dev/null 2>&1 || continue
     image_remove_attempt=0
@@ -188,7 +193,7 @@ cleanup() {
     *) echo "refusing to remove unexpected Helm smoke directory" >&2; status=1 ;;
   esac
   if [ "$status" -eq 0 ] && [ "$verified" = true ]; then
-    echo "Helm Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-admin=403, customer-node=outbound, identity=$identity_summary, service-identity=$service_identity_summary, gateway=TLS+SSH, upgrade=$upgrade_summary, restart=passed, cleanup=zero)"
+    echo "Helm User/Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-web=same-origin, user-admin=403, customer-node=outbound, identity=$identity_summary, service-identity=$service_identity_summary, gateway=TLS+SSH, upgrade=$upgrade_summary, restart=passed, cleanup=zero)"
   fi
   exit "$status"
 }
@@ -217,6 +222,11 @@ build_release_images() (
   docker build --quiet --platform "$image_platform" \
     --tag "cloud-agents/helm-smoke-admin-web:$tag" \
     --file "$deployment_directory/deploy/docker/admin-web.Dockerfile" "$deployment_directory/deploy" >/dev/null
+  if [ -f "$deployment_directory/deploy/docker/user-web.Dockerfile" ]; then
+    docker build --quiet --platform "$image_platform" \
+      --tag "cloud-agents/helm-smoke-user-web:$tag" \
+      --file "$deployment_directory/deploy/docker/user-web.Dockerfile" "$deployment_directory/deploy" >/dev/null
+  fi
 )
 load_kind_images() {
   tag=$1
@@ -227,13 +237,16 @@ load_kind_images() {
         exit 2
       }
       cluster=${context#kind-}
-      kind load docker-image --name "$cluster" \
+      set -- \
         "cloud-agents/helm-smoke-control-plane:$tag" \
         "cloud-agents/helm-smoke-worker:$tag" \
         "cloud-agents/helm-smoke-migrate:$tag" \
         "cloud-agents/helm-smoke-access-gateway:$tag" \
-        "cloud-agents/helm-smoke-admin-web:$tag" \
-        postgres:17.6-bookworm >/dev/null
+        "cloud-agents/helm-smoke-admin-web:$tag" postgres:17.6-bookworm
+      if docker image inspect "cloud-agents/helm-smoke-user-web:$tag" >/dev/null 2>&1; then
+        set -- "$@" "cloud-agents/helm-smoke-user-web:$tag"
+      fi
+      kind load docker-image --name "$cluster" "$@" >/dev/null
       ;;
   esac
 }
@@ -463,7 +476,7 @@ helm_apply() (
   action=$1
   target_chart=$2
   target_tag=$3
-  helm --kube-context "$context" "$action" "$release_name" "$target_chart" --namespace "$namespace" \
+  set -- --kube-context "$context" "$action" "$release_name" "$target_chart" --namespace "$namespace" \
     --wait --timeout 5m --set-string runtime.workspace.size=1Gi \
     --set-string controlPlane.workerSPIFFEID=spiffe://cloud-agents.helm/worker \
     --set-string images.controlPlane.repository="$(image_repository "$control_plane_image")" \
@@ -475,12 +488,21 @@ helm_apply() (
     --set-string images.accessGateway.repository="$(image_repository "$gateway_image")" \
     --set-string images.accessGateway.tag="$target_tag" --set-string images.accessGateway.pullPolicy=Never \
     --set-string images.adminWeb.repository="$(image_repository "$admin_web_image")" \
-    --set-string images.adminWeb.tag="$target_tag" --set-string images.adminWeb.pullPolicy=Never \
-    --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca \
+    --set-string images.adminWeb.tag="$target_tag" --set-string images.adminWeb.pullPolicy=Never
+  if [ -f "$target_chart/templates/user-web.yaml" ]; then
+    set -- "$@" \
+      --set-string images.userWeb.repository="$(image_repository "$user_web_image")" \
+      --set-string images.userWeb.tag="$target_tag" --set-string images.userWeb.pullPolicy=Never
+  fi
+  helm "$@" --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca \
     --set-string remoteWorker.trustDomain=cloud-agents.helm >/dev/null
 )
 wait_deployments() {
-  for component in control-plane worker access-gateway admin-web; do
+  for component in control-plane worker access-gateway admin-web user-web; do
+    if [ "$component" = user-web ] && ! kubectl --context "$context" -n "$namespace" get \
+      deployment/$release_name-cloud-agents-user-web >/dev/null 2>&1; then
+      continue
+    fi
     kubectl --context "$context" -n "$namespace" rollout status \
       deployment/$release_name-cloud-agents-$component --timeout=180s >/dev/null
   done
@@ -523,18 +545,21 @@ for (const component of ["control-plane", "worker", "access-gateway", "admin-web
 }
 const admin = deployments["admin-web"].spec.template.spec;
 if (admin.securityContext.runAsUser !== 1000 || JSON.stringify(admin).includes("provider-credentials") || JSON.stringify(admin).includes("target-credentials")) process.exit(1);
+const user = deployments["user-web"]?.spec.template.spec;
+if (user && (user.automountServiceAccountToken !== false || user.securityContext.runAsUser !== 1000 || user.containers[0]?.securityContext?.readOnlyRootFilesystem !== true || JSON.stringify(user).includes("provider-credentials") || JSON.stringify(user).includes("target-credentials") || JSON.stringify(user).includes("/var/run/docker.sock"))) process.exit(1);
 const gateway = deployments["access-gateway"].spec.template.spec;
 if (gateway.securityContext.runAsUser !== 65532 || gateway.initContainers[0].args[0] !== "--mode=0400") process.exit(1);
 '
 
 stop_forwards() {
-  for pid in "$admin_forward_pid" "$control_plane_forward_pid" "$gateway_forward_pid" "$worker_forward_pid"; do
+  for pid in "$user_forward_pid" "$admin_forward_pid" "$control_plane_forward_pid" "$gateway_forward_pid" "$worker_forward_pid"; do
     if [ -n "$pid" ]; then
       kill "$pid" >/dev/null 2>&1 || true
       wait "$pid" 2>/dev/null || true
     fi
   done
   admin_forward_pid=
+  user_forward_pid=
   control_plane_forward_pid=
   gateway_forward_pid=
   worker_forward_pid=
@@ -545,7 +570,21 @@ admin_upstream_ready() {
     --header 'X-Request-ID: helm-smoke-admin-upstream-ready' \
     "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/deployment-targets?pageSize=1")" = 200 ]
 }
+user_upstream_ready() {
+  [ -z "$user_forward_pid" ] || [ -z "${project_id:-}" ] || [ "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/user-token")" \
+    --header 'X-Request-ID: helm-smoke-user-upstream-ready' \
+    "http://127.0.0.1:$user_port/v1/tenants/tenant-helm-smoke/projects/$project_id/environment-profiles?pageSize=1")" = 200 ]
+}
 start_forwards() {
+  if kubectl --context "$context" -n "$namespace" get \
+    service/$release_name-cloud-agents-user-web >/dev/null 2>&1; then
+    kubectl --context "$context" -n "$namespace" port-forward \
+      service/$release_name-cloud-agents-user-web "$user_port:4173" >"$smoke_directory/user-forward.log" 2>&1 &
+    user_forward_pid=$!
+  else
+    user_forward_pid=
+  fi
   kubectl --context "$context" -n "$namespace" port-forward \
     service/$release_name-cloud-agents-admin-web "$admin_port:4174" >"$smoke_directory/admin-forward.log" 2>&1 &
   admin_forward_pid=$!
@@ -556,10 +595,11 @@ start_forwards() {
     service/$release_name-cloud-agents-access-gateway "$gateway_port:8090" "$gateway_ssh_port:2222" >"$smoke_directory/gateway-forward.log" 2>&1 &
   gateway_forward_pid=$!
   attempt=0
-  until curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >/dev/null 2>&1 \
+  until { [ -z "$user_forward_pid" ] || curl --silent --show-error --fail "http://127.0.0.1:$user_port/healthz" >/dev/null 2>&1; } \
+    && curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >/dev/null 2>&1 \
     && curl --silent --show-error --fail --cacert "$service_ca" "https://127.0.0.1:$control_plane_port/readyz" >/dev/null 2>&1 \
     && curl --silent --show-error --fail --cacert "$service_ca" "https://127.0.0.1:$gateway_port/healthz" >/dev/null 2>&1 \
-    && admin_upstream_ready; do
+    && user_upstream_ready && admin_upstream_ready; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 60 ]; then
       echo "Helm service port-forwards did not become ready" >&2
@@ -621,14 +661,15 @@ apply_service_identity_phase() {
     --set-string tls.workerSecretName="$worker_secret" \
     --set-string tls.workerClientSecretName="$worker_client_secret" \
     --set-string tls.accessGatewaySecretName="$gateway_secret" \
-    --set-string adminWeb.controlPlaneCASecretName="$control_plane_secret" >/dev/null
+    --set-string adminWeb.controlPlaneCASecretName="$control_plane_secret" \
+    --set-string userWeb.controlPlaneCASecretName="$control_plane_secret" >/dev/null
   kubectl --context "$context" -n "$namespace" get deployment \
     -l app.kubernetes.io/instance="$release_name" -o json | node -e '
 const fs = require("node:fs");
 const value = JSON.parse(fs.readFileSync(0, "utf8"));
 const deployments = Object.fromEntries(value.items.map((item) => [item.metadata.labels["app.kubernetes.io/component"], item]));
 const secret = (component, volume) => deployments[component]?.spec?.template?.spec?.volumes?.find((item) => item.name === volume)?.secret?.secretName;
-if (secret("control-plane", "control-plane-tls") !== process.argv[1] || secret("control-plane", "worker-ca") !== process.argv[2] || secret("control-plane", "worker-client") !== process.argv[3] || secret("worker", "tls") !== process.argv[2] || secret("access-gateway", "tls") !== process.argv[4] || secret("admin-web", "control-plane-ca") !== process.argv[1]) process.exit(1);
+if (secret("control-plane", "control-plane-tls") !== process.argv[1] || secret("control-plane", "worker-ca") !== process.argv[2] || secret("control-plane", "worker-client") !== process.argv[3] || secret("worker", "tls") !== process.argv[2] || secret("access-gateway", "tls") !== process.argv[4] || secret("admin-web", "control-plane-ca") !== process.argv[1] || secret("user-web", "control-plane-ca") !== process.argv[1]) process.exit(1);
 ' "$control_plane_secret" "$worker_secret" "$worker_client_secret" "$gateway_secret"
   service_ca=$ca_bundle
   worker_client_certificate=$smoke_directory/$worker_client_prefix.crt
@@ -936,17 +977,24 @@ docker run --detach --platform "$image_platform" --name "$customer_node_containe
 identity_summary=leaf+ca-rotated+old-root-rejected
 service_identity_summary=ca-rotated+old-rejected
 
-kill "$admin_forward_pid" "$gateway_forward_pid" >/dev/null 2>&1 || true
-wait "$admin_forward_pid" "$gateway_forward_pid" 2>/dev/null || true
+kill "$user_forward_pid" "$admin_forward_pid" "$gateway_forward_pid" >/dev/null 2>&1 || true
+wait "$user_forward_pid" "$admin_forward_pid" "$gateway_forward_pid" 2>/dev/null || true
+user_forward_pid=
 admin_forward_pid=
 gateway_forward_pid=
 kubectl --context "$context" -n "$namespace" rollout restart \
   deployment/$release_name-cloud-agents-access-gateway \
+  deployment/$release_name-cloud-agents-user-web \
   deployment/$release_name-cloud-agents-admin-web >/dev/null
 kubectl --context "$context" -n "$namespace" rollout status \
   deployment/$release_name-cloud-agents-access-gateway --timeout=180s >/dev/null
 kubectl --context "$context" -n "$namespace" rollout status \
+  deployment/$release_name-cloud-agents-user-web --timeout=180s >/dev/null
+kubectl --context "$context" -n "$namespace" rollout status \
   deployment/$release_name-cloud-agents-admin-web --timeout=180s >/dev/null
+kubectl --context "$context" -n "$namespace" port-forward \
+  service/$release_name-cloud-agents-user-web "$user_port:4173" >"$smoke_directory/user-forward.log" 2>&1 &
+user_forward_pid=$!
 kubectl --context "$context" -n "$namespace" port-forward \
   service/$release_name-cloud-agents-admin-web "$admin_port:4174" >"$smoke_directory/admin-forward.log" 2>&1 &
 admin_forward_pid=$!
@@ -954,7 +1002,8 @@ kubectl --context "$context" -n "$namespace" port-forward \
   service/$release_name-cloud-agents-access-gateway "$gateway_port:8090" "$gateway_ssh_port:2222" >"$smoke_directory/gateway-forward.log" 2>&1 &
 gateway_forward_pid=$!
 attempt=0
-until curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >/dev/null 2>&1 \
+until curl --silent --show-error --fail "http://127.0.0.1:$user_port/healthz" >/dev/null 2>&1 \
+  && curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >/dev/null 2>&1 \
   && curl --silent --show-error --fail --cacert "$service_ca" "https://127.0.0.1:$gateway_port/healthz" >/dev/null 2>&1; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
@@ -966,6 +1015,21 @@ done
 node "$current_deployment/scripts/test-platform-compose-admin-web.mjs" \
   "http://127.0.0.1:$admin_port" "$smoke_directory/admin-token" "$smoke_directory/user-token" \
   tenant-helm-smoke "$project_id"
+user_web_status=$(curl --silent --show-error --output "$smoke_directory/user-web-profiles.json" \
+  --write-out '%{http_code}' --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/user-token")" \
+  --header 'X-Request-ID: helm-smoke-user-web-profile-list' \
+  "http://127.0.0.1:$user_port/v1/tenants/tenant-helm-smoke/projects/$project_id/environment-profiles?pageSize=1")
+test "$user_web_status" = 200 || {
+  echo "Helm User Web did not proxy the User API: $user_web_status" >&2
+  exit 1
+}
+user_web_admin_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
+  "http://127.0.0.1:$user_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/deployment-targets?pageSize=1")
+test "$user_web_admin_status" = 404 || {
+  echo "Helm User Web exposed the Admin API: $user_web_admin_status" >&2
+  exit 1
+}
 ssh-keyscan -p "$gateway_ssh_port" 127.0.0.1 2>/dev/null >"$smoke_directory/scanned-host-key.pub"
 expected_fingerprint=$(ssh-keygen -lf "$smoke_directory/gateway-ssh-host-key.pub" | awk '{print $2}')
 actual_fingerprint=$(ssh-keygen -lf "$smoke_directory/scanned-host-key.pub" | awk 'NR == 1 {print $2}')

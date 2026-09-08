@@ -163,12 +163,14 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/compose/docker-compose.yml",
     "deploy/compose/provision.sql",
     "deploy/compose/runtime.env.example",
-    "deploy/admin-web/server.mjs",
+    "deploy/web/server.mjs",
     ...readTree(root, "apps/admin-web/dist"),
+    ...readTree(root, "apps/user-web/dist"),
     "deploy/docker/admin-web.Dockerfile",
     "deploy/docker/access-gateway.Dockerfile",
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
+    "deploy/docker/user-web.Dockerfile",
     "deploy/docker/worker.Dockerfile",
     "scripts/prepare-platform-docker-target.sh",
     "scripts/prepare-platform-kubernetes-target.sh",
@@ -188,7 +190,9 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
         ? path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/")
         : path.startsWith("apps/admin-web/dist/")
           ? path.replace("apps/admin-web/", "deploy/admin-web/")
-          : path,
+          : path.startsWith("apps/user-web/dist/")
+            ? path.replace("apps/user-web/", "deploy/user-web/")
+            : path,
       data:
         path === "deploy/docker/migrate.Dockerfile"
           ? Buffer.from(

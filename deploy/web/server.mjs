@@ -1,7 +1,7 @@
+import { createReadStream, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { createReadStream, statSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,20 +58,27 @@ function validateUpstream(value) {
     upstream.search ||
     upstream.hash
   ) {
-    throw new Error(
-      "CLOUD_AGENTS_ADMIN_WEB_UPSTREAM must be HTTPS or loopback HTTP without a path",
-    );
+    throw new Error("CLOUD_AGENTS_WEB_UPSTREAM must be HTTPS or loopback HTTP without a path");
   }
   return upstream;
 }
 
-export function createAdminWebServer({ root, upstream: upstreamValue }) {
+function apiRoute(scope, pathname) {
+  if (scope === "admin") return /^\/v1\/admin(?:\/|$)/u.test(pathname);
+  if (scope === "user") {
+    return /^\/v1(?:\/|$)/u.test(pathname) && !/^\/v1\/admin(?:\/|$)/u.test(pathname);
+  }
+  throw new Error("CLOUD_AGENTS_WEB_SCOPE must be admin or user");
+}
+
+export function createWebServer({ root, upstream: upstreamValue, scope }) {
+  apiRoute(scope, "/");
   const assetRoot = resolve(root);
   const upstream = validateUpstream(upstreamValue);
   return createServer((request, response) => {
     secure(response);
-    const url = new URL(request.url ?? "/", "http://admin-web.invalid");
-    if (/^\/v1\/admin(?:\/|$)/u.test(url.pathname)) {
+    const url = new URL(request.url ?? "/", "http://web.invalid");
+    if (apiRoute(scope, url.pathname)) {
       const headers = Object.fromEntries(
         requestHeaders.flatMap((name) => {
           const value = request.headers[name];
@@ -96,17 +103,17 @@ export function createAdminWebServer({ root, upstream: upstreamValue }) {
       );
       proxy.on("error", () => {
         if (!response.headersSent) {
-          response.writeHead(502, {
-            "content-type": "application/problem+json",
-          });
-          response.end('{"title":"Admin API unavailable","status":502}\n');
+          response.writeHead(502, { "content-type": "application/problem+json" });
+          response.end(
+            `{"title":"${scope === "admin" ? "Admin" : "User"} API unavailable","status":502}\n`,
+          );
         } else response.destroy();
       });
       request.pipe(proxy);
       return;
     }
     if (
-      url.pathname.startsWith("/v1/") ||
+      /^\/v1(?:\/|$)/u.test(url.pathname) ||
       (request.method !== "GET" && request.method !== "HEAD")
     ) {
       response.writeHead(404).end();
@@ -157,17 +164,31 @@ export function createAdminWebServer({ root, upstream: upstreamValue }) {
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const port = Number(process.env.CLOUD_AGENTS_ADMIN_WEB_PORT ?? "4174");
+  const scope = process.env.CLOUD_AGENTS_WEB_SCOPE ?? "admin";
+  apiRoute(scope, "/");
+  const port = Number(
+    process.env.CLOUD_AGENTS_WEB_PORT ??
+      process.env.CLOUD_AGENTS_ADMIN_WEB_PORT ??
+      (scope === "admin" ? "4174" : "4173"),
+  );
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
-    throw new Error("CLOUD_AGENTS_ADMIN_WEB_PORT must be an integer from 1 to 65535");
+    throw new Error("CLOUD_AGENTS_WEB_PORT must be an integer from 1 to 65535");
   }
-  const server = createAdminWebServer({
+  const server = createWebServer({
     root:
-      process.env.CLOUD_AGENTS_ADMIN_WEB_ROOT ?? fileURLToPath(new URL("./dist", import.meta.url)),
-    upstream: process.env.CLOUD_AGENTS_ADMIN_WEB_UPSTREAM ?? "https://control-plane:8080",
+      process.env.CLOUD_AGENTS_WEB_ROOT ??
+      process.env.CLOUD_AGENTS_ADMIN_WEB_ROOT ??
+      fileURLToPath(new URL("./dist", import.meta.url)),
+    upstream:
+      process.env.CLOUD_AGENTS_WEB_UPSTREAM ??
+      process.env.CLOUD_AGENTS_ADMIN_WEB_UPSTREAM ??
+      "https://control-plane:8080",
+    scope,
   });
   server.listen(port, "0.0.0.0", () =>
-    process.stdout.write(`Cloud Agents Admin Web listening on :${port}\n`),
+    process.stdout.write(
+      `Cloud Agents ${scope === "admin" ? "Admin" : "User"} Web listening on :${port}\n`,
+    ),
   );
   process.on("SIGTERM", () => server.close());
 }

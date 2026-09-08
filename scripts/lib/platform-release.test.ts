@@ -130,7 +130,6 @@ describe("platform release", () => {
       "deploy/admin-web/dist/assets/index-CQUuSaJ-.css",
       "deploy/admin-web/dist/assets/index-CWEU0Wgh.js",
       "deploy/admin-web/dist/index.html",
-      "deploy/admin-web/server.mjs",
       "deploy/bootstrap/database.sql",
       "deploy/bootstrap/roles.sql",
       "deploy/compose/.env.example",
@@ -143,6 +142,7 @@ describe("platform release", () => {
       "deploy/docker/admin-web.Dockerfile",
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
+      "deploy/docker/user-web.Dockerfile",
       "deploy/docker/worker.Dockerfile",
       "deploy/helm/cloud-agents/Chart.yaml",
       "deploy/helm/cloud-agents/README.md",
@@ -154,10 +154,15 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/migrate-job.yaml",
       "deploy/helm/cloud-agents/templates/network-policy.yaml",
       "deploy/helm/cloud-agents/templates/tenant-bootstrap-job.yaml",
+      "deploy/helm/cloud-agents/templates/user-web.yaml",
       "deploy/helm/cloud-agents/templates/worker.yaml",
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
+      "deploy/user-web/dist/assets/index-BCnh204a.js",
+      "deploy/user-web/dist/assets/index-qPDCn4WU.css",
+      "deploy/user-web/dist/index.html",
+      "deploy/web/server.mjs",
       "scripts/bootstrap-platform-remote-worker.sh",
       "scripts/prepare-platform-docker-target.sh",
       "scripts/prepare-platform-kubernetes-target.sh",
@@ -243,15 +248,20 @@ describe("platform release", () => {
     expect(compose).not.toContain("/var/run/docker.sock");
   });
 
-  it("packages the non-root Admin Web with an Admin-only same-origin API", () => {
+  it("packages isolated non-root User and Admin Web origins", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
-    const dockerfile = readFileSync("deploy/docker/admin-web.Dockerfile", "utf8");
-    const server = readFileSync("deploy/admin-web/server.mjs", "utf8");
-    expect(dockerfile).toContain("USER 1000:1000");
+    const adminDockerfile = readFileSync("deploy/docker/admin-web.Dockerfile", "utf8");
+    const userDockerfile = readFileSync("deploy/docker/user-web.Dockerfile", "utf8");
+    const server = readFileSync("deploy/web/server.mjs", "utf8");
+    expect(adminDockerfile).toContain("CLOUD_AGENTS_WEB_SCOPE=admin");
+    expect(userDockerfile).toContain("CLOUD_AGENTS_WEB_SCOPE=user");
+    expect(adminDockerfile).toContain("USER 1000:1000");
+    expect(userDockerfile).toContain("USER 1000:1000");
     expect(compose).toContain("CLOUD_AGENTS_ADMIN_WEB_UPSTREAM: https://control-plane:8080");
+    expect(compose).toContain("CLOUD_AGENTS_WEB_UPSTREAM: https://control-plane:8080");
     expect(compose).toContain("CLOUD_AGENTS_CONTROL_PLANE_CA");
     expect(server).toContain("/^\\/v1\\/admin(?:\\/|$)/u");
-    expect(server).toContain('url.pathname.startsWith("/v1/")');
+    expect(server).toContain('scope === "user"');
     expect(compose).not.toContain("/var/run/docker.sock");
   });
 
@@ -309,6 +319,7 @@ describe("platform release", () => {
       "control-plane": "USER 65532:65532",
       worker: "USER 1000:1000",
       migrate: "USER 999:999",
+      "user-web": "USER 1000:1000",
     } as const;
     for (const name of [
       "access-gateway",
@@ -316,9 +327,10 @@ describe("platform release", () => {
       "control-plane",
       "worker",
       "migrate",
+      "user-web",
     ] as const) {
       const dockerfile = readFileSync(`deploy/docker/${name}.Dockerfile`, "utf8");
-      if (name !== "admin-web") {
+      if (name !== "admin-web" && name !== "user-web") {
         expect(dockerfile).toContain("ARG TARGETOS");
         expect(dockerfile).toContain("ARG TARGETARCH");
         expect(dockerfile).toContain("${TARGETOS}-${TARGETARCH}");
@@ -334,7 +346,7 @@ describe("platform release", () => {
     expect(migrationJob).toContain("readOnlyRootFilesystem: true");
     expect(migrationJob).toContain("drop: [ALL]");
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
-    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(5);
+    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(6);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY");

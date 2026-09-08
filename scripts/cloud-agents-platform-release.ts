@@ -76,6 +76,7 @@ artifacts.push(
 
 run("bun", ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
 run("bun", ["run", "--cwd", "apps/admin-web", "build"], repositoryRoot);
+run("bun", ["run", "--cwd", "apps/user-web", "build"], repositoryRoot);
 const deploymentOutput = join(options.outputDirectory, PLATFORM_RELEASE_DEPLOYMENT);
 const deploymentBytes = buildPlatformDeploymentPackage(repositoryRoot);
 writeFileSync(deploymentOutput, deploymentBytes, { mode: 0o444 });

@@ -1,0 +1,165 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "dbd54098b75b7086d5e1eb851eaac026d8c9814a",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "release": {
+    "version": "0.3.0-dev.89",
+    "candidateDirectory": "/tmp/cloud-agents-user-web-deploy-20260909-r1/release-r3",
+    "sourceCommit": "dbd54098b75b7086d5e1eb851eaac026d8c9814a",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "manifestSha256": "sha256:83e2efb6d7c4f479ba4674fc685be51194551a0f55ed84b97016762e575a156b",
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000088.tar",
+      "sizeBytes": 1636864,
+      "sha256": "sha256:f807468d5e915890e81c8b065de9237a9bacc0451c623166a8c1893ee1f24446"
+    },
+    "migrationArtifact": {
+      "filename": "cloud-agents-migrations-000088.tar",
+      "sizeBytes": 2097664,
+      "sha256": "sha256:379b060d644b1ce35c9b9a8e2918241cfeca74fbd762d8ad3648fe49dda0b877"
+    },
+    "accessGatewayLinuxArm64Sha256": "sha256:5d9324b159ec417a022c2293e9b738e58da2ce2eec4fb02ead7b8fe40931f173",
+    "controlPlaneLinuxArm64Sha256": "sha256:4b03b6259bafbead730c290b8a08d005bc2ccc008d25bdfb036cd6cd2fec6666",
+    "published": false
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v24.18.1"
+  },
+  "compose": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-user-web-deploy-20260909-r1/release-r3",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-user-web-deploy-20260909-r1/compose-r3.log",
+      "sha256": "sha256:5c64917d1eb00aedfb833c8c0514bdd3fddd82e43680c7e396be018f40cb72a7"
+    },
+    "userWeb": {
+      "sameOriginUserAPIStatus": 200,
+      "adminRouteStatus": 404,
+      "directInfrastructureAuthority": false,
+      "readOnlyRootFilesystem": true
+    },
+    "adminWeb": {
+      "browserRequests": 17,
+      "ordinaryUserAdminStatus": 403,
+      "locales": [
+        "en-US"
+      ],
+      "themes": [
+        "dark",
+        "light"
+      ],
+      "viewportWidths": [
+        1440,
+        390
+      ]
+    },
+    "lifecycle": [
+      "Docker Worker deploy",
+      "Target drain and resume",
+      "Worker upgrade and rollback",
+      "Gateway Files, PTY, Preview and SSH",
+      "backup and restore"
+    ],
+    "finalDockerWorkers": 0,
+    "finalOpenSandboxResources": 0,
+    "finalComposeResources": 0
+  },
+  "helm": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh scripts/test-platform-helm.sh /tmp/cloud-agents-user-web-deploy-20260909-r1/release-r3",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-user-web-deploy-20260909-r1/helm-r3.log",
+      "sha256": "sha256:51c2f8dc215897ebdf4840731ba971522d32c6358e71fdab25cb81f6b085e9dd"
+    },
+    "schemaLedger": {
+      "count": 88,
+      "first": "000001",
+      "last": "000088"
+    },
+    "readyDeployments": [
+      "control-plane",
+      "worker",
+      "access-gateway",
+      "user-web",
+      "admin-web"
+    ],
+    "userWeb": {
+      "sameOriginUserAPIStatus": 200,
+      "adminRouteStatus": 404,
+      "serviceIdentityCARotated": true,
+      "oldCARejected": true
+    },
+    "adminWeb": {
+      "browserRequests": 15,
+      "ordinaryUserAdminStatus": 403,
+      "themes": [
+        "dark",
+        "light"
+      ],
+      "viewportWidths": [
+        1440,
+        390
+      ]
+    },
+    "remoteWorker": {
+      "customerNodeDirection": "outbound",
+      "leafAndCARotation": "passed",
+      "oldRootRejected": true
+    },
+    "gateway": "TLS and SSH passed",
+    "restart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestImageTags": 0
+  },
+  "regressions": [
+    {
+      "symptom": "Docker Compose reported wildcard published addresses that Chromium would not navigate",
+      "resolution": "the smoke normalizes only the reported wildcard host to 127.0.0.1 while preserving the Docker bind"
+    },
+    {
+      "symptom": "a concurrent Lease controller update surfaced PostgreSQL SQLSTATE 40001 as HTTP 500",
+      "resolution": "the Admin API maps the existing coordination rejection to 409 LEASE_RESOURCE_VERSION_CONFLICT and the smoke performs at most three authority-preview retries"
+    },
+    {
+      "symptom": "OpenSSH forced PTY from a non-interactive runner sent zero columns and rows",
+      "resolution": "the Access Gateway accepts the protocol's unknown dimensions as 80 by 24 while retaining size limits"
+    }
+  ],
+  "verification": {
+    "adminWebTests": "35 passed",
+    "userWebTests": "23 passed",
+    "adminWebBuild": "passed",
+    "userWebBuild": "passed",
+    "webServerTests": "3 passed",
+    "releaseTests": "19 passed",
+    "helmLint": "passed",
+    "shellSyntax": "passed",
+    "focusedGoRegressionTests": "passed",
+    "diffCheck": "passed"
+  },
+  "preexistingResources": {
+    "untouchedNamespace": "cloud-agents-helm-smoke-15421",
+    "createdAt": "2026-09-08T11:34:51Z",
+    "contents": [
+      "default ServiceAccount",
+      "kube-root-ca.crt ConfigMap"
+    ],
+    "reasonNotDeleted": "it predates this run and destructive cleanup was not authorized"
+  },
+  "boundary": "This is a real local Compose and OrbStack Kubernetes deployment from an unpublished dirty-source candidate. It proves independently deployed User Web and Admin Web, same-origin API separation, ordinary-user Admin denial, current migrations, Docker lifecycle and Gateway protocols in Compose, outbound RemoteWorker and certificate rotation in Kubernetes, restart recovery and exact resources created by these runs cleaned to zero. It did not run an N/N-1 Helm upgrade, external Kubernetes or SSH Worker deployment, OIDC audience routing, public ingress, real Codex or Claude Code Provider turns, or delete the pre-existing empty Helm smoke namespace. It is not ADMIN-WEB-V1, BASE-ADMIN-V1 or BASE-READY completion evidence by itself."
+}

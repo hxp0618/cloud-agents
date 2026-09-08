@@ -30,7 +30,7 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlane", "worker", "migrate", "accessGateway", "adminWeb"],
+      "required": ["controlPlane", "worker", "migrate", "accessGateway", "adminWeb", "userWeb"],
       "properties": {
         "controlPlane": {
           "$ref": "#/definitions/image"
@@ -45,6 +45,9 @@
           "$ref": "#/definitions/image"
         },
         "adminWeb": {
+          "$ref": "#/definitions/image"
+        },
+        "userWeb": {
           "$ref": "#/definitions/image"
         }
       }
@@ -197,6 +200,27 @@
       }
     },
     "adminWeb": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "const": 1
+        },
+        "controlPlaneCASecretName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "controlPlaneCAKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      }
+    },
+    "userWeb": {
       "type": "object",
       "properties": {
         "replicas": {

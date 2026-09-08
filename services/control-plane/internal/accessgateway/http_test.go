@@ -58,3 +58,14 @@ func TestRoutesCannotBecomeArbitraryProxy(t *testing.T) {
 		t.Fatalf("untrusted error leaked = %d %s", status, code)
 	}
 }
+
+func TestUnknownSSHWindowUsesStandardTerminalSize(t *testing.T) {
+	terminal := sshPTYRequest{Term: "xterm-256color"}
+	if !validTerminal(&terminal) || terminal.Columns != 80 || terminal.Rows != 24 {
+		t.Fatalf("terminal = %#v", terminal)
+	}
+	terminal.Columns = 1001
+	if validTerminal(&terminal) {
+		t.Fatal("oversized terminal accepted")
+	}
+}

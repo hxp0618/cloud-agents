@@ -254,6 +254,27 @@ services:
     ports:
       - "${CLOUD_AGENTS_ADMIN_WEB_BIND:-127.0.0.1:4174}:4174"
 
+  user-web:
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
+    build:
+      context: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/user-web.Dockerfile
+    depends_on:
+      control-plane:
+        condition: service_started
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      CLOUD_AGENTS_WEB_UPSTREAM: https://control-plane:8080
+      NODE_EXTRA_CA_CERTS: /run/cloud-agents/control-plane-ca.crt
+    volumes:
+      - ${CLOUD_AGENTS_CONTROL_PLANE_CA:?set the Control Plane CA certificate path}:/run/cloud-agents/control-plane-ca.crt:ro
+    ports:
+      - "${CLOUD_AGENTS_USER_WEB_BIND:-127.0.0.1:4173}:4173"
+
   worker:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:

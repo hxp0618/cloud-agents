@@ -24,6 +24,11 @@ images:
     tag: 0.2.0
     digest: ""
     pullPolicy: IfNotPresent
+  userWeb:
+    repository: cloud-agents/user-web
+    tag: 0.2.0
+    digest: ""
+    pullPolicy: IfNotPresent
 
 database:
   secretName: cloud-agents-database
@@ -104,6 +109,15 @@ adminWeb:
   service:
     type: ClusterIP
     port: 4174
+  resources: {}
+
+userWeb:
+  replicas: 1
+  controlPlaneCASecretName: cloud-agents-control-plane-tls
+  controlPlaneCAKey: ca.crt
+  service:
+    type: ClusterIP
+    port: 4173
   resources: {}
 
 networkPolicy:
