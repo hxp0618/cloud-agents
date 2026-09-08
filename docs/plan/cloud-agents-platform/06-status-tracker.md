@@ -51,7 +51,8 @@
 - BASE-M5 Compose Admin Web 切片已接通：发布脚本先重建生成 TypeScript SDK 与独立 Vite Admin Web，再把静态资源、Node 标准库同源服务和 nonroot Dockerfile 纳入部署包；Compose Admin Web 仅挂 Control Plane CA，以 uid `1000`、只读根文件系统、全部 capability drop、`no-new-privileges` 且无 Docker/Target/Provider 凭据运行，只代理 `/v1/admin`。OrbStack Docker 29.4.0、Compose v5.1.2、PostgreSQL 17.6 与真实 Brave 152 验证 17 个同源 Admin 请求、普通用户 403、Token 不落浏览器存储、英文与深/浅主题、1440/390 无横向溢出；同轮 Gateway 数据面、重启、备份恢复与最终零残留通过，见 [Compose Admin Web 证据](evidence/base-m5-compose-admin-web-20260908-r3/evidence.json)。该本地 loopback 证据不替代 Helm/OIDC ingress 或完整 Admin 验收。
 - BASE-M5 Helm Admin Web/Access Gateway 切片已接通：当前发布包纳入两套 Deployment/Service/NetworkPolicy、必需 access-grant key 和可复现集群 smoke；服务 Pod 与 migration/bootstrap Hook 均关闭 ServiceAccount token，Admin 仅挂 Control Plane CA，私钥由 non-root init container 复制到内存卷并固定 `0400`。本地候选 `0.3.0-dev.89` 的 20 个 checksum 与打包文件一致；真实 OrbStack Kubernetes `v1.35.6+orb1`、Helm `v4.2.4`、PostgreSQL 17.6 验证 84 条迁移、四个 Deployment ready、普通用户 403、真实 Brave 14 个同源 Admin 请求、Gateway TLS/SSH identity、重启恢复和零测试 namespace/PV/image tag，见 [Helm Admin Web/Gateway 证据](evidence/base-m5-helm-admin-web-20260908-r5/evidence.json)。本轮未做 OIDC ingress、Kubernetes Target/Sandbox 数据面、备份恢复或升级回滚。
 - BASE-M5 客户节点 bootstrap 切片已接通：发布 manifest 增加版本化 linux-amd64/arm64 `cloud-agents-remote-worker`，部署归档增加 POSIX bootstrap 与运行手册；脚本从独立 bootstrap Token 一次性领取 Secret，在节点本地生成 key/CSR、签发短期 mTLS identity，成功后删除 Secret，并输出可由既有 supervisor 前台托管的无监听进程入口。候选 `0.3.0-dev.94` 的 22 个 checksum 与打包脚本/文档一致；固定 digest 的全新 Debian 容器对真实 Helm Control Plane 完成 enrollment 201、Secret/证书 200、持续 outbound heartbeat 200，Admin 投影 online 且浏览器同源请求增至 15，节点无发布端口，安装目录/identity/CA/入口权限为 `0700/0600/0400/0500`，最终 namespace/PV/容器/测试镜像均为零；见 [客户节点 bootstrap 证据](evidence/base-m5-remote-worker-bootstrap-20260908-r5/evidence.json)。该容器节点仅声明 `exec`，未接本地 Docker/OpenSandbox、未执行 Sandbox，且尚未自动轮换证书。
-- 下一项：继续 BASE-M5，验证同一部署 manifest 的 N/N-1 升级与回滚；随后收口身份/证书轮换。
+- BASE-M5 同迁移头 Helm N/N-1 切片已接通：复用打包 smoke，以声明兼容范围内的 `0.1.0-alpha.94`/`0.1.0-alpha.95` 两套 22-artifact manifest 和精确镜像，在同一 PostgreSQL、Secret 与 PVC 上完成 N-1 安装、N 升级、N-1 回滚和 N 再升级；每一步核对四个服务及 migration init image，并读回同一 Project。最终 N 再通过 RemoteWorker、Admin Web 浏览器 15 请求、普通用户 403、Gateway、重启和零 namespace/PV/容器/测试镜像；见 [Helm N/N-1 证据](evidence/base-m5-helm-upgrade-rollback-20260908-r4/evidence.json)。两版 schema 均为 000084，Chart 使用 `Recreate`，因此该记录不证明跨 schema-head 或零停机 rolling availability。
+- 下一项：继续 BASE-M5，收口身份/证书轮换；随后处理 usage/运维、故障/soak 与完整 Admin 验收。
 - 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；真实 Provider、客户节点和完整 BASE-ADMIN-V1 验收仍保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -77,7 +78,7 @@
 | BASE-M2    | VERIFIED    | bounded Exec、PTY/Files/private Preview/short-lived SSH、Grant/Gateway、实际网络隔离及对应 Admin 管理已有真实本地 Docker/PostgreSQL 证据 |
 | BASE-M3    | VERIFIED    | outbound enrollment/mTLS/轮换吊销、健康与离线拒绝、Drain/Resume、Sandbox lifecycle/Exec/Files/PTY/Preview/SSH、长时续租、断线重连与新 attempt 对账均有真实 Docker/PostgreSQL 证据 |
 | BASE-M4    | VERIFIED    | direct Kubernetes、RemoteWorker 能力/容量/多 Node 调度及 shared-untrusted gVisor 强隔离均有真实执行和对应 Admin 证据 |
-| BASE-M5    | IN PROGRESS | Docker Snapshot 创建/恢复/保留清理及当前迁移头 Compose/Helm、Gateway/Admin Web、客户节点 bootstrap 与浏览器已真实验证；升级/回滚、身份轮换、usage/运维和完整 Admin 验收待完成 |
+| BASE-M5    | IN PROGRESS | Docker Snapshot 创建/恢复/保留清理及当前迁移头 Compose/Helm、Gateway/Admin Web、客户节点 bootstrap、同迁移头 N/N-1 升级回滚与浏览器已真实验证；身份轮换、usage/运维、故障/soak 和完整 Admin 验收待完成 |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |
 | APP-M1     | PAUSED      | 第一阶段完成后推进用户对话；现有 Agent 路径保留兼容并可作为回归负载                                         |
 

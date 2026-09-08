@@ -2,8 +2,8 @@
 
 set -eu
 
-if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
-  echo "usage: CLOUD_AGENTS_HELM_CONTEXT=<context> test-platform-helm.sh PLATFORM_RELEASE_DIRECTORY" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ ! -d "$1" ] || { [ "$#" -eq 2 ] && [ ! -d "$2" ]; }; then
+  echo "usage: CLOUD_AGENTS_HELM_CONTEXT=<context> test-platform-helm.sh PLATFORM_RELEASE_DIRECTORY [N_MINUS_1_RELEASE_DIRECTORY]" >&2
   exit 2
 fi
 for command in curl docker helm kubectl node openssl ssh-keygen ssh-keyscan tar; do
@@ -21,6 +21,18 @@ fi
 kubectl --context "$context" cluster-info >/dev/null
 
 candidate_directory=$(CDPATH= cd -- "$1" && pwd)
+previous_candidate_directory=
+[ "$#" -eq 1 ] || previous_candidate_directory=$(CDPATH= cd -- "$2" && pwd)
+release_version() {
+  node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(value.kind!=="cloud-agents-platform-release"||typeof value.version!=="string")process.exit(1);process.stdout.write(value.version)' "$1/platform-release-manifest.json"
+}
+candidate_version=$(release_version "$candidate_directory")
+previous_version=
+[ -z "$previous_candidate_directory" ] || previous_version=$(release_version "$previous_candidate_directory")
+if [ -n "$previous_version" ] && [ "$previous_version" = "$candidate_version" ]; then
+  echo "N and N-1 platform release versions must differ" >&2
+  exit 2
+fi
 case "$(uname -s)/$(uname -m)" in
   Darwin/arm64) cli_target=darwin-arm64; image_platform=linux/arm64 ;;
   Darwin/x86_64) cli_target=darwin-amd64; image_platform=linux/amd64 ;;
@@ -38,16 +50,46 @@ if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
   echo "platform release must contain exactly one deployment package" >&2
   exit 1
 fi
+candidate_deployment_archive=$1
+previous_cli=
+previous_deployment_archive=
+if [ -n "$previous_candidate_directory" ]; then
+  previous_cli=$previous_candidate_directory/cloud-agentsctl-$cli_target
+  test -x "$previous_cli" || {
+    echo "N-1 platform release is missing executable cloud-agentsctl-$cli_target" >&2
+    exit 1
+  }
+  set -- "$previous_candidate_directory"/cloud-agents-deployment-*.tar
+  if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+    echo "N-1 platform release must contain exactly one deployment package" >&2
+    exit 1
+  fi
+  previous_deployment_archive=$1
+fi
 
 smoke_directory=$(mktemp -d "${TMPDIR:-/tmp}/cloud-agents-helm-smoke.XXXXXX")
 namespace=cloud-agents-helm-smoke-$$
 release_name=cloud-agents
-image_tag=smoke-$$
+image_tag=smoke-$$-n
+previous_image_tag=
+[ -z "$previous_candidate_directory" ] || previous_image_tag=smoke-$$-n-1
 control_plane_image=cloud-agents/helm-smoke-control-plane:$image_tag
 worker_image=cloud-agents/helm-smoke-worker:$image_tag
 migrate_image=cloud-agents/helm-smoke-migrate:$image_tag
 gateway_image=cloud-agents/helm-smoke-access-gateway:$image_tag
 admin_web_image=cloud-agents/helm-smoke-admin-web:$image_tag
+previous_control_plane_image=
+previous_worker_image=
+previous_migrate_image=
+previous_gateway_image=
+previous_admin_web_image=
+if [ -n "$previous_image_tag" ]; then
+  previous_control_plane_image=cloud-agents/helm-smoke-control-plane:$previous_image_tag
+  previous_worker_image=cloud-agents/helm-smoke-worker:$previous_image_tag
+  previous_migrate_image=cloud-agents/helm-smoke-migrate:$previous_image_tag
+  previous_gateway_image=cloud-agents/helm-smoke-access-gateway:$previous_image_tag
+  previous_admin_web_image=cloud-agents/helm-smoke-admin-web:$previous_image_tag
+fi
 customer_node_image=debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 customer_node_container=cloud-agents-helm-smoke-node-$$
 admin_port=$((20000 + ($$ % 1000) * 10 + 1))
@@ -59,6 +101,7 @@ control_plane_forward_pid=
 gateway_forward_pid=
 verified=false
 migration_summary=
+upgrade_summary=not-requested
 
 cleanup() {
   status=$?
@@ -97,7 +140,10 @@ cleanup() {
     echo "test-owned persistent volume remains after namespace cleanup" >&2
     status=1
   fi
-  for image in "$control_plane_image" "$worker_image" "$migrate_image" "$gateway_image" "$admin_web_image"; do
+  for image in "$control_plane_image" "$worker_image" "$migrate_image" "$gateway_image" "$admin_web_image" \
+    "$previous_control_plane_image" "$previous_worker_image" "$previous_migrate_image" \
+    "$previous_gateway_image" "$previous_admin_web_image"; do
+    [ -n "$image" ] || continue
     docker image rm "$image" >/dev/null 2>&1 || status=1
   done
   if [ -n "$(docker ps -aq --filter "label=cloud-agents.dev/test-run=$namespace")" ]; then
@@ -109,7 +155,7 @@ cleanup() {
     *) echo "refusing to remove unexpected Helm smoke directory" >&2; status=1 ;;
   esac
   if [ "$status" -eq 0 ] && [ "$verified" = true ]; then
-    echo "Helm Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-admin=403, customer-node=outbound, gateway=TLS+SSH, restart=passed, cleanup=zero)"
+    echo "Helm Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-admin=403, customer-node=outbound, gateway=TLS+SSH, upgrade=$upgrade_summary, restart=passed, cleanup=zero)"
   fi
   exit "$status"
 }
@@ -122,20 +168,32 @@ fi
 kubectl --context "$context" create namespace "$namespace" >/dev/null
 kubectl --context "$context" label namespace "$namespace" cloud-agents.dev/test-run="$namespace" >/dev/null
 
-tar -xf "$1" -C "$smoke_directory"
-chart=$smoke_directory/deploy/helm/cloud-agents
-for component in control-plane worker migrate access-gateway; do
-  case "$component" in
-    control-plane) image=$control_plane_image ;;
-    worker) image=$worker_image ;;
-    migrate) image=$migrate_image ;;
-    access-gateway) image=$gateway_image ;;
-  esac
-  docker build --quiet --platform "$image_platform" --tag "$image" \
-    --file "$smoke_directory/deploy/docker/$component.Dockerfile" "$candidate_directory" >/dev/null
-done
-docker build --quiet --platform "$image_platform" --tag "$admin_web_image" \
-  --file "$smoke_directory/deploy/docker/admin-web.Dockerfile" "$smoke_directory/deploy" >/dev/null
+current_deployment=$smoke_directory/current
+mkdir "$current_deployment"
+tar -xf "$candidate_deployment_archive" -C "$current_deployment"
+chart=$current_deployment/deploy/helm/cloud-agents
+build_release_images() (
+  release_directory=$1
+  deployment_directory=$2
+  tag=$3
+  for component in control-plane worker migrate access-gateway; do
+    docker build --quiet --platform "$image_platform" \
+      --tag "cloud-agents/helm-smoke-$component:$tag" \
+      --file "$deployment_directory/deploy/docker/$component.Dockerfile" "$release_directory" >/dev/null
+  done
+  docker build --quiet --platform "$image_platform" \
+    --tag "cloud-agents/helm-smoke-admin-web:$tag" \
+    --file "$deployment_directory/deploy/docker/admin-web.Dockerfile" "$deployment_directory/deploy" >/dev/null
+)
+build_release_images "$candidate_directory" "$current_deployment" "$image_tag"
+previous_chart=
+if [ -n "$previous_candidate_directory" ]; then
+  previous_deployment=$smoke_directory/previous
+  mkdir "$previous_deployment"
+  tar -xf "$previous_deployment_archive" -C "$previous_deployment"
+  previous_chart=$previous_deployment/deploy/helm/cloud-agents
+  build_release_images "$previous_candidate_directory" "$previous_deployment" "$previous_image_tag"
+fi
 
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
   -subj /CN=cloud-agents-helm-smoke-ca \
@@ -250,11 +308,11 @@ while [ "$ready_checks" -lt 3 ]; do
   sleep 1
 done
 kubectl --context "$context" -n "$namespace" cp \
-  "$smoke_directory/deploy/bootstrap/roles.sql" "$postgres_pod:/tmp/roles.sql"
+  "$current_deployment/deploy/bootstrap/roles.sql" "$postgres_pod:/tmp/roles.sql"
 kubectl --context "$context" -n "$namespace" cp \
-  "$smoke_directory/deploy/compose/provision.sql" "$postgres_pod:/tmp/provision.sql"
+  "$current_deployment/deploy/compose/provision.sql" "$postgres_pod:/tmp/provision.sql"
 kubectl --context "$context" -n "$namespace" cp \
-  "$smoke_directory/deploy/bootstrap/database.sql" "$postgres_pod:/tmp/database.sql"
+  "$current_deployment/deploy/bootstrap/database.sql" "$postgres_pod:/tmp/database.sql"
 kubectl --context "$context" -n "$namespace" exec "$postgres_pod" -- \
   psql -U cloud_agents_install_admin -d cloud_agents --single-transaction -v ON_ERROR_STOP=1 \
   -v cloud_agents_database=cloud_agents -v cloud_agents_database_owner=cloud_agents_database_owner \
@@ -319,26 +377,55 @@ kubectl --context "$context" -n "$namespace" create secret generic cloud-agents-
   --from-literal=CLOUD_AGENTS_BOOTSTRAP_REASON_CODE=helm-smoke >/dev/null
 
 image_repository() { printf '%s' "${1%:*}"; }
-helm --kube-context "$context" install "$release_name" "$chart" --namespace "$namespace" \
-  --wait --timeout 5m --set-string runtime.workspace.size=1Gi \
-  --set-string controlPlane.workerSPIFFEID=spiffe://cloud-agents.helm/worker \
-  --set-string images.controlPlane.repository="$(image_repository "$control_plane_image")" \
-  --set-string images.controlPlane.tag="$image_tag" --set-string images.controlPlane.pullPolicy=Never \
-  --set-string images.worker.repository="$(image_repository "$worker_image")" \
-  --set-string images.worker.tag="$image_tag" --set-string images.worker.pullPolicy=Never \
-  --set-string images.migrate.repository="$(image_repository "$migrate_image")" \
-  --set-string images.migrate.tag="$image_tag" --set-string images.migrate.pullPolicy=Never \
-  --set-string images.accessGateway.repository="$(image_repository "$gateway_image")" \
-  --set-string images.accessGateway.tag="$image_tag" --set-string images.accessGateway.pullPolicy=Never \
-  --set-string images.adminWeb.repository="$(image_repository "$admin_web_image")" \
-  --set-string images.adminWeb.tag="$image_tag" --set-string images.adminWeb.pullPolicy=Never \
-  --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca \
-  --set-string remoteWorker.trustDomain=cloud-agents.helm >/dev/null
-
-for component in control-plane worker access-gateway admin-web; do
-  kubectl --context "$context" -n "$namespace" rollout status \
-    deployment/$release_name-cloud-agents-$component --timeout=180s >/dev/null
-done
+helm_apply() (
+  action=$1
+  target_chart=$2
+  target_tag=$3
+  helm --kube-context "$context" "$action" "$release_name" "$target_chart" --namespace "$namespace" \
+    --wait --timeout 5m --set-string runtime.workspace.size=1Gi \
+    --set-string controlPlane.workerSPIFFEID=spiffe://cloud-agents.helm/worker \
+    --set-string images.controlPlane.repository="$(image_repository "$control_plane_image")" \
+    --set-string images.controlPlane.tag="$target_tag" --set-string images.controlPlane.pullPolicy=Never \
+    --set-string images.worker.repository="$(image_repository "$worker_image")" \
+    --set-string images.worker.tag="$target_tag" --set-string images.worker.pullPolicy=Never \
+    --set-string images.migrate.repository="$(image_repository "$migrate_image")" \
+    --set-string images.migrate.tag="$target_tag" --set-string images.migrate.pullPolicy=Never \
+    --set-string images.accessGateway.repository="$(image_repository "$gateway_image")" \
+    --set-string images.accessGateway.tag="$target_tag" --set-string images.accessGateway.pullPolicy=Never \
+    --set-string images.adminWeb.repository="$(image_repository "$admin_web_image")" \
+    --set-string images.adminWeb.tag="$target_tag" --set-string images.adminWeb.pullPolicy=Never \
+    --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca \
+    --set-string remoteWorker.trustDomain=cloud-agents.helm >/dev/null
+)
+wait_deployments() {
+  for component in control-plane worker access-gateway admin-web; do
+    kubectl --context "$context" -n "$namespace" rollout status \
+      deployment/$release_name-cloud-agents-$component --timeout=180s >/dev/null
+  done
+}
+assert_release_images() {
+  kubectl --context "$context" -n "$namespace" get deployment \
+    -l app.kubernetes.io/instance="$release_name" -o json | node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(0, "utf8"));
+const expected = process.argv[1];
+for (const deployment of value.items) {
+  const component = deployment.metadata.labels["app.kubernetes.io/component"];
+  if (deployment.spec.template.spec.containers[0].image !== `cloud-agents/helm-smoke-${component}:${expected}`) process.exit(1);
+  if ((deployment.spec.template.spec.initContainers ?? []).some((container) => container.image !== `cloud-agents/helm-smoke-migrate:${expected}`)) process.exit(1);
+}
+' "$1"
+}
+install_chart=$chart
+install_tag=$image_tag
+if [ -n "$previous_chart" ]; then
+  install_chart=$previous_chart
+  install_tag=$previous_image_tag
+  cli=$previous_cli
+fi
+helm_apply install "$install_chart" "$install_tag"
+wait_deployments
+assert_release_images "$install_tag"
 kubectl --context "$context" -n "$namespace" get deployment \
   -l app.kubernetes.io/instance="$release_name" -o json | node -e '
 const fs = require("node:fs");
@@ -358,26 +445,47 @@ const gateway = deployments["access-gateway"].spec.template.spec;
 if (gateway.securityContext.runAsUser !== 65532 || gateway.initContainers[0].args[0] !== "--mode=0400") process.exit(1);
 '
 
-kubectl --context "$context" -n "$namespace" port-forward \
-  service/$release_name-cloud-agents-admin-web "$admin_port:4174" >"$smoke_directory/admin-forward.log" 2>&1 &
-admin_forward_pid=$!
-kubectl --context "$context" -n "$namespace" port-forward --address=0.0.0.0 \
-  service/$release_name-cloud-agents-control-plane "$control_plane_port:8080" >"$smoke_directory/control-plane-forward.log" 2>&1 &
-control_plane_forward_pid=$!
-kubectl --context "$context" -n "$namespace" port-forward \
-  service/$release_name-cloud-agents-access-gateway "$gateway_port:8090" "$gateway_ssh_port:2222" >"$smoke_directory/gateway-forward.log" 2>&1 &
-gateway_forward_pid=$!
-attempt=0
-until curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >/dev/null 2>&1 \
-  && curl --silent --show-error --fail --cacert "$smoke_directory/ca.crt" "https://127.0.0.1:$control_plane_port/readyz" >/dev/null 2>&1 \
-  && curl --silent --show-error --fail --cacert "$smoke_directory/ca.crt" "https://127.0.0.1:$gateway_port/healthz" >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 60 ]; then
-    echo "Helm service port-forwards did not become ready" >&2
-    exit 1
-  fi
-  sleep 1
-done
+stop_forwards() {
+  for pid in "$admin_forward_pid" "$control_plane_forward_pid" "$gateway_forward_pid"; do
+    if [ -n "$pid" ]; then
+      kill "$pid" >/dev/null 2>&1 || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
+  admin_forward_pid=
+  control_plane_forward_pid=
+  gateway_forward_pid=
+}
+admin_upstream_ready() {
+  [ -z "${project_id:-}" ] || [ "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
+    --header 'X-Request-ID: helm-smoke-admin-upstream-ready' \
+    "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/deployment-targets?pageSize=1")" = 200 ]
+}
+start_forwards() {
+  kubectl --context "$context" -n "$namespace" port-forward \
+    service/$release_name-cloud-agents-admin-web "$admin_port:4174" >"$smoke_directory/admin-forward.log" 2>&1 &
+  admin_forward_pid=$!
+  kubectl --context "$context" -n "$namespace" port-forward --address=0.0.0.0 \
+    service/$release_name-cloud-agents-control-plane "$control_plane_port:8080" >"$smoke_directory/control-plane-forward.log" 2>&1 &
+  control_plane_forward_pid=$!
+  kubectl --context "$context" -n "$namespace" port-forward \
+    service/$release_name-cloud-agents-access-gateway "$gateway_port:8090" "$gateway_ssh_port:2222" >"$smoke_directory/gateway-forward.log" 2>&1 &
+  gateway_forward_pid=$!
+  attempt=0
+  until curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >/dev/null 2>&1 \
+    && curl --silent --show-error --fail --cacert "$smoke_directory/ca.crt" "https://127.0.0.1:$control_plane_port/readyz" >/dev/null 2>&1 \
+    && curl --silent --show-error --fail --cacert "$smoke_directory/ca.crt" "https://127.0.0.1:$gateway_port/healthz" >/dev/null 2>&1 \
+    && admin_upstream_ready; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+      echo "Helm service port-forwards did not become ready" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+start_forwards
 
 project_output=$("$cli" --endpoint "https://127.0.0.1:$control_plane_port" \
   --ca-file "$smoke_directory/ca.crt" --token-file "$smoke_directory/admin-token" \
@@ -398,6 +506,38 @@ until [ "$(curl --silent --output /dev/null --write-out '%{http_code}' \
   fi
   sleep 1
 done
+verify_project() {
+  "$1" --endpoint "https://127.0.0.1:$control_plane_port" \
+    --ca-file "$smoke_directory/ca.crt" --token-file "$smoke_directory/admin-token" \
+    --tenant tenant-helm-smoke --project "$project_id" --request-id "$2" project get | \
+    node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));if(value.metadata?.uid!==process.argv[1])process.exit(1)' "$project_id"
+}
+verify_project "$cli" helm-smoke-project-before-upgrade
+if [ -n "$previous_candidate_directory" ]; then
+  stop_forwards
+  helm_apply upgrade "$chart" "$image_tag"
+  wait_deployments
+  assert_release_images "$image_tag"
+  start_forwards
+  verify_project "$candidate_directory/cloud-agentsctl-$cli_target" helm-smoke-project-after-upgrade
+
+  stop_forwards
+  helm --kube-context "$context" rollback "$release_name" 1 --namespace "$namespace" \
+    --wait --timeout 5m >/dev/null
+  wait_deployments
+  assert_release_images "$previous_image_tag"
+  start_forwards
+  verify_project "$previous_cli" helm-smoke-project-after-rollback
+
+  stop_forwards
+  helm_apply upgrade "$chart" "$image_tag"
+  wait_deployments
+  assert_release_images "$image_tag"
+  start_forwards
+  verify_project "$candidate_directory/cloud-agentsctl-$cli_target" helm-smoke-project-after-reupgrade
+  cli=$candidate_directory/cloud-agentsctl-$cli_target
+  upgrade_summary="$previous_version-$candidate_version-passed"
+fi
 curl --silent --show-error --fail-with-body --request PUT \
   --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
   --header 'Content-Type: application/json' --header 'X-Request-ID: helm-smoke-quota-create' \
@@ -441,7 +581,7 @@ docker run --rm --platform "$image_platform" \
   --env CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_CPU_MILLIS=1000 \
   --env CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_MEMORY_BYTES=536870912 \
   --env CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_DISK_BYTES=1073741824 \
-  "$customer_node_image" sh /smoke/scripts/bootstrap-platform-remote-worker.sh
+  "$customer_node_image" sh /smoke/current/scripts/bootstrap-platform-remote-worker.sh
 test ! -e "$smoke_directory/customer-node/install/enrollment-secret"
 test ! -e "$smoke_directory/customer-node/install/claim-response.json"
 docker run --rm --platform "$image_platform" \
@@ -458,7 +598,6 @@ const [container] = JSON.parse(fs.readFileSync(0, "utf8"));
 if (Object.keys(container.Config.ExposedPorts ?? {}).length !== 0) process.exit(1);
 if (Object.keys(container.HostConfig.PortBindings ?? {}).length !== 0) process.exit(1);
 '
-release_version=$(node -e 'const fs=require("node:fs");process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version)' "$candidate_directory/platform-release-manifest.json")
 attempt=0
 until curl --silent --show-error --fail-with-body \
   --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
@@ -471,7 +610,7 @@ const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const version = process.argv[2];
 if (value.spec?.state !== "enrolled" || value.spec.node?.healthState !== "online" || value.spec.node?.workerVersion !== version || value.spec.node?.os !== "linux") process.exit(1);
 if (JSON.stringify(value).includes("carw1_")) process.exit(1);
-' "$smoke_directory/remote-worker-online.json" "$release_version"; do
+' "$smoke_directory/remote-worker-online.json" "$candidate_version"; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
     echo "fresh outbound customer node did not become online" >&2
@@ -507,7 +646,7 @@ until curl --silent --show-error --fail "http://127.0.0.1:$admin_port/healthz" >
   fi
   sleep 1
 done
-node "$smoke_directory/scripts/test-platform-compose-admin-web.mjs" \
+node "$current_deployment/scripts/test-platform-compose-admin-web.mjs" \
   "http://127.0.0.1:$admin_port" "$smoke_directory/admin-token" "$smoke_directory/user-token" \
   tenant-helm-smoke "$project_id"
 ssh-keyscan -p "$gateway_ssh_port" 127.0.0.1 2>/dev/null >"$smoke_directory/scanned-host-key.pub"

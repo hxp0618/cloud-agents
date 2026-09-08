@@ -1,0 +1,127 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "df5b8270a4e8fb1a0f902bd6efb6d503b9f6f5a7",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "releases": {
+    "n": {
+      "version": "0.1.0-alpha.95",
+      "directory": "/tmp/cloud-agents-platform-000084-helm-upgrade-n-r4",
+      "sourceCommit": "df5b8270a4e8fb1a0f902bd6efb6d503b9f6f5a7",
+      "sourceDirty": true,
+      "artifactCount": 22,
+      "deploymentArtifact": {
+        "sizeBytes": 1060864,
+        "sha256": "sha256:d6c9482e407dd001e23820473c040cae19adaa2de774d74c2bda7bcde482f3c0"
+      },
+      "migrationArtifact": {
+        "sizeBytes": 62147072,
+        "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+      },
+      "linuxArm64ControlPlane": "sha256:4fde73b93949e18ffae9bfb5de8eda1fddaef86ef7df16bd585e0ff56561fa8e",
+      "linuxArm64Worker": "sha256:fd8d3ff81179cf6d856ece998d8e6d8e69c0bff1679148a25f3de612685befcf"
+    },
+    "nMinus1": {
+      "version": "0.1.0-alpha.94",
+      "directory": "/tmp/cloud-agents-platform-000084-helm-upgrade-nminus1-r1",
+      "sourceCommit": "df5b8270a4e8fb1a0f902bd6efb6d503b9f6f5a7",
+      "sourceDirty": true,
+      "artifactCount": 22,
+      "deploymentArtifact": {
+        "sizeBytes": 1054208,
+        "sha256": "sha256:b5ed6b0232f6249cbd2a9f61ada2ca936ca02779ab07fc47ca0116e264d6bd0b"
+      },
+      "migrationArtifact": {
+        "sizeBytes": 62147072,
+        "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+      },
+      "linuxArm64ControlPlane": "sha256:991844ab51f30483060ed7e54f5acc2b23990c0c5ff7669c20381eff0a112742",
+      "linuxArm64Worker": "sha256:296ac399293eb6f6d356a99749291b72ef2e1a9dd28653a910a72433e3843462"
+    },
+    "allChecksumsPassed": true,
+    "versionsWithinDeclaredRange": "[0.1.0-alpha.1,0.2.0-0)",
+    "packagedSmokeAndRunbookMatchedSource": true
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "postgresImage": "postgres:17.6-bookworm",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v22.23.1"
+  },
+  "result": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh <packaged-n>/scripts/test-platform-helm.sh /tmp/cloud-agents-platform-000084-helm-upgrade-n-r4 /tmp/cloud-agents-platform-000084-helm-upgrade-nminus1-r1",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-platform-000084-helm-upgrade-r4.log",
+      "sizeBytes": 443,
+      "sha256": "sha256:aa107008c13a0d6ab08fbd405aced95ad7e6a6ba9982a15f733d733e03b08edb",
+      "containsEnrollmentSecretOrPrivateKey": false
+    },
+    "transitions": [
+      {
+        "action": "install",
+        "version": "0.1.0-alpha.94",
+        "exactImagesMatched": true,
+        "projectReadable": true
+      },
+      {
+        "action": "upgrade",
+        "version": "0.1.0-alpha.95",
+        "exactImagesMatched": true,
+        "projectReadable": true
+      },
+      {
+        "action": "rollback",
+        "version": "0.1.0-alpha.94",
+        "exactImagesMatched": true,
+        "projectReadable": true
+      },
+      {
+        "action": "reupgrade",
+        "version": "0.1.0-alpha.95",
+        "exactImagesMatched": true,
+        "projectReadable": true
+      }
+    ],
+    "schemaLedger": {
+      "count": 84,
+      "first": "000001",
+      "last": "000084"
+    },
+    "ordinaryUserAdminStatus": 403,
+    "remoteWorkerOnlineAtVersion": "0.1.0-alpha.95",
+    "adminWebSameOriginRequests": 15,
+    "accessGatewayTLSAndSSH": "passed",
+    "adminAndGatewayRestart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "checks": [
+    "both local release candidates contained 22 checksum-valid artifacts and distinct Control Plane and Worker binary digests",
+    "the N-1 chart installed the N-1 Control Plane, Worker, migration init, Access Gateway and Admin Web images",
+    "the N chart upgrade reran the migration hook and replaced all exact service and init-container images",
+    "Helm rollback restored the exact N-1 service and init-container images",
+    "the final N re-upgrade restored the exact N images",
+    "the same persisted Project remained readable through the N-1 install, N upgrade, N-1 rollback and final N upgrade",
+    "the final N deployment repeated the real RemoteWorker, Admin Web browser, ordinary-user 403, Gateway, restart and exact cleanup checks"
+  ],
+  "verification": {
+    "helmLint": "passed",
+    "releaseTests": "scripts/lib/platform-release.test.ts passed 19 tests",
+    "shellSyntax": "sh -n passed",
+    "diffCheck": "git diff --check passed"
+  },
+  "boundary": "This proves a real same-schema Helm N-1 install, N upgrade, N-1 rollback and final N re-upgrade on OrbStack while preserving PostgreSQL project state and deployment-owned Secrets/PVC. Both versions use migration head 000084 and fall within the declared migration consumer range. The deployments use the chart's Recreate strategy, so this is not a zero-downtime rolling-availability proof. It does not cover a schema-head transition, external PostgreSQL/S3/OIDC, HA, real Provider credentials, public ingress, cross-Region recovery, or published images. Both candidates were built from a dirty local source tree and were not published. This slice is not BASE-READY."
+}
