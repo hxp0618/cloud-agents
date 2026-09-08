@@ -14,10 +14,16 @@ const gvisorOnly = process.argv.includes("--gvisor-only");
 const snapshotOnly = process.argv.includes("--snapshot-only");
 const snapshotRestoreOnly = process.argv.includes("--snapshot-restore-only");
 const snapshotCleanupOnly = process.argv.includes("--snapshot-cleanup-only");
+const faultSoakOnly = process.argv.includes("--fault-soak-only");
 assert.ok(
-  [remoteWorkerOnly, gvisorOnly, snapshotOnly, snapshotRestoreOnly, snapshotCleanupOnly].filter(
-    Boolean,
-  ).length <= 1,
+  [
+    remoteWorkerOnly,
+    gvisorOnly,
+    snapshotOnly,
+    snapshotRestoreOnly,
+    snapshotCleanupOnly,
+    faultSoakOnly,
+  ].filter(Boolean).length <= 1,
   "choose one focused mode",
 );
 const remoteWorkerComplete = Symbol("remote-worker-complete");
@@ -824,7 +830,9 @@ try {
     },
   );
   prepareReceipt = parseMarker(prepareOutput, "FOUNDATION_LIVE_PREPARE");
+  const controllerFaultStarted = process.hrtime.bigint();
   await delay(1200);
+  const controllerRestartStarted = process.hrtime.bigint();
   const recoverOutput = execFileSync(
     controllerTestBinary,
     ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
@@ -840,8 +848,13 @@ try {
       timeout: 180_000,
     },
   );
+  const controllerFaultToRecoveryMilliseconds =
+    Number(process.hrtime.bigint() - controllerFaultStarted) / 1e6;
+  const controllerRestartToRecoveryMilliseconds =
+    Number(process.hrtime.bigint() - controllerRestartStarted) / 1e6;
   const recoverReceipt = parseMarker(recoverOutput, "FOUNDATION_LIVE_RECOVER");
   assert.equal(recoverReceipt.runtimeId, prepareReceipt.runtimeId);
+  assert.equal(recoverReceipt.operationId, prepareReceipt.operationId);
   assert.equal(
     recoverReceipt.cleanup,
     "failed runtime and volume removed; successful runtime retained for lifecycle",
@@ -967,6 +980,120 @@ try {
   );
   assert.equal(snapshotControllerReceipt.operationId, snapshotAPIReceipt.operationId);
   assert.equal(snapshotControllerReceipt.status, "available");
+  if (faultSoakOnly) {
+    const runAdminSoak = (phase) =>
+      parseMarker(
+        execFileSync(
+          serverTestBinary,
+          ["-test.run", "^TestFoundationAdminReadSoakPostgres$", "-test.v"],
+          {
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+              CLOUD_AGENTS_FOUNDATION_ADMIN_SOAK_PHASE: phase,
+            },
+            timeout: 120_000,
+          },
+        ),
+        "FOUNDATION_ADMIN_SOAK",
+      );
+    const beforeRestart = runAdminSoak("before-restart");
+    const afterRestart = runAdminSoak("after-restart");
+    assert.equal(beforeRestart.cycles, 64);
+    assert.equal(beforeRestart.successfulRequests, 384);
+    assert.equal(beforeRestart.deniedRequests, 64);
+    assert.equal(afterRestart.cycles, 64);
+    assert.equal(afterRestart.successfulRequests, 384);
+    assert.equal(afterRestart.deniedRequests, 64);
+    assert.equal(afterRestart.stateDigest, beforeRestart.stateDigest);
+    docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
+    docker("volume", "rm", prepareReceipt.volumeName);
+    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace",
+      ),
+      "",
+    );
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace-snapshot",
+      ),
+      "",
+    );
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        dirty: true,
+        migrationHead: currentHead,
+      },
+      backend: {
+        dockerContext: "orbstack",
+        dockerVersion: docker("version", "--format", "{{.Server.Version}}"),
+        postgres: psql("SHOW server_version;"),
+      },
+      controllerFault: {
+        injected: "Controller process exited after physical create and before settlement",
+        claimExpiryWaitMilliseconds: 1200,
+        faultToRecoveryUpperBoundMilliseconds: controllerFaultToRecoveryMilliseconds,
+        restartToRecoveryUpperBoundMilliseconds: controllerRestartToRecoveryMilliseconds,
+        inProcessRecoveryUpperBoundMilliseconds: recoverReceipt.recoveryMilliseconds,
+        rpo: {
+          operationRowsLost: 0,
+          workspaceBytesLost: 0,
+          operationId: recoverReceipt.operationId,
+          workspaceDigest: recoverReceipt.workspaceDigest,
+        },
+        deliveryAttempts: recoverReceipt.deliveryAttempts,
+        failedRuntimeCompensated: recoverReceipt.failureCompensated,
+      },
+      controlPlaneSoak: {
+        beforeRestart,
+        afterRestart,
+        totalRequests: 896,
+        rpo: { resourceChanges: 0, stateDigest: afterRestart.stateDigest },
+        rtoMilliseconds: afterRestart.recoveryToFirstSuccessMilliseconds,
+      },
+      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+      checks: [
+        `product migration ${currentHead} applied to disposable PostgreSQL`,
+        "a Controller process exited after physical create and before settlement; a new process reaped the expired claim, adopted the exact runtime and operation, preserved Workspace bytes, and compensated a separate failed runtime",
+        "two separate Control Plane test processes each served 64 cycles of six generated-SDK Admin reads plus an ordinary-user 403 against the same PostgreSQL authority",
+        "all 768 successful Admin reads and 128 denied reads completed; P50/P95/max and process-start-to-first-success recovery were measured for each process",
+        "the persisted Profile, Sandbox and Snapshot projection digest was stable within the soak and unchanged across the Control Plane restart",
+        "Admin responses excluded endpoint, credential references, physical snapshot identifiers, Prompt and Workspace content markers",
+        "the stopped real Docker Workspace was copied to an exact-owned Snapshot before the read soak",
+        "zero test-owned runtime containers, Workspace volumes and Snapshot volumes remain",
+      ],
+      boundary:
+        "Local OrbStack Docker, disposable PostgreSQL and in-process HTTP servers using production handlers/generated SDK only; this bounded 896-request read soak measures current-machine latency and Docker Controller/Control Plane restart recovery, not an SLO, write saturation, Kubernetes/SSH/RemoteWorker faults, external load balancers or multi-Region recovery",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    process.stdout.write(
+      `Verified Docker Controller and Control Plane fault/soak; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw snapshotComplete;
+  }
   if (snapshotCleanupOnly) {
     const cleanupAPIOutput = execFileSync(
       serverTestBinary,

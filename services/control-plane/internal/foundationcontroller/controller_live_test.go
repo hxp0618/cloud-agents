@@ -50,13 +50,14 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
+	started := time.Now()
 	environment := newLiveControllerEnvironment(t, ctx)
 	if phase == "prepare" {
 		prepareLiveControllerRestart(t, ctx, environment)
 		return
 	}
 	if phase == "recover" {
-		recoverLiveControllerRestart(t, ctx, environment)
+		recoverLiveControllerRestart(t, ctx, environment, started)
 		return
 	}
 	if phase == "ttl" {
@@ -419,7 +420,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	// Intentionally exit without settlement: the next OS process must reap and adopt.
 }
 
-func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment liveControllerEnvironment, started time.Time) {
 	t.Helper()
 	expectedRuntime := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID")
 	expectedVolume := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME")
@@ -559,8 +560,9 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 			reconciledNetworkReceived, reconciledNetworkTransmitted, reconciledNetworkGeneration, reconciledNetworkCheckpoint)
 	}
 	receipt, _ := json.Marshal(map[string]any{
-		"runtimeId": expectedRuntime, "adopted": true, "deliveryAttempts": success.deliveryAttempts,
-		"failureRuntimeId": failure.runtimeID, "failureCompensated": true,
+		"runtimeId": expectedRuntime, "operationId": success.operationID, "adopted": true, "deliveryAttempts": success.deliveryAttempts,
+		"recoveryMilliseconds": float64(time.Since(started).Microseconds()) / 1000,
+		"failureRuntimeId":     failure.runtimeID, "failureCompensated": true,
 		"workspaceDigest": expectedDigest, "cleanup": "failed runtime and volume removed; successful runtime retained for lifecycle",
 		"workspaceVolumeUsage": map[string]any{"usedBytes": workspaceUsedBytes,
 			"measurementGeneration": workspaceMeasurementGeneration,

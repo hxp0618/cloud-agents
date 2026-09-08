@@ -1,0 +1,388 @@
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] uvicorn.access: 192.168.215.1:59596 - "GET /health HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:18:47+0000 [-] uvicorn.access: 192.168.215.1:59602 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3D95e71c2802fb51c635a6b34d9a953f1d%26cloud-agents-sandbox-sha256-b%3D95e66774332acf41770947c71d3bb6a5&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:07+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3D95e71c2802fb51c635a6b34d9a953f1d%26cloud-agents-sandbox-sha256-b%3D95e66774332acf41770947c71d3bb6a5&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "POST /v1/sandboxes HTTP/1.1" 202
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/proxy/44772/ping HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/endpoints/18080?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/proxy/18080/policy HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40372 - "POST /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/proxy/44772/command HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0/proxy/44772/command/status/f4d2e5c90262453186f3c89688bc11c0 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] uvicorn.access: 192.168.215.1:40374 - "DELETE /v1/sandboxes/00e3bb7c-8366-4264-a87d-8cc93958c1f0 HTTP/1.1" 204
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3D95e71c2802fb51c635a6b34d9a953f1d%26cloud-agents-sandbox-sha256-b%3D95e66774332acf41770947c71d3bb6a5&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "POST /v1/sandboxes HTTP/1.1" 202
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/ping HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/18080?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/18080/policy HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:40374 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:40374 - "POST /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/command HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48396 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/command/status/d73a223ff4af480aba25808ec247e1ac HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48396 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48396 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/3000?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48396 - "POST /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/3000/hello?value=alpha HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/3000?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:12+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/3000/after-restart HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 404
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "POST /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/upload HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/directories/list?depth=1&path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/download?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 206
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48404 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/download?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 206
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:13+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-link HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "DELETE /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 404
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:14+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/files/info?path=%2Fworkspace%2Fremote-files-large.bin HTTP/1.1" 404
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "POST /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty HTTP/1.1" 201
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48406 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/d1c2c45d-25e9-46d3-8b04-92092267462f HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/d1c2c45d-25e9-46d3-8b04-92092267462f HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "DELETE /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/d1c2c45d-25e9-46d3-8b04-92092267462f HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "POST /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty HTTP/1.1" 201
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:18+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:18+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "DELETE /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/3c28cdc2-9b7a-4e90-b595-cae3f35d9e86 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.access: 192.168.215.1:48420 - "POST /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty HTTP/1.1" 201
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [-] uvicorn.access: 192.168.215.1:48420 - "DELETE /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/c4767d55-6369-4087-98ee-9bc70470fec9 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [-] uvicorn.access: 192.168.215.1:48420 - "GET /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [-] uvicorn.access: 192.168.215.1:48420 - "DELETE /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c HTTP/1.1" 204
+[32mINFO[0m:     2026-09-08 18:20:22+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3Db7ad567477c83756aab9a542b2be04f7%26cloud-agents-sandbox-sha256-b%3D7dbae25115d85f22070d74d8cc4779dc&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "POST /v1/sandboxes HTTP/1.1" 202
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/proxy/44772/ping HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/18080?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41938 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/proxy/18080/policy HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] uvicorn.access: 192.168.215.1:41952 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/44772 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:35+0000 [-] uvicorn.access: 192.168.215.1:41952 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/44772 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3Db7ad567477c83756aab9a542b2be04f7%26cloud-agents-sandbox-sha256-b%3D7dbae25115d85f22070d74d8cc4779dc&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/44772?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/proxy/44772/ping HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/18080?use_server_proxy=true HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59684 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/proxy/18080/policy HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59698 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3Db7ad567477c83756aab9a542b2be04f7%26cloud-agents-sandbox-sha256-b%3D7dbae25115d85f22070d74d8cc4779dc&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [-] uvicorn.access: 192.168.215.1:59706 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/44772 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [-] uvicorn.access: 192.168.215.1:59712 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3Dd9c5acdb4dbf398f0a0c9d8cfe2f981e%26cloud-agents-sandbox-sha256-b%3Dac7b28656ca432be3c2f670bf0976307&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] uvicorn.access: 192.168.215.1:59712 - "POST /v1/sandboxes HTTP/1.1" 202
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] uvicorn.access: 192.168.215.1:59712 - "GET /v1/sandboxes/1ce75505-c66b-4108-bd6d-48ef9c25647e HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] uvicorn.access: 192.168.215.1:59712 - "GET /v1/sandboxes/1ce75505-c66b-4108-bd6d-48ef9c25647e HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] uvicorn.access: 192.168.215.1:59712 - "DELETE /v1/sandboxes/1ce75505-c66b-4108-bd6d-48ef9c25647e HTTP/1.1" 204
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] uvicorn.access: 192.168.215.1:59698 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3Dd9c5acdb4dbf398f0a0c9d8cfe2f981e%26cloud-agents-sandbox-sha256-b%3Dac7b28656ca432be3c2f670bf0976307&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] uvicorn.access: 192.168.215.1:59706 - "GET /v1/sandboxes?page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:41+0000 [-] uvicorn.access: 192.168.215.1:59706 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7/endpoints/44772 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [-] uvicorn.access: 192.168.215.1:47426 - "GET /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [-] uvicorn.access: 192.168.215.1:47426 - "DELETE /v1/sandboxes/96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 HTTP/1.1" 204
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [-] uvicorn.access: 192.168.215.1:47430 - "GET /v1/sandboxes?metadata=cloud-agents-sandbox-sha256-a%3Db7ad567477c83756aab9a542b2be04f7%26cloud-agents-sandbox-sha256-b%3D7dbae25115d85f22070d74d8cc4779dc&page=1&pageSize=100 HTTP/1.1" 200
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] opensandbox_server.config: Loaded configuration from /etc/opensandbox/config.toml
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] opensandbox_server.services.factory: Creating sandbox service with type: docker
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] opensandbox_server.services.docker.docker_service: Docker service initialized from environment
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] uvicorn.error: Started server process [[36m1[0m]
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] uvicorn.error: Waiting for application startup.
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] opensandbox_server.main: Validating secure runtime for Docker backend
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] opensandbox_server.services.runtime_resolver: Secure runtime is not configured.
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] opensandbox_server.integrations.otel.metrics: OpenTelemetry metrics export disabled; SDK events are accepted but not exported
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] uvicorn.error: Application startup complete.
+[32mINFO[0m:     2026-09-08 18:18:46+0000 [-] uvicorn.error: Uvicorn running on [1mhttp://0.0.0.0:8080[0m (Press CTRL+C to quit)
+[32mINFO[0m:     2026-09-08 18:18:47+0000 [3d9894e3d8a04465b88b5970991b4359] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': '95e71c2802fb51c635a6b34d9a953f1d', 'cloud-agents-sandbox-sha256-b': '95e66774332acf41770947c71d3bb6a5'}
+[32mINFO[0m:     2026-09-08 18:20:07+0000 [d9ac19f155bd4617a0cf72f6c54c845c] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': '95e71c2802fb51c635a6b34d9a953f1d', 'cloud-agents-sandbox-sha256-b': '95e66774332acf41770947c71d3bb6a5'}
+[32mINFO[0m:     2026-09-08 18:20:07+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=inspect image node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 | duration=1.11
+[32mINFO[0m:     2026-09-08 18:20:07+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=create egress runtime volume | duration=4.97
+[32mINFO[0m:     2026-09-08 18:20:07+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=inspect image sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a | duration=2.31
+[32mINFO[0m:     2026-09-08 18:20:07+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=create egress sidecar | duration=33.62
+[32mINFO[0m:     2026-09-08 18:20:08+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=start egress sidecar | duration=88.35
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=create sandbox container | duration=84.36
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache:linux/arm64 | action=inspect image sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd | duration=1.60
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache | action=execd cache create container | duration=34.85
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.runtime: Created sandbox execd archive for container 5107c105f7414984cb8acaf5776f26785a3b894e561f227fd5312d901cfd0514
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache | action=execd cache start container | duration=81.74
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache | action=execd cache read archive | duration=33.17
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache | action=execd cache read bootstrap | duration=1.57
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache | action=execd cache read bwrap | duration=1.83
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=execd-cache | action=execd cache cleanup container | duration=117.93
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.runtime: Dumped execd archive to memory for platform key linux/arm64
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=ensure directory /opt/opensandbox | duration=1.85
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=copy execd archive to sandbox | duration=38.16
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=ensure directory /opt/opensandbox | duration=1.39
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=install bootstrap script | duration=1.46
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=copy bwrap to sandbox | duration=11.58
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=start sandbox container | duration=38.28
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [7c4b538a3a314769b01eeb5d3e40c8d5] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=kill sandbox container | duration=32.18
+[32mINFO[0m:     2026-09-08 18:20:09+0000 [7c4b538a3a314769b01eeb5d3e40c8d5] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=remove sandbox container | duration=10.65
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [7c4b538a3a314769b01eeb5d3e40c8d5] opensandbox_server.services.docker.docker_service: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | action=cleanup egress sidecar | duration=153.69
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [7c4b538a3a314769b01eeb5d3e40c8d5] opensandbox_server.services.docker.volumes: sandbox=00e3bb7c-8366-4264-a87d-8cc93958c1f0 | removed managed volume 'opensandbox-runtime-00e3bb7c-8366-4264-a87d-8cc93958c1f0'
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [de219c6b38654f63bf02b4352d559f07] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': '95e71c2802fb51c635a6b34d9a953f1d', 'cloud-agents-sandbox-sha256-b': '95e66774332acf41770947c71d3bb6a5'}
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=inspect image node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 | duration=0.95
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=create egress runtime volume | duration=3.56
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=inspect image sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a | duration=1.26
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=create egress sidecar | duration=30.94
+[32mINFO[0m:     2026-09-08 18:20:10+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=start egress sidecar | duration=67.96
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=create sandbox container | duration=61.01
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=ensure directory /opt/opensandbox | duration=3.50
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=copy execd archive to sandbox | duration=57.97
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=ensure directory /opt/opensandbox | duration=1.47
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=install bootstrap script | duration=8.90
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=copy bwrap to sandbox | duration=1.70
+[32mINFO[0m:     2026-09-08 18:20:11+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=start sandbox container | duration=43.24
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.error: 192.168.215.1:48408 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/d1c2c45d-25e9-46d3-8b04-92092267462f/ws?since=0" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:15+0000 [-] uvicorn.error: connection closed
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.error: 192.168.215.1:48436 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/d1c2c45d-25e9-46d3-8b04-92092267462f/ws?since=0&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.error: connection closed
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.error: 192.168.215.1:48446 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/d1c2c45d-25e9-46d3-8b04-92092267462f/ws?since=88&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:16+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.error: connection closed
+[31mERROR[0m:    2026-09-08 18:20:17+0000 [-] opensandbox_server.api.proxy: Unexpected websocket proxy failure for sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c port=44772
+  + Exception Group Traceback (most recent call last):
+  |   File "/app/opensandbox_server/api/proxy.py", line 460, in _proxy_websocket_request
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/app/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/app/opensandbox_server/api/proxy.py", line 361, in _relay_client_messages
+    |     await backend.close(
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/asyncio/connection.py", line 648, in close
+    |     self.protocol.send_close(code, reason)
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/protocol.py", line 391, in send_close
+    |     data = close.serialize()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 415, in serialize
+    |     self.check()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 427, in check
+    |     raise ProtocolError("invalid status code")
+    | websockets.exceptions.ProtocolError: invalid status code
+    +------------------------------------
+[31mERROR[0m:    2026-09-08 18:20:17+0000 [-] opensandbox_server.api.proxy: Unexpected websocket proxy failure for sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c port=44772
+  + Exception Group Traceback (most recent call last):
+  |   File "/app/opensandbox_server/api/proxy.py", line 460, in _proxy_websocket_request
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/app/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/app/opensandbox_server/api/proxy.py", line 361, in _relay_client_messages
+    |     await backend.close(
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/asyncio/connection.py", line 648, in close
+    |     self.protocol.send_close(code, reason)
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/protocol.py", line 391, in send_close
+    |     data = close.serialize()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 415, in serialize
+    |     self.check()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 427, in check
+    |     raise ProtocolError("invalid status code")
+    | websockets.exceptions.ProtocolError: invalid status code
+    +------------------------------------
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.error: 192.168.215.1:48462 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/3c28cdc2-9b7a-4e90-b595-cae3f35d9e86/ws?since=0&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:17+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:18+0000 [-] uvicorn.error: connection closed
+[32mINFO[0m:     2026-09-08 18:20:18+0000 [-] uvicorn.error: 192.168.215.1:48468 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/3c28cdc2-9b7a-4e90-b595-cae3f35d9e86/ws?since=10&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:18+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:18+0000 [-] uvicorn.error: connection closed
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.error: 192.168.215.1:48484 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/3c28cdc2-9b7a-4e90-b595-cae3f35d9e86/ws?since=141&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:19+0000 [-] uvicorn.error: connection closed
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.error: 192.168.215.1:48494 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/c4767d55-6369-4087-98ee-9bc70470fec9/ws?since=0&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.error: connection open
+[31mERROR[0m:    2026-09-08 18:20:20+0000 [-] opensandbox_server.api.proxy: Unexpected websocket proxy failure for sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c port=44772
+  + Exception Group Traceback (most recent call last):
+  |   File "/app/opensandbox_server/api/proxy.py", line 460, in _proxy_websocket_request
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/app/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/app/opensandbox_server/api/proxy.py", line 361, in _relay_client_messages
+    |     await backend.close(
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/asyncio/connection.py", line 648, in close
+    |     self.protocol.send_close(code, reason)
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/protocol.py", line 391, in send_close
+    |     data = close.serialize()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 415, in serialize
+    |     self.check()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 427, in check
+    |     raise ProtocolError("invalid status code")
+    | websockets.exceptions.ProtocolError: invalid status code
+    +------------------------------------
+[31mERROR[0m:    2026-09-08 18:20:20+0000 [-] opensandbox_server.api.proxy: Unexpected websocket proxy failure for sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c port=44772
+  + Exception Group Traceback (most recent call last):
+  |   File "/app/opensandbox_server/api/proxy.py", line 460, in _proxy_websocket_request
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/app/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/app/opensandbox_server/api/proxy.py", line 361, in _relay_client_messages
+    |     await backend.close(
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/asyncio/connection.py", line 648, in close
+    |     self.protocol.send_close(code, reason)
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/protocol.py", line 391, in send_close
+    |     data = close.serialize()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 415, in serialize
+    |     self.check()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 427, in check
+    |     raise ProtocolError("invalid status code")
+    | websockets.exceptions.ProtocolError: invalid status code
+    +------------------------------------
+[31mERROR[0m:    2026-09-08 18:20:20+0000 [-] opensandbox_server.api.proxy: Unexpected websocket proxy failure for sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c port=44772
+  + Exception Group Traceback (most recent call last):
+  |   File "/app/opensandbox_server/api/proxy.py", line 460, in _proxy_websocket_request
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/app/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/app/opensandbox_server/api/proxy.py", line 361, in _relay_client_messages
+    |     await backend.close(
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/asyncio/connection.py", line 648, in close
+    |     self.protocol.send_close(code, reason)
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/protocol.py", line 391, in send_close
+    |     data = close.serialize()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 415, in serialize
+    |     self.check()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 427, in check
+    |     raise ProtocolError("invalid status code")
+    | websockets.exceptions.ProtocolError: invalid status code
+    +------------------------------------
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.error: connection closed
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.error: 192.168.215.1:48498 - "WebSocket /v1/sandboxes/e051e58f-b456-4812-8e6f-0277fb554a1c/proxy/44772/pty/c4767d55-6369-4087-98ee-9bc70470fec9/ws?since=10&takeover=1" [accepted]
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.error: connection open
+[32mINFO[0m:     2026-09-08 18:20:20+0000 [-] uvicorn.error: connection closed
+[31mERROR[0m:    2026-09-08 18:20:21+0000 [-] opensandbox_server.api.proxy: Unexpected websocket proxy failure for sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c port=44772
+  + Exception Group Traceback (most recent call last):
+  |   File "/app/opensandbox_server/api/proxy.py", line 460, in _proxy_websocket_request
+  |     async with anyio.create_task_group() as task_group:
+  |   File "/app/.venv/lib/python3.10/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/app/opensandbox_server/api/proxy.py", line 361, in _relay_client_messages
+    |     await backend.close(
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/asyncio/connection.py", line 648, in close
+    |     self.protocol.send_close(code, reason)
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/protocol.py", line 391, in send_close
+    |     data = close.serialize()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 415, in serialize
+    |     self.check()
+    |   File "/app/.venv/lib/python3.10/site-packages/websockets/frames.py", line 427, in check
+    |     raise ProtocolError("invalid status code")
+    | websockets.exceptions.ProtocolError: invalid status code
+    +------------------------------------
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [4301ddeb84234bbe8b37de42a599d7cb] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=kill sandbox container | duration=40.97
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [4301ddeb84234bbe8b37de42a599d7cb] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=remove sandbox container | duration=9.34
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [4301ddeb84234bbe8b37de42a599d7cb] opensandbox_server.services.docker.docker_service: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | action=cleanup egress sidecar | duration=148.39
+[32mINFO[0m:     2026-09-08 18:20:21+0000 [4301ddeb84234bbe8b37de42a599d7cb] opensandbox_server.services.docker.volumes: sandbox=e051e58f-b456-4812-8e6f-0277fb554a1c | removed managed volume 'opensandbox-runtime-e051e58f-b456-4812-8e6f-0277fb554a1c'
+[32mINFO[0m:     2026-09-08 18:20:22+0000 [11739b89039b4ad2bb472a1fd110cf02] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': 'b7ad567477c83756aab9a542b2be04f7', 'cloud-agents-sandbox-sha256-b': '7dbae25115d85f22070d74d8cc4779dc'}
+[32mINFO[0m:     2026-09-08 18:20:22+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=inspect image node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 | duration=1.56
+[32mINFO[0m:     2026-09-08 18:20:22+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=create egress runtime volume | duration=3.87
+[32mINFO[0m:     2026-09-08 18:20:22+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=inspect image sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a | duration=1.91
+[32mINFO[0m:     2026-09-08 18:20:23+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=create egress sidecar | duration=44.98
+[32mINFO[0m:     2026-09-08 18:20:23+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=start egress sidecar | duration=82.23
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=create sandbox container | duration=64.11
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=ensure directory /opt/opensandbox | duration=2.33
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=copy execd archive to sandbox | duration=44.96
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=ensure directory /opt/opensandbox | duration=1.41
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=install bootstrap script | duration=1.24
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=copy bwrap to sandbox | duration=17.46
+[32mINFO[0m:     2026-09-08 18:20:24+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=start sandbox container | duration=35.75
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [2f74b588a0aa441abb337bb8f361ad17] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': 'b7ad567477c83756aab9a542b2be04f7', 'cloud-agents-sandbox-sha256-b': '7dbae25115d85f22070d74d8cc4779dc'}
+[32mINFO[0m:     2026-09-08 18:20:37+0000 [f07b0eda1dc54463962abaf1e47cdf7f] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': 'b7ad567477c83756aab9a542b2be04f7', 'cloud-agents-sandbox-sha256-b': '7dbae25115d85f22070d74d8cc4779dc'}
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [618b6841fb66401facc762634938d884] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': 'd9c5acdb4dbf398f0a0c9d8cfe2f981e', 'cloud-agents-sandbox-sha256-b': 'ac7b28656ca432be3c2f670bf0976307'}
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=inspect image rancher/mirrored-pause:3.6@sha256:74c4244427b7312c5b901fe0f67cbc53683d06f4f24c6faee65d4182bf0fa893 | duration=0.78
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=create egress runtime volume | duration=2.96
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=inspect image sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a | duration=0.88
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=create egress sidecar | duration=31.87
+[32mINFO[0m:     2026-09-08 18:20:39+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=start egress sidecar | duration=73.52
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=create sandbox container | duration=63.12
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=ensure directory /opt/opensandbox | duration=7.68
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=copy execd archive to sandbox | duration=38.40
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=ensure directory /opt/opensandbox | duration=4.72
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=install bootstrap script | duration=1.14
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=copy bwrap to sandbox | duration=1.99
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [-] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=start sandbox container | duration=44.29
+[33mWARNING[0m:  2026-09-08 18:20:40+0000 [5fe44725a44f482cbbeef1dd2a09a03d] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=kill sandbox container | duration=0.88 | error=409 Client Error for http+docker://localhost/v1.54/containers/f9ae9d4de069fc2c81a3ff72e288ffebc21193c6497c236164be77b45b451a48/kill: Conflict ("cannot kill container: f9ae9d4de069fc2c81a3ff72e288ffebc21193c6497c236164be77b45b451a48: container f9ae9d4de069fc2c81a3ff72e288ffebc21193c6497c236164be77b45b451a48 is not running")
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [5fe44725a44f482cbbeef1dd2a09a03d] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=remove sandbox container | duration=5.41
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [5fe44725a44f482cbbeef1dd2a09a03d] opensandbox_server.services.docker.docker_service: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | action=cleanup egress sidecar | duration=115.42
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [5fe44725a44f482cbbeef1dd2a09a03d] opensandbox_server.services.docker.volumes: sandbox=1ce75505-c66b-4108-bd6d-48ef9c25647e | removed managed volume 'opensandbox-runtime-1ce75505-c66b-4108-bd6d-48ef9c25647e'
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [878a7af20b684125bf4e7e8a4c4485ce] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': 'd9c5acdb4dbf398f0a0c9d8cfe2f981e', 'cloud-agents-sandbox-sha256-b': 'ac7b28656ca432be3c2f670bf0976307'}
+[32mINFO[0m:     2026-09-08 18:20:40+0000 [e2add16897cb4c278193fc63d84a6213] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata=None
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [938a42aaed6f4c498ee7e46a10b96329] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=kill sandbox container | duration=19.99
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [938a42aaed6f4c498ee7e46a10b96329] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=remove sandbox container | duration=9.02
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [938a42aaed6f4c498ee7e46a10b96329] opensandbox_server.services.docker.docker_service: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | action=cleanup egress sidecar | duration=141.24
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [938a42aaed6f4c498ee7e46a10b96329] opensandbox_server.services.docker.volumes: sandbox=96ec2a7b-22d5-4dcb-a457-7229bf8a85b7 | removed managed volume 'opensandbox-runtime-96ec2a7b-22d5-4dcb-a457-7229bf8a85b7'
+[32mINFO[0m:     2026-09-08 18:20:42+0000 [41bcb9bae06f4dd3b9d8c507ab325455] opensandbox_server.api.lifecycle: ListSandboxes: state=None metadata={'cloud-agents-sandbox-sha256-a': 'b7ad567477c83756aab9a542b2be04f7', 'cloud-agents-sandbox-sha256-b': '7dbae25115d85f22070d74d8cc4779dc'}

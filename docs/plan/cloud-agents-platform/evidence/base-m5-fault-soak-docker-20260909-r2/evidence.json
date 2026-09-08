@@ -1,0 +1,120 @@
+{
+  "run": "foundation-controller-7cef8376-6b39-44c0-a6a7-46be749ed83c",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "536e6ccaae00b7e97d49f27d5105f7b3532ccb9b",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "controllerFault": {
+    "injected": "Controller process exited after physical create and before settlement",
+    "claimExpiryWaitMilliseconds": 1200,
+    "faultToRecoveryUpperBoundMilliseconds": 5750.239583,
+    "restartToRecoveryUpperBoundMilliseconds": 4548.958291,
+    "inProcessRecoveryUpperBoundMilliseconds": 4529.652,
+    "rpo": {
+      "operationRowsLost": 0,
+      "workspaceBytesLost": 0,
+      "operationId": "op-b22b57a8611fbf9b4382db7c32c6fe37",
+      "workspaceDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa"
+    },
+    "deliveryAttempts": 2,
+    "failedRuntimeCompensated": true
+  },
+  "controlPlaneSoak": {
+    "beforeRestart": {
+      "cycles": 64,
+      "deniedLatencyMilliseconds": {
+        "max": 0.5,
+        "p50": 0.199,
+        "p95": 0.401
+      },
+      "deniedRequests": 64,
+      "durationMilliseconds": 974.579,
+      "phase": "before-restart",
+      "recoveryToFirstSuccessMilliseconds": 56.143,
+      "resourceCounts": {
+        "profiles": 5,
+        "sandboxes": 3,
+        "snapshots": 1
+      },
+      "stateDigest": "sha256:3a817ae22876223dce910b7f9d847900da83c953519f73eeb9db2492faec2565",
+      "successLatencyMilliseconds": {
+        "max": 10.613,
+        "p50": 2.215,
+        "p95": 3.283
+      },
+      "successfulRequests": 384
+    },
+    "afterRestart": {
+      "cycles": 64,
+      "deniedLatencyMilliseconds": {
+        "max": 0.455,
+        "p50": 0.172,
+        "p95": 0.298
+      },
+      "deniedRequests": 64,
+      "durationMilliseconds": 848.162,
+      "phase": "after-restart",
+      "recoveryToFirstSuccessMilliseconds": 25.559,
+      "resourceCounts": {
+        "profiles": 5,
+        "sandboxes": 3,
+        "snapshots": 1
+      },
+      "stateDigest": "sha256:3a817ae22876223dce910b7f9d847900da83c953519f73eeb9db2492faec2565",
+      "successLatencyMilliseconds": {
+        "max": 9.552,
+        "p50": 2.011,
+        "p95": 2.998
+      },
+      "successfulRequests": 384
+    },
+    "totalRequests": 896,
+    "rpo": {
+      "resourceChanges": 0,
+      "stateDigest": "sha256:3a817ae22876223dce910b7f9d847900da83c953519f73eeb9db2492faec2565"
+    },
+    "rtoMilliseconds": 25.559
+  },
+  "snapshot": {
+    "api": {
+      "adminContentRedacted": true,
+      "fencedRebuildStatus": 409,
+      "idempotentReplay": true,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "ordinaryUserStatus": 403,
+      "snapshotId": "snapshot",
+      "sourceWorkspaceId": "workspace",
+      "status": "pending",
+      "writerFenceReserved": true
+    },
+    "controller": {
+      "archiveVerified": true,
+      "contentDigest": "sha256:0f7877fee5f9f1621d8dfe37868b110d73fe3a88481c9b46b230b7b977c02276",
+      "helperStarted": false,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "physicalVolume": "ca-snap-8e5eefa3eae93e0732f80b4aa8cf51d0b290cdbf80f66c1336354f75",
+      "sizeBytes": 2560,
+      "snapshotId": "snapshot",
+      "status": "available",
+      "writerFenceReleased": true
+    }
+  },
+  "checks": [
+    "product migration 000088 applied to disposable PostgreSQL",
+    "a Controller process exited after physical create and before settlement; a new process reaped the expired claim, adopted the exact runtime and operation, preserved Workspace bytes, and compensated a separate failed runtime",
+    "two separate Control Plane test processes each served 64 cycles of six generated-SDK Admin reads plus an ordinary-user 403 against the same PostgreSQL authority",
+    "all 768 successful Admin reads and 128 denied reads completed; P50/P95/max and process-start-to-first-success recovery were measured for each process",
+    "the persisted Profile, Sandbox and Snapshot projection digest was stable within the soak and unchanged across the Control Plane restart",
+    "Admin responses excluded endpoint, credential references, physical snapshot identifiers, Prompt and Workspace content markers",
+    "the stopped real Docker Workspace was copied to an exact-owned Snapshot before the read soak",
+    "zero test-owned runtime containers, Workspace volumes and Snapshot volumes remain"
+  ],
+  "boundary": "Local OrbStack Docker, disposable PostgreSQL and in-process HTTP servers using production handlers/generated SDK only; this bounded 896-request read soak measures current-machine latency and Docker Controller/Control Plane restart recovery, not an SLO, write saturation, Kubernetes/SSH/RemoteWorker faults, external load balancers or multi-Region recovery"
+}
