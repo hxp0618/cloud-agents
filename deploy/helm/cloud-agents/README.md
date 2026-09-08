@@ -20,3 +20,14 @@ two-release form is destructive only inside its exact-labelled temporary
 namespace and local test image names; it does not validate external PostgreSQL,
 OIDC ingress, S3, or cross-version schema changes when both releases carry the
 same migration head.
+
+The RemoteWorker CA Secret is deployment-owned. Rotate its trust root without
+stranding customer nodes by creating a new Secret whose `ca.crt` contains the
+new certificate followed by the old certificate and whose `ca.key` is the new
+key, then point `remoteWorker.certificateAuthoritySecretName` at that immutable
+Secret with `helm upgrade`. Confirm an existing node reconnects, stop its
+supervisor, and run `run.sh --rotate-certificate-once --once` to issue a leaf
+from the new root before restarting the supervisor. After all active nodes use
+the new root, create another Secret containing only the new certificate and key
+and switch the Helm value again. Retain the prior Secrets until rollback is no
+longer required; never remove the old root while an active node depends on it.

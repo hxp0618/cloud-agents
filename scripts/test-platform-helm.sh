@@ -149,7 +149,8 @@ cleanup() {
     image_remove_attempt=0
     until docker image rm "$image" >/dev/null 2>&1; do
       image_remove_attempt=$((image_remove_attempt + 1))
-      if [ "$image_remove_attempt" -ge 10 ]; then
+      if [ "$image_remove_attempt" -ge 30 ]; then
+        echo "test-owned image remained after cleanup: $image" >&2
         status=1
         break
       fi
@@ -236,6 +237,14 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -sha256 -da
   -subj /CN=cloud-agents-helm-remote-worker-ca \
   -keyout "$smoke_directory/remote-worker-ca.key" -out "$smoke_directory/remote-worker-ca.crt" \
   -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -sha256 -days 1 \
+  -subj /CN=cloud-agents-helm-remote-worker-next-ca \
+  -keyout "$smoke_directory/remote-worker-next-ca.key" -out "$smoke_directory/remote-worker-next-ca.crt" \
+  -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
+openssl x509 -in "$smoke_directory/remote-worker-next-ca.crt" \
+  -out "$smoke_directory/remote-worker-ca-overlap.crt"
+openssl x509 -in "$smoke_directory/remote-worker-ca.crt" \
+  >>"$smoke_directory/remote-worker-ca-overlap.crt"
 
 CLOUD_AGENTS_HELM_SMOKE_STATE=$smoke_directory node <<'NODE'
 const { createSign, generateKeyPairSync, randomBytes } = require("node:crypto");
@@ -496,6 +505,25 @@ start_forwards() {
   done
 }
 start_forwards
+reload_control_plane_remote_worker_ca() {
+  secret_name=$1
+  certificate=$2
+  stop_forwards
+  kubectl --context "$context" -n "$namespace" create secret generic "$secret_name" \
+    --from-file=ca.crt="$certificate" --from-file=ca.key="$smoke_directory/remote-worker-next-ca.key" \
+    >/dev/null
+  helm --kube-context "$context" upgrade "$release_name" "$chart" --namespace "$namespace" \
+    --wait --timeout 5m --reuse-values \
+    --set-string remoteWorker.certificateAuthoritySecretName="$secret_name" >/dev/null
+  kubectl --context "$context" -n "$namespace" get \
+    deployment/$release_name-cloud-agents-control-plane -o json | node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(0, "utf8"));
+const volume = value.spec?.template?.spec?.volumes?.find((item) => item.name === "remote-worker-ca");
+if (volume?.secret?.secretName !== process.argv[1]) process.exit(1);
+' "$secret_name"
+  start_forwards
+}
 
 project_output=$("$cli" --endpoint "https://127.0.0.1:$control_plane_port" \
   --ca-file "$smoke_directory/ca.crt" --token-file "$smoke_directory/admin-token" \
@@ -637,6 +665,13 @@ process.stdout.write(value.spec.certificateSha256);
 ' "$smoke_directory/remote-worker-online.json")
 docker rm --force "$customer_node_container" >/dev/null
 cp "$smoke_directory/customer-node/install/identity.pem" "$smoke_directory/customer-node/old-identity.pem"
+reload_control_plane_remote_worker_ca cloud-agents-remote-worker-ca-overlap \
+  "$smoke_directory/remote-worker-ca-overlap.crt"
+docker run --rm --platform "$image_platform" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
 docker run --rm --platform "$image_platform" \
   --label "cloud-agents.dev/test-run=$namespace" \
   --add-host host.docker.internal:host-gateway \
@@ -666,12 +701,38 @@ const fs = require("node:fs");
 const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 if (value.metadata?.resourceVersion !== "4" || value.spec?.certificateState !== "active" || value.spec?.certificateSha256 === process.argv[2] || value.spec?.node?.healthState !== "online") process.exit(1);
 ' "$smoke_directory/remote-worker-rotated.json" "$initial_certificate_sha256"
+openssl x509 -in "$smoke_directory/customer-node/install/identity.pem" \
+  -out "$smoke_directory/customer-node/rotated-leaf.crt"
+openssl verify -CAfile "$smoke_directory/remote-worker-next-ca.crt" \
+  "$smoke_directory/customer-node/rotated-leaf.crt" >/dev/null
+reload_control_plane_remote_worker_ca cloud-agents-remote-worker-ca-next \
+  "$smoke_directory/remote-worker-next-ca.crt"
+kubectl --context "$context" -n "$namespace" get secret cloud-agents-remote-worker-ca-next \
+  -o jsonpath='{.data.ca\.crt}' | openssl base64 -d -A | \
+  cmp - "$smoke_directory/remote-worker-next-ca.crt"
+docker run --rm --platform "$image_platform" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
+if docker run --rm --platform "$image_platform" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh \
+    --certificate=/node-output/old-identity.pem --private-key=/node-output/old-identity.pem \
+    --certificate-resource-version-file= --state-file=/node-output/old-root-state.json --once \
+    >"$smoke_directory/old-root.log" 2>&1; then
+  echo "old RemoteWorker CA root remained trusted after overlap removal" >&2
+  exit 1
+fi
+grep -q 'AUTHENTICATION_FAILED' "$smoke_directory/old-root.log"
 docker run --detach --platform "$image_platform" --name "$customer_node_container" \
   --label "cloud-agents.dev/test-run=$namespace" \
   --add-host host.docker.internal:host-gateway \
   --volume "$smoke_directory/customer-node:/node-output" \
   "$customer_node_image" /node-output/install/run.sh >/dev/null
-identity_summary=rotated+old-rejected
+identity_summary=leaf+ca-rotated+old-root-rejected
 
 kill "$admin_forward_pid" "$gateway_forward_pid" >/dev/null 2>&1 || true
 wait "$admin_forward_pid" "$gateway_forward_pid" 2>/dev/null || true

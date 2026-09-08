@@ -1,0 +1,112 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "d2a9f05d0eaeaf3ead3b1fb545174e57297e4ade",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.1.0-alpha.105",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-ca-rotation-r5",
+    "sourceCommit": "d2a9f05d0eaeaf3ead3b1fb545174e57297e4ade",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "deploymentArtifact": {
+      "sizeBytes": 1069568,
+      "sha256": "sha256:aac684e426bf670e9d2f34b670983275122eb8b4d56c76ecb8d4b693e4df8a28"
+    },
+    "migrationArtifact": {
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "remoteWorkerArtifacts": [
+      {
+        "target": "linux-amd64",
+        "sizeBytes": 15028485,
+        "sha256": "sha256:0a05f3bc2c91d0f4c94a33b804f1b297d9b7ff532f873706f14b67761d342e53"
+      },
+      {
+        "target": "linux-arm64",
+        "sizeBytes": 13921344,
+        "sha256": "sha256:9d02bd06109400bcbea5b356a066058750d34ddd592fc66b1e7821b39c964597"
+      }
+    ],
+    "allChecksumsPassed": true,
+    "packagedRunbookAndSmokeMatchedSource": true
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "customerNodeImage": "debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "postgresImage": "postgres:17.6-bookworm",
+    "browser": "Brave Browser 152.1.94.121"
+  },
+  "result": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh <packaged>/scripts/test-platform-helm.sh /tmp/cloud-agents-platform-000084-ca-rotation-r5",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-platform-000084-ca-rotation-r5.log",
+      "sizeBytes": 551,
+      "sha256": "sha256:d7b71d46b3f7ef9b9b9b3c808d2d553b91bf4b07691e29fcd9aa2768f8b1b39f",
+      "containsEnrollmentSecretPrivateKeyOrPendingKey": false
+    },
+    "schemaLedger": {
+      "count": 84,
+      "first": "000001",
+      "last": "000084"
+    },
+    "remoteWorkerCA": {
+      "rotationSequence": ["old-root", "new-plus-old-overlap", "new-root-only"],
+      "immutableSecretPerPhase": true,
+      "deploymentReferenceCheckedPerPhase": true,
+      "oldLeafHeartbeatDuringOverlap": "passed",
+      "initialResourceVersion": "3",
+      "rotatedResourceVersion": "4",
+      "newLeafSignedByNewRoot": true,
+      "newLeafHeartbeatAfterOldRootRemoval": "passed",
+      "oldLeafAfterOldRootRemovalStatus": 401,
+      "newRootOnlySecretBytesMatched": true,
+      "customerNodeProcessRestart": "passed"
+    },
+    "adminWeb": {
+      "sameOriginAdminRequests": 15,
+      "ordinaryUserAdminStatus": 403,
+      "locales": ["en-US"],
+      "themes": ["dark", "light"],
+      "viewportWidths": [1440, 390],
+      "tokensPersistedInBrowserStorage": false
+    },
+    "accessGatewayTLSAndSSH": "passed",
+    "adminAndGatewayRestart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "checks": [
+    "the current dirty source produced one local 22-artifact candidate without publishing or pushing anything",
+    "all candidate checksums passed and the packaged Helm runbook and smoke matched the working-tree source byte for byte",
+    "the Control Plane first trusted the old RemoteWorker root, then signed with the new root while trusting both roots, then trusted only the new root",
+    "each trust phase used a new deployment-owned Secret name and Helm changed the Control Plane Deployment reference before waiting for readiness",
+    "the existing old-root node reconnected during overlap, the replacement leaf was signed by the new root, and the new-root node reconnected after old-root removal",
+    "the final Secret contained exactly the new root certificate and the old identity received AUTHENTICATION_FAILED with HTTP 401",
+    "the real browser, ordinary-user 403, Access Gateway, restart and exact cleanup checks passed after root rotation"
+  ],
+  "verification": {
+    "focusedGoTests": "internal/remoteworker passed",
+    "focusedGoRace": "internal/remoteworker passed",
+    "focusedGoVet": "internal/remoteworker passed",
+    "helmLint": "passed",
+    "releaseTests": "scripts/lib/platform-release.test.ts passed 19 tests",
+    "shellSyntax": "Helm smoke sh -n passed",
+    "diffCheck": "git diff --check passed"
+  },
+  "boundary": "This proves a packaged RemoteWorker CA trust-root rollover against the real Helm Control Plane and PostgreSQL on OrbStack using old-root, overlap, and new-root-only phases, a real fixed-digest Debian customer node, leaf reissuance, reconnect, ordinary-user Admin denial, browser and Gateway regression, and exact cleanup. The chart uses Recreate and this is not zero-downtime evidence. The customer node was local and declared only exec; no Sandbox workload ran. This does not cover Control Plane, Worker, Access Gateway or Admin Web service-certificate roots, OIDC/JWKS or master-key rotation, external PostgreSQL/S3, HA, public ingress, real Provider credentials or published images. The candidate came from a dirty local tree and is not BASE-READY."
+}
