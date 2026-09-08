@@ -17,12 +17,7 @@ import { EnvironmentWorkspace } from "./EnvironmentWorkspace";
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
 function initialConnection(): SavedConnection {
-  const saved = readSavedConnection(window.sessionStorage);
-  return {
-    endpoint: saved.endpoint || window.location.origin,
-    tenantId: saved.tenantId,
-    projectId: saved.projectId,
-  };
+  return readSavedConnection(window.sessionStorage);
 }
 
 function statusLabel(status: ConnectionStatus): string {
@@ -77,12 +72,11 @@ export function App() {
     event.preventDefault();
     if (connectingRef.current) return;
 
-    const endpoint = connection.endpoint.trim().replace(/\/+$/u, "");
     const tenantId = connection.tenantId.trim();
     const bearerToken = token.trim();
-    if (endpoint === "" || tenantId === "" || bearerToken === "") {
+    if (tenantId === "" || bearerToken === "") {
       setStatus("error");
-      setError("Endpoint, tenant, and bearer token are required.");
+      setError("Tenant and bearer token are required.");
       return;
     }
 
@@ -94,13 +88,13 @@ export function App() {
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
 
     try {
-      const client = createHTTPClient(endpoint, bearerToken);
+      const client = createHTTPClient(window.location.origin, bearerToken);
       const data = await loadConnectionData(client, tenantId, signal);
       const activeProjects = data.projects.filter(({ spec }) => spec.state === "active");
       const projectId = activeProjects.some(({ metadata }) => metadata.uid === connection.projectId)
         ? connection.projectId
         : (activeProjects[0]?.metadata.uid ?? "");
-      const nextConnection = { endpoint, tenantId, projectId };
+      const nextConnection = { tenantId, projectId };
 
       setClient(client);
       setProjects(data.projects);
@@ -137,11 +131,7 @@ export function App() {
             <small>User Console</small>
           </span>
         </div>
-        <div className="context-strip" aria-label="Current Control Plane context">
-          <span className="context-item">
-            <small>Control Plane</small>
-            <strong title={connection.endpoint}>{connection.endpoint || "Not configured"}</strong>
-          </span>
+        <div className="context-strip" aria-label="Current workspace context">
           <span className="context-item">
             <small>Tenant</small>
             <strong>{tenantName || connection.tenantId || "Not selected"}</strong>
@@ -197,25 +187,12 @@ export function App() {
       ) : (
         <main className="connect-view">
           <section className="connect-card panel" aria-labelledby="connect-title">
-            <div className="eyebrow">Secure browser connection</div>
-            <h1 id="connect-title">Connect to Control Plane</h1>
+            <div className="eyebrow">Secure session</div>
+            <h1 id="connect-title">Open Cloud Agents</h1>
             <p className="lede">
               Select a tenant and project without storing your bearer token in browser storage.
             </p>
             <form onSubmit={connect} className="connect-form">
-              <label>
-                <span>Control Plane endpoint</span>
-                <input
-                  type="url"
-                  value={connection.endpoint}
-                  onChange={(event) => updateConnection("endpoint", event.target.value)}
-                  placeholder="https://agents.example.com"
-                  autoComplete="url"
-                  required
-                  disabled={status === "connecting"}
-                />
-                <small>Use this page origin when `/v1` is reverse proxied.</small>
-              </label>
               <label>
                 <span>Tenant ID</span>
                 <input
@@ -265,7 +242,7 @@ export function App() {
             <div className="ambient-card">
               <span className="note-index">01</span>
               <strong>Server authority</strong>
-              <p>Projects are reloaded from Control Plane after every browser connection.</p>
+              <p>Projects are reloaded from Cloud Agents after every browser connection.</p>
             </div>
             <div className="ambient-card">
               <span className="note-index">02</span>

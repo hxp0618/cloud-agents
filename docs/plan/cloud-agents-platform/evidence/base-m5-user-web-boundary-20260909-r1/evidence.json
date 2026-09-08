@@ -1,0 +1,140 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "928090de882d53a48df42ed11211312488f3f39e",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "release": {
+    "version": "0.3.0-dev.96",
+    "candidateDirectory": "/tmp/cloud-agents-user-web-boundary-20260909-r8/release",
+    "sourceCommit": "928090de882d53a48df42ed11211312488f3f39e",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "manifestSha256": "sha256:ea4b0dced9681249e00598e9f8b37e9b0623f8e64c56cdc0bdce4fcc2579bab6",
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000088.tar",
+      "sizeBytes": 1639424,
+      "sha256": "sha256:0dbf6c1da4f3ccc1f58533bc344ca3c49414633620b956e0663036eafb2464f4"
+    },
+    "published": false
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerComposeVersion": "5.1.2",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v22.23.1"
+  },
+  "userWebBoundary": {
+    "editableControlPlaneEndpoint": false,
+    "clientBaseURL": "window.location.origin",
+    "savedConnectionFields": [
+      "tenantId",
+      "projectId"
+    ],
+    "legacyEndpointStorageScrubbed": true,
+    "browserForbiddenTerms": [
+      "endpoint",
+      "credentialRef",
+      "kubeconfig"
+    ],
+    "tokenStored": false,
+    "directAdminRouteStatus": 404,
+    "ordinaryUserAdminAPIStatus": 403
+  },
+  "compose": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-user-web-boundary-20260909-r8/release",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-user-web-boundary-20260909-r8-compose.log",
+      "sha256": "sha256:0a2aee67ad3687cf4f5eb135faf3a5446ed71de5ae17b5cbf0c407256edb72aa"
+    },
+    "adminBrowserRequests": 17,
+    "userBrowserRequests": 6,
+    "userRequestsSameOriginAndNonAdmin": true,
+    "gateway": [
+      "Files",
+      "PTY",
+      "Preview",
+      "SSH"
+    ],
+    "finalDockerWorkers": 0,
+    "finalOpenSandboxResources": 0,
+    "finalComposeResources": 0
+  },
+  "helm": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh scripts/test-platform-helm.sh /tmp/cloud-agents-user-web-boundary-20260909-r8/release",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-user-web-boundary-20260909-r8-helm.log",
+      "sha256": "sha256:64e8d4116457f507bfbd6d628ce924fb137306667c7735c3ed9dbb750b641d7f"
+    },
+    "schemaLedger": {
+      "count": 88,
+      "first": "000001",
+      "last": "000088"
+    },
+    "readyDeployments": [
+      "control-plane",
+      "worker",
+      "access-gateway",
+      "user-web",
+      "admin-web"
+    ],
+    "adminBrowserRequests": 15,
+    "userBrowserRequests": 6,
+    "userRequestsSameOriginAndNonAdmin": true,
+    "remoteWorker": "outbound with leaf and CA rotation; old root rejected",
+    "serviceIdentity": "CA rotated; old roots rejected",
+    "gateway": "TLS and SSH passed",
+    "restart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "verification": {
+    "userWebTests": "23 passed",
+    "userWebBuild": "passed",
+    "webServerTests": "3 passed",
+    "releaseTests": "19 passed",
+    "format": "passed",
+    "shellSyntax": "passed",
+    "diffCheck": "passed"
+  },
+  "observedRegressions": [
+    {
+      "symptom": "the User Web accepted and persisted a browser-editable Control Plane endpoint",
+      "resolution": "the generated SDK now uses the deployed page origin and startup rewrites legacy storage to tenant and project identifiers only"
+    },
+    {
+      "symptom": "the browser smoke could race a storage-scrubbing reload and its ordinary User token lacked tenant and project discovery scopes",
+      "resolution": "the smoke waits for a new document and uses the read scopes required by the real User Web while retaining Admin denial"
+    },
+    {
+      "symptom": "a post-rollout idempotent RemoteWorker heartbeat observed a transient EOF",
+      "resolution": "only successful post-rollout heartbeat probes receive three bounded attempts; certificate rotation and expected old-identity failures remain single-attempt"
+    },
+    {
+      "symptom": "a kubectl port-forward process could exit during a certificate rollout and the readiness loop could not recover it",
+      "resolution": "only exited tunnel processes trigger an at-most-two restart of the tunnel group; live but unhealthy tunnels still fail with their logs"
+    }
+  ],
+  "preexistingResources": {
+    "untouchedNamespace": "cloud-agents-helm-smoke-15421",
+    "createdAt": "2026-09-08T11:34:51Z",
+    "contents": [
+      "default ServiceAccount",
+      "kube-root-ca.crt ConfigMap"
+    ],
+    "reasonNotDeleted": "it predates this run and destructive cleanup was not authorized"
+  },
+  "boundary": "This is real local Compose and OrbStack Kubernetes evidence from one unpublished dirty-source candidate. It proves that the deployed User Web has no editable infrastructure endpoint, scrubs a legacy endpoint from sessionStorage, keeps tokens out of storage, sends six real same-origin non-Admin API requests, exposes no Admin proxy route, and remains denied by the Admin API with an ordinary User token. The same runs also revalidated the existing Docker, Gateway, outbound RemoteWorker, service-identity rotation and exact test-resource cleanup boundaries. It did not run N/N-1, public OIDC ingress, external Kubernetes or SSH Worker deployment, real Codex or Claude Code Provider turns, or delete a pre-existing empty namespace. It is not ADMIN-WEB-V1, BASE-ADMIN-V1 or BASE-READY completion evidence by itself."
+}

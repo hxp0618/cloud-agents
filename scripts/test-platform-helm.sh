@@ -364,7 +364,7 @@ writeFileSync(`${state}/admin-token`, `${issue("helm-smoke-admin", [
 ])}\n`);
 writeFileSync(`${state}/user-token`, `${issue("helm-smoke-user", [
   "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
-  "projects.act", "projects.get", "sandboxes.update",
+  "organizations.list", "projects.act", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
 ])}\n`);
 writeFileSync(`${state}/bootstrap-token`, `${issue("helm-smoke-bootstrap", [
   "projects.act", "remote-worker-bootstrap.act",
@@ -564,6 +564,16 @@ stop_forwards() {
   gateway_forward_pid=
   worker_forward_pid=
 }
+forwards_alive() {
+  for pid in "$user_forward_pid" "$admin_forward_pid" "$control_plane_forward_pid" "$gateway_forward_pid"; do
+    [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null || return 1
+  done
+}
+print_forward_logs() {
+  for log in user-forward admin-forward control-plane-forward gateway-forward; do
+    [ ! -f "$smoke_directory/$log.log" ] || cat "$smoke_directory/$log.log" >&2
+  done
+}
 admin_upstream_ready() {
   [ -z "${project_id:-}" ] || [ "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
@@ -577,6 +587,7 @@ user_upstream_ready() {
     "http://127.0.0.1:$user_port/v1/tenants/tenant-helm-smoke/projects/$project_id/environment-profiles?pageSize=1")" = 200 ]
 }
 start_forwards() {
+  forward_restart=${1:-0}
   if kubectl --context "$context" -n "$namespace" get \
     service/$release_name-cloud-agents-user-web >/dev/null 2>&1; then
     kubectl --context "$context" -n "$namespace" port-forward \
@@ -600,9 +611,21 @@ start_forwards() {
     && curl --silent --show-error --fail --cacert "$service_ca" "https://127.0.0.1:$control_plane_port/readyz" >/dev/null 2>&1 \
     && curl --silent --show-error --fail --cacert "$service_ca" "https://127.0.0.1:$gateway_port/healthz" >/dev/null 2>&1 \
     && user_upstream_ready && admin_upstream_ready; do
+    if ! forwards_alive; then
+      stop_forwards
+      forward_restart=$((forward_restart + 1))
+      if [ "$forward_restart" -ge 3 ]; then
+        echo "Helm service port-forwards exited repeatedly" >&2
+        print_forward_logs
+        exit 1
+      fi
+      start_forwards "$forward_restart"
+      return
+    fi
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 60 ]; then
       echo "Helm service port-forwards did not become ready" >&2
+      print_forward_logs
       exit 1
     fi
     sleep 1
@@ -691,6 +714,19 @@ install_customer_node_ca() {
       chmod 0400 "$temporary"
       mv -f "$temporary" /node-output/install/control-plane-ca.pem
     ' sh "$source_name"
+}
+
+run_customer_node_once() {
+  customer_node_attempt=0
+  until docker run --rm --platform "$image_platform" \
+    --label "cloud-agents.dev/test-run=$namespace" \
+    --add-host host.docker.internal:host-gateway \
+    --volume "$smoke_directory/customer-node:/node-output" \
+    "$customer_node_image" /node-output/install/run.sh --once >/dev/null; do
+    customer_node_attempt=$((customer_node_attempt + 1))
+    [ "$customer_node_attempt" -lt 3 ] || return 1
+    sleep 1
+  done
 }
 
 project_output=$("$cli" --endpoint "https://127.0.0.1:$control_plane_port" \
@@ -835,11 +871,7 @@ docker rm --force "$customer_node_container" >/dev/null
 cp "$smoke_directory/customer-node/install/identity.pem" "$smoke_directory/customer-node/old-identity.pem"
 reload_control_plane_remote_worker_ca cloud-agents-remote-worker-ca-overlap \
   "$smoke_directory/remote-worker-ca-overlap.crt"
-docker run --rm --platform "$image_platform" \
-  --label "cloud-agents.dev/test-run=$namespace" \
-  --add-host host.docker.internal:host-gateway \
-  --volume "$smoke_directory/customer-node:/node-output" \
-  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
+run_customer_node_once
 docker run --rm --platform "$image_platform" \
   --label "cloud-agents.dev/test-run=$namespace" \
   --add-host host.docker.internal:host-gateway \
@@ -878,11 +910,7 @@ reload_control_plane_remote_worker_ca cloud-agents-remote-worker-ca-next \
 kubectl --context "$context" -n "$namespace" get secret cloud-agents-remote-worker-ca-next \
   -o jsonpath='{.data.ca\.crt}' | openssl base64 -d -A | \
   cmp - "$smoke_directory/remote-worker-next-ca.crt"
-docker run --rm --platform "$image_platform" \
-  --label "cloud-agents.dev/test-run=$namespace" \
-  --add-host host.docker.internal:host-gateway \
-  --volume "$smoke_directory/customer-node:/node-output" \
-  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
+run_customer_node_once
 if docker run --rm --platform "$image_platform" \
   --label "cloud-agents.dev/test-run=$namespace" \
   --add-host host.docker.internal:host-gateway \
@@ -899,18 +927,10 @@ cp "$smoke_directory/ca.crt" "$smoke_directory/customer-node/old-control-plane-c
 install_customer_node_ca "$smoke_directory/service-ca-overlap.crt"
 apply_service_identity_phase overlap control-plane worker worker-client access-gateway \
   "$smoke_directory/service-ca-overlap.crt"
-docker run --rm --platform "$image_platform" \
-  --label "cloud-agents.dev/test-run=$namespace" \
-  --add-host host.docker.internal:host-gateway \
-  --volume "$smoke_directory/customer-node:/node-output" \
-  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
+run_customer_node_once
 apply_service_identity_phase next control-plane-next worker-next worker-client-next \
   access-gateway-next "$smoke_directory/service-ca-overlap.crt"
-docker run --rm --platform "$image_platform" \
-  --label "cloud-agents.dev/test-run=$namespace" \
-  --add-host host.docker.internal:host-gateway \
-  --volume "$smoke_directory/customer-node:/node-output" \
-  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
+run_customer_node_once
 install_customer_node_ca "$smoke_directory/service-next-ca.crt"
 apply_service_identity_phase final control-plane-next worker-next worker-client-next \
   access-gateway-next "$smoke_directory/service-next-ca.crt"
@@ -918,22 +938,20 @@ for secret in cloud-agents-control-plane-tls-final cloud-agents-worker-tls-final
   kubectl --context "$context" -n "$namespace" get secret "$secret" -o jsonpath='{.data.ca\.crt}' | \
     openssl base64 -d -A | cmp - "$smoke_directory/service-next-ca.crt"
 done
-docker run --rm --platform "$image_platform" \
-  --label "cloud-agents.dev/test-run=$namespace" \
-  --add-host host.docker.internal:host-gateway \
-  --volume "$smoke_directory/customer-node:/node-output" \
-  "$customer_node_image" /node-output/install/run.sh --once >/dev/null
+run_customer_node_once
 kubectl --context "$context" -n "$namespace" port-forward \
   service/$release_name-cloud-agents-worker "$worker_port:8091" >"$smoke_directory/worker-forward.log" 2>&1 &
 worker_forward_pid=$!
 attempt=0
+worker_probe_log=$smoke_directory/worker-probe.log
 until curl --silent --show-error --noproxy '*' \
   --cert "$worker_client_certificate" --key "$worker_client_key" \
   --cacert "$service_ca" --resolve "$service_prefix-worker:$worker_port:127.0.0.1" \
-  "https://$service_prefix-worker:$worker_port/not-found" >/dev/null 2>&1; do
+  "https://$service_prefix-worker:$worker_port/not-found" >"$worker_probe_log" 2>&1; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
     echo "Worker mTLS port-forward did not become ready" >&2
+    cat "$smoke_directory/worker-forward.log" "$worker_probe_log" >&2
     exit 1
   fi
   sleep 1
@@ -1014,22 +1032,7 @@ until curl --silent --show-error --fail "http://127.0.0.1:$user_port/healthz" >/
 done
 node "$current_deployment/scripts/test-platform-compose-admin-web.mjs" \
   "http://127.0.0.1:$admin_port" "$smoke_directory/admin-token" "$smoke_directory/user-token" \
-  tenant-helm-smoke "$project_id"
-user_web_status=$(curl --silent --show-error --output "$smoke_directory/user-web-profiles.json" \
-  --write-out '%{http_code}' --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/user-token")" \
-  --header 'X-Request-ID: helm-smoke-user-web-profile-list' \
-  "http://127.0.0.1:$user_port/v1/tenants/tenant-helm-smoke/projects/$project_id/environment-profiles?pageSize=1")
-test "$user_web_status" = 200 || {
-  echo "Helm User Web did not proxy the User API: $user_web_status" >&2
-  exit 1
-}
-user_web_admin_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
-  "http://127.0.0.1:$user_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/deployment-targets?pageSize=1")
-test "$user_web_admin_status" = 404 || {
-  echo "Helm User Web exposed the Admin API: $user_web_admin_status" >&2
-  exit 1
-}
+  tenant-helm-smoke "$project_id" "http://127.0.0.1:$user_port"
 ssh-keyscan -p "$gateway_ssh_port" 127.0.0.1 2>/dev/null >"$smoke_directory/scanned-host-key.pub"
 expected_fingerprint=$(ssh-keygen -lf "$smoke_directory/gateway-ssh-host-key.pub" | awk '{print $2}')
 actual_fingerprint=$(ssh-keygen -lf "$smoke_directory/scanned-host-key.pub" | awk 'NR == 1 {print $2}')

@@ -10,7 +10,6 @@ import {
 import { recordPageToken } from "./pagination";
 
 export type SavedConnection = Readonly<{
-  endpoint: string;
   tenantId: string;
   projectId: string;
 }>;
@@ -25,7 +24,6 @@ type ConnectionStorage = Pick<Storage, "getItem" | "setItem">;
 
 const storageKey = "cloud-agents.user-web.connection.v1";
 const emptyConnection: SavedConnection = Object.freeze({
-  endpoint: "",
   tenantId: "",
   projectId: "",
 });
@@ -35,29 +33,30 @@ function requestId(): string {
 }
 
 export function readSavedConnection(storage: ConnectionStorage): SavedConnection {
+  let connection = emptyConnection;
   try {
     const raw = storage.getItem(storageKey);
-    if (raw === null) return emptyConnection;
-    const value = JSON.parse(raw) as unknown;
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return emptyConnection;
-    const candidate = value as Record<string, unknown>;
-    if (
-      typeof candidate.endpoint !== "string" ||
-      typeof candidate.tenantId !== "string" ||
-      typeof candidate.projectId !== "string" ||
-      candidate.endpoint.length > 2048 ||
-      candidate.tenantId.length > 128 ||
-      candidate.projectId.length > 128
-    )
-      return emptyConnection;
-    return Object.freeze({
-      endpoint: candidate.endpoint,
-      tenantId: candidate.tenantId,
-      projectId: candidate.projectId,
-    });
-  } catch {
-    return emptyConnection;
-  }
+    if (raw !== null) {
+      const value = JSON.parse(raw) as unknown;
+      const candidate = value as Record<string, unknown>;
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        typeof candidate.tenantId === "string" &&
+        typeof candidate.projectId === "string" &&
+        candidate.tenantId.length <= 128 &&
+        candidate.projectId.length <= 128
+      ) {
+        connection = Object.freeze({
+          tenantId: candidate.tenantId,
+          projectId: candidate.projectId,
+        });
+      }
+    }
+  } catch {}
+  writeSavedConnection(storage, connection);
+  return connection;
 }
 
 export function writeSavedConnection(
@@ -145,6 +144,6 @@ export function connectionErrorMessage(error: unknown): string {
   if (error instanceof JSONContractError)
     return "Control Plane returned a response that does not match the Platform API contract.";
   if (error instanceof TypeError)
-    return "Endpoint or token format is invalid. Use HTTPS, or loopback HTTP for local development.";
-  return "Unable to connect to Control Plane. Check the endpoint and try again.";
+    return "The connection could not be started. Refresh and try again.";
+  return "Unable to connect to Cloud Agents. Refresh and try again.";
 }

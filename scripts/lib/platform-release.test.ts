@@ -159,7 +159,7 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
-      "deploy/user-web/dist/assets/index-BCnh204a.js",
+      "deploy/user-web/dist/assets/index-C1r-N1AK.js",
       "deploy/user-web/dist/assets/index-qPDCn4WU.css",
       "deploy/user-web/dist/index.html",
       "deploy/web/server.mjs",

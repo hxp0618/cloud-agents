@@ -358,7 +358,8 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "snapshots.act", "snapshots.create", "snapshots.delete", "snapshots.get", "snapshots.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
-  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get", "sandboxes.update",
+  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
+  "organizations.list", "projects.act", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
 ]);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
@@ -1935,22 +1936,7 @@ NODE
 
 node "$smoke_directory/deployment/scripts/test-platform-compose-admin-web.mjs" \
   "http://$admin_web_endpoint" "$smoke_directory/token" "$smoke_directory/user-token" \
-  tenant-compose-smoke "$project_id"
-user_web_status=$(curl --silent --show-error --output "$smoke_directory/user-web-profiles.json" \
-  --write-out '%{http_code}' --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/user-token")" \
-  --header 'X-Request-ID: compose-user-web-profile-list' \
-  "http://$user_web_endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=1")
-test "$user_web_status" = 200 || {
-  echo "Compose User Web did not proxy the User API: $user_web_status" >&2
-  exit 1
-}
-user_web_admin_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/token")" \
-  "http://$user_web_endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/deployment-targets?pageSize=1")
-test "$user_web_admin_status" = 404 || {
-  echo "Compose User Web exposed the Admin API: $user_web_admin_status" >&2
-  exit 1
-}
+  tenant-compose-smoke "$project_id" "http://$user_web_endpoint"
 
 foundation_network_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-foundation"
 foundation_network_body='{"expectedResourceVersion":"0","policyName":"network-foundation","userSummary":"Private Preview without outbound network","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":true}'

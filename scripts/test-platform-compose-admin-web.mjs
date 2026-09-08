@@ -6,8 +6,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const [argumentOrigin, adminTokenFile, userTokenFile, argumentTenantId, argumentProjectId] =
-  process.argv.slice(2);
+const [
+  argumentOrigin,
+  adminTokenFile,
+  userTokenFile,
+  argumentTenantId,
+  argumentProjectId,
+  argumentUserOrigin,
+] = process.argv.slice(2);
 const snapshotMode = Boolean(process.env.SNAPSHOT_ADMIN_APP_URL);
 const origin = process.env.SNAPSHOT_ADMIN_APP_URL ?? argumentOrigin;
 const tenantId = process.env.SNAPSHOT_ADMIN_TENANT_ID ?? argumentTenantId;
@@ -120,7 +126,12 @@ try {
       if (await evaluate(expression)) return;
       await delay(50);
     }
-    throw new Error(`timed out waiting for ${label}`);
+    const href = await evaluate("location.href");
+    throw new Error(`timed out waiting for ${label} at ${href}: ${errors.join("; ")}`);
+  };
+  const navigate = async (url) => {
+    const result = await command("Page.navigate", { url });
+    assert.equal(result.errorText, undefined, `browser could not navigate to ${url}`);
   };
 
   if (fullCapture) {
@@ -187,7 +198,7 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   });
-  await command("Page.navigate", { url: origin });
+  await navigate(origin);
   await waitFor("document.querySelector('.connect-form') !== null", "Admin connection form");
 
   const denied = snapshotMode
@@ -293,6 +304,7 @@ try {
     ),
   );
   assert.deepEqual(errors, []);
+  const updatedTheme = await evaluate("document.documentElement.dataset.theme");
   let fullCaptureResult;
   if (fullCapture) {
     const captureOutput = join(
@@ -346,8 +358,86 @@ try {
       ordinaryUserDeniedRequests: evidence.permissionDeniedHTTPFailures.length,
     };
   }
+  const adminRequestCount = apiRequests.length;
+  let userRequestCount;
+  if (!snapshotMode && argumentUserOrigin) {
+    errors.length = 0;
+    await command("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await navigate(argumentUserOrigin);
+    await waitFor("document.querySelector('.connect-form') !== null", "User connection form");
+    await evaluate(`(() => {
+      document.documentElement.dataset.smokeBeforeReload = "true";
+      sessionStorage.setItem("cloud-agents.user-web.connection.v1", JSON.stringify({
+        endpoint: "https://forbidden.example.test",
+        tenantId: ${JSON.stringify(tenantId)},
+        projectId: "",
+      }));
+      location.reload();
+    })()`);
+    await waitFor(
+      "document.readyState === 'complete' && document.documentElement.dataset.smokeBeforeReload !== 'true' && document.querySelector('.connect-form') !== null",
+      "reloaded User document",
+    );
+    const initialUserState = await evaluate(
+      `({ text: document.body.textContent, inputs: document.querySelectorAll('.connect-form input').length, stored: JSON.stringify({...localStorage, ...sessionStorage}) })`,
+    );
+    assert.equal(initialUserState.inputs, 2, "User Web must ask only for tenant and token");
+    assert.ok(!/endpoint|credentialref|kubeconfig/iu.test(initialUserState.text));
+    assert.ok(
+      !/endpoint|credentialref|kubeconfig|forbidden\.example/iu.test(initialUserState.stored),
+    );
+    const userAdminStatus = await evaluate(
+      `fetch(${JSON.stringify(`${argumentUserOrigin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${adminToken}`)}, "X-Request-ID": "user-web-admin-route-denied" } }).then(response => response.status)`,
+    );
+    assert.equal(userAdminStatus, 404, "User Web origin must not proxy Admin API routes");
+    await delay(50);
+    errors.length = 0;
+    const requestOffset = apiRequests.length;
+    const submittedUser = await evaluate(`(() => {
+      const inputs = [...document.querySelectorAll('.connect-form input')];
+      const values = ${JSON.stringify([tenantId, userToken])};
+      if (inputs.length !== values.length) return false;
+      for (let index = 0; index < inputs.length; index += 1) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inputs[index], values[index]);
+        inputs[index].dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      document.querySelector('.connect-form').requestSubmit();
+      return true;
+    })()`);
+    assert.equal(submittedUser, true);
+    await waitFor("document.querySelector('.workspace') !== null", "connected User Web");
+    await waitFor(
+      "document.querySelector('.project-picker select')?.value === " + JSON.stringify(projectId),
+      "User project context",
+    );
+    const connectedUserState = await evaluate(
+      `({ text: document.body.textContent, stored: JSON.stringify({...localStorage, ...sessionStorage}), width: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth })`,
+    );
+    assert.equal(connectedUserState.width, connectedUserState.clientWidth);
+    assert.ok(!/endpoint|credentialref|kubeconfig/iu.test(connectedUserState.text));
+    assert.ok(!/endpoint|credentialref|kubeconfig/iu.test(connectedUserState.stored));
+    assert.ok(
+      !connectedUserState.stored.includes(userToken),
+      "User token must remain in memory only",
+    );
+    const userRequests = apiRequests.slice(requestOffset);
+    assert.ok(userRequests.length >= 3, "User Web must load real User API resources");
+    assert.ok(
+      userRequests.every(
+        ({ origin: value, path }) =>
+          value === argumentUserOrigin && path.startsWith("/v1/") && !path.startsWith("/v1/admin/"),
+      ),
+    );
+    assert.deepEqual(errors, []);
+    userRequestCount = userRequests.length;
+  }
   const browserResult = {
-    requests: apiRequests.length,
+    requests: adminRequestCount,
     ordinaryUserStatus: snapshotMode ? undefined : denied,
     locale: "en-US",
     desktopWidth: 1440,
@@ -359,7 +449,7 @@ try {
   process.stdout.write(
     snapshotMode
       ? `FOUNDATION_SNAPSHOT_BROWSER=${JSON.stringify(browserResult)}\n`
-      : `Admin Web browser smoke passed (requests=${apiRequests.length}, user-admin=403, locale=en-US, theme=${originalTheme}->${await evaluate("document.documentElement.dataset.theme")}, widths=1440/390)\n`,
+      : `User/Admin Web browser smoke passed (admin-requests=${browserResult.requests}, user-requests=${userRequestCount ?? 0}, user-admin=403, locale=en-US, theme=${originalTheme}->${updatedTheme}, widths=1440/390)\n`,
   );
 } finally {
   socket?.close();

@@ -34,30 +34,34 @@ function metadata(uid: string, name = uid) {
 }
 
 describe("connection context", () => {
-  it("stores only non-secret connection identifiers", () => {
-    const target = storage();
-    writeSavedConnection(target, {
-      endpoint: "https://agents.example.test",
-      tenantId: "tenant-local",
-      projectId: "project-alpha",
-    });
-
-    expect(target.value()).toBe(
-      '{"endpoint":"https://agents.example.test","tenantId":"tenant-local","projectId":"project-alpha"}',
+  it("stores only tenant and project identifiers", () => {
+    const target = storage(
+      '{"endpoint":"https://legacy.example.test","tenantId":"tenant-local","projectId":"project-alpha"}',
     );
     expect(readSavedConnection(target)).toEqual({
-      endpoint: "https://agents.example.test",
       tenantId: "tenant-local",
       projectId: "project-alpha",
     });
+    expect(target.value()).toBe('{"tenantId":"tenant-local","projectId":"project-alpha"}');
+
+    writeSavedConnection(target, {
+      tenantId: "tenant-two",
+      projectId: "project-two",
+    });
+    expect(readSavedConnection(target)).toEqual({
+      tenantId: "tenant-two",
+      projectId: "project-two",
+    });
+    expect(target.value()).not.toContain("endpoint");
   });
 
   it("ignores invalid browser state", () => {
-    expect(readSavedConnection(storage('{"endpoint":42}'))).toEqual({
-      endpoint: "",
+    const target = storage('{"endpoint":"https://legacy.example.test"}');
+    expect(readSavedConnection(target)).toEqual({
       tenantId: "",
       projectId: "",
     });
+    expect(target.value()).toBe('{"tenantId":"","projectId":""}');
   });
 });
 
@@ -151,7 +155,7 @@ describe("connectionErrorMessage", () => {
     expect(connectionErrorMessage(new ClientError("connect", 403))).toContain("cannot access");
   });
 
-  it("does not report a contract violation as an endpoint format error", () => {
+  it("does not report a contract violation as a connection error", () => {
     expect(connectionErrorMessage(new JSONContractError("INVALID_JSON"))).toContain(
       "Platform API contract",
     );
