@@ -1089,7 +1089,9 @@ try {
           ? []
           : [
               "real Chromium connected through the Vite Admin origin and rendered persisted retention plus Sandbox usage-correction metadata and its fenced form",
-              "Admin locale and theme switched and persisted without storing the bearer token; desktop English and mobile Chinese screenshots were captured with no console errors",
+              browserReceipt.fullCapture === undefined
+                ? "Admin locale and theme switched and persisted without storing the bearer token; desktop English and mobile Chinese screenshots were captured with no console errors"
+                : `${browserReceipt.fullCapture.screenshots} live screenshots covered eight locale/theme/viewport accessibility matrices and ${browserReceipt.fullCapture.referenceMatches} fixed Daytona structural matches; only ${browserReceipt.fullCapture.expectedPreviewFailures} deliberate cleanup-preview failures occurred`,
               "all browser HTTP requests remained on the Admin Web origin and reached infrastructure authority only through the Control Plane proxy",
             ]),
         "zero test-owned runtime containers, Workspace volumes and Snapshot volumes",
@@ -1097,7 +1099,9 @@ try {
       boundary:
         browserReceipt === undefined
           ? "Local OrbStack Docker and disposable PostgreSQL only; manual and database-clock retention cleanup are verified, while Kubernetes/SSH snapshot backends and browser visual QA remain unverified"
-          : "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; immutable usage correction, manual/database-clock retention cleanup and this flow's desktop/mobile UI are verified, while Kubernetes/SSH snapshot backends and full BASE-ADMIN-V1 visual/accessibility regression remain unverified",
+          : browserReceipt.fullCapture === undefined
+            ? "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; immutable usage correction, manual/database-clock retention cleanup and this flow's desktop/mobile UI are verified, while Kubernetes/SSH snapshot backends and full BASE-ADMIN-V1 visual/accessibility regression remain unverified"
+            : "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; immutable usage correction, manual/database-clock retention cleanup and the full bilingual light/dark desktop/mobile Admin visual/accessibility matrix are verified against fixed Daytona references, while Kubernetes/SSH snapshot backends and aggregate BASE-ADMIN-V1 infrastructure acceptance remain unverified",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),

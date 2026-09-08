@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 const [argumentOrigin, adminTokenFile, userTokenFile, argumentTenantId, argumentProjectId] =
@@ -25,10 +27,10 @@ const browserPath = [
 ].find((path) => path && existsSync(path));
 if (!browserPath) throw new Error("Compose Admin Web smoke requires Chrome, Chromium, or Brave");
 
-const adminToken =
-  process.env.SNAPSHOT_ADMIN_TOKEN ?? readFileSync(adminTokenFile, "utf8").trim();
+const adminToken = process.env.SNAPSHOT_ADMIN_TOKEN ?? readFileSync(adminTokenFile, "utf8").trim();
 const userToken =
   process.env.SNAPSHOT_ADMIN_USER_TOKEN ?? readFileSync(userTokenFile, "utf8").trim();
+const fullCapture = snapshotMode && process.env.FOUNDATION_FULL_ADMIN_CAPTURE === "1";
 const profile = mkdtempSync(join(tmpdir(), "cloud-agents-admin-web-smoke-"));
 const browser = spawn(
   browserPath,
@@ -120,6 +122,58 @@ try {
     }
     throw new Error(`timed out waiting for ${label}`);
   };
+
+  if (fullCapture) {
+    for (const target of [
+      {
+        targetId: "visual-kubernetes",
+        targetName: "visual-kubernetes",
+        targetKind: "kubernetes",
+        endpoint: "https://visual-kubernetes.test",
+        credentialRef: "visual-kubernetes-credential",
+      },
+      {
+        targetId: "visual-ssh",
+        targetName: "visual-ssh",
+        targetKind: "ssh",
+        endpoint: "ssh://visual-ssh.test:22",
+        credentialRef: "visual-ssh-credential",
+      },
+    ]) {
+      const response = await fetch(
+        `${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${adminToken}`,
+            "Content-Type": "application/json",
+            "Idempotency-Key": `admin-visual-${target.targetId}`,
+            "X-Request-ID": `admin-visual-${target.targetId}`,
+          },
+          body: JSON.stringify(target),
+        },
+      );
+      assert.equal(response.status, 201, await response.text());
+    }
+    const response = await fetch(
+      `${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=200`,
+      {
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          "X-Request-ID": "admin-visual-target-list",
+        },
+      },
+    );
+    const targetPageBody = await response.text();
+    assert.equal(response.status, 200, targetPageBody);
+    const targetPage = JSON.parse(targetPageBody);
+    assert.ok(
+      ["target", "visual-kubernetes", "visual-ssh"].every((targetId) =>
+        targetPage.deploymentTargets.some(({ metadata }) => metadata.uid === targetId),
+      ),
+      JSON.stringify(targetPage),
+    );
+  }
 
   await Promise.all([
     command("Network.enable"),
@@ -213,7 +267,10 @@ try {
     await delay(100);
     const screenshot = await command("Page.captureScreenshot", { format: "png" });
     writeFileSync(
-      join(process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT, "admin-sandbox-usage-correction.png"),
+      join(
+        process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT,
+        "admin-sandbox-usage-correction.png",
+      ),
       Buffer.from(screenshot.data, "base64"),
     );
   }
@@ -236,6 +293,59 @@ try {
     ),
   );
   assert.deepEqual(errors, []);
+  let fullCaptureResult;
+  if (fullCapture) {
+    const captureOutput = join(
+      process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT,
+      "admin-acceptance",
+    );
+    const fullAdminTokenFile = join(profile, "full-admin-token");
+    const fullUserTokenFile = join(profile, "full-user-token");
+    writeFileSync(fullAdminTokenFile, adminToken, { mode: 0o600 });
+    writeFileSync(fullUserTokenFile, userToken, { mode: 0o600 });
+    const captureScript = fileURLToPath(
+      new URL(
+        "../apps/admin-web/visual-baseline/daytona-v0.190.0/capture-actual.mjs",
+        import.meta.url,
+      ),
+    );
+    const capture = spawn(
+      process.execPath,
+      [captureScript, captureOutput, fullAdminTokenFile, fullUserTokenFile, projectId, tenantId],
+      {
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_ADMIN_CAPTURE_APP_URL: origin,
+          CLOUD_AGENTS_ADMIN_CAPTURE_DOCKER_TARGET: "target",
+          CLOUD_AGENTS_ADMIN_CAPTURE_KUBERNETES_TARGET: "visual-kubernetes",
+          CLOUD_AGENTS_ADMIN_CAPTURE_SSH_TARGET: "visual-ssh",
+          CLOUD_AGENTS_ADMIN_CAPTURE_RUNTIME_PROFILE: "profile",
+          CLOUD_AGENTS_ADMIN_CAPTURE_SANDBOX: "sandbox",
+          CLOUD_AGENTS_BROWSER_PATH: browserPath,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let captureOutputText = "";
+    capture.stdout.on("data", (value) => (captureOutputText += value));
+    capture.stderr.on("data", (value) => (captureOutputText += value));
+    const captureExit = await new Promise((resolve) => capture.once("close", resolve));
+    assert.equal(captureExit, 0, captureOutputText);
+    const evidenceBytes = readFileSync(join(captureOutput, "browser-evidence.json"));
+    const evidence = JSON.parse(evidenceBytes);
+    fullCaptureResult = {
+      evidence: "admin-acceptance/browser-evidence.json",
+      evidenceSHA256: createHash("sha256").update(evidenceBytes).digest("hex"),
+      screenshots: Object.keys(evidence.screenshotHashes).length,
+      accessibilityMatrices: evidence.accessibilityChecks.length,
+      referenceCommit: evidence.reference.commit,
+      targetCount: evidence.targetCount,
+      referenceMatches: evidence.reference.matches.length,
+      expectedPreviewFailures: evidence.adminHTTPFailures.length,
+      unexpectedHTTPFailures: evidence.unexpectedAdminHTTPFailures.length,
+      ordinaryUserDeniedRequests: evidence.permissionDeniedHTTPFailures.length,
+    };
+  }
   const browserResult = {
     requests: apiRequests.length,
     ordinaryUserStatus: snapshotMode ? undefined : denied,
@@ -244,6 +354,7 @@ try {
     mobileWidth: 390,
     usageCorrectionVisible: usageCorrection !== undefined,
     screenshot: snapshotMode ? "admin-sandbox-usage-correction.png" : undefined,
+    fullCapture: fullCaptureResult,
   };
   process.stdout.write(
     snapshotMode

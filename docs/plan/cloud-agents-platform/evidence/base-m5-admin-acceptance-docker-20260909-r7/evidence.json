@@ -1,0 +1,172 @@
+{
+  "run": "foundation-controller-feefda41-ccf6-4a8d-bae6-b67a60f0c9f9",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "0893895dbc4e4ac5fa09a3ddf08b457ba9a32f1a",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "stop": {
+    "api": {
+      "action": "stop",
+      "generation": 2,
+      "operationId": "op-7f436cff8702686ba50ff1c2cb46c20a",
+      "ordinaryUserStatus": 403,
+      "priorResourceVersion": "11",
+      "rawUsageUnchanged": true,
+      "staleFenceStatus": 409,
+      "usageCorrectionAdjustment": "7",
+      "usageCorrectionId": "correction-DO3SJ72DFQOCJU2KX32GVQYMHW",
+      "usageCorrectionMetric": "networkReceivedBytes",
+      "usageCorrectionReplay": true,
+      "usageCorrectionStaleFenceStatus": 409,
+      "workspaceDisposition": "retain"
+    },
+    "controller": {
+      "generation": 2,
+      "networkUsage": {
+        "checkpointedAt": "2026-09-08T17:52:28.503874Z",
+        "latestRuntimeGeneration": 1,
+        "measurementGeneration": 2,
+        "observedAt": "2026-09-08T17:52:28.503874Z",
+        "receivedBytes": 10100,
+        "source": "docker-container-stats-v1",
+        "state": "ready",
+        "transmittedBytes": 8155
+      },
+      "runtimeDeleted": true,
+      "usage": {
+        "allocatedMilliseconds": 124847,
+        "checkpointedAt": "2026-09-08T17:52:28.918604Z",
+        "cpuMillisMilliseconds": 62423500,
+        "finalizedAt": "2026-09-08T17:52:28.918604Z",
+        "memoryByteMilliseconds": 67026722750464
+      },
+      "workspaceVolume": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247",
+      "workspaceVolumeUsage": {
+        "checkpointedAt": "2026-09-08T17:52:29.325052Z",
+        "measurementGeneration": 2,
+        "observedAt": "2026-09-08T17:52:29.325052Z",
+        "source": "docker-system-df-v1",
+        "state": "ready",
+        "usedBytes": 31
+      },
+      "writerReleased": true
+    }
+  },
+  "snapshot": {
+    "api": {
+      "adminContentRedacted": true,
+      "fencedRebuildStatus": 409,
+      "idempotentReplay": true,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "ordinaryUserStatus": 403,
+      "snapshotId": "snapshot",
+      "sourceWorkspaceId": "workspace",
+      "status": "pending",
+      "writerFenceReserved": true
+    },
+    "controller": {
+      "archiveVerified": true,
+      "contentDigest": "sha256:0f7877fee5f9f1621d8dfe37868b110d73fe3a88481c9b46b230b7b977c02276",
+      "helperStarted": false,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "physicalVolume": "ca-snap-8e5eefa3eae93e0732f80b4aa8cf51d0b290cdbf80f66c1336354f75",
+      "sizeBytes": 2560,
+      "snapshotId": "snapshot",
+      "status": "available",
+      "writerFenceReleased": true
+    }
+  },
+  "manualCleanup": {
+    "api": {
+      "adminContentRedacted": true,
+      "failedCleanupRetried": true,
+      "failedOperationId": "op-20945959a7a8930a2a9e721126c708ec",
+      "idempotentReplay": true,
+      "operationId": "op-4823ae7e828a5ca7dd410e1126cf0aa6",
+      "ordinaryUserStatus": 403,
+      "renewalFenced": true,
+      "snapshotId": "snapshot",
+      "staleVersionStatus": 409,
+      "status": "deleting",
+      "trigger": "manual"
+    },
+    "controller": {
+      "audit": true,
+      "cleanupPhase": "complete",
+      "operationId": "op-4823ae7e828a5ca7dd410e1126cf0aa6",
+      "operationState": "succeeded",
+      "physicalVolume": "ca-snap-8e5eefa3eae93e0732f80b4aa8cf51d0b290cdbf80f66c1336354f75",
+      "physicalVolumeDeleted": true,
+      "snapshotId": "snapshot",
+      "status": "deleted",
+      "terminalReceipt": true,
+      "trigger": "manual"
+    }
+  },
+  "retentionCleanup": {
+    "api": {
+      "expiresAt": "2026-09-08T17:53:50.731302Z",
+      "operationId": "op-64e24e569c64cb8e39365b7b4ea2c748",
+      "retentionSeconds": 1,
+      "snapshotId": "snapshot-expiring",
+      "status": "pending"
+    },
+    "controller": {
+      "audit": true,
+      "cleanupPhase": "complete",
+      "expiresAt": "2026-09-08T17:53:50.731302Z",
+      "operationId": "op-f35d1bd709e663a67d3c67fba1a3d6f8",
+      "operationState": "succeeded",
+      "physicalVolume": "ca-snap-c32eb76b3927ff984ce4d6883eab667cb947f6a7454c67ef145d3e6c",
+      "physicalVolumeDeleted": true,
+      "snapshotId": "snapshot-expiring",
+      "status": "deleted",
+      "terminalReceipt": true,
+      "trigger": "retention"
+    }
+  },
+  "adminBrowser": {
+    "requests": 16,
+    "locale": "en-US",
+    "desktopWidth": 1440,
+    "mobileWidth": 390,
+    "usageCorrectionVisible": true,
+    "screenshot": "admin-sandbox-usage-correction.png",
+    "fullCapture": {
+      "evidence": "admin-acceptance/browser-evidence.json",
+      "evidenceSHA256": "92802fc19ea4043dd8a4137e0ae6d184f8df08d3dfef8c0da768aa9f4f9bdd77",
+      "screenshots": 145,
+      "accessibilityMatrices": 8,
+      "referenceCommit": "01c502bb1f1ff8f2885d0cd490e043736083dca8",
+      "targetCount": 6,
+      "referenceMatches": 24,
+      "expectedPreviewFailures": 8,
+      "unexpectedHTTPFailures": 0,
+      "ordinaryUserDeniedRequests": 13
+    }
+  },
+  "checks": [
+    "product migration 000088 applied to disposable PostgreSQL",
+    "new Snapshot retention is fixed at database-clock acceptance and exposed only as metadata",
+    "Admin usage correction required admin scope and immutable fences; replay was stable, stale writes returned 409 and raw facts remained unchanged",
+    "ordinary user token received 403 and stale resourceVersion received 409 from Admin cleanup",
+    "manual cleanup required exact logical Snapshot and source Workspace confirmation without physical volume disclosure",
+    "manual cleanup replay returned the same durable Operation",
+    "terminal cleanup failure was claim-renewal fenced and retried with a new resource version and outbox sequence",
+    "database-clock expiry entered the same cleanup Operation state machine",
+    "Controller deleted only exact platform-owned Docker snapshot volumes under renewable claims",
+    "manual and retention cleanup settled Snapshot deleted, Operation succeeded/complete, terminal receipt and Audit",
+    "real Chromium connected through the Vite Admin origin and rendered persisted retention plus Sandbox usage-correction metadata and its fenced form",
+    "145 live screenshots covered eight locale/theme/viewport accessibility matrices and 24 fixed Daytona structural matches; only 8 deliberate cleanup-preview failures occurred",
+    "all browser HTTP requests remained on the Admin Web origin and reached infrastructure authority only through the Control Plane proxy",
+    "zero test-owned runtime containers, Workspace volumes and Snapshot volumes"
+  ],
+  "boundary": "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; immutable usage correction, manual/database-clock retention cleanup and the full bilingual light/dark desktop/mobile Admin visual/accessibility matrix are verified against fixed Daytona references, while Kubernetes/SSH snapshot backends and aggregate BASE-ADMIN-V1 infrastructure acceptance remain unverified"
+}

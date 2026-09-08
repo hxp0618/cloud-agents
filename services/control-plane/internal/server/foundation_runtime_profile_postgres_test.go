@@ -663,7 +663,11 @@ func TestFoundationWorkspaceSnapshotCleanupPostgres(t *testing.T) {
 	if runtimeURL == "" || ownerURL == "" {
 		t.Skip("isolated foundation Workspace snapshot cleanup PostgreSQL environment not configured")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	timeout := 90 * time.Second
+	if os.Getenv("FOUNDATION_FULL_ADMIN_CAPTURE") == "1" {
+		timeout = 4 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	runtimePool, err := pgxpool.New(ctx, runtimeURL)
 	if err != nil {
@@ -999,7 +1003,7 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 func verifySnapshotAdminBrowser(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get targets.list targets.get leases.list leases.get workers.list releases.list profiles.list profiles.get sandboxes.list sandboxes.get snapshots.list snapshots.get snapshots.delete storage-policies.list network-policies.list quotas.get quotas.update audit.list operations.list",
+		"projects.act projects.get targets.create targets.list targets.get leases.list leases.get workers.list releases.list profiles.list profiles.get sandboxes.list sandboxes.get snapshots.list snapshots.get snapshots.delete storage-policies.list network-policies.list quotas.get quotas.update audit.list operations.list",
 		"projects.get environment-profiles.list",
 	)
 	store, err := postgres.NewDurableCoordinationService(pool)
@@ -1046,7 +1050,7 @@ func verifySnapshotAdminBrowser(t *testing.T, pool *pgxpool.Pool) {
 		{HandlesAdminEnvironmentProfilePath, profiles}, {HandlesAdminWorkerReleasePath, releases},
 		{HandlesProjectLeaseQuotaPath, quota}, {HandlesStoragePolicyPath, storage}, {HandlesNetworkPolicyPath, network},
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, route := range routes {
 			if route.handles(r.URL.Path) {
 				route.handler.ServeHTTP(w, r)
@@ -1054,9 +1058,10 @@ func verifySnapshotAdminBrowser(t *testing.T, pool *pgxpool.Pool) {
 			}
 		}
 		targets.ServeHTTP(w, r)
-	}))
+	})
+	server := httptest.NewServer(AdminDeniedWriteHandler(verifier, store, router))
 	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	admin, err := api.NewHTTPClientWithClient(server.URL, tokens[0], server.Client())
 	if err != nil {

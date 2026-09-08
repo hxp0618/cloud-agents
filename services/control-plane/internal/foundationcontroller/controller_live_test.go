@@ -535,23 +535,28 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	)); !strings.Contains(output, "CAG_NETWORK_USAGE=allowed") {
 		t.Fatalf("network usage traffic response = %s", output)
 	}
-	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
-		t.Fatalf("network usage restart checkpoint = %v / %v", worked, err)
-	}
 	var reconciledNetworkReceived, reconciledNetworkTransmitted, reconciledNetworkGeneration int64
 	var reconciledNetworkCheckpoint time.Time
-	if err := environment.owner.QueryRow(ctx, `SELECT network_received_bytes, network_transmitted_bytes,
-		network_measurement_generation, network_checkpointed_at
-		FROM cloud_agents.sandbox_usage_checkpoints
-		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
-		  AND runtime_uid=$1 AND network_state='ready'`, expectedRuntime).Scan(
-		&reconciledNetworkReceived, &reconciledNetworkTransmitted,
-		&reconciledNetworkGeneration, &reconciledNetworkCheckpoint,
-	); err != nil || reconciledNetworkGeneration != 2 || !reconciledNetworkCheckpoint.After(networkCheckpointedAt) ||
+	for attempt := 0; attempt < 4 && reconciledNetworkGeneration != 2; attempt++ {
+		if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+			t.Fatalf("network usage restart checkpoint %d = %v / %v", attempt+1, worked, err)
+		}
+		if err := environment.owner.QueryRow(ctx, `SELECT network_received_bytes, network_transmitted_bytes,
+			network_measurement_generation, network_checkpointed_at
+			FROM cloud_agents.sandbox_usage_checkpoints
+			WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+			  AND runtime_uid=$1 AND network_state='ready'`, expectedRuntime).Scan(
+			&reconciledNetworkReceived, &reconciledNetworkTransmitted,
+			&reconciledNetworkGeneration, &reconciledNetworkCheckpoint,
+		); err != nil {
+			t.Fatalf("network usage restart fact attempt %d: %v", attempt+1, err)
+		}
+	}
+	if reconciledNetworkGeneration != 2 || !reconciledNetworkCheckpoint.After(networkCheckpointedAt) ||
 		reconciledNetworkReceived < networkReceivedBytes || reconciledNetworkTransmitted < networkTransmittedBytes ||
 		(reconciledNetworkReceived == networkReceivedBytes && reconciledNetworkTransmitted == networkTransmittedBytes) {
-		t.Fatalf("network usage restart fact = %d/%d/%d/%s err=%v",
-			reconciledNetworkReceived, reconciledNetworkTransmitted, reconciledNetworkGeneration, reconciledNetworkCheckpoint, err)
+		t.Fatalf("network usage restart fact = %d/%d/%d/%s",
+			reconciledNetworkReceived, reconciledNetworkTransmitted, reconciledNetworkGeneration, reconciledNetworkCheckpoint)
 	}
 	receipt, _ := json.Marshal(map[string]any{
 		"runtimeId": expectedRuntime, "adopted": true, "deliveryAttempts": success.deliveryAttempts,

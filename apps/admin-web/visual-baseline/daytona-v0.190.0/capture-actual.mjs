@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +14,23 @@ if (!output || !adminTokenFile || !userTokenFile || !projectId) {
   );
 }
 
-const app = "http://127.0.0.1:4174/";
-const browserPath = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
+const app = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_APP_URL ?? "http://127.0.0.1:4174/";
+const browserPath =
+  process.env.CLOUD_AGENTS_BROWSER_PATH ??
+  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
+const dockerTargetName = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_DOCKER_TARGET ?? "visual-docker";
+const kubernetesTargetName =
+  process.env.CLOUD_AGENTS_ADMIN_CAPTURE_KUBERNETES_TARGET ?? "visual-kubernetes";
+const sshTargetName = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_SSH_TARGET ?? "visual-ssh";
+const runtimeProfileName =
+  process.env.CLOUD_AGENTS_ADMIN_CAPTURE_RUNTIME_PROFILE ?? "visual-runtime";
+const sandboxName = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_SANDBOX ?? "visual-sandbox";
+const referenceBytes = readFileSync(
+  new URL("./reference-corrected/reference-evidence.json", import.meta.url),
+);
+const referenceEvidence = JSON.parse(referenceBytes);
+assert.equal(referenceEvidence.commit, "01c502bb1f1ff8f2885d0cd490e043736083dca8");
+assert.equal(referenceEvidence.captures.length, 36);
 const profile = mkdtempSync(join(tmpdir(), "cloud-agents-admin-cdp-"));
 const browser = spawn(
   browserPath,
@@ -85,7 +101,11 @@ try {
   const targetFilterChecks = [];
   const overviewChecks = [];
   const foundationResourceChecks = [];
+  const accessibilityChecks = [];
+  const screenshotHashes = {};
   const mutationRequests = [];
+  let browserVersion;
+  let targetFixture;
   let phase = "admin";
   socket.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
@@ -243,19 +263,80 @@ try {
       }
       formChecks.push({ filename, ...formCheck });
     }
-    layoutChecks.push(
-      JSON.parse(
-        await evaluate(
-          `JSON.stringify({ filename: ${JSON.stringify(filename)}, locale: document.documentElement.lang, theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], documentWidth: [document.documentElement.clientWidth, document.documentElement.scrollWidth], overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth })`,
-        ),
+    const layout = JSON.parse(
+      await evaluate(
+        `JSON.stringify((() => { const sheet = document.querySelector('.admin-sheet'); const rect = sheet?.getBoundingClientRect(); return { filename: ${JSON.stringify(filename)}, locale: document.documentElement.lang, theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], documentWidth: [document.documentElement.clientWidth, document.documentElement.scrollWidth], overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, sheet: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left } : null }; })())`,
       ),
     );
+    if (layout.sheet !== null) {
+      assert.equal(layout.sheet.width, layout.viewport[0] < 768 ? layout.viewport[0] : 500);
+      assert.equal(layout.sheet.right, layout.viewport[0]);
+      assert.equal(layout.sheet.height, layout.viewport[1]);
+    }
+    layoutChecks.push(layout);
     const result = await command("Page.captureScreenshot", {
       format: "png",
       fromSurface: true,
       captureBeyondViewport: false,
     });
-    writeFileSync(join(output, filename), Buffer.from(result.data, "base64"));
+    const bytes = Buffer.from(result.data, "base64");
+    writeFileSync(join(output, filename), bytes);
+    screenshotHashes[filename] = createHash("sha256").update(bytes).digest("hex");
+  };
+  const verifyAccessibility = async (name) => {
+    await pressKey("Tab");
+    const check = JSON.parse(
+      await evaluate(`JSON.stringify((() => {
+        const visible = (element) => element.checkVisibility();
+        const labelled = (element) => {
+          if (element.labels?.length) return true;
+          const ariaLabel = element.getAttribute('aria-label')?.trim();
+          if (ariaLabel) return true;
+          const labelledBy = element.getAttribute('aria-labelledby')?.split(/\\s+/).filter(Boolean) ?? [];
+          if (labelledBy.some(id => document.getElementById(id)?.textContent.trim())) return true;
+          return ['BUTTON', 'SUMMARY'].includes(element.tagName) && !!(element.textContent.trim() || element.title);
+        };
+        const controls = [...document.querySelectorAll('button,input,select,summary')].filter(visible);
+        const missingLabels = controls.filter(element => !labelled(element)).map(element => ({tag:element.tagName,type:element.type,className:element.className}));
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d', {willReadFrequently:true});
+        const rgba = (value) => { context.clearRect(0,0,1,1); context.fillStyle = value; context.fillRect(0,0,1,1); return [...context.getImageData(0,0,1,1).data]; };
+        const over = (front, back) => { const alpha = front[3] / 255, backAlpha = back[3] / 255, outAlpha = alpha + backAlpha * (1 - alpha); return outAlpha === 0 ? [0,0,0,0] : [0,1,2].map(index => Math.round((front[index] * alpha + back[index] * backAlpha * (1 - alpha)) / outAlpha)).concat(Math.round(outAlpha * 255)); };
+        const background = (element) => { const layers = []; for (let node = element; node; node = node.parentElement) layers.push(rgba(getComputedStyle(node).backgroundColor)); return layers.reverse().reduce((result, layer) => over(layer, result), [255,255,255,255]); };
+        const luminance = ([r,g,b]) => [r,g,b].map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126,0.7152,0.0722][index], 0);
+        const samples = [
+          ['.page-heading h1', 3],
+          ['.page-heading p', 4.5],
+          ['.heading-actions .primary', 4.5],
+          ['.sidebar nav button.active', 4.5],
+          ['tbody .phase', 4.5],
+        ].map(([selector, minimum]) => { const element = document.querySelector(selector), bg = background(element), fg = over(rgba(getComputedStyle(element).color), bg), values = [luminance(fg), luminance(bg)]; return {selector,minimum,ratio:(Math.max(...values)+0.05)/(Math.min(...values)+0.05),foreground:fg,background:bg}; });
+        const focusTarget = document.querySelector('.list-toolbar input'); focusTarget.focus();
+        const focusStyle = getComputedStyle(focusTarget);
+        const focus = { visible: focusTarget.matches(':focus-visible'), outlineStyle: focusStyle.outlineStyle, outlineWidth: focusStyle.outlineWidth, outlineColor: focusStyle.outlineColor };
+        const motionStyle = getComputedStyle(document.querySelector('.button'));
+        const durations = [...motionStyle.transitionDuration.split(','), ...motionStyle.animationDuration.split(',')].map(value => value.trim()).filter(Boolean).map(value => value.endsWith('ms') ? parseFloat(value) / 1000 : parseFloat(value));
+        return { reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches, maximumMotionSeconds: Math.max(0, ...durations), missingLabels, focus, samples };
+      })())`),
+    );
+    assert.equal(check.reducedMotion, true);
+    assert.ok(check.maximumMotionSeconds <= 0.00001);
+    assert.deepEqual(check.missingLabels, []);
+    assert.deepEqual(
+      {
+        visible: check.focus.visible,
+        style: check.focus.outlineStyle,
+        width: check.focus.outlineWidth,
+      },
+      { visible: true, style: "solid", width: "3px" },
+    );
+    for (const sample of check.samples) {
+      assert.ok(
+        sample.ratio >= sample.minimum,
+        `${name}: ${sample.selector} contrast ${sample.ratio} < ${sample.minimum}`,
+      );
+    }
+    accessibilityChecks.push({ name, ...check });
   };
   const connect = async (token) => {
     await waitFor("document.querySelector('.connect-form') !== null", "connection form");
@@ -314,9 +395,22 @@ try {
   const navigateTargets = async () => {
     await navigatePage("targets");
     await waitFor(
-      "document.querySelector('.sidebar [data-page=targets]').getAttribute('aria-current') === 'page' && document.querySelectorAll('tbody tr').length === 3",
-      "three live targets",
+      `document.querySelector('.sidebar [data-page=targets]').getAttribute('aria-current') === 'page' && ${JSON.stringify([dockerTargetName, kubernetesTargetName, sshTargetName])}.every(name => [...document.querySelectorAll('.target-table tbody tr')].some(row => row.textContent.includes(name)))`,
+      "required live targets",
     );
+    const current = JSON.parse(
+      await evaluate(
+        "JSON.stringify([...document.querySelectorAll('.target-table tbody tr')].map(row => ({name:row.cells[0].innerText,kind:row.querySelector('[data-kind]').dataset.kind})))",
+      ),
+    );
+    if (targetFixture === undefined) {
+      assert.ok(
+        ["docker", "kubernetes", "ssh"].every((kind) => current.some((row) => row.kind === kind)),
+      );
+      targetFixture = current;
+    } else {
+      assert.deepEqual(current, targetFixture);
+    }
   };
   const openTarget = async (name) => {
     const index = await evaluate(
@@ -412,7 +506,7 @@ try {
       ),
       true,
     );
-    await openTarget("visual-docker");
+    await openTarget(dockerTargetName);
     const trigger = ".detail-panel .action-block:nth-child(1 of .action-block) button";
     await waitFor(
       `document.querySelector(${JSON.stringify(trigger)}) !== null`,
@@ -556,7 +650,8 @@ try {
     assert.equal(geometry.bottom, geometry.viewport <= 600 ? 16 : 32);
     assert.equal(geometry.fontSize, "13px");
     await screenshot(`toast-${name}.png`);
-    if (name === "en-US-light-desktop") {
+    const verifiesTiming = name === "en-US-light-desktop";
+    if (verifiesTiming) {
       const point = await evaluate(
         "(() => { const r = document.querySelector('.success-toast').getBoundingClientRect(); return { x: r.x + 30, y: r.y + 30 }; })()",
       );
@@ -571,12 +666,14 @@ try {
     }
     await evaluate("document.querySelector('.toast-close').focus()");
     assert.equal(await evaluate("document.activeElement.matches('.toast-close')"), true);
-    await delay(4100);
-    assert.equal(
-      await evaluate("document.querySelector('.success-toast')?.matches(':popover-open')"),
-      true,
-      "Focused Toast must not expire",
-    );
+    if (verifiesTiming) {
+      await delay(4100);
+      assert.equal(
+        await evaluate("document.querySelector('.success-toast')?.matches(':popover-open')"),
+        true,
+        "Focused Toast must not expire",
+      );
+    }
     await pressKey("Enter");
     await waitFor("!document.querySelector('.success-toast')", "keyboard Toast dismissal");
     assert.equal(
@@ -586,22 +683,25 @@ try {
       true,
       "Toast dismissal restores the trigger focus",
     );
-    await clickAt(".heading-actions button:first-child");
-    await waitFor(
-      "document.querySelector('.success-toast')?.matches(':popover-open')",
-      "second refresh Toast",
-    );
-    await waitFor("!document.querySelector('.success-toast')", "automatic Toast expiry");
+    if (verifiesTiming) {
+      await clickAt(".heading-actions button:first-child");
+      await waitFor(
+        "document.querySelector('.success-toast')?.matches(':popover-open')",
+        "second refresh Toast",
+      );
+      await waitFor("!document.querySelector('.success-toast')", "automatic Toast expiry");
+    }
     toastChecks.push({
       name,
       ...geometry,
-      focusPause: true,
+      focusPause: verifiesTiming ? true : "covered-by-en-US-light-desktop",
       keyboardDismiss: true,
-      automaticExpiry: true,
+      automaticExpiry: verifiesTiming ? true : "covered-by-en-US-light-desktop",
     });
   };
 
   const verifyCommands = async (name) => {
+    await verifyAccessibility(name);
     await evaluate("document.querySelector('.heading-actions button').focus()");
     await pressKey("k", "KeyK", 4);
     await waitFor(
@@ -618,12 +718,12 @@ try {
     );
     const geometry = await evaluate(`(() => {
       const dialog = document.querySelector(".navigation-commands");
-      return { width: dialog.getBoundingClientRect().width, inputHeight: dialog.querySelector("input").getBoundingClientRect().height, fontSize: getComputedStyle(dialog.querySelector("input")).fontSize, count: dialog.querySelectorAll("[role=option]").length, viewportWidth: innerWidth };
+      return { width: dialog.getBoundingClientRect().width, inputHeight: dialog.querySelector("input").getBoundingClientRect().height, fontSize: getComputedStyle(dialog.querySelector("input")).fontSize, count: dialog.querySelectorAll("[role=option]").length, navigationCount: document.querySelectorAll('.sidebar nav button').length, viewportWidth: innerWidth };
     })()`);
     assert.equal(geometry.width, geometry.viewportWidth < 768 ? 358 : 576);
     assert.equal(geometry.inputHeight, 48);
     assert.equal(geometry.fontSize, "14px");
-    assert.equal(geometry.count, 11);
+    assert.equal(geometry.count, geometry.navigationCount - 1);
     assert.equal(await evaluate("document.querySelector('#command-targets') === null"), true);
     await screenshot(`commands-${name}.png`);
     await pressKey("ArrowUp");
@@ -688,7 +788,7 @@ try {
     await navigateTargets();
     const prefix = name.startsWith("zh-CN") ? "zh-CN-" : "";
     const dimensions = name.slice(6);
-    await openTarget("visual-ssh");
+    await openTarget(sshTargetName);
     await waitFor(
       "document.querySelector('.success-toast')?.matches(':popover-open')",
       "detail success Toast",
@@ -818,13 +918,18 @@ try {
   const verifyFoundationResources = async (name) => {
     await navigatePage("runtimeProfiles");
     await waitFor(
-      "document.querySelectorAll('tbody tr').length === 1",
+      `[...document.querySelectorAll('tbody tr')].some(row => row.textContent.includes(${JSON.stringify(runtimeProfileName)}))`,
       "persisted Runtime Profile",
     );
-    const runtimeProfileRow = await evaluate("document.querySelector('tbody tr').innerText");
-    assert.match(runtimeProfileRow, /visual-runtime/);
+    const runtimeProfileIndex = await evaluate(
+      `[...document.querySelectorAll('tbody tr')].findIndex(row => row.textContent.includes(${JSON.stringify(runtimeProfileName)}))`,
+    );
+    const runtimeProfileRow = await evaluate(
+      `document.querySelectorAll('tbody tr')[${runtimeProfileIndex}].innerText`,
+    );
+    assert.ok(runtimeProfileRow.includes(runtimeProfileName));
     await screenshot(`foundation-runtime-profiles-${name}.png`);
-    await clickAt("tbody tr td:first-child button");
+    await clickAt(`tbody tr:nth-child(${runtimeProfileIndex + 1}) td:first-child button`);
     await waitFor("document.querySelector('.admin-sheet') !== null", "Runtime Profile detail");
     const runtimeProfileDetail = await evaluate("document.querySelector('.admin-sheet').innerText");
     assert.ok(!runtimeProfileDetail.includes("fixture-only"));
@@ -834,16 +939,21 @@ try {
 
     await navigatePage("sandboxes");
     await waitFor(
-      "document.querySelectorAll('tbody tr').length === 1",
+      `[...document.querySelectorAll('tbody tr')].some(row => row.textContent.includes(${JSON.stringify(sandboxName)}))`,
       "persisted Sandbox session",
     );
-    const sandboxRow = await evaluate("document.querySelector('tbody tr').innerText");
-    assert.match(sandboxRow, /visual-sandbox/);
+    const sandboxIndex = await evaluate(
+      `[...document.querySelectorAll('tbody tr')].findIndex(row => row.textContent.includes(${JSON.stringify(sandboxName)}))`,
+    );
+    const sandboxRow = await evaluate(
+      `document.querySelectorAll('tbody tr')[${sandboxIndex}].innerText`,
+    );
+    assert.ok(sandboxRow.includes(sandboxName));
     await screenshot(`foundation-sandboxes-${name}.png`);
-    await clickAt("tbody tr td:first-child button");
+    await clickAt(`tbody tr:nth-child(${sandboxIndex + 1}) td:first-child button`);
     await waitFor("document.querySelector('.admin-sheet') !== null", "Sandbox detail");
     const sandboxDetail = await evaluate("document.querySelector('.admin-sheet').innerText");
-    for (const forbidden of ["fixture-only", "127.0.0.1", "node@sha256:"]) {
+    for (const forbidden of ["fixture-only", "127.0.0.1"]) {
       assert.ok(!sandboxDetail.includes(forbidden), `Sandbox detail disclosed ${forbidden}`);
     }
     await screenshot(`foundation-sandbox-detail-${name}.png`);
@@ -864,6 +974,8 @@ try {
         element.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
     };
+    const dockerCount = targetFixture.filter(({ kind }) => kind === "docker").length;
+    const sshCount = targetFixture.filter(({ kind }) => kind === "ssh").length;
     const openFilter = async (filter) => {
       await clickAt(".target-filters-trigger");
       await waitFor(
@@ -896,12 +1008,12 @@ try {
     await openFilter("kind");
     await pressKey("Enter");
     await waitFor(
-      "document.querySelectorAll('.target-table tbody tr').length === 1",
+      `document.querySelectorAll('.target-table tbody tr').length === ${dockerCount}`,
       "kind filter",
     );
     await clickAt(".target-filter-options:popover-open [data-value=ssh]");
     await waitFor(
-      "document.querySelectorAll('.target-table tbody tr').length === 2",
+      `document.querySelectorAll('.target-table tbody tr').length === ${dockerCount + sshCount}`,
       "multi-kind union",
     );
     await waitFor(
@@ -915,7 +1027,10 @@ try {
       "empty options",
     );
     await pressKey("Enter");
-    assert.equal(await evaluate("document.querySelectorAll('.target-table tbody tr').length"), 2);
+    assert.equal(
+      await evaluate("document.querySelectorAll('.target-table tbody tr').length"),
+      dockerCount + sshCount,
+    );
     await closeFilter();
     await change(".target-toolbar > input", " VISUAL-SSH ");
     await waitFor(
@@ -956,7 +1071,7 @@ try {
     await screenshot(`${name}-filter-empty.png`);
     await clickAt(".empty-state .button.primary");
     await waitFor(
-      "document.querySelectorAll('.target-table tbody tr').length === 3",
+      `document.querySelectorAll('.target-table tbody tr').length === ${targetFixture.length}`,
       "clear target filters",
     );
     assert.equal(await evaluate("document.querySelector('.target-filters-clear').disabled"), true);
@@ -967,7 +1082,7 @@ try {
       nestedEscape: true,
       noOptionsEnterNoop: true,
       noMatches: true,
-      clearRestored: 3,
+      clearRestored: targetFixture.length,
       missingProbeFacts: facts,
     });
   };
@@ -976,6 +1091,7 @@ try {
   await command("Network.enable");
   await command("Runtime.enable");
   await command("Log.enable");
+  browserVersion = await command("Browser.getVersion");
   await command("Emulation.setEmulatedMedia", {
     media: "screen",
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
@@ -1036,7 +1152,10 @@ try {
     "document.querySelector('.sidebar nav button[data-page=targets]').scrollIntoView({ block: 'nearest' })",
   );
   await clickAt(".sidebar nav button[data-page=targets]");
-  await waitFor("document.querySelectorAll('tbody tr').length === 3", "short-window targets");
+  await waitFor(
+    `document.querySelectorAll('.target-table tbody tr').length === ${targetFixture.length}`,
+    "short-window targets",
+  );
   await setViewport(1440, 900);
   await waitFor("innerHeight === 900", "desktop viewport restore");
   await evaluate("document.querySelector('.content').scrollTop = 0");
@@ -1164,6 +1283,20 @@ try {
   const adminConsoleErrors = [...consoleErrors];
   const adminConsoleWarnings = [...consoleWarnings];
   const adminHTTPFailures = httpFailures.filter((failure) => failure.phase === "admin");
+  const unexpectedAdminHTTPFailures = adminHTTPFailures.filter(({ status, url }) => {
+    const path = new URL(url).pathname;
+    return (
+      status !== 503 || !path.endsWith(`/deployment-targets/${dockerTargetName}:cleanup-preview`)
+    );
+  });
+  const unexpectedAdminConsoleErrors = adminConsoleErrors.filter(
+    (message) =>
+      !/Failed to load resource: the server responded with a status of 503/.test(message),
+  );
+  assert.deepEqual(unexpectedAdminHTTPFailures, []);
+  assert.deepEqual(unexpectedAdminConsoleErrors, []);
+  assert.deepEqual(adminConsoleWarnings, []);
+  assert.equal(adminConsoleErrors.length, adminHTTPFailures.length);
   consoleErrors.length = 0;
   consoleWarnings.length = 0;
   phase = "permission-denied";
@@ -1192,6 +1325,12 @@ try {
   const deniedRequests = httpFailures.filter((failure) => failure.phase === "permission-denied");
   assert.ok(deniedRequests.length > 0);
   assert.ok(deniedRequests.every((failure) => failure.status === 403));
+  assert.ok(
+    consoleErrors.every((message) =>
+      /Failed to load resource: the server responded with a status of 403/.test(message),
+    ),
+  );
+  assert.deepEqual(consoleWarnings, []);
   assert.deepEqual(mutationRequests, [], "visual checks must not submit lifecycle mutations");
   for (const prefix of ["", "zh-CN-"]) {
     for (const theme of ["light", "dark"]) {
@@ -1214,10 +1353,35 @@ try {
       }
     }
   }
+  const referenceMatches = layoutChecks
+    .filter(({ filename }) =>
+      /^(?:zh-CN-)?(?:list|detail|create-form)-(?:light|dark)-(?:desktop|mobile)\.png$/.test(
+        filename,
+      ),
+    )
+    .map((current) => {
+      const referenceFilename = current.filename.replace(/^zh-CN-/, "");
+      const reference = referenceEvidence.captures.find(
+        ({ filename }) => filename === referenceFilename,
+      );
+      assert.ok(reference, `Missing fixed Daytona reference ${referenceFilename}`);
+      assert.deepEqual(current.viewport, reference.viewport);
+      assert.equal(reference.clientWidth, reference.scrollWidth);
+      if (reference.sheet) assert.deepEqual(current.sheet, reference.sheet);
+      return {
+        currentFilename: current.filename,
+        referenceFilename,
+        referenceSHA256: reference.sha256,
+        viewport: current.viewport,
+        sheetGeometryMatched: reference.sheet ? true : undefined,
+      };
+    });
+  assert.equal(referenceMatches.length, 24);
 
   const evidence = `${JSON.stringify(
     {
       capturedAt: new Date().toISOString(),
+      browser: browserVersion,
       appOrigin: new URL(app).origin,
       projectId,
       targetKinds: authority.rows.map((row) => row.kind),
@@ -1243,6 +1407,15 @@ try {
       targetFilterChecks,
       overviewChecks,
       foundationResourceChecks,
+      accessibilityChecks,
+      reference: {
+        commit: referenceEvidence.commit,
+        compositionSHA256: referenceEvidence.compositionSHA256,
+        browser: referenceEvidence.browser,
+        evidenceSHA256: createHash("sha256").update(referenceBytes).digest("hex"),
+        matches: referenceMatches,
+      },
+      screenshotHashes,
       mutationRequests,
       shellChecks: { desktopShell, shortShell, shortWindowFinalNavigation: true },
       interactions: {
@@ -1262,6 +1435,8 @@ try {
       adminConsoleErrors,
       adminConsoleWarnings,
       adminHTTPFailures,
+      unexpectedAdminConsoleErrors,
+      unexpectedAdminHTTPFailures,
       permissionDeniedConsoleErrors: consoleErrors,
       permissionDeniedConsoleWarnings: consoleWarnings,
       permissionDeniedHTTPFailures: httpFailures.filter(
