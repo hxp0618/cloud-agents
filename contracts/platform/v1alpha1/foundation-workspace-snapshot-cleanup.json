@@ -1,0 +1,11 @@
+{
+  "profileId": "foundationWorkspaceSnapshotCleanup/v1alpha1",
+  "resourceKind": "workspaceSnapshot",
+  "outboxEventClass": "operation_effect",
+  "externalSideEffect": "docker_snapshot_volume_delete_under_durable_claim",
+  "canonicalization": "RFC8785_ASCII_safe_integers",
+  "fence": "snapshot-resource-version",
+  "allowedTriggers": ["manual", "retention"],
+  "requiredFinalizers": ["workspace-snapshot-delete"],
+  "secretMaterial": "excluded"
+}

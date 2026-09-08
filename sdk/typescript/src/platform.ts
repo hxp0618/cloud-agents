@@ -1223,6 +1223,13 @@ export type WorkspaceSnapshotCreateRequest = Readonly<{
   snapshotId: string;
   sourceSandboxId: string;
   expectedSandboxGeneration: number;
+  retentionSeconds: number;
+}>;
+export type WorkspaceSnapshotCleanupRequest = Readonly<{
+  expectedSnapshotResourceVersion: string;
+  confirmedSnapshotId: string;
+  confirmedSourceWorkspaceId: string;
+  snapshotDisposition: "delete";
 }>;
 export type WorkspaceSnapshotRestoreRequest = Readonly<{
   expectedSnapshotResourceVersion: string;
@@ -1243,11 +1250,23 @@ export type WorkspaceSnapshot = Readonly<{
     sourceWorkspaceResourceVersion: string;
     backend: "docker-volume-v1";
     consistencyMode: "offline";
-    status: "pending" | "available" | "unknown" | "failed";
+    status:
+      | "pending"
+      | "available"
+      | "unknown"
+      | "failed"
+      | "deleting"
+      | "cleanup_failed"
+      | "deleted";
     operationId: string;
+    retentionSeconds?: number;
+    expiresAt?: string;
+    cleanupOperationId?: string;
+    cleanupTrigger?: "manual" | "retention";
     sizeBytes?: number;
     stableErrorCode?: string;
     observedAt?: string;
+    deletedAt?: string;
   }>;
 }>;
 export type WorkspaceSnapshotPage = Readonly<{
@@ -1403,6 +1422,7 @@ const adminDeniedWriteActions = [
   "adminRevokeSandboxAccessGrant",
   "adminCreateWorkspaceSnapshot",
   "adminRestoreWorkspaceSnapshot",
+  "adminCleanupWorkspaceSnapshot",
   "adminCreateRemoteWorkerEnrollment",
   "adminRevokeRemoteWorkerEnrollment",
   "adminTransitionRemoteWorkerScheduling",
@@ -2327,6 +2347,14 @@ const runtimeProfileResponseShape = resourceResponseShape({
   workloadTrust: scalarResponseShape,
   isolationRuntime: scalarResponseShape,
   targetId: scalarResponseShape,
+  targetSelector: {
+    fields: {
+      regionId: scalarResponseShape,
+      resourcePoolId: scalarResponseShape,
+      runtime: scalarResponseShape,
+      architecture: scalarResponseShape,
+    },
+  },
   networkPolicyRef: scalarResponseShape,
   imageUri: scalarResponseShape,
   releaseDigest: scalarResponseShape,
@@ -2570,9 +2598,14 @@ const workspaceSnapshotResponseShape = resourceResponseShape({
   consistencyMode: scalarResponseShape,
   status: scalarResponseShape,
   operationId: scalarResponseShape,
+  retentionSeconds: scalarResponseShape,
+  expiresAt: scalarResponseShape,
+  cleanupOperationId: scalarResponseShape,
+  cleanupTrigger: scalarResponseShape,
   sizeBytes: scalarResponseShape,
   stableErrorCode: scalarResponseShape,
   observedAt: scalarResponseShape,
+  deletedAt: scalarResponseShape,
 });
 const workspaceSnapshotPageResponseShape: ResponseShape = {
   fields: {
@@ -4427,8 +4460,8 @@ export function decodeWorkspaceSnapshotCreateRequest(
 ): WorkspaceSnapshotCreateRequest {
   const source = strictRecord(
     value,
-    ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration"],
-    ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration"],
+    ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration", "retentionSeconds"],
+    ["snapshotId", "sourceSandboxId", "expectedSandboxGeneration", "retentionSeconds"],
   );
   return Object.freeze({
     snapshotId: identifier(source.snapshotId, "/snapshotId"),
@@ -4439,12 +4472,56 @@ export function decodeWorkspaceSnapshotCreateRequest(
       Number.MAX_SAFE_INTEGER,
       "/expectedSandboxGeneration",
     ),
+    retentionSeconds: integer(source.retentionSeconds, 1, 31536000, "/retentionSeconds"),
   });
 }
 export function encodeWorkspaceSnapshotCreateRequest(
   value: WorkspaceSnapshotCreateRequest,
 ): string {
   return JSON.stringify(decodeWorkspaceSnapshotCreateRequest(value));
+}
+export function decodeWorkspaceSnapshotCleanupRequest(
+  value: unknown,
+): WorkspaceSnapshotCleanupRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedSnapshotResourceVersion",
+      "confirmedSnapshotId",
+      "confirmedSourceWorkspaceId",
+      "snapshotDisposition",
+    ],
+    [
+      "expectedSnapshotResourceVersion",
+      "confirmedSnapshotId",
+      "confirmedSourceWorkspaceId",
+      "snapshotDisposition",
+    ],
+  );
+  const expectedSnapshotResourceVersion = string(
+    source.expectedSnapshotResourceVersion,
+    "/expectedSnapshotResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedSnapshotResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedSnapshotResourceVersion");
+  return Object.freeze({
+    expectedSnapshotResourceVersion,
+    confirmedSnapshotId: identifier(source.confirmedSnapshotId, "/confirmedSnapshotId"),
+    confirmedSourceWorkspaceId: identifier(
+      source.confirmedSourceWorkspaceId,
+      "/confirmedSourceWorkspaceId",
+    ),
+    snapshotDisposition: enumValue(
+      source.snapshotDisposition,
+      ["delete"] as const,
+      "/snapshotDisposition",
+    ),
+  });
+}
+export function encodeWorkspaceSnapshotCleanupRequest(
+  value: WorkspaceSnapshotCleanupRequest,
+): string {
+  return JSON.stringify(decodeWorkspaceSnapshotCleanupRequest(value));
 }
 export function decodeWorkspaceSnapshotRestoreRequest(
   value: unknown,
@@ -8591,9 +8668,14 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
       "consistencyMode",
       "status",
       "operationId",
+      "retentionSeconds",
+      "expiresAt",
+      "cleanupOperationId",
+      "cleanupTrigger",
       "sizeBytes",
       "stableErrorCode",
       "observedAt",
+      "deletedAt",
     ],
     [
       "projectRef",
@@ -8614,9 +8696,23 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
     error("INVALID_RESOURCE_VERSION", "/spec/sourceWorkspaceResourceVersion");
   const status = enumValue(
     spec.status,
-    ["pending", "available", "unknown", "failed"] as const,
+    ["pending", "available", "unknown", "failed", "deleting", "cleanup_failed", "deleted"] as const,
     "/spec/status",
   );
+  const retentionSeconds =
+    spec.retentionSeconds === undefined
+      ? undefined
+      : integer(spec.retentionSeconds, 1, 31536000, "/spec/retentionSeconds");
+  const expiresAt =
+    spec.expiresAt === undefined ? undefined : dateTime(spec.expiresAt, "/spec/expiresAt");
+  const cleanupOperationId =
+    spec.cleanupOperationId === undefined
+      ? undefined
+      : identifier(spec.cleanupOperationId, "/spec/cleanupOperationId");
+  const cleanupTrigger =
+    spec.cleanupTrigger === undefined
+      ? undefined
+      : enumValue(spec.cleanupTrigger, ["manual", "retention"] as const, "/spec/cleanupTrigger");
   const sizeBytes =
     spec.sizeBytes === undefined
       ? undefined
@@ -8627,15 +8723,47 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
       : identifier(spec.stableErrorCode, "/spec/stableErrorCode");
   const observedAt =
     spec.observedAt === undefined ? undefined : dateTime(spec.observedAt, "/spec/observedAt");
+  const deletedAt =
+    spec.deletedAt === undefined ? undefined : dateTime(spec.deletedAt, "/spec/deletedAt");
+  const cleanupState = status === "deleting" || status === "cleanup_failed" || status === "deleted";
   if (
+    (retentionSeconds === undefined) !== (expiresAt === undefined) ||
+    cleanupState !== (cleanupOperationId !== undefined && cleanupTrigger !== undefined) ||
     (status === "available" &&
-      (sizeBytes === undefined || stableErrorCode !== undefined || observedAt === undefined)) ||
+      (sizeBytes === undefined ||
+        stableErrorCode !== undefined ||
+        observedAt === undefined ||
+        deletedAt !== undefined)) ||
     (status === "failed" &&
-      (sizeBytes !== undefined || stableErrorCode === undefined || observedAt === undefined)) ||
+      (sizeBytes !== undefined ||
+        stableErrorCode === undefined ||
+        observedAt === undefined ||
+        deletedAt !== undefined)) ||
     (status === "unknown" &&
-      (sizeBytes !== undefined || stableErrorCode !== undefined || observedAt === undefined)) ||
+      (sizeBytes !== undefined ||
+        stableErrorCode !== undefined ||
+        observedAt === undefined ||
+        deletedAt !== undefined)) ||
     (status === "pending" &&
-      (sizeBytes !== undefined || stableErrorCode !== undefined || observedAt !== undefined))
+      (sizeBytes !== undefined ||
+        stableErrorCode !== undefined ||
+        observedAt !== undefined ||
+        deletedAt !== undefined)) ||
+    (status === "deleting" &&
+      (sizeBytes === undefined ||
+        stableErrorCode !== undefined ||
+        observedAt === undefined ||
+        deletedAt !== undefined)) ||
+    (status === "cleanup_failed" &&
+      (sizeBytes === undefined ||
+        stableErrorCode === undefined ||
+        observedAt === undefined ||
+        deletedAt !== undefined)) ||
+    (status === "deleted" &&
+      (sizeBytes === undefined ||
+        stableErrorCode !== undefined ||
+        observedAt === undefined ||
+        deletedAt === undefined))
   )
     error("INVALID_WORKSPACE_SNAPSHOT", "/spec/status");
   return Object.freeze({
@@ -8653,9 +8781,14 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
       ),
       status,
       operationId: identifier(spec.operationId, "/spec/operationId"),
+      ...(retentionSeconds === undefined ? {} : { retentionSeconds }),
+      ...(expiresAt === undefined ? {} : { expiresAt }),
+      ...(cleanupOperationId === undefined ? {} : { cleanupOperationId }),
+      ...(cleanupTrigger === undefined ? {} : { cleanupTrigger }),
       ...(sizeBytes === undefined ? {} : { sizeBytes }),
       ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
       ...(observedAt === undefined ? {} : { observedAt }),
+      ...(deletedAt === undefined ? {} : { deletedAt }),
     }),
   });
 }
@@ -13623,6 +13756,44 @@ export class Client {
       result.value.metadata.tenantRef.id !== tenantId ||
       result.value.spec.projectRef.id !== projectId ||
       result.value.metadata.uid !== snapshotId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async cleanupAdminWorkspaceSnapshot(
+    tenantId: string,
+    projectId: string,
+    snapshotId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: WorkspaceSnapshotCleanupRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<WorkspaceSnapshot>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(snapshotId, "/snapshotId");
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeWorkspaceSnapshotCleanupRequest(body);
+    if (checked.confirmedSnapshotId !== snapshotId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedSnapshotId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/workspace-snapshots/${snapshotId}:cleanup`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeWorkspaceSnapshotCleanupRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 202)
+      throw await this.problem("adminCleanupWorkspaceSnapshot", response);
+    const result = parseWorkspaceSnapshot(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.metadata.uid !== snapshotId ||
+      result.value.spec.sourceWorkspaceId !== checked.confirmedSourceWorkspaceId
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;

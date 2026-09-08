@@ -35,6 +35,7 @@ type foundationStore interface {
 	GetAdminSandbox(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.AdminSandboxSnapshot, error)
 	ListAdminSandboxes(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminSandboxPage, error)
 	CreateWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, postgres.WorkspaceSnapshotCreateInput) (postgres.WorkspaceSnapshot, error)
+	CleanupWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, postgres.WorkspaceSnapshotCleanupInput) (postgres.WorkspaceSnapshot, error)
 	RestoreWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, postgres.WorkspaceSnapshotRestoreInput) (internalcoordination.FoundationSandboxSnapshot, error)
 	GetWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.WorkspaceSnapshot, error)
 	ListWorkspaceSnapshots(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.WorkspaceSnapshotPage, error)
@@ -132,6 +133,8 @@ func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		server.getWorkspaceSnapshot(writer, request, tenantID, projectID, profileID, requestID, principal)
 	case "restore-workspace-snapshot":
 		server.restoreWorkspaceSnapshot(writer, request, tenantID, projectID, profileID, requestID, principal)
+	case "cleanup-workspace-snapshot":
+		server.cleanupWorkspaceSnapshot(writer, request, tenantID, projectID, profileID, requestID, principal)
 	case "admin-access-grant-collection":
 		server.listSandboxAccessGrants(writer, request, tenantID, projectID, profileID, requestID, principal)
 	case "revoke-access-grant":
@@ -553,7 +556,42 @@ func (server *FoundationHTTPServer) createWorkspaceSnapshot(writer http.Response
 	value, err := server.store.CreateWorkspaceSnapshot(request.Context(), tenantID, principal, postgres.WorkspaceSnapshotCreateInput{
 		Scope: internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID}, SnapshotID: validated.Body.SnapshotID,
 		SourceSandboxID: validated.Body.SourceSandboxID, ExpectedSandboxGeneration: validated.Body.ExpectedSandboxGeneration,
-		Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
+		RetentionSeconds: validated.Body.RetentionSeconds,
+		Mutation:         internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
+	})
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	body, err = platform.EncodeWorkspaceSnapshotResponseJSON(common.ResponseEnvelope[platform.WorkspaceSnapshot]{Value: workspaceSnapshotResource(value)})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Resource-Version", strconv.FormatInt(value.ResourceVersion, 10))
+	writeJSONResponse(writer, http.StatusAccepted, requestID, body)
+}
+
+func (server *FoundationHTTPServer) cleanupWorkspaceSnapshot(writer http.ResponseWriter, request *http.Request, tenantID, projectID, snapshotID, requestID string, principal *authn.VerifiedPrincipal) {
+	key, body, ok := foundationMutationBody(writer, request)
+	if !ok {
+		return
+	}
+	validated, err := openapi.ValidateCleanupAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapshotID, requestID, key, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	expectedVersion, err := strconv.ParseInt(validated.Body.ExpectedSnapshotResourceVersion, 10, 64)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	value, err := server.store.CleanupWorkspaceSnapshot(request.Context(), tenantID, principal, postgres.WorkspaceSnapshotCleanupInput{
+		Scope: internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID}, SnapshotID: snapshotID,
+		ExpectedSnapshotResourceVersion: expectedVersion, ConfirmedSnapshotID: validated.Body.ConfirmedSnapshotID,
+		ConfirmedSourceWorkspaceID: validated.Body.ConfirmedSourceWorkspaceID,
+		Mutation:                   internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
 	})
 	if err != nil {
 		writeFoundationError(writer, err)
@@ -919,12 +957,25 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 }
 
 func workspaceSnapshotResource(snapshot postgres.WorkspaceSnapshot) platform.WorkspaceSnapshot {
-	stableErrorCode, observedAt := "", ""
+	stableErrorCode, expiresAt, observedAt, deletedAt := "", "", "", ""
+	cleanupOperationID, cleanupTrigger := "", ""
 	if snapshot.StableErrorCode != nil {
 		stableErrorCode = *snapshot.StableErrorCode
 	}
 	if snapshot.ObservedAt != nil {
 		observedAt = snapshot.ObservedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if snapshot.ExpiresAt != nil {
+		expiresAt = snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	if snapshot.CleanupOperationID != nil {
+		cleanupOperationID = *snapshot.CleanupOperationID
+	}
+	if snapshot.CleanupTrigger != nil {
+		cleanupTrigger = *snapshot.CleanupTrigger
+	}
+	if snapshot.DeletedAt != nil {
+		deletedAt = snapshot.DeletedAt.UTC().Format(time.RFC3339Nano)
 	}
 	return platform.WorkspaceSnapshot{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "WorkspaceSnapshot", Metadata: common.ResourceMetadata{
 		UID: snapshot.SnapshotID, Name: snapshot.SnapshotID,
@@ -934,7 +985,9 @@ func workspaceSnapshotResource(snapshot postgres.WorkspaceSnapshot) platform.Wor
 		ProjectRef:        common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
 		SourceWorkspaceID: snapshot.SourceWorkspaceID, SourceWorkspaceResourceVersion: strconv.FormatInt(snapshot.SourceWorkspaceResourceVersion, 10),
 		Backend: snapshot.Backend, ConsistencyMode: snapshot.ConsistencyMode, Status: snapshot.Status,
-		OperationID: snapshot.OperationID, SizeBytes: snapshot.SizeBytes, StableErrorCode: stableErrorCode, ObservedAt: observedAt,
+		OperationID: snapshot.OperationID, RetentionSeconds: snapshot.RetentionSeconds, ExpiresAt: expiresAt,
+		CleanupOperationID: cleanupOperationID, CleanupTrigger: cleanupTrigger, SizeBytes: snapshot.SizeBytes,
+		StableErrorCode: stableErrorCode, ObservedAt: observedAt, DeletedAt: deletedAt,
 	}}
 }
 
@@ -1012,6 +1065,8 @@ func foundationPath(path string) (admin bool, tenantID, projectID, resourceID, s
 		snapshotID, snapshotAction := parts[4], "get-workspace-snapshot"
 		if value, found := strings.CutSuffix(snapshotID, ":restore"); found {
 			snapshotID, snapshotAction = value, "restore-workspace-snapshot"
+		} else if value, found := strings.CutSuffix(snapshotID, ":cleanup"); found {
+			snapshotID, snapshotAction = value, "cleanup-workspace-snapshot"
 		}
 		return true, parts[0], parts[2], snapshotID, "", 0, snapshotAction, snapshotID != ""
 	}
@@ -1066,6 +1121,8 @@ func foundationPermission(admin bool, action, method string) (projectPermission,
 		return "projects.get", "snapshots.get", true
 	case admin && action == "restore-workspace-snapshot" && method == http.MethodPost:
 		return "projects.act", "snapshots.act", true
+	case admin && action == "cleanup-workspace-snapshot" && method == http.MethodPost:
+		return "projects.act", "snapshots.delete", true
 	case admin && action == "admin-access-grant-collection" && method == http.MethodGet:
 		return "projects.get", "sandboxes.get", true
 	case admin && action == "revoke-access-grant" && method == http.MethodPost:

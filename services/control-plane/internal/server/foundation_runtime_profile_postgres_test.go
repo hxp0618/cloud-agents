@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,6 +24,7 @@ import (
 	api "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/jackc/pgx/v5"
@@ -427,7 +430,7 @@ func TestFoundationWorkspaceSnapshotPostgres(t *testing.T) {
 	if err != nil || sandbox.Value.Spec.ObservedState != "stopped" || !sandbox.Value.Spec.WriterReleased {
 		t.Fatalf("snapshot source=%+v err=%v", sandbox.Value.Spec, err)
 	}
-	request := platform.WorkspaceSnapshotCreateRequest{SnapshotID: "snapshot", SourceSandboxID: "sandbox", ExpectedSandboxGeneration: sandbox.Value.Spec.Generation}
+	request := platform.WorkspaceSnapshotCreateRequest{SnapshotID: "snapshot", SourceSandboxID: "sandbox", ExpectedSandboxGeneration: sandbox.Value.Spec.Generation, RetentionSeconds: 3600}
 	if _, err := user.CreateAdminWorkspaceSnapshot(ctx, "tenant", "project", "request-snapshot-user", "snapshot-user-denied-key", request); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("ordinary user snapshot status=%d err=%v", clientStatus(err), err)
 	}
@@ -564,6 +567,12 @@ func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
 	if err != nil || replay.Value.OperationID != restored.Value.OperationID {
 		t.Fatalf("restore replay=%+v err=%v", replay.Value, err)
 	}
+	_, err = admin.CleanupAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-restore-cleanup", "snapshot-restore-cleanup-key",
+		platform.WorkspaceSnapshotCleanupRequest{ExpectedSnapshotResourceVersion: available.Value.Metadata.ResourceVersion,
+			ConfirmedSnapshotID: "snapshot", ConfirmedSourceWorkspaceID: available.Value.Spec.SourceWorkspaceID, SnapshotDisposition: "delete"})
+	if clientStatus(err) != http.StatusConflict {
+		t.Fatalf("active restore cleanup status=%d err=%v", clientStatus(err), err)
+	}
 	var restores, audits, writerFences int
 	if err := owner.QueryRow(ctx, `SELECT
 (SELECT count(*) FROM cloud_agents.workspace_snapshot_restores WHERE tenant_id='tenant' AND project_uid='project'
@@ -583,8 +592,185 @@ func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
 	encoded, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": restored.Value.OperationID,
 		"workspaceId": restored.Value.WorkspaceID, "sandboxId": restored.Value.SandboxID,
 		"ordinaryUserStatus": 403, "staleVersionStatus": 409, "idempotentReplay": true,
-		"writerFenceReserved": true, "adminContentRedacted": true})
+		"writerFenceReserved": true, "activeRestoreCleanupStatus": 409, "adminContentRedacted": true})
 	t.Logf("FOUNDATION_RESTORE_API=%s", encoded)
+}
+
+func TestFoundationWorkspaceSnapshotCleanupPostgres(t *testing.T) {
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
+	if runtimeURL == "" || ownerURL == "" {
+		t.Skip("isolated foundation Workspace snapshot cleanup PostgreSQL environment not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimePool.Close()
+	ownerConfig, err := pgxpool.ParseConfig(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerConfig.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner")
+		return err
+	}
+	owner, err := pgxpool.NewWithConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	verifier, adminToken, userToken := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
+	available, err := admin.GetAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup-source")
+	if err != nil || available.Value.Spec.Status != "available" || available.Value.Spec.RetentionSeconds == nil ||
+		*available.Value.Spec.RetentionSeconds != 3600 || available.Value.Spec.ExpiresAt == "" {
+		t.Fatalf("cleanup source=%+v err=%v", available.Value, err)
+	}
+	page, err := admin.ListAdminWorkspaceSnapshots(ctx, "tenant", "project", "request-cleanup-list", 200, "")
+	if err != nil || len(page.Value.WorkspaceSnapshots) != 1 || page.Value.WorkspaceSnapshots[0].Metadata.UID != "snapshot" {
+		t.Fatalf("cleanup snapshot list=%+v err=%v", page.Value, err)
+	}
+	if os.Getenv("CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT") != "" {
+		verifySnapshotAdminBrowser(t, runtimePool)
+	}
+	var databaseVersion int64
+	var databaseWorkspace, databaseStatus, physicalSnapshotID, contentDigest string
+	var sizeBytes int64
+	if err := owner.QueryRow(ctx, `SELECT resource_version, source_workspace_uid, status,
+		physical_snapshot_uid, content_digest, size_bytes FROM cloud_agents.workspace_snapshots
+		WHERE tenant_id='tenant' AND project_uid='project' AND snapshot_uid='snapshot'`).Scan(
+		&databaseVersion, &databaseWorkspace, &databaseStatus, &physicalSnapshotID, &contentDigest, &sizeBytes,
+	); err != nil || strconv.FormatInt(databaseVersion, 10) != available.Value.Metadata.ResourceVersion ||
+		databaseWorkspace != available.Value.Spec.SourceWorkspaceID || databaseStatus != "available" ||
+		physicalSnapshotID == "" || !strings.HasPrefix(contentDigest, "sha256:") || sizeBytes < 1 {
+		t.Fatalf("cleanup database authority rv=%d workspace=%q status=%q physical=%q digest=%q size=%d err=%v api=%+v",
+			databaseVersion, databaseWorkspace, databaseStatus, physicalSnapshotID, contentDigest, sizeBytes, err, available.Value)
+	}
+	body := platform.WorkspaceSnapshotCleanupRequest{ExpectedSnapshotResourceVersion: available.Value.Metadata.ResourceVersion,
+		ConfirmedSnapshotID: "snapshot", ConfirmedSourceWorkspaceID: available.Value.Spec.SourceWorkspaceID,
+		SnapshotDisposition: "delete"}
+	if _, err := user.CleanupAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup-user", "snapshot-cleanup-user-key", body); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user cleanup status=%d err=%v", clientStatus(err), err)
+	}
+	version, _ := strconv.ParseInt(body.ExpectedSnapshotResourceVersion, 10, 64)
+	stale := body
+	stale.ExpectedSnapshotResourceVersion = strconv.FormatInt(version-1, 10)
+	if _, err := admin.CleanupAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup-stale", "snapshot-cleanup-stale-key", stale); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("stale cleanup status=%d err=%v", clientStatus(err), err)
+	}
+	failed, err := admin.CleanupAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup-failure", "snapshot-cleanup-failure-key", body)
+	if err != nil {
+		t.Fatalf("failure-path acceptance: %v", err)
+	}
+	subject := "sha256:" + strings.Repeat("d", 64)
+	claim, err := store.ClaimWorkspaceSnapshotCleanup(ctx, "cleanup-test", "cleanup-test-inc", "cleanup-test-token", 30, subject, "audit-cleanup-test-claim")
+	if err != nil || !claim.Found || claim.Claim.OperationID != failed.Value.Spec.CleanupOperationID {
+		t.Fatalf("cleanup failure claim=%+v err=%v", claim, err)
+	}
+	renewed, err := store.RenewWorkspaceSnapshotCleanup(ctx, claim.Claim, 60)
+	if err != nil || !renewed.After(claim.Claim.ClaimExpiresAt) {
+		t.Fatalf("cleanup renewal=%s err=%v", renewed, err)
+	}
+	if _, err := store.RenewWorkspaceSnapshotCleanup(ctx, claim.Claim, 60); err == nil {
+		t.Fatal("stale cleanup renewal accepted")
+	}
+	claim.Claim.ClaimExpiresAt = renewed
+	settled, err := store.SettleWorkspaceSnapshotCleanup(ctx, postgres.WorkspaceSnapshotCleanupSettlement{
+		Claim: claim.Claim, Transition: "failed", StableErrorCode: "SNAPSHOT_OWNER_CONFLICT",
+		SubjectDigest: subject, AuditFactID: "audit-cleanup-test-failed",
+	})
+	if err != nil || settled.OperationState != "failed" {
+		t.Fatalf("cleanup terminal failure=%+v err=%v", settled, err)
+	}
+	failedState, err := admin.GetAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup-failed-state")
+	if err != nil || failedState.Value.Spec.Status != "cleanup_failed" || failedState.Value.Spec.StableErrorCode != "SNAPSHOT_OWNER_CONFLICT" {
+		t.Fatalf("cleanup failed state=%+v err=%v", failedState.Value, err)
+	}
+	body.ExpectedSnapshotResourceVersion = failedState.Value.Metadata.ResourceVersion
+	accepted, err := admin.CleanupAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup", "workspace-snapshot-cleanup-key", body)
+	if err != nil || accepted.Value.Spec.Status != "deleting" || accepted.Value.Spec.CleanupOperationID == "" ||
+		accepted.Value.Spec.CleanupTrigger != "manual" {
+		t.Fatalf("cleanup accepted=%+v err=%v", accepted.Value, err)
+	}
+	replay, err := admin.CleanupAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", "request-cleanup-replay", "workspace-snapshot-cleanup-key", body)
+	if err != nil || replay.Value.Spec.CleanupOperationID != accepted.Value.Spec.CleanupOperationID {
+		t.Fatalf("cleanup replay=%+v err=%v", replay.Value, err)
+	}
+	var pending, operations, audits int
+	if err := owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM cloud_agents.outbox_events WHERE tenant_id='tenant' AND operation_id=$1 AND state='pending'),
+		(SELECT count(*) FROM cloud_agents.platform_operations WHERE tenant_id='tenant' AND operation_id=$1 AND state='pending'),
+		(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE tenant_id='tenant' AND operation_id=$1
+		  AND transition='workspace.snapshot.cleanup.accept.manual')`, accepted.Value.Spec.CleanupOperationID).
+		Scan(&pending, &operations, &audits); err != nil || pending != 1 || operations != 1 || audits != 1 {
+		t.Fatalf("cleanup authority=%d/%d/%d err=%v", pending, operations, audits, err)
+	}
+	raw, _ := json.Marshal(accepted.Value)
+	for _, forbidden := range []string{"physicalSnapshot", "contentDigest", "endpoint", "credentialRef", "providerCredentialRef", "prompt", "artifact", "fileContent"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("cleanup response disclosed %q: %s", forbidden, raw)
+		}
+	}
+	encoded, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": accepted.Value.Spec.CleanupOperationID,
+		"ordinaryUserStatus": 403, "staleVersionStatus": 409, "idempotentReplay": true,
+		"failedOperationId": failed.Value.Spec.CleanupOperationID, "failedCleanupRetried": true, "renewalFenced": true,
+		"status": accepted.Value.Spec.Status, "trigger": accepted.Value.Spec.CleanupTrigger, "adminContentRedacted": true})
+	t.Logf("FOUNDATION_SNAPSHOT_CLEANUP_API=%s", encoded)
+}
+
+func TestFoundationWorkspaceSnapshotExpiryPostgres(t *testing.T) {
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	if runtimeURL == "" {
+		t.Skip("isolated foundation Workspace snapshot expiry PostgreSQL environment not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimePool.Close()
+	verifier, adminToken, _ := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	sandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", "request-expiry-source")
+	if err != nil || sandbox.Value.Spec.ObservedState != "stopped" || !sandbox.Value.Spec.WriterReleased {
+		t.Fatalf("expiry source=%+v err=%v", sandbox.Value, err)
+	}
+	request := platform.WorkspaceSnapshotCreateRequest{SnapshotID: "snapshot-expiring", SourceSandboxID: "sandbox",
+		ExpectedSandboxGeneration: sandbox.Value.Spec.Generation, RetentionSeconds: 1}
+	created, err := admin.CreateAdminWorkspaceSnapshot(ctx, "tenant", "project", "request-expiry-create", "workspace-snapshot-expiry-key", request)
+	if err != nil || created.Value.Spec.Status != "pending" || created.Value.Spec.RetentionSeconds == nil ||
+		*created.Value.Spec.RetentionSeconds != 1 || created.Value.Spec.ExpiresAt == "" {
+		t.Fatalf("expiring snapshot=%+v err=%v", created.Value, err)
+	}
+	encoded, _ := json.Marshal(map[string]any{"snapshotId": created.Value.Metadata.UID,
+		"operationId": created.Value.Spec.OperationID, "retentionSeconds": *created.Value.Spec.RetentionSeconds,
+		"expiresAt": created.Value.Spec.ExpiresAt, "status": created.Value.Spec.Status})
+	t.Logf("FOUNDATION_SNAPSHOT_EXPIRY_API=%s", encoded)
 }
 
 func TestFoundationSandboxExecPostgres(t *testing.T) {
@@ -742,10 +928,124 @@ func pgErrorCode(err error) string {
 
 func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, string, string) {
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.act snapshots.create snapshots.get snapshots.list network-policies.update",
+		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.act snapshots.create snapshots.delete snapshots.get snapshots.list network-policies.update",
 		"environment-profiles.list environments.create projects.act projects.get sandboxes.update",
 	)
 	return verifier, tokens[0], tokens[1]
+}
+
+// Optional real-browser check uses the same persisted resources and production Admin handlers.
+func verifySnapshotAdminBrowser(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	verifier, tokens := foundationVerifierAndScopedTokens(t,
+		"projects.act projects.get targets.list targets.get leases.list leases.get workers.list releases.list profiles.list profiles.get sandboxes.list snapshots.list snapshots.get snapshots.delete storage-policies.list network-policies.list quotas.get quotas.update audit.list operations.list",
+	)
+	store, err := postgres.NewDurableCoordinationService(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundation, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, err := NewAdminDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := NewAdminEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := NewAdminEnvironmentProfileHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases, err := NewAdminWorkerReleaseHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quota, err := NewProjectLeaseQuotaHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage, err := NewStoragePolicyHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	network, err := NewNetworkPolicyHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := []struct {
+		handles func(string) bool
+		handler http.Handler
+	}{
+		{HandlesFoundationPath, foundation}, {HandlesAdminEnvironmentLeasePath, leases},
+		{HandlesAdminEnvironmentProfilePath, profiles}, {HandlesAdminWorkerReleasePath, releases},
+		{HandlesProjectLeaseQuotaPath, quota}, {HandlesStoragePolicyPath, storage}, {HandlesNetworkPolicyPath, network},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, route := range routes {
+			if route.handles(r.URL.Path) {
+				route.handler.ServeHTTP(w, r)
+				return
+			}
+		}
+		targets.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	admin, err := api.NewHTTPClientWithClient(server.URL, tokens[0], server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.GetAdminProjectLeaseQuota(ctx, "tenant", "project", "request-browser-quota-get"); clientStatus(err) == http.StatusNotFound {
+		_, err = admin.SetAdminProjectLeaseQuota(ctx, "tenant", "project", "request-browser-quota-set", "browser-quota-set-key",
+			platform.ProjectLeaseQuotaSetRequest{ExpectedResourceVersion: "0", MaxConcurrentLeases: 8,
+				MaxCPUMillis: 16000, MaxMemoryBytes: 34359738368, MaxLeaseTTLSeconds: 3600})
+	}
+	if err != nil {
+		t.Fatalf("prepare Admin browser quota: %v", err)
+	}
+	viteContext, stopVite := context.WithCancel(ctx)
+	var viteLog bytes.Buffer
+	vite := exec.CommandContext(viteContext, "./node_modules/.bin/vite")
+	vite.Dir = "apps/admin-web"
+	vite.Env = append(os.Environ(), "CLOUD_AGENTS_CONTROL_PLANE_URL="+server.URL)
+	vite.Stdout = &viteLog
+	vite.Stderr = &viteLog
+	if err := vite.Start(); err != nil {
+		t.Fatalf("start Admin Web: %v", err)
+	}
+	defer func() {
+		stopVite()
+		_ = vite.Wait()
+	}()
+	appURL := "http://127.0.0.1:4174"
+	ready := false
+	client := &http.Client{Timeout: time.Second}
+	for attempt := 0; attempt < 200; attempt++ {
+		response, err := client.Get(appURL)
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				ready = true
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !ready {
+		t.Fatalf("Admin Web did not start:\n%s", viteLog.String())
+	}
+	command := exec.CommandContext(ctx, os.Getenv("CLOUD_AGENTS_FOUNDATION_BROWSER_PYTHON"), os.Getenv("CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT"))
+	command.Env = append(os.Environ(), "SNAPSHOT_ADMIN_APP_URL="+appURL, "SNAPSHOT_ADMIN_TOKEN="+tokens[0])
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("Admin browser check: %v\n%s", err, output)
+	} else {
+		t.Log(strings.TrimSpace(string(output)))
+	}
 }
 
 func foundationVerifierAndScopedTokens(t *testing.T, scopes ...string) (*authn.ConfiguredVerifier, []string) {

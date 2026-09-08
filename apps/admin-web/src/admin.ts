@@ -92,6 +92,7 @@ export type AdminClient = Pick<
   | "listAdminWorkspaceSnapshots"
   | "createAdminWorkspaceSnapshot"
   | "getAdminWorkspaceSnapshot"
+  | "cleanupAdminWorkspaceSnapshot"
   | "restoreAdminWorkspaceSnapshot"
 >;
 
@@ -378,7 +379,12 @@ export function pageAdminTargets(
     count - 1,
     Math.max(0, Number.isFinite(requestedPage) ? Math.floor(requestedPage) : 0),
   );
-  return { index, count, size, items: targets.slice(index * size, (index + 1) * size) };
+  return {
+    index,
+    count,
+    size,
+    items: targets.slice(index * size, (index + 1) * size),
+  };
 }
 
 export async function listAdminTargets(

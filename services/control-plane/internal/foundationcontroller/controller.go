@@ -147,6 +147,53 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 }
 
 func (controller *Controller) runWorkspaceSnapshotOne(ctx context.Context, subject string) (bool, error) {
+	cleanupReaped, err := controller.store.ReapWorkspaceSnapshotCleanup(ctx, subject, randomIdentifier("audit"))
+	if err != nil {
+		return false, err
+	}
+	if cleanupReaped.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("workspace snapshot cleanup reaper outcome is unknown")
+	}
+	if cleanupReaped.Found {
+		return true, nil
+	}
+	expired, err := controller.store.ExpireWorkspaceSnapshot(ctx, subject)
+	if err != nil {
+		return false, err
+	}
+	if expired.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("workspace snapshot expiry outcome is unknown")
+	}
+	if expired.Found {
+		return true, nil
+	}
+	cleanupClaim, err := controller.store.ClaimWorkspaceSnapshotCleanup(ctx, controller.holder, controller.incarnation,
+		randomIdentifier("claim"), int32(claimLease/time.Second), subject, randomIdentifier("audit"))
+	if err != nil {
+		return false, err
+	}
+	if cleanupClaim.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("workspace snapshot cleanup claim outcome is unknown")
+	}
+	if cleanupClaim.Found {
+		claim := cleanupClaim.Claim
+		result, effectErr := controller.executeSnapshotCleanupWithRenewal(ctx, &claim)
+		if effectErr != nil {
+			return true, effectErr
+		}
+		transition, code := classify(result.Err, claim.DeliveryAttempts)
+		settled, settleErr := controller.store.SettleWorkspaceSnapshotCleanup(ctx, postgres.WorkspaceSnapshotCleanupSettlement{
+			Claim: claim, Transition: transition, StableErrorCode: code,
+			SubjectDigest: subject, AuditFactID: randomIdentifier("audit"),
+		})
+		if settleErr != nil {
+			return true, settleErr
+		}
+		if settled.DatabaseOutcome != postgres.DatabaseCommitted {
+			return true, errors.New("workspace snapshot cleanup settlement outcome is unknown")
+		}
+		return true, nil
+	}
 	reaped, err := controller.store.ReapWorkspaceSnapshot(ctx, subject, randomIdentifier("audit"))
 	if err != nil {
 		return false, err
@@ -186,6 +233,39 @@ func (controller *Controller) runWorkspaceSnapshotOne(ctx context.Context, subje
 		return true, errors.New("workspace snapshot settlement outcome is unknown")
 	}
 	return true, nil
+}
+
+func (controller *Controller) executeSnapshotCleanupWithRenewal(ctx context.Context, claim *postgres.WorkspaceSnapshotCleanupClaim) (EffectResult, error) {
+	effectCtx, cancel := context.WithTimeout(ctx, effectTimeout)
+	defer cancel()
+	results := make(chan EffectResult, 1)
+	go func() {
+		err := controller.docker.CleanupFoundationWorkspaceSnapshot(effectCtx, claim.TargetEndpoint, claim.CredentialRef,
+			dockertarget.FoundationWorkspaceSnapshotCleanup{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+				TargetID: claim.TargetID, SourceWorkspaceID: claim.SourceWorkspaceID,
+				SnapshotID: claim.SnapshotID, PhysicalSnapshotID: claim.PhysicalSnapshotID})
+		results <- EffectResult{CleanupComplete: err == nil, Err: err}
+	}()
+	ticker := time.NewTicker(renewInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case result := <-results:
+			if ctx.Err() != nil {
+				return EffectResult{}, ctx.Err()
+			}
+			return result, nil
+		case <-ticker.C:
+			expiry, err := controller.store.RenewWorkspaceSnapshotCleanup(ctx, *claim, int32(claimLease/time.Second))
+			if err != nil {
+				cancel()
+				return EffectResult{}, err
+			}
+			claim.ClaimExpiresAt = expiry
+		case <-ctx.Done():
+			return EffectResult{}, ctx.Err()
+		}
+	}
 }
 
 func (controller *Controller) executeSnapshotWithRenewal(ctx context.Context, claim *postgres.WorkspaceSnapshotClaim) (EffectResult, error) {

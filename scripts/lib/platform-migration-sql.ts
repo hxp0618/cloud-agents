@@ -358,6 +358,7 @@ export function classifyMigrationStatement(
         "000080",
         "000081",
         "000082",
+        "000084",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -586,6 +587,16 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000084",
+          [
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -720,6 +731,14 @@ export function classifyMigrationStatement(
         ]).get(targetIdentity) === subcommand[2] &&
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
+      const dropWorkspaceSnapshotConstraint =
+        migrationId === "000084" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:workspace_snapshots" &&
+        new Set(["WORKSPACE_SNAPSHOTS_STATUS_CHECK", "WORKSPACE_SNAPSHOTS_CHECK"]).has(
+          subcommand[2] ?? "",
+        ) &&
+        subcommand[0] === "DROP" &&
+        subcommand[1] === "CONSTRAINT";
       if (
         !exact &&
         !additive &&
@@ -734,7 +753,8 @@ export function classifyMigrationStatement(
         !dropRemoteWorkerEnrollmentActivityConstraint &&
         !dropAdminDeniedWriteConstraint &&
         !dropFoundationObservationConstraint &&
-        !dropSandboxAccessConstraint
+        !dropSandboxAccessConstraint &&
+        !dropWorkspaceSnapshotConstraint
       )
         reject(tokens);
       return classification("ALTER", "TABLE", targetIdentity, null);

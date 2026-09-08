@@ -95,7 +95,9 @@ const PLATFORM_SCHEMAS = [
   "worker-release.schema.json",
   "worker.schema.json",
   "workspace-snapshot-create-request.schema.json",
+  "workspace-snapshot-cleanup-request.schema.json",
   "workspace-snapshot-page.schema.json",
+  "workspace-snapshot-restore-request.schema.json",
   "workspace-snapshot.schema.json",
   "user-environment-create-request.schema.json",
   "user-environment.schema.json",
@@ -301,6 +303,7 @@ function validateJSONSDKAuthority(root: string): void {
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
   const expected = [
     "adminCleanupDeploymentTarget",
+    "adminCleanupWorkspaceSnapshot",
     "adminCreateEnvironmentProfile",
     "adminCreateRemoteWorkerEnrollment",
     "adminCreateRuntimeProfile",

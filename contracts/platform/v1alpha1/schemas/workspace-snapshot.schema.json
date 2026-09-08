@@ -27,17 +27,29 @@
         "sourceWorkspaceResourceVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
         "backend": { "const": "docker-volume-v1" },
         "consistencyMode": { "const": "offline" },
-        "status": { "enum": ["pending", "available", "unknown", "failed"] },
+        "status": {
+          "enum": ["pending", "available", "unknown", "failed", "deleting", "cleanup_failed", "deleted"]
+        },
         "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "retentionSeconds": { "type": "integer", "minimum": 1, "maximum": 31536000 },
+        "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "cleanupOperationId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "cleanupTrigger": { "enum": ["manual", "retention"] },
         "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 67108864 },
         "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+        "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "deletedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       }
     }
   },
   "x-cloud-agents-semantic-constraints": [
     "Admin projection is metadata-only and never exposes paths, file bytes, content digests, endpoints, credentials or Secret bytes",
     "available requires sizeBytes and observedAt; failed requires stableErrorCode and observedAt",
-    "docker-volume-v1 uses an offline copy after the source Workspace writer is durably fenced"
+    "docker-volume-v1 uses an offline copy after the source Workspace writer is durably fenced",
+    "retentionSeconds and expiresAt are immutable database-clock authority for snapshots created after retention support was introduced",
+    "cleanupOperationId and cleanupTrigger never expose a physical volume name, endpoint, credential, digest or content",
+    "deleted snapshots retain metadata and size for audit but cannot be restored"
   ]
 }

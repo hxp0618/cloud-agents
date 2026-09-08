@@ -321,6 +321,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 
 	requireCallerClosure(t, tree, "withFoundationOperation",
 		"*DurableCoordinationService.ClaimRemoteWorkerEnrollmentSecret",
+		"*DurableCoordinationService.CleanupWorkspaceSnapshot",
 		"*DurableCoordinationService.CreateFoundationSandbox",
 		"*DurableCoordinationService.CreateRemoteWorkerEnrollment",
 		"*DurableCoordinationService.CreateRuntimeProfile",

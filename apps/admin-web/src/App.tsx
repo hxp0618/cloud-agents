@@ -34,6 +34,7 @@ import {
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
   type WorkspaceSnapshot,
+  type WorkspaceSnapshotCleanupRequest,
   type WorkspaceSnapshotCreateRequest,
   type WorkspaceSnapshotRestoreRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -236,6 +237,7 @@ function phaseTone(phase: string): string {
       "starting",
       "stopping",
       "drained",
+      "deleting",
     ].includes(phase)
   )
     return "running";
@@ -244,7 +246,8 @@ function phaseTone(phase: string): string {
     phase === "failed" ||
     phase === "blocked" ||
     phase === "disabled" ||
-    phase === "cleanup-pending"
+    phase === "cleanup-pending" ||
+    phase === "cleanup_failed"
   )
     return "danger";
   return "neutral";
@@ -280,6 +283,9 @@ const phaseMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   stopping: "phase.stopping",
   "cleanup-pending": "phase.cleanupPending",
   available: "phase.available",
+  deleting: "phase.deleting",
+  cleanup_failed: "phase.cleanupFailed",
+  deleted: "phase.deleted",
   unknown: "phase.unknown",
   stopped: "phase.stopped",
   Pending: "phase.pending",
@@ -572,6 +578,7 @@ export function App() {
   const [workspaceSnapshots, setWorkspaceSnapshots] = useState<readonly WorkspaceSnapshot[]>(
     Object.freeze([]),
   );
+  const [snapshotCleanup, setSnapshotCleanup] = useState<WorkspaceSnapshot | null>(null);
   const [selectedSandboxId, setSelectedSandboxId] = useState("");
   const [sandboxAccessGrants, setSandboxAccessGrants] = useState<
     readonly AdminSandboxAccessGrant[]
@@ -668,7 +675,11 @@ export function App() {
   });
   const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
   const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
-  const [snapshotForm, setSnapshotForm] = useState({ snapshotId: "", sourceSandboxId: "" });
+  const [snapshotForm, setSnapshotForm] = useState({
+    snapshotId: "",
+    sourceSandboxId: "",
+    retentionSeconds: "604800",
+  });
   const [restoreForm, setRestoreForm] = useState({
     snapshotId: "",
     workspaceId: "",
@@ -939,7 +950,7 @@ export function App() {
       ["pending", "unknown"].includes(spec.observedState),
     );
     const snapshotPending = workspaceSnapshots.some(({ spec }) =>
-      ["pending", "unknown"].includes(spec.status),
+      ["pending", "unknown", "deleting"].includes(spec.status),
     );
     const lifecyclePending =
       targets.some(({ spec }) => spec.observedPhase === "probing") ||
@@ -1055,6 +1066,7 @@ export function App() {
     setSandboxDetailOpen(false);
     setSandboxLifecycleTransition(null);
     setSandboxGrantRevoke(null);
+    setSnapshotCleanup(null);
     setMaintenanceDetailOpen(false);
     setProfileTransition(null);
     setRuntimeProfileTransition(null);
@@ -1088,6 +1100,7 @@ export function App() {
     setSelectedRuntimeProfileVersionId("");
     setSandboxes(Object.freeze([]));
     setWorkspaceSnapshots(Object.freeze([]));
+    setSnapshotCleanup(null);
     setSelectedSandboxId("");
     setSandboxAccessGrants(Object.freeze([]));
     setSandboxGrantRevoke(null);
@@ -1097,7 +1110,11 @@ export function App() {
     setSelectedStoragePolicyId("");
     setStoragePolicyAudit(Object.freeze([]));
     setStoragePolicyForm(storagePolicyFormFrom());
-    setSnapshotForm({ snapshotId: "", sourceSandboxId: "" });
+    setSnapshotForm({
+      snapshotId: "",
+      sourceSandboxId: "",
+      retentionSeconds: "604800",
+    });
     setRestoreForm({
       snapshotId: "",
       workspaceId: "",
@@ -1683,7 +1700,10 @@ export function App() {
     setSandboxGrantRevoke(null);
     void runOperation(
       operationKey,
-      { key: "operation.revokeSandboxGrant", values: { name: grant.metadata.uid } },
+      {
+        key: "operation.revokeSandboxGrant",
+        values: { name: grant.metadata.uid },
+      },
       async (signal) => {
         const result = await client.revokeAdminSandboxAccessGrant(
           connection.tenantId,
@@ -1907,8 +1927,9 @@ export function App() {
       snapshotId: snapshotForm.snapshotId.trim(),
       sourceSandboxId: source.metadata.uid,
       expectedSandboxGeneration: source.spec.generation,
+      retentionSeconds: Number(snapshotForm.retentionSeconds),
     };
-    const key = `create-workspace-snapshot:${body.snapshotId}:${body.sourceSandboxId}:${body.expectedSandboxGeneration}`;
+    const key = `create-workspace-snapshot:${Object.values(body).join(":")}`;
     void runOperation(key, { key: "operation.createWorkspaceSnapshot" }, async (signal) => {
       const result = await client.createAdminWorkspaceSnapshot(
         connection.tenantId,
@@ -1924,8 +1945,47 @@ export function App() {
           ...current.filter(({ metadata }) => metadata.uid !== result.value.metadata.uid),
         ]),
       );
-      setSnapshotForm({ snapshotId: "", sourceSandboxId: "" });
+      setSnapshotForm({
+        snapshotId: "",
+        sourceSandboxId: "",
+        retentionSeconds: "604800",
+      });
     });
+  }
+
+  function cleanupWorkspaceSnapshot() {
+    if (client === null || snapshotCleanup === null) return;
+    const body: WorkspaceSnapshotCleanupRequest = {
+      expectedSnapshotResourceVersion: snapshotCleanup.metadata.resourceVersion,
+      confirmedSnapshotId: snapshotCleanup.metadata.uid,
+      confirmedSourceWorkspaceId: snapshotCleanup.spec.sourceWorkspaceId,
+      snapshotDisposition: "delete",
+    };
+    const key = `cleanup-workspace-snapshot:${Object.values(body).join(":")}`;
+    void runOperation(
+      key,
+      { key: "operation.cleanupWorkspaceSnapshot" },
+      async (signal) => {
+        const result = await client.cleanupAdminWorkspaceSnapshot(
+          connection.tenantId,
+          connection.projectId,
+          snapshotCleanup.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        );
+        setWorkspaceSnapshots((current) =>
+          Object.freeze(
+            current.map((snapshot) =>
+              snapshot.metadata.uid === result.value.metadata.uid ? result.value : snapshot,
+            ),
+          ),
+        );
+        setSnapshotCleanup(null);
+      },
+      true,
+    );
   }
 
   function restoreWorkspaceSnapshot(event: FormEvent<HTMLFormElement>) {
@@ -3335,7 +3395,7 @@ export function App() {
                     <p>{t("workspaceSnapshot.description")}</p>
                   </div>
                   <span className="scope-chip">
-                    snapshots.list · snapshots.create · snapshots.act
+                    snapshots.list · snapshots.create · snapshots.act · snapshots.delete
                   </span>
                 </div>
                 <form className="resource-form" onSubmit={createWorkspaceSnapshot}>
@@ -3380,6 +3440,22 @@ export function App() {
                             </option>
                           ))}
                       </select>
+                    </label>
+                    <label>
+                      <span>{t("workspaceSnapshot.retention")}</span>
+                      <input
+                        required
+                        type="number"
+                        min={1}
+                        max={31_536_000}
+                        value={snapshotForm.retentionSeconds}
+                        onChange={(event) =>
+                          setSnapshotForm((current) => ({
+                            ...current,
+                            retentionSeconds: event.target.value,
+                          }))
+                        }
+                      />
                     </label>
                   </div>
                   <p className="cluster-boundary">{t("workspaceSnapshot.offlineBoundary")}</p>
@@ -3501,7 +3577,14 @@ export function App() {
                     {t("workspaceSnapshot.restore")}
                   </button>
                 </form>
-                <WorkspaceSnapshotTable snapshots={workspaceSnapshots} />
+                <WorkspaceSnapshotTable
+                  snapshots={workspaceSnapshots}
+                  onCleanup={(snapshot) => {
+                    operationTriggerRef.current =
+                      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                    setSnapshotCleanup(snapshot);
+                  }}
+                />
               </section>
 
               <section className="panel overview-panel">
@@ -3947,7 +4030,9 @@ export function App() {
 
       {runtimeProfileDetailOpen && selectedRuntimeProfile !== undefined ? (
         <AdminSheet
-          label={t("sheet.runtimeProfile", { name: selectedRuntimeProfile.metadata.name })}
+          label={t("sheet.runtimeProfile", {
+            name: selectedRuntimeProfile.metadata.name,
+          })}
           feedback={feedback}
           onClose={() => {
             setRuntimeProfileDetailOpen(false);
@@ -4039,7 +4124,9 @@ export function App() {
           confirmation
           feedback={feedback}
           returnFocus={operationTriggerRef.current}
-          label={t("sheet.sandboxGrantRevoke", { name: sandboxGrantRevoke.metadata.uid })}
+          label={t("sheet.sandboxGrantRevoke", {
+            name: sandboxGrantRevoke.metadata.uid,
+          })}
           onClose={() => setSandboxGrantRevoke(null)}
         >
           <SandboxGrantRevokeConfirmation
@@ -4047,6 +4134,23 @@ export function App() {
             disabled={busy !== null}
             onClose={() => setSandboxGrantRevoke(null)}
             onConfirm={revokeSandboxAccessGrant}
+          />
+        </AdminSheet>
+      ) : null}
+
+      {snapshotCleanup !== null ? (
+        <AdminSheet
+          confirmation
+          feedback={feedback}
+          returnFocus={operationTriggerRef.current}
+          label={t("workspaceSnapshot.cleanupTitle")}
+          onClose={() => setSnapshotCleanup(null)}
+        >
+          <WorkspaceSnapshotCleanupConfirmation
+            snapshot={snapshotCleanup}
+            disabled={busy !== null}
+            onClose={() => setSnapshotCleanup(null)}
+            onConfirm={cleanupWorkspaceSnapshot}
           />
         </AdminSheet>
       ) : null}
@@ -4291,7 +4395,10 @@ export function App() {
                   required
                   spellCheck={false}
                   onChange={(event) =>
-                    setRuntimeProfileDraft({ ...runtimeProfileDraft, imageUri: event.target.value })
+                    setRuntimeProfileDraft({
+                      ...runtimeProfileDraft,
+                      imageUri: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -5307,7 +5414,10 @@ function PaginatedTargets({
         </div>
         <div className="pagination-navigation">
           <span role="status">
-            {t("pagination.page", { page: number(page.index + 1), pages: number(page.count) })}
+            {t("pagination.page", {
+              page: number(page.index + 1),
+              pages: number(page.count),
+            })}
           </span>
           <div className="pagination-buttons">
             {(
@@ -5763,7 +5873,11 @@ function ReleaseTable({ releases }: Readonly<{ releases: readonly WorkerRelease[
 
 function WorkspaceSnapshotTable({
   snapshots,
-}: Readonly<{ snapshots: readonly WorkspaceSnapshot[] }>) {
+  onCleanup,
+}: Readonly<{
+  snapshots: readonly WorkspaceSnapshot[];
+  onCleanup: (snapshot: WorkspaceSnapshot) => void;
+}>) {
   const { t, number, dateTime } = useI18n();
   if (snapshots.length === 0)
     return <div className="table-empty">{t("workspaceSnapshot.empty")}</div>;
@@ -5776,8 +5890,11 @@ function WorkspaceSnapshotTable({
             <th>{t("workspaceSnapshot.sourceWorkspace")}</th>
             <th>{t("table.status")}</th>
             <th>{t("workspaceSnapshot.size")}</th>
+            <th>{t("workspaceSnapshot.retention")}</th>
+            <th>{t("workspaceSnapshot.expires")}</th>
             <th>{t("workspaceSnapshot.operation")}</th>
             <th>{t("table.updated")}</th>
+            <th>{t("table.actions")}</th>
           </tr>
         </thead>
         <tbody>
@@ -5801,13 +5918,128 @@ function WorkspaceSnapshotTable({
                   ? "—"
                   : `${number(snapshot.spec.sizeBytes)} B`}
               </td>
-              <td className="mono">{snapshot.spec.operationId}</td>
+              <td>
+                {snapshot.spec.retentionSeconds === undefined
+                  ? t("common.never")
+                  : t("workspaceSnapshot.retentionValue", {
+                      seconds: number(snapshot.spec.retentionSeconds),
+                    })}
+              </td>
+              <td>
+                {snapshot.spec.expiresAt === undefined
+                  ? t("common.never")
+                  : dateTime(snapshot.spec.expiresAt)}
+              </td>
+              <td className="mono">
+                {snapshot.spec.cleanupOperationId ?? snapshot.spec.operationId}
+              </td>
               <td>{dateTime(snapshot.metadata.updatedAt)}</td>
+              <td>
+                {snapshot.spec.status === "available" ||
+                snapshot.spec.status === "cleanup_failed" ? (
+                  <button
+                    className="button danger compact"
+                    type="button"
+                    onClick={() => onCleanup(snapshot)}
+                  >
+                    {t("workspaceSnapshot.cleanupAction")}
+                  </button>
+                ) : null}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function WorkspaceSnapshotCleanupConfirmation({
+  snapshot,
+  disabled,
+  onClose,
+  onConfirm,
+}: Readonly<{
+  snapshot: WorkspaceSnapshot;
+  disabled: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  const [confirmed, setConfirmed] = useState(false);
+  return (
+    <section className="dialog" aria-labelledby="snapshot-cleanup-title">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">snapshots.delete · {t("common.destructive")}</div>
+          <h2 id="snapshot-cleanup-title">{t("workspaceSnapshot.cleanupTitle")}</h2>
+          <p>{t("workspaceSnapshot.cleanupDescription")}</p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("action.close")}
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <form
+        className="resource-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <dl className="detail-list cleanup-fence">
+          <div>
+            <dt>{t("workspaceSnapshot.id")}</dt>
+            <dd className="mono">{snapshot.metadata.uid}</dd>
+          </div>
+          <div>
+            <dt>{t("workspaceSnapshot.sourceWorkspace")}</dt>
+            <dd className="mono">{snapshot.spec.sourceWorkspaceId}</dd>
+          </div>
+          <div>
+            <dt>{t("detail.resourceVersion")}</dt>
+            <dd className="mono">{snapshot.metadata.resourceVersion}</dd>
+          </div>
+          <div>
+            <dt>{t("workspaceSnapshot.size")}</dt>
+            <dd>
+              {snapshot.spec.sizeBytes === undefined ? "—" : `${number(snapshot.spec.sizeBytes)} B`}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("workspaceSnapshot.expires")}</dt>
+            <dd>
+              {snapshot.spec.expiresAt === undefined
+                ? t("common.never")
+                : dateTime(snapshot.spec.expiresAt)}
+            </dd>
+          </div>
+        </dl>
+        <p className="cluster-boundary">{t("workspaceSnapshot.cleanupBoundary")}</p>
+        <label className="confirmation-check">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+            disabled={disabled}
+            data-sheet-autofocus
+          />
+          <span>{t("workspaceSnapshot.cleanupReview")}</span>
+        </label>
+        <div className="dialog-actions">
+          <button className="button ghost" type="button" onClick={onClose}>
+            {t("action.cancel")}
+          </button>
+          <button className="button danger" type="submit" disabled={disabled || !confirmed}>
+            {t("workspaceSnapshot.cleanupConfirm")}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -6708,7 +6940,11 @@ function WorkerHealthCheck({
   worker,
   client,
   connection,
-}: Readonly<{ worker: Worker; client: AdminClient; connection: SavedAdminConnection }>) {
+}: Readonly<{
+  worker: Worker;
+  client: AdminClient;
+  connection: SavedAdminConnection;
+}>) {
   const { t, dateTime } = useI18n();
   const [observation, setObservation] = useState<WorkerHealthObservation | null>(null);
   const [failure, setFailure] = useState<ReturnType<typeof adminFailure> | null>(null);
@@ -7385,7 +7621,9 @@ function SandboxDetail({
           <dd>
             {sandbox.spec.ttlSeconds === undefined
               ? t("common.notAvailable")
-              : t("sandbox.ttlValue", { seconds: number(sandbox.spec.ttlSeconds) })}
+              : t("sandbox.ttlValue", {
+                  seconds: number(sandbox.spec.ttlSeconds),
+                })}
           </dd>
         </div>
         <div>
@@ -7490,7 +7728,9 @@ function SandboxDetail({
                   })}
                 </small>
                 <small>
-                  {t("sandbox.grants.sessions", { count: number(grant.spec.ptySessionCount) })}
+                  {t("sandbox.grants.sessions", {
+                    count: number(grant.spec.ptySessionCount),
+                  })}
                 </small>
                 <small>
                   {t("sandbox.grants.files", {

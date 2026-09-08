@@ -1606,6 +1606,9 @@ describe("generated platform JSON models", () => {
       },
     };
     expect(decodeRuntimeProfile(selectorProfile).spec.targetSelector?.architecture).toBe("arm64");
+    expect(
+      parseRuntimeProfile(JSON.stringify(selectorProfile)).value.spec.targetSelector?.architecture,
+    ).toBe("arm64");
     expect(() =>
       decodeRuntimeProfile({
         ...selectorProfile,

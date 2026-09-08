@@ -2306,6 +2306,58 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/workspace-snapshots/{snapshotId}:cleanup": {
+      "post": {
+        "operationId": "adminCleanupWorkspaceSnapshot",
+        "x-cloud-agents-required-scope": "snapshots.delete",
+        "x-cloud-agents-coordination": "durable-operation",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          {
+            "name": "snapshotId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$"
+            }
+          },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/workspace-snapshot-cleanup-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Durably accepted deletion of the exact platform-owned Snapshot volume",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/workspace-snapshot.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/environment-profiles": {
       "get": {
         "operationId": "adminListEnvironmentProfiles",

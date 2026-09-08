@@ -45,7 +45,7 @@ type liveControllerEnvironment struct {
 
 func TestLiveFoundationControllerRestart(t *testing.T) {
 	phase := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_PHASE")
-	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "snapshot" && phase != "restore" && phase != "restore-stop" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
+	if phase != "prepare" && phase != "recover" && phase != "stop" && phase != "snapshot" && phase != "snapshot-cleanup" && phase != "snapshot-expiry" && phase != "restore" && phase != "restore-stop" && phase != "rebuild" && phase != "ttl" && phase != "rebuild-final" {
 		t.Skip("live foundation Controller phase is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
@@ -67,6 +67,14 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 		snapshotLiveController(t, ctx, environment)
 		return
 	}
+	if phase == "snapshot-cleanup" {
+		snapshotCleanupLiveController(t, ctx, environment)
+		return
+	}
+	if phase == "snapshot-expiry" {
+		snapshotExpiryLiveController(t, ctx, environment)
+		return
+	}
 	if phase == "restore" {
 		restoreLiveController(t, ctx, environment)
 		return
@@ -76,6 +84,96 @@ func TestLiveFoundationControllerRestart(t *testing.T) {
 		return
 	}
 	lifecycleLiveController(t, ctx, environment, phase)
+}
+
+func snapshotCleanupLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+	t.Helper()
+	var physical, operationID string
+	if err := environment.owner.QueryRow(ctx, `SELECT physical_snapshot_uid,cleanup_operation_id
+		FROM cloud_agents.workspace_snapshots WHERE tenant_id='tenant' AND project_uid='project'
+		AND snapshot_uid='snapshot' AND status='deleting'`).Scan(&physical, &operationID); err != nil {
+		t.Fatal(err)
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("snapshot cleanup reconcile = %v / %v", worked, err)
+	}
+	var status, trigger, operationState, cleanupPhase string
+	var deletedAt time.Time
+	var physicalAfter *string
+	var receiptCount, auditCount int
+	err := environment.owner.QueryRow(ctx, `SELECT snapshot.status,snapshot.cleanup_trigger,snapshot.deleted_at,
+		snapshot.physical_snapshot_uid,operation.state,operation.cleanup_phase,
+		(SELECT count(*) FROM cloud_agents.terminal_receipts receipt WHERE receipt.tenant_id=snapshot.tenant_id
+		  AND receipt.operation_id=snapshot.cleanup_operation_id AND receipt.outcome='succeeded'),
+		(SELECT count(*) FROM cloud_agents.coordination_audit_facts audit WHERE audit.tenant_id=snapshot.tenant_id
+		  AND audit.operation_id=snapshot.cleanup_operation_id AND audit.transition='workspace.snapshot.cleanup.claim')
+		FROM cloud_agents.workspace_snapshots snapshot JOIN cloud_agents.platform_operations operation
+		ON operation.tenant_id=snapshot.tenant_id AND operation.operation_id=snapshot.cleanup_operation_id
+		WHERE snapshot.tenant_id='tenant' AND snapshot.project_uid='project' AND snapshot.snapshot_uid='snapshot'`).Scan(
+		&status, &trigger, &deletedAt, &physicalAfter, &operationState, &cleanupPhase, &receiptCount, &auditCount)
+	if err != nil || status != "deleted" || trigger != "manual" || physicalAfter != nil || deletedAt.IsZero() ||
+		operationState != "succeeded" || cleanupPhase != "complete" || receiptCount != 1 || auditCount != 1 {
+		t.Fatalf("snapshot cleanup settlement=%s/%s/%s/%s receipt=%d audit=%d err=%v",
+			status, trigger, operationState, cleanupPhase, receiptCount, auditCount, err)
+	}
+	if code, _ := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodGet, "/volumes/"+physical); code != http.StatusNotFound {
+		t.Fatalf("snapshot volume still exists: %s status=%d", physical, code)
+	}
+	receipt, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": operationID,
+		"physicalVolume": physical, "physicalVolumeDeleted": true, "status": status,
+		"trigger": trigger, "operationState": operationState, "cleanupPhase": cleanupPhase,
+		"terminalReceipt": true, "audit": true})
+	t.Logf("FOUNDATION_LIVE_SNAPSHOT_CLEANUP=%s", receipt)
+}
+
+func snapshotExpiryLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
+	t.Helper()
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("expiring snapshot copy = %v / %v", worked, err)
+	}
+	var physical string
+	var expiresAt time.Time
+	if err := environment.owner.QueryRow(ctx, `SELECT physical_snapshot_uid,expires_at
+		FROM cloud_agents.workspace_snapshots WHERE tenant_id='tenant' AND project_uid='project'
+		AND snapshot_uid='snapshot-expiring' AND status='available'`).Scan(&physical, &expiresAt); err != nil {
+		t.Fatal(err)
+	}
+	for expiresAt.After(time.Now()) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("snapshot expiry acceptance = %v / %v", worked, err)
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("snapshot expiry cleanup = %v / %v", worked, err)
+	}
+	var status, trigger, operationID, operationState, cleanupPhase string
+	var deletedAt time.Time
+	var expiryAudit, receiptCount int
+	err := environment.owner.QueryRow(ctx, `SELECT snapshot.status,snapshot.cleanup_trigger,snapshot.cleanup_operation_id,
+		snapshot.deleted_at,operation.state,operation.cleanup_phase,
+		(SELECT count(*) FROM cloud_agents.coordination_audit_facts audit WHERE audit.tenant_id=snapshot.tenant_id
+		  AND audit.operation_id=snapshot.cleanup_operation_id AND audit.transition='workspace.snapshot.cleanup.accept.retention'),
+		(SELECT count(*) FROM cloud_agents.terminal_receipts receipt WHERE receipt.tenant_id=snapshot.tenant_id
+		  AND receipt.operation_id=snapshot.cleanup_operation_id AND receipt.outcome='succeeded')
+		FROM cloud_agents.workspace_snapshots snapshot JOIN cloud_agents.platform_operations operation
+		ON operation.tenant_id=snapshot.tenant_id AND operation.operation_id=snapshot.cleanup_operation_id
+		WHERE snapshot.tenant_id='tenant' AND snapshot.project_uid='project'
+		AND snapshot.snapshot_uid='snapshot-expiring' AND snapshot.physical_snapshot_uid IS NULL`).Scan(
+		&status, &trigger, &operationID, &deletedAt, &operationState, &cleanupPhase, &expiryAudit, &receiptCount)
+	if err != nil || status != "deleted" || trigger != "retention" || deletedAt.IsZero() ||
+		operationState != "succeeded" || cleanupPhase != "complete" || expiryAudit != 1 || receiptCount != 1 {
+		t.Fatalf("snapshot expiry settlement=%s/%s/%s/%s audit=%d receipt=%d err=%v",
+			status, trigger, operationState, cleanupPhase, expiryAudit, receiptCount, err)
+	}
+	if code, _ := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodGet, "/volumes/"+physical); code != http.StatusNotFound {
+		t.Fatalf("expired snapshot volume still exists: %s status=%d", physical, code)
+	}
+	receipt, _ := json.Marshal(map[string]any{"snapshotId": "snapshot-expiring", "operationId": operationID,
+		"physicalVolume": physical, "physicalVolumeDeleted": true, "expiresAt": expiresAt.UTC().Format(time.RFC3339Nano),
+		"status": status, "trigger": trigger, "operationState": operationState,
+		"cleanupPhase": cleanupPhase, "terminalReceipt": true, "audit": true})
+	t.Logf("FOUNDATION_LIVE_SNAPSHOT_EXPIRY=%s", receipt)
 }
 
 func snapshotLiveController(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {

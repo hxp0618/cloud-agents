@@ -13,8 +13,11 @@ const remoteWorkerOnly = process.argv.includes("--remote-worker-only");
 const gvisorOnly = process.argv.includes("--gvisor-only");
 const snapshotOnly = process.argv.includes("--snapshot-only");
 const snapshotRestoreOnly = process.argv.includes("--snapshot-restore-only");
+const snapshotCleanupOnly = process.argv.includes("--snapshot-cleanup-only");
 assert.ok(
-  [remoteWorkerOnly, gvisorOnly, snapshotOnly, snapshotRestoreOnly].filter(Boolean).length <= 1,
+  [remoteWorkerOnly, gvisorOnly, snapshotOnly, snapshotRestoreOnly, snapshotCleanupOnly].filter(
+    Boolean,
+  ).length <= 1,
   "choose one focused mode",
 );
 const remoteWorkerComplete = Symbol("remote-worker-complete");
@@ -917,6 +920,145 @@ try {
   );
   assert.equal(snapshotControllerReceipt.operationId, snapshotAPIReceipt.operationId);
   assert.equal(snapshotControllerReceipt.status, "available");
+  if (snapshotCleanupOnly) {
+    const cleanupAPIOutput = execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationWorkspaceSnapshotCleanupPostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT:
+            process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT ?? evidenceDirectory,
+        },
+        timeout: 120_000,
+      },
+    );
+    const cleanupAPIReceipt = parseMarker(cleanupAPIOutput, "FOUNDATION_SNAPSHOT_CLEANUP_API");
+    const browserReceipt = process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT
+      ? parseMarker(cleanupAPIOutput, "FOUNDATION_SNAPSHOT_BROWSER")
+      : undefined;
+    const cleanupControllerReceipt = parseMarker(
+      execFileSync(
+        controllerTestBinary,
+        ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
+        {
+          encoding: "utf8",
+          env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot-cleanup" },
+          timeout: 180_000,
+        },
+      ),
+      "FOUNDATION_LIVE_SNAPSHOT_CLEANUP",
+    );
+    assert.equal(cleanupControllerReceipt.operationId, cleanupAPIReceipt.operationId);
+    assert.equal(cleanupControllerReceipt.status, "deleted");
+    const expiryAPIReceipt = parseMarker(
+      execFileSync(
+        serverTestBinary,
+        ["-test.run", "^TestFoundationWorkspaceSnapshotExpiryPostgres$", "-test.v"],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+            CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          },
+          timeout: 120_000,
+        },
+      ),
+      "FOUNDATION_SNAPSHOT_EXPIRY_API",
+    );
+    const expiryControllerReceipt = parseMarker(
+      execFileSync(
+        controllerTestBinary,
+        ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
+        {
+          encoding: "utf8",
+          env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot-expiry" },
+          timeout: 180_000,
+        },
+      ),
+      "FOUNDATION_LIVE_SNAPSHOT_EXPIRY",
+    );
+    assert.equal(expiryControllerReceipt.status, "deleted");
+    assert.equal(expiryControllerReceipt.trigger, "retention");
+    docker("volume", "rm", prepareReceipt.volumeName);
+    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace",
+      ),
+      "",
+    );
+    assert.equal(
+      docker(
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=cloud-agents.dev/resource=foundation-workspace-snapshot",
+      ),
+      "",
+    );
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        dirty: true,
+        migrationHead: currentHead,
+      },
+      backend: {
+        dockerContext: "orbstack",
+        dockerVersion: docker("version", "--format", "{{.Server.Version}}"),
+        postgres: psql("SHOW server_version;"),
+      },
+      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+      manualCleanup: { api: cleanupAPIReceipt, controller: cleanupControllerReceipt },
+      retentionCleanup: { api: expiryAPIReceipt, controller: expiryControllerReceipt },
+      ...(browserReceipt === undefined ? {} : { adminBrowser: browserReceipt }),
+      checks: [
+        "product migration 000084 applied to disposable PostgreSQL",
+        "new Snapshot retention is fixed at database-clock acceptance and exposed only as metadata",
+        "ordinary user token received 403 and stale resourceVersion received 409 from Admin cleanup",
+        "manual cleanup required exact logical Snapshot and source Workspace confirmation without physical volume disclosure",
+        "manual cleanup replay returned the same durable Operation",
+        "terminal cleanup failure was claim-renewal fenced and retried with a new resource version and outbox sequence",
+        "database-clock expiry entered the same cleanup Operation state machine",
+        "Controller deleted only exact platform-owned Docker snapshot volumes under renewable claims",
+        "manual and retention cleanup settled Snapshot deleted, Operation succeeded/complete, terminal receipt and Audit",
+        ...(browserReceipt === undefined
+          ? []
+          : [
+              "real Chromium connected through the Vite Admin origin, rendered persisted retention metadata, and fenced destructive confirmation",
+              "Admin locale and theme switched and persisted without storing the bearer token; desktop English and mobile Chinese screenshots were captured with no console errors",
+              "all browser HTTP requests remained on the Admin Web origin and reached infrastructure authority only through the Control Plane proxy",
+            ]),
+        "zero test-owned runtime containers, Workspace volumes and Snapshot volumes",
+      ],
+      boundary:
+        browserReceipt === undefined
+          ? "Local OrbStack Docker and disposable PostgreSQL only; manual and database-clock retention cleanup are verified, while Kubernetes/SSH snapshot backends and browser visual QA remain unverified"
+          : "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; manual/database-clock retention cleanup plus this snapshot flow's desktop/mobile bilingual UI are verified, while Kubernetes/SSH snapshot backends and full BASE-ADMIN-V1 visual/accessibility regression remain unverified",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    process.stdout.write(
+      `Verified Docker Workspace Snapshot retention cleanup; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw snapshotComplete;
+  }
   if (snapshotOnly) {
     const snapshotInfo = JSON.parse(
       docker("volume", "inspect", snapshotControllerReceipt.physicalVolume),
@@ -1464,7 +1606,7 @@ try {
     if (
       info.Labels?.["cloud-agents.dev/tenant"] === "tenant" &&
       info.Labels?.["cloud-agents.dev/project"] === "project" &&
-      info.Labels?.["cloud-agents.dev/snapshot"] === "snapshot"
+      ["snapshot", "snapshot-expiring"].includes(info.Labels?.["cloud-agents.dev/snapshot"])
     ) {
       docker("volume", "rm", volume);
     }

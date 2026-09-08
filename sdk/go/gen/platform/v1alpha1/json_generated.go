@@ -1250,6 +1250,13 @@ type WorkspaceSnapshotCreateRequest struct {
 	SnapshotID                string `json:"snapshotId"`
 	SourceSandboxID           string `json:"sourceSandboxId"`
 	ExpectedSandboxGeneration int64  `json:"expectedSandboxGeneration"`
+	RetentionSeconds          int64  `json:"retentionSeconds"`
+}
+type WorkspaceSnapshotCleanupRequest struct {
+	ExpectedSnapshotResourceVersion string `json:"expectedSnapshotResourceVersion"`
+	ConfirmedSnapshotID             string `json:"confirmedSnapshotId"`
+	ConfirmedSourceWorkspaceID      string `json:"confirmedSourceWorkspaceId"`
+	SnapshotDisposition             string `json:"snapshotDisposition"`
 }
 type WorkspaceSnapshotRestoreRequest struct {
 	ExpectedSnapshotResourceVersion string `json:"expectedSnapshotResourceVersion"`
@@ -1268,9 +1275,14 @@ type WorkspaceSnapshotSpec struct {
 	ConsistencyMode                string            `json:"consistencyMode"`
 	Status                         string            `json:"status"`
 	OperationID                    string            `json:"operationId"`
+	RetentionSeconds               *int64            `json:"retentionSeconds,omitempty"`
+	ExpiresAt                      string            `json:"expiresAt,omitempty"`
+	CleanupOperationID             string            `json:"cleanupOperationId,omitempty"`
+	CleanupTrigger                 string            `json:"cleanupTrigger,omitempty"`
 	SizeBytes                      *int64            `json:"sizeBytes,omitempty"`
 	StableErrorCode                string            `json:"stableErrorCode,omitempty"`
 	ObservedAt                     string            `json:"observedAt,omitempty"`
+	DeletedAt                      string            `json:"deletedAt,omitempty"`
 }
 type WorkspaceSnapshot struct {
 	ResourceBase
@@ -1412,7 +1424,7 @@ func DecodeAdminDeniedWriteEventJSON(data []byte) (AdminDeniedWriteEvent, error)
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "")
 	}
 	switch value.Action {
-	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
+	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCleanupWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
 	default:
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "/action")
 	}
@@ -5856,12 +5868,12 @@ func EncodeAdminSandboxSessionPageResponseJSON(value common.ResponseEnvelope[Adm
 }
 
 func DecodeWorkspaceSnapshotCreateRequestJSON(data []byte) (WorkspaceSnapshotCreateRequest, error) {
-	allowed := []string{"snapshotId", "sourceSandboxId", "expectedSandboxGeneration"}
+	allowed := []string{"snapshotId", "sourceSandboxId", "expectedSandboxGeneration", "retentionSeconds"}
 	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
 		return WorkspaceSnapshotCreateRequest{}, err
 	}
 	var value WorkspaceSnapshotCreateRequest
-	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.SnapshotID, "/snapshotId") != nil || common.ValidateIdentifier(value.SourceSandboxID, "/sourceSandboxId") != nil || value.ExpectedSandboxGeneration < 1 || value.ExpectedSandboxGeneration > 9007199254740991 {
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.SnapshotID, "/snapshotId") != nil || common.ValidateIdentifier(value.SourceSandboxID, "/sourceSandboxId") != nil || value.ExpectedSandboxGeneration < 1 || value.ExpectedSandboxGeneration > 9007199254740991 || value.RetentionSeconds < 1 || value.RetentionSeconds > 31536000 {
 		return WorkspaceSnapshotCreateRequest{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT_REQUEST", "")
 	}
 	return value, nil
@@ -5872,6 +5884,27 @@ func EncodeWorkspaceSnapshotCreateRequestJSON(value WorkspaceSnapshotCreateReque
 		return nil, err
 	}
 	if _, err := DecodeWorkspaceSnapshotCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeWorkspaceSnapshotCleanupRequestJSON(data []byte) (WorkspaceSnapshotCleanupRequest, error) {
+	allowed := []string{"expectedSnapshotResourceVersion", "confirmedSnapshotId", "confirmedSourceWorkspaceId", "snapshotDisposition"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return WorkspaceSnapshotCleanupRequest{}, err
+	}
+	var value WorkspaceSnapshotCleanupRequest
+	if json.Unmarshal(data, &value) != nil || common.ValidateResourceVersion(value.ExpectedSnapshotResourceVersion, "/expectedSnapshotResourceVersion") != nil || common.ValidateIdentifier(value.ConfirmedSnapshotID, "/confirmedSnapshotId") != nil || common.ValidateIdentifier(value.ConfirmedSourceWorkspaceID, "/confirmedSourceWorkspaceId") != nil || value.SnapshotDisposition != "delete" {
+		return WorkspaceSnapshotCleanupRequest{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT_CLEANUP_REQUEST", "")
+	}
+	return value, nil
+}
+func EncodeWorkspaceSnapshotCleanupRequestJSON(value WorkspaceSnapshotCleanupRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeWorkspaceSnapshotCleanupRequestJSON(raw); err != nil {
 		return nil, err
 	}
 	return raw, nil
@@ -5906,15 +5939,20 @@ func DecodeWorkspaceSnapshotJSON(data []byte) (WorkspaceSnapshot, error) {
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
-	allowed := []string{"projectRef", "sourceWorkspaceId", "sourceWorkspaceResourceVersion", "backend", "consistencyMode", "status", "operationId", "sizeBytes", "stableErrorCode", "observedAt"}
+	allowed := []string{"projectRef", "sourceWorkspaceId", "sourceWorkspaceResourceVersion", "backend", "consistencyMode", "status", "operationId", "retentionSeconds", "expiresAt", "cleanupOperationId", "cleanupTrigger", "sizeBytes", "stableErrorCode", "observedAt", "deletedAt"}
 	required := []string{"projectRef", "sourceWorkspaceId", "sourceWorkspaceResourceVersion", "backend", "consistencyMode", "status", "operationId"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
 	var spec WorkspaceSnapshotSpec
-	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SourceWorkspaceID, "/spec/sourceWorkspaceId") != nil || common.ValidateIdentifier(spec.OperationID, "/spec/operationId") != nil || spec.Backend != "docker-volume-v1" || spec.ConsistencyMode != "offline" || spec.Status != "pending" && spec.Status != "available" && spec.Status != "unknown" && spec.Status != "failed" {
+	if json.Unmarshal(fields["spec"], &spec) != nil || common.ValidateIdentifier(spec.SourceWorkspaceID, "/spec/sourceWorkspaceId") != nil || common.ValidateIdentifier(spec.OperationID, "/spec/operationId") != nil || spec.Backend != "docker-volume-v1" || spec.ConsistencyMode != "offline" {
 		return WorkspaceSnapshot{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT", "/spec")
+	}
+	switch spec.Status {
+	case "pending", "available", "unknown", "failed", "deleting", "cleanup_failed", "deleted":
+	default:
+		return WorkspaceSnapshot{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT", "/spec/status")
 	}
 	version, parseErr := strconv.ParseInt(spec.SourceWorkspaceResourceVersion, 10, 64)
 	if parseErr != nil || version < 1 {
@@ -5924,10 +5962,16 @@ func DecodeWorkspaceSnapshotJSON(data []byte) (WorkspaceSnapshot, error) {
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
+	_, hasRetention := specFields["retentionSeconds"]
+	_, hasExpiry := specFields["expiresAt"]
+	_, hasCleanupOperation := specFields["cleanupOperationId"]
+	_, hasCleanupTrigger := specFields["cleanupTrigger"]
 	_, hasSize := specFields["sizeBytes"]
 	_, hasError := specFields["stableErrorCode"]
 	_, hasObserved := specFields["observedAt"]
-	if hasSize && (spec.SizeBytes == nil || *spec.SizeBytes < 0 || *spec.SizeBytes > 67108864) || hasError && common.ValidateIdentifier(spec.StableErrorCode, "/spec/stableErrorCode") != nil || hasObserved && common.ValidateDateTime(spec.ObservedAt, "/spec/observedAt") != nil || spec.Status == "available" && (!hasSize || hasError || !hasObserved) || spec.Status == "failed" && (hasSize || !hasError || !hasObserved) || spec.Status == "unknown" && (hasSize || hasError || !hasObserved) || spec.Status == "pending" && (hasSize || hasError || hasObserved) {
+	_, hasDeleted := specFields["deletedAt"]
+	cleanupState := spec.Status == "deleting" || spec.Status == "cleanup_failed" || spec.Status == "deleted"
+	if hasRetention && (spec.RetentionSeconds == nil || *spec.RetentionSeconds < 1 || *spec.RetentionSeconds > 31536000) || hasRetention != hasExpiry || hasExpiry && common.ValidateDateTime(spec.ExpiresAt, "/spec/expiresAt") != nil || hasCleanupOperation && common.ValidateIdentifier(spec.CleanupOperationID, "/spec/cleanupOperationId") != nil || hasCleanupTrigger && spec.CleanupTrigger != "manual" && spec.CleanupTrigger != "retention" || hasDeleted && common.ValidateDateTime(spec.DeletedAt, "/spec/deletedAt") != nil || hasSize && (spec.SizeBytes == nil || *spec.SizeBytes < 0 || *spec.SizeBytes > 67108864) || hasError && common.ValidateIdentifier(spec.StableErrorCode, "/spec/stableErrorCode") != nil || hasObserved && common.ValidateDateTime(spec.ObservedAt, "/spec/observedAt") != nil || cleanupState != (hasCleanupOperation && hasCleanupTrigger) || spec.Status == "available" && (!hasSize || hasError || !hasObserved || hasDeleted) || spec.Status == "failed" && (hasSize || !hasError || !hasObserved || hasDeleted) || spec.Status == "unknown" && (hasSize || hasError || !hasObserved || hasDeleted) || spec.Status == "pending" && (hasSize || hasError || hasObserved || hasDeleted) || spec.Status == "deleting" && (!hasSize || hasError || !hasObserved || hasDeleted) || spec.Status == "cleanup_failed" && (!hasSize || !hasError || !hasObserved || hasDeleted) || spec.Status == "deleted" && (!hasSize || hasError || !hasObserved || !hasDeleted) {
 		return WorkspaceSnapshot{}, common.ContractError("INVALID_WORKSPACE_SNAPSHOT", "/spec/status")
 	}
 	return WorkspaceSnapshot{ResourceBase: base, Spec: spec}, nil

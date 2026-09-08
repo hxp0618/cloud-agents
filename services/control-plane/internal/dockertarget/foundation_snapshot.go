@@ -50,6 +50,11 @@ type FoundationWorkspaceRestoreResult struct {
 	CleanupComplete           bool
 }
 
+type FoundationWorkspaceSnapshotCleanup struct {
+	TenantID, ProjectID, TargetID, SourceWorkspaceID string
+	SnapshotID, PhysicalSnapshotID                   string
+}
+
 func (input FoundationWorkspaceSnapshot) valid() bool {
 	for path, value := range map[string]string{
 		"/tenantId": input.TenantID, "/projectId": input.ProjectID, "/targetId": input.TargetID,
@@ -96,6 +101,37 @@ func (input FoundationWorkspaceSnapshot) labels() map[string]string {
 		"cloud-agents.dev/source-volume":    input.SourceVolumeName,
 		"cloud-agents.dev/consistency-mode": "offline",
 	}
+}
+
+func (input FoundationWorkspaceSnapshotCleanup) snapshot() FoundationWorkspaceSnapshot {
+	volume := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID,
+		TargetID: input.TargetID, WorkspaceID: input.SourceWorkspaceID}
+	return FoundationWorkspaceSnapshot{TenantID: input.TenantID, ProjectID: input.ProjectID,
+		TargetID: input.TargetID, WorkspaceID: input.SourceWorkspaceID, SnapshotID: input.SnapshotID,
+		SourceVolumeName: volume.Name()}
+}
+
+func (input FoundationWorkspaceSnapshotCleanup) valid() bool {
+	for path, value := range map[string]string{"/tenantId": input.TenantID, "/projectId": input.ProjectID,
+		"/targetId": input.TargetID, "/sourceWorkspaceId": input.SourceWorkspaceID,
+		"/snapshotId": input.SnapshotID, "/physicalSnapshotId": input.PhysicalSnapshotID} {
+		if commonv1alpha1.ValidateIdentifier(value, path) != nil {
+			return false
+		}
+	}
+	return input.PhysicalSnapshotID == input.snapshot().name("ca-snap-", "snapshot")
+}
+
+func (directory *CredentialDirectory) CleanupFoundationWorkspaceSnapshot(ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceSnapshotCleanup) error {
+	if ctx == nil || directory == nil || endpoint == "" || !input.valid() {
+		return ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return err
+	}
+	defer transport.CloseIdleConnections()
+	return removeSnapshotVolume(ctx, client, base, input.PhysicalSnapshotID, input.snapshot().labels())
 }
 
 func (input FoundationWorkspaceRestore) valid() bool {

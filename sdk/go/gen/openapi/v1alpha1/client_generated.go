@@ -2312,6 +2312,34 @@ func (client *Client) GetAdminWorkspaceSnapshot(ctx context.Context, tenantID, p
 	}
 	return value, nil
 }
+func (client *Client) CleanupAdminWorkspaceSnapshot(ctx context.Context, tenantID, projectID, snapshotID, requestID, idempotencyKey string, body platform.WorkspaceSnapshotCleanupRequest) (WorkspaceSnapshotResult, error) {
+	bodyBytes, err := platform.EncodeWorkspaceSnapshotCleanupRequestJSON(body)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	input, err := ValidateCleanupAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapshotID, requestID, idempotencyKey, bodyBytes)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/workspace-snapshots/" + snapshotID + ":cleanup", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if response.Status != 202 {
+		return WorkspaceSnapshotResult{}, client.problemError("adminCleanupWorkspaceSnapshot", response)
+	}
+	value, err := platform.DecodeWorkspaceSnapshotResponseJSON(response.Body)
+	if err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return WorkspaceSnapshotResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != snapshotID || value.Value.Spec.SourceWorkspaceID != input.Body.ConfirmedSourceWorkspaceID {
+		return WorkspaceSnapshotResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
 func (client *Client) RestoreAdminWorkspaceSnapshot(ctx context.Context, tenantID, projectID, snapshotID, requestID, idempotencyKey string, body platform.WorkspaceSnapshotRestoreRequest) (SandboxSessionResult, error) {
 	bodyBytes, err := platform.EncodeWorkspaceSnapshotRestoreRequestJSON(body)
 	if err != nil {
@@ -5837,6 +5865,33 @@ func ValidateGetAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapsho
 		return GetAdminWorkspaceSnapshotServerInput{}, err
 	}
 	return GetAdminWorkspaceSnapshotServerInput{TenantID: tenantID, ProjectID: projectID, SnapshotID: snapshotID, RequestID: requestID}, nil
+}
+
+type CleanupAdminWorkspaceSnapshotServerInput struct {
+	TenantID       string
+	ProjectID      string
+	SnapshotID     string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.WorkspaceSnapshotCleanupRequest
+}
+
+func ValidateCleanupAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapshotID, requestID, idempotencyKey string, body []byte) (CleanupAdminWorkspaceSnapshotServerInput, error) {
+	base, err := ValidateGetAdminWorkspaceSnapshotServerRequest(tenantID, projectID, snapshotID, requestID)
+	if err != nil {
+		return CleanupAdminWorkspaceSnapshotServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CleanupAdminWorkspaceSnapshotServerInput{}, err
+	}
+	value, err := platform.DecodeWorkspaceSnapshotCleanupRequestJSON(body)
+	if err != nil {
+		return CleanupAdminWorkspaceSnapshotServerInput{}, err
+	}
+	if value.ConfirmedSnapshotID != snapshotID {
+		return CleanupAdminWorkspaceSnapshotServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedSnapshotId")
+	}
+	return CleanupAdminWorkspaceSnapshotServerInput{TenantID: base.TenantID, ProjectID: base.ProjectID, SnapshotID: base.SnapshotID, RequestID: base.RequestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type RestoreAdminWorkspaceSnapshotServerInput struct {

@@ -48,6 +48,7 @@
         "adminRevokeSandboxAccessGrant",
         "adminCreateWorkspaceSnapshot",
         "adminRestoreWorkspaceSnapshot",
+        "adminCleanupWorkspaceSnapshot",
         "adminCreateRemoteWorkerEnrollment",
         "adminRevokeRemoteWorkerEnrollment",
         "adminTransitionRemoteWorkerScheduling"
