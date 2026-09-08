@@ -54,7 +54,8 @@
 - BASE-M5 同迁移头 Helm N/N-1 切片已接通：复用打包 smoke，以声明兼容范围内的 `0.1.0-alpha.94`/`0.1.0-alpha.95` 两套 22-artifact manifest 和精确镜像，在同一 PostgreSQL、Secret 与 PVC 上完成 N-1 安装、N 升级、N-1 回滚和 N 再升级；每一步核对四个服务及 migration init image，并读回同一 Project。最终 N 再通过 RemoteWorker、Admin Web 浏览器 15 请求、普通用户 403、Gateway、重启和零 namespace/PV/容器/测试镜像；见 [Helm N/N-1 证据](evidence/base-m5-helm-upgrade-rollback-20260908-r4/evidence.json)。两版 schema 均为 000084，Chart 使用 `Recreate`，因此该记录不证明跨 schema-head 或零停机 rolling availability。
 - BASE-M5 客户节点自动身份轮换切片已接通：RemoteWorker 复用既有 mTLS 轮换 API，在到期前五分钟续签，并以本地 `0600` pending 请求、原子 identity/resource-version 文件和确定性幂等键支持不确定响应后的精确重放。候选 `0.1.0-alpha.100` 的 22 个 checksum 与打包脚本/运行手册一致；固定 digest Debian 客户节点对真实 Helm Control Plane 从资源版本 3 轮换到 4，新证书 heartbeat/重启成功，旧证书返回 401，pending 清除，Admin Web 浏览器、Gateway、普通用户 403、重启和最终零残留均通过；见 [客户节点自动身份轮换证据](evidence/base-m5-remote-worker-identity-rotation-20260908-r1/evidence.json)。本轮用强制单次开关触发同一续签路径，没有等待默认墙钟阈值，也不覆盖 CA trust root 或部署服务证书轮换。
 - BASE-M5 RemoteWorker CA 信任根轮换切片已接通：沿用部署方 Secret authority，以不同名不可变 Secret 和 Helm 引用切换执行旧根→新旧重叠→仅新根；Control Plane 在重叠期继续接受旧 leaf 并用新根签发资源版本 4，移除旧根后新 leaf heartbeat/进程重启成功、旧 leaf 返回 401，最终 Secret 字节与 Deployment 引用精确核对。候选 `0.1.0-alpha.105` 的 22 个 checksum 与打包 runbook/smoke 一致；真实 OrbStack Kubernetes、PostgreSQL 17.6、固定 digest Debian 节点、Admin Web 浏览器、Gateway、普通用户 403 及 namespace/PV/容器/测试镜像零残留均通过；见 [RemoteWorker CA 轮换证据](evidence/base-m5-remote-worker-ca-rotation-20260908-r1/evidence.json)。Chart 使用 `Recreate`，本轮不声明零停机，也尚未覆盖 Control Plane/Worker/Gateway/Admin 服务证书根。
-- 下一项：继续 BASE-M5，收口 Control Plane、Worker、Access Gateway 与 Admin Web 部署服务证书/CA 轮换；随后处理 usage/运维、故障/soak 与完整 Admin 验收。
+- BASE-M5 部署服务证书/CA 轮换切片已接通：沿用 Chart 现有外部 Secret 引用，以不同名不可变 Secret 完成旧 leaves＋新旧根、全新 leaves＋新旧根、全新 leaves＋仅新根三阶段；逐阶段核对 Control Plane、Worker、Access Gateway 与 Admin Web Deployment 引用，并真实验证 Admin 代理、Control Plane→Worker 及直接 Worker mTLS、Gateway TLS/SSH、固定 digest Debian 节点 heartbeat。移除旧根后旧 Control Plane/Gateway server root、旧 Worker client 与节点旧 server root 均被拒绝，最终 CA 字节精确匹配。候选 `0.1.0-alpha.109` 的 22 个 checksum 与打包 runbook/smoke 一致；任务自有 kind Kubernetes v1.37.0、PostgreSQL 17.6、真实 Brave、普通用户 403、重启及 namespace/PV/容器/测试镜像零残留通过，临时集群已删除并恢复原 `orbstack` context；见 [部署服务 CA 轮换证据](evidence/base-m5-service-certificate-rotation-20260908-r1/evidence.json)。Chart 使用 `Recreate`，本轮不声明零停机；kubectl v1.33.9 对 v1.37.0 有超支持范围版本偏差警告，且本轮不覆盖外部证书签发器或其他平台密钥轮换。
+- 下一项：继续 BASE-M5，处理 usage/运维、故障/soak 与完整 Admin 验收。
 - 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；真实 Provider、客户节点和完整 BASE-ADMIN-V1 验收仍保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
@@ -80,7 +81,7 @@
 | BASE-M2    | VERIFIED    | bounded Exec、PTY/Files/private Preview/short-lived SSH、Grant/Gateway、实际网络隔离及对应 Admin 管理已有真实本地 Docker/PostgreSQL 证据 |
 | BASE-M3    | VERIFIED    | outbound enrollment/mTLS/轮换吊销、健康与离线拒绝、Drain/Resume、Sandbox lifecycle/Exec/Files/PTY/Preview/SSH、长时续租、断线重连与新 attempt 对账均有真实 Docker/PostgreSQL 证据 |
 | BASE-M4    | VERIFIED    | direct Kubernetes、RemoteWorker 能力/容量/多 Node 调度及 shared-untrusted gVisor 强隔离均有真实执行和对应 Admin 证据 |
-| BASE-M5    | IN PROGRESS | Docker Snapshot 创建/恢复/保留清理及当前迁移头 Compose/Helm、Gateway/Admin Web、客户节点 bootstrap/自动叶证书轮换、同迁移头 N/N-1 升级回滚与浏览器已真实验证；部署服务/CA 轮换、usage/运维、故障/soak 和完整 Admin 验收待完成 |
+| BASE-M5    | IN PROGRESS | Docker Snapshot 创建/恢复/保留清理及当前迁移头 Compose/Helm、Gateway/Admin Web、客户节点 bootstrap/自动叶证书轮换、RemoteWorker/部署服务 CA 轮换、同迁移头 N/N-1 升级回滚与浏览器已真实验证；usage/运维、故障/soak 和完整 Admin 验收待完成 |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |
 | APP-M1     | PAUSED      | 第一阶段完成后推进用户对话；现有 Agent 路径保留兼容并可作为回归负载                                         |
 

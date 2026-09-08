@@ -1,0 +1,122 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "d575b1d7e90da1ead2a00b52176d5c02e961939c",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.1.0-alpha.109",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-service-rotation-r4",
+    "sourceCommit": "d575b1d7e90da1ead2a00b52176d5c02e961939c",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "deploymentArtifact": {
+      "sizeBytes": 1079808,
+      "sha256": "sha256:1df84a6851c258de2b228d8afc52c5f3b3b44b0f10914b1921e7373927de8b59"
+    },
+    "migrationArtifact": {
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "remoteWorkerArtifacts": [
+      {
+        "target": "linux-amd64",
+        "sizeBytes": 15028485,
+        "sha256": "sha256:513a7e8840b101c031b24e425bdb38fa3d7bcf450629a4bd4bd6315b8dcd4e98"
+      },
+      {
+        "target": "linux-arm64",
+        "sizeBytes": 13921344,
+        "sha256": "sha256:be2bbb11beffafd7495b37b203f88b7d9acd822f105f3f8bc45aa85c29122d2f"
+      }
+    ],
+    "allChecksumsPassed": true,
+    "packagedRunbookAndSmokeMatchedSource": true
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "customerNodeImage": "debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kindVersion": "v0.33.0",
+    "kubernetesServerVersion": "v1.37.0",
+    "kubernetesServerPlatform": "linux/arm64",
+    "postgresImage": "postgres:17.6-bookworm",
+    "browser": "Brave Browser 152.1.94.121"
+  },
+  "result": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=kind-cloud-agents-cert-rotation sh <packaged>/scripts/test-platform-helm.sh /tmp/cloud-agents-platform-000084-service-rotation-r4",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-platform-000084-service-rotation-r4-kind.log",
+      "sizeBytes": 1903,
+      "sha256": "sha256:b9b6e0a42834c5c04ba3708246badc780c1811ecddd62e766292008033fe3900",
+      "containsPrivateKeyEnrollmentSecretOrCredentialReference": false
+    },
+    "schemaLedger": {
+      "count": 84,
+      "first": "000001",
+      "last": "000084"
+    },
+    "serviceCA": {
+      "rotationSequence": [
+        "old-leaves-new-plus-old-trust",
+        "new-leaves-new-plus-old-trust",
+        "new-leaves-new-root-only"
+      ],
+      "immutableSecretsPerPhase": true,
+      "controlPlaneWorkerGatewayAndAdminReferencesCheckedPerPhase": true,
+      "adminProxyDuringEveryPhase": "passed",
+      "controlPlaneWorkerMTLSDuringEveryPhase": "passed",
+      "customerNodeHeartbeatDuringEveryPhase": "passed",
+      "currentWorkerClientAfterOldRootRemoval": "passed",
+      "oldWorkerClientAfterOldRootRemoval": "rejected",
+      "oldControlPlaneServerRootAfterRemoval": "rejected",
+      "oldAccessGatewayServerRootAfterRemoval": "rejected",
+      "oldCustomerNodeServerRootAfterRemoval": "rejected",
+      "newRootOnlyControlPlaneAndWorkerSecretBytesMatched": true,
+      "customerNodeTrustFileUpdatedAtomicallyInsideNode": true
+    },
+    "remoteWorkerCARegression": "leaf-and-root-rotation-passed",
+    "adminWeb": {
+      "sameOriginAdminRequests": 15,
+      "ordinaryUserAdminStatus": 403,
+      "locales": ["en-US"],
+      "themes": ["dark", "light"],
+      "viewportWidths": [1440, 390],
+      "tokensPersistedInBrowserStorage": false
+    },
+    "accessGatewayTLSAndSSH": "passed",
+    "adminAndGatewayRestart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0,
+    "temporaryKindClusterRemoved": true,
+    "kubectlContextRestored": "orbstack"
+  },
+  "checks": [
+    "the current dirty source produced one local 22-artifact candidate without publishing or pushing anything",
+    "all candidate checksums passed and the packaged Helm runbook and smoke matched the working-tree source byte for byte",
+    "each service trust phase used new deployment-owned Secret names and Helm changed the Control Plane, Worker, Access Gateway and Admin Web Deployment references before waiting for readiness",
+    "the old service leaves remained usable with the overlap bundle, then new leaves were installed while both roots remained trusted, and finally only the new root remained",
+    "Admin proxying, Control Plane to Worker mTLS, direct Worker client mTLS, Gateway TLS and the outbound customer node were exercised against the rotated identities",
+    "the old Control Plane and Gateway server root, old Worker client and old customer-node server root were rejected after overlap removal",
+    "the final Control Plane and Worker Secrets contained exactly the new root certificate",
+    "the real browser, ordinary-user 403, RemoteWorker identity regression, Gateway SSH, restart and exact cleanup checks passed after service root rotation",
+    "the task-owned kind cluster was deleted and the pre-existing orbstack kubectl context was restored"
+  ],
+  "verification": {
+    "helmLint": "passed",
+    "releaseTests": "scripts/lib/platform-release.test.ts passed 19 tests",
+    "repositorySecretScan": "passed",
+    "shellSyntax": "Helm smoke sh -n passed",
+    "diffCheck": "git diff --check passed"
+  },
+  "boundary": "This proves a packaged deployment-service trust-root rollover for the Control Plane, Worker, Access Gateway and Admin Web against real PostgreSQL and Kubernetes in a task-owned local kind cluster, plus a fixed-digest Debian customer node on the same OrbStack Docker engine. The kubectl v1.33.9 client reported an unsupported version-skew warning against the v1.37.0 server, but the complete Helm, API, browser, mTLS, SSH and cleanup flow passed. The chart uses Recreate and this is not zero-downtime evidence. The node declared only exec and no Sandbox workload ran. This does not cover cert-manager or another external issuer, public ingress, HA, external PostgreSQL/S3, OIDC/JWKS, master-key, access-grant-key or SSH-host-key rotation, real Provider credentials, published images, or the full BASE-ADMIN-V1 acceptance matrix. Earlier OrbStack Kubernetes attempts failed before or during the flow with API EOF/deadline errors and are not counted as evidence. The candidate came from a dirty local tree and is not BASE-READY."
+}

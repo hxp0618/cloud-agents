@@ -31,3 +31,16 @@ from the new root before restarting the supervisor. After all active nodes use
 the new root, create another Secret containing only the new certificate and key
 and switch the Helm value again. Retain the prior Secrets until rollback is no
 longer required; never remove the old root while an active node depends on it.
+
+Rotate the shared deployment service root in three immutable-Secret phases.
+First point `tls.controlPlaneSecretName`, `tls.workerSecretName`, and
+`adminWeb.controlPlaneCASecretName` at copies of the current leaf identities whose
+`ca.crt` contains the new root followed by the old root; update CLI and
+RemoteWorker server trust bundles to the same overlap. Next issue new Control
+Plane, Worker, Worker-client, and Access Gateway leaves from the new root and
+switch all four `tls.*SecretName` values while retaining the overlap bundle.
+After Admin proxying, Worker mTLS, Gateway TLS, and customer-node reconnects pass,
+switch the Control Plane, Worker, Admin, CLI, and node trust bundles to the new
+root only and verify old-root clients fail. The chart uses `Recreate`, so these
+steps are recoverable root rotation, not a zero-downtime guarantee; retain each
+prior Secret until its rollback window closes.
