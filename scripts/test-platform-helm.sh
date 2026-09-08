@@ -328,17 +328,18 @@ const { writeFileSync } = require("node:fs");
 const state = process.env.CLOUD_AGENTS_HELM_SMOKE_STATE;
 const issuer = "https://issuer.helm-smoke.test";
 const audience = "https://api.helm-smoke.test";
+const adminAudience = "https://admin-api.helm-smoke.test";
 const kid = "helm-smoke-key";
 const now = Math.floor(Date.now() / 1000);
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const exported = publicKey.export({ format: "jwk" });
 const jwk = { alg: "RS256", e: exported.e, key_ops: ["verify"], kid, kty: "RSA", n: exported.n, use: "sig" };
 writeFileSync(`${state}/auth.json`, `${JSON.stringify({
-  issuer, audience, generation: 1, securityEpoch: 1, notBefore: now - 60, expiresAt: now + 3600,
+  issuer, audience, adminAudience, generation: 1, securityEpoch: 1, notBefore: now - 60, expiresAt: now + 3600,
   keys: [{ jwk, enabled: true, notBefore: now - 60, notAfter: now + 3600 }],
 })}\n`);
 const base = {
-  iss: issuer, sub: "user-helm-smoke", aud: audience, exp: now + 1800, iat: now - 10,
+  iss: issuer, sub: "user-helm-smoke", exp: now + 1800, iat: now - 10,
   client_id: "helm-smoke-client", jti: "",
   "https://schemas.cloud-agents.dev/claims/security-epoch": 1,
   "https://schemas.cloud-agents.dev/claims/subject-kind": "user",
@@ -346,12 +347,12 @@ const base = {
   "https://schemas.cloud-agents.dev/claims/token-profile": "cloud-agents-access-token/v1",
 };
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-const issue = (jti, scopes) => {
-  const claims = { ...base, jti, scope: [...scopes].sort().join(" ") };
+const issue = (jti, tokenAudience, scopes) => {
+  const claims = { ...base, aud: tokenAudience, jti, scope: [...scopes].sort().join(" ") };
   const input = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
   return `${input}.${createSign("RSA-SHA256").update(input).end().sign(privateKey).toString("base64url")}`;
 };
-writeFileSync(`${state}/admin-token`, `${issue("helm-smoke-admin", [
+const adminScopes = [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
@@ -361,12 +362,15 @@ writeFileSync(`${state}/admin-token`, `${issue("helm-smoke-admin", [
   "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create",
   "targets.get", "targets.list", "workers.list", "snapshots.act", "snapshots.create", "snapshots.delete",
   "snapshots.get", "snapshots.list",
-])}\n`);
-writeFileSync(`${state}/user-token`, `${issue("helm-smoke-user", [
+];
+const userScopes = [
   "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
-  "organizations.list", "projects.act", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
-])}\n`);
-writeFileSync(`${state}/bootstrap-token`, `${issue("helm-smoke-bootstrap", [
+  "organizations.list", "projects.act", "projects.create", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
+];
+writeFileSync(`${state}/admin-token`, `${issue("helm-smoke-admin", adminAudience, adminScopes)}\n`);
+writeFileSync(`${state}/admin-denied-token`, `${issue("helm-smoke-admin-denied", adminAudience, userScopes)}\n`);
+writeFileSync(`${state}/user-token`, `${issue("helm-smoke-user", audience, userScopes)}\n`);
+writeFileSync(`${state}/bootstrap-token`, `${issue("helm-smoke-bootstrap", audience, [
   "projects.act", "remote-worker-bootstrap.act",
 ])}\n`);
 writeFileSync(`${state}/access-grant.key`, randomBytes(32));
@@ -374,7 +378,7 @@ writeFileSync(`${state}/admission-token`, randomBytes(24).toString("hex"));
 writeFileSync(`${state}/database-password`, randomBytes(24).toString("hex"));
 writeFileSync(`${state}/tenant-helm-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 NODE
-chmod 0600 "$smoke_directory"/admin-token "$smoke_directory"/user-token "$smoke_directory"/bootstrap-token \
+chmod 0600 "$smoke_directory"/admin-token "$smoke_directory"/admin-denied-token "$smoke_directory"/user-token "$smoke_directory"/bootstrap-token \
   "$smoke_directory"/access-grant.key "$smoke_directory"/admission-token \
   "$smoke_directory"/database-password "$smoke_directory"/gateway-ssh-host-key
 
@@ -730,7 +734,7 @@ run_customer_node_once() {
 }
 
 project_output=$("$cli" --endpoint "https://127.0.0.1:$control_plane_port" \
-  --ca-file "$service_ca" --token-file "$smoke_directory/admin-token" \
+	--ca-file "$service_ca" --token-file "$smoke_directory/user-token" \
   --tenant tenant-helm-smoke --request-id helm-smoke-project-create \
   --idempotency-key helm-smoke-project-create project create --name helm-smoke-project \
   --display-name 'Helm Smoke Project' --organization-id organization-helm-smoke)
@@ -750,7 +754,7 @@ until [ "$(curl --silent --output /dev/null --write-out '%{http_code}' \
 done
 verify_project() {
   "$1" --endpoint "https://127.0.0.1:$control_plane_port" \
-    --ca-file "$service_ca" --token-file "$smoke_directory/admin-token" \
+    --ca-file "$service_ca" --token-file "$smoke_directory/user-token" \
     --tenant tenant-helm-smoke --project "$project_id" --request-id "$2" project get | \
     node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));if(value.metadata?.uid!==process.argv[1])process.exit(1)' "$project_id"
 }
@@ -787,7 +791,7 @@ curl --silent --show-error --fail-with-body --request PUT \
   --data '{"expectedResourceVersion":"0","maxConcurrentLeases":1,"maxCpuMillis":1000,"maxMemoryBytes":536870912,"maxLeaseTtlSeconds":3600}' \
   "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/lease-quota" >/dev/null
 user_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/user-token")" \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-denied-token")" \
   --header 'X-Request-ID: helm-smoke-user-admin-denied' \
   "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/deployment-targets?pageSize=1")
 test "$user_status" = 403 || {
@@ -1031,8 +1035,9 @@ until curl --silent --show-error --fail "http://127.0.0.1:$user_port/healthz" >/
   sleep 1
 done
 node "$current_deployment/scripts/test-platform-compose-admin-web.mjs" \
-  "http://127.0.0.1:$admin_port" "$smoke_directory/admin-token" "$smoke_directory/user-token" \
-  tenant-helm-smoke "$project_id" "http://127.0.0.1:$user_port"
+	"http://127.0.0.1:$admin_port" "$smoke_directory/admin-token" "$smoke_directory/admin-denied-token" \
+	"$smoke_directory/user-token" \
+	tenant-helm-smoke "$project_id" "http://127.0.0.1:$user_port"
 ssh-keyscan -p "$gateway_ssh_port" 127.0.0.1 2>/dev/null >"$smoke_directory/scanned-host-key.pub"
 expected_fingerprint=$(ssh-keygen -lf "$smoke_directory/gateway-ssh-host-key.pub" | awk '{print $2}')
 actual_fingerprint=$(ssh-keygen -lf "$smoke_directory/scanned-host-key.pub" | awk 'NR == 1 {print $2}')

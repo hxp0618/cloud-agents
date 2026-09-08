@@ -1,0 +1,110 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "efe5e22fe1c26eabe9b20c7dcc3f42e9fd5d0bed",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "release": {
+    "version": "0.3.0-dev.97",
+    "candidateDirectory": "/tmp/cloud-agents-oidc-boundary-20260909-r1/release",
+    "sourceCommit": "efe5e22fe1c26eabe9b20c7dcc3f42e9fd5d0bed",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "manifestSha256": "sha256:0a5bb9578d5505506f50cac1884d96428b0383338e65645e9192e4bb4dd1c476",
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000088.tar",
+      "sizeBytes": 1641472,
+      "sha256": "sha256:ec61b23dd4d408781228396dcf87d59de5e37403c3000af69cff030dc0c7051b"
+    },
+    "published": false
+  },
+  "authenticationBoundary": {
+    "issuerShared": true,
+    "keySetShared": true,
+    "userAudience": "https://api.<deployment>.test",
+    "adminAudience": "https://admin-api.<deployment>.test",
+    "distinctAudienceRequiredAtStartup": true,
+    "adminRoutesUseAdminVerifier": true,
+    "userRoutesUseUserVerifier": true,
+    "adminAudienceWithAdminScopesOnAdminAPI": 200,
+    "adminAudienceWithoutAdminScopesOnAdminAPI": 403,
+    "userAudienceOnAdminAPI": 401,
+    "adminAudienceOnUserAPI": 401,
+    "userOriginAdminRoute": 404,
+    "tokenStored": false
+  },
+  "compose": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-oidc-boundary-20260909-r1/release",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-oidc-boundary-20260909-r1-compose.log",
+      "sha256": "sha256:0db4bf85731fbc4d4838127f98559b6f6387ac236d4d265c9352ee6d95b62c8a"
+    },
+    "adminBrowserRequests": 18,
+    "userBrowserRequests": 6,
+    "gateway": ["Files", "PTY", "Preview", "SSH"],
+    "finalDockerWorkers": 0,
+    "finalOpenSandboxResources": 0,
+    "finalComposeResources": 0
+  },
+  "helm": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh scripts/test-platform-helm.sh /tmp/cloud-agents-oidc-boundary-20260909-r1/release",
+    "status": "passed on attempt 3",
+    "passedLog": {
+      "path": "/tmp/cloud-agents-oidc-boundary-20260909-r3-helm.log",
+      "sha256": "sha256:f3cca8bcdc5bb177220216e0a0fbd84dbb7fedf7d9c9d819004486d7620c997a"
+    },
+    "preServiceFailures": [
+      {
+        "path": "/tmp/cloud-agents-oidc-boundary-20260909-r1-helm.log",
+        "sha256": "sha256:0d0fd7ff5669957df2ef9b7d42fd6e2fc5c855cdaefdebe389d2a2e2593de458",
+        "failure": "OrbStack Kubernetes API returned unexpected EOF while creating the first test Secret"
+      },
+      {
+        "path": "/tmp/cloud-agents-oidc-boundary-20260909-r2-helm.log",
+        "sha256": "sha256:4ece4ca29d686ed450a765cc2a8f0e22ca50d8fda1291667ebf7bf723c9db68b",
+        "failure": "OrbStack Kubernetes API returned unexpected EOF while creating the first test Secret"
+      }
+    ],
+    "recoveryCheck": "five consecutive readyz checks plus an isolated namespace and Secret create/delete passed before attempt 3",
+    "schemaLedger": {
+      "count": 88,
+      "first": "000001",
+      "last": "000088"
+    },
+    "adminBrowserRequests": 16,
+    "userBrowserRequests": 6,
+    "remoteWorker": "outbound with leaf and CA rotation; old root rejected",
+    "serviceIdentity": "CA rotated; old roots rejected",
+    "gateway": "TLS and SSH passed",
+    "restart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "verification": {
+    "controlPlaneCommandAndAuthPackages": "passed",
+    "controlPlanePackagesExceptMigration": "passed",
+    "releaseTests": "19 passed",
+    "releaseBuild": "passed",
+    "browserHarnessLintAndFormat": "passed",
+    "shellSyntax": "passed",
+    "diffCheck": "passed",
+    "fullControlPlanePackageRun": "failed outside this slice in internal/migration after 10 minutes under Go 1.27.1; observed existing quota/closure failures and timeout"
+  },
+  "preexistingResources": [
+    {
+      "namespace": "cloud-agents-helm-smoke-15421",
+      "createdAt": "2026-09-08T11:34:51Z",
+      "contents": ["default ServiceAccount", "kube-root-ca.crt ConfigMap"]
+    },
+    {
+      "namespace": "cloud-agents-helm-smoke-78845",
+      "createdAt": "2026-09-08T21:54:48Z",
+      "contents": ["default ServiceAccount", "kube-root-ca.crt ConfigMap"]
+    }
+  ],
+  "boundary": "This is real local Compose and OrbStack Kubernetes evidence from one unpublished dirty-source candidate. It proves separate startup-required User and Admin audiences on the production Control Plane, route-owned verifiers, independent User/Admin Web proxies, ordinary User scope denial on an Admin-audience token, and bidirectional wrong-audience rejection. It also revalidates the existing Docker, Gateway, outbound RemoteWorker, service-identity rotation and exact test-resource cleanup paths. Existing legacy infrastructure-capable routes under the User API remain and the Compose compatibility flow uses a separately named User-audience legacy operator token for them; removing those routes is a later boundary slice. This run did not use public OIDC ingress, external Kubernetes or SSH Worker deployment, or real Codex or Claude Code Provider credentials. Two empty namespaces predating this slice were not deleted because destructive cleanup was not authorized. This is not ADMIN-WEB-V1 completion evidence by itself."
+}

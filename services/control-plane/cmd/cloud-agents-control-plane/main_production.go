@@ -101,6 +101,7 @@ type productionConfig struct {
 type authConfigFile struct {
 	Issuer        string          `json:"issuer"`
 	Audience      string          `json:"audience"`
+	AdminAudience string          `json:"adminAudience"`
 	JWKSURL       string          `json:"jwksUrl,omitempty"`
 	Generation    int64           `json:"generation"`
 	SecurityEpoch int64           `json:"securityEpoch"`
@@ -180,11 +181,12 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return err
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	verifier, err := loadConfiguredVerifier(config.authPath)
+	userVerifier, adminVerifier, err := loadConfiguredVerifiers(config.authPath)
 	if err != nil {
 		return err
 	}
-	defer verifier.Invalidate()
+	defer userVerifier.Invalidate()
+	defer adminVerifier.Invalidate()
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -242,7 +244,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("project create server is unavailable")
 	}
-	projectServer, err := server.NewProjectHTTPServer(verifier, coordinationService, projectCreator)
+	projectServer, err := server.NewProjectHTTPServer(userVerifier, coordinationService, projectCreator)
 	if err != nil {
 		return errors.New("project HTTP server is unavailable")
 	}
@@ -296,31 +298,35 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("SSH target credential directory is invalid")
 		}
 	}
-	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber, sshProber)
+	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(userVerifier, coordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("deployment target HTTP server is unavailable")
 	}
-	adminDeploymentTargetServer, err := server.NewAdminDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber, sshProber)
+	adminDeploymentTargetServer, err := server.NewAdminDeploymentTargetHTTPServer(adminVerifier, coordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("admin deployment target HTTP server is unavailable")
 	}
-	adminEnvironmentLeaseServer, err := server.NewAdminEnvironmentLeaseHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
+	adminEnvironmentLeaseServer, err := server.NewAdminEnvironmentLeaseHTTPServer(adminVerifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
 	if err != nil {
 		return errors.New("admin environment lease HTTP server is unavailable")
 	}
-	adminEnvironmentProfileServer, err := server.NewAdminEnvironmentProfileHTTPServer(verifier, coordinationService)
+	adminEnvironmentProfileServer, err := server.NewAdminEnvironmentProfileHTTPServer(adminVerifier, coordinationService)
 	if err != nil {
 		return errors.New("admin environment profile HTTP server is unavailable")
 	}
-	adminWorkerReleaseServer, err := server.NewAdminWorkerReleaseHTTPServer(verifier, coordinationService)
+	adminWorkerReleaseServer, err := server.NewAdminWorkerReleaseHTTPServer(adminVerifier, coordinationService)
 	if err != nil {
 		return errors.New("admin worker release HTTP server is unavailable")
 	}
-	projectLeaseQuotaServer, err := server.NewProjectLeaseQuotaHTTPServer(verifier, coordinationService)
+	projectLeaseQuotaServer, err := server.NewProjectLeaseQuotaHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("project lease quota HTTP server is unavailable")
 	}
-	networkPolicyServer, err := server.NewNetworkPolicyHTTPServer(verifier, coordinationService)
+	adminProjectLeaseQuotaServer, err := server.NewProjectLeaseQuotaHTTPServer(adminVerifier, coordinationService)
+	if err != nil {
+		return errors.New("admin project lease quota HTTP server is unavailable")
+	}
+	networkPolicyServer, err := server.NewNetworkPolicyHTTPServer(adminVerifier, coordinationService)
 	if err != nil {
 		return errors.New("network policy HTTP server is unavailable")
 	}
@@ -344,66 +350,74 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("RemoteWorker client CA pool is invalid")
 		}
 	}
-	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(verifier, coordinationService, remoteWorkerCertificateAuthority)
+	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(userVerifier, coordinationService, remoteWorkerCertificateAuthority)
 	if err != nil {
 		return errors.New("RemoteWorker enrollment HTTP server is unavailable")
 	}
-	storagePolicyServer, err := server.NewStoragePolicyHTTPServer(verifier, coordinationService)
+	adminRemoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(adminVerifier, coordinationService, remoteWorkerCertificateAuthority)
+	if err != nil {
+		return errors.New("admin RemoteWorker enrollment HTTP server is unavailable")
+	}
+	storagePolicyServer, err := server.NewStoragePolicyHTTPServer(adminVerifier, coordinationService)
 	if err != nil {
 		return errors.New("storage policy HTTP server is unavailable")
 	}
-	publishedEnvironmentProfileServer, err := server.NewPublishedEnvironmentProfileHTTPServer(verifier, coordinationService)
+	publishedEnvironmentProfileServer, err := server.NewPublishedEnvironmentProfileHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("published environment profile HTTP server is unavailable")
 	}
-	foundationServer, err := server.NewFoundationHTTPServer(verifier, coordinationService, sandboxCredentials, grantCodec)
+	foundationServer, err := server.NewFoundationHTTPServer(userVerifier, coordinationService, sandboxCredentials, grantCodec)
 	if err != nil {
 		return errors.New("foundation HTTP server is unavailable")
 	}
-	tenantServer, err := server.NewPlatformTenantHTTPServer(verifier, coordinationService)
+	adminFoundationServer, err := server.NewFoundationHTTPServer(adminVerifier, coordinationService, sandboxCredentials, grantCodec)
+	if err != nil {
+		return errors.New("admin foundation HTTP server is unavailable")
+	}
+	tenantServer, err := server.NewPlatformTenantHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("tenant HTTP server is unavailable")
 	}
-	organizationServer, err := server.NewOrganizationHTTPServer(verifier, coordinationService)
+	organizationServer, err := server.NewOrganizationHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("organization HTTP server is unavailable")
 	}
-	roleServer, err := server.NewRoleHTTPServer(verifier, coordinationService)
+	roleServer, err := server.NewRoleHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("role HTTP server is unavailable")
 	}
-	rbacServer, err := server.NewRBACHTTPServer(verifier, coordinationService, rbacMutationService)
+	rbacServer, err := server.NewRBACHTTPServer(userVerifier, coordinationService, rbacMutationService)
 	if err != nil {
 		return errors.New("RBAC HTTP server is unavailable")
 	}
-	sessionServer, err := server.NewManagedAgentSessionHTTPServer(verifier, coordinationService)
+	sessionServer, err := server.NewManagedAgentSessionHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("managed agent session HTTP server is unavailable")
 	}
-	eventsServer, err := server.NewManagedAgentEventsHTTPServer(verifier, coordinationService)
+	eventsServer, err := server.NewManagedAgentEventsHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("managed agent events HTTP server is unavailable")
 	}
-	turnServer, err := server.NewManagedAgentTurnHTTPServer(verifier, coordinationService)
+	turnServer, err := server.NewManagedAgentTurnHTTPServer(userVerifier, coordinationService)
 	if err != nil {
 		return errors.New("managed agent turn HTTP server is unavailable")
 	}
-	executionServer, err := server.NewManagedAgentExecutionHTTPServer(verifier, coordinationService, runtimeCoordinator)
+	executionServer, err := server.NewManagedAgentExecutionHTTPServer(userVerifier, coordinationService, runtimeCoordinator)
 	if err != nil {
 		return errors.New("managed agent execution HTTP server is unavailable")
 	}
-	leaseServer, err := server.NewManagedHostEnvironmentLeaseHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
+	leaseServer, err := server.NewManagedHostEnvironmentLeaseHTTPServer(userVerifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
 	if err != nil {
 		return errors.New("managed host environment lease HTTP server is unavailable")
 	}
-	userEnvironmentServer, err := server.NewUserEnvironmentHTTPServer(verifier, coordinationService, leaseServer)
+	userEnvironmentServer, err := server.NewUserEnvironmentHTTPServer(userVerifier, coordinationService, leaseServer)
 	if err != nil {
 		return errors.New("user environment HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(verifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(adminVerifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesFoundationPath(request.URL.Path) {
-			foundationServer.ServeHTTP(writer, request)
+			adminFoundationServer.ServeHTTP(writer, request)
 			return
 		}
 		if server.HandlesNetworkPolicyPath(request.URL.Path) {
@@ -411,7 +425,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return
 		}
 		if server.HandlesRemoteWorkerEnrollmentPath(request.URL.Path) {
-			remoteWorkerEnrollmentServer.ServeHTTP(writer, request)
+			adminRemoteWorkerEnrollmentServer.ServeHTTP(writer, request)
 			return
 		}
 		if server.HandlesStoragePolicyPath(request.URL.Path) {
@@ -419,7 +433,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return
 		}
 		if server.HandlesProjectLeaseQuotaPath(request.URL.Path) {
-			projectLeaseQuotaServer.ServeHTTP(writer, request)
+			adminProjectLeaseQuotaServer.ServeHTTP(writer, request)
 			return
 		}
 		if server.HandlesAdminWorkerReleasePath(request.URL.Path) {
@@ -507,7 +521,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			writer.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if !verifier.Ready() {
+		if !userVerifier.Ready() || !adminVerifier.Ready() {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -548,16 +562,20 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			defer cancel()
 			return httpServer.Shutdown(shutdownContext)
 		case <-hup:
-			refreshed, refreshErr := loadConfiguredVerifierConfig(config.authPath)
+			userRefreshed, adminRefreshed, refreshErr := loadConfiguredVerifierConfigs(config.authPath)
 			if refreshErr != nil {
 				logger.Error("authentication reload failed", "error", refreshErr)
 				continue
 			}
-			if refreshErr = verifier.Reload(refreshed); refreshErr != nil {
+			if refreshErr = userVerifier.Reload(userRefreshed); refreshErr != nil {
 				logger.Error("authentication reload failed", "error", refreshErr)
 				continue
 			}
-			logger.Info("authentication reloaded", "generation", refreshed.Generation)
+			if refreshErr = adminVerifier.Reload(adminRefreshed); refreshErr != nil {
+				logger.Error("admin authentication reload failed", "error", refreshErr)
+				continue
+			}
+			logger.Info("authentication reloaded", "generation", userRefreshed.Generation)
 		case err := <-errorChannel:
 			if errors.Is(err, http.ErrServerClosed) {
 				return nil
@@ -692,73 +710,84 @@ func readProductionFile(path string, maximum int64) ([]byte, error) {
 	return contents, nil
 }
 
-func loadConfiguredVerifier(path string) (*authn.ConfiguredVerifier, error) {
-	input, err := loadConfiguredVerifierConfig(path)
+func loadConfiguredVerifiers(path string) (*authn.ConfiguredVerifier, *authn.ConfiguredVerifier, error) {
+	userConfig, adminConfig, err := loadConfiguredVerifierConfigs(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	verifier, err := authn.NewConfiguredVerifier(input)
+	userVerifier, err := authn.NewConfiguredVerifier(userConfig)
 	if err != nil {
-		return nil, errors.New("auth configuration is invalid")
+		return nil, nil, errors.New("auth configuration is invalid")
 	}
-	return verifier, nil
+	adminVerifier, err := authn.NewConfiguredVerifier(adminConfig)
+	if err != nil {
+		userVerifier.Invalidate()
+		return nil, nil, errors.New("admin auth configuration is invalid")
+	}
+	return userVerifier, adminVerifier, nil
 }
 
-func loadConfiguredVerifierConfig(path string) (authn.ConfiguredVerifierConfig, error) {
-	return loadConfiguredVerifierConfigWith(path, fetchJWKS)
+func loadConfiguredVerifierConfigs(path string) (authn.ConfiguredVerifierConfig, authn.ConfiguredVerifierConfig, error) {
+	return loadConfiguredVerifierConfigsWith(path, fetchJWKS)
 }
 
-func loadConfiguredVerifierConfigWith(path string, fetch func(string) ([]json.RawMessage, error)) (authn.ConfiguredVerifierConfig, error) {
+func loadConfiguredVerifierConfigsWith(path string, fetch func(string) ([]json.RawMessage, error)) (authn.ConfiguredVerifierConfig, authn.ConfiguredVerifierConfig, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration cannot be opened")
+		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration cannot be opened")
 	}
 	defer file.Close()
 	contents, err := io.ReadAll(io.LimitReader(file, maxAuthConfigBytes+1))
 	if err != nil || len(contents) > maxAuthConfigBytes {
-		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
+		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.DisallowUnknownFields()
 	var input authConfigFile
 	if err := decoder.Decode(&input); err != nil {
-		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
+		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration has trailing data")
+		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration has trailing data")
+	}
+	if input.AdminAudience == "" || input.AdminAudience == input.Audience {
+		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration must use distinct User and Admin audiences")
 	}
 	if input.JWKSURL != "" && len(input.Keys) != 0 {
-		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration must select keys or jwksUrl")
+		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration must select keys or jwksUrl")
 	}
 	keys := input.Keys
 	if input.JWKSURL != "" {
 		if fetch == nil {
-			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetcher is required")
+			return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetcher is required")
 		}
 		remoteKeys, err := fetch(input.JWKSURL)
 		if err != nil {
-			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetch failed")
+			return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetch failed")
 		}
 		keys = make([]authConfigKey, 0, len(remoteKeys))
 		for _, key := range remoteKeys {
 			normalized, supported, err := normalizeRemoteJWK(key)
 			if err != nil {
-				return authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains an invalid key")
+				return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains an invalid key")
 			}
 			if supported {
 				keys = append(keys, authConfigKey{JWK: normalized, Enabled: true, NotBefore: input.NotBefore, NotAfter: input.ExpiresAt})
 			}
 		}
 		if len(keys) == 0 {
-			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains no supported RS256 key")
+			return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains no supported RS256 key")
 		}
 	}
 	configuredKeys := make([]authn.ConfiguredVerifierKey, len(keys))
 	for index, key := range keys {
 		configuredKeys[index] = authn.ConfiguredVerifierKey{JWK: key.JWK, Enabled: key.Enabled, NotBefore: key.NotBefore, NotAfter: key.NotAfter}
 	}
-	return authn.ConfiguredVerifierConfig{Issuer: input.Issuer, Audience: input.Audience, Generation: input.Generation, SecurityEpoch: input.SecurityEpoch, NotBefore: input.NotBefore, ExpiresAt: input.ExpiresAt, Keys: configuredKeys, Clock: time.Now}, nil
+	userConfig := authn.ConfiguredVerifierConfig{Issuer: input.Issuer, Audience: input.Audience, Generation: input.Generation, SecurityEpoch: input.SecurityEpoch, NotBefore: input.NotBefore, ExpiresAt: input.ExpiresAt, Keys: configuredKeys, Clock: time.Now}
+	adminConfig := userConfig
+	adminConfig.Audience = input.AdminAudience
+	return userConfig, adminConfig, nil
 }
 
 func normalizeRemoteJWK(raw json.RawMessage) (json.RawMessage, bool, error) {

@@ -161,14 +161,14 @@ func TestFetchJWKSRequiresHTTPSAndPreservesKeys(t *testing.T) {
 
 func TestLoadConfiguredVerifierConfigUsesJWKSURL(t *testing.T) {
 	path := t.TempDir() + "/auth.json"
-	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","adminAudience":"https://admin-api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	modulus := make([]byte, 256)
 	modulus[0], modulus[len(modulus)-1] = 0x80, 1
 	n := base64.RawURLEncoding.EncodeToString(modulus)
 	var fetched string
-	config, err := loadConfiguredVerifierConfigWith(path, func(rawURL string) ([]json.RawMessage, error) {
+	userConfig, adminConfig, err := loadConfiguredVerifierConfigsWith(path, func(rawURL string) ([]json.RawMessage, error) {
 		fetched = rawURL
 		return []json.RawMessage{
 			json.RawMessage(`{"kty":"EC","kid":"ec-key","crv":"P-256","x":"AQ","y":"AQ"}`),
@@ -176,17 +176,20 @@ func TestLoadConfiguredVerifierConfigUsesJWKSURL(t *testing.T) {
 		}, nil
 	})
 	wantJWK := `{"alg":"RS256","e":"AQAB","key_ops":["verify"],"kid":"key-1","kty":"RSA","n":"` + n + `","use":"sig"}`
-	if err != nil || fetched != "https://issuer.example/jwks" || len(config.Keys) != 1 || string(config.Keys[0].JWK) != wantJWK || !config.Keys[0].Enabled || config.Keys[0].NotBefore != 100 || config.Keys[0].NotAfter != 200 {
-		t.Fatalf("config=%#v fetched=%q err=%v", config, fetched, err)
+	if err != nil || fetched != "https://issuer.example/jwks" || userConfig.Audience != "https://api.example" || adminConfig.Audience != "https://admin-api.example" || len(userConfig.Keys) != 1 || string(userConfig.Keys[0].JWK) != wantJWK || !userConfig.Keys[0].Enabled || userConfig.Keys[0].NotBefore != 100 || userConfig.Keys[0].NotAfter != 200 {
+		t.Fatalf("user=%#v admin=%#v fetched=%q err=%v", userConfig, adminConfig, fetched, err)
 	}
-	if _, err := authn.NewConfiguredVerifier(config); err != nil {
-		t.Fatalf("normalized remote JWKS cannot initialize verifier: %v", err)
+	if _, err := authn.NewConfiguredVerifier(userConfig); err != nil {
+		t.Fatalf("normalized remote JWKS cannot initialize User verifier: %v", err)
+	}
+	if _, err := authn.NewConfiguredVerifier(adminConfig); err != nil {
+		t.Fatalf("normalized remote JWKS cannot initialize Admin verifier: %v", err)
 	}
 }
 
 func TestLoadConfiguredVerifierConfigRejectsUnsafeJWKSKeys(t *testing.T) {
 	path := t.TempDir() + "/auth.json"
-	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","adminAudience":"https://admin-api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
@@ -197,10 +200,25 @@ func TestLoadConfiguredVerifierConfigRejectsUnsafeJWKSKeys(t *testing.T) {
 		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","use":"enc"}`,
 		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","key_ops":["sign"]}`,
 	} {
-		if _, err := loadConfiguredVerifierConfigWith(path, func(string) ([]json.RawMessage, error) {
+		if _, _, err := loadConfiguredVerifierConfigsWith(path, func(string) ([]json.RawMessage, error) {
 			return []json.RawMessage{json.RawMessage(key)}, nil
 		}); err == nil {
 			t.Fatalf("accepted unsafe JWKS key: %s", key)
+		}
+	}
+}
+
+func TestLoadConfiguredVerifierConfigsRequiresDistinctAudiences(t *testing.T) {
+	for _, body := range []string{
+		`{"issuer":"https://issuer.example","audience":"https://api.example","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`,
+		`{"issuer":"https://issuer.example","audience":"https://api.example","adminAudience":"https://api.example","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`,
+	} {
+		path := t.TempDir() + "/auth.json"
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := loadConfiguredVerifierConfigsWith(path, nil); err == nil {
+			t.Fatalf("accepted non-distinct audiences: %s", body)
 		}
 	}
 }

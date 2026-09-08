@@ -300,13 +300,14 @@ if (isIP(dockerGateway) !== 4) throw new Error("invalid Docker bridge gateway");
 const deploy = `${state}/deployment/deploy`;
 const issuer = "https://issuer.compose.test";
 const audience = "https://api.compose.test";
+const adminAudience = "https://admin-api.compose.test";
 const kid = "compose-smoke-key";
 const now = Math.floor(Date.now() / 1000);
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const exported = publicKey.export({ format: "jwk" });
 const jwk = { alg: "RS256", e: exported.e, key_ops: ["verify"], kid, kty: "RSA", n: exported.n, use: "sig" };
 const auth = {
-  issuer, audience, generation: 1, securityEpoch: 1, notBefore: now - 60, expiresAt: now + 3600,
+  issuer, audience, adminAudience, generation: 1, securityEpoch: 1, notBefore: now - 60, expiresAt: now + 3600,
   keys: [{ jwk, enabled: true, notBefore: now - 60, notAfter: now + 3600 }],
 };
 writeFileSync(`${state}/auth.json`, `${JSON.stringify(auth)}\n`);
@@ -336,7 +337,7 @@ type="sqlite"
 path="/tmp/opensandbox.db"
 `);
 const baseClaims = {
-  iss: issuer, sub: "user-compose-smoke", aud: audience, exp: now + 1800, iat: now - 10,
+  iss: issuer, sub: "user-compose-smoke", exp: now + 1800, iat: now - 10,
   client_id: "compose-smoke-client",
   "https://schemas.cloud-agents.dev/claims/security-epoch": 1,
   "https://schemas.cloud-agents.dev/claims/subject-kind": "user",
@@ -344,28 +345,35 @@ const baseClaims = {
   "https://schemas.cloud-agents.dev/claims/token-profile": "cloud-agents-access-token/v1",
 };
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-const issueToken = (tokenId, scopes) => {
-  const claims = { ...baseClaims, jti: tokenId, scope: [...scopes].sort().join(" ") };
+const issueToken = (tokenId, tokenAudience, scopes) => {
+  const claims = { ...baseClaims, aud: tokenAudience, jti: tokenId, scope: [...scopes].sort().join(" ") };
   const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
   const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
   return `${signingInput}.${signature}`;
 };
-const adminToken = issueToken("compose-smoke-admin-token", [
+const adminScopes = [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
   "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
   "snapshots.act", "snapshots.create", "snapshots.delete", "snapshots.get", "snapshots.list",
-]);
-const userToken = issueToken("compose-smoke-user-token", [
-  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
-  "organizations.list", "projects.act", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
-]);
+];
+const userScopes = [
+	"environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
+	"organizations.list", "projects.act", "projects.create", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
+];
+const adminToken = issueToken("compose-smoke-admin-token", adminAudience, adminScopes);
+const adminDeniedToken = issueToken("compose-smoke-admin-denied-token", adminAudience, userScopes);
+const legacyOperatorToken = issueToken("compose-smoke-legacy-operator-token", audience, adminScopes);
+const userToken = issueToken("compose-smoke-user-token", audience, userScopes);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
-writeFileSync(`${state}/token`, `${adminToken}\n`);
+writeFileSync(`${state}/token`, `${legacyOperatorToken}\n`);
+writeFileSync(`${state}/admin-token`, `${adminToken}\n`);
+writeFileSync(`${state}/admin-denied-token`, `${adminDeniedToken}\n`);
 writeFileSync(`${state}/user-token`, `${userToken}\n`);
 writeFileSync(`${state}/admin-curl.conf`, `header = "Authorization: Bearer ${adminToken}"\n`);
+writeFileSync(`${state}/admin-denied-curl.conf`, `header = "Authorization: Bearer ${adminDeniedToken}"\n`);
 writeFileSync(`${state}/user-curl.conf`, `header = "Authorization: Bearer ${userToken}"\n`);
 writeFileSync(`${state}/ssh-askpass.sh`, '#!/bin/sh\nprintf "%s\\n" "$CLOUD_AGENTS_GATEWAY_PASSWORD"\n');
 writeFileSync(`${state}/runtime.env`, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent\nCLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1\n");
@@ -496,8 +504,11 @@ chmodSync(`${state}/docker-proxy.mjs`, 0o400);
 chmodSync(`${state}/opensandbox-proxy.mjs`, 0o400);
 chmodSync(`${state}/kubernetes-api.mjs`, 0o400);
 chmodSync(`${state}/token`, 0o600);
+chmodSync(`${state}/admin-token`, 0o600);
+chmodSync(`${state}/admin-denied-token`, 0o600);
 chmodSync(`${state}/user-token`, 0o600);
 chmodSync(`${state}/admin-curl.conf`, 0o600);
+chmodSync(`${state}/admin-denied-curl.conf`, 0o600);
 chmodSync(`${state}/user-curl.conf`, 0o600);
 chmodSync(`${state}/ssh-askpass.sh`, 0o700);
 chmodSync(`${state}/compose.env`, 0o600);
@@ -943,12 +954,12 @@ if [ -n "$real_provider_credentials_directory" ]; then
     'cp /source/tenant-compose-smoke.codex.json /source/tenant-compose-smoke.claudeAgent.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
 fi
 
-organization_output=$(cloud_agentsctl --request-id compose-smoke-organizations organization list)
+organization_output=$(cloud_agentsctl_user --request-id compose-smoke-organizations organization list)
 case "$organization_output" in
   *'"uid":"organization-compose-smoke"'*) ;;
   *) echo "Compose bootstrap organization is unavailable" >&2; exit 1 ;;
 esac
-project_output=$(cloud_agentsctl --request-id compose-smoke-project-create \
+project_output=$(cloud_agentsctl_user --request-id compose-smoke-project-create \
   --idempotency-key compose-smoke-project-create project create --name compose-smoke-project \
   --display-name "Compose Smoke Project" --organization-id organization-compose-smoke)
 project_id=$(printf '%s' "$project_output" | node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.metadata.uid)')
@@ -1112,7 +1123,7 @@ if (value.kind !== "WorkerReleasePage" || value.workerReleases?.length !== 1 ||
 NODE
 user_admin_release_file="$smoke_directory/user-admin-release-denied.json"
 user_admin_release_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-release-denied" \
   --output "$user_admin_release_file" --write-out '%{http_code}' \
   "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases?pageSize=200")
@@ -1182,7 +1193,7 @@ if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 1 ||
 NODE
 user_admin_storage_file="$smoke_directory/user-admin-storage-denied.json"
 user_admin_storage_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-storage-denied" \
   --output "$user_admin_storage_file" --write-out '%{http_code}' \
   "https://$endpoint$storage_policy_path")
@@ -1250,7 +1261,7 @@ if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 1 ||
 NODE
 user_admin_network_file="$smoke_directory/user-admin-network-denied.json"
 user_admin_network_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-network-denied" \
   --output "$user_admin_network_file" --write-out '%{http_code}' \
   "https://$endpoint$network_policy_path")
@@ -1341,7 +1352,7 @@ NODE
 
 user_admin_profile_file="$smoke_directory/user-admin-profile-denied.json"
 user_admin_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-profile-denied" \
   --output "$user_admin_profile_file" --write-out '%{http_code}' \
   "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=200")
@@ -1429,7 +1440,7 @@ if ! cmp -s "$quota_create_file" "$quota_replay_file"; then
 fi
 user_admin_quota_file="$smoke_directory/user-admin-quota-denied.json"
 user_admin_quota_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-quota-denied" \
   --output "$user_admin_quota_file" --write-out '%{http_code}' \
   "https://$endpoint$quota_path")
@@ -1598,7 +1609,7 @@ NODE
 
 user_admin_workers_file="$smoke_directory/user-admin-workers-denied.json"
 user_admin_workers_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-workers-denied" \
   --output "$user_admin_workers_file" --write-out '%{http_code}' \
   "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/workers?pageSize=200")
@@ -1634,7 +1645,7 @@ NODE
 )
 user_admin_scheduling_file="$smoke_directory/user-admin-scheduling-denied.json"
 user_admin_scheduling_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-scheduling-denied" \
   --output "$user_admin_scheduling_file" --write-out '%{http_code}' \
   "https://$endpoint$scheduling_path:scheduling-preview")
@@ -1740,7 +1751,7 @@ NODE
 )
 user_admin_upgrade_file="$smoke_directory/user-admin-upgrade-denied.json"
 user_admin_upgrade_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-  --config "$smoke_directory/user-curl.conf" --request GET \
+  --config "$smoke_directory/admin-denied-curl.conf" --request GET \
   --header "X-Request-ID: compose-smoke-user-admin-upgrade-denied" \
   --output "$user_admin_upgrade_file" --write-out '%{http_code}' \
   "https://$endpoint$lease_release_path:upgrade-preview?releaseDigest=sha256%3A${worker_upgrade_release_digest#sha256:}")
@@ -1935,8 +1946,9 @@ for (const action of ["target.drain", "target.upgrade", "target.rollback", "targ
 NODE
 
 node "$smoke_directory/deployment/scripts/test-platform-compose-admin-web.mjs" \
-  "http://$admin_web_endpoint" "$smoke_directory/token" "$smoke_directory/user-token" \
-  tenant-compose-smoke "$project_id" "http://$user_web_endpoint"
+	"http://$admin_web_endpoint" "$smoke_directory/admin-token" "$smoke_directory/admin-denied-token" \
+	"$smoke_directory/user-token" \
+	tenant-compose-smoke "$project_id" "http://$user_web_endpoint"
 
 foundation_network_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-foundation"
 foundation_network_body='{"expectedResourceVersion":"0","policyName":"network-foundation","userSummary":"Private Preview without outbound network","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":true}'

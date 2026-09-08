@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 const [
   argumentOrigin,
   adminTokenFile,
+  adminDeniedTokenFile,
   userTokenFile,
   argumentTenantId,
   argumentProjectId,
@@ -18,9 +19,12 @@ const snapshotMode = Boolean(process.env.SNAPSHOT_ADMIN_APP_URL);
 const origin = process.env.SNAPSHOT_ADMIN_APP_URL ?? argumentOrigin;
 const tenantId = process.env.SNAPSHOT_ADMIN_TENANT_ID ?? argumentTenantId;
 const projectId = process.env.SNAPSHOT_ADMIN_PROJECT_ID ?? argumentProjectId;
-if (![origin, tenantId, projectId].every(Boolean) || (!snapshotMode && !adminTokenFile)) {
+if (
+  ![origin, tenantId, projectId].every(Boolean) ||
+  (!snapshotMode && ![adminTokenFile, adminDeniedTokenFile, userTokenFile].every(Boolean))
+) {
   throw new Error(
-    "usage: node test-platform-compose-admin-web.mjs ORIGIN ADMIN_TOKEN_FILE USER_TOKEN_FILE TENANT_ID PROJECT_ID",
+    "usage: node test-platform-compose-admin-web.mjs ORIGIN ADMIN_TOKEN_FILE ADMIN_DENIED_TOKEN_FILE USER_TOKEN_FILE TENANT_ID PROJECT_ID [USER_ORIGIN]",
   );
 }
 const browserPath = [
@@ -34,6 +38,9 @@ const browserPath = [
 if (!browserPath) throw new Error("Compose Admin Web smoke requires Chrome, Chromium, or Brave");
 
 const adminToken = process.env.SNAPSHOT_ADMIN_TOKEN ?? readFileSync(adminTokenFile, "utf8").trim();
+const adminDeniedToken = snapshotMode
+  ? (process.env.SNAPSHOT_ADMIN_USER_TOKEN ?? readFileSync(adminDeniedTokenFile, "utf8").trim())
+  : readFileSync(adminDeniedTokenFile, "utf8").trim();
 const userToken =
   process.env.SNAPSHOT_ADMIN_USER_TOKEN ?? readFileSync(userTokenFile, "utf8").trim();
 const fullCapture = snapshotMode && process.env.FOUNDATION_FULL_ADMIN_CAPTURE === "1";
@@ -204,10 +211,14 @@ try {
   const denied = snapshotMode
     ? 403
     : await evaluate(
-        `fetch(${JSON.stringify(`${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${userToken}`)}, "X-Request-ID": "compose-admin-web-user-denied" } }).then(response => response.status)`,
+        `fetch(${JSON.stringify(`${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${adminDeniedToken}`)}, "X-Request-ID": "compose-admin-web-user-denied" } }).then(response => response.status)`,
       );
   if (!snapshotMode) {
     assert.equal(denied, 403, "ordinary User token must not cross the Admin API proxy");
+    const wrongAudience = await evaluate(
+      `fetch(${JSON.stringify(`${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${userToken}`)}, "X-Request-ID": "compose-admin-web-user-audience-denied" } }).then(response => response.status)`,
+    );
+    assert.equal(wrongAudience, 401, "User API audience must not authenticate on Admin API");
     await delay(50);
     errors.length = 0;
   }
@@ -235,7 +246,9 @@ try {
   );
   assert.equal(desktop.width, desktop.clientWidth, "desktop layout must not overflow horizontally");
   assert.ok(
-    !desktop.stored.includes(adminToken) && !desktop.stored.includes(userToken),
+    !desktop.stored.includes(adminToken) &&
+      !desktop.stored.includes(adminDeniedToken) &&
+      !desktop.stored.includes(userToken),
     "tokens must remain out of browser storage",
   );
 
@@ -314,7 +327,7 @@ try {
     const fullAdminTokenFile = join(profile, "full-admin-token");
     const fullUserTokenFile = join(profile, "full-user-token");
     writeFileSync(fullAdminTokenFile, adminToken, { mode: 0o600 });
-    writeFileSync(fullUserTokenFile, userToken, { mode: 0o600 });
+    writeFileSync(fullUserTokenFile, adminDeniedToken, { mode: 0o600 });
     const captureScript = fileURLToPath(
       new URL(
         "../apps/admin-web/visual-baseline/daytona-v0.190.0/capture-actual.mjs",
@@ -395,6 +408,10 @@ try {
       `fetch(${JSON.stringify(`${argumentUserOrigin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${adminToken}`)}, "X-Request-ID": "user-web-admin-route-denied" } }).then(response => response.status)`,
     );
     assert.equal(userAdminStatus, 404, "User Web origin must not proxy Admin API routes");
+    const adminUserStatus = await evaluate(
+      `fetch(${JSON.stringify(`${argumentUserOrigin}/v1/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/environment-profiles?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${adminToken}`)}, "X-Request-ID": "admin-audience-user-api-denied" } }).then(response => response.status)`,
+    );
+    assert.equal(adminUserStatus, 401, "Admin API audience must not authenticate on User API");
     await delay(50);
     errors.length = 0;
     const requestOffset = apiRequests.length;
