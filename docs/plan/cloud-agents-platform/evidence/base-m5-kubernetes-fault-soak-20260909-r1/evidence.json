@@ -1,0 +1,104 @@
+{
+  "run": "foundation-k8s-4760ea2d",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "d787916a0f547805dbd565bbbfeb3f638465a926",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "backend": {
+    "kubernetesContext": "orbstack",
+    "kubernetesVersion": "{\n  \"clientVersion\": {\n    \"major\": \"1\",\n    \"minor\": \"33\",\n    \"gitVersion\": \"v1.33.9\",\n    \"gitCommit\": \"69220b617523ac1ba5d070e74c12b5daf5e6c572\",\n    \"gitTreeState\": \"clean\",\n    \"buildDate\": \"2026-02-26T20:22:38Z\",\n    \"goVersion\": \"go1.24.13\",\n    \"compiler\": \"gc\",\n    \"platform\": \"darwin/arm64\"\n  },\n  \"kustomizeVersion\": \"v5.6.0\",\n  \"serverVersion\": {\n    \"major\": \"1\",\n    \"minor\": \"35\",\n    \"emulationMajor\": \"1\",\n    \"emulationMinor\": \"35\",\n    \"minCompatibilityMajor\": \"1\",\n    \"minCompatibilityMinor\": \"34\",\n    \"gitVersion\": \"v1.35.6+orb1\",\n    \"gitCommit\": \"6ffe43029a0c56bfffd91b24535b22c6e37ab9d5\",\n    \"gitTreeState\": \"clean\",\n    \"buildDate\": \"2026-07-31T07:54:36Z\",\n    \"goVersion\": \"go1.25.11\",\n    \"compiler\": \"gc\",\n    \"platform\": \"linux/arm64\"\n  }\n}",
+    "targetNamespace": "foundation-k8s-4760ea2d",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)",
+    "openSandboxServerImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "openSandboxControllerImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller:v0.2.0",
+    "openSandboxControllerImageID": "docker-pullable://sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller@sha256:a9a5f73c1785ebd955336ffa313973a35c1a1b662cb7afc4ea82d92021b3532a",
+    "execdImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "egressImage": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "faults": {
+    "controlPlaneController": {
+      "injected": "process exited after Kubernetes physical create and before settlement",
+      "faultToSettlementUpperBoundMilliseconds": 27214.302417,
+      "recoveryToFirstAdminSuccessMilliseconds": 289.872,
+      "operationRowsLost": 0,
+      "workspaceBytesLost": 0,
+      "deliveryAttempts": 2
+    },
+    "openSandboxController": {
+      "priorPodUid": "5f1c0188-5869-48d8-92ee-4c7f28b7e87a",
+      "recoveredPodUid": "1e92b0fa-cd2e-4526-9fad-d9d71e702af7",
+      "recoveryMilliseconds": 1882.74625
+    },
+    "workloadPod": {
+      "priorPodUid": "ab2cedc4-98db-4e93-92dd-274db6ca2c8a",
+      "recoveredPodUid": "d8a35fb8-a9f7-46cd-acf7-7ef9e0290db9",
+      "recoveryMilliseconds": 22239.82225
+    }
+  },
+  "soak": {
+    "cycles": 64,
+    "successfulRequests": 192,
+    "deniedRequests": 64,
+    "successLatencyMilliseconds": {
+      "max": 4.887,
+      "p50": 1.764,
+      "p95": 3.069
+    },
+    "deniedLatencyMilliseconds": {
+      "max": 0.65,
+      "p50": 0.176,
+      "p95": 0.4
+    },
+    "stateDigest": "sha256:66b33bffca45242706bf2ed8ee0d27eeb06e7f08f8058773f66c5afb06db6a77"
+  },
+  "receipt": {
+    "prepare": {
+      "claimExpiresAt": "2026-09-08T19:03:24.23581Z",
+      "deliveryAttempts": 1,
+      "operationId": "op-e88e0064f3d3c0c6d05c9f7e6a32741e",
+      "operationRows": 1,
+      "proofDigest": "c68bdea01c9d679cd2d8e8fe113a45bc5e0e46aa4798d38a8895962b6c33740d",
+      "runtimeId": "449c03db-3803-448a-bde6-b81db5fd5588",
+      "specDigest": "sha256:5f10c47c6aa105316ba76ef010b405581803d3ed63f29b345aa13a2047313fad",
+      "volumeName": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247"
+    },
+    "recover": {
+      "cycles": 64,
+      "deliveryAttempts": 2,
+      "deniedLatencyMilliseconds": {
+        "max": 0.65,
+        "p50": 0.176,
+        "p95": 0.4
+      },
+      "deniedRequests": 64,
+      "finalCleanupPhase": "complete",
+      "finalObservedState": "stopped",
+      "operationId": "op-e88e0064f3d3c0c6d05c9f7e6a32741e",
+      "operationRows": 1,
+      "recoveryToFirstSuccessMilliseconds": 289.872,
+      "runtimeId": "449c03db-3803-448a-bde6-b81db5fd5588",
+      "stateDigest": "sha256:66b33bffca45242706bf2ed8ee0d27eeb06e7f08f8058773f66c5afb06db6a77",
+      "successLatencyMilliseconds": {
+        "max": 4.887,
+        "p50": 1.764,
+        "p95": 3.069
+      },
+      "successfulRequests": 192,
+      "volumeName": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247",
+      "workspaceDigest": "c68bdea01c9d679cd2d8e8fe113a45bc5e0e46aa4798d38a8895962b6c33740d"
+    }
+  },
+  "checks": [
+    "product migration 000088 applied to disposable PostgreSQL",
+    "a fresh Control Plane Controller process reaped the expired claim and adopted the same Kubernetes runtime, Operation and retained PVC",
+    "the OpenSandbox controller Deployment restarted with a new Pod UID before settlement",
+    "the running BatchSandbox Pod was deleted and replaced with a Ready Pod using the same retained Workspace digest",
+    "64 cycles of three generated-SDK Admin reads and one ordinary-user 403 completed with measured P50/P95/max latency",
+    "Admin responses excluded Secret bytes, Prompt, Artifact and Workspace content markers; the ordinary user received 403",
+    "the recovered runtime stopped with complete cleanup; the harness retained the owner-bound PVC only until its UUID namespace was deleted"
+  ],
+  "boundary": "Local OrbStack Kubernetes and disposable PostgreSQL only; bounded controller/Pod restart and 256-request read measurements are current-machine observations, not SLOs, external-cluster, SSH, write-saturation, control-plane-node or multi-Region evidence"
+}

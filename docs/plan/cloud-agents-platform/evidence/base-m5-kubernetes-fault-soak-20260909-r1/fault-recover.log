@@ -1,0 +1,4 @@
+=== RUN   TestFoundationKubernetesLifecycle
+    foundation_kubernetes_live_test.go:127: FOUNDATION_KUBERNETES_FAULT_RECOVER={"cycles":64,"deliveryAttempts":2,"deniedLatencyMilliseconds":{"max":0.65,"p50":0.176,"p95":0.4},"deniedRequests":64,"finalCleanupPhase":"complete","finalObservedState":"stopped","operationId":"op-e88e0064f3d3c0c6d05c9f7e6a32741e","operationRows":1,"recoveryToFirstSuccessMilliseconds":289.872,"runtimeId":"449c03db-3803-448a-bde6-b81db5fd5588","stateDigest":"sha256:66b33bffca45242706bf2ed8ee0d27eeb06e7f08f8058773f66c5afb06db6a77","successLatencyMilliseconds":{"max":4.887,"p50":1.764,"p95":3.069},"successfulRequests":192,"volumeName":"ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247","workspaceDigest":"c68bdea01c9d679cd2d8e8fe113a45bc5e0e46aa4798d38a8895962b6c33740d"}
+--- PASS: TestFoundationKubernetesLifecycle (0.87s)
+PASS

@@ -1,0 +1,4 @@
+=== RUN   TestFoundationKubernetesLifecycle
+    foundation_kubernetes_live_test.go:184: FOUNDATION_KUBERNETES_FAULT_PREPARE={"claimExpiresAt":"2026-09-08T19:03:24.23581Z","deliveryAttempts":1,"operationId":"op-e88e0064f3d3c0c6d05c9f7e6a32741e","operationRows":1,"proofDigest":"c68bdea01c9d679cd2d8e8fe113a45bc5e0e46aa4798d38a8895962b6c33740d","runtimeId":"449c03db-3803-448a-bde6-b81db5fd5588","specDigest":"sha256:5f10c47c6aa105316ba76ef010b405581803d3ed63f29b345aa13a2047313fad","volumeName":"ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247"}
+--- PASS: TestFoundationKubernetesLifecycle (8.28s)
+PASS

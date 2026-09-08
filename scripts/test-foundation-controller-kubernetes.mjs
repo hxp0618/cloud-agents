@@ -6,11 +6,13 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-const [output] = process.argv.slice(2);
+const [output, ...flags] = process.argv.slice(2);
+const faultSoakOnly = flags.includes("--fault-soak-only");
 assert.ok(
-  output,
-  "usage: node scripts/test-foundation-controller-kubernetes.mjs NEW_OUTPUT_DIRECTORY",
+  output && flags.every((flag) => flag === "--fault-soak-only"),
+  "usage: node scripts/test-foundation-controller-kubernetes.mjs NEW_OUTPUT_DIRECTORY [--fault-soak-only]",
 );
+const faultSoakComplete = Symbol("fault-soak-complete");
 const root = resolve(import.meta.dirname, "..");
 const evidenceDirectory = resolve(output);
 mkdirSync(evidenceDirectory, { mode: 0o700 });
@@ -482,23 +484,229 @@ SELECT 'tenant','tenant','project','project','organization','Foundation Kubernet
     { mode: 0o600 },
   );
 
-  const testOutput = execFileSync(
-    serverTestBinary,
-    ["-test.run", "^TestFoundationKubernetesLifecycle$", "-test.v"],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        CLOUD_AGENTS_FOUNDATION_KUBERNETES_RUNTIME_DATABASE_URL: runtimeURL,
-        CLOUD_AGENTS_FOUNDATION_KUBERNETES_OWNER_DATABASE_URL: migrationURL,
-        CLOUD_AGENTS_FOUNDATION_KUBERNETES_CREDENTIAL_DIRECTORY: credentialDirectory,
-        CLOUD_AGENTS_FOUNDATION_KUBERNETES_TARGET_ENDPOINT: targetEndpoint,
-        CLOUD_AGENTS_FOUNDATION_KUBERNETES_CREDENTIAL_REF: credentialRef,
-        CLOUD_AGENTS_FOUNDATION_KUBERNETES_IMAGE_URI: sandboxImage,
+  const runServerTest = (phase, expected = {}) =>
+    execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationKubernetesLifecycle$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_OWNER_DATABASE_URL: migrationURL,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_CREDENTIAL_DIRECTORY: credentialDirectory,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_TARGET_ENDPOINT: targetEndpoint,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_CREDENTIAL_REF: credentialRef,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_IMAGE_URI: sandboxImage,
+          CLOUD_AGENTS_FOUNDATION_KUBERNETES_PHASE: phase,
+          ...expected,
+        },
+        timeout: 480_000,
       },
-      timeout: 480_000,
-    },
-  );
+    );
+
+  if (faultSoakOnly) {
+    const prepareOutput = runServerTest("fault-prepare");
+    const prepare = parseMarker(prepareOutput, "FOUNDATION_KUBERNETES_FAULT_PREPARE");
+    assert.equal(prepare.operationRows, 1);
+    assert.equal(prepare.deliveryAttempts, 1);
+    const faultStarted = process.hrtime.bigint();
+
+    const controllerBefore = JSON.parse(
+      kubectl(
+        "get",
+        "pods",
+        "-n",
+        operatorNamespace,
+        "-l",
+        `cloud-agents.dev/e2e-run=${run}`,
+        "-o",
+        "json",
+      ),
+    ).items[0];
+    const controllerRestartStarted = process.hrtime.bigint();
+    kubectl("rollout", "restart", "deployment/opensandbox-controller", "-n", operatorNamespace);
+    kubectl(
+      "rollout",
+      "status",
+      "deployment/opensandbox-controller",
+      "-n",
+      operatorNamespace,
+      "--timeout=180s",
+    );
+    const controllerAfter = JSON.parse(
+      kubectl(
+        "get",
+        "pods",
+        "-n",
+        operatorNamespace,
+        "-l",
+        `cloud-agents.dev/e2e-run=${run}`,
+        "-o",
+        "json",
+      ),
+    ).items.find((pod) => pod.metadata.uid !== controllerBefore.metadata.uid);
+    assert.ok(controllerAfter?.status.containerStatuses[0].ready);
+    const controllerRecoveryMilliseconds =
+      Number(process.hrtime.bigint() - controllerRestartStarted) / 1e6;
+
+    const workloadBefore = JSON.parse(
+      kubectl("get", "pods", "-n", targetNamespace, "-o", "json"),
+    ).items;
+    assert.equal(workloadBefore.length, 1);
+    const workloadRestartStarted = process.hrtime.bigint();
+    kubectl(
+      "delete",
+      "pod",
+      workloadBefore[0].metadata.name,
+      "-n",
+      targetNamespace,
+      "--wait=true",
+      "--timeout=180s",
+    );
+    let workloadAfter;
+    for (let attempt = 0; attempt <= 360; attempt++) {
+      const candidates = JSON.parse(
+        kubectl("get", "pods", "-n", targetNamespace, "-o", "json"),
+      ).items;
+      workloadAfter = candidates.find(
+        (pod) =>
+          pod.metadata.uid !== workloadBefore[0].metadata.uid &&
+          pod.status.conditions?.some(
+            (condition) => condition.type === "Ready" && condition.status === "True",
+          ),
+      );
+      if (workloadAfter) break;
+      if (attempt === 360) throw new Error("Kubernetes workload Pod did not recover");
+      await delay(500);
+    }
+    const workloadRecoveryMilliseconds =
+      Number(process.hrtime.bigint() - workloadRestartStarted) / 1e6;
+    await delay(Math.max(0, Date.parse(prepare.claimExpiresAt) - Date.now() + 200));
+
+    const recoverOutput = runServerTest("fault-recover", {
+      CLOUD_AGENTS_FOUNDATION_KUBERNETES_EXPECTED_RUNTIME_ID: prepare.runtimeId,
+      CLOUD_AGENTS_FOUNDATION_KUBERNETES_EXPECTED_VOLUME_NAME: prepare.volumeName,
+      CLOUD_AGENTS_FOUNDATION_KUBERNETES_EXPECTED_OPERATION_ID: prepare.operationId,
+      CLOUD_AGENTS_FOUNDATION_KUBERNETES_EXPECTED_PROOF_DIGEST: prepare.proofDigest,
+    });
+    const recover = parseMarker(recoverOutput, "FOUNDATION_KUBERNETES_FAULT_RECOVER");
+    assert.equal(recover.runtimeId, prepare.runtimeId);
+    assert.equal(recover.volumeName, prepare.volumeName);
+    assert.equal(recover.operationId, prepare.operationId);
+    assert.equal(recover.operationRows, 1);
+    assert.equal(recover.deliveryAttempts, 2);
+    assert.equal(recover.successfulRequests, 192);
+    assert.equal(recover.deniedRequests, 64);
+    assert.equal(recover.finalObservedState, "stopped");
+    assert.equal(recover.finalCleanupPhase, "complete");
+
+    for (let attempt = 0; ; attempt++) {
+      const workloads = JSON.parse(
+        kubectl(
+          "get",
+          "pods,batchsandboxes.sandbox.opensandbox.io",
+          "-n",
+          targetNamespace,
+          "-o",
+          "json",
+        ),
+      );
+      if (workloads.items.length === 0) break;
+      if (attempt === 120) throw new Error("fault-recovered Kubernetes runtime left residue");
+      await delay(500);
+    }
+    const pvc = JSON.parse(
+      kubectl("get", "pvc", prepare.volumeName, "-n", targetNamespace, "-o", "json"),
+    );
+    assert.equal(pvc.metadata.labels["cloud-agents.dev/resource"], "foundation-workspace");
+    assert.equal(pvc.metadata.annotations["cloud-agents.dev/workspace"], "workspace");
+    const evidence = {
+      run,
+      source: {
+        branch: execFileSync("git", ["branch", "--show-current"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        dirty: true,
+        migrationHead: migration.schema_head,
+      },
+      backend: {
+        kubernetesContext: context,
+        kubernetesVersion: kubectl("version", "-o", "json"),
+        targetNamespace,
+        postgres: psql("SHOW server_version;"),
+        openSandboxServerImage: serverImage,
+        openSandboxControllerImage: controllerImage,
+        openSandboxControllerImageID: controllerAfter.status.containerStatuses[0].imageID,
+        execdImage,
+        egressImage,
+        sandboxImage,
+      },
+      faults: {
+        controlPlaneController: {
+          injected: "process exited after Kubernetes physical create and before settlement",
+          faultToSettlementUpperBoundMilliseconds:
+            Number(process.hrtime.bigint() - faultStarted) / 1e6,
+          recoveryToFirstAdminSuccessMilliseconds: recover.recoveryToFirstSuccessMilliseconds,
+          operationRowsLost: 0,
+          workspaceBytesLost: 0,
+          deliveryAttempts: recover.deliveryAttempts,
+        },
+        openSandboxController: {
+          priorPodUid: controllerBefore.metadata.uid,
+          recoveredPodUid: controllerAfter.metadata.uid,
+          recoveryMilliseconds: controllerRecoveryMilliseconds,
+        },
+        workloadPod: {
+          priorPodUid: workloadBefore[0].metadata.uid,
+          recoveredPodUid: workloadAfter.metadata.uid,
+          recoveryMilliseconds: workloadRecoveryMilliseconds,
+        },
+      },
+      soak: {
+        cycles: recover.cycles,
+        successfulRequests: recover.successfulRequests,
+        deniedRequests: recover.deniedRequests,
+        successLatencyMilliseconds: recover.successLatencyMilliseconds,
+        deniedLatencyMilliseconds: recover.deniedLatencyMilliseconds,
+        stateDigest: recover.stateDigest,
+      },
+      receipt: { prepare, recover },
+      checks: [
+        `product migration ${migration.schema_head} applied to disposable PostgreSQL`,
+        "a fresh Control Plane Controller process reaped the expired claim and adopted the same Kubernetes runtime, Operation and retained PVC",
+        "the OpenSandbox controller Deployment restarted with a new Pod UID before settlement",
+        "the running BatchSandbox Pod was deleted and replaced with a Ready Pod using the same retained Workspace digest",
+        "64 cycles of three generated-SDK Admin reads and one ordinary-user 403 completed with measured P50/P95/max latency",
+        "Admin responses excluded Secret bytes, Prompt, Artifact and Workspace content markers; the ordinary user received 403",
+        "the recovered runtime stopped with complete cleanup; the harness retained the owner-bound PVC only until its UUID namespace was deleted",
+      ],
+      boundary:
+        "Local OrbStack Kubernetes and disposable PostgreSQL only; bounded controller/Pod restart and 256-request read measurements are current-machine observations, not SLOs, external-cluster, SSH, write-saturation, control-plane-node or multi-Region evidence",
+    };
+    writeFileSync(
+      resolve(evidenceDirectory, "evidence.json"),
+      JSON.stringify(evidence, null, 2) + "\n",
+    );
+    writeFileSync(resolve(evidenceDirectory, "fault-prepare.log"), prepareOutput);
+    writeFileSync(resolve(evidenceDirectory, "fault-recover.log"), recoverOutput);
+    writeFileSync(
+      resolve(evidenceDirectory, "opensandbox-server.log"),
+      docker("logs", sandboxServerName) + "\n",
+    );
+    writeFileSync(
+      resolve(evidenceDirectory, "opensandbox-controller.log"),
+      kubectl("logs", "deployment/opensandbox-controller", "-n", operatorNamespace) + "\n",
+    );
+    process.stdout.write(
+      `Verified Kubernetes fault/soak; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+    );
+    throw faultSoakComplete;
+  }
+
+  const testOutput = runServerTest("lifecycle");
   const receipt = parseMarker(testOutput, "FOUNDATION_KUBERNETES");
   assert.equal(receipt.ordinaryUserAdminStatus, 403);
   assert.equal(receipt.staleGenerationStatus, 409);
@@ -592,34 +800,38 @@ SELECT 'tenant','tenant','project','project','organization','Foundation Kubernet
     `Verified Kubernetes Foundation lifecycle; evidence ${evidenceDirectory}/evidence.json\n`,
   );
 } catch (error) {
-  if (sandboxServerStarted) {
-    try {
-      writeFileSync(
-        resolve(evidenceDirectory, "opensandbox-server.failure.log"),
-        docker("logs", sandboxServerName) + "\n",
-      );
-    } catch {}
+  if (error === faultSoakComplete) {
+    // The success sentinel keeps the shared cleanup path below.
+  } else {
+    if (sandboxServerStarted) {
+      try {
+        writeFileSync(
+          resolve(evidenceDirectory, "opensandbox-server.failure.log"),
+          docker("logs", sandboxServerName) + "\n",
+        );
+      } catch {}
+    }
+    if (kubernetesCreated) {
+      try {
+        writeFileSync(
+          resolve(evidenceDirectory, "kubernetes.failure.json"),
+          kubectl(
+            "get",
+            "pods,batchsandboxes.sandbox.opensandbox.io,pvc,events",
+            "-n",
+            targetNamespace,
+            "-o",
+            "json",
+          ) + "\n",
+        );
+        writeFileSync(
+          resolve(evidenceDirectory, "opensandbox-controller.failure.log"),
+          kubectl("logs", "deployment/opensandbox-controller", "-n", operatorNamespace) + "\n",
+        );
+      } catch {}
+    }
+    throw error;
   }
-  if (kubernetesCreated) {
-    try {
-      writeFileSync(
-        resolve(evidenceDirectory, "kubernetes.failure.json"),
-        kubectl(
-          "get",
-          "pods,batchsandboxes.sandbox.opensandbox.io,pvc,events",
-          "-n",
-          targetNamespace,
-          "-o",
-          "json",
-        ) + "\n",
-      );
-      writeFileSync(
-        resolve(evidenceDirectory, "opensandbox-controller.failure.log"),
-        kubectl("logs", "deployment/opensandbox-controller", "-n", operatorNamespace) + "\n",
-      );
-    } catch {}
-  }
-  throw error;
 } finally {
   if (sandboxServerStarted) {
     try {
