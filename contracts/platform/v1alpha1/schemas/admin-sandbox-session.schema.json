@@ -63,7 +63,20 @@
         "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "runtimeState": { "enum": ["Pending", "Running", "Pausing", "Paused", "Resuming", "Stopping", "Terminated", "Failed"] },
         "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+        "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["latestRuntimeGeneration", "allocatedMilliseconds", "cpuMillisMilliseconds", "memoryByteMilliseconds", "checkpointedAt"],
+          "properties": {
+            "latestRuntimeGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+            "allocatedMilliseconds": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,39})$" },
+            "cpuMillisMilliseconds": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,39})$" },
+            "memoryByteMilliseconds": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,39})$" },
+            "checkpointedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+            "finalizedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+          }
+        }
       }
     }
   },
@@ -72,6 +85,8 @@
     "physicalVolumeId is opaque and workspaceRetention is always retained in BASE-M1",
     "ttlSeconds and expiresAt are absent only for resources accepted before TTL authority existed",
     "lifecycleTrigger identifies durable manual or TTL acceptance without exposing user content",
-    "networkPolicyEnforcement is derived from the verified lifecycle result; legacy identifies pre-authority profiles"
+    "networkPolicyEnforcement is derived from the verified lifecycle result; legacy identifies pre-authority profiles",
+    "usage contains database-clock allocation facts only; decimal strings preserve values beyond JavaScript safe integers",
+    "usage is absent only until the first database checkpoint; finalizedAt is absent while any runtime segment remains active"
   ]
 }

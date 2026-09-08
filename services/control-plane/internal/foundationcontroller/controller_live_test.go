@@ -448,6 +448,13 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if output := liveCommand(t, ctx, environment, expectedRuntime, "sha256sum /workspace/controller-proof.txt"); !strings.Contains(output, expectedDigest) {
 		t.Fatalf("recovered workspace response = %s", output)
 	}
+	command, err := environment.owner.Exec(ctx, `UPDATE cloud_agents.sandbox_usage_checkpoints
+		SET started_at=checkpointed_at-interval '2 minutes', checkpointed_at=checkpointed_at-interval '2 minutes'
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+		  AND runtime_uid=$1 AND finalized_at IS NULL`, expectedRuntime)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("offline usage checkpoint fixture = %d / %v", command.RowsAffected(), err)
+	}
 
 	var failure liveSandboxRow
 	for attempt := 0; attempt < 5; attempt++ {
@@ -513,8 +520,26 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 		if _, err := environment.sandbox.Find(ctx, oldIdentity); !errors.Is(err, opensandbox.ErrNotFound) {
 			t.Fatalf("stopped runtime still exists: %v", err)
 		}
+		var allocated, cpuAllocated, memoryAllocated int64
+		var checkpointedAt, finalizedAt time.Time
+		err := environment.owner.QueryRow(ctx, `SELECT allocated_milliseconds::bigint,
+			cpu_millis_milliseconds::bigint, memory_byte_milliseconds::bigint,
+			checkpointed_at, finalized_at
+			FROM cloud_agents.sandbox_usage_checkpoints
+			WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+			  AND sandbox_generation=1 AND runtime_uid=$1`, priorRuntime).Scan(
+			&allocated, &cpuAllocated, &memoryAllocated, &checkpointedAt, &finalizedAt)
+		if err != nil || allocated < 120000 || cpuAllocated != allocated*500 ||
+			memoryAllocated != allocated*536870912 || finalizedAt.IsZero() || !finalizedAt.Equal(checkpointedAt) {
+			t.Fatalf("finalized usage = %d/%d/%d/%s/%s err=%v",
+				allocated, cpuAllocated, memoryAllocated, checkpointedAt, finalizedAt, err)
+		}
 		receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "runtimeDeleted": true,
-			"workspaceVolume": current.volumeName, "writerReleased": current.writerReleased})
+			"workspaceVolume": current.volumeName, "writerReleased": current.writerReleased,
+			"usage": map[string]any{"allocatedMilliseconds": allocated,
+				"cpuMillisMilliseconds": cpuAllocated, "memoryByteMilliseconds": memoryAllocated,
+				"checkpointedAt": checkpointedAt.UTC().Format(time.RFC3339Nano),
+				"finalizedAt":    finalizedAt.UTC().Format(time.RFC3339Nano)}})
 		t.Logf("FOUNDATION_LIVE_STOP=%s", receipt)
 		return
 	}

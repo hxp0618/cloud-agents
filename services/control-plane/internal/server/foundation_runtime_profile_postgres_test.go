@@ -338,6 +338,11 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if current.Value.Spec.Usage == nil || current.Value.Spec.Usage.AllocatedMilliseconds == "" ||
+		current.Value.Spec.Usage.CPUMillisMilliseconds == "" || current.Value.Spec.Usage.MemoryByteMilliseconds == "" ||
+		current.Value.Spec.Usage.CheckpointedAt == "" {
+		t.Fatalf("Admin sandbox usage projection = %+v", current.Value.Spec.Usage)
+	}
 	compute := "delete"
 	if action == "rebuild" {
 		compute = "create"

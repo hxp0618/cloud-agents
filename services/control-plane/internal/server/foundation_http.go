@@ -916,6 +916,7 @@ func adminSandboxAccessGrantResource(snapshot postgres.SandboxAccessGrantSnapsho
 func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.AdminSandboxSession {
 	physicalVolumeID, runtimeID, stableErrorCode, observedAt, expiresAt, lifecycleTrigger := "", "", "", "", "", ""
 	ttlSeconds := int64(0)
+	var usage *platform.AdminSandboxUsage
 	if snapshot.PhysicalVolumeID != nil {
 		physicalVolumeID = *snapshot.PhysicalVolumeID
 	}
@@ -937,6 +938,19 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 	if snapshot.LifecycleTrigger != nil {
 		lifecycleTrigger = *snapshot.LifecycleTrigger
 	}
+	if snapshot.Usage != nil {
+		finalizedAt := ""
+		if snapshot.Usage.FinalizedAt != nil {
+			finalizedAt = snapshot.Usage.FinalizedAt.UTC().Format(time.RFC3339Nano)
+		}
+		usage = &platform.AdminSandboxUsage{
+			LatestRuntimeGeneration: snapshot.Usage.LatestRuntimeGeneration,
+			AllocatedMilliseconds:   snapshot.Usage.AllocatedMilliseconds,
+			CPUMillisMilliseconds:   snapshot.Usage.CPUMillisMilliseconds,
+			MemoryByteMilliseconds:  snapshot.Usage.MemoryByteMilliseconds,
+			CheckpointedAt:          snapshot.Usage.CheckpointedAt.UTC().Format(time.RFC3339Nano), FinalizedAt: finalizedAt,
+		}
+	}
 	return platform.AdminSandboxSession{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "AdminSandboxSession", Metadata: common.ResourceMetadata{
 		UID: snapshot.SandboxID, Name: snapshot.SandboxID,
 		TenantRef:       common.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID},
@@ -953,6 +967,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 		DesiredState: snapshot.DesiredState, ObservedState: snapshot.ObservedState, WriterReleased: snapshot.WriterReleased,
 		TTLSeconds: ttlSeconds, ExpiresAt: expiresAt, LifecycleTrigger: lifecycleTrigger,
 		RuntimeID: runtimeID, RuntimeState: snapshot.RuntimeState, StableErrorCode: stableErrorCode, ObservedAt: observedAt,
+		Usage: usage,
 	}}
 }
 

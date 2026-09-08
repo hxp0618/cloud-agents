@@ -28,6 +28,7 @@ FROM cloud_agents.reap_foundation_sandbox_claim_v1($1,$2)`
 	expireFoundationSandboxSQL = `SELECT tenant_id, project_uid, sandbox_uid, expired_at,
     operation_uid, sandbox_generation
 FROM cloud_agents.expire_foundation_sandbox_v1($1,$2)`
+	checkpointFoundationSandboxUsageSQL = `SELECT cloud_agents.checkpoint_foundation_sandbox_usage_v1($1)`
 )
 
 type FoundationSandboxClaimInput struct {
@@ -99,6 +100,35 @@ type FoundationSandboxExpiryResult struct {
 	OperationID                    string
 	ExpiredAt                      time.Time
 	SandboxGeneration              int64
+}
+
+type FoundationSandboxUsageCheckpointResult struct {
+	DatabaseOutcome DatabaseOutcome
+	Count           int32
+}
+
+func (service *DurableCoordinationService) CheckpointFoundationSandboxUsage(ctx context.Context, limit int32) (FoundationSandboxUsageCheckpointResult, error) {
+	if service == nil || service.runner == nil {
+		return FoundationSandboxUsageCheckpointResult{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || limit < 1 || limit > 500 {
+		return FoundationSandboxUsageCheckpointResult{}, ErrCoordinationInvalidInput
+	}
+	var result FoundationSandboxUsageCheckpointResult
+	err := service.runner.withGlobalMutation(ctx, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, checkpointFoundationSandboxUsageSQL, limit).Scan(&result.Count)
+	})
+	if errors.Is(err, ErrMutationCommitUnknown) {
+		return FoundationSandboxUsageCheckpointResult{DatabaseOutcome: DatabaseUnknown}, nil
+	}
+	if err != nil {
+		return FoundationSandboxUsageCheckpointResult{}, mapCoordinationDatabaseError("checkpoint foundation sandbox usage", err)
+	}
+	result.DatabaseOutcome = DatabaseCommitted
+	if result.Count < 0 || result.Count > limit {
+		return FoundationSandboxUsageCheckpointResult{}, ErrCoordinationResultDrift
+	}
+	return result, nil
 }
 
 func (service *DurableCoordinationService) ExpireFoundationSandbox(ctx context.Context, subjectDigest, auditFactID string) (FoundationSandboxExpiryResult, error) {

@@ -1169,6 +1169,14 @@ export type SandboxSessionLifecycleOperation = Readonly<{
   computeDisposition: "delete" | "create";
   workspaceDisposition: "retain";
 }>;
+export type AdminSandboxUsage = Readonly<{
+  latestRuntimeGeneration: number;
+  allocatedMilliseconds: string;
+  cpuMillisMilliseconds: string;
+  memoryByteMilliseconds: string;
+  checkpointedAt: string;
+  finalizedAt?: string;
+}>;
 export type AdminSandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "AdminSandboxSession";
@@ -1211,6 +1219,7 @@ export type AdminSandboxSession = Readonly<{
       | "Failed";
     stableErrorCode?: string;
     observedAt?: string;
+    usage?: AdminSandboxUsage;
   }>;
 }>;
 export type AdminSandboxSessionPage = Readonly<{
@@ -3119,6 +3128,52 @@ function runtimeIsolation(source: Record<string, unknown>, path: string) {
   if ((workloadTrust === "shared-untrusted") !== (isolationRuntime === "gvisor"))
     error("INVALID_RUNTIME_ISOLATION", `${path}/isolationRuntime`);
   return { workloadTrust, isolationRuntime };
+}
+function sandboxUsage(value: unknown, generation: number, path: string): AdminSandboxUsage {
+  const source = strictRecord(
+    value,
+    [
+      "latestRuntimeGeneration",
+      "allocatedMilliseconds",
+      "cpuMillisMilliseconds",
+      "memoryByteMilliseconds",
+      "checkpointedAt",
+      "finalizedAt",
+    ],
+    [
+      "latestRuntimeGeneration",
+      "allocatedMilliseconds",
+      "cpuMillisMilliseconds",
+      "memoryByteMilliseconds",
+      "checkpointedAt",
+    ],
+    path,
+  );
+  const decimal = (value: unknown, field: string) => {
+    const text = string(value, field);
+    if (!/^(?:0|[1-9][0-9]{0,39})$/u.test(text)) error("INVALID_SANDBOX_USAGE", field);
+    return text;
+  };
+  const usage = {
+    latestRuntimeGeneration: integer(
+      source.latestRuntimeGeneration,
+      1,
+      generation,
+      `${path}/latestRuntimeGeneration`,
+    ),
+    allocatedMilliseconds: decimal(source.allocatedMilliseconds, `${path}/allocatedMilliseconds`),
+    cpuMillisMilliseconds: decimal(source.cpuMillisMilliseconds, `${path}/cpuMillisMilliseconds`),
+    memoryByteMilliseconds: decimal(
+      source.memoryByteMilliseconds,
+      `${path}/memoryByteMilliseconds`,
+    ),
+    checkpointedAt: dateTime(source.checkpointedAt, `${path}/checkpointedAt`),
+  };
+  return Object.freeze(
+    source.finalizedAt === undefined
+      ? usage
+      : { ...usage, finalizedAt: dateTime(source.finalizedAt, `${path}/finalizedAt`) },
+  );
 }
 function runtimeImage(value: unknown, path: string): string {
   const text = boundedString(value, 1, 1024, path);
@@ -8488,6 +8543,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "runtimeState",
     "stableErrorCode",
     "observedAt",
+    "usage",
   ] as const;
   const spec = strictRecord(
     source.spec,
@@ -8504,6 +8560,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
           "runtimeState",
           "stableErrorCode",
           "observedAt",
+          "usage",
         ].includes(field),
     ),
     "/spec",
@@ -8626,6 +8683,9 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     ...(spec.observedAt === undefined
       ? {}
       : { observedAt: dateTime(spec.observedAt, "/spec/observedAt") }),
+    ...(spec.usage === undefined
+      ? {}
+      : { usage: sandboxUsage(spec.usage, generation, "/spec/usage") }),
   };
   return Object.freeze({ ...root, kind: "AdminSandboxSession", spec: Object.freeze(result) });
 }

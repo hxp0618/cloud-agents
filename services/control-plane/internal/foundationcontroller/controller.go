@@ -76,6 +76,13 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	if controller == nil || controller.store == nil {
 		return false, errors.New("foundation controller is unavailable")
 	}
+	checkpoint, err := controller.store.CheckpointFoundationSandboxUsage(ctx, 200)
+	if err != nil {
+		return false, err
+	}
+	if checkpoint.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("foundation usage checkpoint outcome is unknown")
+	}
 	subject := digest("foundation-controller")
 	if controller.docker != nil {
 		worked, err := controller.runWorkspaceSnapshotOne(ctx, subject)

@@ -890,6 +890,16 @@ try {
   const stopReceipt = lifecycleController("stop", "FOUNDATION_LIVE_STOP");
   assert.equal(stopReceipt.generation, stopAPIReceipt.generation);
   assert.equal(stopReceipt.workspaceVolume, prepareReceipt.volumeName);
+  assert.ok(stopReceipt.usage.allocatedMilliseconds >= 120_000);
+  assert.equal(
+    stopReceipt.usage.cpuMillisMilliseconds,
+    stopReceipt.usage.allocatedMilliseconds * 500,
+  );
+  assert.equal(
+    stopReceipt.usage.memoryByteMilliseconds,
+    stopReceipt.usage.allocatedMilliseconds * 536_870_912,
+  );
+  assert.equal(stopReceipt.usage.checkpointedAt, stopReceipt.usage.finalizedAt);
   const snapshotAPIReceipt = parseMarker(
     execFileSync(
       serverTestBinary,
@@ -1027,7 +1037,7 @@ try {
       retentionCleanup: { api: expiryAPIReceipt, controller: expiryControllerReceipt },
       ...(browserReceipt === undefined ? {} : { adminBrowser: browserReceipt }),
       checks: [
-        "product migration 000084 applied to disposable PostgreSQL",
+        `product migration ${currentHead} applied to disposable PostgreSQL`,
         "new Snapshot retention is fixed at database-clock acceptance and exposed only as metadata",
         "ordinary user token received 403 and stale resourceVersion received 409 from Admin cleanup",
         "manual cleanup required exact logical Snapshot and source Workspace confirmation without physical volume disclosure",
@@ -1112,10 +1122,11 @@ try {
       stop: { api: stopAPIReceipt, controller: stopReceipt },
       snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
       checks: [
-        "product migration 000082 applied to disposable PostgreSQL",
+        `product migration ${currentHead} applied to disposable PostgreSQL`,
         "ordinary user token received 403 from Admin Workspace Snapshot API",
         "Admin create replay returned the same durable Operation and metadata-only responses excluded physical volume, digest, endpoint and credentials",
         "source Sandbox was stopped, observed stopped and writer-released before acceptance",
+        "database-clock CPU and memory allocation facts caught up from a stale checkpoint after Controller process restart and froze in the Stop transaction",
         "acceptance reserved the existing single-writer slot until terminal settlement; Admin rebuild returned 409 while the snapshot was pending",
         "Controller claimed the operation and copied the real Docker Workspace through a never-started helper",
         "normalized path, type, mode, link target and file-byte archive digests matched after Docker unpack and repack",
@@ -1262,7 +1273,7 @@ try {
       restore: { api: restoreAPIReceipt, controller: restoreControllerReceipt },
       stop: { api: restoreStopAPIReceipt, controller: restoreStopControllerReceipt },
       checks: [
-        "product migration 000083 applied to disposable PostgreSQL",
+        `product migration ${currentHead} applied to disposable PostgreSQL`,
         "ordinary user token received 403 and stale snapshot resourceVersion received 409 from the Admin restore API",
         "Admin restore replay returned the same durable Sandbox Operation and response excluded snapshot internals, endpoint and credentials",
         "restore acceptance bound the available snapshot, fixed same-Target published RuntimeProfile, new Workspace and new Sandbox under the existing single-writer fence",
@@ -1483,6 +1494,7 @@ try {
       "real OpenSandbox Failed state and exact compensation",
       "generated Admin stop/rebuild with ordinary-user 403, idempotent replay, stale fencing, Operation and Audit",
       "stop deletes the exact runtime, releases its writer, and retains the physical Workspace volume",
+      "database-clock Sandbox CPU and memory allocation facts catch up from a stale checkpoint after Controller process restart and freeze in the Stop transaction",
       "rebuild uses the same physical volume and preserves Workspace bytes",
       "generated Product Sandbox Exec uses database-authorized exact generation and physical runtime receipt",
       "real bounded foreground command runs in /workspace and returns exit code, stdout, stderr, and duration",

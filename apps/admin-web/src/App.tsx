@@ -7689,6 +7689,42 @@ function SandboxDetail({
               : dateTime(sandbox.spec.observedAt)}
           </dd>
         </div>
+        {sandbox.spec.usage === undefined ? null : (
+          <>
+            <div>
+              <dt>{t("sandbox.usageGeneration")}</dt>
+              <dd className="mono">{number(sandbox.spec.usage.latestRuntimeGeneration)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.usageAllocated")}</dt>
+              <dd className="mono">
+                {t("sandbox.usageMilliseconds", {
+                  value: sandbox.spec.usage.allocatedMilliseconds,
+                })}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.usageCPU")}</dt>
+              <dd className="mono">{sandbox.spec.usage.cpuMillisMilliseconds} mCPU·ms</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.usageMemory")}</dt>
+              <dd className="mono">{sandbox.spec.usage.memoryByteMilliseconds} byte·ms</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.usageCheckpointedAt")}</dt>
+              <dd>{dateTime(sandbox.spec.usage.checkpointedAt)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.usageFinalizedAt")}</dt>
+              <dd>
+                {sandbox.spec.usage.finalizedAt === undefined
+                  ? t("sandbox.usageActive")
+                  : dateTime(sandbox.spec.usage.finalizedAt)}
+              </dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{sandbox.metadata.resourceVersion}</dd>

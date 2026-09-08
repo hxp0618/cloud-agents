@@ -34,6 +34,14 @@ type AdminSandboxSnapshot struct {
 	WriterReleased                                        bool
 	CreatedAt, UpdatedAt                                  time.Time
 	ObservedAt, ExpiresAt                                 *time.Time
+	Usage                                                 *AdminSandboxUsageSnapshot
+}
+
+type AdminSandboxUsageSnapshot struct {
+	LatestRuntimeGeneration                                              int64
+	AllocatedMilliseconds, CPUMillisMilliseconds, MemoryByteMilliseconds string
+	CheckpointedAt                                                       time.Time
+	FinalizedAt                                                          *time.Time
 }
 
 type AdminSandboxPage struct {
@@ -91,6 +99,12 @@ type adminSandboxPageRow struct {
 	CreatedAt              time.Time  `json:"created_at"`
 	UpdatedAt              time.Time  `json:"updated_at"`
 	ObservedAt             *time.Time `json:"observed_at"`
+	UsageLatestGeneration  *int64     `json:"usage_latest_runtime_generation"`
+	UsageAllocatedMillis   *string    `json:"usage_allocated_milliseconds"`
+	UsageCPUMillisMillis   *string    `json:"usage_cpu_millis_milliseconds"`
+	UsageMemoryByteMillis  *string    `json:"usage_memory_byte_milliseconds"`
+	UsageCheckpointedAt    *time.Time `json:"usage_checkpointed_at"`
+	UsageFinalizedAt       *time.Time `json:"usage_finalized_at"`
 }
 
 const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.sandbox_uid,
@@ -104,7 +118,26 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     sandbox.generation, sandbox.observed_generation, sandbox.desired_state, sandbox.observed_state,
     sandbox.writer_released, sandbox.ttl_seconds, sandbox.expires_at, activity.lifecycle_trigger,
     sandbox.runtime_uid, sandbox.runtime_state, sandbox.stable_error_code,
-    sandbox.resource_version, operation.created_at, operation.updated_at, sandbox.observed_at`
+    sandbox.resource_version, operation.created_at, operation.updated_at, sandbox.observed_at,
+    usage.latest_runtime_generation AS usage_latest_runtime_generation,
+    usage.allocated_milliseconds AS usage_allocated_milliseconds,
+    usage.cpu_millis_milliseconds AS usage_cpu_millis_milliseconds,
+    usage.memory_byte_milliseconds AS usage_memory_byte_milliseconds,
+    usage.checkpointed_at AS usage_checkpointed_at, usage.finalized_at AS usage_finalized_at`
+
+const adminSandboxUsageJoin = `LEFT JOIN LATERAL (
+    SELECT pg_catalog.max(checkpoint.sandbox_generation) AS latest_runtime_generation,
+        pg_catalog.sum(checkpoint.allocated_milliseconds)::text AS allocated_milliseconds,
+        pg_catalog.sum(checkpoint.cpu_millis_milliseconds)::text AS cpu_millis_milliseconds,
+        pg_catalog.sum(checkpoint.memory_byte_milliseconds)::text AS memory_byte_milliseconds,
+        pg_catalog.max(checkpoint.checkpointed_at) AS checkpointed_at,
+        CASE WHEN pg_catalog.bool_and(checkpoint.finalized_at IS NOT NULL)
+            THEN pg_catalog.max(checkpoint.finalized_at) END AS finalized_at
+    FROM cloud_agents.sandbox_usage_checkpoints AS checkpoint
+    WHERE checkpoint.tenant_id = sandbox.tenant_id AND checkpoint.project_uid = sandbox.project_uid
+      AND checkpoint.sandbox_uid = sandbox.sandbox_uid
+    HAVING pg_catalog.count(*) > 0
+) AS usage ON true`
 
 var (
 	getAdminSandboxSQL = `SELECT ` + adminSandboxColumns + `
@@ -120,6 +153,7 @@ LEFT JOIN cloud_agents.runtime_profiles AS profile
 LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
   ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
  AND activity.sandbox_generation = sandbox.operation_generation
+` + adminSandboxUsageJoin + `
 WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
   AND sandbox.sandbox_uid = $2`
 	getFoundationSandboxAccessSQL = `SELECT sandbox.tenant_id, sandbox.project_uid,
@@ -165,6 +199,7 @@ FROM (
     LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
       ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
      AND activity.sandbox_generation = sandbox.operation_generation
+    ` + adminSandboxUsageJoin + `
     WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
       AND sandbox.sandbox_uid > $2
     ORDER BY sandbox.sandbox_uid
@@ -442,7 +477,9 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 		&value.ObservedGeneration, &value.DesiredState, &value.ObservedState, &value.WriterReleased,
 		&value.TTLSeconds, &value.ExpiresAt, &value.LifecycleTrigger, &value.RuntimeID,
 		&value.RuntimeState, &value.StableErrorCode, &value.ResourceVersion,
-		&value.CreatedAt, &value.UpdatedAt, &value.ObservedAt)
+		&value.CreatedAt, &value.UpdatedAt, &value.ObservedAt,
+		&value.UsageLatestGeneration, &value.UsageAllocatedMillis, &value.UsageCPUMillisMillis,
+		&value.UsageMemoryByteMillis, &value.UsageCheckpointedAt, &value.UsageFinalizedAt)
 }
 
 func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (AdminSandboxSnapshot, error) {
@@ -460,6 +497,21 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 		RuntimeID: row.RuntimeID, RuntimeState: row.RuntimeState, StableErrorCode: row.StableErrorCode,
 		ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		ObservedAt: row.ObservedAt,
+	}
+	if row.UsageLatestGeneration != nil {
+		if row.UsageAllocatedMillis == nil || row.UsageCPUMillisMillis == nil || row.UsageMemoryByteMillis == nil || row.UsageCheckpointedAt == nil {
+			return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+		}
+		value.Usage = &AdminSandboxUsageSnapshot{
+			LatestRuntimeGeneration: *row.UsageLatestGeneration,
+			AllocatedMilliseconds:   *row.UsageAllocatedMillis,
+			CPUMillisMilliseconds:   *row.UsageCPUMillisMillis,
+			MemoryByteMilliseconds:  *row.UsageMemoryByteMillis,
+			CheckpointedAt:          *row.UsageCheckpointedAt,
+			FinalizedAt:             row.UsageFinalizedAt,
+		}
+	} else if row.UsageAllocatedMillis != nil || row.UsageCPUMillisMillis != nil || row.UsageMemoryByteMillis != nil || row.UsageCheckpointedAt != nil || row.UsageFinalizedAt != nil {
+		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
 	}
 	value.NetworkPolicyEnforcement = networkPolicyEnforcement(value)
 	if row.TenantID != tenantID || row.ProjectID != projectID || row.WorkspaceRetention != "retain" || !validAdminSandboxSnapshot(value) {
@@ -520,6 +572,11 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 	if value.RuntimeProfileVersion < 1 || value.RuntimeProfileVersion > 2147483647 || value.Generation < 1 ||
 		value.ObservedGeneration < 0 || value.ObservedGeneration > value.Generation || value.ResourceVersion < 0 ||
 		value.CreatedAt.IsZero() || value.UpdatedAt.Before(value.CreatedAt) || value.WriterReleased && value.ObservedState != "stopped" {
+		return false
+	}
+	if value.Usage != nil && (value.Usage.LatestRuntimeGeneration < 1 || value.Usage.LatestRuntimeGeneration > value.Generation ||
+		value.Usage.AllocatedMilliseconds == "" || value.Usage.CPUMillisMilliseconds == "" || value.Usage.MemoryByteMilliseconds == "" ||
+		value.Usage.CheckpointedAt.IsZero() || value.Usage.FinalizedAt != nil && value.Usage.FinalizedAt.IsZero()) {
 		return false
 	}
 	switch value.OperationState {

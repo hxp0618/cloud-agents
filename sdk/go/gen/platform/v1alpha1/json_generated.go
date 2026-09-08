@@ -112,6 +112,7 @@ var (
 	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
 	previewProxyPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
 	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	usageDecimalPattern          = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,39})$`)
 	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
 	workerVersionPattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 	egressDomainPattern          = regexp.MustCompile(`^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
@@ -1205,36 +1206,45 @@ type SandboxSessionLifecycleOperation struct {
 	ComputeDisposition   string `json:"computeDisposition"`
 	WorkspaceDisposition string `json:"workspaceDisposition"`
 }
+type AdminSandboxUsage struct {
+	LatestRuntimeGeneration int64  `json:"latestRuntimeGeneration"`
+	AllocatedMilliseconds   string `json:"allocatedMilliseconds"`
+	CPUMillisMilliseconds   string `json:"cpuMillisMilliseconds"`
+	MemoryByteMilliseconds  string `json:"memoryByteMilliseconds"`
+	CheckpointedAt          string `json:"checkpointedAt"`
+	FinalizedAt             string `json:"finalizedAt,omitempty"`
+}
 type AdminSandboxSessionSpec struct {
-	ProjectRef               common.ProjectRef `json:"projectRef"`
-	OperationID              string            `json:"operationId"`
-	OperationState           string            `json:"operationState"`
-	CleanupPhase             string            `json:"cleanupPhase"`
-	WorkspaceID              string            `json:"workspaceId"`
-	WorkspaceName            string            `json:"workspaceName"`
-	VolumeID                 string            `json:"volumeId"`
-	PhysicalVolumeID         string            `json:"physicalVolumeId,omitempty"`
-	WorkspaceRetention       string            `json:"workspaceRetention"`
-	WorkspaceObservedState   string            `json:"workspaceObservedState"`
-	RuntimeProfileID         string            `json:"runtimeProfileId"`
-	RuntimeProfileVersion    int64             `json:"runtimeProfileVersion"`
-	WorkloadTrust            string            `json:"workloadTrust"`
-	IsolationRuntime         string            `json:"isolationRuntime"`
-	TargetID                 string            `json:"targetId"`
-	NetworkPolicyRef         string            `json:"networkPolicyRef,omitempty"`
-	NetworkPolicyEnforcement string            `json:"networkPolicyEnforcement"`
-	Generation               int64             `json:"generation"`
-	ObservedGeneration       int64             `json:"observedGeneration"`
-	DesiredState             string            `json:"desiredState"`
-	ObservedState            string            `json:"observedState"`
-	WriterReleased           bool              `json:"writerReleased"`
-	TTLSeconds               int64             `json:"ttlSeconds,omitempty"`
-	ExpiresAt                string            `json:"expiresAt,omitempty"`
-	LifecycleTrigger         string            `json:"lifecycleTrigger,omitempty"`
-	RuntimeID                string            `json:"runtimeId,omitempty"`
-	RuntimeState             string            `json:"runtimeState,omitempty"`
-	StableErrorCode          string            `json:"stableErrorCode,omitempty"`
-	ObservedAt               string            `json:"observedAt,omitempty"`
+	ProjectRef               common.ProjectRef  `json:"projectRef"`
+	OperationID              string             `json:"operationId"`
+	OperationState           string             `json:"operationState"`
+	CleanupPhase             string             `json:"cleanupPhase"`
+	WorkspaceID              string             `json:"workspaceId"`
+	WorkspaceName            string             `json:"workspaceName"`
+	VolumeID                 string             `json:"volumeId"`
+	PhysicalVolumeID         string             `json:"physicalVolumeId,omitempty"`
+	WorkspaceRetention       string             `json:"workspaceRetention"`
+	WorkspaceObservedState   string             `json:"workspaceObservedState"`
+	RuntimeProfileID         string             `json:"runtimeProfileId"`
+	RuntimeProfileVersion    int64              `json:"runtimeProfileVersion"`
+	WorkloadTrust            string             `json:"workloadTrust"`
+	IsolationRuntime         string             `json:"isolationRuntime"`
+	TargetID                 string             `json:"targetId"`
+	NetworkPolicyRef         string             `json:"networkPolicyRef,omitempty"`
+	NetworkPolicyEnforcement string             `json:"networkPolicyEnforcement"`
+	Generation               int64              `json:"generation"`
+	ObservedGeneration       int64              `json:"observedGeneration"`
+	DesiredState             string             `json:"desiredState"`
+	ObservedState            string             `json:"observedState"`
+	WriterReleased           bool               `json:"writerReleased"`
+	TTLSeconds               int64              `json:"ttlSeconds,omitempty"`
+	ExpiresAt                string             `json:"expiresAt,omitempty"`
+	LifecycleTrigger         string             `json:"lifecycleTrigger,omitempty"`
+	RuntimeID                string             `json:"runtimeId,omitempty"`
+	RuntimeState             string             `json:"runtimeState,omitempty"`
+	StableErrorCode          string             `json:"stableErrorCode,omitempty"`
+	ObservedAt               string             `json:"observedAt,omitempty"`
+	Usage                    *AdminSandboxUsage `json:"usage,omitempty"`
 }
 type AdminSandboxSession struct {
 	ResourceBase
@@ -1576,7 +1586,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "RuntimeProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetSelector": common.ObjectResponseShape(map[string]common.ResponseShape{"regionId": common.ScalarResponseShape(), "resourcePoolId": common.ScalarResponseShape(), "runtime": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape()}), "networkPolicyRef": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "AdminSandboxSession":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "usage": common.ObjectResponseShape(map[string]common.ResponseShape{"latestRuntimeGeneration": common.ScalarResponseShape(), "allocatedMilliseconds": common.ScalarResponseShape(), "cpuMillisMilliseconds": common.ScalarResponseShape(), "memoryByteMilliseconds": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "finalizedAt": common.ScalarResponseShape()})}
 	case "AdminSandboxAccessGrant":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "previewPorts": common.ArrayResponseShape(common.ScalarResponseShape()), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
@@ -5714,7 +5724,7 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	if err != nil {
 		return AdminSandboxSession{}, err
 	}
-	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt"}
+	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt", "usage"}
 	required := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
@@ -5723,6 +5733,11 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	project, err := common.DecodeProjectRefJSON(specFields["projectRef"])
 	if err != nil {
 		return AdminSandboxSession{}, err
+	}
+	if raw, ok := specFields["usage"]; ok {
+		if _, err := common.DecodeStrictObject(raw, []string{"latestRuntimeGeneration", "allocatedMilliseconds", "cpuMillisMilliseconds", "memoryByteMilliseconds", "checkpointedAt", "finalizedAt"}, []string{"latestRuntimeGeneration", "allocatedMilliseconds", "cpuMillisMilliseconds", "memoryByteMilliseconds", "checkpointedAt"}); err != nil {
+			return AdminSandboxSession{}, err
+		}
 	}
 	var spec AdminSandboxSessionSpec
 	if json.Unmarshal(fields["spec"], &spec) != nil {
@@ -5787,6 +5802,11 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	}
 	if spec.ObservedAt != "" && common.ValidateDateTime(spec.ObservedAt, "/spec/observedAt") != nil {
 		return AdminSandboxSession{}, common.ContractError("INVALID_DATE_TIME", "/spec/observedAt")
+	}
+	if spec.Usage != nil {
+		if spec.Usage.LatestRuntimeGeneration < 1 || spec.Usage.LatestRuntimeGeneration > spec.Generation || !usageDecimalPattern.MatchString(spec.Usage.AllocatedMilliseconds) || !usageDecimalPattern.MatchString(spec.Usage.CPUMillisMilliseconds) || !usageDecimalPattern.MatchString(spec.Usage.MemoryByteMilliseconds) || common.ValidateDateTime(spec.Usage.CheckpointedAt, "/spec/usage/checkpointedAt") != nil || spec.Usage.FinalizedAt != "" && common.ValidateDateTime(spec.Usage.FinalizedAt, "/spec/usage/finalizedAt") != nil {
+			return AdminSandboxSession{}, common.ContractError("INVALID_SANDBOX_USAGE", "/spec/usage")
+		}
 	}
 	return AdminSandboxSession{ResourceBase: base, Spec: spec}, nil
 }

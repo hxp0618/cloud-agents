@@ -123,6 +123,56 @@ func TestFoundationControllerPostgres(t *testing.T) {
 	if err != nil || successFacts != 1 || terminalFacts != 1 || attempts != 4 || audits != 2 {
 		t.Fatalf("durable controller facts = %d/%d/%d/%d err=%v", successFacts, terminalFacts, attempts, audits, err)
 	}
+
+	command, err = owner.Exec(ctx, `DELETE FROM cloud_agents.sandbox_usage_checkpoints
+		WHERE tenant_id='tenant' AND sandbox_uid='sandbox' AND runtime_uid='runtime-ready'`)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("legacy usage fixture = %d / %v", command.RowsAffected(), err)
+	}
+	checkpoint, err := service.CheckpointFoundationSandboxUsage(ctx, 10)
+	if err != nil || checkpoint.DatabaseOutcome != DatabaseCommitted || checkpoint.Count != 0 {
+		t.Fatalf("legacy usage backfill = %#v / %v", checkpoint, err)
+	}
+	command, err = owner.Exec(ctx, `UPDATE cloud_agents.sandbox_usage_checkpoints
+		SET started_at=checkpointed_at-interval '2 minutes', checkpointed_at=checkpointed_at-interval '2 minutes'
+		WHERE tenant_id='tenant' AND sandbox_uid='sandbox' AND runtime_uid='runtime-ready' AND finalized_at IS NULL`)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("stale usage checkpoint fixture = %d / %v", command.RowsAffected(), err)
+	}
+	checkpoint, err = service.CheckpointFoundationSandboxUsage(ctx, 10)
+	if err != nil || checkpoint.DatabaseOutcome != DatabaseCommitted || checkpoint.Count != 1 {
+		t.Fatalf("usage checkpoint = %#v / %v", checkpoint, err)
+	}
+	var allocated, cpuAllocated, memoryAllocated int64
+	if err := owner.QueryRow(ctx, `SELECT allocated_milliseconds::bigint,
+		cpu_millis_milliseconds::bigint, memory_byte_milliseconds::bigint
+		FROM cloud_agents.sandbox_usage_checkpoints
+		WHERE tenant_id='tenant' AND sandbox_uid='sandbox' AND runtime_uid='runtime-ready'`).Scan(
+		&allocated, &cpuAllocated, &memoryAllocated,
+	); err != nil || allocated < 120000 || cpuAllocated != allocated*500 || memoryAllocated != allocated*536870912 {
+		t.Fatalf("usage totals = %d/%d/%d err=%v", allocated, cpuAllocated, memoryAllocated, err)
+	}
+	command, err = owner.Exec(ctx, `UPDATE cloud_agents.sandbox_sessions SET
+		desired_state='stopped', observed_state='stopped', observed_generation=generation, writer_released=true,
+		runtime_uid=NULL, runtime_state='', runtime_operation_uid=NULL, runtime_generation=NULL,
+		runtime_spec_digest=NULL, stable_error_code=NULL, observed_at=transaction_timestamp()
+		WHERE tenant_id='tenant' AND sandbox_uid='sandbox'`)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("usage finalization fixture = %d / %v", command.RowsAffected(), err)
+	}
+	var finalizedAt *time.Time
+	if err := owner.QueryRow(ctx, `SELECT allocated_milliseconds::bigint,
+		cpu_millis_milliseconds::bigint, memory_byte_milliseconds::bigint, finalized_at
+		FROM cloud_agents.sandbox_usage_checkpoints
+		WHERE tenant_id='tenant' AND sandbox_uid='sandbox' AND runtime_uid='runtime-ready'`).Scan(
+		&allocated, &cpuAllocated, &memoryAllocated, &finalizedAt,
+	); err != nil || finalizedAt == nil || cpuAllocated != allocated*500 || memoryAllocated != allocated*536870912 {
+		t.Fatalf("finalized usage totals = %d/%d/%d/%v err=%v", allocated, cpuAllocated, memoryAllocated, finalizedAt, err)
+	}
+	checkpoint, err = service.CheckpointFoundationSandboxUsage(ctx, 10)
+	if err != nil || checkpoint.DatabaseOutcome != DatabaseCommitted || checkpoint.Count != 0 {
+		t.Fatalf("finalized usage changed = %#v / %v", checkpoint, err)
+	}
 }
 
 func claimFoundationControllerTest(t *testing.T, ctx context.Context, service *DurableCoordinationService, subject, suffix string, lease int32) FoundationSandboxClaim {
