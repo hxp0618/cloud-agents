@@ -35,6 +35,7 @@ type AdminSandboxSnapshot struct {
 	CreatedAt, UpdatedAt                                  time.Time
 	ObservedAt, ExpiresAt                                 *time.Time
 	Usage                                                 *AdminSandboxUsageSnapshot
+	WorkspaceVolumeUsage                                  *AdminWorkspaceVolumeUsageSnapshot
 }
 
 type AdminSandboxUsageSnapshot struct {
@@ -42,6 +43,15 @@ type AdminSandboxUsageSnapshot struct {
 	AllocatedMilliseconds, CPUMillisMilliseconds, MemoryByteMilliseconds string
 	CheckpointedAt                                                       time.Time
 	FinalizedAt                                                          *time.Time
+}
+
+type AdminWorkspaceVolumeUsageSnapshot struct {
+	MeasurementGeneration int64
+	State                 string
+	UsedBytes             *string
+	CheckpointedAt        *time.Time
+	ObservedAt            *time.Time
+	StableErrorCode       *string
 }
 
 type AdminSandboxPage struct {
@@ -105,6 +115,12 @@ type adminSandboxPageRow struct {
 	UsageMemoryByteMillis  *string    `json:"usage_memory_byte_milliseconds"`
 	UsageCheckpointedAt    *time.Time `json:"usage_checkpointed_at"`
 	UsageFinalizedAt       *time.Time `json:"usage_finalized_at"`
+	VolumeUsageGeneration  *int64     `json:"volume_usage_generation"`
+	VolumeUsageState       *string    `json:"volume_usage_state"`
+	VolumeUsageUsedBytes   *string    `json:"volume_usage_used_bytes"`
+	VolumeUsageCheckpoint  *time.Time `json:"volume_usage_checkpointed_at"`
+	VolumeUsageObservedAt  *time.Time `json:"volume_usage_observed_at"`
+	VolumeUsageStableError *string    `json:"volume_usage_stable_error_code"`
 }
 
 const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.sandbox_uid,
@@ -123,7 +139,12 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     usage.allocated_milliseconds AS usage_allocated_milliseconds,
     usage.cpu_millis_milliseconds AS usage_cpu_millis_milliseconds,
     usage.memory_byte_milliseconds AS usage_memory_byte_milliseconds,
-    usage.checkpointed_at AS usage_checkpointed_at, usage.finalized_at AS usage_finalized_at`
+    usage.checkpointed_at AS usage_checkpointed_at, usage.finalized_at AS usage_finalized_at,
+    volume_usage.measurement_generation AS volume_usage_generation,
+    volume_usage.state AS volume_usage_state, volume_usage.used_bytes::text AS volume_usage_used_bytes,
+    volume_usage.checkpointed_at AS volume_usage_checkpointed_at,
+    volume_usage.observed_at AS volume_usage_observed_at,
+    volume_usage.stable_error_code AS volume_usage_stable_error_code`
 
 const adminSandboxUsageJoin = `LEFT JOIN LATERAL (
     SELECT pg_catalog.max(checkpoint.sandbox_generation) AS latest_runtime_generation,
@@ -144,6 +165,9 @@ var (
 FROM cloud_agents.sandbox_sessions AS sandbox
 JOIN cloud_agents.workspaces AS workspace USING (tenant_id, project_uid, workspace_uid)
 JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, workspace_uid)
+LEFT JOIN cloud_agents.workspace_volume_usage_checkpoints AS volume_usage
+  ON volume_usage.tenant_id = volume.tenant_id AND volume_usage.project_uid = volume.project_uid
+ AND volume_usage.volume_uid = volume.volume_uid
 JOIN cloud_agents.platform_operations AS operation
   ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
  AND operation.operation_generation = sandbox.operation_generation
@@ -190,6 +214,9 @@ FROM (
     FROM cloud_agents.sandbox_sessions AS sandbox
     JOIN cloud_agents.workspaces AS workspace USING (tenant_id, project_uid, workspace_uid)
     JOIN cloud_agents.workspace_volumes AS volume USING (tenant_id, project_uid, workspace_uid)
+    LEFT JOIN cloud_agents.workspace_volume_usage_checkpoints AS volume_usage
+      ON volume_usage.tenant_id = volume.tenant_id AND volume_usage.project_uid = volume.project_uid
+     AND volume_usage.volume_uid = volume.volume_uid
     JOIN cloud_agents.platform_operations AS operation
       ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
      AND operation.operation_generation = sandbox.operation_generation
@@ -479,7 +506,9 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 		&value.RuntimeState, &value.StableErrorCode, &value.ResourceVersion,
 		&value.CreatedAt, &value.UpdatedAt, &value.ObservedAt,
 		&value.UsageLatestGeneration, &value.UsageAllocatedMillis, &value.UsageCPUMillisMillis,
-		&value.UsageMemoryByteMillis, &value.UsageCheckpointedAt, &value.UsageFinalizedAt)
+		&value.UsageMemoryByteMillis, &value.UsageCheckpointedAt, &value.UsageFinalizedAt,
+		&value.VolumeUsageGeneration, &value.VolumeUsageState, &value.VolumeUsageUsedBytes,
+		&value.VolumeUsageCheckpoint, &value.VolumeUsageObservedAt, &value.VolumeUsageStableError)
 }
 
 func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (AdminSandboxSnapshot, error) {
@@ -511,6 +540,21 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 			FinalizedAt:             row.UsageFinalizedAt,
 		}
 	} else if row.UsageAllocatedMillis != nil || row.UsageCPUMillisMillis != nil || row.UsageMemoryByteMillis != nil || row.UsageCheckpointedAt != nil || row.UsageFinalizedAt != nil {
+		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+	}
+	if row.VolumeUsageGeneration != nil {
+		if row.VolumeUsageState == nil {
+			return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+		}
+		value.WorkspaceVolumeUsage = &AdminWorkspaceVolumeUsageSnapshot{
+			MeasurementGeneration: *row.VolumeUsageGeneration,
+			State:                 *row.VolumeUsageState,
+			UsedBytes:             row.VolumeUsageUsedBytes,
+			CheckpointedAt:        row.VolumeUsageCheckpoint,
+			ObservedAt:            row.VolumeUsageObservedAt,
+			StableErrorCode:       row.VolumeUsageStableError,
+		}
+	} else if row.VolumeUsageState != nil || row.VolumeUsageUsedBytes != nil || row.VolumeUsageCheckpoint != nil || row.VolumeUsageObservedAt != nil || row.VolumeUsageStableError != nil {
 		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
 	}
 	value.NetworkPolicyEnforcement = networkPolicyEnforcement(value)
@@ -578,6 +622,28 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 		value.Usage.AllocatedMilliseconds == "" || value.Usage.CPUMillisMilliseconds == "" || value.Usage.MemoryByteMilliseconds == "" ||
 		value.Usage.CheckpointedAt.IsZero() || value.Usage.FinalizedAt != nil && value.Usage.FinalizedAt.IsZero()) {
 		return false
+	}
+	if usage := value.WorkspaceVolumeUsage; usage != nil {
+		if usage.MeasurementGeneration < 0 || (usage.UsedBytes == nil) != (usage.CheckpointedAt == nil) ||
+			usage.CheckpointedAt != nil && usage.CheckpointedAt.IsZero() || usage.ObservedAt != nil && usage.ObservedAt.IsZero() {
+			return false
+		}
+		switch usage.State {
+		case "pending":
+			if usage.MeasurementGeneration != 0 || usage.UsedBytes != nil || usage.ObservedAt != nil || usage.StableErrorCode != nil {
+				return false
+			}
+		case "measuring", "ready":
+			if usage.MeasurementGeneration < 1 || usage.ObservedAt == nil || usage.StableErrorCode != nil || usage.State == "ready" && usage.UsedBytes == nil {
+				return false
+			}
+		case "failed":
+			if usage.MeasurementGeneration < 1 || usage.ObservedAt == nil || usage.StableErrorCode == nil || !validMutationIdentifier(*usage.StableErrorCode) {
+				return false
+			}
+		default:
+			return false
+		}
 	}
 	switch value.OperationState {
 	case "pending", "running", "reconciling", "succeeded", "failed":

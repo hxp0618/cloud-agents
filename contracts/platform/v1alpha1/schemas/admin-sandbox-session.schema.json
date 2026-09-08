@@ -47,11 +47,15 @@
         "workspaceObservedState": { "enum": ["pending", "available", "unknown", "failed"] },
         "runtimeProfileId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "runtimeProfileVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
-        "workloadTrust": { "enum": ["trusted-single-tenant", "dedicated-node", "shared-untrusted"] },
+        "workloadTrust": {
+          "enum": ["trusted-single-tenant", "dedicated-node", "shared-untrusted"]
+        },
         "isolationRuntime": { "enum": ["runc", "gvisor"] },
         "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "networkPolicyEnforcement": { "enum": ["legacy", "pending", "enforced", "failed", "stopped"] },
+        "networkPolicyEnforcement": {
+          "enum": ["legacy", "pending", "enforced", "failed", "stopped"]
+        },
         "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
         "observedGeneration": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
         "desiredState": { "enum": ["running", "stopped"] },
@@ -61,20 +65,59 @@
         "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "lifecycleTrigger": { "enum": ["manual", "ttl"] },
         "runtimeId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "runtimeState": { "enum": ["Pending", "Running", "Pausing", "Paused", "Resuming", "Stopping", "Terminated", "Failed"] },
+        "runtimeState": {
+          "enum": [
+            "Pending",
+            "Running",
+            "Pausing",
+            "Paused",
+            "Resuming",
+            "Stopping",
+            "Terminated",
+            "Failed"
+          ]
+        },
         "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "usage": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["latestRuntimeGeneration", "allocatedMilliseconds", "cpuMillisMilliseconds", "memoryByteMilliseconds", "checkpointedAt"],
+          "required": [
+            "latestRuntimeGeneration",
+            "allocatedMilliseconds",
+            "cpuMillisMilliseconds",
+            "memoryByteMilliseconds",
+            "checkpointedAt"
+          ],
           "properties": {
-            "latestRuntimeGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+            "latestRuntimeGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            },
             "allocatedMilliseconds": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,39})$" },
             "cpuMillisMilliseconds": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,39})$" },
             "memoryByteMilliseconds": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,39})$" },
             "checkpointedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
             "finalizedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+          }
+        },
+        "workspaceVolumeUsage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "measurementGeneration", "state"],
+          "properties": {
+            "source": { "const": "docker-system-df-v1" },
+            "measurementGeneration": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9223372036854775807
+            },
+            "state": { "enum": ["pending", "measuring", "ready", "failed"] },
+            "usedBytes": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
+            "checkpointedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+            "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+            "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
           }
         }
       }
@@ -87,6 +130,9 @@
     "lifecycleTrigger identifies durable manual or TTL acceptance without exposing user content",
     "networkPolicyEnforcement is derived from the verified lifecycle result; legacy identifies pre-authority profiles",
     "usage contains database-clock allocation facts only; decimal strings preserve values beyond JavaScript safe integers",
-    "usage is absent only until the first database checkpoint; finalizedAt is absent while any runtime segment remains active"
+    "usage is absent only until the first database checkpoint; finalizedAt is absent while any runtime segment remains active",
+    "workspaceVolumeUsage is absent until the Controller discovers a supported backend and contains backend metadata only, never Workspace file names or content",
+    "workspaceVolumeUsage.usedBytes is Docker backend occupied bytes reported by GET /system/df and is not an enforced capacity or billable amount",
+    "workspaceVolumeUsage pending has generation zero and no observation; ready requires usedBytes and checkpointedAt; failed requires stableErrorCode and may retain the last good usedBytes and checkpointedAt"
   ]
 }

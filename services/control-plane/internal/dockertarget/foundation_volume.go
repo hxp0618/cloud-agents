@@ -64,6 +64,44 @@ func (directory *CredentialDirectory) VerifyFoundationWorkspaceVolume(
 	return directory.foundationWorkspaceVolume(ctx, endpoint, credentialRef, input, false)
 }
 
+// MeasureFoundationWorkspaceVolume reads Docker's storage-backend usage fact.
+// It verifies exact ownership first and never opens Workspace files.
+func (directory *CredentialDirectory) MeasureFoundationWorkspaceVolume(
+	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceVolume,
+) (int64, error) {
+	if ctx == nil || !input.valid() {
+		return 0, ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return 0, err
+	}
+	defer transport.CloseIdleConnections()
+	name := input.Name()
+	volume, exists, err := inspectWorkspaceVolume(ctx, client, base, name)
+	if err != nil || !exists || !exactLabels(volume.Labels, input.labels()) {
+		return 0, ErrDeploymentConflict
+	}
+	// ponytail: system df is target-wide; batch by Target only if checkpoint load becomes measurable.
+	var usage struct {
+		Volumes []struct {
+			Name      string `json:"Name"`
+			UsageData *struct {
+				Size int64 `json:"Size"`
+			} `json:"UsageData"`
+		} `json:"Volumes"`
+	}
+	if dockerJSON(ctx, client, http.MethodGet, base+"/system/df?type=volume", nil, http.StatusOK, &usage) != nil {
+		return 0, ErrDeploymentFailed
+	}
+	for _, candidate := range usage.Volumes {
+		if candidate.Name == name && candidate.UsageData != nil && candidate.UsageData.Size >= 0 {
+			return candidate.UsageData.Size, nil
+		}
+	}
+	return 0, ErrDeploymentFailed
+}
+
 func (directory *CredentialDirectory) foundationWorkspaceVolume(
 	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceVolume, create bool,
 ) (string, error) {

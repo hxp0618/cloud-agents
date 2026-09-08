@@ -1,0 +1,109 @@
+{
+  "run": "foundation-controller-56629c67-65d5-4404-bc74-20d89b20ac6a",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "76e03a76c50e9fc69e4c875527c03407cde078ea",
+    "dirty": true,
+    "migrationHead": "000086"
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerVersion": "29.4.0",
+    "postgres": "17.6 (Debian 17.6-2.pgdg12+1)"
+  },
+  "prepare": {
+    "expiresAt": "2026-09-08T14:06:35.273089Z",
+    "networkPolicy": "restricted allow plus cross-sandbox/host/metadata deny",
+    "operationId": "op-b22b57a8611fbf9b4382db7c32c6fe37",
+    "proofDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "runtimeId": "83d88836-16f5-4195-b7a3-be87a89181a1",
+    "specDigest": "sha256:3f2a51406964aee9c0fe309241225a8a36f03f4b3a67026631c04f628ab7367d",
+    "volumeName": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247"
+  },
+  "recover": {
+    "adopted": true,
+    "cleanup": "failed runtime and volume removed; successful runtime retained for lifecycle",
+    "deliveryAttempts": 2,
+    "failureCompensated": true,
+    "failureRuntimeId": "cd028e9e-f121-4f72-b148-9077aa1dcfce",
+    "runtimeId": "83d88836-16f5-4195-b7a3-be87a89181a1",
+    "workspaceDigest": "69c204e27c471aa5cd8e06a074ebd08577ef5ddc2caf2c26800c4b8b95a8ebaa",
+    "workspaceVolumeUsage": {
+      "checkpointedAt": "2026-09-08T14:06:32.285305Z",
+      "measurementGeneration": 1,
+      "usedBytes": 31
+    }
+  },
+  "stop": {
+    "api": {
+      "action": "stop",
+      "generation": 2,
+      "operationId": "op-7f436cff8702686ba50ff1c2cb46c20a",
+      "ordinaryUserStatus": 403,
+      "priorResourceVersion": "10",
+      "staleFenceStatus": 409,
+      "workspaceDisposition": "retain"
+    },
+    "controller": {
+      "generation": 2,
+      "runtimeDeleted": true,
+      "usage": {
+        "allocatedMilliseconds": 123586,
+        "checkpointedAt": "2026-09-08T14:06:32.625348Z",
+        "cpuMillisMilliseconds": 61793000,
+        "finalizedAt": "2026-09-08T14:06:32.625348Z",
+        "memoryByteMilliseconds": 66349728530432
+      },
+      "workspaceVolume": "ca-ws-56af1bb2e0b01921e1a5966b8f69dcfe21e1790f824b32a20b63f247",
+      "workspaceVolumeUsage": {
+        "checkpointedAt": "2026-09-08T14:06:33.039327Z",
+        "measurementGeneration": 2,
+        "observedAt": "2026-09-08T14:06:33.039327Z",
+        "source": "docker-system-df-v1",
+        "state": "ready",
+        "usedBytes": 31
+      },
+      "writerReleased": true
+    }
+  },
+  "snapshot": {
+    "api": {
+      "adminContentRedacted": true,
+      "fencedRebuildStatus": 409,
+      "idempotentReplay": true,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "ordinaryUserStatus": 403,
+      "snapshotId": "snapshot",
+      "sourceWorkspaceId": "workspace",
+      "status": "pending",
+      "writerFenceReserved": true
+    },
+    "controller": {
+      "archiveVerified": true,
+      "contentDigest": "sha256:0f7877fee5f9f1621d8dfe37868b110d73fe3a88481c9b46b230b7b977c02276",
+      "helperStarted": false,
+      "operationId": "op-123ecaed1acecfe6906e929f816a5cea",
+      "physicalVolume": "ca-snap-8e5eefa3eae93e0732f80b4aa8cf51d0b290cdbf80f66c1336354f75",
+      "sizeBytes": 2560,
+      "snapshotId": "snapshot",
+      "status": "available",
+      "writerFenceReleased": true
+    }
+  },
+  "checks": [
+    "product migration 000086 applied to disposable PostgreSQL",
+    "ordinary user token received 403 from Admin Workspace Snapshot API",
+    "Admin create replay returned the same durable Operation and metadata-only responses excluded physical volume, digest, endpoint and credentials",
+    "source Sandbox was stopped, observed stopped and writer-released before acceptance",
+    "database-clock CPU and memory allocation facts caught up from a stale checkpoint after Controller process restart and froze in the Stop transaction",
+    "Controller sampled exact-owned Docker backend occupied bytes without opening Workspace files and durably caught up a stale measurement after process restart",
+    "generated Admin Sandbox detail exposed only Workspace usage source, state, generation, byte count and timestamps; ordinary User APIs remained unchanged",
+    "acceptance reserved the existing single-writer slot until terminal settlement; Admin rebuild returned 409 while the snapshot was pending",
+    "Controller claimed the operation and copied the real Docker Workspace through a never-started helper",
+    "normalized path, type, mode, link target and file-byte archive digests matched after Docker unpack and repack",
+    "snapshot Operation settled succeeded/complete and the snapshot metadata settled available",
+    "terminal settlement released the source Workspace writer fence",
+    "exact-owned helper, snapshot volume, runtime containers and Workspace volume were removed after verification"
+  ],
+  "boundary": "Local OrbStack Docker and disposable PostgreSQL only; Workspace occupied-byte measurement is not an enforced quota or billable amount; Kubernetes and RemoteWorker storage measurement, restore, retention policy and browser visual QA remain unverified"
+}

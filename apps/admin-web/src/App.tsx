@@ -7725,6 +7725,54 @@ function SandboxDetail({
             </div>
           </>
         )}
+        {sandbox.spec.workspaceVolumeUsage === undefined ? null : (
+          <>
+            <div>
+              <dt>{t("sandbox.workspaceUsageSource")}</dt>
+              <dd className="mono">{sandbox.spec.workspaceVolumeUsage.source}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.workspaceUsageGeneration")}</dt>
+              <dd className="mono">
+                {number(sandbox.spec.workspaceVolumeUsage.measurementGeneration)}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.workspaceUsageState")}</dt>
+              <dd>{phaseLabel(sandbox.spec.workspaceVolumeUsage.state, t)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.workspaceUsageBytes")}</dt>
+              <dd className="mono">
+                {sandbox.spec.workspaceVolumeUsage.usedBytes ?? t("common.notAvailable")}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.workspaceUsageCheckpointedAt")}</dt>
+              <dd>
+                {sandbox.spec.workspaceVolumeUsage.checkpointedAt === undefined
+                  ? t("common.notObserved")
+                  : dateTime(sandbox.spec.workspaceVolumeUsage.checkpointedAt)}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.workspaceUsageObservedAt")}</dt>
+              <dd>
+                {sandbox.spec.workspaceVolumeUsage.observedAt === undefined
+                  ? t("common.notObserved")
+                  : dateTime(sandbox.spec.workspaceVolumeUsage.observedAt)}
+              </dd>
+            </div>
+            {sandbox.spec.workspaceVolumeUsage.stableErrorCode === undefined ? null : (
+              <div>
+                <dt>{t("detail.stableError")}</dt>
+                <dd className="mono danger-text">
+                  {sandbox.spec.workspaceVolumeUsage.stableErrorCode}
+                </dd>
+              </div>
+            )}
+          </>
+        )}
         <div>
           <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{sandbox.metadata.resourceVersion}</dd>

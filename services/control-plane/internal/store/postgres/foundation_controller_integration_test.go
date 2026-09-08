@@ -81,7 +81,44 @@ func TestFoundationControllerPostgres(t *testing.T) {
 		t.Fatalf("success settlement = %#v / %v", succeeded, err)
 	}
 
-	command, err := owner.Exec(ctx, `UPDATE cloud_agents.outbox_events SET delivery_attempts=7
+	volumeUsageClaim, err := service.ClaimFoundationWorkspaceVolumeUsage(ctx, 200, 60)
+	if err != nil || volumeUsageClaim.DatabaseOutcome != DatabaseCommitted || !volumeUsageClaim.Found ||
+		volumeUsageClaim.Claim.VolumeID != "workspace" || volumeUsageClaim.Claim.PhysicalVolumeID != "ca-ws-integration" ||
+		volumeUsageClaim.Claim.MeasurementGeneration != 1 {
+		t.Fatalf("workspace usage claim = %#v / %v", volumeUsageClaim, err)
+	}
+	usedBytes := int64(12345)
+	volumeUsage, err := service.SettleFoundationWorkspaceVolumeUsage(ctx, FoundationWorkspaceVolumeUsageSettlement{
+		Claim: volumeUsageClaim.Claim, Transition: "ready", UsedBytes: &usedBytes,
+	})
+	if err != nil || volumeUsage.DatabaseOutcome != DatabaseCommitted || volumeUsage.State != "ready" ||
+		volumeUsage.UsedBytes == nil || *volumeUsage.UsedBytes != usedBytes || volumeUsage.CheckpointedAt == nil {
+		t.Fatalf("workspace usage settlement = %#v / %v", volumeUsage, err)
+	}
+	notDue, err := service.ClaimFoundationWorkspaceVolumeUsage(ctx, 200, 60)
+	if err != nil || notDue.DatabaseOutcome != DatabaseCommitted || notDue.Found {
+		t.Fatalf("workspace usage immediate replay = %#v / %v", notDue, err)
+	}
+	command, err := owner.Exec(ctx, `UPDATE cloud_agents.workspace_volume_usage_checkpoints
+		SET checkpointed_at=checkpointed_at-interval '2 minutes', observed_at=observed_at-interval '2 minutes'
+		WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace'`)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("stale workspace usage fixture = %d / %v", command.RowsAffected(), err)
+	}
+	volumeUsageClaim, err = service.ClaimFoundationWorkspaceVolumeUsage(ctx, 200, 60)
+	if err != nil || volumeUsageClaim.DatabaseOutcome != DatabaseCommitted || !volumeUsageClaim.Found ||
+		volumeUsageClaim.Claim.MeasurementGeneration != 2 {
+		t.Fatalf("workspace usage reclaim = %#v / %v", volumeUsageClaim, err)
+	}
+	volumeUsage, err = service.SettleFoundationWorkspaceVolumeUsage(ctx, FoundationWorkspaceVolumeUsageSettlement{
+		Claim: volumeUsageClaim.Claim, Transition: "failed", StableErrorCode: "workspace_volume_usage_unavailable",
+	})
+	if err != nil || volumeUsage.State != "failed" || volumeUsage.UsedBytes == nil || *volumeUsage.UsedBytes != usedBytes ||
+		volumeUsage.CheckpointedAt == nil || volumeUsage.StableErrorCode == nil || *volumeUsage.StableErrorCode != "workspace_volume_usage_unavailable" {
+		t.Fatalf("workspace usage failed settlement = %#v / %v", volumeUsage, err)
+	}
+
+	command, err = owner.Exec(ctx, `UPDATE cloud_agents.outbox_events SET delivery_attempts=7
 		WHERE tenant_id='tenant' AND aggregate_id='sandbox-terminal' AND state='pending'`)
 	if err != nil || command.RowsAffected() != 1 {
 		t.Fatalf("terminal attempt fixture = %d / %v", command.RowsAffected(), err)

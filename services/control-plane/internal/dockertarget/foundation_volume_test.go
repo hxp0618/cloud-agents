@@ -19,6 +19,7 @@ func TestEnsureFoundationWorkspaceVolumeRecoversAndGuardsOwnership(t *testing.T)
 	name := input.Name()
 	var volume *volumeInspect
 	creates := 0
+	usageAvailable := true
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/volumes/"+name:
@@ -38,6 +39,12 @@ func TestEnsureFoundationWorkspaceVolumeRecoversAndGuardsOwnership(t *testing.T)
 			}
 			volume = &volumeInspect{Name: body.Name, Labels: body.Labels}
 			http.Error(writer, "lost response", http.StatusInternalServerError)
+		case request.Method == http.MethodGet && request.URL.Path == "/system/df" && request.URL.Query().Get("type") == "volume":
+			var usage any
+			if usageAvailable {
+				usage = map[string]any{"Size": int64(12_345)}
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"Volumes": []any{map[string]any{"Name": name, "UsageData": usage}}})
 		default:
 			http.NotFound(writer, request)
 		}
@@ -77,6 +84,13 @@ func TestEnsureFoundationWorkspaceVolumeRecoversAndGuardsOwnership(t *testing.T)
 	}
 	if actual, err := directory.VerifyFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); err != nil || actual != name {
 		t.Fatalf("verified volume = %q, error = %v", actual, err)
+	}
+	if actual, err := directory.MeasureFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); err != nil || actual != 12_345 {
+		t.Fatalf("volume usage = %d, error = %v", actual, err)
+	}
+	usageAvailable = false
+	if _, err := directory.MeasureFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); !errors.Is(err, ErrDeploymentFailed) {
+		t.Fatalf("missing volume usage = %v", err)
 	}
 	volume.Labels["cloud-agents.dev/workspace"] = "other"
 	if _, err := directory.EnsureFoundationWorkspaceVolume(context.Background(), server.URL, "docker-alpha", input); !errors.Is(err, ErrDeploymentConflict) {

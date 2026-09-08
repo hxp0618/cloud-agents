@@ -343,6 +343,12 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		current.Value.Spec.Usage.CheckpointedAt == "" {
 		t.Fatalf("Admin sandbox usage projection = %+v", current.Value.Spec.Usage)
 	}
+	if current.Value.Spec.WorkspaceVolumeUsage == nil || current.Value.Spec.WorkspaceVolumeUsage.Source != "docker-system-df-v1" ||
+		current.Value.Spec.WorkspaceVolumeUsage.State != "ready" || current.Value.Spec.WorkspaceVolumeUsage.MeasurementGeneration != 1 ||
+		current.Value.Spec.WorkspaceVolumeUsage.UsedBytes == "" || current.Value.Spec.WorkspaceVolumeUsage.CheckpointedAt == "" ||
+		current.Value.Spec.WorkspaceVolumeUsage.ObservedAt == "" || current.Value.Spec.WorkspaceVolumeUsage.StableErrorCode != "" {
+		t.Fatalf("Admin workspace volume usage projection = %+v", current.Value.Spec.WorkspaceVolumeUsage)
+	}
 	compute := "delete"
 	if action == "rebuild" {
 		compute = "create"

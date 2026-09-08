@@ -7,6 +7,7 @@ import {
   Client,
   createHTTPClient,
   createRemoteWorkerBootstrapHTTPClient,
+  decodeAdminSandboxSession,
   decodeAdminAuditEventPage,
   decodeDeploymentTargetCleanupPreview,
   decodeDeploymentTargetPage,
@@ -75,6 +76,7 @@ import {
   parseEnvironmentProfile,
   parseEnvironmentProfilePage,
   parseEnvironmentProfileSummaryPage,
+  parseAdminSandboxSession,
   parseAdminAuditEventPage,
   parseMaintenanceOperationPage,
   parseProject,
@@ -2843,6 +2845,71 @@ describe("generated platform JSON models", () => {
         '{"name":"project-alpha","organizationRef":{"namespace":"cloud-agents","kind":"organization","id":"organization-alpha"},"displayName":"Project Alpha"}[]',
       ),
     ).toThrow(expect.objectContaining({ code: "TRAILING_JSON" }));
+  });
+
+  it("keeps Admin Workspace volume usage in the typed response", () => {
+    const value = {
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "AdminSandboxSession",
+      metadata: {
+        uid: "sandbox-alpha",
+        name: "sandbox-alpha",
+        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        resourceVersion: "1",
+        createdAt: "2026-09-08T12:00:00Z",
+        updatedAt: "2026-09-08T12:01:00Z",
+      },
+      spec: {
+        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        operationId: "operation-alpha",
+        operationState: "succeeded",
+        cleanupPhase: "complete",
+        workspaceId: "workspace-alpha",
+        workspaceName: "workspace-alpha",
+        volumeId: "volume-alpha",
+        workspaceRetention: "retained",
+        workspaceObservedState: "available",
+        runtimeProfileId: "profile-alpha",
+        runtimeProfileVersion: 1,
+        workloadTrust: "trusted-single-tenant",
+        isolationRuntime: "runc",
+        targetId: "target-alpha",
+        networkPolicyEnforcement: "legacy",
+        generation: 1,
+        observedGeneration: 1,
+        desiredState: "running",
+        observedState: "running",
+        writerReleased: false,
+        usage: {
+          latestRuntimeGeneration: 1,
+          allocatedMilliseconds: "120000",
+          cpuMillisMilliseconds: "60000000",
+          memoryByteMilliseconds: "64424509440000",
+          checkpointedAt: "2026-09-08T12:01:00Z",
+        },
+        workspaceVolumeUsage: {
+          source: "docker-system-df-v1",
+          measurementGeneration: 2,
+          state: "ready",
+          usedBytes: "12345",
+          checkpointedAt: "2026-09-08T12:01:00Z",
+          observedAt: "2026-09-08T12:01:00Z",
+        },
+      },
+    };
+    const parsed = parseAdminSandboxSession(JSON.stringify(value));
+    expect(parsed.value.spec.usage?.allocatedMilliseconds).toBe("120000");
+    expect(parsed.value.spec.workspaceVolumeUsage?.usedBytes).toBe("12345");
+    expect(parsed.unknown).toEqual({});
+    expect(() =>
+      decodeAdminSandboxSession({
+        ...value,
+        spec: {
+          ...value.spec,
+          workspaceVolumeUsage: { ...value.spec.workspaceVolumeUsage, usedBytes: undefined },
+        },
+      }),
+    ).toThrow(/INVALID_WORKSPACE_VOLUME_USAGE/u);
   });
 
   it("preserves response-only unknown fields in the sidecar", () => {

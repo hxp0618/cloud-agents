@@ -339,6 +339,7 @@ INSERT INTO cloud_agents.deployment_targets (
         "RuntimeProfile create/publish/disable and public redaction",
         "durable Sandbox Operation/outbox acceptance and replay",
         "Controller claim renewal, retry, expired-claim recovery, terminal exhaustion and settlement",
+        "Workspace volume usage generation claim, one-minute cadence, failed-observation retention and runtime-only settlement",
         "legacy project dispatcher cannot claim foundation operation effects",
         "ordinary user Admin 403 and direct intent bypass denial",
         "RemoteWorker Admin/bootstrap 403 separation and non-replayable no-store enrollment secret",

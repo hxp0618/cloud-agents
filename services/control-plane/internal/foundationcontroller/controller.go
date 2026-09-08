@@ -131,7 +131,7 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 		}
 	}
 	if !claimResult.Found {
-		return false, nil
+		return controller.runWorkspaceVolumeUsageOne(ctx)
 	}
 	claim := claimResult.Claim
 	result, err := controller.executeWithRenewal(ctx, &claim)
@@ -149,6 +149,50 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	}
 	if settled.DatabaseOutcome != postgres.DatabaseCommitted {
 		return true, errors.New("foundation settlement outcome is unknown")
+	}
+	return true, nil
+}
+
+func (controller *Controller) runWorkspaceVolumeUsageOne(ctx context.Context) (bool, error) {
+	if controller.docker == nil {
+		return false, nil
+	}
+	claimed, err := controller.store.ClaimFoundationWorkspaceVolumeUsage(ctx, 200, 60)
+	if err != nil {
+		return false, err
+	}
+	if claimed.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("foundation workspace volume usage claim outcome is unknown")
+	}
+	if !claimed.Found {
+		return false, nil
+	}
+	claim := claimed.Claim
+	usedBytes, effectErr := controller.docker.MeasureFoundationWorkspaceVolume(ctx, claim.TargetEndpoint, claim.CredentialRef,
+		dockertarget.FoundationWorkspaceVolume{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+			TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID})
+	transition, stableErrorCode := "ready", ""
+	var used *int64
+	if effectErr == nil {
+		used = &usedBytes
+	} else {
+		transition, stableErrorCode = "failed", "workspace_volume_usage_unavailable"
+		switch {
+		case errors.Is(effectErr, dockertarget.ErrDeploymentConflict):
+			stableErrorCode = "foundation_ownership_conflict"
+		case errors.Is(effectErr, dockertarget.ErrDeploymentConfigInvalid), errors.Is(effectErr, dockertarget.ErrCredentialInvalid),
+			errors.Is(effectErr, dockertarget.ErrInvalidEndpoint):
+			stableErrorCode = "foundation_configuration_invalid"
+		}
+	}
+	settled, err := controller.store.SettleFoundationWorkspaceVolumeUsage(ctx, postgres.FoundationWorkspaceVolumeUsageSettlement{
+		Claim: claim, Transition: transition, UsedBytes: used, StableErrorCode: stableErrorCode,
+	})
+	if err != nil {
+		return true, err
+	}
+	if settled.DatabaseOutcome != postgres.DatabaseCommitted {
+		return true, errors.New("foundation workspace volume usage settlement outcome is unknown")
 	}
 	return true, nil
 }

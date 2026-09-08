@@ -846,6 +846,8 @@ try {
     recoverReceipt.cleanup,
     "failed runtime and volume removed; successful runtime retained for lifecycle",
   );
+  assert.ok(recoverReceipt.workspaceVolumeUsage.usedBytes > 0);
+  assert.equal(recoverReceipt.workspaceVolumeUsage.measurementGeneration, 1);
 
   const lifecycleAPI = (action) =>
     parseMarker(
@@ -900,6 +902,14 @@ try {
     stopReceipt.usage.allocatedMilliseconds * 536_870_912,
   );
   assert.equal(stopReceipt.usage.checkpointedAt, stopReceipt.usage.finalizedAt);
+  assert.equal(stopReceipt.workspaceVolumeUsage.source, "docker-system-df-v1");
+  assert.equal(stopReceipt.workspaceVolumeUsage.state, "ready");
+  assert.ok(stopReceipt.workspaceVolumeUsage.usedBytes > 0);
+  assert.ok(stopReceipt.workspaceVolumeUsage.measurementGeneration >= 2);
+  assert.ok(
+    Date.parse(stopReceipt.workspaceVolumeUsage.checkpointedAt) >
+      Date.parse(recoverReceipt.workspaceVolumeUsage.checkpointedAt),
+  );
   const snapshotAPIReceipt = parseMarker(
     execFileSync(
       serverTestBinary,
@@ -1127,6 +1137,8 @@ try {
         "Admin create replay returned the same durable Operation and metadata-only responses excluded physical volume, digest, endpoint and credentials",
         "source Sandbox was stopped, observed stopped and writer-released before acceptance",
         "database-clock CPU and memory allocation facts caught up from a stale checkpoint after Controller process restart and froze in the Stop transaction",
+        "Controller sampled exact-owned Docker backend occupied bytes without opening Workspace files and durably caught up a stale measurement after process restart",
+        "generated Admin Sandbox detail exposed only Workspace usage source, state, generation, byte count and timestamps; ordinary User APIs remained unchanged",
         "acceptance reserved the existing single-writer slot until terminal settlement; Admin rebuild returned 409 while the snapshot was pending",
         "Controller claimed the operation and copied the real Docker Workspace through a never-started helper",
         "normalized path, type, mode, link target and file-byte archive digests matched after Docker unpack and repack",
@@ -1135,7 +1147,7 @@ try {
         "exact-owned helper, snapshot volume, runtime containers and Workspace volume were removed after verification",
       ],
       boundary:
-        "Local OrbStack Docker and disposable PostgreSQL only; snapshot creation is verified, while restore, retention policy, Kubernetes/SSH snapshot backends and browser visual QA remain unverified",
+        "Local OrbStack Docker and disposable PostgreSQL only; Workspace occupied-byte measurement is not an enforced quota or billable amount; Kubernetes and RemoteWorker storage measurement, restore, retention policy and browser visual QA remain unverified",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),
@@ -1495,6 +1507,8 @@ try {
       "generated Admin stop/rebuild with ordinary-user 403, idempotent replay, stale fencing, Operation and Audit",
       "stop deletes the exact runtime, releases its writer, and retains the physical Workspace volume",
       "database-clock Sandbox CPU and memory allocation facts catch up from a stale checkpoint after Controller process restart and freeze in the Stop transaction",
+      "Controller reads exact-owned Docker backend occupied bytes without opening Workspace files, durably checkpoints them, and catches up a stale checkpoint after process restart",
+      "generated Admin Sandbox detail exposes only Workspace measurement source, state, generation, byte count and timestamps; ordinary User APIs remain unchanged",
       "rebuild uses the same physical volume and preserves Workspace bytes",
       "generated Product Sandbox Exec uses database-authorized exact generation and physical runtime receipt",
       "real bounded foreground command runs in /workspace and returns exit code, stdout, stderr, and duration",
@@ -1522,7 +1536,7 @@ try {
       "zero test-owned runtime containers and Workspace volumes",
     ],
     boundary:
-      "Local OrbStack Docker customer-node process and disposable PostgreSQL only; Admin Web is build-tested but no browser visual run is included; no deployment, image publication, Kubernetes or SSH node",
+      "Local OrbStack Docker customer-node process and disposable PostgreSQL only; Workspace occupied-byte measurement is not an enforced quota or billable amount; Kubernetes and RemoteWorker storage measurement, browser visual QA, deployment, image publication and external SSH nodes are not covered",
   };
   writeFileSync(
     resolve(evidenceDirectory, "evidence.json"),

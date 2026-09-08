@@ -1177,6 +1177,15 @@ export type AdminSandboxUsage = Readonly<{
   checkpointedAt: string;
   finalizedAt?: string;
 }>;
+export type AdminWorkspaceVolumeUsage = Readonly<{
+  source: "docker-system-df-v1";
+  measurementGeneration: number;
+  state: "pending" | "measuring" | "ready" | "failed";
+  usedBytes?: string;
+  checkpointedAt?: string;
+  observedAt?: string;
+  stableErrorCode?: string;
+}>;
 export type AdminSandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "AdminSandboxSession";
@@ -1220,6 +1229,7 @@ export type AdminSandboxSession = Readonly<{
     stableErrorCode?: string;
     observedAt?: string;
     usage?: AdminSandboxUsage;
+    workspaceVolumeUsage?: AdminWorkspaceVolumeUsage;
   }>;
 }>;
 export type AdminSandboxSessionPage = Readonly<{
@@ -2590,6 +2600,27 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
   runtimeState: scalarResponseShape,
   stableErrorCode: scalarResponseShape,
   observedAt: scalarResponseShape,
+  usage: {
+    fields: {
+      latestRuntimeGeneration: scalarResponseShape,
+      allocatedMilliseconds: scalarResponseShape,
+      cpuMillisMilliseconds: scalarResponseShape,
+      memoryByteMilliseconds: scalarResponseShape,
+      checkpointedAt: scalarResponseShape,
+      finalizedAt: scalarResponseShape,
+    },
+  },
+  workspaceVolumeUsage: {
+    fields: {
+      source: scalarResponseShape,
+      measurementGeneration: scalarResponseShape,
+      state: scalarResponseShape,
+      usedBytes: scalarResponseShape,
+      checkpointedAt: scalarResponseShape,
+      observedAt: scalarResponseShape,
+      stableErrorCode: scalarResponseShape,
+    },
+  },
 });
 const adminSandboxSessionPageResponseShape: ResponseShape = {
   fields: {
@@ -3174,6 +3205,70 @@ function sandboxUsage(value: unknown, generation: number, path: string): AdminSa
       ? usage
       : { ...usage, finalizedAt: dateTime(source.finalizedAt, `${path}/finalizedAt`) },
   );
+}
+function workspaceVolumeUsage(value: unknown, path: string): AdminWorkspaceVolumeUsage {
+  const source = strictRecord(
+    value,
+    [
+      "source",
+      "measurementGeneration",
+      "state",
+      "usedBytes",
+      "checkpointedAt",
+      "observedAt",
+      "stableErrorCode",
+    ],
+    ["source", "measurementGeneration", "state"],
+    path,
+  );
+  if (source.source !== "docker-system-df-v1")
+    error("INVALID_WORKSPACE_VOLUME_USAGE", `${path}/source`);
+  const state = enumValue(
+    source.state,
+    ["pending", "measuring", "ready", "failed"] as const,
+    `${path}/state`,
+  );
+  const measurementGeneration = integer(
+    source.measurementGeneration,
+    state === "pending" ? 0 : 1,
+    Number.MAX_SAFE_INTEGER,
+    `${path}/measurementGeneration`,
+  );
+  const usedBytes =
+    source.usedBytes === undefined ? undefined : string(source.usedBytes, `${path}/usedBytes`);
+  const checkpointedAt =
+    source.checkpointedAt === undefined
+      ? undefined
+      : dateTime(source.checkpointedAt, `${path}/checkpointedAt`);
+  const observedAt =
+    source.observedAt === undefined ? undefined : dateTime(source.observedAt, `${path}/observedAt`);
+  const stableErrorCode =
+    source.stableErrorCode === undefined
+      ? undefined
+      : identifier(source.stableErrorCode, `${path}/stableErrorCode`);
+  if (
+    (usedBytes !== undefined && !/^(?:0|[1-9][0-9]{0,18})$/u.test(usedBytes)) ||
+    (usedBytes === undefined) !== (checkpointedAt === undefined) ||
+    (state === "pending" &&
+      (measurementGeneration !== 0 ||
+        usedBytes !== undefined ||
+        observedAt !== undefined ||
+        stableErrorCode !== undefined)) ||
+    (state !== "pending" && observedAt === undefined) ||
+    (state === "measuring" && stableErrorCode !== undefined) ||
+    (state === "ready" && (usedBytes === undefined || stableErrorCode !== undefined)) ||
+    (state === "failed" && stableErrorCode === undefined)
+  )
+    error("INVALID_WORKSPACE_VOLUME_USAGE", path);
+  return Object.freeze({
+    source: "docker-system-df-v1",
+    measurementGeneration,
+    state,
+    ...(usedBytes === undefined ? {} : { usedBytes }),
+    ...(checkpointedAt === undefined ? {} : { checkpointedAt }),
+    ...(observedAt === undefined ? {} : { observedAt }),
+    ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
+  });
 }
 function runtimeImage(value: unknown, path: string): string {
   const text = boundedString(value, 1, 1024, path);
@@ -8544,6 +8639,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "stableErrorCode",
     "observedAt",
     "usage",
+    "workspaceVolumeUsage",
   ] as const;
   const spec = strictRecord(
     source.spec,
@@ -8561,6 +8657,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
           "stableErrorCode",
           "observedAt",
           "usage",
+          "workspaceVolumeUsage",
         ].includes(field),
     ),
     "/spec",
@@ -8686,6 +8783,14 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     ...(spec.usage === undefined
       ? {}
       : { usage: sandboxUsage(spec.usage, generation, "/spec/usage") }),
+    ...(spec.workspaceVolumeUsage === undefined
+      ? {}
+      : {
+          workspaceVolumeUsage: workspaceVolumeUsage(
+            spec.workspaceVolumeUsage,
+            "/spec/workspaceVolumeUsage",
+          ),
+        }),
   };
   return Object.freeze({ ...root, kind: "AdminSandboxSession", spec: Object.freeze(result) });
 }

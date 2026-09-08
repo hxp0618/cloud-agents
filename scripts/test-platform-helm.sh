@@ -962,8 +962,8 @@ if (value.info.status !== "deployed") process.exit(1);
 migration_summary=$(kubectl --context "$context" -n "$namespace" exec "$postgres_pod" -- \
   psql -U cloud_agents_install_admin -d cloud_agents -X -A -t -v ON_ERROR_STOP=1 \
   -c "SELECT count(*) || ':' || min(migration_id) || '-' || max(migration_id) FROM cloud_agents.schema_migrations")
-test "$migration_summary" = '85:000001-000085' || {
-  echo "Helm migration ledger is not at product schema head 000085" >&2
+test "$migration_summary" = '86:000001-000086' || {
+  echo "Helm migration ledger is not at product schema head 000086" >&2
   exit 1
 }
 verified=true

@@ -483,10 +483,32 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if count := liveSandboxCount(t, ctx, environment); count != 1 {
 		t.Fatalf("OpenSandbox residue = %d", count)
 	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("workspace usage first checkpoint = %v / %v", worked, err)
+	}
+	var workspaceUsedBytes, workspaceMeasurementGeneration int64
+	var workspaceCheckpointedAt time.Time
+	if err := environment.owner.QueryRow(ctx, `SELECT used_bytes, measurement_generation, checkpointed_at
+		FROM cloud_agents.workspace_volume_usage_checkpoints
+		WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace' AND state='ready'`).Scan(
+		&workspaceUsedBytes, &workspaceMeasurementGeneration, &workspaceCheckpointedAt,
+	); err != nil || workspaceUsedBytes < 1 || workspaceMeasurementGeneration != 1 || workspaceCheckpointedAt.IsZero() {
+		t.Fatalf("workspace usage first fact = %d/%d/%s err=%v",
+			workspaceUsedBytes, workspaceMeasurementGeneration, workspaceCheckpointedAt, err)
+	}
+	command, err = environment.owner.Exec(ctx, `UPDATE cloud_agents.workspace_volume_usage_checkpoints
+		SET checkpointed_at=checkpointed_at-interval '2 minutes', observed_at=observed_at-interval '2 minutes'
+		WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace'`)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("offline workspace usage checkpoint fixture = %d / %v", command.RowsAffected(), err)
+	}
 	receipt, _ := json.Marshal(map[string]any{
 		"runtimeId": expectedRuntime, "adopted": true, "deliveryAttempts": success.deliveryAttempts,
 		"failureRuntimeId": failure.runtimeID, "failureCompensated": true,
 		"workspaceDigest": expectedDigest, "cleanup": "failed runtime and volume removed; successful runtime retained for lifecycle",
+		"workspaceVolumeUsage": map[string]any{"usedBytes": workspaceUsedBytes,
+			"measurementGeneration": workspaceMeasurementGeneration,
+			"checkpointedAt":        workspaceCheckpointedAt.UTC().Format(time.RFC3339Nano)},
 	})
 	t.Logf("FOUNDATION_LIVE_RECOVER=%s", receipt)
 }
@@ -520,9 +542,40 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 		if _, err := environment.sandbox.Find(ctx, oldIdentity); !errors.Is(err, opensandbox.ErrNotFound) {
 			t.Fatalf("stopped runtime still exists: %v", err)
 		}
+		idle := false
+		for attempt := 0; attempt < 4; attempt++ {
+			worked, err := environment.controller.RunOne(ctx)
+			if err != nil {
+				t.Fatalf("workspace usage restart checkpoint %d = %v", attempt+1, err)
+			}
+			if !worked {
+				idle = true
+				break
+			}
+		}
+		if !idle {
+			t.Fatal("workspace usage checkpoint did not become idle")
+		}
+		var workspaceUsageState string
+		var workspaceUsedBytes, workspaceMeasurementGeneration int64
+		var workspaceCheckpointedAt, workspaceObservedAt time.Time
+		var workspaceStableError *string
+		err := environment.owner.QueryRow(ctx, `SELECT state, used_bytes, measurement_generation,
+			checkpointed_at, observed_at, stable_error_code
+			FROM cloud_agents.workspace_volume_usage_checkpoints
+			WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace'`).Scan(
+			&workspaceUsageState, &workspaceUsedBytes, &workspaceMeasurementGeneration,
+			&workspaceCheckpointedAt, &workspaceObservedAt, &workspaceStableError)
+		if err != nil || workspaceUsageState != "ready" || workspaceUsedBytes < 1 ||
+			workspaceMeasurementGeneration < 2 || workspaceCheckpointedAt.IsZero() ||
+			workspaceObservedAt.Before(workspaceCheckpointedAt) || workspaceStableError != nil {
+			t.Fatalf("workspace usage restart fact = %s/%d/%d/%s/%s/%v err=%v",
+				workspaceUsageState, workspaceUsedBytes, workspaceMeasurementGeneration,
+				workspaceCheckpointedAt, workspaceObservedAt, workspaceStableError, err)
+		}
 		var allocated, cpuAllocated, memoryAllocated int64
 		var checkpointedAt, finalizedAt time.Time
-		err := environment.owner.QueryRow(ctx, `SELECT allocated_milliseconds::bigint,
+		err = environment.owner.QueryRow(ctx, `SELECT allocated_milliseconds::bigint,
 			cpu_millis_milliseconds::bigint, memory_byte_milliseconds::bigint,
 			checkpointed_at, finalized_at
 			FROM cloud_agents.sandbox_usage_checkpoints
@@ -536,6 +589,11 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 		}
 		receipt, _ := json.Marshal(map[string]any{"generation": current.generation, "runtimeDeleted": true,
 			"workspaceVolume": current.volumeName, "writerReleased": current.writerReleased,
+			"workspaceVolumeUsage": map[string]any{"source": "docker-system-df-v1",
+				"state": workspaceUsageState, "usedBytes": workspaceUsedBytes,
+				"measurementGeneration": workspaceMeasurementGeneration,
+				"checkpointedAt":        workspaceCheckpointedAt.UTC().Format(time.RFC3339Nano),
+				"observedAt":            workspaceObservedAt.UTC().Format(time.RFC3339Nano)},
 			"usage": map[string]any{"allocatedMilliseconds": allocated,
 				"cpuMillisMilliseconds": cpuAllocated, "memoryByteMilliseconds": memoryAllocated,
 				"checkpointedAt": checkpointedAt.UTC().Format(time.RFC3339Nano),
