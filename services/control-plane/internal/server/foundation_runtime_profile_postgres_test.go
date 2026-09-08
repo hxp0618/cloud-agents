@@ -356,6 +356,46 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		current.Value.Spec.NetworkUsage.ObservedAt == "" || current.Value.Spec.NetworkUsage.StableErrorCode != "" {
 		t.Fatalf("Admin network usage projection = %+v", current.Value.Spec.NetworkUsage)
 	}
+	correction := platform.SandboxUsageCorrectionRequest{
+		ExpectedGeneration: current.Value.Spec.Generation, ExpectedResourceVersion: current.Value.Metadata.ResourceVersion,
+		ConfirmedSandboxID: sandboxID, Metric: "networkReceivedBytes", Adjustment: "7", ReasonCode: "offline-reconciliation",
+	}
+	correctionKey := fmt.Sprintf("%s-usage-correction-%s-g%d-key", sandboxID, action, current.Value.Spec.Generation)
+	if _, err := user.CorrectAdminSandboxUsage(ctx, "tenant", "project", sandboxID, "request-correction-user", correctionKey+"-user", correction); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user correction status=%d err=%v", clientStatus(err), err)
+	}
+	priorCorrections := len(current.Value.Spec.UsageCorrections)
+	rawReceived, rawTransmitted := current.Value.Spec.NetworkUsage.ReceivedBytes, current.Value.Spec.NetworkUsage.TransmittedBytes
+	corrected, err := admin.CorrectAdminSandboxUsage(ctx, "tenant", "project", sandboxID, "request-correction-"+action, correctionKey, correction)
+	if err != nil || corrected.Value.Metadata.ResourceVersion == current.Value.Metadata.ResourceVersion ||
+		len(corrected.Value.Spec.UsageCorrections) != priorCorrections+1 ||
+		corrected.Value.Spec.UsageCorrections[0].Metric != correction.Metric ||
+		corrected.Value.Spec.UsageCorrections[0].Adjustment != correction.Adjustment ||
+		corrected.Value.Spec.UsageCorrections[0].ReasonCode != correction.ReasonCode ||
+		corrected.Value.Spec.NetworkUsage == nil || corrected.Value.Spec.NetworkUsage.ReceivedBytes != rawReceived ||
+		corrected.Value.Spec.NetworkUsage.TransmittedBytes != rawTransmitted {
+		t.Fatalf("usage correction=%+v raw=%s/%s err=%v", corrected.Value, rawReceived, rawTransmitted, err)
+	}
+	correctionReplay, err := admin.CorrectAdminSandboxUsage(ctx, "tenant", "project", sandboxID, "request-correction-replay", correctionKey, correction)
+	if err != nil || len(correctionReplay.Value.Spec.UsageCorrections) != priorCorrections+1 ||
+		correctionReplay.Value.Spec.UsageCorrections[0].CorrectionID != corrected.Value.Spec.UsageCorrections[0].CorrectionID {
+		t.Fatalf("usage correction replay=%+v err=%v", correctionReplay.Value.Spec.UsageCorrections, err)
+	}
+	changedCorrection := correction
+	changedCorrection.Adjustment = "8"
+	if _, err := admin.CorrectAdminSandboxUsage(ctx, "tenant", "project", sandboxID, "request-correction-changed", correctionKey, changedCorrection); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("changed correction replay status=%d err=%v", clientStatus(err), err)
+	}
+	if _, err := admin.CorrectAdminSandboxUsage(ctx, "tenant", "project", sandboxID, "request-correction-stale", correctionKey+"-stale", correction); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("stale correction fence status=%d err=%v", clientStatus(err), err)
+	}
+	var correctionRows int
+	var storedAdjustment, storedReason, storedSubject string
+	if err := owner.QueryRow(ctx, `SELECT pg_catalog.count(*), pg_catalog.min(adjustment::text), pg_catalog.min(reason_code), pg_catalog.min(subject_digest)
+FROM cloud_agents.sandbox_usage_corrections WHERE tenant_id='tenant' AND project_uid='project' AND idempotency_key=$1`, correctionKey).Scan(&correctionRows, &storedAdjustment, &storedReason, &storedSubject); err != nil || correctionRows != 1 || storedAdjustment != correction.Adjustment || storedReason != correction.ReasonCode || !strings.HasPrefix(storedSubject, "sha256:") {
+		t.Fatalf("durable usage correction rows=%d adjustment=%q reason=%q subject=%q err=%v", correctionRows, storedAdjustment, storedReason, storedSubject, err)
+	}
+	current = corrected
 	compute := "delete"
 	if action == "rebuild" {
 		compute = "create"
@@ -397,6 +437,9 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		"action": action, "operationId": operation.Value.OperationID,
 		"generation": operation.Value.SandboxGeneration, "priorResourceVersion": body.ExpectedResourceVersion,
 		"ordinaryUserStatus": 403, "staleFenceStatus": 409, "workspaceDisposition": "retain",
+		"usageCorrectionId":     corrected.Value.Spec.UsageCorrections[0].CorrectionID,
+		"usageCorrectionMetric": correction.Metric, "usageCorrectionAdjustment": correction.Adjustment,
+		"usageCorrectionReplay": true, "usageCorrectionStaleFenceStatus": 409, "rawUsageUnchanged": true,
 	})
 	marker := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIFECYCLE_MARKER")
 	if marker == "" {
@@ -956,7 +999,8 @@ func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, strin
 func verifySnapshotAdminBrowser(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get targets.list targets.get leases.list leases.get workers.list releases.list profiles.list profiles.get sandboxes.list snapshots.list snapshots.get snapshots.delete storage-policies.list network-policies.list quotas.get quotas.update audit.list operations.list",
+		"projects.act projects.get targets.list targets.get leases.list leases.get workers.list releases.list profiles.list profiles.get sandboxes.list sandboxes.get snapshots.list snapshots.get snapshots.delete storage-policies.list network-policies.list quotas.get quotas.update audit.list operations.list",
+		"projects.get environment-profiles.list",
 	)
 	store, err := postgres.NewDurableCoordinationService(pool)
 	if err != nil {
@@ -1058,7 +1102,8 @@ func verifySnapshotAdminBrowser(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatalf("Admin Web did not start:\n%s", viteLog.String())
 	}
 	command := exec.CommandContext(ctx, os.Getenv("CLOUD_AGENTS_FOUNDATION_BROWSER_PYTHON"), os.Getenv("CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT"))
-	command.Env = append(os.Environ(), "SNAPSHOT_ADMIN_APP_URL="+appURL, "SNAPSHOT_ADMIN_TOKEN="+tokens[0])
+	command.Env = append(os.Environ(), "SNAPSHOT_ADMIN_APP_URL="+appURL, "SNAPSHOT_ADMIN_TOKEN="+tokens[0],
+		"SNAPSHOT_ADMIN_USER_TOKEN="+tokens[1], "SNAPSHOT_ADMIN_TENANT_ID=tenant", "SNAPSHOT_ADMIN_PROJECT_ID=project")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("Admin browser check: %v\n%s", err, output)
 	} else {

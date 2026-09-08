@@ -27,6 +27,8 @@ import {
   type RuntimeProfileCreateRequest,
   type SandboxAccessGrantRevokeRequest,
   type SandboxSessionLifecycleRequest,
+  type SandboxUsageCorrectionRequest,
+  type SandboxUsageMetric,
   type StoragePolicy,
   type StoragePolicySetRequest,
   type Worker,
@@ -329,6 +331,15 @@ const operationImpactMessageKeys: Readonly<Record<string, MessageKey>> = Object.
   "remote-worker.drain": "operation.impact.remoteWorkerDrain",
   "remote-worker.resume": "operation.impact.remoteWorkerResume",
 });
+
+const sandboxUsageMetrics = Object.freeze([
+  "allocatedMilliseconds",
+  "cpuMillisMilliseconds",
+  "memoryByteMilliseconds",
+  "workspaceUsedBytes",
+  "networkReceivedBytes",
+  "networkTransmittedBytes",
+] as const satisfies readonly SandboxUsageMetric[]);
 
 const resourceMessageKeys: Readonly<Record<string, MessageKey>> = Object.freeze({
   DeploymentTarget: "maintenance.deploymentTarget",
@@ -1779,6 +1790,43 @@ export function App() {
         );
         setMaintenanceOperations(loadedOperations);
         setSelectedMaintenanceOperationId(operation.value.operationId);
+      },
+      true,
+    );
+  }
+
+  function correctSandboxUsage(
+    correction: Pick<SandboxUsageCorrectionRequest, "metric" | "adjustment" | "reasonCode">,
+  ) {
+    if (client === null || selectedSandbox === undefined) return;
+    const sandbox = selectedSandbox;
+    const body: SandboxUsageCorrectionRequest = {
+      ...correction,
+      expectedGeneration: sandbox.spec.generation,
+      expectedResourceVersion: sandbox.metadata.resourceVersion,
+      confirmedSandboxId: sandbox.metadata.uid,
+    };
+    const key = `sandbox:correct-usage:${sandbox.metadata.uid}:${sandbox.metadata.resourceVersion}:${correction.metric}:${correction.adjustment}:${correction.reasonCode}`;
+    void runOperation(
+      key,
+      { key: "operation.correctSandboxUsage", values: { name: sandbox.metadata.name } },
+      async (signal) => {
+        const updated = await client.correctAdminSandboxUsage(
+          connection.tenantId,
+          connection.projectId,
+          sandbox.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          body,
+          signal,
+        );
+        setSandboxes((current) =>
+          Object.freeze(
+            current.map((item) =>
+              item.metadata.uid === sandbox.metadata.uid ? updated.value : item,
+            ),
+          ),
+        );
       },
       true,
     );
@@ -4089,6 +4137,7 @@ export function App() {
               disabled={busy !== null}
               onTransition={setSandboxLifecycleTransition}
               onRevokeGrant={setSandboxGrantRevoke}
+              onCorrectUsage={correctSandboxUsage}
             />
           </aside>
         </AdminSheet>
@@ -7547,15 +7596,25 @@ function SandboxDetail({
   disabled,
   onTransition,
   onRevokeGrant,
+  onCorrectUsage,
 }: Readonly<{
   sandbox: AdminSandboxSession;
   grants: readonly AdminSandboxAccessGrant[];
   disabled: boolean;
   onTransition: (action: SandboxLifecycleAction) => void;
   onRevokeGrant: (grant: AdminSandboxAccessGrant) => void;
+  onCorrectUsage: (
+    correction: Pick<SandboxUsageCorrectionRequest, "metric" | "adjustment" | "reasonCode">,
+  ) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
   const action = availableSandboxLifecycleAction(sandbox);
+  const [correctionMetric, setCorrectionMetric] =
+    useState<SandboxUsageMetric>("allocatedMilliseconds");
+  const [correctionAdjustment, setCorrectionAdjustment] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correctionConfirmed, setCorrectionConfirmed] = useState(false);
+  const correctionLimitReached = (sandbox.spec.usageCorrections?.length ?? 0) >= 100;
   return (
     <>
       <div className="detail-heading">
@@ -7834,6 +7893,116 @@ function SandboxDetail({
           </div>
         )}
       </dl>
+      <section className="action-block" aria-labelledby="sandbox-usage-corrections-title">
+        <div className="activity-heading">
+          <h3 id="sandbox-usage-corrections-title">{t("sandbox.usageCorrections.title")}</h3>
+          <span className="mono">{number(sandbox.spec.usageCorrections?.length ?? 0)} / 100</span>
+        </div>
+        <p>{t("sandbox.usageCorrections.description")}</p>
+        {sandbox.spec.usageCorrections?.length ? (
+          <ul className="activity-list">
+            {sandbox.spec.usageCorrections.map((correction) => (
+              <li key={correction.correctionId}>
+                <div>
+                  <strong>{t(`sandbox.usageMetric.${correction.metric}`)}</strong>
+                  <span className="mono">{correction.adjustment}</span>
+                </div>
+                <small>
+                  {correction.reasonCode} · g{number(correction.sandboxGeneration)} · rv{" "}
+                  {correction.priorResourceVersion}
+                </small>
+                <small>
+                  {dateTime(correction.createdAt)} · {correction.requestId}
+                </small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="activity-empty">{t("sandbox.usageCorrections.empty")}</p>
+        )}
+        <form
+          className="resource-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCorrectUsage({
+              metric: correctionMetric,
+              adjustment: correctionAdjustment,
+              reasonCode: correctionReason,
+            });
+            setCorrectionAdjustment("");
+            setCorrectionReason("");
+            setCorrectionConfirmed(false);
+          }}
+        >
+          <label>
+            <span>{t("sandbox.usageCorrections.metric")}</span>
+            <select
+              value={correctionMetric}
+              onChange={(event) => setCorrectionMetric(event.target.value as SandboxUsageMetric)}
+              disabled={disabled || correctionLimitReached}
+            >
+              {sandboxUsageMetrics.map((metric) => (
+                <option key={metric} value={metric}>
+                  {t(`sandbox.usageMetric.${metric}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t("sandbox.usageCorrections.adjustment")}</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              required
+              pattern="-?[1-9][0-9]{0,39}"
+              value={correctionAdjustment}
+              onChange={(event) => setCorrectionAdjustment(event.target.value)}
+              disabled={disabled || correctionLimitReached}
+            />
+          </label>
+          <label>
+            <span>{t("sandbox.usageCorrections.reason")}</span>
+            <input
+              type="text"
+              required
+              pattern={targetIdentifierPattern}
+              value={correctionReason}
+              onChange={(event) => setCorrectionReason(event.target.value)}
+              disabled={disabled || correctionLimitReached}
+            />
+          </label>
+          <dl className="detail-list cleanup-fence">
+            <div>
+              <dt>{t("sandbox.lifecycle.expectedGeneration")}</dt>
+              <dd className="mono">{number(sandbox.spec.generation)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.lifecycle.expectedResourceVersion")}</dt>
+              <dd className="mono">{sandbox.metadata.resourceVersion}</dd>
+            </div>
+          </dl>
+          <label className="confirmation-check">
+            <input
+              type="checkbox"
+              checked={correctionConfirmed}
+              onChange={(event) => setCorrectionConfirmed(event.target.checked)}
+              disabled={disabled || correctionLimitReached}
+            />
+            <span>{t("sandbox.usageCorrections.review", { name: sandbox.metadata.uid })}</span>
+          </label>
+          <button
+            className="button danger"
+            type="submit"
+            disabled={disabled || correctionLimitReached || !correctionConfirmed}
+          >
+            {t(
+              correctionLimitReached
+                ? "sandbox.usageCorrections.limit"
+                : "sandbox.usageCorrections.submit",
+            )}
+          </button>
+        </form>
+      </section>
       {sandbox.spec.isolationRuntime === "gvisor" ? (
         <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
       ) : null}

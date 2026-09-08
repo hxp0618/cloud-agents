@@ -1069,6 +1069,7 @@ try {
         dockerVersion: docker("version", "--format", "{{.Server.Version}}"),
         postgres: psql("SHOW server_version;"),
       },
+      stop: { api: stopAPIReceipt, controller: stopReceipt },
       snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
       manualCleanup: { api: cleanupAPIReceipt, controller: cleanupControllerReceipt },
       retentionCleanup: { api: expiryAPIReceipt, controller: expiryControllerReceipt },
@@ -1076,6 +1077,7 @@ try {
       checks: [
         `product migration ${currentHead} applied to disposable PostgreSQL`,
         "new Snapshot retention is fixed at database-clock acceptance and exposed only as metadata",
+        "Admin usage correction required admin scope and immutable fences; replay was stable, stale writes returned 409 and raw facts remained unchanged",
         "ordinary user token received 403 and stale resourceVersion received 409 from Admin cleanup",
         "manual cleanup required exact logical Snapshot and source Workspace confirmation without physical volume disclosure",
         "manual cleanup replay returned the same durable Operation",
@@ -1086,7 +1088,7 @@ try {
         ...(browserReceipt === undefined
           ? []
           : [
-              "real Chromium connected through the Vite Admin origin, rendered persisted retention metadata, and fenced destructive confirmation",
+              "real Chromium connected through the Vite Admin origin and rendered persisted retention plus Sandbox usage-correction metadata and its fenced form",
               "Admin locale and theme switched and persisted without storing the bearer token; desktop English and mobile Chinese screenshots were captured with no console errors",
               "all browser HTTP requests remained on the Admin Web origin and reached infrastructure authority only through the Control Plane proxy",
             ]),
@@ -1095,7 +1097,7 @@ try {
       boundary:
         browserReceipt === undefined
           ? "Local OrbStack Docker and disposable PostgreSQL only; manual and database-clock retention cleanup are verified, while Kubernetes/SSH snapshot backends and browser visual QA remain unverified"
-          : "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; manual/database-clock retention cleanup plus this snapshot flow's desktop/mobile bilingual UI are verified, while Kubernetes/SSH snapshot backends and full BASE-ADMIN-V1 visual/accessibility regression remain unverified",
+          : "Local OrbStack Docker, disposable PostgreSQL and Chromium Admin Web only; immutable usage correction, manual/database-clock retention cleanup and this flow's desktop/mobile UI are verified, while Kubernetes/SSH snapshot backends and full BASE-ADMIN-V1 visual/accessibility regression remain unverified",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),
@@ -1168,6 +1170,7 @@ try {
         "Controller sampled only aggregate cumulative RX/TX bytes from exact-owned running Docker container stats and durably caught up generation 1 to 2 after process restart",
         "generated Admin Sandbox detail exposed only Workspace usage source, state, generation, byte count and timestamps; ordinary User APIs remained unchanged",
         "generated Admin Sandbox detail exposed only network source, runtime and measurement generations, aggregate byte counters, state and timestamps; no packet, address, destination or payload data entered the contract",
+        "generated Admin usage correction required admin scope, exact generation/resource version, target confirmation and idempotency; replay was stable, stale writes returned 409 and raw facts remained unchanged",
         "acceptance reserved the existing single-writer slot until terminal settlement; Admin rebuild returned 409 while the snapshot was pending",
         "Controller claimed the operation and copied the real Docker Workspace through a never-started helper",
         "normalized path, type, mode, link target and file-byte archive digests matched after Docker unpack and repack",
@@ -1176,7 +1179,7 @@ try {
         "exact-owned helper, snapshot volume, runtime containers and Workspace volume were removed after verification",
       ],
       boundary:
-        "Local OrbStack Docker and disposable PostgreSQL only; Workspace occupied-byte and cumulative network counters are not enforced quotas or billable amounts; stopped runtime counters are last successful samples, and Kubernetes/RemoteWorker storage or network measurement, restore, retention policy and browser visual QA remain unverified",
+        "Local OrbStack Docker and disposable PostgreSQL only; usage corrections are operational deltas, not prices or billable amounts; stopped runtime counters are last successful samples, and Kubernetes/RemoteWorker storage or network measurement, restore, retention policy and browser visual QA remain unverified",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),

@@ -474,7 +474,11 @@ func mapRuntimeProfileError(err error) error {
 			return internalcoordination.ErrRuntimeProfileUnavailable
 		case pgErr.Code == "23505" && (pgErr.Message == "foundation sandbox profile conflict" ||
 			pgErr.Message == "foundation sandbox transition conflict" ||
-			pgErr.Message == "foundation sandbox idempotency conflict"):
+			pgErr.Message == "foundation sandbox idempotency conflict" ||
+			pgErr.Message == "sandbox usage correction conflict" ||
+			pgErr.Message == "sandbox usage correction idempotency conflict" ||
+			pgErr.Message == "sandbox usage correction source is absent" ||
+			pgErr.Message == "sandbox usage correction limit reached"):
 			return internalcoordination.ErrFoundationSandboxConflict
 		case pgErr.Code == "23505":
 			return internalcoordination.ErrRuntimeProfileConflict

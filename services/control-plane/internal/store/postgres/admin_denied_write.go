@@ -39,7 +39,7 @@ func validAdminDeniedWrite(event AdminDeniedWrite) bool {
 		return event.ResourceID != "" && event.ProfileVersion > 0 && event.ProfileVersion <= 2147483647
 	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminSetStoragePolicy", "adminSetNetworkPolicy",
 		"adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget",
-		"adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant",
+		"adminStopSandboxSession", "adminRebuildSandboxSession", "adminCorrectSandboxUsage", "adminRevokeSandboxAccessGrant",
 		"adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
 		return event.ResourceID != "" && event.ProfileVersion == 0
 	case "adminRegisterWorkerRelease", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminCreateRuntimeProfile",

@@ -1144,6 +1144,14 @@ export type SandboxSessionLifecycleRequest = Readonly<{
   computeDisposition: "delete" | "create";
   workspaceDisposition: "retain";
 }>;
+export type SandboxUsageCorrectionRequest = Readonly<{
+  expectedGeneration: number;
+  expectedResourceVersion: string;
+  confirmedSandboxId: string;
+  metric: SandboxUsageMetric;
+  adjustment: string;
+  reasonCode: string;
+}>;
 export type SandboxSessionLifecycleOperation = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "SandboxSessionLifecycleOperation";
@@ -1176,6 +1184,24 @@ export type AdminSandboxUsage = Readonly<{
   memoryByteMilliseconds: string;
   checkpointedAt: string;
   finalizedAt?: string;
+}>;
+export type SandboxUsageMetric =
+  | "allocatedMilliseconds"
+  | "cpuMillisMilliseconds"
+  | "memoryByteMilliseconds"
+  | "workspaceUsedBytes"
+  | "networkReceivedBytes"
+  | "networkTransmittedBytes";
+export type AdminSandboxUsageCorrection = Readonly<{
+  correctionId: string;
+  metric: SandboxUsageMetric;
+  adjustment: string;
+  reasonCode: string;
+  sandboxGeneration: number;
+  priorResourceVersion: string;
+  requestedBy: `sha256:${string}`;
+  requestId: string;
+  createdAt: string;
 }>;
 export type AdminWorkspaceVolumeUsage = Readonly<{
   source: "docker-system-df-v1";
@@ -1242,6 +1268,7 @@ export type AdminSandboxSession = Readonly<{
     usage?: AdminSandboxUsage;
     workspaceVolumeUsage?: AdminWorkspaceVolumeUsage;
     networkUsage?: AdminSandboxNetworkUsage;
+    usageCorrections?: readonly AdminSandboxUsageCorrection[];
   }>;
 }>;
 export type AdminSandboxSessionPage = Readonly<{
@@ -1450,6 +1477,7 @@ const adminDeniedWriteActions = [
   "adminCleanupDeploymentTarget",
   "adminStopSandboxSession",
   "adminRebuildSandboxSession",
+  "adminCorrectSandboxUsage",
   "adminRevokeSandboxAccessGrant",
   "adminCreateWorkspaceSnapshot",
   "adminRestoreWorkspaceSnapshot",
@@ -2647,6 +2675,23 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
     },
   },
 });
+(
+  adminSandboxSessionResponseShape.fields!.spec.fields as Record<string, ResponseShape>
+).usageCorrections = {
+  item: {
+    fields: {
+      correctionId: scalarResponseShape,
+      metric: scalarResponseShape,
+      adjustment: scalarResponseShape,
+      reasonCode: scalarResponseShape,
+      sandboxGeneration: scalarResponseShape,
+      priorResourceVersion: scalarResponseShape,
+      requestedBy: scalarResponseShape,
+      requestId: scalarResponseShape,
+      createdAt: scalarResponseShape,
+    },
+  },
+};
 const adminSandboxSessionPageResponseShape: ResponseShape = {
   fields: {
     apiVersion: scalarResponseShape,
@@ -3230,6 +3275,74 @@ function sandboxUsage(value: unknown, generation: number, path: string): AdminSa
       ? usage
       : { ...usage, finalizedAt: dateTime(source.finalizedAt, `${path}/finalizedAt`) },
   );
+}
+const sandboxUsageMetrics = [
+  "allocatedMilliseconds",
+  "cpuMillisMilliseconds",
+  "memoryByteMilliseconds",
+  "workspaceUsedBytes",
+  "networkReceivedBytes",
+  "networkTransmittedBytes",
+] as const;
+function sandboxUsageAdjustment(value: unknown, path: string): string {
+  const adjustment = string(value, path);
+  if (!/^-?[1-9][0-9]{0,39}$/u.test(adjustment)) error("INVALID_SANDBOX_USAGE_CORRECTION", path);
+  return adjustment;
+}
+function sandboxUsageCorrection(
+  value: unknown,
+  generation: number,
+  path: string,
+): AdminSandboxUsageCorrection {
+  const source = strictRecord(
+    value,
+    [
+      "correctionId",
+      "metric",
+      "adjustment",
+      "reasonCode",
+      "sandboxGeneration",
+      "priorResourceVersion",
+      "requestedBy",
+      "requestId",
+      "createdAt",
+    ],
+    [
+      "correctionId",
+      "metric",
+      "adjustment",
+      "reasonCode",
+      "sandboxGeneration",
+      "priorResourceVersion",
+      "requestedBy",
+      "requestId",
+      "createdAt",
+    ],
+    path,
+  );
+  const priorResourceVersion = string(source.priorResourceVersion, `${path}/priorResourceVersion`);
+  if (
+    !/^[1-9][0-9]{0,18}$/u.test(priorResourceVersion) ||
+    typeof source.requestedBy !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/u.test(source.requestedBy)
+  )
+    error("INVALID_SANDBOX_USAGE_CORRECTION", path);
+  return Object.freeze({
+    correctionId: identifier(source.correctionId, `${path}/correctionId`),
+    metric: enumValue(source.metric, sandboxUsageMetrics, `${path}/metric`),
+    adjustment: sandboxUsageAdjustment(source.adjustment, `${path}/adjustment`),
+    reasonCode: identifier(source.reasonCode, `${path}/reasonCode`),
+    sandboxGeneration: integer(
+      source.sandboxGeneration,
+      1,
+      generation,
+      `${path}/sandboxGeneration`,
+    ),
+    priorResourceVersion,
+    requestedBy: source.requestedBy as `sha256:${string}`,
+    requestId: identifier(source.requestId, `${path}/requestId`),
+    createdAt: dateTime(source.createdAt, `${path}/createdAt`),
+  });
 }
 function workspaceVolumeUsage(value: unknown, path: string): AdminWorkspaceVolumeUsage {
   const source = strictRecord(
@@ -4702,6 +4815,49 @@ export function encodeSandboxSessionLifecycleRequest(
   value: SandboxSessionLifecycleRequest,
 ): string {
   return JSON.stringify(decodeSandboxSessionLifecycleRequest(value));
+}
+export function decodeSandboxUsageCorrectionRequest(value: unknown): SandboxUsageCorrectionRequest {
+  const source = strictRecord(
+    value,
+    [
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "confirmedSandboxId",
+      "metric",
+      "adjustment",
+      "reasonCode",
+    ],
+    [
+      "expectedGeneration",
+      "expectedResourceVersion",
+      "confirmedSandboxId",
+      "metric",
+      "adjustment",
+      "reasonCode",
+    ],
+  );
+  const expectedResourceVersion = string(
+    source.expectedResourceVersion,
+    "/expectedResourceVersion",
+  );
+  if (!/^[1-9][0-9]{0,18}$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+    expectedResourceVersion,
+    confirmedSandboxId: identifier(source.confirmedSandboxId, "/confirmedSandboxId"),
+    metric: enumValue(source.metric, sandboxUsageMetrics, "/metric"),
+    adjustment: sandboxUsageAdjustment(source.adjustment, "/adjustment"),
+    reasonCode: identifier(source.reasonCode, "/reasonCode"),
+  });
+}
+export function encodeSandboxUsageCorrectionRequest(value: SandboxUsageCorrectionRequest): string {
+  return JSON.stringify(decodeSandboxUsageCorrectionRequest(value));
 }
 export function decodeWorkspaceSnapshotCreateRequest(
   value: unknown,
@@ -8739,6 +8895,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "usage",
     "workspaceVolumeUsage",
     "networkUsage",
+    "usageCorrections",
   ] as const;
   const spec = strictRecord(
     source.spec,
@@ -8758,6 +8915,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
           "usage",
           "workspaceVolumeUsage",
           "networkUsage",
+          "usageCorrections",
         ].includes(field),
     ),
     "/spec",
@@ -8789,6 +8947,16 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     (networkPolicyRef === undefined) !== (networkPolicyEnforcement === "legacy")
   )
     error("INVALID_ADMIN_SANDBOX_SESSION", "/spec");
+  const usageCorrections =
+    spec.usageCorrections === undefined
+      ? undefined
+      : Array.isArray(spec.usageCorrections) && spec.usageCorrections.length <= 100
+        ? Object.freeze(
+            spec.usageCorrections.map((entry, index) =>
+              sandboxUsageCorrection(entry, generation, `/spec/usageCorrections/${index}`),
+            ),
+          )
+        : error("INVALID_SANDBOX_USAGE_CORRECTION", "/spec/usageCorrections");
   const result = {
     projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
     operationId: identifier(spec.operationId, "/spec/operationId"),
@@ -8894,6 +9062,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     ...(spec.networkUsage === undefined
       ? {}
       : { networkUsage: sandboxNetworkUsage(spec.networkUsage, generation, "/spec/networkUsage") }),
+    ...(usageCorrections === undefined ? {} : { usageCorrections }),
   };
   return Object.freeze({ ...root, kind: "AdminSandboxSession", spec: Object.freeze(result) });
 }
@@ -13924,6 +14093,42 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("adminGetSandboxSession", response);
+    const result = parseAdminSandboxSession(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.metadata.uid !== sandboxId
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  async correctAdminSandboxUsage(
+    tenantId: string,
+    projectId: string,
+    sandboxId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SandboxUsageCorrectionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<AdminSandboxSession>> {
+    validateEnvironmentProfilePath(tenantId, projectId, undefined, undefined, requestId);
+    identifier(sandboxId, "/sandboxId");
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeSandboxUsageCorrectionRequest(body);
+    if (checked.confirmedSandboxId !== sandboxId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedSandboxId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sandbox-sessions/${sandboxId}:correct-usage`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSandboxUsageCorrectionRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminCorrectSandboxUsage", response);
     const result = parseAdminSandboxSession(response.body);
     requireVersion(response, result.value.metadata.resourceVersion);
     if (

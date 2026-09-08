@@ -37,6 +37,7 @@ type AdminSandboxSnapshot struct {
 	Usage                                                 *AdminSandboxUsageSnapshot
 	NetworkUsage                                          *AdminSandboxNetworkUsageSnapshot
 	WorkspaceVolumeUsage                                  *AdminWorkspaceVolumeUsageSnapshot
+	UsageCorrections                                      []AdminSandboxUsageCorrectionSnapshot
 }
 
 type AdminSandboxUsageSnapshot struct {
@@ -63,6 +64,21 @@ type AdminSandboxNetworkUsageSnapshot struct {
 	StableErrorCode                                *string
 }
 
+type AdminSandboxUsageCorrectionSnapshot struct {
+	CorrectionID, Metric, Adjustment, ReasonCode string
+	RequestedBy, RequestID                       string
+	SandboxGeneration, PriorResourceVersion      int64
+	CreatedAt                                    time.Time
+}
+
+type SandboxUsageCorrectionInput struct {
+	Scope                                             internalcoordination.FoundationScope
+	SandboxID, ConfirmedSandboxID, Metric, Adjustment string
+	ReasonCode, RequestDigest                         string
+	ExpectedGeneration, ExpectedResourceVersion       int64
+	Mutation                                          internalcoordination.FoundationMutation
+}
+
 type AdminSandboxPage struct {
 	Sandboxes     []AdminSandboxSnapshot
 	NextSandboxID string
@@ -85,59 +101,60 @@ type FoundationSandboxExec struct {
 }
 
 type adminSandboxPageRow struct {
-	TenantID                string     `json:"tenant_id"`
-	ProjectID               string     `json:"project_uid"`
-	SandboxID               string     `json:"sandbox_uid"`
-	OperationID             string     `json:"operation_id"`
-	OperationState          string     `json:"operation_state"`
-	CleanupPhase            string     `json:"cleanup_phase"`
-	WorkspaceID             string     `json:"workspace_uid"`
-	WorkspaceName           string     `json:"workspace_name"`
-	VolumeID                string     `json:"volume_uid"`
-	PhysicalVolumeID        *string    `json:"physical_volume_uid"`
-	WorkspaceRetention      string     `json:"retention"`
-	WorkspaceObservedState  string     `json:"workspace_observed_state"`
-	RuntimeProfileID        string     `json:"runtime_profile_uid"`
-	RuntimeProfileVersion   int64      `json:"runtime_profile_version"`
-	WorkloadTrust           string     `json:"workload_trust"`
-	IsolationRuntime        string     `json:"isolation_runtime"`
-	NetworkPolicyID         string     `json:"network_policy_ref"`
-	TargetID                string     `json:"target_uid"`
-	Generation              int64      `json:"generation"`
-	ObservedGeneration      int64      `json:"observed_generation"`
-	DesiredState            string     `json:"desired_state"`
-	ObservedState           string     `json:"observed_state"`
-	WriterReleased          bool       `json:"writer_released"`
-	TTLSeconds              *int32     `json:"ttl_seconds"`
-	ExpiresAt               *time.Time `json:"expires_at"`
-	LifecycleTrigger        *string    `json:"lifecycle_trigger"`
-	RuntimeID               *string    `json:"runtime_uid"`
-	RuntimeState            string     `json:"runtime_state"`
-	StableErrorCode         *string    `json:"stable_error_code"`
-	ResourceVersion         int64      `json:"resource_version"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
-	ObservedAt              *time.Time `json:"observed_at"`
-	UsageLatestGeneration   *int64     `json:"usage_latest_runtime_generation"`
-	UsageAllocatedMillis    *string    `json:"usage_allocated_milliseconds"`
-	UsageCPUMillisMillis    *string    `json:"usage_cpu_millis_milliseconds"`
-	UsageMemoryByteMillis   *string    `json:"usage_memory_byte_milliseconds"`
-	UsageCheckpointedAt     *time.Time `json:"usage_checkpointed_at"`
-	UsageFinalizedAt        *time.Time `json:"usage_finalized_at"`
-	VolumeUsageGeneration   *int64     `json:"volume_usage_generation"`
-	VolumeUsageState        *string    `json:"volume_usage_state"`
-	VolumeUsageUsedBytes    *string    `json:"volume_usage_used_bytes"`
-	VolumeUsageCheckpoint   *time.Time `json:"volume_usage_checkpointed_at"`
-	VolumeUsageObservedAt   *time.Time `json:"volume_usage_observed_at"`
-	VolumeUsageStableError  *string    `json:"volume_usage_stable_error_code"`
-	NetworkLatestGeneration *int64     `json:"network_latest_runtime_generation"`
-	NetworkMeasurement      *int64     `json:"network_measurement_generation"`
-	NetworkState            *string    `json:"network_state"`
-	NetworkReceivedBytes    *string    `json:"network_received_bytes"`
-	NetworkTransmittedBytes *string    `json:"network_transmitted_bytes"`
-	NetworkCheckpointedAt   *time.Time `json:"network_checkpointed_at"`
-	NetworkObservedAt       *time.Time `json:"network_observed_at"`
-	NetworkStableError      *string    `json:"network_stable_error_code"`
+	TenantID                string          `json:"tenant_id"`
+	ProjectID               string          `json:"project_uid"`
+	SandboxID               string          `json:"sandbox_uid"`
+	OperationID             string          `json:"operation_id"`
+	OperationState          string          `json:"operation_state"`
+	CleanupPhase            string          `json:"cleanup_phase"`
+	WorkspaceID             string          `json:"workspace_uid"`
+	WorkspaceName           string          `json:"workspace_name"`
+	VolumeID                string          `json:"volume_uid"`
+	PhysicalVolumeID        *string         `json:"physical_volume_uid"`
+	WorkspaceRetention      string          `json:"retention"`
+	WorkspaceObservedState  string          `json:"workspace_observed_state"`
+	RuntimeProfileID        string          `json:"runtime_profile_uid"`
+	RuntimeProfileVersion   int64           `json:"runtime_profile_version"`
+	WorkloadTrust           string          `json:"workload_trust"`
+	IsolationRuntime        string          `json:"isolation_runtime"`
+	NetworkPolicyID         string          `json:"network_policy_ref"`
+	TargetID                string          `json:"target_uid"`
+	Generation              int64           `json:"generation"`
+	ObservedGeneration      int64           `json:"observed_generation"`
+	DesiredState            string          `json:"desired_state"`
+	ObservedState           string          `json:"observed_state"`
+	WriterReleased          bool            `json:"writer_released"`
+	TTLSeconds              *int32          `json:"ttl_seconds"`
+	ExpiresAt               *time.Time      `json:"expires_at"`
+	LifecycleTrigger        *string         `json:"lifecycle_trigger"`
+	RuntimeID               *string         `json:"runtime_uid"`
+	RuntimeState            string          `json:"runtime_state"`
+	StableErrorCode         *string         `json:"stable_error_code"`
+	ResourceVersion         int64           `json:"resource_version"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+	ObservedAt              *time.Time      `json:"observed_at"`
+	UsageLatestGeneration   *int64          `json:"usage_latest_runtime_generation"`
+	UsageAllocatedMillis    *string         `json:"usage_allocated_milliseconds"`
+	UsageCPUMillisMillis    *string         `json:"usage_cpu_millis_milliseconds"`
+	UsageMemoryByteMillis   *string         `json:"usage_memory_byte_milliseconds"`
+	UsageCheckpointedAt     *time.Time      `json:"usage_checkpointed_at"`
+	UsageFinalizedAt        *time.Time      `json:"usage_finalized_at"`
+	VolumeUsageGeneration   *int64          `json:"volume_usage_generation"`
+	VolumeUsageState        *string         `json:"volume_usage_state"`
+	VolumeUsageUsedBytes    *string         `json:"volume_usage_used_bytes"`
+	VolumeUsageCheckpoint   *time.Time      `json:"volume_usage_checkpointed_at"`
+	VolumeUsageObservedAt   *time.Time      `json:"volume_usage_observed_at"`
+	VolumeUsageStableError  *string         `json:"volume_usage_stable_error_code"`
+	NetworkLatestGeneration *int64          `json:"network_latest_runtime_generation"`
+	NetworkMeasurement      *int64          `json:"network_measurement_generation"`
+	NetworkState            *string         `json:"network_state"`
+	NetworkReceivedBytes    *string         `json:"network_received_bytes"`
+	NetworkTransmittedBytes *string         `json:"network_transmitted_bytes"`
+	NetworkCheckpointedAt   *time.Time      `json:"network_checkpointed_at"`
+	NetworkObservedAt       *time.Time      `json:"network_observed_at"`
+	NetworkStableError      *string         `json:"network_stable_error_code"`
+	UsageCorrections        json.RawMessage `json:"usage_corrections"`
 }
 
 const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.sandbox_uid,
@@ -169,7 +186,8 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     network_usage.transmitted_bytes AS network_transmitted_bytes,
     network_usage.checkpointed_at AS network_checkpointed_at,
     network_usage.observed_at AS network_observed_at,
-    network_usage.stable_error_code AS network_stable_error_code`
+    network_usage.stable_error_code AS network_stable_error_code,
+    corrections.records AS usage_corrections`
 
 const adminSandboxUsageJoin = `LEFT JOIN LATERAL (
     SELECT pg_catalog.max(checkpoint.sandbox_generation) AS latest_runtime_generation,
@@ -201,6 +219,23 @@ const adminSandboxNetworkUsageJoin = `LEFT JOIN LATERAL (
     LIMIT 1
 ) AS network_usage ON true`
 
+const adminSandboxUsageCorrectionsJoin = `LEFT JOIN LATERAL (
+    SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'correctionId', correction.correction_uid,
+        'metric', correction.metric,
+        'adjustment', correction.adjustment::text,
+        'reasonCode', correction.reason_code,
+        'sandboxGeneration', correction.sandbox_generation,
+        'priorResourceVersion', correction.prior_resource_version,
+        'requestedBy', correction.subject_digest,
+        'requestId', correction.request_id,
+        'createdAt', correction.created_at
+    ) ORDER BY correction.created_at DESC, correction.correction_uid DESC), '[]'::jsonb) AS records
+    FROM cloud_agents.sandbox_usage_corrections AS correction
+    WHERE correction.tenant_id = sandbox.tenant_id AND correction.project_uid = sandbox.project_uid
+      AND correction.sandbox_uid = sandbox.sandbox_uid
+) AS corrections ON true`
+
 var (
 	getAdminSandboxSQL = `SELECT ` + adminSandboxColumns + `
 FROM cloud_agents.sandbox_sessions AS sandbox
@@ -220,6 +255,7 @@ LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
  AND activity.sandbox_generation = sandbox.operation_generation
 ` + adminSandboxUsageJoin + `
 ` + adminSandboxNetworkUsageJoin + `
+` + adminSandboxUsageCorrectionsJoin + `
 WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
   AND sandbox.sandbox_uid = $2`
 	getFoundationSandboxAccessSQL = `SELECT sandbox.tenant_id, sandbox.project_uid,
@@ -270,6 +306,7 @@ FROM (
      AND activity.sandbox_generation = sandbox.operation_generation
     ` + adminSandboxUsageJoin + `
     ` + adminSandboxNetworkUsageJoin + `
+    ` + adminSandboxUsageCorrectionsJoin + `
     WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
       AND sandbox.sandbox_uid > $2
     ORDER BY sandbox.sandbox_uid
@@ -279,6 +316,8 @@ FROM (
     sandbox_generation, requested_by, request_id, requested_at, updated_at, operation_state,
     cleanup_phase, stable_error_code, compute_disposition, workspace_disposition
 FROM cloud_agents.transition_foundation_sandbox_v4($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
+	createSandboxUsageCorrectionSQL = `SELECT cloud_agents.create_foundation_sandbox_usage_correction_v1(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
 )
 
 func (service *DurableCoordinationService) TransitionFoundationSandbox(
@@ -344,6 +383,68 @@ func (service *DurableCoordinationService) GetAdminSandbox(
 		return AdminSandboxSnapshot{}, mapRuntimeProfileError(err)
 	}
 	return adminSandboxSnapshot(row, tenantID, projectID)
+}
+
+func (service *DurableCoordinationService) CreateSandboxUsageCorrection(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input SandboxUsageCorrectionInput,
+) (AdminSandboxSnapshot, error) {
+	if service == nil || service.runner == nil {
+		return AdminSandboxSnapshot{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validSandboxUsageCorrectionInput(input, tenantID) {
+		return AdminSandboxSnapshot{}, ErrCoordinationInvalidInput
+	}
+	var row adminSandboxPageRow
+	err := service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true,
+		func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
+			correctionID := "correction-" + rand.Text()
+			var storedCorrectionID string
+			if err := handle.transaction.queryRow(operationContext, createSandboxUsageCorrectionSQL,
+				input.Scope.ProjectID, input.SandboxID, correctionID, input.ExpectedGeneration,
+				input.ExpectedResourceVersion, input.ConfirmedSandboxID, input.Metric, input.Adjustment,
+				input.ReasonCode, subjectDigest, input.Mutation.IdempotencyKey, input.RequestDigest,
+				input.Mutation.RequestID).Scan(&storedCorrectionID); err != nil {
+				return err
+			}
+			if !validMutationIdentifier(storedCorrectionID) {
+				return ErrCoordinationResultDrift
+			}
+			return scanAdminSandboxRow(handle.transaction.queryRow(operationContext, getAdminSandboxSQL,
+				input.Scope.ProjectID, input.SandboxID), &row)
+		})
+	if err != nil {
+		return AdminSandboxSnapshot{}, mapRuntimeProfileError(err)
+	}
+	return adminSandboxSnapshot(row, tenantID, input.Scope.ProjectID)
+}
+
+func validSandboxUsageCorrectionInput(input SandboxUsageCorrectionInput, tenantID string) bool {
+	return input.Scope.TenantID == tenantID && validMutationIdentifier(tenantID) &&
+		validMutationIdentifier(input.Scope.ProjectID) && validMutationIdentifier(input.SandboxID) &&
+		input.ConfirmedSandboxID == input.SandboxID && validSandboxUsageCorrectionMetric(input.Metric) && validSignedDecimal(input.Adjustment, 40) &&
+		validMutationIdentifier(input.ReasonCode) && input.ExpectedGeneration > 0 &&
+		input.ExpectedGeneration <= 9007199254740991 && input.ExpectedResourceVersion > 0 &&
+		validCoordinationDigest(input.RequestDigest) && validMutationIdentifier(input.Mutation.RequestID) &&
+		validIdempotencyKey(input.Mutation.IdempotencyKey)
+}
+
+func validSignedDecimal(value string, maximumDigits int) bool {
+	if value == "" || maximumDigits < 1 {
+		return false
+	}
+	digits := value
+	if digits[0] == '-' {
+		digits = digits[1:]
+	}
+	if len(digits) < 1 || len(digits) > maximumDigits || digits[0] == '0' {
+		return false
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (service *DurableCoordinationService) PrepareFoundationSandboxExec(
@@ -554,7 +655,7 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 		&value.VolumeUsageCheckpoint, &value.VolumeUsageObservedAt, &value.VolumeUsageStableError,
 		&value.NetworkLatestGeneration, &value.NetworkMeasurement, &value.NetworkState,
 		&value.NetworkReceivedBytes, &value.NetworkTransmittedBytes, &value.NetworkCheckpointedAt,
-		&value.NetworkObservedAt, &value.NetworkStableError)
+		&value.NetworkObservedAt, &value.NetworkStableError, &value.UsageCorrections)
 }
 
 func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (AdminSandboxSnapshot, error) {
@@ -572,6 +673,13 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 		RuntimeID: row.RuntimeID, RuntimeState: row.RuntimeState, StableErrorCode: row.StableErrorCode,
 		ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		ObservedAt: row.ObservedAt,
+	}
+	if row.UsageCorrections == nil || json.Unmarshal(row.UsageCorrections, &value.UsageCorrections) != nil ||
+		value.UsageCorrections == nil || len(value.UsageCorrections) > 100 {
+		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+	}
+	if len(value.UsageCorrections) > 0 && value.UpdatedAt.Before(value.UsageCorrections[0].CreatedAt) {
+		value.UpdatedAt = value.UsageCorrections[0].CreatedAt
 	}
 	if row.UsageLatestGeneration != nil {
 		if row.UsageAllocatedMillis == nil || row.UsageCPUMillisMillis == nil || row.UsageMemoryByteMillis == nil || row.UsageCheckpointedAt == nil {
@@ -733,6 +841,15 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 			return false
 		}
 	}
+	for _, correction := range value.UsageCorrections {
+		if !validMutationIdentifier(correction.CorrectionID) || !validSandboxUsageCorrectionMetric(correction.Metric) ||
+			!validSignedDecimal(correction.Adjustment, 40) || !validMutationIdentifier(correction.ReasonCode) ||
+			correction.SandboxGeneration < 1 || correction.SandboxGeneration > value.Generation ||
+			correction.PriorResourceVersion < 1 || !validCoordinationDigest(correction.RequestedBy) ||
+			!validMutationIdentifier(correction.RequestID) || correction.CreatedAt.IsZero() {
+			return false
+		}
+	}
 	switch value.OperationState {
 	case "pending", "running", "reconciling", "succeeded", "failed":
 	default:
@@ -764,4 +881,14 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 		return false
 	}
 	return value.ObservedAt == nil || !value.ObservedAt.IsZero()
+}
+
+func validSandboxUsageCorrectionMetric(value string) bool {
+	switch value {
+	case "allocatedMilliseconds", "cpuMillisMilliseconds", "memoryByteMilliseconds",
+		"workspaceUsedBytes", "networkReceivedBytes", "networkTransmittedBytes":
+		return true
+	default:
+		return false
+	}
 }

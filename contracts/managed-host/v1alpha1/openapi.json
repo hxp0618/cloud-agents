@@ -2107,6 +2107,49 @@
         }
       }
     },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}:correct-usage": {
+      "post": {
+        "operationId": "adminCorrectSandboxUsage",
+        "x-cloud-agents-required-scope": "sandboxes.act",
+        "x-cloud-agents-coordination": "append-only-audit",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SandboxId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/sandbox-usage-correction-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sandbox metadata with the immutable correction audit appended",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/admin-sandbox-session.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/admin/tenants/{tenantId}/projects/{projectId}/sandbox-sessions/{sandboxId}:rebuild": {
       "post": {
         "operationId": "adminRebuildSandboxSession",

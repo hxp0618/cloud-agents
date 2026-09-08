@@ -167,6 +167,7 @@ const PLATFORM_SCHEMAS = [
   "sandbox-session-create-request.schema.json",
   "sandbox-session-lifecycle-operation.schema.json",
   "sandbox-session-lifecycle-request.schema.json",
+  "sandbox-usage-correction-request.schema.json",
   "sandbox-session.schema.json",
   "storage-policy-page.schema.json",
   "storage-policy-set-request.schema.json",
@@ -304,6 +305,7 @@ function validateJSONSDKAuthority(root: string): void {
   const expected = [
     "adminCleanupDeploymentTarget",
     "adminCleanupWorkspaceSnapshot",
+    "adminCorrectSandboxUsage",
     "adminCreateEnvironmentProfile",
     "adminCreateRemoteWorkerEnrollment",
     "adminCreateRuntimeProfile",

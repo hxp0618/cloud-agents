@@ -51,6 +51,25 @@ if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
   exit 1
 fi
 candidate_deployment_archive=$1
+set -- "$candidate_directory"/cloud-agents-migrations-*.tar
+if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+  echo "platform release must contain exactly one migration package" >&2
+  exit 1
+fi
+candidate_migration_archive=$1
+candidate_schema_head=$(tar -tf "$candidate_migration_archive" | sed -n 's#^services/control-plane/migrations/product/\([0-9][0-9]*\)/manifest.json$#\1#p')
+case "$candidate_schema_head" in
+  ??????) ;;
+  *) echo "platform release migration package has no unique six-digit schema head" >&2; exit 1 ;;
+esac
+case "$candidate_schema_head" in
+  *[!0-9]*) echo "platform release migration package has an invalid schema head" >&2; exit 1 ;;
+esac
+candidate_migration_count=$(printf '%s\n' "$candidate_schema_head" | sed 's/^0*//')
+[ -n "$candidate_migration_count" ] && [ "$candidate_migration_count" -gt 0 ] || {
+  echo "platform release migration package has an invalid schema head" >&2
+  exit 1
+}
 previous_cli=
 previous_deployment_archive=
 if [ -n "$previous_candidate_directory" ]; then
@@ -962,8 +981,9 @@ if (value.info.status !== "deployed") process.exit(1);
 migration_summary=$(kubectl --context "$context" -n "$namespace" exec "$postgres_pod" -- \
   psql -U cloud_agents_install_admin -d cloud_agents -X -A -t -v ON_ERROR_STOP=1 \
   -c "SELECT count(*) || ':' || min(migration_id) || '-' || max(migration_id) FROM cloud_agents.schema_migrations")
-test "$migration_summary" = '87:000001-000087' || {
-  echo "Helm migration ledger is not at product schema head 000087" >&2
+expected_migration_summary="$candidate_migration_count:000001-$candidate_schema_head"
+test "$migration_summary" = "$expected_migration_summary" || {
+  echo "Helm migration ledger is not at packaged product schema head $candidate_schema_head" >&2
   exit 1
 }
 verified=true

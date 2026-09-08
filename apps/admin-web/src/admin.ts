@@ -85,6 +85,7 @@ export type AdminClient = Pick<
   | "getAdminRuntimeProfile"
   | "listAdminSandboxSessions"
   | "getAdminSandboxSession"
+  | "correctAdminSandboxUsage"
   | "listAdminSandboxAccessGrants"
   | "revokeAdminSandboxAccessGrant"
   | "stopAdminSandboxSession"

@@ -62,6 +62,7 @@ import {
   decodeSandboxExecRequest,
   decodeSandboxExecResult,
   decodeSandboxSession,
+  decodeSandboxUsageCorrectionRequest,
   decodeWatchCursor,
   decodeWorkerPage,
   decodeWorkerRelease,
@@ -2847,7 +2848,7 @@ describe("generated platform JSON models", () => {
     ).toThrow(expect.objectContaining({ code: "TRAILING_JSON" }));
   });
 
-  it("keeps Admin Sandbox resource usage in the typed response", () => {
+  it("keeps Admin Sandbox resource usage and immutable corrections in the typed response", async () => {
     const value = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "AdminSandboxSession",
@@ -2905,6 +2906,19 @@ describe("generated platform JSON models", () => {
           checkpointedAt: "2026-09-08T12:01:00Z",
           observedAt: "2026-09-08T12:01:00Z",
         },
+        usageCorrections: [
+          {
+            correctionId: "correction-alpha",
+            metric: "networkReceivedBytes",
+            adjustment: "7",
+            reasonCode: "offline-reconciliation",
+            sandboxGeneration: 1,
+            priorResourceVersion: "1",
+            requestedBy: `sha256:${"a".repeat(64)}`,
+            requestId: "request-correction",
+            createdAt: "2026-09-08T12:02:00Z",
+          },
+        ],
       },
     };
     const parsed = parseAdminSandboxSession(JSON.stringify(value));
@@ -2912,6 +2926,7 @@ describe("generated platform JSON models", () => {
     expect(parsed.value.spec.workspaceVolumeUsage?.usedBytes).toBe("12345");
     expect(parsed.value.spec.networkUsage?.receivedBytes).toBe("67890");
     expect(parsed.value.spec.networkUsage?.transmittedBytes).toBe("3456");
+    expect(parsed.value.spec.usageCorrections?.[0]?.adjustment).toBe("7");
     expect(parsed.unknown).toEqual({});
     expect(() =>
       decodeAdminSandboxSession({
@@ -2931,6 +2946,39 @@ describe("generated platform JSON models", () => {
         },
       }),
     ).toThrow(/INVALID_SANDBOX_NETWORK_USAGE/u);
+    expect(() =>
+      decodeSandboxUsageCorrectionRequest({
+        expectedGeneration: 1,
+        expectedResourceVersion: "1",
+        confirmedSandboxId: "sandbox-alpha",
+        metric: "networkReceivedBytes",
+        adjustment: "0",
+        reasonCode: "offline-reconciliation",
+      }),
+    ).toThrow(/INVALID_SANDBOX_USAGE_CORRECTION/u);
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(value) };
+    });
+    await client.correctAdminSandboxUsage(
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      "request-correction",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZCOR",
+      {
+        expectedGeneration: 1,
+        expectedResourceVersion: "1",
+        confirmedSandboxId: "sandbox-alpha",
+        metric: "networkReceivedBytes",
+        adjustment: "7",
+        reasonCode: "offline-reconciliation",
+      },
+    );
+    expect(seen[0]?.path).toBe(
+      "/v1/admin/tenants/tenant-alpha/projects/project-alpha/sandbox-sessions/sandbox-alpha:correct-usage",
+    );
   });
 
   it("preserves response-only unknown fields in the sidecar", () => {

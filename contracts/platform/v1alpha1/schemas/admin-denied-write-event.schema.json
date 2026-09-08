@@ -45,6 +45,7 @@
         "adminCleanupDeploymentTarget",
         "adminStopSandboxSession",
         "adminRebuildSandboxSession",
+        "adminCorrectSandboxUsage",
         "adminRevokeSandboxAccessGrant",
         "adminCreateWorkspaceSnapshot",
         "adminRestoreWorkspaceSnapshot",

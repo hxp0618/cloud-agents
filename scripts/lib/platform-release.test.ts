@@ -100,13 +100,22 @@ describe("platform release", () => {
     });
   });
 
-  it("packages the current product migration manifest, catalog, and SQL", () => {
+  it("packages only the product migrator runtime inputs", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
+    const productDirectory = `product/${PLATFORM_RELEASE_MIGRATION_HEAD}`;
     expect(entries.map(({ path }) => path)).toContain("LICENSE");
-    expect(entries.some(({ path }) => path.endsWith("product/000087/manifest.json"))).toBe(true);
-    expect(entries.filter(({ path }) => path.endsWith(".sql"))).toHaveLength(87);
-    expect(PLATFORM_RELEASE_MIGRATION_HEAD).toBe("000087");
+    expect(entries.some(({ path }) => path.endsWith(`${productDirectory}/manifest.json`))).toBe(
+      true,
+    );
+    expect(
+      entries.some(({ path }) => path.endsWith(`${productDirectory}/schema-bundle.json`)),
+    ).toBe(true);
+    expect(entries.filter(({ path }) => path.endsWith(".sql"))).toHaveLength(
+      Number.parseInt(PLATFORM_RELEASE_MIGRATION_HEAD, 10),
+    );
+    expect(entries.some(({ path }) => path.includes("/catalog/"))).toBe(false);
+    expect(PLATFORM_RELEASE_MIGRATION_HEAD).toMatch(/^\d{6}$/u);
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agents-migrations",
       target: "portable",
@@ -119,7 +128,7 @@ describe("platform release", () => {
     expect(entries.map(({ path }) => path)).toEqual([
       "LICENSE",
       "deploy/admin-web/dist/assets/index-CQUuSaJ-.css",
-      "deploy/admin-web/dist/assets/index-vSf0b5Q9.js",
+      "deploy/admin-web/dist/assets/index-CWEU0Wgh.js",
       "deploy/admin-web/dist/index.html",
       "deploy/admin-web/server.mjs",
       "deploy/bootstrap/database.sql",
@@ -339,8 +348,10 @@ describe("platform release", () => {
     const migrateDockerfile = new TextDecoder().decode(
       deployment.find(({ path }) => path === "deploy/docker/migrate.Dockerfile")!.data,
     );
-    expect(migrateDockerfile).toContain("cloud-agents-migrations-000087.tar");
-    expect(migrateDockerfile).toContain("product/000087/manifest.json");
+    expect(migrateDockerfile).toContain(
+      `cloud-agents-migrations-${PLATFORM_RELEASE_MIGRATION_HEAD}.tar`,
+    );
+    expect(migrateDockerfile).toContain(`product/${PLATFORM_RELEASE_MIGRATION_HEAD}/manifest.json`);
     expect(migrateDockerfile).not.toContain("@PLATFORM_MIGRATION_");
     const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
     expect(workerDockerfile).toContain("@openai/codex@0.150.1");

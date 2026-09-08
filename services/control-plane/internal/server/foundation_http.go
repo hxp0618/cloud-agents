@@ -34,6 +34,7 @@ type foundationStore interface {
 	TransitionFoundationSandbox(context.Context, string, *authn.VerifiedPrincipal, internalcoordination.FoundationSandboxLifecycleInput) (internalcoordination.FoundationSandboxLifecycleOperation, error)
 	GetAdminSandbox(context.Context, string, *authn.VerifiedPrincipal, string, string) (postgres.AdminSandboxSnapshot, error)
 	ListAdminSandboxes(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.AdminSandboxPage, error)
+	CreateSandboxUsageCorrection(context.Context, string, *authn.VerifiedPrincipal, postgres.SandboxUsageCorrectionInput) (postgres.AdminSandboxSnapshot, error)
 	CreateWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, postgres.WorkspaceSnapshotCreateInput) (postgres.WorkspaceSnapshot, error)
 	CleanupWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, postgres.WorkspaceSnapshotCleanupInput) (postgres.WorkspaceSnapshot, error)
 	RestoreWorkspaceSnapshot(context.Context, string, *authn.VerifiedPrincipal, postgres.WorkspaceSnapshotRestoreInput) (internalcoordination.FoundationSandboxSnapshot, error)
@@ -123,6 +124,8 @@ func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		server.listAdminSandboxes(writer, request, tenantID, projectID, requestID, principal)
 	case "get-admin-sandbox":
 		server.getAdminSandbox(writer, request, tenantID, projectID, profileID, requestID, principal)
+	case "correct-sandbox-usage":
+		server.correctSandboxUsage(writer, request, tenantID, projectID, profileID, requestID, principal)
 	case "admin-snapshot-collection":
 		if request.Method == http.MethodPost {
 			server.createWorkspaceSnapshot(writer, request, tenantID, projectID, requestID, principal)
@@ -543,6 +546,46 @@ func (server *FoundationHTTPServer) getAdminSandbox(writer http.ResponseWriter, 
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
+func (server *FoundationHTTPServer) correctSandboxUsage(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sandboxID, requestID string, principal *authn.VerifiedPrincipal) {
+	key, body, ok := foundationMutationBody(writer, request)
+	if !ok {
+		return
+	}
+	validated, err := openapi.ValidateCorrectAdminSandboxUsageServerRequest(tenantID, projectID, sandboxID, requestID, key, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	expectedResourceVersion, err := strconv.ParseInt(validated.Body.ExpectedResourceVersion, 10, 64)
+	if err != nil || expectedResourceVersion < 1 {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	requestDigest, err := foundationRequestDigest(validated.Body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	value, err := server.store.CreateSandboxUsageCorrection(request.Context(), tenantID, principal, postgres.SandboxUsageCorrectionInput{
+		Scope: internalcoordination.FoundationScope{TenantID: tenantID, ProjectID: projectID}, SandboxID: sandboxID,
+		ConfirmedSandboxID: validated.Body.ConfirmedSandboxID, Metric: validated.Body.Metric,
+		Adjustment: validated.Body.Adjustment, ReasonCode: validated.Body.ReasonCode, RequestDigest: requestDigest,
+		ExpectedGeneration: validated.Body.ExpectedGeneration, ExpectedResourceVersion: expectedResourceVersion,
+		Mutation: internalcoordination.FoundationMutation{RequestID: requestID, IdempotencyKey: key},
+	})
+	if err != nil {
+		writeFoundationError(writer, err)
+		return
+	}
+	body, err = platform.EncodeAdminSandboxSessionResponseJSON(common.ResponseEnvelope[platform.AdminSandboxSession]{Value: adminSandboxResource(value)})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Resource-Version", strconv.FormatInt(value.ResourceVersion, 10))
+	writeJSONResponse(writer, http.StatusOK, requestID, body)
+}
+
 func (server *FoundationHTTPServer) createWorkspaceSnapshot(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID string, principal *authn.VerifiedPrincipal) {
 	key, body, ok := foundationMutationBody(writer, request)
 	if !ok {
@@ -919,6 +962,15 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 	var usage *platform.AdminSandboxUsage
 	var workspaceVolumeUsage *platform.AdminWorkspaceVolumeUsage
 	var networkUsage *platform.AdminSandboxNetworkUsage
+	usageCorrections := make([]platform.AdminSandboxUsageCorrection, 0, len(snapshot.UsageCorrections))
+	for _, correction := range snapshot.UsageCorrections {
+		usageCorrections = append(usageCorrections, platform.AdminSandboxUsageCorrection{
+			CorrectionID: correction.CorrectionID, Metric: correction.Metric, Adjustment: correction.Adjustment,
+			ReasonCode: correction.ReasonCode, SandboxGeneration: correction.SandboxGeneration,
+			PriorResourceVersion: strconv.FormatInt(correction.PriorResourceVersion, 10), RequestedBy: correction.RequestedBy,
+			RequestID: correction.RequestID, CreatedAt: correction.CreatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
 	if snapshot.PhysicalVolumeID != nil {
 		physicalVolumeID = *snapshot.PhysicalVolumeID
 	}
@@ -1016,6 +1068,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 		TTLSeconds: ttlSeconds, ExpiresAt: expiresAt, LifecycleTrigger: lifecycleTrigger,
 		RuntimeID: runtimeID, RuntimeState: snapshot.RuntimeState, StableErrorCode: stableErrorCode, ObservedAt: observedAt,
 		Usage: usage, WorkspaceVolumeUsage: workspaceVolumeUsage, NetworkUsage: networkUsage,
+		UsageCorrections: usageCorrections,
 	}}
 }
 
@@ -1121,6 +1174,8 @@ func foundationPath(path string) (admin bool, tenantID, projectID, resourceID, s
 			sandboxID, sandboxAction = value, internalcoordination.FoundationSandboxStop
 		} else if value, found := strings.CutSuffix(sandboxID, ":rebuild"); found {
 			sandboxID, sandboxAction = value, internalcoordination.FoundationSandboxRebuild
+		} else if value, found := strings.CutSuffix(sandboxID, ":correct-usage"); found {
+			sandboxID, sandboxAction = value, "correct-sandbox-usage"
 		}
 		return true, parts[0], parts[2], sandboxID, "", 0, sandboxAction, sandboxID != ""
 	}
@@ -1191,6 +1246,8 @@ func foundationPermission(admin bool, action, method string) (projectPermission,
 	case admin && action == "revoke-access-grant" && method == http.MethodPost:
 		return "projects.act", "sandboxes.act", true
 	case admin && (action == internalcoordination.FoundationSandboxStop || action == internalcoordination.FoundationSandboxRebuild) && method == http.MethodPost:
+		return "projects.act", "sandboxes.act", true
+	case admin && action == "correct-sandbox-usage" && method == http.MethodPost:
 		return "projects.act", "sandboxes.act", true
 	default:
 		return "", "", false

@@ -90,7 +90,7 @@ func adminDeniedWriteRoute(r *http.Request) (postgres.AdminDeniedWrite, bool) {
 		event.Action = map[string]string{"upgrade": "adminUpgradeEnvironmentLease", "rollback": "adminRollbackEnvironmentLease"}[action]
 	} else if admin, tenant, project, id, secondaryID, version, action, ok := foundationPath(r.URL.Path); ok && admin && r.Method == http.MethodPost {
 		event.TenantID, event.ProjectID, event.ResourceID, event.ProfileVersion = tenant, project, id, version
-		event.Action = map[string]string{"admin-collection": "adminCreateRuntimeProfile", "admin-snapshot-collection": "adminCreateWorkspaceSnapshot", "restore-workspace-snapshot": "adminRestoreWorkspaceSnapshot", "cleanup-workspace-snapshot": "adminCleanupWorkspaceSnapshot", "publish": "adminPublishRuntimeProfile", "disable": "adminDisableRuntimeProfile", "stop": "adminStopSandboxSession", "rebuild": "adminRebuildSandboxSession", "revoke-access-grant": "adminRevokeSandboxAccessGrant"}[action]
+		event.Action = map[string]string{"admin-collection": "adminCreateRuntimeProfile", "admin-snapshot-collection": "adminCreateWorkspaceSnapshot", "restore-workspace-snapshot": "adminRestoreWorkspaceSnapshot", "cleanup-workspace-snapshot": "adminCleanupWorkspaceSnapshot", "publish": "adminPublishRuntimeProfile", "disable": "adminDisableRuntimeProfile", "stop": "adminStopSandboxSession", "rebuild": "adminRebuildSandboxSession", "correct-sandbox-usage": "adminCorrectSandboxUsage", "revoke-access-grant": "adminRevokeSandboxAccessGrant"}[action]
 		if action == "revoke-access-grant" {
 			event.ResourceID = secondaryID
 		}

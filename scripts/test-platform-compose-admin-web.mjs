@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const [origin, adminTokenFile, userTokenFile, tenantId, projectId] = process.argv.slice(2);
-if (![origin, adminTokenFile, userTokenFile, tenantId, projectId].every(Boolean)) {
+const [argumentOrigin, adminTokenFile, userTokenFile, argumentTenantId, argumentProjectId] =
+  process.argv.slice(2);
+const snapshotMode = Boolean(process.env.SNAPSHOT_ADMIN_APP_URL);
+const origin = process.env.SNAPSHOT_ADMIN_APP_URL ?? argumentOrigin;
+const tenantId = process.env.SNAPSHOT_ADMIN_TENANT_ID ?? argumentTenantId;
+const projectId = process.env.SNAPSHOT_ADMIN_PROJECT_ID ?? argumentProjectId;
+if (![origin, tenantId, projectId].every(Boolean) || (!snapshotMode && !adminTokenFile)) {
   throw new Error(
     "usage: node test-platform-compose-admin-web.mjs ORIGIN ADMIN_TOKEN_FILE USER_TOKEN_FILE TENANT_ID PROJECT_ID",
   );
@@ -20,8 +25,10 @@ const browserPath = [
 ].find((path) => path && existsSync(path));
 if (!browserPath) throw new Error("Compose Admin Web smoke requires Chrome, Chromium, or Brave");
 
-const adminToken = readFileSync(adminTokenFile, "utf8").trim();
-const userToken = readFileSync(userTokenFile, "utf8").trim();
+const adminToken =
+  process.env.SNAPSHOT_ADMIN_TOKEN ?? readFileSync(adminTokenFile, "utf8").trim();
+const userToken =
+  process.env.SNAPSHOT_ADMIN_USER_TOKEN ?? readFileSync(userTokenFile, "utf8").trim();
 const profile = mkdtempSync(join(tmpdir(), "cloud-agents-admin-web-smoke-"));
 const browser = spawn(
   browserPath,
@@ -129,12 +136,16 @@ try {
   await command("Page.navigate", { url: origin });
   await waitFor("document.querySelector('.connect-form') !== null", "Admin connection form");
 
-  const denied = await evaluate(
-    `fetch(${JSON.stringify(`${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${userToken}`)}, "X-Request-ID": "compose-admin-web-user-denied" } }).then(response => response.status)`,
-  );
-  assert.equal(denied, 403, "ordinary User token must not cross the Admin API proxy");
-  await delay(50);
-  errors.length = 0;
+  const denied = snapshotMode
+    ? 403
+    : await evaluate(
+        `fetch(${JSON.stringify(`${origin}/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { headers: { Authorization: ${JSON.stringify(`Bearer ${userToken}`)}, "X-Request-ID": "compose-admin-web-user-denied" } }).then(response => response.status)`,
+      );
+  if (!snapshotMode) {
+    assert.equal(denied, 403, "ordinary User token must not cross the Admin API proxy");
+    await delay(50);
+    errors.length = 0;
+  }
 
   const submitted = await evaluate(`(() => {
     const inputs = [...document.querySelectorAll('.connect-form input')];
@@ -176,6 +187,36 @@ try {
     `document.documentElement.dataset.theme !== ${JSON.stringify(originalTheme)}`,
     "theme switch",
   );
+  let usageCorrection;
+  if (snapshotMode) {
+    await evaluate("document.querySelector('[data-page=\"sandboxes\"]').click()");
+    await waitFor(
+      "document.querySelector('.sandbox-table tbody tr button') !== null",
+      "Sandbox table",
+    );
+    await evaluate("document.querySelector('.sandbox-table tbody tr button').click()");
+    await waitFor(
+      "document.querySelector('#sandbox-usage-corrections-title') !== null",
+      "usage correction detail",
+    );
+    usageCorrection = await evaluate(`(() => {
+      const section = document.querySelector('#sandbox-usage-corrections-title').closest('section');
+      return { text: section.textContent, fields: section.querySelectorAll('select, input').length };
+    })()`);
+    assert.ok(usageCorrection.text.includes("Network received bytes"));
+    assert.ok(usageCorrection.text.includes("offline-reconciliation"));
+    assert.ok(usageCorrection.text.includes("Record correction"));
+    assert.equal(usageCorrection.fields, 4);
+    await evaluate(
+      "document.querySelector('#sandbox-usage-corrections-title').scrollIntoView({ block: 'start' })",
+    );
+    await delay(100);
+    const screenshot = await command("Page.captureScreenshot", { format: "png" });
+    writeFileSync(
+      join(process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT, "admin-sandbox-usage-correction.png"),
+      Buffer.from(screenshot.data, "base64"),
+    );
+  }
   await command("Emulation.setDeviceMetricsOverride", {
     width: 390,
     height: 844,
@@ -195,8 +236,19 @@ try {
     ),
   );
   assert.deepEqual(errors, []);
+  const browserResult = {
+    requests: apiRequests.length,
+    ordinaryUserStatus: snapshotMode ? undefined : denied,
+    locale: "en-US",
+    desktopWidth: 1440,
+    mobileWidth: 390,
+    usageCorrectionVisible: usageCorrection !== undefined,
+    screenshot: snapshotMode ? "admin-sandbox-usage-correction.png" : undefined,
+  };
   process.stdout.write(
-    `Admin Web browser smoke passed (requests=${apiRequests.length}, user-admin=403, locale=en-US, theme=${originalTheme}->${await evaluate("document.documentElement.dataset.theme")}, widths=1440/390)\n`,
+    snapshotMode
+      ? `FOUNDATION_SNAPSHOT_BROWSER=${JSON.stringify(browserResult)}\n`
+      : `Admin Web browser smoke passed (requests=${apiRequests.length}, user-admin=403, locale=en-US, theme=${originalTheme}->${await evaluate("document.documentElement.dataset.theme")}, widths=1440/390)\n`,
   );
 } finally {
   socket?.close();

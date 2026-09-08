@@ -102,22 +102,23 @@ func EncodeWorkerHealthObservationResponseJSON(value common.ResponseEnvelope[Wor
 }
 
 var (
-	permissionPattern            = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
-	digestPattern                = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	enrollmentSecretPattern      = regexp.MustCompile(`^carw1_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$`)
-	accessTokenPattern           = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
-	sshUsernamePattern           = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$`)
-	fileVersionPattern           = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
-	previewHeaderNamePattern     = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9a-z-]+$")
-	ptyWebSocketPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
-	previewProxyPathPattern      = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
-	runtimeImagePattern          = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
-	usageDecimalPattern          = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,39})$`)
-	workspaceUsageBytesPattern   = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,18})$`)
-	workerImageRepositoryPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
-	workerVersionPattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
-	egressDomainPattern          = regexp.MustCompile(`^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
-	roleNames                    = map[string]struct{}{
+	permissionPattern                = regexp.MustCompile(`^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$`)
+	digestPattern                    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	enrollmentSecretPattern          = regexp.MustCompile(`^carw1_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$`)
+	accessTokenPattern               = regexp.MustCompile(`^cag1_[A-Za-z0-9_-]{43}$`)
+	sshUsernamePattern               = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}:[A-Za-z0-9._~-]{1,128}$`)
+	fileVersionPattern               = regexp.MustCompile(`^sfv1_[A-Za-z0-9_-]{43}$`)
+	previewHeaderNamePattern         = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9a-z-]+$")
+	ptyWebSocketPathPattern          = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/pty-sessions/[A-Za-z0-9._~-]+/ws$`)
+	previewProxyPathPattern          = regexp.MustCompile(`^/v1/tenants/[A-Za-z0-9._~-]+/projects/[A-Za-z0-9._~-]+/sandbox-access-grants/[A-Za-z0-9._~-]+/preview-ports/[0-9]+/proxy$`)
+	runtimeImagePattern              = regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$`)
+	usageDecimalPattern              = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,39})$`)
+	usageCorrectionAdjustmentPattern = regexp.MustCompile(`^-?[1-9][0-9]{0,39}$`)
+	workspaceUsageBytesPattern       = regexp.MustCompile(`^(?:0|[1-9][0-9]{0,18})$`)
+	workerImageRepositoryPattern     = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$`)
+	workerVersionPattern             = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
+	egressDomainPattern              = regexp.MustCompile(`^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+	roleNames                        = map[string]struct{}{
 		"platform.admin": {}, "tenant.admin": {}, "organization.admin": {}, "project.admin": {},
 		"project.operator": {}, "project.developer": {}, "project.viewer": {},
 	}
@@ -1188,6 +1189,14 @@ type SandboxSessionLifecycleRequest struct {
 	ComputeDisposition      string `json:"computeDisposition"`
 	WorkspaceDisposition    string `json:"workspaceDisposition"`
 }
+type SandboxUsageCorrectionRequest struct {
+	ExpectedGeneration      int64  `json:"expectedGeneration"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ConfirmedSandboxID      string `json:"confirmedSandboxId"`
+	Metric                  string `json:"metric"`
+	Adjustment              string `json:"adjustment"`
+	ReasonCode              string `json:"reasonCode"`
+}
 type SandboxSessionLifecycleOperation struct {
 	APIVersion           string `json:"apiVersion"`
 	Kind                 string `json:"kind"`
@@ -1215,6 +1224,17 @@ type AdminSandboxUsage struct {
 	CheckpointedAt          string `json:"checkpointedAt"`
 	FinalizedAt             string `json:"finalizedAt,omitempty"`
 }
+type AdminSandboxUsageCorrection struct {
+	CorrectionID         string `json:"correctionId"`
+	Metric               string `json:"metric"`
+	Adjustment           string `json:"adjustment"`
+	ReasonCode           string `json:"reasonCode"`
+	SandboxGeneration    int64  `json:"sandboxGeneration"`
+	PriorResourceVersion string `json:"priorResourceVersion"`
+	RequestedBy          string `json:"requestedBy"`
+	RequestID            string `json:"requestId"`
+	CreatedAt            string `json:"createdAt"`
+}
 type AdminWorkspaceVolumeUsage struct {
 	Source                string `json:"source"`
 	MeasurementGeneration int64  `json:"measurementGeneration"`
@@ -1236,38 +1256,39 @@ type AdminSandboxNetworkUsage struct {
 	StableErrorCode         string `json:"stableErrorCode,omitempty"`
 }
 type AdminSandboxSessionSpec struct {
-	ProjectRef               common.ProjectRef          `json:"projectRef"`
-	OperationID              string                     `json:"operationId"`
-	OperationState           string                     `json:"operationState"`
-	CleanupPhase             string                     `json:"cleanupPhase"`
-	WorkspaceID              string                     `json:"workspaceId"`
-	WorkspaceName            string                     `json:"workspaceName"`
-	VolumeID                 string                     `json:"volumeId"`
-	PhysicalVolumeID         string                     `json:"physicalVolumeId,omitempty"`
-	WorkspaceRetention       string                     `json:"workspaceRetention"`
-	WorkspaceObservedState   string                     `json:"workspaceObservedState"`
-	RuntimeProfileID         string                     `json:"runtimeProfileId"`
-	RuntimeProfileVersion    int64                      `json:"runtimeProfileVersion"`
-	WorkloadTrust            string                     `json:"workloadTrust"`
-	IsolationRuntime         string                     `json:"isolationRuntime"`
-	TargetID                 string                     `json:"targetId"`
-	NetworkPolicyRef         string                     `json:"networkPolicyRef,omitempty"`
-	NetworkPolicyEnforcement string                     `json:"networkPolicyEnforcement"`
-	Generation               int64                      `json:"generation"`
-	ObservedGeneration       int64                      `json:"observedGeneration"`
-	DesiredState             string                     `json:"desiredState"`
-	ObservedState            string                     `json:"observedState"`
-	WriterReleased           bool                       `json:"writerReleased"`
-	TTLSeconds               int64                      `json:"ttlSeconds,omitempty"`
-	ExpiresAt                string                     `json:"expiresAt,omitempty"`
-	LifecycleTrigger         string                     `json:"lifecycleTrigger,omitempty"`
-	RuntimeID                string                     `json:"runtimeId,omitempty"`
-	RuntimeState             string                     `json:"runtimeState,omitempty"`
-	StableErrorCode          string                     `json:"stableErrorCode,omitempty"`
-	ObservedAt               string                     `json:"observedAt,omitempty"`
-	Usage                    *AdminSandboxUsage         `json:"usage,omitempty"`
-	WorkspaceVolumeUsage     *AdminWorkspaceVolumeUsage `json:"workspaceVolumeUsage,omitempty"`
-	NetworkUsage             *AdminSandboxNetworkUsage  `json:"networkUsage,omitempty"`
+	ProjectRef               common.ProjectRef             `json:"projectRef"`
+	OperationID              string                        `json:"operationId"`
+	OperationState           string                        `json:"operationState"`
+	CleanupPhase             string                        `json:"cleanupPhase"`
+	WorkspaceID              string                        `json:"workspaceId"`
+	WorkspaceName            string                        `json:"workspaceName"`
+	VolumeID                 string                        `json:"volumeId"`
+	PhysicalVolumeID         string                        `json:"physicalVolumeId,omitempty"`
+	WorkspaceRetention       string                        `json:"workspaceRetention"`
+	WorkspaceObservedState   string                        `json:"workspaceObservedState"`
+	RuntimeProfileID         string                        `json:"runtimeProfileId"`
+	RuntimeProfileVersion    int64                         `json:"runtimeProfileVersion"`
+	WorkloadTrust            string                        `json:"workloadTrust"`
+	IsolationRuntime         string                        `json:"isolationRuntime"`
+	TargetID                 string                        `json:"targetId"`
+	NetworkPolicyRef         string                        `json:"networkPolicyRef,omitempty"`
+	NetworkPolicyEnforcement string                        `json:"networkPolicyEnforcement"`
+	Generation               int64                         `json:"generation"`
+	ObservedGeneration       int64                         `json:"observedGeneration"`
+	DesiredState             string                        `json:"desiredState"`
+	ObservedState            string                        `json:"observedState"`
+	WriterReleased           bool                          `json:"writerReleased"`
+	TTLSeconds               int64                         `json:"ttlSeconds,omitempty"`
+	ExpiresAt                string                        `json:"expiresAt,omitempty"`
+	LifecycleTrigger         string                        `json:"lifecycleTrigger,omitempty"`
+	RuntimeID                string                        `json:"runtimeId,omitempty"`
+	RuntimeState             string                        `json:"runtimeState,omitempty"`
+	StableErrorCode          string                        `json:"stableErrorCode,omitempty"`
+	ObservedAt               string                        `json:"observedAt,omitempty"`
+	Usage                    *AdminSandboxUsage            `json:"usage,omitempty"`
+	WorkspaceVolumeUsage     *AdminWorkspaceVolumeUsage    `json:"workspaceVolumeUsage,omitempty"`
+	NetworkUsage             *AdminSandboxNetworkUsage     `json:"networkUsage,omitempty"`
+	UsageCorrections         []AdminSandboxUsageCorrection `json:"usageCorrections,omitempty"`
 }
 type AdminSandboxSession struct {
 	ResourceBase
@@ -1457,7 +1478,7 @@ func DecodeAdminDeniedWriteEventJSON(data []byte) (AdminDeniedWriteEvent, error)
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "")
 	}
 	switch value.Action {
-	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCleanupWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
+	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminCorrectSandboxUsage", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCleanupWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
 	default:
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "/action")
 	}
@@ -1610,6 +1631,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetSelector": common.ObjectResponseShape(map[string]common.ResponseShape{"regionId": common.ScalarResponseShape(), "resourcePoolId": common.ScalarResponseShape(), "runtime": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape()}), "networkPolicyRef": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "AdminSandboxSession":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "usage": common.ObjectResponseShape(map[string]common.ResponseShape{"latestRuntimeGeneration": common.ScalarResponseShape(), "allocatedMilliseconds": common.ScalarResponseShape(), "cpuMillisMilliseconds": common.ScalarResponseShape(), "memoryByteMilliseconds": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "finalizedAt": common.ScalarResponseShape()}), "workspaceVolumeUsage": common.ObjectResponseShape(map[string]common.ResponseShape{"source": common.ScalarResponseShape(), "measurementGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "usedBytes": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}), "networkUsage": common.ObjectResponseShape(map[string]common.ResponseShape{"source": common.ScalarResponseShape(), "latestRuntimeGeneration": common.ScalarResponseShape(), "measurementGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "receivedBytes": common.ScalarResponseShape(), "transmittedBytes": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()})}
+		spec["usageCorrections"] = common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"correctionId": common.ScalarResponseShape(), "metric": common.ScalarResponseShape(), "adjustment": common.ScalarResponseShape(), "reasonCode": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "priorResourceVersion": common.ScalarResponseShape(), "requestedBy": common.ScalarResponseShape(), "requestId": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape()}))
 	case "AdminSandboxAccessGrant":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "previewPorts": common.ArrayResponseShape(common.ScalarResponseShape()), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
@@ -5642,6 +5664,38 @@ func EncodeSandboxSessionLifecycleRequestJSON(value SandboxSessionLifecycleReque
 	}
 	return raw, nil
 }
+func validSandboxUsageCorrectionMetric(value string) bool {
+	switch value {
+	case "allocatedMilliseconds", "cpuMillisMilliseconds", "memoryByteMilliseconds", "workspaceUsedBytes", "networkReceivedBytes", "networkTransmittedBytes":
+		return true
+	}
+	return false
+}
+func DecodeSandboxUsageCorrectionRequestJSON(data []byte) (SandboxUsageCorrectionRequest, error) {
+	allowed := []string{"expectedGeneration", "expectedResourceVersion", "confirmedSandboxId", "metric", "adjustment", "reasonCode"}
+	if _, err := common.DecodeStrictObject(data, allowed, allowed); err != nil {
+		return SandboxUsageCorrectionRequest{}, err
+	}
+	var value SandboxUsageCorrectionRequest
+	if json.Unmarshal(data, &value) != nil {
+		return SandboxUsageCorrectionRequest{}, common.ContractError("INVALID_FIELD_TYPE", "")
+	}
+	resourceVersion, err := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	if value.ExpectedGeneration < 1 || value.ExpectedGeneration > 9007199254740991 || err != nil || resourceVersion < 1 || len(value.ExpectedResourceVersion) > 19 || common.ValidateIdentifier(value.ConfirmedSandboxID, "/confirmedSandboxId") != nil || !validSandboxUsageCorrectionMetric(value.Metric) || !usageCorrectionAdjustmentPattern.MatchString(value.Adjustment) || common.ValidateIdentifier(value.ReasonCode, "/reasonCode") != nil {
+		return SandboxUsageCorrectionRequest{}, common.ContractError("INVALID_SANDBOX_USAGE_CORRECTION_REQUEST", "")
+	}
+	return value, nil
+}
+func EncodeSandboxUsageCorrectionRequestJSON(value SandboxUsageCorrectionRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSandboxUsageCorrectionRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
 func DecodeSandboxSessionJSON(data []byte) (SandboxSession, error) {
 	allowed := []string{"apiVersion", "kind", "projectRef", "operationId", "workspaceId", "sandboxId", "runtimeProfileId", "runtimeProfileVersion", "generation", "desiredState", "observedState", "expiresAt"}
 	fields, err := common.DecodeStrictObject(data, allowed, allowed)
@@ -5738,6 +5792,29 @@ func EncodeSandboxSessionLifecycleOperationResponseJSON(value common.ResponseEnv
 	}
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
+func decodeAdminSandboxUsageCorrections(data []byte, generation int64) ([]AdminSandboxUsageCorrection, error) {
+	var items []json.RawMessage
+	if json.Unmarshal(data, &items) != nil || items == nil || len(items) > 100 {
+		return nil, common.ContractError("INVALID_SANDBOX_USAGE_CORRECTIONS", "/spec/usageCorrections")
+	}
+	result := make([]AdminSandboxUsageCorrection, 0, len(items))
+	allowed := []string{"correctionId", "metric", "adjustment", "reasonCode", "sandboxGeneration", "priorResourceVersion", "requestedBy", "requestId", "createdAt"}
+	for index, item := range items {
+		if _, err := common.DecodeStrictObject(item, allowed, allowed); err != nil {
+			return nil, err
+		}
+		var value AdminSandboxUsageCorrection
+		if json.Unmarshal(item, &value) != nil {
+			return nil, common.ContractError("INVALID_FIELD_TYPE", "/spec/usageCorrections/"+itoa(index))
+		}
+		resourceVersion, err := strconv.ParseInt(value.PriorResourceVersion, 10, 64)
+		if common.ValidateIdentifier(value.CorrectionID, "/spec/usageCorrections/correctionId") != nil || !validSandboxUsageCorrectionMetric(value.Metric) || !usageCorrectionAdjustmentPattern.MatchString(value.Adjustment) || common.ValidateIdentifier(value.ReasonCode, "/spec/usageCorrections/reasonCode") != nil || value.SandboxGeneration < 1 || value.SandboxGeneration > generation || err != nil || resourceVersion < 1 || len(value.PriorResourceVersion) > 19 || !digestPattern.MatchString(value.RequestedBy) || common.ValidateIdentifier(value.RequestID, "/spec/usageCorrections/requestId") != nil || common.ValidateDateTime(value.CreatedAt, "/spec/usageCorrections/createdAt") != nil {
+			return nil, common.ContractError("INVALID_SANDBOX_USAGE_CORRECTION", "/spec/usageCorrections/"+itoa(index))
+		}
+		result = append(result, value)
+	}
+	return result, nil
+}
 func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	fields, err := strictResourceExact(data)
 	if err != nil {
@@ -5747,7 +5824,7 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	if err != nil {
 		return AdminSandboxSession{}, err
 	}
-	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt", "usage", "workspaceVolumeUsage", "networkUsage"}
+	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt", "usage", "workspaceVolumeUsage", "networkUsage", "usageCorrections"}
 	required := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
@@ -5777,6 +5854,12 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 		return AdminSandboxSession{}, common.ContractError("INVALID_FIELD_TYPE", "/spec")
 	}
 	spec.ProjectRef = project
+	if raw, ok := specFields["usageCorrections"]; ok {
+		spec.UsageCorrections, err = decodeAdminSandboxUsageCorrections(raw, spec.Generation)
+		if err != nil {
+			return AdminSandboxSession{}, err
+		}
+	}
 	if validateRuntimeIsolation(spec.WorkloadTrust, spec.IsolationRuntime, "/spec") != nil {
 		return AdminSandboxSession{}, common.ContractError("INVALID_RUNTIME_ISOLATION", "/spec/isolationRuntime")
 	}

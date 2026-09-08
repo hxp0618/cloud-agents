@@ -149,6 +149,59 @@
             "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
             "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
           }
+        },
+        "usageCorrections": {
+          "description": "Complete append-only correction audit for this Sandbox. P0 rejects a 101st record rather than truncating this array.",
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "correctionId",
+              "metric",
+              "adjustment",
+              "reasonCode",
+              "sandboxGeneration",
+              "priorResourceVersion",
+              "requestedBy",
+              "requestId",
+              "createdAt"
+            ],
+            "properties": {
+              "correctionId": {
+                "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+              },
+              "metric": {
+                "enum": [
+                  "allocatedMilliseconds",
+                  "cpuMillisMilliseconds",
+                  "memoryByteMilliseconds",
+                  "workspaceUsedBytes",
+                  "networkReceivedBytes",
+                  "networkTransmittedBytes"
+                ]
+              },
+              "adjustment": { "type": "string", "pattern": "^-?[1-9][0-9]{0,39}$" },
+              "reasonCode": {
+                "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+              },
+              "sandboxGeneration": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9223372036854775807
+              },
+              "priorResourceVersion": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "requestedBy": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+              "requestId": {
+                "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+              },
+              "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+            }
+          }
         }
       }
     }
@@ -165,6 +218,8 @@
     "workspaceVolumeUsage.usedBytes is Docker backend occupied bytes reported by GET /system/df and is not an enforced capacity or billable amount",
     "workspaceVolumeUsage pending has generation zero and no observation; ready requires usedBytes and checkpointedAt; failed requires stableErrorCode and may retain the last good usedBytes and checkpointedAt",
     "networkUsage is the latest direct-Docker runtime generation cumulative container RX/TX byte checkpoint and never includes packet, address, destination or payload data",
-    "networkUsage is absent for unsupported backends or before the first measurement; failed observations may retain the last good byte counters and checkpoint"
+    "networkUsage is absent for unsupported backends or before the first measurement; failed observations may retain the last good byte counters and checkpoint",
+    "usageCorrections are immutable signed deltas over persisted raw facts and never replace those facts",
+    "usageCorrections contain only Admin metadata and never user content, credentials, endpoints or prices"
   ]
 }

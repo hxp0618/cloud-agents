@@ -2230,6 +2230,33 @@ func (client *Client) GetAdminSandboxSession(ctx context.Context, tenantID, proj
 	}
 	return value, nil
 }
+func (client *Client) CorrectAdminSandboxUsage(ctx context.Context, tenantID, projectID, sandboxID, requestID, idempotencyKey string, body platform.SandboxUsageCorrectionRequest) (AdminSandboxSessionResult, error) {
+	bodyBytes, err := platform.EncodeSandboxUsageCorrectionRequestJSON(body)
+	if err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	if _, err := ValidateCorrectAdminSandboxUsageServerRequest(tenantID, projectID, sandboxID, requestID, idempotencyKey, bodyBytes); err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/sandbox-sessions/" + sandboxID + ":correct-usage", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	if response.Status != 200 {
+		return AdminSandboxSessionResult{}, client.problemError("adminCorrectSandboxUsage", response)
+	}
+	value, err := platform.DecodeAdminSandboxSessionResponseJSON(response.Body)
+	if err != nil {
+		return AdminSandboxSessionResult{}, &ClientError{Operation: "adminCorrectSandboxUsage", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return AdminSandboxSessionResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Metadata.UID != sandboxID {
+		return AdminSandboxSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
 func (client *Client) ListAdminWorkspaceSnapshots(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (WorkspaceSnapshotPageResult, error) {
 	if pageSize == 0 {
 		pageSize = 50
@@ -5803,6 +5830,32 @@ func ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID,
 		return GetAdminSandboxSessionServerInput{}, err
 	}
 	return GetAdminSandboxSessionServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID}, nil
+}
+
+type CorrectAdminSandboxUsageServerInput struct {
+	TenantID       string
+	ProjectID      string
+	SandboxID      string
+	RequestID      string
+	IdempotencyKey string
+	Body           platform.SandboxUsageCorrectionRequest
+}
+
+func ValidateCorrectAdminSandboxUsageServerRequest(tenantID, projectID, sandboxID, requestID, idempotencyKey string, body []byte) (CorrectAdminSandboxUsageServerInput, error) {
+	if _, err := ValidateGetAdminSandboxSessionServerRequest(tenantID, projectID, sandboxID, requestID); err != nil {
+		return CorrectAdminSandboxUsageServerInput{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return CorrectAdminSandboxUsageServerInput{}, err
+	}
+	value, err := platform.DecodeSandboxUsageCorrectionRequestJSON(body)
+	if err != nil {
+		return CorrectAdminSandboxUsageServerInput{}, err
+	}
+	if value.ConfirmedSandboxID != sandboxID {
+		return CorrectAdminSandboxUsageServerInput{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/confirmedSandboxId")
+	}
+	return CorrectAdminSandboxUsageServerInput{TenantID: tenantID, ProjectID: projectID, SandboxID: sandboxID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: value}, nil
 }
 
 type ListAdminWorkspaceSnapshotsServerInput struct {

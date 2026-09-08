@@ -135,7 +135,6 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
     readonly schema_bundle: {
       readonly migrations: ReadonlyArray<{
         readonly sql_artifact: { readonly path: string };
-        readonly catalog_contract: { readonly path: string };
       }>;
     };
   };
@@ -146,7 +145,6 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   ]);
   for (const migration of manifest.schema_bundle.migrations) {
     paths.add(migration.sql_artifact.path);
-    paths.add(migration.catalog_contract.path);
   }
   return createDeterministicUstar(
     [...paths].map((path) => ({

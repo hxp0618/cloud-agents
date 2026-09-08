@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/sandbox-usage-correction-request.schema.json",
+  "title": "SandboxUsageCorrectionRequest",
+  "description": "Append-only Admin correction for one observed Sandbox usage fact. It never rewrites the original measurement or computes prices, balances, or invoices.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "expectedGeneration",
+    "expectedResourceVersion",
+    "confirmedSandboxId",
+    "metric",
+    "adjustment",
+    "reasonCode"
+  ],
+  "properties": {
+    "expectedGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "expectedResourceVersion": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "confirmedSandboxId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "metric": {
+      "enum": [
+        "allocatedMilliseconds",
+        "cpuMillisMilliseconds",
+        "memoryByteMilliseconds",
+        "workspaceUsedBytes",
+        "networkReceivedBytes",
+        "networkTransmittedBytes"
+      ]
+    },
+    "adjustment": {
+      "description": "Signed non-zero decimal delta. The corresponding original fact remains unchanged.",
+      "type": "string",
+      "pattern": "^-?[1-9][0-9]{0,39}$"
+    },
+    "reasonCode": {
+      "description": "Stable metadata-only reason code; free-form user content is not accepted.",
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "confirmedSandboxId must equal the route sandboxId",
+    "expectedGeneration and expectedResourceVersion fence the exact Sandbox state",
+    "the selected metric must have a persisted raw usage fact before a correction is accepted",
+    "Idempotency-Key is required by the Admin HTTP operation"
+  ]
+}
