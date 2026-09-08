@@ -113,6 +113,45 @@ services:
     entrypoint: ["/usr/bin/install"]
     command: ["--mode=0400", "--owner=65532", "--group=65532", "/source/access-grant.key", "/target/access-grant.key"]
 
+  access-gateway-ssh-key:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - ${CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY:?set the Access Gateway SSH host key path}:/source/ssh-host-key:ro
+      - cloud-agents-access-gateway-secrets:/target
+    entrypoint: ["/usr/bin/install"]
+    command: ["--mode=0400", "--owner=65532", "--group=65532", "/source/ssh-host-key", "/target/ssh-host-key"]
+
+  access-gateway:
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
+    build:
+      context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/access-gateway.Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      access-gateway-ssh-key:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_RUNTIME_DATABASE_URL:?set the runtime database URL}
+      CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY: /run/cloud-agents/docker-target-credentials
+      CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY: /run/cloud-agents/kubernetes-target-credentials
+    command: ["--listen", ":8090", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key", "--ssh-listen", ":2222", "--ssh-host-key", "/run/cloud-agents/secrets/ssh-host-key"]
+    volumes:
+      - ${CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR:?set the Docker target credential directory}:/run/cloud-agents/docker-target-credentials:ro
+      - ${CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR:?set the Kubernetes target credential directory}:/run/cloud-agents/kubernetes-target-credentials:ro
+      - ${CLOUD_AGENTS_ACCESS_GATEWAY_TLS_DIR:?set the Access Gateway TLS directory}:/run/cloud-agents/tls:ro
+      - cloud-agents-access-gateway-secrets:/run/cloud-agents/secrets:ro
+    ports:
+      - "${CLOUD_AGENTS_ACCESS_GATEWAY_BIND:-127.0.0.1:8090}:8090"
+      - "${CLOUD_AGENTS_ACCESS_GATEWAY_SSH_BIND:-127.0.0.1:2222}:2222"
+
   backup:
     image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
     profiles: [backup]
@@ -236,4 +275,5 @@ services:
 
 volumes:
   cloud-agents-postgres:
+  cloud-agents-access-gateway-secrets:
   cloud-agents-control-plane-secrets:

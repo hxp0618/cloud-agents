@@ -1,0 +1,88 @@
+{
+  "run": "cloud-agents-compose-smoke-16283",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "3e13523de946c0ffa1b8cb74fe550dfa1a15b893",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.3.0-dev.84",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-compose-r3",
+    "sourceCommit": "3e13523de946c0ffa1b8cb74fe550dfa1a15b893",
+    "sourceDirty": true,
+    "artifactCount": 20,
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000084.tar",
+      "sizeBytes": 179712,
+      "sha256": "sha256:7ac74c880e34e921c0761129407afca5e2fa95f5b0921e6a68ca25d873859be1"
+    },
+    "migrationArtifact": {
+      "filename": "cloud-agents-migrations-000084.tar",
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "accessGatewayArtifacts": [
+      {
+        "target": "linux-amd64",
+        "sizeBytes": 21234286,
+        "sha256": "sha256:3d243f59b8f6c4a3432e2c2aa760669eae311361fe6255184a6be9537c397a3c"
+      },
+      {
+        "target": "linux-arm64",
+        "sizeBytes": 20024009,
+        "sha256": "sha256:986b9a5c7987aa0d11d7ba95f485605e8c0fd29d7f7a1294a48622c6fdf62023"
+      }
+    ]
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "dockerComposeVersion": "v5.1.2",
+    "postgresImage": "postgres:17.6-bookworm",
+    "imagePlatform": "linux/arm64",
+    "cliTarget": "darwin-arm64",
+    "openSandboxServer": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "openSandboxExecd": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "openSandboxEgress": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a",
+    "sandboxImage": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+  },
+  "result": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-platform-000084-compose-r3",
+    "status": "passed",
+    "projectId": "project-2fde604e9ef099aad6125e5a2181196c",
+    "profile": "compose-docker-profile:v1",
+    "environmentId": "environment-0cc46b1599b67da3345de72ee27f3312",
+    "gatewayRoutes": [
+      "files",
+      "pty",
+      "preview",
+      "ssh"
+    ],
+    "finalDockerWorkers": 0,
+    "finalOpenSandboxRuntimeContainers": 0,
+    "finalOpenSandboxEgressContainers": 0,
+    "finalOpenSandboxManagedVolumes": 0,
+    "finalTestOwnedComposeContainers": 0,
+    "finalTestOwnedComposeVolumes": 0,
+    "finalTestOwnedComposeNetworks": 0
+  },
+  "checks": [
+    "the release contains fixed linux-amd64 and linux-arm64 Access Gateway binaries plus a deployment Dockerfile",
+    "the packaged Gateway ran as uid 65532 with a read-only root filesystem, all Linux capabilities dropped, no-new-privileges and no Docker socket",
+    "a no-network one-shot copied the deployment-owned SSH host key into a read-only named secret volume with uid 65532 and mode 0400",
+    "fresh migration 000084 and normal no-op migration startup completed before Control Plane and Gateway readiness",
+    "a published no-Agent RuntimeProfile created a real OpenSandbox runtime through Control Plane authority with a deny-by-default network policy",
+    "a bounded generation-bound Grant exercised real Files write/read and PTY create/attach/delete through the packaged HTTPS Gateway",
+    "a registered private Preview returned the real Sandbox response and rejected a valid-shape wrong token with 403",
+    "strict-host-key SSH used the bounded Grant password, ran in /workspace and returned command output",
+    "Gateway restart preserved Files, Preview and SSH access while Compose remapped only the loopback host ports",
+    "Sandbox Stop deleted compute, released the writer and settled network enforcement; runtime, egress and OpenSandbox-managed volume inventories returned to their pre-run baselines",
+    "Control Plane restart preserved Profile Environment and terminal Execution authority",
+    "database backup, empty-database restore and repeated-restore fail-closed checks passed; both Control Plane and Gateway became ready after restore",
+    "Environment termination and Target cleanup removed all test Workers; trap cleanup left no test-owned Compose containers, volumes, networks or OpenSandbox resources",
+    "platform release tests passed 18 tests and 151 expectations; Gateway Go tests, go vet, TypeScript formatting, shell syntax and diff checks passed"
+  ],
+  "boundary": "Local OrbStack Docker, real fixed OpenSandbox and disposable PostgreSQL Compose deployment only. The Kubernetes Target uses a synthetic API fixture and no real Provider credentials were supplied, so Codex and Claude Code Sessions/Turns persisted but ended at the deliberate runtime_open_failed boundary. Admin Web deployment, Helm, customer-node bootstrap, N/N-1 package upgrade/rollback, identity or certificate rotation and full BASE-READY remain unverified."
+}

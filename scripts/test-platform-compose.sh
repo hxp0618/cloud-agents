@@ -25,7 +25,7 @@ if [ "$#" -eq 2 ]; then
     fi
   done
 fi
-for command in curl docker node openssl; do
+for command in cmp curl docker node openssl ssh ssh-keygen; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "platform Compose smoke requires $command" >&2
     exit 2
@@ -36,6 +36,7 @@ case "$docker_host" in
   unix:///*) docker_socket=${docker_host#unix://} ;;
   *) echo "platform Compose Docker target smoke requires a Unix Docker context" >&2; exit 2 ;;
 esac
+docker_gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
 
 candidate_directory=$(CDPATH= cd -- "$1" && pwd)
 case "$(uname -s)/$(uname -m)" in
@@ -62,8 +63,12 @@ environment_file="$smoke_directory/compose.env"
 compose_file="$smoke_directory/deployment/deploy/compose/docker-compose.yml"
 compose_override_file="$smoke_directory/compose-target-override.yml"
 docker_proxy_pid=
+opensandbox_proxy_pid=
 kubernetes_api_pid=
 registry_container="${project}-registry"
+opensandbox_container="${project}-opensandbox"
+opensandbox_server_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb"
+foundation_workspace_id=compose-gateway-workspace
 worker_repository=
 worker_release_digest=
 worker_upgrade_release_digest=
@@ -87,12 +92,54 @@ cleanup() {
       fi
       docker rm -f "$container" >/dev/null 2>&1 || true
     done
+    for volume in $(docker volume ls -q \
+      --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+      --filter label=cloud-agents.dev/project="$project_id" \
+      --filter label=cloud-agents.dev/workspace="$foundation_workspace_id"); do
+      docker volume rm "$volume" >/dev/null 2>&1 || true
+    done
   fi
   if [ -f "$environment_file" ]; then
     if [ "$status" -ne 0 ]; then
-      compose logs --no-color --tail=200 access-grant-key control-plane worker migrate postgres >&2 || true
+      compose logs --no-color --tail=200 access-gateway access-gateway-ssh-key access-grant-key control-plane worker migrate postgres >&2 || true
     fi
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+  fi
+  if [ "$status" -ne 0 ]; then
+    docker logs "$opensandbox_container" >&2 || true
+  fi
+  docker rm -f "$opensandbox_container" >/dev/null 2>&1 || true
+  if [ -f "$smoke_directory/opensandbox-egress-baseline" ]; then
+    for container in $(docker ps -aq --filter label=opensandbox.io/egress-sidecar-for); do
+      if ! grep -Fqx "$container" "$smoke_directory/opensandbox-egress-baseline"; then
+        if [ "$status" -ne 0 ]; then
+          docker logs "$container" >&2 || true
+        fi
+        docker rm -f "$container" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+  if [ -f "$smoke_directory/opensandbox-runtime-baseline" ]; then
+    for container in $(docker ps -aq --filter label=opensandbox.io/id); do
+      if ! grep -Fqx "$container" "$smoke_directory/opensandbox-runtime-baseline"; then
+        if [ "$status" -ne 0 ]; then
+          docker logs "$container" >&2 || true
+        fi
+        docker rm -f "$container" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+  if [ -f "$smoke_directory/opensandbox-volume-baseline" ]; then
+    for volume in $(docker volume ls -q --filter label=opensandbox.io/volume-managed-by=server); do
+      if ! grep -Fqx "$volume" "$smoke_directory/opensandbox-volume-baseline"; then
+        docker volume rm "$volume" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+  if docker network inspect "${project}_default" >/dev/null 2>&1 &&
+    ! docker network rm "${project}_default" >/dev/null 2>&1; then
+    echo "Compose smoke network cleanup failed: ${project}_default" >&2
+    status=1
   fi
   docker rm -f "$registry_container" >/dev/null 2>&1 || true
   docker rm -f "${project}-worker-upgrade-seed" >/dev/null 2>&1 || true
@@ -111,17 +158,21 @@ cleanup() {
     kill "$docker_proxy_pid" >/dev/null 2>&1 || true
     wait "$docker_proxy_pid" 2>/dev/null || true
   fi
+  if [ -n "$opensandbox_proxy_pid" ]; then
+    kill "$opensandbox_proxy_pid" >/dev/null 2>&1 || true
+    wait "$opensandbox_proxy_pid" 2>/dev/null || true
+  fi
   if [ -n "$kubernetes_api_pid" ]; then
     kill "$kubernetes_api_pid" >/dev/null 2>&1 || true
     wait "$kubernetes_api_pid" 2>/dev/null || true
   fi
-  docker image rm "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
+  docker image rm "${project}-access-gateway" "${project}-control-plane" "${project}-worker" "${project}-migrate" >/dev/null 2>&1 || true
   rm -rf -- "$smoke_directory"
   exit "$status"
 }
 trap cleanup 0 HUP INT TERM
 
-mkdir -p "$smoke_directory/deployment" "$smoke_directory/control-plane-tls" \
+mkdir -p "$smoke_directory/deployment" "$smoke_directory/access-gateway-tls" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/workspace" \
   "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/kubernetes-target-credentials" \
@@ -129,7 +180,10 @@ mkdir -p "$smoke_directory/deployment" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/ssh-target-credentials" \
   "$smoke_directory/fake-kubectl-state" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
-chmod 0755 "$smoke_directory" "$smoke_directory/control-plane-tls" \
+docker ps -aq --filter label=opensandbox.io/id | sort >"$smoke_directory/opensandbox-runtime-baseline"
+docker ps -aq --filter label=opensandbox.io/egress-sidecar-for | sort >"$smoke_directory/opensandbox-egress-baseline"
+docker volume ls -q --filter label=opensandbox.io/volume-managed-by=server | sort >"$smoke_directory/opensandbox-volume-baseline"
+chmod 0755 "$smoke_directory" "$smoke_directory/access-gateway-tls" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" \
   "$smoke_directory/docker-target-credentials" "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/kubernetes-target-credentials" \
@@ -175,6 +229,25 @@ openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=control-plane \
 openssl x509 -req -sha256 -days 1 -in "$smoke_directory/control-plane-server.csr" \
   -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
   -copy_extensions copy -out "$smoke_directory/control-plane-tls/server.crt" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=access-gateway \
+  -keyout "$smoke_directory/access-gateway-tls/server.key" \
+  -out "$smoke_directory/access-gateway-server.csr" \
+  -addext subjectAltName=DNS:access-gateway,IP:127.0.0.1 \
+  -addext extendedKeyUsage=serverAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
+openssl x509 -req -sha256 -days 1 -in "$smoke_directory/access-gateway-server.csr" \
+  -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
+  -copy_extensions copy -out "$smoke_directory/access-gateway-tls/server.crt" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=host.docker.internal \
+  -keyout "$smoke_directory/opensandbox-proxy.key" \
+  -out "$smoke_directory/opensandbox-proxy.csr" \
+  -addext subjectAltName=DNS:host.docker.internal \
+  -addext extendedKeyUsage=serverAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
+openssl x509 -req -sha256 -days 1 -in "$smoke_directory/opensandbox-proxy.csr" \
+  -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
+  -copy_extensions copy -out "$smoke_directory/opensandbox-proxy.crt" >/dev/null 2>&1
+ssh-keygen -q -t ed25519 -N "" -f "$smoke_directory/access-gateway-ssh-host-key"
+cp "$smoke_directory/ca.crt" "$smoke_directory/access-gateway-tls/ca.crt"
+cp "$smoke_directory/ca.crt" "$smoke_directory/control-plane-tls/ca.crt"
 cp "$smoke_directory/ca.crt" "$smoke_directory/control-plane-tls/worker-ca.crt"
 cp "$smoke_directory/ca.crt" "$smoke_directory/worker-tls/client-ca.crt"
 cp "$smoke_directory/ca.crt" "$smoke_directory/target-worker-credentials/client-ca.crt"
@@ -201,23 +274,29 @@ cp "$smoke_directory/docker-target-ca.crt" \
   "$smoke_directory/docker-target-credentials/docker-compose-target/ca.pem"
 cp "$smoke_directory/docker-target-ca.crt" \
   "$smoke_directory/kubernetes-target-credentials/kubernetes-compose-target.ca.crt"
-chmod 0444 "$smoke_directory"/control-plane-tls/* "$smoke_directory"/worker-tls/*
+chmod 0444 "$smoke_directory"/access-gateway-tls/* \
+  "$smoke_directory"/control-plane-tls/* "$smoke_directory"/worker-tls/*
+chmod 0600 "$smoke_directory/access-gateway-ssh-host-key"
 
 CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" \
 CLOUD_AGENTS_COMPOSE_SMOKE_RELEASE="$candidate_directory" \
 CLOUD_AGENTS_COMPOSE_SMOKE_PROJECT="$project" \
 CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM="$image_platform" \
+CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY="$docker_gateway" \
   node <<'NODE'
 const { createSign, generateKeyPairSync, randomBytes } = require("node:crypto");
 const { chmodSync, writeFileSync } = require("node:fs");
+const { isIP } = require("node:net");
 
 const state = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_STATE;
 const release = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_RELEASE;
 const project = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PROJECT;
 const platform = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM;
-if (![state, release, project, platform].every((value) => value && !value.includes("\n"))) {
+const dockerGateway = process.env.CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY;
+if (![state, release, project, platform, dockerGateway].every((value) => value && !value.includes("\n"))) {
   throw new Error("invalid Compose smoke environment");
 }
+if (isIP(dockerGateway) !== 4) throw new Error("invalid Docker bridge gateway");
 const deploy = `${state}/deployment/deploy`;
 const issuer = "https://issuer.compose.test";
 const audience = "https://api.compose.test";
@@ -232,6 +311,30 @@ const auth = {
 };
 writeFileSync(`${state}/auth.json`, `${JSON.stringify(auth)}\n`);
 writeFileSync(`${state}/access-grant.key`, randomBytes(32));
+const opensandboxApiKey = randomBytes(32).toString("hex");
+writeFileSync(`${state}/opensandbox-api-key`, opensandboxApiKey);
+writeFileSync(`${state}/opensandbox.toml`, `[server]
+host="0.0.0.0"
+eip="host.docker.internal"
+port=8080
+api_key="${opensandboxApiKey}"
+[runtime]
+type="docker"
+execd_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd"
+[docker]
+network_mode="bridge"
+host_ip="${dockerGateway}"
+port_range_min=49530
+port_range_max=49740
+[egress]
+image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a"
+mode="dns+nft"
+[storage]
+allowed_host_paths=[]
+[store]
+type="sqlite"
+path="/tmp/opensandbox.db"
+`);
 const baseClaims = {
   iss: issuer, sub: "user-compose-smoke", aud: audience, exp: now + 1800, iat: now - 10,
   client_id: "compose-smoke-client",
@@ -251,10 +354,10 @@ const adminToken = issueToken("compose-smoke-admin-token", [
   "audit.list", "environments.create", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
+  "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
 ]);
 const userToken = issueToken("compose-smoke-user-token", [
-  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get",
+  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list", "projects.act", "projects.get", "sandboxes.update",
 ]);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
@@ -262,12 +365,13 @@ writeFileSync(`${state}/token`, `${adminToken}\n`);
 writeFileSync(`${state}/user-token`, `${userToken}\n`);
 writeFileSync(`${state}/admin-curl.conf`, `header = "Authorization: Bearer ${adminToken}"\n`);
 writeFileSync(`${state}/user-curl.conf`, `header = "Authorization: Bearer ${userToken}"\n`);
+writeFileSync(`${state}/ssh-askpass.sh`, '#!/bin/sh\nprintf "%s\\n" "$CLOUD_AGENTS_GATEWAY_PASSWORD"\n');
 writeFileSync(`${state}/runtime.env`, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent\nCLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1\n");
 writeFileSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 writeFileSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 writeFileSync(`${state}/target-worker-credentials/admission-token`, admissionToken);
 writeFileSync(`${state}/kubernetes-target-credentials/kubernetes-compose-target.token`, `${kubernetesToken}\n`);
-writeFileSync(`${state}/compose-target-override.yml`, 'services:\n  control-plane:\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n');
+writeFileSync(`${state}/compose-target-override.yml`, 'services:\n  access-gateway:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n  control-plane:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n');
 writeFileSync(`${state}/docker-proxy.mjs`, [
   'import { chmodSync, readFileSync, writeFileSync } from "node:fs";',
   'import net from "node:net";',
@@ -275,6 +379,21 @@ writeFileSync(`${state}/docker-proxy.mjs`, [
   'const [socketPath, caPath, certPath, keyPath, portPath] = process.argv.slice(2);',
   'const server = tls.createServer({ ca: readFileSync(caPath), cert: readFileSync(certPath), key: readFileSync(keyPath), minVersion: "TLSv1.2", requestCert: true, rejectUnauthorized: true }, (client) => {',
   '  const upstream = net.createConnection(socketPath);',
+  '  const close = () => { client.destroy(); upstream.destroy(); };',
+  '  client.on("error", close); upstream.on("error", close);',
+  '  client.pipe(upstream); upstream.pipe(client);',
+  '});',
+  'server.on("tlsClientError", () => {});',
+  'server.listen(0, "0.0.0.0", () => { writeFileSync(portPath, String(server.address().port)); chmodSync(portPath, 0o600); });',
+  'process.on("SIGTERM", () => process.exit(0));',
+].join("\n") + "\n");
+writeFileSync(`${state}/opensandbox-proxy.mjs`, [
+  'import { chmodSync, readFileSync, writeFileSync } from "node:fs";',
+  'import net from "node:net";',
+  'import tls from "node:tls";',
+  'const [certPath, keyPath, upstreamPort, portPath] = process.argv.slice(2);',
+  'const server = tls.createServer({ cert: readFileSync(certPath), key: readFileSync(keyPath), minVersion: "TLSv1.2" }, (client) => {',
+  '  const upstream = net.createConnection({ host: "127.0.0.1", port: Number(upstreamPort) });',
   '  const close = () => { client.destroy(); upstream.destroy(); };',
   '  client.on("error", close); upstream.on("error", close);',
   '  client.pipe(upstream); upstream.pipe(client);',
@@ -341,6 +460,8 @@ const values = [
   `CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR=${state}/kubernetes-target-credentials`,
   `CLOUD_AGENTS_SSH_CREDENTIALS_DIR=${state}/ssh-target-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR=${state}/control-plane-tls`,
+  `CLOUD_AGENTS_ACCESS_GATEWAY_TLS_DIR=${state}/access-gateway-tls`,
+  `CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY=${state}/access-gateway-ssh-host-key`,
   `CLOUD_AGENTS_WORKER_TLS_DIR=${state}/worker-tls`,
   "CLOUD_AGENTS_WORKER_ENDPOINT=https://worker:8091",
   "CLOUD_AGENTS_WORKER_SPIFFE_ID=spiffe://cloud-agents.compose/worker",
@@ -349,6 +470,8 @@ const values = [
   `CLOUD_AGENTS_WORKER_CA=${state}/control-plane-tls/worker-ca.crt`,
   `CLOUD_AGENTS_WORKSPACE_DIR=${state}/workspace`,
   "CLOUD_AGENTS_WORKER_WORKSPACE_DIRECTORY=/workspace",
+  "CLOUD_AGENTS_ACCESS_GATEWAY_BIND=127.0.0.1:",
+  "CLOUD_AGENTS_ACCESS_GATEWAY_SSH_BIND=127.0.0.1:",
   "CLOUD_AGENTS_RUNTIME_MAX_SESSIONS=2",
   "CLOUD_AGENTS_ADMISSION_LEASE_ID=compose-smoke-lease",
   "CLOUD_AGENTS_ADMISSION_GENERATION=1",
@@ -357,17 +480,21 @@ const values = [
 writeFileSync(`${state}/compose.env`, `${values.join("\n")}\n`);
 chmodSync(`${state}/auth.json`, 0o444);
 chmodSync(`${state}/access-grant.key`, 0o600);
+chmodSync(`${state}/opensandbox-api-key`, 0o600);
+chmodSync(`${state}/opensandbox.toml`, 0o600);
 chmodSync(`${state}/runtime.env`, 0o444);
 chmodSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
 chmodSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
 chmodSync(`${state}/target-worker-credentials/admission-token`, 0o400);
 chmodSync(`${state}/kubernetes-target-credentials/kubernetes-compose-target.token`, 0o400);
 chmodSync(`${state}/docker-proxy.mjs`, 0o400);
+chmodSync(`${state}/opensandbox-proxy.mjs`, 0o400);
 chmodSync(`${state}/kubernetes-api.mjs`, 0o400);
 chmodSync(`${state}/token`, 0o600);
 chmodSync(`${state}/user-token`, 0o600);
 chmodSync(`${state}/admin-curl.conf`, 0o600);
 chmodSync(`${state}/user-curl.conf`, 0o600);
+chmodSync(`${state}/ssh-askpass.sh`, 0o700);
 chmodSync(`${state}/compose.env`, 0o600);
 NODE
 
@@ -422,10 +549,63 @@ test "$(curl --silent --show-error --fail \
 
 compose config --quiet
 compose --profile bootstrap run --rm bootstrap >/dev/null
+docker run -d --name "$opensandbox_container" \
+  --network "${project}_default" --network-alias opensandbox \
+  --add-host host.docker.internal:host-gateway \
+  --label "cloud-agents.dev/test=$project" \
+  -p 127.0.0.1::8080 \
+  --mount "type=bind,src=$smoke_directory/opensandbox.toml,dst=/etc/opensandbox/config.toml,readonly" \
+  --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+  "$opensandbox_server_image" >/dev/null
+opensandbox_endpoint=$(docker port "$opensandbox_container" 8080/tcp)
+opensandbox_port=${opensandbox_endpoint##*:}
+case "$opensandbox_port" in
+  '' | *[!0-9]*) echo "Compose OpenSandbox target returned an invalid port" >&2; exit 1 ;;
+esac
+attempt=0
+until curl --silent --show-error --fail "http://127.0.0.1:$opensandbox_port/health" >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 60 ]; then
+    docker logs "$opensandbox_container" >&2
+    exit 1
+  fi
+  sleep 1
+done
+opensandbox_proxy_port_file="$smoke_directory/opensandbox-proxy.port"
+node "$smoke_directory/opensandbox-proxy.mjs" \
+  "$smoke_directory/opensandbox-proxy.crt" "$smoke_directory/opensandbox-proxy.key" \
+  "$opensandbox_port" "$opensandbox_proxy_port_file" &
+opensandbox_proxy_pid=$!
+attempt=0
+while [ ! -s "$opensandbox_proxy_port_file" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 50 ] || ! kill -0 "$opensandbox_proxy_pid" 2>/dev/null; then
+    echo "OpenSandbox TLS proxy did not start" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+opensandbox_proxy_port=$(cat "$opensandbox_proxy_port_file")
+case "$opensandbox_proxy_port" in
+  '' | *[!0-9]*) echo "OpenSandbox TLS proxy returned an invalid port" >&2; exit 1 ;;
+esac
+CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_PORT="$opensandbox_proxy_port" \
+CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_KEY_FILE="$smoke_directory/opensandbox-api-key" \
+CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_CREDENTIAL="$smoke_directory/docker-target-credentials/docker-compose-target/opensandbox.json" \
+  node <<'NODE'
+const { chmodSync, readFileSync, writeFileSync } = require("node:fs");
+const apiKey = readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_KEY_FILE, "utf8");
+writeFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_CREDENTIAL,
+  `${JSON.stringify({ endpoint: `https://host.docker.internal:${process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_PORT}`, apiKey })}\n`,
+  { mode: 0o444 });
+chmodSync(process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_CREDENTIAL, 0o444);
+NODE
 compose --profile tenant-bootstrap run --rm tenant-bootstrap >/dev/null
 compose up -d --build >/dev/null
 
 endpoint=
+gateway_endpoint=
+gateway_ssh_port=
 wait_ready() {
   endpoint=$(compose port control-plane 8080)
   if [ -z "$endpoint" ]; then
@@ -442,7 +622,34 @@ wait_ready() {
     sleep 1
   done
 }
+wait_gateway() {
+  gateway_endpoint=$(compose port access-gateway 8090)
+  gateway_ssh_endpoint=$(compose port access-gateway 2222)
+  gateway_ssh_port=${gateway_ssh_endpoint##*:}
+  if [ -z "$gateway_endpoint" ] || [ -z "$gateway_ssh_port" ]; then
+    echo "Compose Access Gateway ports are unavailable" >&2
+    exit 1
+  fi
+  attempt=0
+  until curl --silent --show-error --fail --cacert "$smoke_directory/ca.crt" \
+    "https://$gateway_endpoint/healthz" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+      compose logs --no-color --tail=200 access-gateway access-gateway-ssh-key postgres >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
 wait_ready
+wait_gateway
+gateway_container=$(compose ps -q access-gateway)
+test "$(docker inspect --format '{{.Config.User}}' "$gateway_container")" = "65532:65532"
+test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$gateway_container")" = true
+test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$gateway_container")" = '["ALL"]'
+case "$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$gateway_container")" in
+  *'/var/run/docker.sock'*) echo "Access Gateway received direct Docker authority" >&2; exit 1 ;;
+esac
 cloud_agentsctl() {
   "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
     --token-file "$smoke_directory/token" --tenant tenant-compose-smoke "$@"
@@ -450,6 +657,10 @@ cloud_agentsctl() {
 cloud_agentsctl_user() {
   "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
     --token-file "$smoke_directory/user-token" --tenant tenant-compose-smoke "$@"
+}
+cloud_agentsctl_gateway() {
+  "$cli" --endpoint "https://$gateway_endpoint" --ca-file "$smoke_directory/ca.crt" \
+    --token-file "$smoke_directory/gateway-grant-token" --tenant tenant-compose-smoke "$@"
 }
 control_plane_api() {
   auth_config=$1
@@ -1609,6 +1820,254 @@ for (const action of ["target.drain", "target.upgrade", "target.rollback", "targ
 }
 NODE
 
+foundation_network_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-foundation"
+foundation_network_body='{"expectedResourceVersion":"0","policyName":"network-foundation","userSummary":"Private Preview without outbound network","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":true}'
+control_plane_api "$smoke_directory/admin-curl.conf" PUT "$foundation_network_path" \
+  compose-smoke-foundation-network --header "Idempotency-Key: compose-smoke-foundation-network" \
+  --data "$foundation_network_body" >"$smoke_directory/foundation-network.json"
+foundation_release_digest="sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
+foundation_profile_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/runtime-profiles"
+foundation_profile_body=$(printf '{"profileId":"compose-gateway-profile","profileName":"compose-gateway-profile","version":1,"description":"Packaged Access Gateway profile","workloadTrust":"trusted-single-tenant","isolationRuntime":"runc","targetId":"docker-compose-target","networkPolicyRef":"network-foundation","imageUri":"node@%s","releaseDigest":"%s","cpuMillis":500,"memoryBytes":536870912}' \
+  "$foundation_release_digest" "$foundation_release_digest")
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$foundation_profile_path" \
+  compose-smoke-foundation-profile --header "Idempotency-Key: compose-smoke-foundation-profile" \
+  --data "$foundation_profile_body" >"$smoke_directory/foundation-profile.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "$foundation_profile_path/compose-gateway-profile/versions/1:publish" \
+  compose-smoke-foundation-profile-publish \
+  --header "Idempotency-Key: compose-smoke-foundation-profile-publish" \
+  --data '{"expectedResourceVersion":"1"}' >"$smoke_directory/foundation-profile-published.json"
+CLOUD_AGENTS_COMPOSE_PROFILE_FILE="$smoke_directory/foundation-profile-published.json" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_FILE, "utf8"));
+if (value.kind !== "RuntimeProfile" || value.spec?.status !== "published" ||
+    value.spec?.targetId !== "docker-compose-target" || value.spec?.networkPolicyRef !== "network-foundation") {
+  throw new Error("Compose did not publish the Foundation RuntimeProfile");
+}
+NODE
+foundation_sandbox_id=compose-gateway-sandbox
+foundation_sandbox_path="/v1/tenants/tenant-compose-smoke/projects/$project_id/sandbox-sessions"
+foundation_sandbox_body=$(printf '{"workspaceId":"%s","workspaceName":"%s","sandboxId":"%s","runtimeProfileId":"compose-gateway-profile","runtimeProfileVersion":1,"ttlSeconds":600}' \
+  "$foundation_workspace_id" "$foundation_workspace_id" "$foundation_sandbox_id")
+control_plane_api "$smoke_directory/user-curl.conf" POST "$foundation_sandbox_path" \
+  compose-smoke-foundation-sandbox --header "Idempotency-Key: compose-smoke-foundation-sandbox" \
+  --data "$foundation_sandbox_body" >"$smoke_directory/foundation-sandbox-created.json"
+foundation_admin_sandbox_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/sandbox-sessions/$foundation_sandbox_id"
+attempt=0
+while :; do
+  control_plane_api "$smoke_directory/admin-curl.conf" GET "$foundation_admin_sandbox_path" \
+    compose-smoke-foundation-sandbox-get >"$smoke_directory/foundation-sandbox.json"
+  foundation_sandbox_values=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/foundation-sandbox.json" node -e \
+    'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.stableErrorCode??""].join("|"))')
+  foundation_sandbox_state=${foundation_sandbox_values%%|*}
+  foundation_sandbox_rest=${foundation_sandbox_values#*|}
+  foundation_sandbox_generation=${foundation_sandbox_rest%%|*}
+  foundation_sandbox_rest=${foundation_sandbox_rest#*|}
+  foundation_sandbox_resource_version=${foundation_sandbox_rest%%|*}
+  foundation_sandbox_error=${foundation_sandbox_rest#*|}
+  if [ "$foundation_sandbox_state" = running ]; then
+    break
+  fi
+  if [ "$foundation_sandbox_state" = failed ]; then
+    echo "Compose Foundation Sandbox failed: $foundation_sandbox_error" >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 120 ]; then
+    echo "Compose Foundation Sandbox did not become ready: state=$foundation_sandbox_state error=$foundation_sandbox_error" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+foundation_grant_file="$smoke_directory/foundation-grant.json"
+cloud_agentsctl_user --project "$project_id" --sandbox "$foundation_sandbox_id" \
+  --request-id compose-smoke-foundation-grant --idempotency-key compose-smoke-foundation-grant \
+  sandbox grant --expected-generation "$foundation_sandbox_generation" --ttl-seconds 300 >"$foundation_grant_file"
+foundation_grant_values=$(CLOUD_AGENTS_COMPOSE_GRANT_FILE="$foundation_grant_file" \
+  CLOUD_AGENTS_COMPOSE_STATE="$smoke_directory" node <<'NODE'
+const { chmodSync, readFileSync, writeFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_GRANT_FILE, "utf8"));
+if (value.kind !== "SandboxAccessGrant" || !value.grantId || !value.accessToken || !value.sshUsername) {
+  throw new Error("Compose did not issue a bounded Sandbox access Grant");
+}
+writeFileSync(`${process.env.CLOUD_AGENTS_COMPOSE_STATE}/gateway-grant-token`, `${value.accessToken}\n`, { mode: 0o600 });
+writeFileSync(`${process.env.CLOUD_AGENTS_COMPOSE_STATE}/gateway-curl.conf`, `header = "Authorization: Bearer ${value.accessToken}"\n`, { mode: 0o600 });
+chmodSync(`${process.env.CLOUD_AGENTS_COMPOSE_STATE}/gateway-grant-token`, 0o600);
+chmodSync(`${process.env.CLOUD_AGENTS_COMPOSE_STATE}/gateway-curl.conf`, 0o600);
+process.stdout.write(`${value.grantId}|${value.sshUsername}`);
+NODE
+)
+foundation_grant_id=${foundation_grant_values%%|*}
+foundation_ssh_username=${foundation_grant_values#*|}
+
+cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --request-id compose-smoke-gateway-file-write files write --path gateway-proof.txt \
+  --content-base64url Z2F0ZXdheS1maWxlCg >"$smoke_directory/gateway-file-write.json"
+gateway_file_read=$(cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --request-id compose-smoke-gateway-file-read files read --path gateway-proof.txt)
+case "$gateway_file_read" in
+  *'"contentBase64Url":"Z2F0ZXdheS1maWxlCg"'*) ;;
+  *) echo "Compose Access Gateway Files route changed: $gateway_file_read" >&2; exit 1 ;;
+esac
+
+pty_create_file="$smoke_directory/gateway-pty-create.json"
+cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --request-id compose-smoke-gateway-pty-create pty create >"$pty_create_file"
+foundation_pty_id=$(CLOUD_AGENTS_COMPOSE_PTY_FILE="$pty_create_file" node -e \
+  'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PTY_FILE,"utf8"));if(value.kind!=="SandboxPTYSession"||!value.sessionId)process.exit(1);process.stdout.write(value.sessionId)')
+gateway_pty_output=$(printf 'pwd\nprintf "gateway-pty-ok\\n"\nexit\n' | \
+  cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+    --pty-session "$foundation_pty_id" --request-id compose-smoke-gateway-pty-attach \
+    pty attach --takeover)
+case "$gateway_pty_output" in
+  *'/workspace'*'gateway-pty-ok'*) ;;
+  *) echo "Compose Access Gateway PTY route changed: $gateway_pty_output" >&2; exit 1 ;;
+esac
+cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --pty-session "$foundation_pty_id" --request-id compose-smoke-gateway-pty-delete \
+  pty delete >/dev/null
+
+preview_source='require("http").createServer((_,response)=>response.end("gateway-preview-ok\n")).listen(3000,"0.0.0.0")'
+preview_content=$(CLOUD_AGENTS_COMPOSE_PREVIEW_SOURCE="$preview_source" node -e \
+  'process.stdout.write(Buffer.from(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_SOURCE).toString("base64url"))')
+cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --request-id compose-smoke-gateway-preview-file files write --path gateway-preview.js \
+  --content-base64url "$preview_content" >/dev/null
+cloud_agentsctl_user --timeout 60s --project "$project_id" --sandbox "$foundation_sandbox_id" \
+  --request-id compose-smoke-gateway-preview-start sandbox exec \
+  --expected-generation "$foundation_sandbox_generation" \
+  --command 'node /workspace/gateway-preview.js >/tmp/gateway-preview.log 2>&1 &' >/dev/null
+preview_file="$smoke_directory/gateway-preview.json"
+cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --request-id compose-smoke-gateway-preview-register preview register --port 3000 >"$preview_file"
+foundation_preview_path=$(CLOUD_AGENTS_COMPOSE_PREVIEW_FILE="$preview_file" node -e \
+  'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_FILE,"utf8"));if(value.kind!=="SandboxPreviewPort"||!value.proxyPath)process.exit(1);process.stdout.write(value.proxyPath)')
+attempt=0
+gateway_preview_body_file="$smoke_directory/gateway-preview-body"
+while :; do
+  if ! gateway_preview_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+    --header "X-Request-ID: compose-smoke-gateway-preview-read" \
+    --config "$smoke_directory/gateway-curl.conf" --output "$gateway_preview_body_file" \
+    --write-out '%{http_code}' "https://$gateway_endpoint$foundation_preview_path"); then
+    gateway_preview_status=transport-error
+  fi
+  if [ "$gateway_preview_status" = 200 ] && [ "$(cat "$gateway_preview_body_file")" = "gateway-preview-ok" ]; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    echo "Compose Access Gateway Preview route did not become ready: status=$gateway_preview_status" >&2
+    head -c 500 "$gateway_preview_body_file" >&2 || true
+    echo >&2
+    exit 1
+  fi
+  sleep 1
+done
+gateway_wrong_token_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --header "X-Request-ID: compose-smoke-gateway-preview-wrong-token" \
+  --header "Authorization: Bearer cag1_0000000000000000000000000000000000000000000" \
+  --output "$smoke_directory/gateway-wrong-token.json" --write-out '%{http_code}' \
+  "https://$gateway_endpoint$foundation_preview_path")
+test "$gateway_wrong_token_status" -eq 403
+
+foundation_ssh_public_key=$(ssh-keygen -y -f "$smoke_directory/access-gateway-ssh-host-key")
+printf '[127.0.0.1]:%s %s\n' "$gateway_ssh_port" "$foundation_ssh_public_key" >"$smoke_directory/gateway-known-hosts"
+chmod 0600 "$smoke_directory/gateway-known-hosts"
+gateway_ssh() {
+  DISPLAY=cloud-agents-compose-smoke SSH_ASKPASS_REQUIRE=force \
+    SSH_ASKPASS="$smoke_directory/ssh-askpass.sh" \
+    CLOUD_AGENTS_GATEWAY_PASSWORD="$(cat "$smoke_directory/gateway-grant-token")" \
+    ssh -F /dev/null -tt -o BatchMode=no -o IdentitiesOnly=yes -o PasswordAuthentication=yes \
+      -o PubkeyAuthentication=no -o KbdInteractiveAuthentication=no -o LogLevel=ERROR \
+      -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$smoke_directory/gateway-known-hosts" \
+      -p "$gateway_ssh_port" "$foundation_ssh_username@127.0.0.1" \
+      'pwd; printf "gateway-ssh-ok\n"; sleep 0.1'
+}
+if ! gateway_ssh_output=$(gateway_ssh 2>"$smoke_directory/gateway-ssh.err"); then
+  echo "Compose Access Gateway SSH command failed" >&2
+  cat "$smoke_directory/gateway-ssh.err" >&2
+  exit 1
+fi
+case "$gateway_ssh_output" in
+  *'/workspace'*'gateway-ssh-ok'*) ;;
+  *)
+    echo "Compose Access Gateway SSH route changed: $gateway_ssh_output" >&2
+    cat "$smoke_directory/gateway-ssh.err" >&2
+    exit 1 ;;
+esac
+
+compose restart access-gateway >/dev/null
+wait_gateway
+printf '[127.0.0.1]:%s %s\n' "$gateway_ssh_port" "$foundation_ssh_public_key" >"$smoke_directory/gateway-known-hosts"
+gateway_file_replay=$(cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  --request-id compose-smoke-gateway-file-restart files read --path gateway-proof.txt)
+case "$gateway_file_replay" in
+  *'"contentBase64Url":"Z2F0ZXdheS1maWxlCg"'*) ;;
+  *) echo "Compose Access Gateway restart lost the Files route" >&2; exit 1 ;;
+esac
+test "$(curl --silent --show-error --fail --cacert "$smoke_directory/ca.crt" \
+  --header "X-Request-ID: compose-smoke-gateway-preview-restart" \
+  --config "$smoke_directory/gateway-curl.conf" "https://$gateway_endpoint$foundation_preview_path")" = "gateway-preview-ok"
+if ! gateway_ssh_output=$(gateway_ssh 2>"$smoke_directory/gateway-ssh-restart.err"); then
+  echo "Compose Access Gateway restart SSH command failed" >&2
+  cat "$smoke_directory/gateway-ssh-restart.err" >&2
+  exit 1
+fi
+case "$gateway_ssh_output" in
+  *'/workspace'*'gateway-ssh-ok'*) ;;
+  *)
+    echo "Compose Access Gateway restart lost the SSH route: $gateway_ssh_output" >&2
+    cat "$smoke_directory/gateway-ssh-restart.err" >&2
+    exit 1 ;;
+esac
+
+control_plane_api "$smoke_directory/admin-curl.conf" GET "$foundation_admin_sandbox_path" \
+  compose-smoke-foundation-sandbox-before-stop >"$smoke_directory/foundation-sandbox-before-stop.json"
+foundation_stop_values=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/foundation-sandbox-before-stop.json" node -e \
+  'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write(`${value.spec.generation}|${value.metadata.resourceVersion}`)')
+foundation_stop_generation=${foundation_stop_values%%|*}
+foundation_stop_resource_version=${foundation_stop_values#*|}
+foundation_stop_body=$(printf '{"expectedGeneration":%s,"expectedResourceVersion":"%s","confirmedSandboxId":"%s","computeDisposition":"delete","workspaceDisposition":"retain"}' \
+  "$foundation_stop_generation" "$foundation_stop_resource_version" "$foundation_sandbox_id")
+control_plane_api "$smoke_directory/admin-curl.conf" POST "$foundation_admin_sandbox_path:stop" \
+  compose-smoke-foundation-sandbox-stop \
+  --header "Idempotency-Key: compose-smoke-foundation-sandbox-stop" \
+  --data "$foundation_stop_body" >"$smoke_directory/foundation-sandbox-stop.json"
+attempt=0
+while :; do
+  control_plane_api "$smoke_directory/admin-curl.conf" GET "$foundation_admin_sandbox_path" \
+    compose-smoke-foundation-sandbox-stopped >"$smoke_directory/foundation-sandbox.json"
+  if CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/foundation-sandbox.json" node -e \
+    'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.exit(value.spec?.observedState==="stopped"&&value.spec?.writerReleased===true&&value.spec?.networkPolicyEnforcement==="stopped"?0:1)'; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 120 ]; then
+    echo "Compose Foundation Sandbox did not stop" >&2
+    exit 1
+  fi
+  sleep 1
+done
+test -z "$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/project="$project_id" \
+  --filter label=cloud-agents.dev/workspace="$foundation_workspace_id")"
+docker ps -aq --filter label=opensandbox.io/id | sort >"$smoke_directory/opensandbox-runtime-current"
+docker ps -aq --filter label=opensandbox.io/egress-sidecar-for | sort >"$smoke_directory/opensandbox-egress-current"
+docker volume ls -q --filter label=opensandbox.io/volume-managed-by=server | sort >"$smoke_directory/opensandbox-volume-current"
+cmp -s "$smoke_directory/opensandbox-runtime-baseline" "$smoke_directory/opensandbox-runtime-current"
+cmp -s "$smoke_directory/opensandbox-egress-baseline" "$smoke_directory/opensandbox-egress-current"
+cmp -s "$smoke_directory/opensandbox-volume-baseline" "$smoke_directory/opensandbox-volume-current"
+foundation_volume=$(docker volume ls -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/project="$project_id" \
+  --filter label=cloud-agents.dev/workspace="$foundation_workspace_id")
+case "$foundation_volume" in
+  '' | *' '*) echo "Compose Foundation Workspace volume inventory changed" >&2; exit 1 ;;
+esac
+docker volume rm "$foundation_volume" >/dev/null
+
 codex_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
   --session session-compose-smoke \
   --request-id compose-smoke-session-create --idempotency-key compose-smoke-session-create \
@@ -1829,6 +2288,7 @@ fi
 
 compose up -d >/dev/null
 wait_ready
+wait_gateway
 restored_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
   --turn turn-compose-smoke --execution execution-compose-smoke \
   --request-id compose-smoke-restored-execution execution get)
@@ -1837,4 +2297,4 @@ case "$restored_output" in
   *) echo "Compose restore omitted the durable execution" >&2; exit 1 ;;
 esac
 
-echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, docker-workers=0)"
+echo "platform Compose smoke passed ($image_platform, $cli_target, profile=$profile_id:v1, environment=$profile_environment_id, gateway=files+pty+preview+ssh, docker-workers=0, opensandbox-resources=0)"

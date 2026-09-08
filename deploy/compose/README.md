@@ -71,9 +71,25 @@ that volume read-only. To rotate it, replace the deployment-owned source file,
 then recreate `access-grant-key` and `control-plane` together. Existing grants
 expire normally and new grants use the replacement key.
 
+Create a deployment-owned TLS certificate/key pair in
+`CLOUD_AGENTS_ACCESS_GATEWAY_TLS_DIR` and an OpenSSH private host key at
+`CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY` with mode `0600`. The no-network
+`access-gateway-ssh-key` one-shot copies the SSH key into a dedicated Compose
+volume as uid `65532` with mode `0400`. The Gateway runs as non-root with a
+read-only root filesystem, no Linux capabilities and no Docker socket. Keep the
+HTTP and SSH bind addresses loopback-only unless a deployment-owned ingress
+terminates and authenticates public access.
+
 The Worker accepts at most `CLOUD_AGENTS_RUNTIME_MAX_SESSIONS` concurrent Runtime
 sessions (default `4`). Additional session opens fail immediately with
 `ResourceExhausted`; tune the value to the CPU and memory assigned to the Worker.
+
+Foundation Sandbox access also requires a deployment-owned OpenSandbox descriptor
+with mode `0400`: Docker targets use `<credentialRef>/opensandbox.json` and
+Kubernetes targets use `<credentialRef>.opensandbox.json` in their respective
+credential directory. The file contains only `endpoint` and `apiKey`; it is
+mounted into the Control Plane and Gateway, never copied into an API body,
+browser, or release archive.
 
 For a Docker deployment target, point `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR` at
 a deployment-owned directory. Each registered target `credentialRef` selects a

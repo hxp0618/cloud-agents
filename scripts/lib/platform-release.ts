@@ -19,6 +19,7 @@ export type PlatformReleaseTarget =
   | (typeof PLATFORM_RELEASE_CLI_TARGETS)[number];
 
 export const PLATFORM_RELEASE_GO_COMMANDS = [
+  "cloud-agents-access-gateway",
   "cloud-agents-control-plane",
   "cloud-agentsctl",
   "cloud-agents-worker",
@@ -156,6 +157,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/compose/docker-compose.yml",
     "deploy/compose/provision.sql",
     "deploy/compose/runtime.env.example",
+    "deploy/docker/access-gateway.Dockerfile",
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/worker.Dockerfile",

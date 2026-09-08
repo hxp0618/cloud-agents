@@ -79,6 +79,7 @@ describe("platform release", () => {
       "windows-arm64",
     ]);
     expect(PLATFORM_RELEASE_TARGETS).toEqual(["linux-amd64", "linux-arm64"]);
+    expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-access-gateway");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agentsctl");
     expect(PLATFORM_RELEASE_GO_COMMANDS).not.toContain("cloud-agents-evidencefs-provision");
     expect(expectedArtifactIdentities()).toContainEqual({
@@ -117,6 +118,7 @@ describe("platform release", () => {
       "deploy/compose/docker-compose.yml",
       "deploy/compose/provision.sql",
       "deploy/compose/runtime.env.example",
+      "deploy/docker/access-gateway.Dockerfile",
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
@@ -202,6 +204,17 @@ describe("platform release", () => {
     expect(compose).toContain("cloud-agents-control-plane-secrets:/run/cloud-agents/secrets:ro");
   });
 
+  it("packages the non-root Access Gateway without Docker authority", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const dockerfile = readFileSync("deploy/docker/access-gateway.Dockerfile", "utf8");
+    expect(dockerfile).toContain("gcr.io/distroless/static-debian12:nonroot");
+    expect(dockerfile).toContain("USER 65532:65532");
+    expect(compose).toContain("cloud-agents-access-gateway-secrets:/run/cloud-agents/secrets:ro");
+    expect(compose).toContain("read_only: true\n    cap_drop: [ALL]");
+    expect(compose).toContain('security_opt: ["no-new-privileges:true"]');
+    expect(compose).not.toContain("/var/run/docker.sock");
+  });
+
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     const up = readFileSync("deploy/compose/cloud-agents-up.sh", "utf8");
@@ -271,7 +284,7 @@ describe("platform release", () => {
     expect(migrationJob).toContain("readOnlyRootFilesystem: true");
     expect(migrationJob).toContain("drop: [ALL]");
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
-    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
+    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(4);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY");
