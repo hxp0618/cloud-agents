@@ -26,6 +26,11 @@ func TestVerifyFoundationSandboxIsolation(t *testing.T) {
 			_ = json.NewEncoder(writer).Encode([]map[string]string{{"Id": "container-1"}})
 		case "/containers/container-1/json":
 			_ = json.NewEncoder(writer).Encode(map[string]any{"Config": map[string]any{"Labels": map[string]string{"opensandbox.io/id": runtimeID}}, "State": map[string]bool{"Running": true}, "HostConfig": map[string]string{"Runtime": runtime}, "NetworkSettings": map[string]any{"Networks": map[string]any{"isolated": map[string]string{"NetworkID": "network-1"}}}})
+		case "/containers/container-1/stats":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"networks": map[string]any{
+				"eth0": map[string]int64{"rx_bytes": 1234, "tx_bytes": 567},
+				"eth1": map[string]int64{"rx_bytes": 6, "tx_bytes": 8},
+			}})
 		case "/networks/network-1":
 			_ = json.NewEncoder(writer).Encode(map[string]any{"Id": "network-1", "Internal": internal, "Options": map[string]string{"com.docker.network.bridge.enable_icc": icc}})
 		default:
@@ -36,6 +41,10 @@ func TestVerifyFoundationSandboxIsolation(t *testing.T) {
 	directory := credentialDirectoryForIsolationTest(t, server)
 	if err := directory.VerifyFoundationSandboxIsolation(context.Background(), server.URL, "docker", runtimeID); err != nil {
 		t.Fatal(err)
+	}
+	received, transmitted, err := directory.MeasureFoundationSandboxNetwork(context.Background(), server.URL, "docker", runtimeID)
+	if err != nil || received != 1240 || transmitted != 575 {
+		t.Fatalf("network usage = %d/%d err=%v", received, transmitted, err)
 	}
 	for name, mutate := range map[string]func(){
 		"runtime":  func() { runtime = "runc" },

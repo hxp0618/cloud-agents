@@ -119,6 +119,36 @@
             "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
             "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
           }
+        },
+        "networkUsage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "latestRuntimeGeneration",
+            "measurementGeneration",
+            "state",
+            "observedAt"
+          ],
+          "properties": {
+            "source": { "const": "docker-container-stats-v1" },
+            "latestRuntimeGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            },
+            "measurementGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            },
+            "state": { "enum": ["measuring", "ready", "failed"] },
+            "receivedBytes": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
+            "transmittedBytes": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$" },
+            "checkpointedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+            "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+            "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+          }
         }
       }
     }
@@ -133,6 +163,8 @@
     "usage is absent only until the first database checkpoint; finalizedAt is absent while any runtime segment remains active",
     "workspaceVolumeUsage is absent until the Controller discovers a supported backend and contains backend metadata only, never Workspace file names or content",
     "workspaceVolumeUsage.usedBytes is Docker backend occupied bytes reported by GET /system/df and is not an enforced capacity or billable amount",
-    "workspaceVolumeUsage pending has generation zero and no observation; ready requires usedBytes and checkpointedAt; failed requires stableErrorCode and may retain the last good usedBytes and checkpointedAt"
+    "workspaceVolumeUsage pending has generation zero and no observation; ready requires usedBytes and checkpointedAt; failed requires stableErrorCode and may retain the last good usedBytes and checkpointedAt",
+    "networkUsage is the latest direct-Docker runtime generation cumulative container RX/TX byte checkpoint and never includes packet, address, destination or payload data",
+    "networkUsage is absent for unsupported backends or before the first measurement; failed observations may retain the last good byte counters and checkpoint"
   ]
 }

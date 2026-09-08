@@ -81,6 +81,49 @@ func TestFoundationControllerPostgres(t *testing.T) {
 		t.Fatalf("success settlement = %#v / %v", succeeded, err)
 	}
 
+	networkUsageClaim, err := service.ClaimFoundationSandboxNetworkUsage(ctx, 60)
+	if err != nil || networkUsageClaim.DatabaseOutcome != DatabaseCommitted || !networkUsageClaim.Found ||
+		networkUsageClaim.Claim.SandboxID != "sandbox" || networkUsageClaim.Claim.RuntimeID != "runtime-ready" ||
+		networkUsageClaim.Claim.MeasurementGeneration != 1 || networkUsageClaim.Claim.PreviousReceivedBytes != nil {
+		t.Fatalf("network usage claim = %#v / %v", networkUsageClaim, err)
+	}
+	receivedBytes, transmittedBytes := int64(1000), int64(500)
+	networkUsage, err := service.SettleFoundationSandboxNetworkUsage(ctx, FoundationSandboxNetworkUsageSettlement{
+		Claim: networkUsageClaim.Claim, Transition: "ready",
+		ReceivedBytes: &receivedBytes, TransmittedBytes: &transmittedBytes,
+	})
+	if err != nil || networkUsage.DatabaseOutcome != DatabaseCommitted || networkUsage.State != "ready" ||
+		networkUsage.ReceivedBytes == nil || *networkUsage.ReceivedBytes != receivedBytes ||
+		networkUsage.TransmittedBytes == nil || *networkUsage.TransmittedBytes != transmittedBytes || networkUsage.CheckpointedAt == nil {
+		t.Fatalf("network usage settlement = %#v / %v", networkUsage, err)
+	}
+	networkNotDue, err := service.ClaimFoundationSandboxNetworkUsage(ctx, 60)
+	if err != nil || networkNotDue.DatabaseOutcome != DatabaseCommitted || networkNotDue.Found {
+		t.Fatalf("network usage immediate replay = %#v / %v", networkNotDue, err)
+	}
+	command, err := owner.Exec(ctx, `UPDATE cloud_agents.sandbox_usage_checkpoints
+		SET network_checkpointed_at=network_checkpointed_at-interval '2 minutes',
+		    network_observed_at=network_observed_at-interval '2 minutes'
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+		  AND runtime_uid='runtime-ready'`)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("stale network usage fixture = %d / %v", command.RowsAffected(), err)
+	}
+	networkUsageClaim, err = service.ClaimFoundationSandboxNetworkUsage(ctx, 60)
+	if err != nil || networkUsageClaim.DatabaseOutcome != DatabaseCommitted || !networkUsageClaim.Found ||
+		networkUsageClaim.Claim.MeasurementGeneration != 2 || networkUsageClaim.Claim.PreviousReceivedBytes == nil ||
+		*networkUsageClaim.Claim.PreviousReceivedBytes != receivedBytes || *networkUsageClaim.Claim.PreviousTransmittedBytes != transmittedBytes {
+		t.Fatalf("network usage reclaim = %#v / %v", networkUsageClaim, err)
+	}
+	networkUsage, err = service.SettleFoundationSandboxNetworkUsage(ctx, FoundationSandboxNetworkUsageSettlement{
+		Claim: networkUsageClaim.Claim, Transition: "failed", StableErrorCode: "sandbox_network_usage_unavailable",
+	})
+	if err != nil || networkUsage.State != "failed" || networkUsage.ReceivedBytes == nil || *networkUsage.ReceivedBytes != receivedBytes ||
+		networkUsage.TransmittedBytes == nil || *networkUsage.TransmittedBytes != transmittedBytes || networkUsage.CheckpointedAt == nil ||
+		networkUsage.StableErrorCode == nil || *networkUsage.StableErrorCode != "sandbox_network_usage_unavailable" {
+		t.Fatalf("network usage failed settlement = %#v / %v", networkUsage, err)
+	}
+
 	volumeUsageClaim, err := service.ClaimFoundationWorkspaceVolumeUsage(ctx, 200, 60)
 	if err != nil || volumeUsageClaim.DatabaseOutcome != DatabaseCommitted || !volumeUsageClaim.Found ||
 		volumeUsageClaim.Claim.VolumeID != "workspace" || volumeUsageClaim.Claim.PhysicalVolumeID != "ca-ws-integration" ||
@@ -99,7 +142,7 @@ func TestFoundationControllerPostgres(t *testing.T) {
 	if err != nil || notDue.DatabaseOutcome != DatabaseCommitted || notDue.Found {
 		t.Fatalf("workspace usage immediate replay = %#v / %v", notDue, err)
 	}
-	command, err := owner.Exec(ctx, `UPDATE cloud_agents.workspace_volume_usage_checkpoints
+	command, err = owner.Exec(ctx, `UPDATE cloud_agents.workspace_volume_usage_checkpoints
 		SET checkpointed_at=checkpointed_at-interval '2 minutes', observed_at=observed_at-interval '2 minutes'
 		WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace'`)
 	if err != nil || command.RowsAffected() != 1 {

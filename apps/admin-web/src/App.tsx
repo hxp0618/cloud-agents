@@ -7773,6 +7773,56 @@ function SandboxDetail({
             )}
           </>
         )}
+        {sandbox.spec.networkUsage === undefined ? null : (
+          <>
+            <div>
+              <dt>{t("sandbox.networkUsageSource")}</dt>
+              <dd className="mono">{sandbox.spec.networkUsage.source}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageRuntimeGeneration")}</dt>
+              <dd className="mono">{number(sandbox.spec.networkUsage.latestRuntimeGeneration)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageMeasurementGeneration")}</dt>
+              <dd className="mono">{number(sandbox.spec.networkUsage.measurementGeneration)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageState")}</dt>
+              <dd>{phaseLabel(sandbox.spec.networkUsage.state, t)}</dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageReceivedBytes")}</dt>
+              <dd className="mono">
+                {sandbox.spec.networkUsage.receivedBytes ?? t("common.notAvailable")}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageTransmittedBytes")}</dt>
+              <dd className="mono">
+                {sandbox.spec.networkUsage.transmittedBytes ?? t("common.notAvailable")}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageCheckpointedAt")}</dt>
+              <dd>
+                {sandbox.spec.networkUsage.checkpointedAt === undefined
+                  ? t("common.notObserved")
+                  : dateTime(sandbox.spec.networkUsage.checkpointedAt)}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("sandbox.networkUsageObservedAt")}</dt>
+              <dd>{dateTime(sandbox.spec.networkUsage.observedAt)}</dd>
+            </div>
+            {sandbox.spec.networkUsage.stableErrorCode === undefined ? null : (
+              <div>
+                <dt>{t("detail.stableError")}</dt>
+                <dd className="mono danger-text">{sandbox.spec.networkUsage.stableErrorCode}</dd>
+              </div>
+            )}
+          </>
+        )}
         <div>
           <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{sandbox.metadata.resourceVersion}</dd>

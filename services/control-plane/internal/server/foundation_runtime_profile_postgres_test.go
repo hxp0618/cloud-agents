@@ -349,6 +349,13 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		current.Value.Spec.WorkspaceVolumeUsage.ObservedAt == "" || current.Value.Spec.WorkspaceVolumeUsage.StableErrorCode != "" {
 		t.Fatalf("Admin workspace volume usage projection = %+v", current.Value.Spec.WorkspaceVolumeUsage)
 	}
+	if current.Value.Spec.NetworkUsage == nil || current.Value.Spec.NetworkUsage.Source != "docker-container-stats-v1" ||
+		current.Value.Spec.NetworkUsage.State != "ready" || current.Value.Spec.NetworkUsage.LatestRuntimeGeneration != 1 ||
+		current.Value.Spec.NetworkUsage.MeasurementGeneration < 2 || current.Value.Spec.NetworkUsage.ReceivedBytes == "" ||
+		current.Value.Spec.NetworkUsage.TransmittedBytes == "" || current.Value.Spec.NetworkUsage.CheckpointedAt == "" ||
+		current.Value.Spec.NetworkUsage.ObservedAt == "" || current.Value.Spec.NetworkUsage.StableErrorCode != "" {
+		t.Fatalf("Admin network usage projection = %+v", current.Value.Spec.NetworkUsage)
+	}
 	compute := "delete"
 	if action == "rebuild" {
 		compute = "create"

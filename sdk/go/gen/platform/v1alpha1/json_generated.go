@@ -1224,6 +1224,17 @@ type AdminWorkspaceVolumeUsage struct {
 	ObservedAt            string `json:"observedAt,omitempty"`
 	StableErrorCode       string `json:"stableErrorCode,omitempty"`
 }
+type AdminSandboxNetworkUsage struct {
+	Source                  string `json:"source"`
+	LatestRuntimeGeneration int64  `json:"latestRuntimeGeneration"`
+	MeasurementGeneration   int64  `json:"measurementGeneration"`
+	State                   string `json:"state"`
+	ReceivedBytes           string `json:"receivedBytes,omitempty"`
+	TransmittedBytes        string `json:"transmittedBytes,omitempty"`
+	CheckpointedAt          string `json:"checkpointedAt,omitempty"`
+	ObservedAt              string `json:"observedAt"`
+	StableErrorCode         string `json:"stableErrorCode,omitempty"`
+}
 type AdminSandboxSessionSpec struct {
 	ProjectRef               common.ProjectRef          `json:"projectRef"`
 	OperationID              string                     `json:"operationId"`
@@ -1256,6 +1267,7 @@ type AdminSandboxSessionSpec struct {
 	ObservedAt               string                     `json:"observedAt,omitempty"`
 	Usage                    *AdminSandboxUsage         `json:"usage,omitempty"`
 	WorkspaceVolumeUsage     *AdminWorkspaceVolumeUsage `json:"workspaceVolumeUsage,omitempty"`
+	NetworkUsage             *AdminSandboxNetworkUsage  `json:"networkUsage,omitempty"`
 }
 type AdminSandboxSession struct {
 	ResourceBase
@@ -1597,7 +1609,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "RuntimeProfile":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "profileId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "description": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetSelector": common.ObjectResponseShape(map[string]common.ResponseShape{"regionId": common.ScalarResponseShape(), "resourcePoolId": common.ScalarResponseShape(), "runtime": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape()}), "networkPolicyRef": common.ScalarResponseShape(), "imageUri": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "publishedAt": common.ScalarResponseShape(), "disabledAt": common.ScalarResponseShape()}
 	case "AdminSandboxSession":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "usage": common.ObjectResponseShape(map[string]common.ResponseShape{"latestRuntimeGeneration": common.ScalarResponseShape(), "allocatedMilliseconds": common.ScalarResponseShape(), "cpuMillisMilliseconds": common.ScalarResponseShape(), "memoryByteMilliseconds": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "finalizedAt": common.ScalarResponseShape()}), "workspaceVolumeUsage": common.ObjectResponseShape(map[string]common.ResponseShape{"source": common.ScalarResponseShape(), "measurementGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "usedBytes": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()})}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "operationId": common.ScalarResponseShape(), "operationState": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "workspaceName": common.ScalarResponseShape(), "volumeId": common.ScalarResponseShape(), "physicalVolumeId": common.ScalarResponseShape(), "workspaceRetention": common.ScalarResponseShape(), "workspaceObservedState": common.ScalarResponseShape(), "runtimeProfileId": common.ScalarResponseShape(), "runtimeProfileVersion": common.ScalarResponseShape(), "workloadTrust": common.ScalarResponseShape(), "isolationRuntime": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "networkPolicyEnforcement": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "writerReleased": common.ScalarResponseShape(), "ttlSeconds": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "lifecycleTrigger": common.ScalarResponseShape(), "runtimeId": common.ScalarResponseShape(), "runtimeState": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "usage": common.ObjectResponseShape(map[string]common.ResponseShape{"latestRuntimeGeneration": common.ScalarResponseShape(), "allocatedMilliseconds": common.ScalarResponseShape(), "cpuMillisMilliseconds": common.ScalarResponseShape(), "memoryByteMilliseconds": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "finalizedAt": common.ScalarResponseShape()}), "workspaceVolumeUsage": common.ObjectResponseShape(map[string]common.ResponseShape{"source": common.ScalarResponseShape(), "measurementGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "usedBytes": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()}), "networkUsage": common.ObjectResponseShape(map[string]common.ResponseShape{"source": common.ScalarResponseShape(), "latestRuntimeGeneration": common.ScalarResponseShape(), "measurementGeneration": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "receivedBytes": common.ScalarResponseShape(), "transmittedBytes": common.ScalarResponseShape(), "checkpointedAt": common.ScalarResponseShape(), "observedAt": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape()})}
 	case "AdminSandboxAccessGrant":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "sandboxId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "accessKind": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "ptySessionCount": common.ScalarResponseShape(), "fileAccessCount": common.ScalarResponseShape(), "fileFailureCount": common.ScalarResponseShape(), "previewPorts": common.ArrayResponseShape(common.ScalarResponseShape()), "lastFileAction": common.ScalarResponseShape(), "lastFileStatus": common.ScalarResponseShape(), "lastFileErrorCode": common.ScalarResponseShape(), "lastFileAccessAt": common.ScalarResponseShape()}
 	case "StoragePolicy":
@@ -5735,7 +5747,7 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	if err != nil {
 		return AdminSandboxSession{}, err
 	}
-	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt", "usage", "workspaceVolumeUsage"}
+	allowed := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "physicalVolumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyRef", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased", "ttlSeconds", "expiresAt", "lifecycleTrigger", "runtimeId", "runtimeState", "stableErrorCode", "observedAt", "usage", "workspaceVolumeUsage", "networkUsage"}
 	required := []string{"projectRef", "operationId", "operationState", "cleanupPhase", "workspaceId", "workspaceName", "volumeId", "workspaceRetention", "workspaceObservedState", "runtimeProfileId", "runtimeProfileVersion", "workloadTrust", "isolationRuntime", "targetId", "networkPolicyEnforcement", "generation", "observedGeneration", "desiredState", "observedState", "writerReleased"}
 	specFields, err := strictSpec(fields["spec"], allowed, required)
 	if err != nil {
@@ -5752,6 +5764,11 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 	}
 	if raw, ok := specFields["workspaceVolumeUsage"]; ok {
 		if _, err := common.DecodeStrictObject(raw, []string{"source", "measurementGeneration", "state", "usedBytes", "checkpointedAt", "observedAt", "stableErrorCode"}, []string{"source", "measurementGeneration", "state"}); err != nil {
+			return AdminSandboxSession{}, err
+		}
+	}
+	if raw, ok := specFields["networkUsage"]; ok {
+		if _, err := common.DecodeStrictObject(raw, []string{"source", "latestRuntimeGeneration", "measurementGeneration", "state", "receivedBytes", "transmittedBytes", "checkpointedAt", "observedAt", "stableErrorCode"}, []string{"source", "latestRuntimeGeneration", "measurementGeneration", "state", "observedAt"}); err != nil {
 			return AdminSandboxSession{}, err
 		}
 	}
@@ -5835,6 +5852,18 @@ func DecodeAdminSandboxSessionJSON(data []byte) (AdminSandboxSession, error) {
 		hasError := volumeUsage.StableErrorCode != ""
 		if volumeUsage.Source != "docker-system-df-v1" || !pending && !measuring && !ready && !failed || hasUsed != hasCheckpoint || pending && (volumeUsage.MeasurementGeneration != 0 || hasUsed || hasObserved || hasError) || !pending && (volumeUsage.MeasurementGeneration < 1 || !hasObserved) || measuring && hasError || ready && (!hasUsed || hasError) || failed && !hasError || hasUsed && !workspaceUsageBytesPattern.MatchString(volumeUsage.UsedBytes) || hasCheckpoint && common.ValidateDateTime(volumeUsage.CheckpointedAt, "/spec/workspaceVolumeUsage/checkpointedAt") != nil || hasObserved && common.ValidateDateTime(volumeUsage.ObservedAt, "/spec/workspaceVolumeUsage/observedAt") != nil || hasError && common.ValidateIdentifier(volumeUsage.StableErrorCode, "/spec/workspaceVolumeUsage/stableErrorCode") != nil {
 			return AdminSandboxSession{}, common.ContractError("INVALID_WORKSPACE_VOLUME_USAGE", "/spec/workspaceVolumeUsage")
+		}
+	}
+	if networkUsage := spec.NetworkUsage; networkUsage != nil {
+		measuring := networkUsage.State == "measuring"
+		ready := networkUsage.State == "ready"
+		failed := networkUsage.State == "failed"
+		hasReceived := networkUsage.ReceivedBytes != ""
+		hasTransmitted := networkUsage.TransmittedBytes != ""
+		hasCheckpoint := networkUsage.CheckpointedAt != ""
+		hasError := networkUsage.StableErrorCode != ""
+		if networkUsage.Source != "docker-container-stats-v1" || networkUsage.LatestRuntimeGeneration < 1 || networkUsage.LatestRuntimeGeneration > spec.Generation || networkUsage.MeasurementGeneration < 1 || !measuring && !ready && !failed || hasReceived != hasTransmitted || hasReceived != hasCheckpoint || measuring && hasError || ready && (!hasReceived || hasError) || failed && !hasError || hasReceived && (!workspaceUsageBytesPattern.MatchString(networkUsage.ReceivedBytes) || !workspaceUsageBytesPattern.MatchString(networkUsage.TransmittedBytes)) || hasCheckpoint && common.ValidateDateTime(networkUsage.CheckpointedAt, "/spec/networkUsage/checkpointedAt") != nil || common.ValidateDateTime(networkUsage.ObservedAt, "/spec/networkUsage/observedAt") != nil || hasError && common.ValidateIdentifier(networkUsage.StableErrorCode, "/spec/networkUsage/stableErrorCode") != nil {
+			return AdminSandboxSession{}, common.ContractError("INVALID_SANDBOX_NETWORK_USAGE", "/spec/networkUsage")
 		}
 	}
 	return AdminSandboxSession{ResourceBase: base, Spec: spec}, nil

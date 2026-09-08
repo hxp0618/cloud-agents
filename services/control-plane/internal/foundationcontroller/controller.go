@@ -131,6 +131,9 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 		}
 	}
 	if !claimResult.Found {
+		if worked, err := controller.runSandboxNetworkUsageOne(ctx); worked || err != nil {
+			return worked, err
+		}
 		return controller.runWorkspaceVolumeUsageOne(ctx)
 	}
 	claim := claimResult.Claim
@@ -149,6 +152,54 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 	}
 	if settled.DatabaseOutcome != postgres.DatabaseCommitted {
 		return true, errors.New("foundation settlement outcome is unknown")
+	}
+	return true, nil
+}
+
+func (controller *Controller) runSandboxNetworkUsageOne(ctx context.Context) (bool, error) {
+	if controller.docker == nil {
+		return false, nil
+	}
+	claimed, err := controller.store.ClaimFoundationSandboxNetworkUsage(ctx, 60)
+	if err != nil {
+		return false, err
+	}
+	if claimed.DatabaseOutcome != postgres.DatabaseCommitted {
+		return false, errors.New("foundation sandbox network usage claim outcome is unknown")
+	}
+	if !claimed.Found {
+		return false, nil
+	}
+	claim := claimed.Claim
+	receivedBytes, transmittedBytes, effectErr := controller.docker.MeasureFoundationSandboxNetwork(
+		ctx, claim.TargetEndpoint, claim.CredentialRef, claim.RuntimeID,
+	)
+	transition, stableErrorCode := "ready", ""
+	var received, transmitted *int64
+	if effectErr == nil && (claim.PreviousReceivedBytes == nil ||
+		receivedBytes >= *claim.PreviousReceivedBytes && transmittedBytes >= *claim.PreviousTransmittedBytes) {
+		received, transmitted = &receivedBytes, &transmittedBytes
+	} else {
+		transition, stableErrorCode = "failed", "sandbox_network_usage_unavailable"
+		switch {
+		case effectErr == nil:
+			stableErrorCode = "foundation_network_counter_reset"
+		case errors.Is(effectErr, dockertarget.ErrDeploymentConflict):
+			stableErrorCode = "foundation_ownership_conflict"
+		case errors.Is(effectErr, dockertarget.ErrDeploymentConfigInvalid), errors.Is(effectErr, dockertarget.ErrCredentialInvalid),
+			errors.Is(effectErr, dockertarget.ErrInvalidEndpoint):
+			stableErrorCode = "foundation_configuration_invalid"
+		}
+	}
+	settled, err := controller.store.SettleFoundationSandboxNetworkUsage(ctx, postgres.FoundationSandboxNetworkUsageSettlement{
+		Claim: claim, Transition: transition, ReceivedBytes: received, TransmittedBytes: transmitted,
+		StableErrorCode: stableErrorCode,
+	})
+	if err != nil {
+		return true, err
+	}
+	if settled.DatabaseOutcome != postgres.DatabaseCommitted {
+		return true, errors.New("foundation sandbox network usage settlement outcome is unknown")
 	}
 	return true, nil
 }

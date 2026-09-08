@@ -484,6 +484,22 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		t.Fatalf("OpenSandbox residue = %d", count)
 	}
 	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("network usage first checkpoint = %v / %v", worked, err)
+	}
+	var networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration int64
+	var networkCheckpointedAt time.Time
+	if err := environment.owner.QueryRow(ctx, `SELECT network_received_bytes, network_transmitted_bytes,
+		network_measurement_generation, network_checkpointed_at
+		FROM cloud_agents.sandbox_usage_checkpoints
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+		  AND runtime_uid=$1 AND network_state='ready'`, expectedRuntime).Scan(
+		&networkReceivedBytes, &networkTransmittedBytes, &networkMeasurementGeneration, &networkCheckpointedAt,
+	); err != nil || networkReceivedBytes < 1 || networkTransmittedBytes < 1 ||
+		networkMeasurementGeneration != 1 || networkCheckpointedAt.IsZero() {
+		t.Fatalf("network usage first fact = %d/%d/%d/%s err=%v",
+			networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration, networkCheckpointedAt, err)
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
 		t.Fatalf("workspace usage first checkpoint = %v / %v", worked, err)
 	}
 	var workspaceUsedBytes, workspaceMeasurementGeneration int64
@@ -502,6 +518,41 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if err != nil || command.RowsAffected() != 1 {
 		t.Fatalf("offline workspace usage checkpoint fixture = %d / %v", command.RowsAffected(), err)
 	}
+	command, err = environment.owner.Exec(ctx, `UPDATE cloud_agents.sandbox_usage_checkpoints
+		SET network_checkpointed_at=network_checkpointed_at-interval '2 minutes',
+		    network_observed_at=network_observed_at-interval '2 minutes'
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+		  AND runtime_uid=$1`, expectedRuntime)
+	if err != nil || command.RowsAffected() != 1 {
+		t.Fatalf("offline network usage checkpoint fixture = %d / %v", command.RowsAffected(), err)
+	}
+	allowedIP := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_ALLOWED_IP")
+	if net.ParseIP(allowedIP) == nil {
+		t.Fatal("live network usage fixture is invalid")
+	}
+	if output := liveCommand(t, ctx, environment, expectedRuntime, fmt.Sprintf(
+		`node -e 'fetch("http://%s:8080").then(async response=>{const body=(await response.text()).trim();if(!response.ok||body!=="allowed")process.exit(1);console.log("CAG_NETWORK_USAGE=allowed")})'`, allowedIP,
+	)); !strings.Contains(output, "CAG_NETWORK_USAGE=allowed") {
+		t.Fatalf("network usage traffic response = %s", output)
+	}
+	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+		t.Fatalf("network usage restart checkpoint = %v / %v", worked, err)
+	}
+	var reconciledNetworkReceived, reconciledNetworkTransmitted, reconciledNetworkGeneration int64
+	var reconciledNetworkCheckpoint time.Time
+	if err := environment.owner.QueryRow(ctx, `SELECT network_received_bytes, network_transmitted_bytes,
+		network_measurement_generation, network_checkpointed_at
+		FROM cloud_agents.sandbox_usage_checkpoints
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+		  AND runtime_uid=$1 AND network_state='ready'`, expectedRuntime).Scan(
+		&reconciledNetworkReceived, &reconciledNetworkTransmitted,
+		&reconciledNetworkGeneration, &reconciledNetworkCheckpoint,
+	); err != nil || reconciledNetworkGeneration != 2 || !reconciledNetworkCheckpoint.After(networkCheckpointedAt) ||
+		reconciledNetworkReceived < networkReceivedBytes || reconciledNetworkTransmitted < networkTransmittedBytes ||
+		(reconciledNetworkReceived == networkReceivedBytes && reconciledNetworkTransmitted == networkTransmittedBytes) {
+		t.Fatalf("network usage restart fact = %d/%d/%d/%s err=%v",
+			reconciledNetworkReceived, reconciledNetworkTransmitted, reconciledNetworkGeneration, reconciledNetworkCheckpoint, err)
+	}
 	receipt, _ := json.Marshal(map[string]any{
 		"runtimeId": expectedRuntime, "adopted": true, "deliveryAttempts": success.deliveryAttempts,
 		"failureRuntimeId": failure.runtimeID, "failureCompensated": true,
@@ -509,6 +560,11 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		"workspaceVolumeUsage": map[string]any{"usedBytes": workspaceUsedBytes,
 			"measurementGeneration": workspaceMeasurementGeneration,
 			"checkpointedAt":        workspaceCheckpointedAt.UTC().Format(time.RFC3339Nano)},
+		"networkUsage": map[string]any{"source": "docker-container-stats-v1", "state": "ready",
+			"initialReceivedBytes": networkReceivedBytes, "initialTransmittedBytes": networkTransmittedBytes,
+			"receivedBytes": reconciledNetworkReceived, "transmittedBytes": reconciledNetworkTransmitted,
+			"measurementGeneration": reconciledNetworkGeneration,
+			"checkpointedAt":        reconciledNetworkCheckpoint.UTC().Format(time.RFC3339Nano)},
 	})
 	t.Logf("FOUNDATION_LIVE_RECOVER=%s", receipt)
 }
@@ -573,6 +629,25 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 				workspaceUsageState, workspaceUsedBytes, workspaceMeasurementGeneration,
 				workspaceCheckpointedAt, workspaceObservedAt, workspaceStableError, err)
 		}
+		var networkUsageState string
+		var networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration int64
+		var networkCheckpointedAt, networkObservedAt time.Time
+		var networkStableError *string
+		err = environment.owner.QueryRow(ctx, `SELECT network_state, network_received_bytes,
+			network_transmitted_bytes, network_measurement_generation, network_checkpointed_at,
+			network_observed_at, network_stable_error_code
+			FROM cloud_agents.sandbox_usage_checkpoints
+			WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+			  AND sandbox_generation=1 AND runtime_uid=$1`, priorRuntime).Scan(
+			&networkUsageState, &networkReceivedBytes, &networkTransmittedBytes,
+			&networkMeasurementGeneration, &networkCheckpointedAt, &networkObservedAt, &networkStableError)
+		if err != nil || networkUsageState != "ready" || networkReceivedBytes < 1 || networkTransmittedBytes < 1 ||
+			networkMeasurementGeneration < 2 || networkCheckpointedAt.IsZero() ||
+			networkObservedAt.Before(networkCheckpointedAt) || networkStableError != nil {
+			t.Fatalf("network usage retained fact = %s/%d/%d/%d/%s/%s/%v err=%v",
+				networkUsageState, networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration,
+				networkCheckpointedAt, networkObservedAt, networkStableError, err)
+		}
 		var allocated, cpuAllocated, memoryAllocated int64
 		var checkpointedAt, finalizedAt time.Time
 		err = environment.owner.QueryRow(ctx, `SELECT allocated_milliseconds::bigint,
@@ -594,6 +669,11 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 				"measurementGeneration": workspaceMeasurementGeneration,
 				"checkpointedAt":        workspaceCheckpointedAt.UTC().Format(time.RFC3339Nano),
 				"observedAt":            workspaceObservedAt.UTC().Format(time.RFC3339Nano)},
+			"networkUsage": map[string]any{"source": "docker-container-stats-v1", "state": networkUsageState,
+				"latestRuntimeGeneration": 1, "receivedBytes": networkReceivedBytes,
+				"transmittedBytes": networkTransmittedBytes, "measurementGeneration": networkMeasurementGeneration,
+				"checkpointedAt": networkCheckpointedAt.UTC().Format(time.RFC3339Nano),
+				"observedAt":     networkObservedAt.UTC().Format(time.RFC3339Nano)},
 			"usage": map[string]any{"allocatedMilliseconds": allocated,
 				"cpuMillisMilliseconds": cpuAllocated, "memoryByteMilliseconds": memoryAllocated,
 				"checkpointedAt": checkpointedAt.UTC().Format(time.RFC3339Nano),

@@ -35,6 +35,7 @@ type AdminSandboxSnapshot struct {
 	CreatedAt, UpdatedAt                                  time.Time
 	ObservedAt, ExpiresAt                                 *time.Time
 	Usage                                                 *AdminSandboxUsageSnapshot
+	NetworkUsage                                          *AdminSandboxNetworkUsageSnapshot
 	WorkspaceVolumeUsage                                  *AdminWorkspaceVolumeUsageSnapshot
 }
 
@@ -52,6 +53,14 @@ type AdminWorkspaceVolumeUsageSnapshot struct {
 	CheckpointedAt        *time.Time
 	ObservedAt            *time.Time
 	StableErrorCode       *string
+}
+
+type AdminSandboxNetworkUsageSnapshot struct {
+	LatestRuntimeGeneration, MeasurementGeneration int64
+	State                                          string
+	ReceivedBytes, TransmittedBytes                *string
+	CheckpointedAt, ObservedAt                     *time.Time
+	StableErrorCode                                *string
 }
 
 type AdminSandboxPage struct {
@@ -76,51 +85,59 @@ type FoundationSandboxExec struct {
 }
 
 type adminSandboxPageRow struct {
-	TenantID               string     `json:"tenant_id"`
-	ProjectID              string     `json:"project_uid"`
-	SandboxID              string     `json:"sandbox_uid"`
-	OperationID            string     `json:"operation_id"`
-	OperationState         string     `json:"operation_state"`
-	CleanupPhase           string     `json:"cleanup_phase"`
-	WorkspaceID            string     `json:"workspace_uid"`
-	WorkspaceName          string     `json:"workspace_name"`
-	VolumeID               string     `json:"volume_uid"`
-	PhysicalVolumeID       *string    `json:"physical_volume_uid"`
-	WorkspaceRetention     string     `json:"retention"`
-	WorkspaceObservedState string     `json:"workspace_observed_state"`
-	RuntimeProfileID       string     `json:"runtime_profile_uid"`
-	RuntimeProfileVersion  int64      `json:"runtime_profile_version"`
-	WorkloadTrust          string     `json:"workload_trust"`
-	IsolationRuntime       string     `json:"isolation_runtime"`
-	NetworkPolicyID        string     `json:"network_policy_ref"`
-	TargetID               string     `json:"target_uid"`
-	Generation             int64      `json:"generation"`
-	ObservedGeneration     int64      `json:"observed_generation"`
-	DesiredState           string     `json:"desired_state"`
-	ObservedState          string     `json:"observed_state"`
-	WriterReleased         bool       `json:"writer_released"`
-	TTLSeconds             *int32     `json:"ttl_seconds"`
-	ExpiresAt              *time.Time `json:"expires_at"`
-	LifecycleTrigger       *string    `json:"lifecycle_trigger"`
-	RuntimeID              *string    `json:"runtime_uid"`
-	RuntimeState           string     `json:"runtime_state"`
-	StableErrorCode        *string    `json:"stable_error_code"`
-	ResourceVersion        int64      `json:"resource_version"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
-	ObservedAt             *time.Time `json:"observed_at"`
-	UsageLatestGeneration  *int64     `json:"usage_latest_runtime_generation"`
-	UsageAllocatedMillis   *string    `json:"usage_allocated_milliseconds"`
-	UsageCPUMillisMillis   *string    `json:"usage_cpu_millis_milliseconds"`
-	UsageMemoryByteMillis  *string    `json:"usage_memory_byte_milliseconds"`
-	UsageCheckpointedAt    *time.Time `json:"usage_checkpointed_at"`
-	UsageFinalizedAt       *time.Time `json:"usage_finalized_at"`
-	VolumeUsageGeneration  *int64     `json:"volume_usage_generation"`
-	VolumeUsageState       *string    `json:"volume_usage_state"`
-	VolumeUsageUsedBytes   *string    `json:"volume_usage_used_bytes"`
-	VolumeUsageCheckpoint  *time.Time `json:"volume_usage_checkpointed_at"`
-	VolumeUsageObservedAt  *time.Time `json:"volume_usage_observed_at"`
-	VolumeUsageStableError *string    `json:"volume_usage_stable_error_code"`
+	TenantID                string     `json:"tenant_id"`
+	ProjectID               string     `json:"project_uid"`
+	SandboxID               string     `json:"sandbox_uid"`
+	OperationID             string     `json:"operation_id"`
+	OperationState          string     `json:"operation_state"`
+	CleanupPhase            string     `json:"cleanup_phase"`
+	WorkspaceID             string     `json:"workspace_uid"`
+	WorkspaceName           string     `json:"workspace_name"`
+	VolumeID                string     `json:"volume_uid"`
+	PhysicalVolumeID        *string    `json:"physical_volume_uid"`
+	WorkspaceRetention      string     `json:"retention"`
+	WorkspaceObservedState  string     `json:"workspace_observed_state"`
+	RuntimeProfileID        string     `json:"runtime_profile_uid"`
+	RuntimeProfileVersion   int64      `json:"runtime_profile_version"`
+	WorkloadTrust           string     `json:"workload_trust"`
+	IsolationRuntime        string     `json:"isolation_runtime"`
+	NetworkPolicyID         string     `json:"network_policy_ref"`
+	TargetID                string     `json:"target_uid"`
+	Generation              int64      `json:"generation"`
+	ObservedGeneration      int64      `json:"observed_generation"`
+	DesiredState            string     `json:"desired_state"`
+	ObservedState           string     `json:"observed_state"`
+	WriterReleased          bool       `json:"writer_released"`
+	TTLSeconds              *int32     `json:"ttl_seconds"`
+	ExpiresAt               *time.Time `json:"expires_at"`
+	LifecycleTrigger        *string    `json:"lifecycle_trigger"`
+	RuntimeID               *string    `json:"runtime_uid"`
+	RuntimeState            string     `json:"runtime_state"`
+	StableErrorCode         *string    `json:"stable_error_code"`
+	ResourceVersion         int64      `json:"resource_version"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+	ObservedAt              *time.Time `json:"observed_at"`
+	UsageLatestGeneration   *int64     `json:"usage_latest_runtime_generation"`
+	UsageAllocatedMillis    *string    `json:"usage_allocated_milliseconds"`
+	UsageCPUMillisMillis    *string    `json:"usage_cpu_millis_milliseconds"`
+	UsageMemoryByteMillis   *string    `json:"usage_memory_byte_milliseconds"`
+	UsageCheckpointedAt     *time.Time `json:"usage_checkpointed_at"`
+	UsageFinalizedAt        *time.Time `json:"usage_finalized_at"`
+	VolumeUsageGeneration   *int64     `json:"volume_usage_generation"`
+	VolumeUsageState        *string    `json:"volume_usage_state"`
+	VolumeUsageUsedBytes    *string    `json:"volume_usage_used_bytes"`
+	VolumeUsageCheckpoint   *time.Time `json:"volume_usage_checkpointed_at"`
+	VolumeUsageObservedAt   *time.Time `json:"volume_usage_observed_at"`
+	VolumeUsageStableError  *string    `json:"volume_usage_stable_error_code"`
+	NetworkLatestGeneration *int64     `json:"network_latest_runtime_generation"`
+	NetworkMeasurement      *int64     `json:"network_measurement_generation"`
+	NetworkState            *string    `json:"network_state"`
+	NetworkReceivedBytes    *string    `json:"network_received_bytes"`
+	NetworkTransmittedBytes *string    `json:"network_transmitted_bytes"`
+	NetworkCheckpointedAt   *time.Time `json:"network_checkpointed_at"`
+	NetworkObservedAt       *time.Time `json:"network_observed_at"`
+	NetworkStableError      *string    `json:"network_stable_error_code"`
 }
 
 const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.sandbox_uid,
@@ -144,7 +161,15 @@ const adminSandboxColumns = `sandbox.tenant_id, sandbox.project_uid, sandbox.san
     volume_usage.state AS volume_usage_state, volume_usage.used_bytes::text AS volume_usage_used_bytes,
     volume_usage.checkpointed_at AS volume_usage_checkpointed_at,
     volume_usage.observed_at AS volume_usage_observed_at,
-    volume_usage.stable_error_code AS volume_usage_stable_error_code`
+    volume_usage.stable_error_code AS volume_usage_stable_error_code,
+    network_usage.latest_runtime_generation AS network_latest_runtime_generation,
+    network_usage.measurement_generation AS network_measurement_generation,
+    network_usage.state AS network_state,
+    network_usage.received_bytes AS network_received_bytes,
+    network_usage.transmitted_bytes AS network_transmitted_bytes,
+    network_usage.checkpointed_at AS network_checkpointed_at,
+    network_usage.observed_at AS network_observed_at,
+    network_usage.stable_error_code AS network_stable_error_code`
 
 const adminSandboxUsageJoin = `LEFT JOIN LATERAL (
     SELECT pg_catalog.max(checkpoint.sandbox_generation) AS latest_runtime_generation,
@@ -159,6 +184,22 @@ const adminSandboxUsageJoin = `LEFT JOIN LATERAL (
       AND checkpoint.sandbox_uid = sandbox.sandbox_uid
     HAVING pg_catalog.count(*) > 0
 ) AS usage ON true`
+
+const adminSandboxNetworkUsageJoin = `LEFT JOIN LATERAL (
+    SELECT checkpoint.sandbox_generation AS latest_runtime_generation,
+        checkpoint.network_measurement_generation AS measurement_generation,
+        checkpoint.network_state AS state,
+        checkpoint.network_received_bytes::text AS received_bytes,
+        checkpoint.network_transmitted_bytes::text AS transmitted_bytes,
+        checkpoint.network_checkpointed_at AS checkpointed_at,
+        checkpoint.network_observed_at AS observed_at,
+        checkpoint.network_stable_error_code AS stable_error_code
+    FROM cloud_agents.sandbox_usage_checkpoints AS checkpoint
+    WHERE checkpoint.tenant_id = sandbox.tenant_id AND checkpoint.project_uid = sandbox.project_uid
+      AND checkpoint.sandbox_uid = sandbox.sandbox_uid AND checkpoint.network_measurement_generation > 0
+    ORDER BY checkpoint.sandbox_generation DESC, checkpoint.network_observed_at DESC
+    LIMIT 1
+) AS network_usage ON true`
 
 var (
 	getAdminSandboxSQL = `SELECT ` + adminSandboxColumns + `
@@ -178,6 +219,7 @@ LEFT JOIN cloud_agents.foundation_sandbox_activity AS activity
   ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
  AND activity.sandbox_generation = sandbox.operation_generation
 ` + adminSandboxUsageJoin + `
+` + adminSandboxNetworkUsageJoin + `
 WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
   AND sandbox.sandbox_uid = $2`
 	getFoundationSandboxAccessSQL = `SELECT sandbox.tenant_id, sandbox.project_uid,
@@ -227,6 +269,7 @@ FROM (
       ON activity.tenant_id = sandbox.tenant_id AND activity.operation_uid = sandbox.operation_id
      AND activity.sandbox_generation = sandbox.operation_generation
     ` + adminSandboxUsageJoin + `
+    ` + adminSandboxNetworkUsageJoin + `
     WHERE sandbox.tenant_id = cloud_agents.require_tenant_id() AND sandbox.project_uid = $1
       AND sandbox.sandbox_uid > $2
     ORDER BY sandbox.sandbox_uid
@@ -508,7 +551,10 @@ func scanAdminSandboxRow(row rowScanner, value *adminSandboxPageRow) error {
 		&value.UsageLatestGeneration, &value.UsageAllocatedMillis, &value.UsageCPUMillisMillis,
 		&value.UsageMemoryByteMillis, &value.UsageCheckpointedAt, &value.UsageFinalizedAt,
 		&value.VolumeUsageGeneration, &value.VolumeUsageState, &value.VolumeUsageUsedBytes,
-		&value.VolumeUsageCheckpoint, &value.VolumeUsageObservedAt, &value.VolumeUsageStableError)
+		&value.VolumeUsageCheckpoint, &value.VolumeUsageObservedAt, &value.VolumeUsageStableError,
+		&value.NetworkLatestGeneration, &value.NetworkMeasurement, &value.NetworkState,
+		&value.NetworkReceivedBytes, &value.NetworkTransmittedBytes, &value.NetworkCheckpointedAt,
+		&value.NetworkObservedAt, &value.NetworkStableError)
 }
 
 func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (AdminSandboxSnapshot, error) {
@@ -555,6 +601,24 @@ func adminSandboxSnapshot(row adminSandboxPageRow, tenantID, projectID string) (
 			StableErrorCode:       row.VolumeUsageStableError,
 		}
 	} else if row.VolumeUsageState != nil || row.VolumeUsageUsedBytes != nil || row.VolumeUsageCheckpoint != nil || row.VolumeUsageObservedAt != nil || row.VolumeUsageStableError != nil {
+		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+	}
+	if row.NetworkLatestGeneration != nil {
+		if row.NetworkMeasurement == nil || row.NetworkState == nil {
+			return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
+		}
+		value.NetworkUsage = &AdminSandboxNetworkUsageSnapshot{
+			LatestRuntimeGeneration: *row.NetworkLatestGeneration,
+			MeasurementGeneration:   *row.NetworkMeasurement,
+			State:                   *row.NetworkState,
+			ReceivedBytes:           row.NetworkReceivedBytes,
+			TransmittedBytes:        row.NetworkTransmittedBytes,
+			CheckpointedAt:          row.NetworkCheckpointedAt,
+			ObservedAt:              row.NetworkObservedAt,
+			StableErrorCode:         row.NetworkStableError,
+		}
+	} else if row.NetworkMeasurement != nil || row.NetworkState != nil || row.NetworkReceivedBytes != nil ||
+		row.NetworkTransmittedBytes != nil || row.NetworkCheckpointedAt != nil || row.NetworkObservedAt != nil || row.NetworkStableError != nil {
 		return AdminSandboxSnapshot{}, ErrCoordinationResultDrift
 	}
 	value.NetworkPolicyEnforcement = networkPolicyEnforcement(value)
@@ -639,6 +703,30 @@ func validAdminSandboxSnapshot(value AdminSandboxSnapshot) bool {
 			}
 		case "failed":
 			if usage.MeasurementGeneration < 1 || usage.ObservedAt == nil || usage.StableErrorCode == nil || !validMutationIdentifier(*usage.StableErrorCode) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	if usage := value.NetworkUsage; usage != nil {
+		if usage.LatestRuntimeGeneration < 1 || usage.LatestRuntimeGeneration > value.Generation || usage.MeasurementGeneration < 1 ||
+			(usage.ReceivedBytes == nil) != (usage.TransmittedBytes == nil) ||
+			(usage.ReceivedBytes == nil) != (usage.CheckpointedAt == nil) || usage.ObservedAt == nil || usage.ObservedAt.IsZero() ||
+			usage.CheckpointedAt != nil && usage.CheckpointedAt.IsZero() {
+			return false
+		}
+		switch usage.State {
+		case "measuring":
+			if usage.StableErrorCode != nil {
+				return false
+			}
+		case "ready":
+			if usage.ReceivedBytes == nil || usage.StableErrorCode != nil {
+				return false
+			}
+		case "failed":
+			if usage.StableErrorCode == nil || !validMutationIdentifier(*usage.StableErrorCode) {
 				return false
 			}
 		default:

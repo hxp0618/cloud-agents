@@ -848,6 +848,23 @@ try {
   );
   assert.ok(recoverReceipt.workspaceVolumeUsage.usedBytes > 0);
   assert.equal(recoverReceipt.workspaceVolumeUsage.measurementGeneration, 1);
+  assert.equal(recoverReceipt.networkUsage.source, "docker-container-stats-v1");
+  assert.equal(recoverReceipt.networkUsage.state, "ready");
+  assert.equal(recoverReceipt.networkUsage.measurementGeneration, 2);
+  assert.ok(recoverReceipt.networkUsage.initialReceivedBytes > 0);
+  assert.ok(recoverReceipt.networkUsage.initialTransmittedBytes > 0);
+  assert.ok(
+    recoverReceipt.networkUsage.receivedBytes >= recoverReceipt.networkUsage.initialReceivedBytes,
+  );
+  assert.ok(
+    recoverReceipt.networkUsage.transmittedBytes >=
+      recoverReceipt.networkUsage.initialTransmittedBytes,
+  );
+  assert.ok(
+    recoverReceipt.networkUsage.receivedBytes > recoverReceipt.networkUsage.initialReceivedBytes ||
+      recoverReceipt.networkUsage.transmittedBytes >
+        recoverReceipt.networkUsage.initialTransmittedBytes,
+  );
 
   const lifecycleAPI = (action) =>
     parseMarker(
@@ -910,6 +927,16 @@ try {
     Date.parse(stopReceipt.workspaceVolumeUsage.checkpointedAt) >
       Date.parse(recoverReceipt.workspaceVolumeUsage.checkpointedAt),
   );
+  assert.equal(stopReceipt.networkUsage.source, "docker-container-stats-v1");
+  assert.equal(stopReceipt.networkUsage.state, "ready");
+  assert.equal(stopReceipt.networkUsage.latestRuntimeGeneration, 1);
+  assert.equal(stopReceipt.networkUsage.measurementGeneration, 2);
+  assert.equal(stopReceipt.networkUsage.receivedBytes, recoverReceipt.networkUsage.receivedBytes);
+  assert.equal(
+    stopReceipt.networkUsage.transmittedBytes,
+    recoverReceipt.networkUsage.transmittedBytes,
+  );
+  assert.equal(stopReceipt.networkUsage.checkpointedAt, recoverReceipt.networkUsage.checkpointedAt);
   const snapshotAPIReceipt = parseMarker(
     execFileSync(
       serverTestBinary,
@@ -1138,7 +1165,9 @@ try {
         "source Sandbox was stopped, observed stopped and writer-released before acceptance",
         "database-clock CPU and memory allocation facts caught up from a stale checkpoint after Controller process restart and froze in the Stop transaction",
         "Controller sampled exact-owned Docker backend occupied bytes without opening Workspace files and durably caught up a stale measurement after process restart",
+        "Controller sampled only aggregate cumulative RX/TX bytes from exact-owned running Docker container stats and durably caught up generation 1 to 2 after process restart",
         "generated Admin Sandbox detail exposed only Workspace usage source, state, generation, byte count and timestamps; ordinary User APIs remained unchanged",
+        "generated Admin Sandbox detail exposed only network source, runtime and measurement generations, aggregate byte counters, state and timestamps; no packet, address, destination or payload data entered the contract",
         "acceptance reserved the existing single-writer slot until terminal settlement; Admin rebuild returned 409 while the snapshot was pending",
         "Controller claimed the operation and copied the real Docker Workspace through a never-started helper",
         "normalized path, type, mode, link target and file-byte archive digests matched after Docker unpack and repack",
@@ -1147,7 +1176,7 @@ try {
         "exact-owned helper, snapshot volume, runtime containers and Workspace volume were removed after verification",
       ],
       boundary:
-        "Local OrbStack Docker and disposable PostgreSQL only; Workspace occupied-byte measurement is not an enforced quota or billable amount; Kubernetes and RemoteWorker storage measurement, restore, retention policy and browser visual QA remain unverified",
+        "Local OrbStack Docker and disposable PostgreSQL only; Workspace occupied-byte and cumulative network counters are not enforced quotas or billable amounts; stopped runtime counters are last successful samples, and Kubernetes/RemoteWorker storage or network measurement, restore, retention policy and browser visual QA remain unverified",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),

@@ -918,6 +918,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 	ttlSeconds := int64(0)
 	var usage *platform.AdminSandboxUsage
 	var workspaceVolumeUsage *platform.AdminWorkspaceVolumeUsage
+	var networkUsage *platform.AdminSandboxNetworkUsage
 	if snapshot.PhysicalVolumeID != nil {
 		physicalVolumeID = *snapshot.PhysicalVolumeID
 	}
@@ -976,6 +977,28 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 			StableErrorCode:       stableErrorCode,
 		}
 	}
+	if snapshot.NetworkUsage != nil {
+		receivedBytes, transmittedBytes, checkpointedAt, stableErrorCode := "", "", "", ""
+		if snapshot.NetworkUsage.ReceivedBytes != nil {
+			receivedBytes = *snapshot.NetworkUsage.ReceivedBytes
+			transmittedBytes = *snapshot.NetworkUsage.TransmittedBytes
+			checkpointedAt = snapshot.NetworkUsage.CheckpointedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if snapshot.NetworkUsage.StableErrorCode != nil {
+			stableErrorCode = *snapshot.NetworkUsage.StableErrorCode
+		}
+		networkUsage = &platform.AdminSandboxNetworkUsage{
+			Source:                  "docker-container-stats-v1",
+			LatestRuntimeGeneration: snapshot.NetworkUsage.LatestRuntimeGeneration,
+			MeasurementGeneration:   snapshot.NetworkUsage.MeasurementGeneration,
+			State:                   snapshot.NetworkUsage.State,
+			ReceivedBytes:           receivedBytes,
+			TransmittedBytes:        transmittedBytes,
+			CheckpointedAt:          checkpointedAt,
+			ObservedAt:              snapshot.NetworkUsage.ObservedAt.UTC().Format(time.RFC3339Nano),
+			StableErrorCode:         stableErrorCode,
+		}
+	}
 	return platform.AdminSandboxSession{ResourceBase: platform.ResourceBase{APIVersion: platform.APIVersion, Kind: "AdminSandboxSession", Metadata: common.ResourceMetadata{
 		UID: snapshot.SandboxID, Name: snapshot.SandboxID,
 		TenantRef:       common.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID},
@@ -992,7 +1015,7 @@ func adminSandboxResource(snapshot postgres.AdminSandboxSnapshot) platform.Admin
 		DesiredState: snapshot.DesiredState, ObservedState: snapshot.ObservedState, WriterReleased: snapshot.WriterReleased,
 		TTLSeconds: ttlSeconds, ExpiresAt: expiresAt, LifecycleTrigger: lifecycleTrigger,
 		RuntimeID: runtimeID, RuntimeState: snapshot.RuntimeState, StableErrorCode: stableErrorCode, ObservedAt: observedAt,
-		Usage: usage, WorkspaceVolumeUsage: workspaceVolumeUsage,
+		Usage: usage, WorkspaceVolumeUsage: workspaceVolumeUsage, NetworkUsage: networkUsage,
 	}}
 }
 

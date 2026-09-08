@@ -28,9 +28,8 @@ func (directory *CredentialDirectory) VerifyFoundationSandboxIsolation(
 		return err
 	}
 	defer transport.CloseIdleConnections()
-	filter, _ := json.Marshal(map[string][]string{"label": {"opensandbox.io/id=" + runtimeID}})
-	var containers []containerSummary
-	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filter)), nil, http.StatusOK, &containers); err != nil {
+	containers, err := listFoundationSandboxContainers(ctx, client, base, runtimeID)
+	if err != nil {
 		return err
 	}
 	if len(containers) != 1 {
@@ -49,4 +48,58 @@ func (directory *CredentialDirectory) VerifyFoundationSandboxIsolation(
 		}
 	}
 	return nil
+}
+
+// MeasureFoundationSandboxNetwork reads cumulative Docker container counters.
+// It returns only aggregate bytes and never packet, address, or destination data.
+func (directory *CredentialDirectory) MeasureFoundationSandboxNetwork(
+	ctx context.Context, endpoint, credentialRef, runtimeID string,
+) (int64, int64, error) {
+	if ctx == nil || commonv1alpha1.ValidateIdentifier(runtimeID, "/runtimeId") != nil {
+		return 0, 0, ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer transport.CloseIdleConnections()
+	containers, err := listFoundationSandboxContainers(ctx, client, base, runtimeID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(containers) != 1 {
+		return 0, 0, ErrDeploymentConflict
+	}
+	container, err := inspectWorkerContainer(ctx, client, base, containers[0].ID)
+	if err != nil || !container.State.Running || container.Config.Labels["opensandbox.io/id"] != runtimeID {
+		return 0, 0, ErrDeploymentConflict
+	}
+	var stats struct {
+		Networks map[string]struct {
+			ReceivedBytes    int64 `json:"rx_bytes"`
+			TransmittedBytes int64 `json:"tx_bytes"`
+		} `json:"networks"`
+	}
+	if dockerJSON(ctx, client, http.MethodGet, base+"/containers/"+url.PathEscape(containers[0].ID)+"/stats?stream=false&one-shot=true", nil, http.StatusOK, &stats) != nil || len(stats.Networks) == 0 {
+		return 0, 0, ErrDeploymentFailed
+	}
+	var received, transmitted int64
+	for _, network := range stats.Networks {
+		if network.ReceivedBytes < 0 || network.TransmittedBytes < 0 ||
+			network.ReceivedBytes > 1<<60-received || network.TransmittedBytes > 1<<60-transmitted {
+			return 0, 0, ErrDeploymentFailed
+		}
+		received += network.ReceivedBytes
+		transmitted += network.TransmittedBytes
+	}
+	return received, transmitted, nil
+}
+
+func listFoundationSandboxContainers(ctx context.Context, client *http.Client, base, runtimeID string) ([]containerSummary, error) {
+	filter, _ := json.Marshal(map[string][]string{"label": {"opensandbox.io/id=" + runtimeID}})
+	var containers []containerSummary
+	if err := dockerJSON(ctx, client, http.MethodGet, base+"/containers/json?all=1&filters="+url.QueryEscape(string(filter)), nil, http.StatusOK, &containers); err != nil {
+		return nil, err
+	}
+	return containers, nil
 }

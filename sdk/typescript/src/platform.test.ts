@@ -2847,7 +2847,7 @@ describe("generated platform JSON models", () => {
     ).toThrow(expect.objectContaining({ code: "TRAILING_JSON" }));
   });
 
-  it("keeps Admin Workspace volume usage in the typed response", () => {
+  it("keeps Admin Sandbox resource usage in the typed response", () => {
     const value = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "AdminSandboxSession",
@@ -2895,11 +2895,23 @@ describe("generated platform JSON models", () => {
           checkpointedAt: "2026-09-08T12:01:00Z",
           observedAt: "2026-09-08T12:01:00Z",
         },
+        networkUsage: {
+          source: "docker-container-stats-v1",
+          latestRuntimeGeneration: 1,
+          measurementGeneration: 2,
+          state: "ready",
+          receivedBytes: "67890",
+          transmittedBytes: "3456",
+          checkpointedAt: "2026-09-08T12:01:00Z",
+          observedAt: "2026-09-08T12:01:00Z",
+        },
       },
     };
     const parsed = parseAdminSandboxSession(JSON.stringify(value));
     expect(parsed.value.spec.usage?.allocatedMilliseconds).toBe("120000");
     expect(parsed.value.spec.workspaceVolumeUsage?.usedBytes).toBe("12345");
+    expect(parsed.value.spec.networkUsage?.receivedBytes).toBe("67890");
+    expect(parsed.value.spec.networkUsage?.transmittedBytes).toBe("3456");
     expect(parsed.unknown).toEqual({});
     expect(() =>
       decodeAdminSandboxSession({
@@ -2910,6 +2922,15 @@ describe("generated platform JSON models", () => {
         },
       }),
     ).toThrow(/INVALID_WORKSPACE_VOLUME_USAGE/u);
+    expect(() =>
+      decodeAdminSandboxSession({
+        ...value,
+        spec: {
+          ...value.spec,
+          networkUsage: { ...value.spec.networkUsage, transmittedBytes: undefined },
+        },
+      }),
+    ).toThrow(/INVALID_SANDBOX_NETWORK_USAGE/u);
   });
 
   it("preserves response-only unknown fields in the sidecar", () => {

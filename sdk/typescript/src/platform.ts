@@ -1186,6 +1186,17 @@ export type AdminWorkspaceVolumeUsage = Readonly<{
   observedAt?: string;
   stableErrorCode?: string;
 }>;
+export type AdminSandboxNetworkUsage = Readonly<{
+  source: "docker-container-stats-v1";
+  latestRuntimeGeneration: number;
+  measurementGeneration: number;
+  state: "measuring" | "ready" | "failed";
+  receivedBytes?: string;
+  transmittedBytes?: string;
+  checkpointedAt?: string;
+  observedAt: string;
+  stableErrorCode?: string;
+}>;
 export type AdminSandboxSession = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "AdminSandboxSession";
@@ -1230,6 +1241,7 @@ export type AdminSandboxSession = Readonly<{
     observedAt?: string;
     usage?: AdminSandboxUsage;
     workspaceVolumeUsage?: AdminWorkspaceVolumeUsage;
+    networkUsage?: AdminSandboxNetworkUsage;
   }>;
 }>;
 export type AdminSandboxSessionPage = Readonly<{
@@ -2621,6 +2633,19 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
       stableErrorCode: scalarResponseShape,
     },
   },
+  networkUsage: {
+    fields: {
+      source: scalarResponseShape,
+      latestRuntimeGeneration: scalarResponseShape,
+      measurementGeneration: scalarResponseShape,
+      state: scalarResponseShape,
+      receivedBytes: scalarResponseShape,
+      transmittedBytes: scalarResponseShape,
+      checkpointedAt: scalarResponseShape,
+      observedAt: scalarResponseShape,
+      stableErrorCode: scalarResponseShape,
+    },
+  },
 });
 const adminSandboxSessionPageResponseShape: ResponseShape = {
   fields: {
@@ -3267,6 +3292,79 @@ function workspaceVolumeUsage(value: unknown, path: string): AdminWorkspaceVolum
     ...(usedBytes === undefined ? {} : { usedBytes }),
     ...(checkpointedAt === undefined ? {} : { checkpointedAt }),
     ...(observedAt === undefined ? {} : { observedAt }),
+    ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
+  });
+}
+function sandboxNetworkUsage(
+  value: unknown,
+  generation: number,
+  path: string,
+): AdminSandboxNetworkUsage {
+  const source = strictRecord(
+    value,
+    [
+      "source",
+      "latestRuntimeGeneration",
+      "measurementGeneration",
+      "state",
+      "receivedBytes",
+      "transmittedBytes",
+      "checkpointedAt",
+      "observedAt",
+      "stableErrorCode",
+    ],
+    ["source", "latestRuntimeGeneration", "measurementGeneration", "state", "observedAt"],
+    path,
+  );
+  if (source.source !== "docker-container-stats-v1")
+    error("INVALID_SANDBOX_NETWORK_USAGE", `${path}/source`);
+  const state = enumValue(source.state, ["measuring", "ready", "failed"] as const, `${path}/state`);
+  const latestRuntimeGeneration = integer(
+    source.latestRuntimeGeneration,
+    1,
+    generation,
+    `${path}/latestRuntimeGeneration`,
+  );
+  const measurementGeneration = integer(
+    source.measurementGeneration,
+    1,
+    Number.MAX_SAFE_INTEGER,
+    `${path}/measurementGeneration`,
+  );
+  const bytes = (value: unknown, field: string) => {
+    if (value === undefined) return undefined;
+    const text = string(value, field);
+    if (!/^(?:0|[1-9][0-9]{0,18})$/u.test(text)) error("INVALID_SANDBOX_NETWORK_USAGE", field);
+    return text;
+  };
+  const receivedBytes = bytes(source.receivedBytes, `${path}/receivedBytes`);
+  const transmittedBytes = bytes(source.transmittedBytes, `${path}/transmittedBytes`);
+  const checkpointedAt =
+    source.checkpointedAt === undefined
+      ? undefined
+      : dateTime(source.checkpointedAt, `${path}/checkpointedAt`);
+  const observedAt = dateTime(source.observedAt, `${path}/observedAt`);
+  const stableErrorCode =
+    source.stableErrorCode === undefined
+      ? undefined
+      : identifier(source.stableErrorCode, `${path}/stableErrorCode`);
+  if (
+    (receivedBytes === undefined) !== (transmittedBytes === undefined) ||
+    (receivedBytes === undefined) !== (checkpointedAt === undefined) ||
+    (state === "measuring" && stableErrorCode !== undefined) ||
+    (state === "ready" && (receivedBytes === undefined || stableErrorCode !== undefined)) ||
+    (state === "failed" && stableErrorCode === undefined)
+  )
+    error("INVALID_SANDBOX_NETWORK_USAGE", path);
+  return Object.freeze({
+    source: "docker-container-stats-v1",
+    latestRuntimeGeneration,
+    measurementGeneration,
+    state,
+    ...(receivedBytes === undefined
+      ? {}
+      : { receivedBytes, transmittedBytes: transmittedBytes!, checkpointedAt: checkpointedAt! }),
+    observedAt,
     ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
   });
 }
@@ -8640,6 +8738,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
     "observedAt",
     "usage",
     "workspaceVolumeUsage",
+    "networkUsage",
   ] as const;
   const spec = strictRecord(
     source.spec,
@@ -8658,6 +8757,7 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
           "observedAt",
           "usage",
           "workspaceVolumeUsage",
+          "networkUsage",
         ].includes(field),
     ),
     "/spec",
@@ -8791,6 +8891,9 @@ export function decodeAdminSandboxSession(value: unknown): AdminSandboxSession {
             "/spec/workspaceVolumeUsage",
           ),
         }),
+    ...(spec.networkUsage === undefined
+      ? {}
+      : { networkUsage: sandboxNetworkUsage(spec.networkUsage, generation, "/spec/networkUsage") }),
   };
   return Object.freeze({ ...root, kind: "AdminSandboxSession", spec: Object.freeze(result) });
 }
