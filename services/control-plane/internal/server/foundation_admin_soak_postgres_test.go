@@ -61,7 +61,7 @@ func TestFoundationAdminReadSoakPostgres(t *testing.T) {
 	var profileCount, sandboxCount, snapshotCount int
 	for cycle := 0; cycle < cycles; cycle++ {
 		requestPrefix := fmt.Sprintf("request-admin-soak-%s-%02d", phase, cycle)
-		profiles, err := timedFoundationAdminRead(&successLatency, func() (api.RuntimeProfilePageResult, error) {
+		profiles, err := timedFoundationRequest(&successLatency, func() (api.RuntimeProfilePageResult, error) {
 			return admin.ListAdminRuntimeProfiles(ctx, "tenant", "project", requestPrefix+"-profiles", 50, "")
 		})
 		if err != nil {
@@ -70,37 +70,37 @@ func TestFoundationAdminReadSoakPostgres(t *testing.T) {
 		if cycle == 0 {
 			recoveryToFirstSuccess = time.Since(started)
 		}
-		profile, err := timedFoundationAdminRead(&successLatency, func() (api.RuntimeProfileResult, error) {
+		profile, err := timedFoundationRequest(&successLatency, func() (api.RuntimeProfileResult, error) {
 			return admin.GetAdminRuntimeProfile(ctx, "tenant", "project", "profile", 1, requestPrefix+"-profile")
 		})
 		if err != nil {
 			t.Fatalf("get profile cycle %d: %v", cycle, err)
 		}
-		sandboxes, err := timedFoundationAdminRead(&successLatency, func() (api.AdminSandboxSessionPageResult, error) {
+		sandboxes, err := timedFoundationRequest(&successLatency, func() (api.AdminSandboxSessionPageResult, error) {
 			return admin.ListAdminSandboxSessions(ctx, "tenant", "project", requestPrefix+"-sandboxes", 50, "")
 		})
 		if err != nil {
 			t.Fatalf("list sandboxes cycle %d: %v", cycle, err)
 		}
-		sandbox, err := timedFoundationAdminRead(&successLatency, func() (api.AdminSandboxSessionResult, error) {
+		sandbox, err := timedFoundationRequest(&successLatency, func() (api.AdminSandboxSessionResult, error) {
 			return admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox", requestPrefix+"-sandbox")
 		})
 		if err != nil {
 			t.Fatalf("get sandbox cycle %d: %v", cycle, err)
 		}
-		snapshots, err := timedFoundationAdminRead(&successLatency, func() (api.WorkspaceSnapshotPageResult, error) {
+		snapshots, err := timedFoundationRequest(&successLatency, func() (api.WorkspaceSnapshotPageResult, error) {
 			return admin.ListAdminWorkspaceSnapshots(ctx, "tenant", "project", requestPrefix+"-snapshots", 50, "")
 		})
 		if err != nil {
 			t.Fatalf("list snapshots cycle %d: %v", cycle, err)
 		}
-		snapshot, err := timedFoundationAdminRead(&successLatency, func() (api.WorkspaceSnapshotResult, error) {
+		snapshot, err := timedFoundationRequest(&successLatency, func() (api.WorkspaceSnapshotResult, error) {
 			return admin.GetAdminWorkspaceSnapshot(ctx, "tenant", "project", "snapshot", requestPrefix+"-snapshot")
 		})
 		if err != nil {
 			t.Fatalf("get snapshot cycle %d: %v", cycle, err)
 		}
-		_, denied := timedFoundationAdminRead(&deniedLatency, func() (api.AdminSandboxSessionPageResult, error) {
+		_, denied := timedFoundationRequest(&deniedLatency, func() (api.AdminSandboxSessionPageResult, error) {
 			return user.ListAdminSandboxSessions(ctx, "tenant", "project", requestPrefix+"-user-denied", 50, "")
 		})
 		if clientStatus(denied) != http.StatusForbidden {
@@ -135,8 +135,8 @@ func TestFoundationAdminReadSoakPostgres(t *testing.T) {
 	receipt, _ := json.Marshal(map[string]any{
 		"phase": phase, "cycles": cycles, "successfulRequests": len(successLatency), "deniedRequests": len(deniedLatency),
 		"recoveryToFirstSuccessMilliseconds": durationMilliseconds(recoveryToFirstSuccess),
-		"successLatencyMilliseconds":         foundationAdminLatencySummary(successLatency),
-		"deniedLatencyMilliseconds":          foundationAdminLatencySummary(deniedLatency),
+		"successLatencyMilliseconds":         foundationLatencySummary(successLatency),
+		"deniedLatencyMilliseconds":          foundationLatencySummary(deniedLatency),
 		"stateDigest":                        stateDigest, "resourceCounts": map[string]int{"profiles": profileCount, "sandboxes": sandboxCount, "snapshots": snapshotCount},
 		"durationMilliseconds": durationMilliseconds(time.Since(started)),
 	})
@@ -144,7 +144,7 @@ func TestFoundationAdminReadSoakPostgres(t *testing.T) {
 }
 
 func TestFoundationAdminLatencySummary(t *testing.T) {
-	summary := foundationAdminLatencySummary([]time.Duration{
+	summary := foundationLatencySummary([]time.Duration{
 		20 * time.Millisecond, time.Millisecond, 19 * time.Millisecond, 10 * time.Millisecond,
 		2 * time.Millisecond, 18 * time.Millisecond, 9 * time.Millisecond, 11 * time.Millisecond,
 		3 * time.Millisecond, 17 * time.Millisecond, 8 * time.Millisecond, 12 * time.Millisecond,
@@ -156,14 +156,14 @@ func TestFoundationAdminLatencySummary(t *testing.T) {
 	}
 }
 
-func timedFoundationAdminRead[T any](samples *[]time.Duration, call func() (T, error)) (T, error) {
+func timedFoundationRequest[T any](samples *[]time.Duration, call func() (T, error)) (T, error) {
 	started := time.Now()
 	value, err := call()
 	*samples = append(*samples, time.Since(started))
 	return value, err
 }
 
-func foundationAdminLatencySummary(samples []time.Duration) map[string]float64 {
+func foundationLatencySummary(samples []time.Duration) map[string]float64 {
 	sorted := append([]time.Duration(nil), samples...)
 	sort.Slice(sorted, func(left, right int) bool { return sorted[left] < sorted[right] })
 	return map[string]float64{

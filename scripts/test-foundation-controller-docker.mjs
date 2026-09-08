@@ -645,6 +645,18 @@ try {
   assert.equal(remoteWorkerReceipt.renewWrongCommandStatus, 409);
   assert.equal(remoteWorkerReceipt.reconnectOriginalCommandNotReplayed, true);
   assert.equal(remoteWorkerReceipt.reconnectAttempt, 2);
+  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.heartbeatCycles, 64);
+  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.successfulHeartbeats, 64);
+  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.successfulAdminReads, 64);
+  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.rpo.operationRowsLost, 0);
+  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.rpo.duplicateRuntimes, 0);
+  assert.ok(remoteWorkerReceipt.remoteWorkerFaultSoak.heartbeatLatencyMilliseconds.p95 > 0);
+  assert.ok(remoteWorkerReceipt.remoteWorkerFaultSoak.reconnectToSettlementMilliseconds > 0);
+  assert.equal(remoteWorkerReceipt.gatewayRestart.protocolRecoveries, 4);
+  assert.equal(remoteWorkerReceipt.gatewayRestart.rpo.fileBytesLost, 0);
+  assert.equal(remoteWorkerReceipt.gatewayRestart.rpo.ptyOutputBytesLost, 0);
+  assert.equal(remoteWorkerReceipt.gatewayRestart.rpo.grantRowsLost, 0);
+  assert.ok(remoteWorkerReceipt.gatewayRestart.latencyMilliseconds.p95 > 0);
   assert.equal(remoteWorkerReceipt.execExitCode, 7);
   assert.equal(remoteWorkerReceipt.execWorkspaceDigestVerified, true);
   assert.equal(remoteWorkerReceipt.execRequestReplay, true);
@@ -791,10 +803,12 @@ try {
         "SSH command delivery is bound to the exact incarnation and certificate, runtime cannot read command rows, and Admin receives metadata without command content or credentials",
         "a lifecycle effect longer than the original claim renews through the existing mTLS heartbeat, and a wrong command ID is rejected",
         "a dropped outbound heartbeat clears the uncertain local command; after natural claim expiry, reconnect executes only a new reconciled attempt",
+        "64 authenticated outbound heartbeats and 64 matching Admin reads completed with measured P50/P95/max latency after the dropped-connection recovery",
+        "Preview, Files, PTY and SSH each recovered through a new Access Gateway process with measured recovery latency and zero verified Grant/file/PTY state loss",
         "create, stop, retained-volume rebuild and final cleanup leave zero test-owned runtime containers and Workspace volumes",
       ],
       boundary:
-        "Local OrbStack Docker RemoteWorker customer nodes and disposable PostgreSQL only; deterministic selection across two real database-authoritative nodes and aggregate CPU/memory/fixed-20-GiB Workspace reservation are covered, while image-manifest architecture, strong-isolation runtime, streaming Preview, Kubernetes and external SSH customer nodes are not covered",
+        "Local OrbStack Docker RemoteWorker customer nodes and disposable PostgreSQL only; deterministic selection, bounded 64-cycle mTLS heartbeat/Admin soak, dropped-connection reconciliation and four protocol Gateway restarts are covered with current-machine measurements, not an SLO; image-manifest architecture, strong-isolation runtime, streaming Preview, Kubernetes and external SSH customer nodes are not covered",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),

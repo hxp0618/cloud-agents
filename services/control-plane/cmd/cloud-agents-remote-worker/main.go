@@ -809,6 +809,12 @@ func exchangeSandboxPTY(ctx context.Context, client *opensandbox.Client, input o
 		messageType, payload, readErr := connection.ReadMessage()
 		if readErr != nil {
 			var networkError net.Error
+			if errors.As(readErr, &networkError) && networkError.Timeout() && command.Input != nil && command.PTY != nil && !*command.PTY {
+				if ctx.Err() != nil {
+					return nil, 0, false, ctx.Err()
+				}
+				continue
+			}
 			if errors.As(readErr, &networkError) && networkError.Timeout() || websocket.IsCloseError(readErr, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				break
 			}

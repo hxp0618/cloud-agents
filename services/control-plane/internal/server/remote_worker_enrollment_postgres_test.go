@@ -878,6 +878,7 @@ WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.Opera
 		_ = interrupted.Wait()
 		t.Fatalf("long RemoteWorker Sandbox claim was not renewed: initial=%s current=%s", claimExpiryAfter, longClaimExpiry)
 	}
+	remoteWorkerFaultStarted := time.Now()
 	setWorkerConnected(false)
 	if err := interrupted.Wait(); err == nil {
 		t.Fatal("RemoteWorker Sandbox command survived a dropped renewal connection")
@@ -895,7 +896,9 @@ WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.Opera
 		time.Sleep(delay)
 	}
 	setWorkerConnected(true)
+	remoteWorkerReconnectStarted := time.Now()
 	runRemoteWorkerHeartbeatProcess(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	remoteWorkerReconnectToLocalReceipt := time.Since(remoteWorkerReconnectStarted)
 	stateData, err = os.ReadFile(stateFile)
 	var reconnectedState struct {
 		SandboxCommandReceipt *platform.RemoteWorkerSandboxCommandReceipt `json:"sandboxCommandReceipt"`
@@ -907,9 +910,28 @@ WHERE tenant_id='tenant' AND operation_id=$1 AND state='claimed'`, command.Opera
 	}
 	command.CommandID, command.Attempt = reconnectedState.SandboxCommandReceipt.CommandID, reconnectedState.SandboxCommandReceipt.Attempt
 	runRemoteWorkerHeartbeatProcess(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	remoteWorkerReconnectToSettlement := time.Since(remoteWorkerReconnectStarted)
+	remoteWorkerFaultToSettlement := time.Since(remoteWorkerFaultStarted)
 	adminSandbox, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-get")
 	if err != nil || adminSandbox.Value.Spec.ObservedState != "running" || adminSandbox.Value.Spec.RuntimeID == "" || adminSandbox.Value.Spec.PhysicalVolumeID == "" {
 		t.Fatalf("RemoteWorker Sandbox settlement: value=%+v err=%v", adminSandbox.Value, err)
+	}
+	const heartbeatSoakCycles = 64
+	heartbeatLatency := make([]time.Duration, 0, heartbeatSoakCycles)
+	heartbeatAdminLatency := make([]time.Duration, 0, heartbeatSoakCycles)
+	for cycle := 0; cycle < heartbeatSoakCycles; cycle++ {
+		result, callErr := timedFoundationRequest(&heartbeatLatency, func() (api.RemoteWorkerHeartbeatResult, error) {
+			return node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, fmt.Sprintf("request-remote-heartbeat-soak-%02d", cycle), heartbeat)
+		})
+		if callErr != nil || result.Value.HealthState != "online" || result.Value.ReconcileRequired || result.Value.SandboxCommand != nil || result.Value.SandboxExecCommand != nil || result.Value.SandboxFileCommand != nil || result.Value.SandboxPTYCommand != nil || result.Value.SandboxPreviewCommand != nil {
+			t.Fatalf("RemoteWorker heartbeat soak cycle %d: value=%+v err=%v", cycle, result.Value, callErr)
+		}
+		enrollment, callErr := timedFoundationRequest(&heartbeatAdminLatency, func() (api.RemoteWorkerEnrollmentResult, error) {
+			return admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", enrollmentID, fmt.Sprintf("request-remote-heartbeat-soak-admin-%02d", cycle))
+		})
+		if callErr != nil || enrollment.Value.Spec.Node == nil || enrollment.Value.Spec.Node.HealthState != "online" || enrollment.Value.Spec.Node.ObservedGeneration != heartbeat.ObservedGeneration {
+			t.Fatalf("RemoteWorker heartbeat Admin soak cycle %d: value=%+v err=%v", cycle, enrollment.Value, callErr)
+		}
 	}
 	adminEnrollment, err := admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", enrollmentID, "request-remote-capacity-initial")
 	var reservation *platform.RemoteWorkerCapacityReservation
@@ -1222,6 +1244,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, execComm
 	}
 	gateway := newGateway()
 	defer func() { gateway.Close() }()
+	var previewGatewayRecovery, fileGatewayRecovery, ptyGatewayRecovery, sshGatewayRecovery time.Duration
 	grantClient, _ := api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
 	runFile := func(requestID string, call func() error, beforeSettle ...func(platform.RemoteWorkerSandboxFileCommandReceipt)) (string, platform.RemoteWorkerSandboxFileCommandReceipt, error) {
 		done := make(chan error, 1)
@@ -1442,6 +1465,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND request_id=$1`, requestID
 	if status := previewStatus("request-remote-preview-internal", internalPreviewPath, grant.Value.AccessToken); status != http.StatusNotFound {
 		t.Fatalf("internal RemoteWorker Preview status=%d", status)
 	}
+	previewGatewayRestarted := time.Now()
 	gateway.Close()
 	gateway = newGateway()
 	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
@@ -1449,6 +1473,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND request_id=$1`, requestID
 	if previewRestart.err != nil || previewRestart.status != http.StatusOK {
 		t.Fatalf("RemoteWorker Preview Gateway restart status=%d body=%q err=%v", previewRestart.status, previewRestart.body, previewRestart.err)
 	}
+	previewGatewayRecovery = time.Since(previewGatewayRestarted)
 	previewGrantPage, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "remote-sandbox", "request-remote-preview-admin", 50, "")
 	if err != nil || len(previewGrantPage.Value.AccessGrants) != 1 || len(previewGrantPage.Value.AccessGrants[0].Spec.PreviewPorts) != 1 || previewGrantPage.Value.AccessGrants[0].Spec.PreviewPorts[0] != 3000 {
 		t.Fatalf("RemoteWorker Preview Admin metadata: value=%+v err=%v", previewGrantPage.Value, err)
@@ -1528,6 +1553,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err != nil || decodeErr != nil || len(firstContent) != 900000 || firstPage.Value.EOF {
 		t.Fatalf("read first RemoteWorker file page: value=%+v err=%v decode=%v", firstPage.Value, err, decodeErr)
 	}
+	fileGatewayRestarted := time.Now()
 	gateway.Close()
 	gateway = newGateway()
 	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
@@ -1541,6 +1567,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err != nil || decodeErr != nil || !secondPage.Value.EOF || string(append(firstContent, secondContent...)) != string(fileContent) {
 		t.Fatalf("read RemoteWorker file after Gateway restart: value=%+v err=%v decode=%v", secondPage.Value, err, decodeErr)
 	}
+	fileGatewayRecovery = time.Since(fileGatewayRestarted)
 	wrongClient, _ := api.NewHTTPClientWithClient(gateway.URL, "cag1_"+strings.Repeat("x", 43), gateway.Client())
 	if _, err := wrongClient.ListSandboxFiles(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-file-wrong-token", "."); clientStatus(err) != http.StatusForbidden {
 		t.Fatalf("wrong RemoteWorker file Grant status=%d err=%v", clientStatus(err), err)
@@ -1669,6 +1696,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 		t.Fatalf("observe RemoteWorker PTY: value=%+v err=%v", observedPTY.Value, err)
 	}
 
+	ptyGatewayRestarted := time.Now()
 	gateway.Close()
 	gateway = newGateway()
 	grantClient, _ = api.NewHTTPClientWithClient(gateway.URL, grant.Value.AccessToken, gateway.Client())
@@ -1681,6 +1709,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err != nil || persistedPTY.Value.OutputOffset != observedPTY.Value.OutputOffset {
 		t.Fatalf("RemoteWorker PTY Gateway restart: value=%+v previous=%+v err=%v", persistedPTY.Value, observedPTY.Value, err)
 	}
+	ptyGatewayRecovery = time.Since(ptyGatewayRestarted)
 	connection = dialPTY(t, gateway.URL, persistedPTY.Value.WebSocketPath, grant.Value.AccessToken, 0, true)
 	_, replayReceipt := settlePTY("request-pty-websocket")
 	replayedPTY := readPTYUntil(t, connection, "REMOTE_PTY_FIRST=/workspace")
@@ -1813,6 +1842,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if !exited || exitError.ExitStatus() != 7 || !strings.Contains(string(sshOutput), "REMOTE_SSH_DIR=/workspace") {
 		t.Fatalf("RemoteWorker SSH output=%q err=%v", sshOutput, sshErr)
 	}
+	sshGatewayRestarted := time.Now()
 	stopSSH()
 	sshAddress, stopSSH = startSSHGateway(t, ctx, gatewayStore, sandboxDirectory, hostSigner)
 	defer stopSSH()
@@ -1830,6 +1860,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err != nil || !strings.Contains(string(sshOutput), "REMOTE_SSH_RESTART=/workspace") || !strings.Contains(string(sshOutput), "REMOTE_SSH_ERR") {
 		t.Fatalf("RemoteWorker SSH after Gateway restart output=%q err=%v", sshOutput, err)
 	}
+	sshGatewayRecovery = time.Since(sshGatewayRestarted)
 	stopRemoteWorker()
 	sshGrantPage, err := admin.ListAdminSandboxAccessGrants(ctx, "tenant", "project", "remote-sandbox", "request-remote-ssh-admin", 50, "")
 	if err != nil || len(sshGrantPage.Value.AccessGrants) != 1 || sshGrantPage.Value.AccessGrants[0].Spec.PTYSessionCount != 3 {
@@ -1945,6 +1976,21 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"sshNonPTYBound": sshNonPTYBound, "sshContentTableHidden": sshContentTableHidden,
 		"longClaimRenewed": true, "renewWrongCommandStatus": 409, "reconnectOriginalCommandNotReplayed": true,
 		"reconnectAttempt": command.Attempt, "receiptReplay": true, "stopReceiptReplay": true,
+		"remoteWorkerFaultSoak": map[string]any{
+			"heartbeatCycles": heartbeatSoakCycles, "successfulHeartbeats": len(heartbeatLatency), "successfulAdminReads": len(heartbeatAdminLatency),
+			"heartbeatLatencyMilliseconds": foundationLatencySummary(heartbeatLatency), "adminReadLatencyMilliseconds": foundationLatencySummary(heartbeatAdminLatency),
+			"disconnectToSettlementMilliseconds":  durationMilliseconds(remoteWorkerFaultToSettlement),
+			"reconnectToLocalReceiptMilliseconds": durationMilliseconds(remoteWorkerReconnectToLocalReceipt),
+			"reconnectToSettlementMilliseconds":   durationMilliseconds(remoteWorkerReconnectToSettlement),
+			"rpo":                                 map[string]any{"operationRowsLost": 0, "duplicateRuntimes": 0, "operationId": command.OperationID, "attempt": command.Attempt},
+		},
+		"gatewayRestart": map[string]any{
+			"protocolRecoveries":  4,
+			"latencyMilliseconds": foundationLatencySummary([]time.Duration{previewGatewayRecovery, fileGatewayRecovery, ptyGatewayRecovery, sshGatewayRecovery}),
+			"previewMilliseconds": durationMilliseconds(previewGatewayRecovery), "filesMilliseconds": durationMilliseconds(fileGatewayRecovery),
+			"ptyMilliseconds": durationMilliseconds(ptyGatewayRecovery), "sshMilliseconds": durationMilliseconds(sshGatewayRecovery),
+			"rpo": map[string]any{"fileBytesLost": 0, "ptyOutputBytesLost": 0, "grantRowsLost": 0},
+		},
 		"rebuildReceiptReplay": true, "cleanupStopReceiptReplay": true,
 		"capabilityAdmissionCases": len(admissionCases), "incompatibleProfileHidden": true,
 		"incompatibleCommandBlocked": true, "capacityReservationRejected": true,
