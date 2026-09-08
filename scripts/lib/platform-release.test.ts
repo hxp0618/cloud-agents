@@ -83,6 +83,7 @@ describe("platform release", () => {
     ]);
     expect(PLATFORM_RELEASE_TARGETS).toEqual(["linux-amd64", "linux-arm64"]);
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-access-gateway");
+    expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-remote-worker");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agentsctl");
     expect(PLATFORM_RELEASE_GO_COMMANDS).not.toContain("cloud-agents-evidencefs-provision");
     expect(expectedArtifactIdentities()).toContainEqual({
@@ -91,6 +92,10 @@ describe("platform release", () => {
     });
     expect(expectedArtifactIdentities()).not.toContainEqual({
       name: "cloud-agents-worker",
+      target: "darwin-arm64",
+    });
+    expect(expectedArtifactIdentities()).not.toContainEqual({
+      name: "cloud-agents-remote-worker",
       target: "darwin-arm64",
     });
   });
@@ -144,6 +149,7 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
+      "scripts/bootstrap-platform-remote-worker.sh",
       "scripts/prepare-platform-docker-target.sh",
       "scripts/prepare-platform-kubernetes-target.sh",
       "scripts/test-platform-agent-interactions.sh",

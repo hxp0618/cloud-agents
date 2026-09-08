@@ -1,0 +1,121 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "937a176c164c8b758d03bdb1532c118423e34a3b",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.3.0-dev.94",
+    "candidateDirectory": "/tmp/cloud-agents-platform-000084-remote-worker-bootstrap-r5",
+    "sourceCommit": "937a176c164c8b758d03bdb1532c118423e34a3b",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000084.tar",
+      "sizeBytes": 1054208,
+      "sha256": "sha256:b5ed6b0232f6249cbd2a9f61ada2ca936ca02779ab07fc47ca0116e264d6bd0b"
+    },
+    "migrationArtifact": {
+      "filename": "cloud-agents-migrations-000084.tar",
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "remoteWorkerArtifacts": [
+      {
+        "target": "linux-amd64",
+        "sizeBytes": 14878569,
+        "sha256": "sha256:7861608a20372c64b0ac4cf4750f6dd7fff4bdacb2ca55c2095da4df34c32e47"
+      },
+      {
+        "target": "linux-arm64",
+        "sizeBytes": 13812020,
+        "sha256": "sha256:9cf25fee98acc152632de386e738810a1b60caeac49ee7c2970c66f9d48c7c66"
+      }
+    ],
+    "allChecksumsPassed": true,
+    "packagedBootstrapRunbookAndSmokeMatchedSource": true
+  },
+  "environment": {
+    "host": "Darwin 25.6.0 arm64",
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "imagePlatform": "linux/arm64",
+    "customerNodeImage": "debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+    "helmVersion": "v4.2.4+g3900f43",
+    "kubectlClientVersion": "v1.33.9",
+    "kubernetesServerVersion": "v1.35.6+orb1",
+    "kubernetesServerPlatform": "linux/arm64",
+    "postgresImage": "postgres:17.6-bookworm",
+    "browser": "Brave Browser 152.1.94.121",
+    "browserHarnessNode": "v22.23.1"
+  },
+  "result": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh <packaged>/scripts/test-platform-helm.sh /tmp/cloud-agents-platform-000084-remote-worker-bootstrap-r5",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-platform-000084-remote-worker-bootstrap-r5.log",
+      "sizeBytes": 397,
+      "sha256": "sha256:0d720887db6dce6357cbe70283bcd9e81250c4c2b46d52cfef337bc65aff4638",
+      "containsEnrollmentSecretOrPrivateKey": false
+    },
+    "schemaLedger": {
+      "count": 84,
+      "first": "000001",
+      "last": "000084"
+    },
+    "customerNode": {
+      "freshLinuxFilesystem": true,
+      "enrollmentCreateStatus": 201,
+      "secretClaimStatus": 200,
+      "certificateIssueStatus": 200,
+      "heartbeatStatus": 200,
+      "adminHealthState": "online",
+      "workerVersion": "0.3.0-dev.94",
+      "capabilities": ["exec"],
+      "publishedPorts": 0,
+      "installDirectoryMode": "0700",
+      "identityMode": "0600",
+      "controlPlaneCAMode": "0400",
+      "runScriptMode": "0500",
+      "enrollmentSecretRetainedAfterSuccess": false
+    },
+    "adminWeb": {
+      "sameOriginAdminRequests": 15,
+      "ordinaryUserAdminStatus": 403,
+      "locales": ["en-US"],
+      "themes": ["dark", "light"],
+      "viewportWidths": [1440, 390],
+      "tokensPersistedInBrowserStorage": false
+    },
+    "accessGateway": {
+      "httpsHealth": "passed",
+      "sshHostKeyFingerprintMatchedDeploymentSecret": true
+    },
+    "adminAndGatewayRestart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "checks": [
+    "the current dirty source produced one local 22-artifact candidate without publishing or pushing anything",
+    "all candidate checksums passed and the packaged bootstrap script, runbook and Helm smoke matched the working-tree source byte for byte",
+    "the release includes versioned cloud-agents-remote-worker binaries for linux-amd64 and linux-arm64",
+    "a real Admin API created an enrollment and a separately scoped bootstrap token claimed the one-time Secret",
+    "the packaged bootstrap generated the key and CSR on a fresh Debian filesystem, obtained a short-lived mTLS certificate and removed the enrollment Secret after success",
+    "the installed identity, CA, executable and launch script had modes 0600, 0400, 0500 and 0500 inside a mode-0700 directory",
+    "the fresh Linux RemoteWorker container published no ports, opened an outbound mTLS connection and repeatedly received successful heartbeat responses",
+    "the Admin API projected the real node as online with the exact release version without returning Secret bytes",
+    "the real browser rendered the enrolled node through the same-origin Admin API while an ordinary User token remained 403",
+    "the test removed only its exact-labelled customer node, Kubernetes namespace, PVC/PV and local image tags"
+  ],
+  "verification": {
+    "releaseTests": "scripts/lib/platform-release.test.ts passed 19 tests",
+    "format": "targeted oxfmt check passed",
+    "shellSyntax": "sh -n passed for bootstrap and Helm smoke scripts",
+    "diffCheck": "git diff --check passed"
+  },
+  "boundary": "This is a real packaged bootstrap against the real Helm Control Plane, PostgreSQL and Admin Web on OrbStack. The fresh customer node was an isolated Debian container with no published ports and only the exec capability; it proved enrollment, local CSR/key creation, mTLS identity, outbound heartbeat, Admin projection and exact cleanup. It was not an external NAT host, did not install a systemd unit, did not attach a node-local Docker/OpenSandbox runtime or execute a Sandbox workload, and did not test automated certificate rotation. It also did not publish images, configure public OIDC ingress, supply Provider credentials, run backup/restore or perform N/N-1 upgrade/rollback. Existing BASE-M3 evidence covers real RemoteWorker Sandbox lifecycle separately; this slice is not BASE-READY."
+}

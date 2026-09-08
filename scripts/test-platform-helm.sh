@@ -48,6 +48,8 @@ worker_image=cloud-agents/helm-smoke-worker:$image_tag
 migrate_image=cloud-agents/helm-smoke-migrate:$image_tag
 gateway_image=cloud-agents/helm-smoke-access-gateway:$image_tag
 admin_web_image=cloud-agents/helm-smoke-admin-web:$image_tag
+customer_node_image=debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+customer_node_container=cloud-agents-helm-smoke-node-$$
 admin_port=$((20000 + ($$ % 1000) * 10 + 1))
 control_plane_port=$((admin_port + 1))
 gateway_port=$((admin_port + 2))
@@ -68,6 +70,13 @@ cleanup() {
       wait "$pid" 2>/dev/null
     fi
   done
+  node_owner=$(docker inspect --format '{{ index .Config.Labels "cloud-agents.dev/test-run" }}' "$customer_node_container" 2>/dev/null)
+  if [ "$node_owner" = "$namespace" ]; then
+    docker rm -f "$customer_node_container" >/dev/null 2>&1 || status=1
+  elif [ -n "$node_owner" ]; then
+    echo "refusing to remove customer node without the exact test ownership label" >&2
+    status=1
+  fi
   if [ "$status" -ne 0 ]; then
     kubectl --context "$context" -n "$namespace" get pods,services,jobs,pvc -o wide >&2
     kubectl --context "$context" -n "$namespace" logs -l app.kubernetes.io/instance="$release_name" --all-containers --tail=100 >&2
@@ -91,12 +100,16 @@ cleanup() {
   for image in "$control_plane_image" "$worker_image" "$migrate_image" "$gateway_image" "$admin_web_image"; do
     docker image rm "$image" >/dev/null 2>&1 || status=1
   done
+  if [ -n "$(docker ps -aq --filter "label=cloud-agents.dev/test-run=$namespace")" ]; then
+    echo "test-owned customer node remains after cleanup" >&2
+    status=1
+  fi
   case "$smoke_directory" in
     "${TMPDIR:-/tmp}"/cloud-agents-helm-smoke.*) rm -rf -- "$smoke_directory" ;;
     *) echo "refusing to remove unexpected Helm smoke directory" >&2; status=1 ;;
   esac
   if [ "$status" -eq 0 ] && [ "$verified" = true ]; then
-    echo "Helm Admin Web smoke passed (context=$context, schema=$migration_summary, user-admin=403, gateway=TLS+SSH, restart=passed, cleanup=zero)"
+    echo "Helm Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-admin=403, customer-node=outbound, gateway=TLS+SSH, restart=passed, cleanup=zero)"
   fi
   exit "$status"
 }
@@ -143,7 +156,7 @@ issue_certificate() {
 }
 service_prefix=$release_name-cloud-agents
 issue_certificate control-plane "$service_prefix-control-plane" \
-  "DNS:$service_prefix-control-plane,DNS:$service_prefix-control-plane.$namespace.svc,IP:127.0.0.1" serverAuth
+  "DNS:$service_prefix-control-plane,DNS:$service_prefix-control-plane.$namespace.svc,DNS:host.docker.internal,IP:127.0.0.1" serverAuth
 issue_certificate worker "$service_prefix-worker" \
   "DNS:$service_prefix-worker,DNS:$service_prefix-worker.$namespace.svc,URI:spiffe://cloud-agents.helm/worker" serverAuth
 issue_certificate worker-client control-plane \
@@ -151,6 +164,10 @@ issue_certificate worker-client control-plane \
 issue_certificate access-gateway "$service_prefix-access-gateway" \
   "DNS:$service_prefix-access-gateway,DNS:$service_prefix-access-gateway.$namespace.svc,IP:127.0.0.1" serverAuth
 ssh-keygen -q -t ed25519 -N "" -f "$smoke_directory/gateway-ssh-host-key"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -sha256 -days 1 \
+  -subj /CN=cloud-agents-helm-remote-worker-ca \
+  -keyout "$smoke_directory/remote-worker-ca.key" -out "$smoke_directory/remote-worker-ca.crt" \
+  -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
 
 CLOUD_AGENTS_HELM_SMOKE_STATE=$smoke_directory node <<'NODE'
 const { createSign, generateKeyPairSync, randomBytes } = require("node:crypto");
@@ -187,6 +204,7 @@ writeFileSync(`${state}/admin-token`, `${issue("helm-smoke-admin", [
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
   "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update",
   "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list",
+  "remote-worker-enrollments.act", "remote-worker-enrollments.create", "remote-worker-enrollments.get", "remote-worker-enrollments.list",
   "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create",
   "targets.get", "targets.list", "workers.list", "snapshots.act", "snapshots.create", "snapshots.delete",
   "snapshots.get", "snapshots.list",
@@ -195,12 +213,15 @@ writeFileSync(`${state}/user-token`, `${issue("helm-smoke-user", [
   "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
   "projects.act", "projects.get", "sandboxes.update",
 ])}\n`);
+writeFileSync(`${state}/bootstrap-token`, `${issue("helm-smoke-bootstrap", [
+  "projects.act", "remote-worker-bootstrap.act",
+])}\n`);
 writeFileSync(`${state}/access-grant.key`, randomBytes(32));
 writeFileSync(`${state}/admission-token`, randomBytes(24).toString("hex"));
 writeFileSync(`${state}/database-password`, randomBytes(24).toString("hex"));
 writeFileSync(`${state}/tenant-helm-smoke.unavailable-provider.json`, '{"payload":{}}\n');
 NODE
-chmod 0600 "$smoke_directory"/admin-token "$smoke_directory"/user-token \
+chmod 0600 "$smoke_directory"/admin-token "$smoke_directory"/user-token "$smoke_directory"/bootstrap-token \
   "$smoke_directory"/access-grant.key "$smoke_directory"/admission-token \
   "$smoke_directory"/database-password "$smoke_directory"/gateway-ssh-host-key
 
@@ -266,6 +287,9 @@ kubectl --context "$context" -n "$namespace" create secret generic cloud-agents-
   --from-file=tls.key="$smoke_directory/access-gateway.key" >/dev/null
 kubectl --context "$context" -n "$namespace" create secret generic cloud-agents-access-gateway-ssh \
   --from-file=ssh-host-key="$smoke_directory/gateway-ssh-host-key" >/dev/null
+kubectl --context "$context" -n "$namespace" create secret generic cloud-agents-remote-worker-ca \
+  --from-file=ca.crt="$smoke_directory/remote-worker-ca.crt" \
+  --from-file=ca.key="$smoke_directory/remote-worker-ca.key" >/dev/null
 kubectl --context "$context" -n "$namespace" create secret generic cloud-agents-admission \
   --from-literal=lease-id=helm-smoke-lease --from-literal=generation=1 \
   --from-literal=token="$admission_token" >/dev/null
@@ -307,7 +331,9 @@ helm --kube-context "$context" install "$release_name" "$chart" --namespace "$na
   --set-string images.accessGateway.repository="$(image_repository "$gateway_image")" \
   --set-string images.accessGateway.tag="$image_tag" --set-string images.accessGateway.pullPolicy=Never \
   --set-string images.adminWeb.repository="$(image_repository "$admin_web_image")" \
-  --set-string images.adminWeb.tag="$image_tag" --set-string images.adminWeb.pullPolicy=Never >/dev/null
+  --set-string images.adminWeb.tag="$image_tag" --set-string images.adminWeb.pullPolicy=Never \
+  --set-string remoteWorker.certificateAuthoritySecretName=cloud-agents-remote-worker-ca \
+  --set-string remoteWorker.trustDomain=cloud-agents.helm >/dev/null
 
 for component in control-plane worker access-gateway admin-web; do
   kubectl --context "$context" -n "$namespace" rollout status \
@@ -335,7 +361,7 @@ if (gateway.securityContext.runAsUser !== 65532 || gateway.initContainers[0].arg
 kubectl --context "$context" -n "$namespace" port-forward \
   service/$release_name-cloud-agents-admin-web "$admin_port:4174" >"$smoke_directory/admin-forward.log" 2>&1 &
 admin_forward_pid=$!
-kubectl --context "$context" -n "$namespace" port-forward \
+kubectl --context "$context" -n "$namespace" port-forward --address=0.0.0.0 \
   service/$release_name-cloud-agents-control-plane "$control_plane_port:8080" >"$smoke_directory/control-plane-forward.log" 2>&1 &
 control_plane_forward_pid=$!
 kubectl --context "$context" -n "$namespace" port-forward \
@@ -360,6 +386,18 @@ project_output=$("$cli" --endpoint "https://127.0.0.1:$control_plane_port" \
   --display-name 'Helm Smoke Project' --organization-id organization-helm-smoke)
 project_id=$(printf '%s' "$project_output" | node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.metadata.uid)')
 case "$project_id" in project-*) ;; *) echo "Helm project id is invalid" >&2; exit 1 ;; esac
+attempt=0
+until [ "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
+  --header 'X-Request-ID: helm-smoke-admin-upstream-ready' \
+  "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/deployment-targets?pageSize=1")" = 200 ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    echo "Admin Web upstream did not become ready" >&2
+    exit 1
+  fi
+  sleep 1
+done
 curl --silent --show-error --fail-with-body --request PUT \
   --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
   --header 'Content-Type: application/json' --header 'X-Request-ID: helm-smoke-quota-create' \
@@ -374,6 +412,73 @@ test "$user_status" = 403 || {
   echo "ordinary User token crossed the Helm Admin API proxy" >&2
   exit 1
 }
+
+remote_worker_enrollment=remote-worker-helm-smoke
+curl --silent --show-error --fail-with-body --request POST \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
+  --header 'Content-Type: application/json' --header 'X-Request-ID: helm-smoke-remote-worker-create' \
+  --header 'Idempotency-Key: helm-smoke-remote-worker-create' \
+  --data "{\"enrollmentId\":\"$remote_worker_enrollment\",\"workerId\":\"worker-helm-smoke\",\"workerName\":\"worker-helm-smoke\",\"ttlSeconds\":900}" \
+  "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/remote-worker-enrollments" \
+  >"$smoke_directory/remote-worker-created.json"
+mkdir "$smoke_directory/customer-node"
+docker run --rm --platform "$image_platform" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$candidate_directory:/release:ro" \
+  --volume "$smoke_directory:/smoke:ro" \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  --env CLOUD_AGENTS_PLATFORM_RELEASE_DIR=/release \
+  --env CLOUD_AGENTS_REMOTE_WORKER_INSTALL_DIR=/node-output/install \
+  --env "CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL=https://host.docker.internal:$control_plane_port" \
+  --env CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE=/smoke/ca.crt \
+  --env CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE=/smoke/bootstrap-token \
+  --env CLOUD_AGENTS_REMOTE_WORKER_TENANT=tenant-helm-smoke \
+  --env "CLOUD_AGENTS_REMOTE_WORKER_PROJECT=$project_id" \
+  --env "CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT=$remote_worker_enrollment" \
+  --env CLOUD_AGENTS_REMOTE_WORKER_INCARNATION=incarnation-helm-smoke \
+  --env CLOUD_AGENTS_REMOTE_WORKER_CAPABILITIES=exec \
+  --env CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_CPU_MILLIS=1000 \
+  --env CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_MEMORY_BYTES=536870912 \
+  --env CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_DISK_BYTES=1073741824 \
+  "$customer_node_image" sh /smoke/scripts/bootstrap-platform-remote-worker.sh
+test ! -e "$smoke_directory/customer-node/install/enrollment-secret"
+test ! -e "$smoke_directory/customer-node/install/claim-response.json"
+docker run --rm --platform "$image_platform" \
+  --volume "$smoke_directory/customer-node:/node-output:ro" "$customer_node_image" sh -c \
+  'test "$(stat -c %a /node-output/install)" = 700 && test "$(stat -c %a /node-output/install/identity.pem)" = 600 && test "$(stat -c %a /node-output/install/control-plane-ca.pem)" = 400 && test "$(stat -c %a /node-output/install/run.sh)" = 500'
+docker run --detach --platform "$image_platform" --name "$customer_node_container" \
+  --label "cloud-agents.dev/test-run=$namespace" \
+  --add-host host.docker.internal:host-gateway \
+  --volume "$smoke_directory/customer-node:/node-output" \
+  "$customer_node_image" /node-output/install/run.sh >/dev/null
+docker inspect "$customer_node_container" | node -e '
+const fs = require("node:fs");
+const [container] = JSON.parse(fs.readFileSync(0, "utf8"));
+if (Object.keys(container.Config.ExposedPorts ?? {}).length !== 0) process.exit(1);
+if (Object.keys(container.HostConfig.PortBindings ?? {}).length !== 0) process.exit(1);
+'
+release_version=$(node -e 'const fs=require("node:fs");process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version)' "$candidate_directory/platform-release-manifest.json")
+attempt=0
+until curl --silent --show-error --fail-with-body \
+  --header "Authorization: Bearer $(sed -n '1p' "$smoke_directory/admin-token")" \
+  --header 'X-Request-ID: helm-smoke-remote-worker-get' \
+  "http://127.0.0.1:$admin_port/v1/admin/tenants/tenant-helm-smoke/projects/$project_id/remote-worker-enrollments/$remote_worker_enrollment" \
+  >"$smoke_directory/remote-worker-online.json" \
+  && node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const version = process.argv[2];
+if (value.spec?.state !== "enrolled" || value.spec.node?.healthState !== "online" || value.spec.node?.workerVersion !== version || value.spec.node?.os !== "linux") process.exit(1);
+if (JSON.stringify(value).includes("carw1_")) process.exit(1);
+' "$smoke_directory/remote-worker-online.json" "$release_version"; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    echo "fresh outbound customer node did not become online" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 kill "$admin_forward_pid" "$gateway_forward_pid" >/dev/null 2>&1 || true
 wait "$admin_forward_pid" "$gateway_forward_pid" 2>/dev/null || true

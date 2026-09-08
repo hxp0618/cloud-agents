@@ -100,6 +100,44 @@ credential directory. The file contains only `endpoint` and `apiKey`; it is
 mounted into the Control Plane and Gateway, never copied into an API body,
 browser, or release archive.
 
+For an outbound customer node, create one RemoteWorker enrollment in Admin Web
+and deliver a separately scoped bootstrap token file to the node operator. From
+the same extracted release directory, run the packaged bootstrap script into a
+new deployment-owned directory:
+
+```sh
+CLOUD_AGENTS_PLATFORM_RELEASE_DIR=/media/cloud-agents-release \
+CLOUD_AGENTS_REMOTE_WORKER_INSTALL_DIR=/srv/cloud-agents-remote-worker \
+CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL=https://control-plane.example \
+CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE=/secure/control-plane-ca.pem \
+CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE=/secure/bootstrap-token \
+CLOUD_AGENTS_REMOTE_WORKER_TENANT=tenant-a \
+CLOUD_AGENTS_REMOTE_WORKER_PROJECT=project-a \
+CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT=enrollment-a \
+CLOUD_AGENTS_REMOTE_WORKER_INCARNATION=node-a-1 \
+CLOUD_AGENTS_REMOTE_WORKER_CAPABILITIES=docker,exec,files,network-dns-nft,preview,pty,ssh,workspace-volume \
+CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_CPU_MILLIS=4000 \
+CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_MEMORY_BYTES=8589934592 \
+CLOUD_AGENTS_REMOTE_WORKER_CAPACITY_DISK_BYTES=42949672960 \
+CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ENDPOINT=https://127.0.0.1:2376 \
+CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY=/secure/remote-worker-runtime \
+CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF=opensandbox \
+  sh scripts/bootstrap-platform-remote-worker.sh
+```
+
+Verify the release `checksums.sha256` before bootstrap. The script selects the
+matching Linux binary from the release,
+claims the enrollment Secret through the bootstrap-only API, generates the key
+and CSR locally, and removes the Secret after certificate issuance. It refuses
+an existing install directory and never prints Secret or key bytes. If issuance
+fails after the one-time claim, the mode-`0600` Secret remains in the reported
+staging directory so the operator can retry rather than lose the enrollment.
+Run `/srv/cloud-agents-remote-worker/run.sh` under the node's existing service
+supervisor. The process opens no listener and connects only outbound; Docker and
+runtime credentials remain node-local. The current bootstrap installs the
+short-lived initial identity but does not yet automate certificate rotation, so
+it is not by itself BASE-READY evidence.
+
 For a Docker deployment target, point `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR` at
 a deployment-owned directory. Each registered target `credentialRef` selects a
 subdirectory containing Docker Engine `ca.pem`, `cert.pem`, `key.pem`, and this

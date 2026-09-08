@@ -21,6 +21,7 @@ export type PlatformReleaseTarget =
 export const PLATFORM_RELEASE_GO_COMMANDS = [
   "cloud-agents-access-gateway",
   "cloud-agents-control-plane",
+  "cloud-agents-remote-worker",
   "cloud-agentsctl",
   "cloud-agents-worker",
   "cloud-agents-product-migrate",
@@ -173,6 +174,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/docker/worker.Dockerfile",
     "scripts/prepare-platform-docker-target.sh",
     "scripts/prepare-platform-kubernetes-target.sh",
+    "scripts/bootstrap-platform-remote-worker.sh",
     "scripts/test-platform-compose-admin-web.mjs",
     "scripts/test-platform-helm.sh",
     "scripts/test-platform-agent-interactions.sh",
