@@ -46,8 +46,9 @@
 - BASE-M5 首个 Docker Workspace Snapshot 创建切片已接通：product-000082 只接受 stopped/observed stopped/writer-released 的来源 Sandbox，并复用单 writer authority 在复制期间阻止 rebuild；Controller 通过从不启动的 helper 仅挂载来源 Workspace 与目标 Snapshot volume，使用规范化路径、类型、模式、链接和文件字节摘要核验复制，Secret/credential volume 不进入归档。Admin API/生成 SDK/Admin Web 只展示来源 Workspace、容量、状态和 Operation，普通用户返回 403，物理 volume、内容摘要、端点和凭据不返回浏览器。PostgreSQL 17.6 与 OrbStack Docker 29.4.0 实测 pending 期间 rebuild=409、终态 fence 释放、Operation/Audit 成功且最终相关容器和卷为零；见 [Docker Workspace Snapshot 证据](evidence/base-m5-workspace-snapshot-docker-20260908-r7/evidence.json)。
 - BASE-M5 的 Docker 离线恢复切片已接通：Admin 只提交 Snapshot resourceVersion、新 Workspace/Sandbox 和已发布 RuntimeProfile；服务端绑定 Snapshot 内部物理卷/内容摘要与同一来源 Docker Target，沿用 Sandbox Operation、单 writer fence、幂等键和 Audit。Controller 只创建新的确定性 Workspace volume，通过从不启动的 helper 校验归档摘要后复制，已有非同内容目标拒绝覆盖；Admin/User API 均不返回 Snapshot 内部字段，普通用户调用 Admin restore 为 403。PostgreSQL 17.6 与 OrbStack Docker 29.4.0 实测 stale resourceVersion=409、幂等重放、真实 Sandbox 读取原 proof 文件、stop 释放 writer，并在验证后清零相关容器和卷；见 [Docker Workspace Snapshot Restore 证据](evidence/base-m5-workspace-restore-docker-20260908-r4/evidence.json)。
 - BASE-M5 Snapshot retention/清理切片已接通：product-000084 在数据库时钟上固定 1 秒至 365 天的 retention，手动删除与到期回收共用 snapshot resourceVersion fence、幂等 Operation、可续租 claim、Audit 与 tombstone；失败终态保留逻辑 Snapshot 并以新 resourceVersion/generation 重试，不向 Admin 返回物理卷、内容摘要、endpoint 或凭据。PostgreSQL 17.6 与 OrbStack Docker 29.4.0 实测普通用户 403、旧版本 409、失败/续租 fencing、手动及到期删除、terminal receipt 和零测试容器/Workspace/Snapshot 卷残留；真实 Chromium 145 通过 Vite/Control Plane Admin API 完成英/中、桌面/移动、深色主题和危险确认，浏览器仅访问 Admin origin、无 console/page error 且不持久化 Token。见 [Snapshot retention/清理证据](evidence/base-m5-workspace-snapshot-retention-docker-20260908-r19/evidence.json)。
-- 下一项：继续 BASE-M5，完成独立 Compose/Helm 安装、固定制品版本、N/N-1 升级/回滚和身份/证书轮换的可执行恢复闭环；本切片不声称 Kubernetes/SSH snapshot backend 或完整 BASE-ADMIN-V1 验收。
-- 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；历史完整 Admin/Provider 验收仍按原范围保持未通过。
+- BASE-M5 当前迁移头 Compose 安装切片已接通：发布脚本从 product migration 目录派生 `000084`，迁移/部署制品名及打包后的 migrate image 输入不再手写旧版本；合法累计 JSON catalog 的单成员上限由 1 MiB 调整为 2 MiB，总归档仍固定 64 MiB。Compose 以无网络 one-shot 将部署方 32–64 字节 access-grant key 复制为 uid `65532`、`0400` 的独立只读 secret volume，Control Plane 不直接挂载宿主 key。OrbStack Docker 29.4.0、Compose v5.1.2 与 PostgreSQL 17.6 实测 fresh migration、no-op 重跑、权限/策略/配额、Target/Profile/Environment/Worker 运维、重启、备份/恢复及最终零测试容器和卷；见 [当前迁移头 Compose 证据](evidence/base-m5-compose-current-migrations-20260908-r2/evidence.json)。该 smoke 未注入真实 Provider，Kubernetes 为 API fixture，且当前包仍不含 Access Gateway/Admin Web，不能声明独立交付完成。
+- 下一项：继续 BASE-M5，在 Compose 发布包中加入固定版本、非 root、只读根文件系统的 Access Gateway，并通过 Control Plane 授权的真实 Preview/PTY/SSH 路由验证；随后再补 Admin Web 部署、Helm、客户节点 bootstrap、N/N-1 升级/回滚和身份/证书轮换。
+- 本切片未改既有 Agent/Lease/User Web 请求行为；无关 `.gitignore`、`go.work.sum`、`docs/img.png` 保留。当前无需要用户立即补充的凭据/权限；真实 Provider、客户节点和完整 BASE-ADMIN-V1 验收仍保持未通过。
 
 ### 已完成的文档整合状态（历史，不重复执行）
 
@@ -72,7 +73,7 @@
 | BASE-M2    | VERIFIED    | bounded Exec、PTY/Files/private Preview/short-lived SSH、Grant/Gateway、实际网络隔离及对应 Admin 管理已有真实本地 Docker/PostgreSQL 证据 |
 | BASE-M3    | VERIFIED    | outbound enrollment/mTLS/轮换吊销、健康与离线拒绝、Drain/Resume、Sandbox lifecycle/Exec/Files/PTY/Preview/SSH、长时续租、断线重连与新 attempt 对账均有真实 Docker/PostgreSQL 证据 |
 | BASE-M4    | VERIFIED    | direct Kubernetes、RemoteWorker 能力/容量/多 Node 调度及 shared-untrusted gVisor 强隔离均有真实执行和对应 Admin 证据 |
-| BASE-M5    | IN PROGRESS | Docker 离线 Snapshot 创建与恢复到新 Workspace/Sandbox 已真实验证；保留策略、独立交付、升级/回滚、usage/运维和完整 Admin 视觉/双语/权限验收待完成 |
+| BASE-M5    | IN PROGRESS | Docker Snapshot 创建/恢复/保留清理及当前迁移头 Compose 安装/备份恢复已真实验证；独立 Gateway/Admin/Helm 交付、升级/回滚、usage/运维和完整 Admin 验收待完成 |
 | BASE-READY | NOT STARTED | [05](05-gates-and-acceptance.md) 十二项全部满足，包括完整 Admin Web；不以 CLI-only、截图或旧 Agent E2E 替代 |
 | APP-M1     | PAUSED      | 第一阶段完成后推进用户对话；现有 Agent 路径保留兼容并可作为回归负载                                         |
 

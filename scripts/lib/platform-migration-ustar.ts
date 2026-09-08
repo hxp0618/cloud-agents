@@ -85,7 +85,7 @@ export function readDeterministicUstar(bytes: Uint8Array): ReadonlyArray<UstarEn
     const size = readOctal(header, 124, 12);
     if (
       (path.endsWith(".sql") && size > 16 * 1024 * 1024) ||
-      (path.endsWith(".json") && size > 1024 * 1024)
+      (path.endsWith(".json") && size > 2 * 1024 * 1024)
     ) {
       throw new MigrationValidationError("USTAR_MEMBER_SIZE", path);
     }

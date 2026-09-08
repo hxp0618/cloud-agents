@@ -90,7 +90,7 @@ cleanup() {
   fi
   if [ -f "$environment_file" ]; then
     if [ "$status" -ne 0 ]; then
-      compose logs --no-color --tail=200 control-plane worker migrate postgres >&2 || true
+      compose logs --no-color --tail=200 access-grant-key control-plane worker migrate postgres >&2 || true
     fi
     compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
@@ -231,6 +231,7 @@ const auth = {
   keys: [{ jwk, enabled: true, notBefore: now - 60, notAfter: now + 3600 }],
 };
 writeFileSync(`${state}/auth.json`, `${JSON.stringify(auth)}\n`);
+writeFileSync(`${state}/access-grant.key`, randomBytes(32));
 const baseClaims = {
   iss: issuer, sub: "user-compose-smoke", aud: audience, exp: now + 1800, iat: now - 10,
   client_id: "compose-smoke-client",
@@ -333,6 +334,7 @@ const values = [
   "CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID=audit-compose-role-binding",
   "CLOUD_AGENTS_BOOTSTRAP_REASON_CODE=compose-smoke",
   `CLOUD_AGENTS_AUTH_CONFIG=${state}/auth.json`,
+  `CLOUD_AGENTS_ACCESS_GRANT_KEY_FILE=${state}/access-grant.key`,
   `CLOUD_AGENTS_RUNTIME_ENV_FILE=${state}/runtime.env`,
   `CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR=${state}/provider-credentials`,
   `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR=${state}/docker-target-credentials`,
@@ -354,6 +356,7 @@ const values = [
 ];
 writeFileSync(`${state}/compose.env`, `${values.join("\n")}\n`);
 chmodSync(`${state}/auth.json`, 0o444);
+chmodSync(`${state}/access-grant.key`, 0o600);
 chmodSync(`${state}/runtime.env`, 0o444);
 chmodSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
 chmodSync(`${state}/target-provider-credentials/tenant-compose-smoke.unavailable-provider.json`, 0o444);
@@ -870,7 +873,7 @@ if [ "$user_admin_storage_status" -ne 403 ] || \
 fi
 network_policy_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-compose"
 network_policy_file="$smoke_directory/network-policy.json"
-network_policy_body='{"expectedResourceVersion":"0","policyName":"network-compose","userSummary":"Public internet access","defaultEgress":"public","ingressEnabled":false,"previewEnabled":false}'
+network_policy_body='{"expectedResourceVersion":"0","policyName":"network-compose","userSummary":"Public internet access","defaultEgress":"public","allowedEgress":[],"ingressEnabled":false,"previewEnabled":false}'
 control_plane_api "$smoke_directory/admin-curl.conf" PUT "$network_policy_path" \
   compose-smoke-network-policy --header "Idempotency-Key: compose-smoke-network-policy" \
   --data "$network_policy_body" >"$network_policy_file"
@@ -971,7 +974,7 @@ process.stdout.write(value.metadata.resourceVersion);
 NODE
 )
 # Non-default policies can be saved but must never deploy with silently ignored restrictions.
-network_deny_body='{"expectedResourceVersion":"0","policyName":"network-deny","userSummary":"No internet access","defaultEgress":"deny","ingressEnabled":false,"previewEnabled":false}'
+network_deny_body='{"expectedResourceVersion":"0","policyName":"network-deny","userSummary":"No internet access","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":false}'
 control_plane_api "$smoke_directory/admin-curl.conf" PUT \
   "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-deny" \
   compose-smoke-network-deny --header "Idempotency-Key: compose-smoke-network-deny" \
@@ -1065,7 +1068,7 @@ if [ "$storage_policy_referenced_status" -ne 409 ] || \
 fi
 
 network_policy_referenced_file="$smoke_directory/network-policy-referenced.json"
-network_policy_referenced_body='{"expectedResourceVersion":"1","policyName":"network-compose","userSummary":"Restricted access","defaultEgress":"restricted","ingressEnabled":false,"previewEnabled":false}'
+network_policy_referenced_body='{"expectedResourceVersion":"1","policyName":"network-compose","userSummary":"Restricted access","defaultEgress":"restricted","allowedEgress":["example.com"],"ingressEnabled":false,"previewEnabled":false}'
 network_policy_referenced_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-curl.conf" --request PUT \
   --header "X-Request-ID: compose-smoke-network-policy-referenced" \

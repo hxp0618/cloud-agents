@@ -1,0 +1,60 @@
+{
+  "run": "cloud-agents-compose-smoke-66491",
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "b4f2c85ca98d6137b48fe025c7f66a08b6b80a53",
+    "dirty": true,
+    "migrationHead": "000084"
+  },
+  "release": {
+    "version": "0.3.0-dev.84",
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000084.tar",
+      "sizeBytes": 175104,
+      "sha256": "sha256:2c7f7e17ce6ca5ad73166116190c5bbdd1fd75011c4f14591942e529b0208035"
+    },
+    "migrationArtifact": {
+      "filename": "cloud-agents-migrations-000084.tar",
+      "sizeBytes": 62147072,
+      "sha256": "sha256:f2b7c7b7637e5ed26bf8a3f0ae662ba2875185d64f367b4494acef3679b1d945"
+    },
+    "sourceDockerfilePlaceholdersResolved": true
+  },
+  "backend": {
+    "dockerContext": "orbstack",
+    "dockerClientVersion": "29.4.0",
+    "dockerServerVersion": "29.4.0",
+    "dockerComposeVersion": "v5.1.2",
+    "postgresImage": "postgres:17.6-bookworm",
+    "imagePlatform": "linux/arm64",
+    "cliTarget": "darwin-arm64"
+  },
+  "result": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-platform-000084-compose-r2",
+    "status": "passed",
+    "projectId": "project-2fde604e9ef099aad6125e5a2181196c",
+    "profile": "compose-docker-profile:v1",
+    "environmentId": "environment-0cc46b1599b67da3345de72ee27f3312",
+    "finalDockerWorkers": 0,
+    "testOwnedContainers": 0,
+    "testOwnedVolumes": 0
+  },
+  "checks": [
+    "packaged migration and deployment artifact names follow the current six-digit product migration head instead of a hand-maintained historical value",
+    "fresh PostgreSQL bootstrap applied schema head 000084 and the normal Compose startup reran migrations as a no-op",
+    "the no-network access-grant-key one-shot copied a deployment-owned key into a read-only Control Plane secret volume with uid 65532 and mode 0400",
+    "Control Plane and Worker images built from the local candidate and passed readiness",
+    "ordinary User credentials received 403 from Worker Release, Storage Policy, Network Policy, Profile, Lease Quota, Worker and scheduling Admin APIs",
+    "Docker and synthetic Kubernetes Target registration, probe and cleanup paths completed through the Control Plane API",
+    "Worker releases, Storage and Network Policies, project Lease quota and a published Profile persisted with resource-version, idempotency and Audit checks",
+    "unsupported Network Policy enforcement failed closed during Profile publication",
+    "a Profile-only User request resolved a Docker Target, fixed Worker release and credential references server-side",
+    "failed Docker Worker allocation recovered without duplicate Workers, and quota rejection preserved the active Worker count",
+    "Target drain and resume plus Worker upgrade and rollback completed with impact preview, Operations, Audit and fixed image digests",
+    "Codex and Claude Code Session and Turn records persisted; the intentionally unavailable Provider ended execution with runtime_open_failed",
+    "Control Plane restart preserved Environment and failed Execution authority",
+    "backup, empty-database restore and repeated-restore fail-closed checks passed",
+    "Environment termination and Target cleanup removed the test Worker; final cleanup removed all test-owned Compose containers and volumes"
+  ],
+  "boundary": "Local OrbStack Docker and disposable PostgreSQL Compose deployment only. The Kubernetes Target uses a synthetic API fixture, no real Provider credentials were supplied, and Access Gateway, Admin Web deployment, Helm, customer-node bootstrap, N/N-1 package upgrade, identity or certificate rotation and full BASE-READY remain unverified."
+}

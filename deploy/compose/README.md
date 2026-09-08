@@ -2,7 +2,7 @@
 
 This runbook describes the existing Agent/Lease deployment and its actual bootstrap commands. The [foundation-first delivery plan](../../docs/plan/cloud-agents-platform/04-extraction-and-migration.md) additionally requires a no-Agent installation with independent Workspace persistence, Sandbox access and customer-node support; that target is not implemented by merely following this runbook. Do not silently change old Lease cleanup/volume semantics or imply that a successful stack startup proves BASE-READY. Deployment and production database authorization remain separate from editing this document.
 
-Extract `cloud-agents-deployment-000049.tar` into a directory and copy
+Extract the single `cloud-agents-deployment-<schema-head>.tar` from the release into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
@@ -63,6 +63,13 @@ runtime env file are ignored. `baseURL` is accepted as an alias for `baseUrl`,
 and an optional credential `model` is used only when the execution request has
 no explicit model. Claude credentials may use the same `/v1` endpoint form as
 Codex; the Claude provider removes that suffix before the SDK adds its API path.
+
+Create `CLOUD_AGENTS_ACCESS_GRANT_KEY_FILE` as 32–64 random bytes with mode
+`0600`. The no-network `access-grant-key` one-shot copies it into a dedicated
+Compose volume as uid `65532` with mode `0400`; the Control Plane mounts only
+that volume read-only. To rotate it, replace the deployment-owned source file,
+then recreate `access-grant-key` and `control-plane` together. Existing grants
+expire normally and new grants use the replacement key.
 
 The Worker accepts at most `CLOUD_AGENTS_RUNTIME_MAX_SESSIONS` concurrent Runtime
 sessions (default `4`). Additional session opens fail immediately with

@@ -26,8 +26,16 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
-export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000054.tar";
-export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000054.tar";
+export const PLATFORM_RELEASE_MIGRATION_HEAD = readdirSync(
+  resolve(import.meta.dirname, "../../services/control-plane/migrations/product"),
+  { withFileTypes: true },
+)
+  .filter((entry) => entry.isDirectory() && /^\d{6}$/u.test(entry.name))
+  .map((entry) => entry.name)
+  .sort()
+  .at(-1)!;
+export const PLATFORM_RELEASE_MIGRATIONS = `cloud-agents-migrations-${PLATFORM_RELEASE_MIGRATION_HEAD}.tar`;
+export const PLATFORM_RELEASE_DEPLOYMENT = `cloud-agents-deployment-${PLATFORM_RELEASE_MIGRATION_HEAD}.tar`;
 export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
 export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
 export const PLATFORM_RELEASE_TYPESCRIPT_SDK = "cloud-agents-typescript-sdk.tgz";
@@ -116,7 +124,7 @@ export function platformReleaseArtifact(
 }
 
 export function buildPlatformMigrationPackage(root: string): Uint8Array {
-  const manifestPath = "services/control-plane/migrations/product/000054/manifest.json";
+  const manifestPath = `services/control-plane/migrations/product/${PLATFORM_RELEASE_MIGRATION_HEAD}/manifest.json`;
   const manifest = JSON.parse(readFileSync(resolve(root, manifestPath), "utf8")) as {
     readonly schema_bundle: {
       readonly migrations: ReadonlyArray<{
@@ -128,7 +136,7 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   const paths = new Set<string>([
     "LICENSE",
     manifestPath,
-    "services/control-plane/migrations/product/000054/schema-bundle.json",
+    `services/control-plane/migrations/product/${PLATFORM_RELEASE_MIGRATION_HEAD}/schema-bundle.json`,
   ]);
   for (const migration of manifest.schema_bundle.migrations) {
     paths.add(migration.sql_artifact.path);
@@ -165,7 +173,17 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
       path: path.startsWith("services/")
         ? path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/")
         : path,
-      data: readFileSync(resolve(root, path)),
+      data:
+        path === "deploy/docker/migrate.Dockerfile"
+          ? Buffer.from(
+              readFileSync(resolve(root, path), "utf8")
+                .replaceAll("@PLATFORM_MIGRATION_ARCHIVE@", PLATFORM_RELEASE_MIGRATIONS)
+                .replaceAll(
+                  "@PLATFORM_MIGRATION_MANIFEST@",
+                  `services/control-plane/migrations/product/${PLATFORM_RELEASE_MIGRATION_HEAD}/manifest.json`,
+                ),
+            )
+          : readFileSync(resolve(root, path)),
     })),
   );
 }
