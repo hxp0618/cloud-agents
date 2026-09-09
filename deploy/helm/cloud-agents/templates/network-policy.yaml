@@ -1,4 +1,5 @@
 {{- if .Values.networkPolicy.enabled }}
+{{- if .Values.worker.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,6 +22,7 @@ spec:
         - protocol: TCP
           port: {{ .Values.worker.service.port }}
 ---
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

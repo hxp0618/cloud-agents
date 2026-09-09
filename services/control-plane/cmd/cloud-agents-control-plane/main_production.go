@@ -206,39 +206,44 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("RBAC mutation store is unavailable")
 	}
-	workerClientCertificate, err := tls.LoadX509KeyPair(config.workerClientCert, config.workerClientKey)
-	if err != nil {
-		return errors.New("worker client certificate is invalid")
-	}
-	workerCAs, err := readProductionCAPool(config.workerCA)
-	if err != nil {
-		return errors.New("worker CA configuration is invalid")
-	}
+	var workerClientCertificate tls.Certificate
+	var workerCAs *x509.CertPool
 	var workerSupervisor *workerclient.Supervisor
-	healthContext, cancelHealth := context.WithCancel(ctx)
-	healthDone := make(chan struct{})
-	go func() {
-		defer close(healthDone)
-		workerhealth.Run(healthContext, pool, workerClientCertificate, workerCAs, logger)
-	}()
-	defer func() { cancelHealth(); <-healthDone }()
-	if config.workerEndpoint != "" {
-		workerIdentity, identityErr := productionWorkerIdentity(config.workerSPIFFE)
-		if identityErr != nil {
-			return errors.New("worker identity configuration is invalid")
-		}
-		workerSupervisor, err = workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
+	var runtimeCoordinator *internalmanagedagent.DurableRuntimeExecutionCoordinator
+	if config.workerClientCert != "" {
+		workerClientCertificate, err = tls.LoadX509KeyPair(config.workerClientCert, config.workerClientKey)
 		if err != nil {
-			return errors.New("worker transport configuration is invalid")
+			return errors.New("worker client certificate is invalid")
 		}
-	}
-	runtimeCoordinator, err := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
-		Store: coordinationService, Supervisor: workerSupervisor, WorkerClientCertificate: workerClientCertificate, WorkerRootCAs: workerCAs, Clock: time.Now,
-		FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
-		WorkspaceDirectory: config.workspaceDirectory, MaxDuration: productionRuntimeMaxDuration,
-	})
-	if err != nil {
-		return errors.New("managed agent Runtime coordinator is unavailable")
+		workerCAs, err = readProductionCAPool(config.workerCA)
+		if err != nil {
+			return errors.New("worker CA configuration is invalid")
+		}
+		healthContext, cancelHealth := context.WithCancel(ctx)
+		healthDone := make(chan struct{})
+		go func() {
+			defer close(healthDone)
+			workerhealth.Run(healthContext, pool, workerClientCertificate, workerCAs, logger)
+		}()
+		defer func() { cancelHealth(); <-healthDone }()
+		if config.workerEndpoint != "" {
+			workerIdentity, identityErr := productionWorkerIdentity(config.workerSPIFFE)
+			if identityErr != nil {
+				return errors.New("worker identity configuration is invalid")
+			}
+			workerSupervisor, err = workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
+			if err != nil {
+				return errors.New("worker transport configuration is invalid")
+			}
+		}
+		runtimeCoordinator, err = internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
+			Store: coordinationService, Supervisor: workerSupervisor, WorkerClientCertificate: workerClientCertificate, WorkerRootCAs: workerCAs, Clock: time.Now,
+			FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
+			WorkspaceDirectory: config.workspaceDirectory, MaxDuration: productionRuntimeMaxDuration,
+		})
+		if err != nil {
+			return errors.New("managed agent Runtime coordinator is unavailable")
+		}
 	}
 	projectCreator, err := server.NewDurableProjectCreateServer(coordinationService)
 	if err != nil {
@@ -398,17 +403,21 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed agent turn HTTP server is unavailable")
 	}
-	executionServer, err := server.NewManagedAgentExecutionHTTPServer(userVerifier, coordinationService, runtimeCoordinator)
-	if err != nil {
-		return errors.New("managed agent execution HTTP server is unavailable")
-	}
-	leaseServer, err := server.NewManagedHostEnvironmentLeaseHTTPServer(userVerifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
-	if err != nil {
-		return errors.New("managed host environment lease HTTP server is unavailable")
-	}
-	userEnvironmentServer, err := server.NewUserEnvironmentHTTPServer(userVerifier, coordinationService, leaseServer)
-	if err != nil {
-		return errors.New("user environment HTTP server is unavailable")
+	var executionServer *server.ManagedAgentExecutionHTTPServer
+	var userEnvironmentServer *server.UserEnvironmentHTTPServer
+	if runtimeCoordinator != nil {
+		executionServer, err = server.NewManagedAgentExecutionHTTPServer(userVerifier, coordinationService, runtimeCoordinator)
+		if err != nil {
+			return errors.New("managed agent execution HTTP server is unavailable")
+		}
+		leaseServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(userVerifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
+		if leaseErr != nil {
+			return errors.New("managed host environment lease HTTP server is unavailable")
+		}
+		userEnvironmentServer, err = server.NewUserEnvironmentHTTPServer(userVerifier, coordinationService, leaseServer)
+		if err != nil {
+			return errors.New("user environment HTTP server is unavailable")
+		}
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(adminVerifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -469,6 +478,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return
 		}
 		if server.HandlesUserEnvironmentPath(request.URL.Path) {
+			if userEnvironmentServer == nil {
+				http.NotFound(writer, request)
+				return
+			}
 			userEnvironmentServer.ServeHTTP(writer, request)
 			return
 		}
@@ -481,6 +494,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return
 		}
 		if server.HandlesManagedAgentExecutionPath(request.URL.Path) {
+			if executionServer == nil {
+				http.NotFound(writer, request)
+				return
+			}
 			executionServer.ServeHTTP(writer, request)
 			return
 		}
@@ -647,14 +664,16 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	if getenv != nil {
 		admissionToken = getenv(productionAdmissionTokenEnvironment)
 	}
-	required := []string{*database, *authPath, *tlsCert, *tlsKey, *workerClientCert, *workerClientKey, *workerCA, *workspaceDirectory, *accessGrantKey, admissionToken}
+	required := []string{*database, *authPath, *tlsCert, *tlsKey, *accessGrantKey}
 	for _, value := range required {
 		if value == "" || strings.TrimSpace(value) != value {
-			return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
+			return productionConfig{}, errors.New("database, authentication, TLS, and access Grant configuration are required")
 		}
 	}
 	staticWorker := *workerEndpoint != "" || *workerSPIFFE != "" || *admissionLeaseID != "" || *admissionGeneration != 0
-	if (staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0)) || len(admissionToken) > 1<<20 {
+	managedAgentRuntime := staticWorker || *workerClientCert != "" || *workerClientKey != "" || *workerCA != "" || *workspaceDirectory != "" || admissionToken != ""
+	if managedAgentRuntime && (*workerClientCert == "" || *workerClientKey == "" || *workerCA == "" || *workspaceDirectory == "" || admissionToken == "") ||
+		staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0) || len(admissionToken) > 1<<20 {
 		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
 	}
 	remoteWorkerAuthorityConfigured := *remoteWorkerCACert != "" || *remoteWorkerCAKey != "" || *remoteWorkerTrustDomain != ""

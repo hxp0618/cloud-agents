@@ -130,6 +130,7 @@ migration_summary=
 upgrade_summary=not-requested
 identity_summary=not-tested
 service_identity_summary=not-tested
+no_agent_summary=not-tested
 
 cleanup() {
   status=$?
@@ -193,7 +194,7 @@ cleanup() {
     *) echo "refusing to remove unexpected Helm smoke directory" >&2; status=1 ;;
   esac
   if [ "$status" -eq 0 ] && [ "$verified" = true ]; then
-    echo "Helm User/Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-web=same-origin, user-admin=403, customer-node=outbound, identity=$identity_summary, service-identity=$service_identity_summary, gateway=TLS+SSH, upgrade=$upgrade_summary, restart=passed, cleanup=zero)"
+    echo "Helm User/Admin Web/RemoteWorker smoke passed (context=$context, schema=$migration_summary, user-web=same-origin, user-admin=403, customer-node=outbound, identity=$identity_summary, service-identity=$service_identity_summary, gateway=TLS+SSH, upgrade=$upgrade_summary, no-agent=$no_agent_summary, restart=passed, cleanup=zero)"
   fi
   exit "$status"
 }
@@ -481,7 +482,7 @@ helm_apply() (
   target_chart=$2
   target_tag=$3
   set -- --kube-context "$context" "$action" "$release_name" "$target_chart" --namespace "$namespace" \
-    --wait --timeout 5m --set-string runtime.workspace.size=1Gi \
+    --wait --timeout 5m --set-string runtime.workspace.size=1Gi --set worker.enabled=true \
     --set-string controlPlane.workerSPIFFEID=spiffe://cloud-agents.helm/worker \
     --set-string images.controlPlane.repository="$(image_repository "$control_plane_image")" \
     --set-string images.controlPlane.tag="$target_tag" --set-string images.controlPlane.pullPolicy=Never \
@@ -1058,4 +1059,40 @@ test "$migration_summary" = "$expected_migration_summary" || {
   echo "Helm migration ledger is not at packaged product schema head $candidate_schema_head" >&2
   exit 1
 }
+stop_forwards
+helm --kube-context "$context" upgrade "$release_name" "$chart" --namespace "$namespace" \
+  --wait --timeout 5m --reuse-values --set worker.enabled=false >/dev/null
+for component in control-plane access-gateway admin-web user-web; do
+  kubectl --context "$context" -n "$namespace" rollout status \
+    deployment/$release_name-cloud-agents-$component --timeout=180s >/dev/null
+done
+for resource in deployment service; do
+  if kubectl --context "$context" -n "$namespace" get \
+    "$resource/$release_name-cloud-agents-worker" >/dev/null 2>&1; then
+    echo "no-Agent Helm release retained the Managed Agent Worker $resource" >&2
+    exit 1
+  fi
+done
+if kubectl --context "$context" -n "$namespace" get \
+  "pvc/$release_name-cloud-agents-workspace" >/dev/null 2>&1; then
+  echo "no-Agent Helm release retained the Managed Agent workspace" >&2
+  exit 1
+fi
+kubectl --context "$context" -n "$namespace" get \
+  "deployment/$release_name-cloud-agents-control-plane" -o json | node -e '
+const fs = require("node:fs");
+const deployment = JSON.parse(fs.readFileSync(0, "utf8"));
+const text = JSON.stringify(deployment.spec.template.spec);
+if (/CLOUD_AGENTS_PLATFORM_(WORKER|ADMISSION)|provider-credentials|\/workspace/.test(text)) process.exit(1);
+'
+kubectl --context "$context" -n "$namespace" delete secret \
+  cloud-agents-worker-tls cloud-agents-worker-client-tls cloud-agents-admission \
+  cloud-agents-runtime-env cloud-agents-provider-credentials >/dev/null
+kubectl --context "$context" -n "$namespace" rollout restart \
+  deployment/$release_name-cloud-agents-control-plane >/dev/null
+kubectl --context "$context" -n "$namespace" rollout status \
+  deployment/$release_name-cloud-agents-control-plane --timeout=180s >/dev/null
+start_forwards
+verify_project "$candidate_directory/cloud-agentsctl-$cli_target" helm-smoke-project-no-agent
+no_agent_summary=worker+provider-secrets-absent
 verified=true

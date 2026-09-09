@@ -160,6 +160,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/compose/.env.example",
     "deploy/compose/README.md",
     "deploy/compose/cloud-agents-up.sh",
+    "deploy/compose/docker-compose.managed-agent.yml",
     "deploy/compose/docker-compose.yml",
     "deploy/compose/provision.sql",
     "deploy/compose/runtime.env.example",

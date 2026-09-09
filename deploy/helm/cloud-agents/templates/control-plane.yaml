@@ -82,6 +82,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: {{ .Values.database.runtimeURLKey }}
+            {{- if .Values.worker.enabled }}
             - name: CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT
               value: https://{{ include "cloud-agents.fullname" . }}-worker:{{ .Values.worker.service.port }}
             - name: CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID
@@ -92,6 +93,7 @@ spec:
               value: /run/cloud-agents/worker-client/tls.key
             - name: CLOUD_AGENTS_PLATFORM_WORKER_CA
               value: /run/cloud-agents/worker-ca/ca.crt
+            {{- end }}
             {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
             - name: CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY
               value: /run/cloud-agents/kubernetes-target-credentials
@@ -108,10 +110,11 @@ spec:
             - name: CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN
               value: {{ .Values.remoteWorker.trustDomain | quote }}
             {{- end }}
-            - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
-              value: /workspace
             - name: CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE
               value: /run/cloud-agents/secrets/access-grant.key
+            {{- if .Values.worker.enabled }}
+            - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
+              value: /workspace
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
               valueFrom:
                 secretKeyRef:
@@ -127,6 +130,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.admission.secretName }}
                   key: {{ .Values.admission.tokenKey }}
+            {{- end }}
           ports:
             - name: https
               containerPort: 8080
@@ -154,12 +158,14 @@ spec:
             - name: control-plane-tls
               mountPath: /run/cloud-agents/control-plane-tls
               readOnly: true
+            {{- if .Values.worker.enabled }}
             - name: worker-client
               mountPath: /run/cloud-agents/worker-client
               readOnly: true
             - name: worker-ca
               mountPath: /run/cloud-agents/worker-ca
               readOnly: true
+            {{- end }}
             - name: access-grant
               mountPath: /run/cloud-agents/secrets
               readOnly: true
@@ -188,6 +194,7 @@ spec:
         - name: control-plane-tls
           secret:
             secretName: {{ .Values.tls.controlPlaneSecretName }}
+        {{- if .Values.worker.enabled }}
         - name: worker-client
           secret:
             secretName: {{ .Values.tls.workerClientSecretName }}
@@ -197,6 +204,7 @@ spec:
             items:
               - key: ca.crt
                 path: ca.crt
+        {{- end }}
         - name: access-grant-source
           secret:
             secretName: {{ .Values.accessGrant.secretName }}

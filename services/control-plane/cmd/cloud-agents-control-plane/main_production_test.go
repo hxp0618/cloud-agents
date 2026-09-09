@@ -82,6 +82,36 @@ func TestParseProductionConfigRejectsPartialTLS(t *testing.T) {
 	}
 }
 
+func TestParseProductionConfigAllowsNoAgentRuntime(t *testing.T) {
+	values := map[string]string{
+		productionDatabaseEnvironment:       "postgres://runtime@db/cloud_agents",
+		productionAuthConfigEnvironment:     "/etc/cloud-agents/auth.json",
+		productionAccessGrantKeyEnvironment: "/etc/cloud-agents/access-grant.key",
+	}
+	config, err := parseProductionConfig([]string{"--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}, func(name string) string { return values[name] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.workerEndpoint != "" || config.workerClientCert != "" || config.workspaceDirectory != "" || len(config.admissionToken) != 0 {
+		t.Fatalf("unexpected Managed Agent Runtime configuration: %#v", config)
+	}
+	for name, value := range map[string]string{
+		productionWorkerClientCertEnvironment: "/etc/cloud-agents/worker-client.crt",
+		productionWorkspaceEnvironment:        "/workspace",
+		productionAdmissionTokenEnvironment:   "runtime-token",
+	} {
+		partial := func(candidate string) string {
+			if candidate == name {
+				return value
+			}
+			return values[candidate]
+		}
+		if _, err := parseProductionConfig([]string{"--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}, partial); err == nil {
+			t.Fatalf("accepted partial Managed Agent Runtime field %s", name)
+		}
+	}
+}
+
 func TestParseProductionConfigAllowsEnvironmentRoutedWorkers(t *testing.T) {
 	values := map[string]string{
 		productionDatabaseEnvironment:         "postgres://runtime@db/cloud_agents",

@@ -127,14 +127,15 @@ describe("platform release", () => {
     const entries = readDeterministicUstar(new Uint8Array(archive));
     expect(entries.map(({ path }) => path)).toEqual([
       "LICENSE",
+      "deploy/admin-web/dist/assets/index-BHDZ5Pig.js",
       "deploy/admin-web/dist/assets/index-CQUuSaJ-.css",
-      "deploy/admin-web/dist/assets/index-CWEU0Wgh.js",
       "deploy/admin-web/dist/index.html",
       "deploy/bootstrap/database.sql",
       "deploy/bootstrap/roles.sql",
       "deploy/compose/.env.example",
       "deploy/compose/README.md",
       "deploy/compose/cloud-agents-up.sh",
+      "deploy/compose/docker-compose.managed-agent.yml",
       "deploy/compose/docker-compose.yml",
       "deploy/compose/provision.sql",
       "deploy/compose/runtime.env.example",
@@ -159,7 +160,7 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
-      "deploy/user-web/dist/assets/index-C1r-N1AK.js",
+      "deploy/user-web/dist/assets/index-CWeVyaxP.js",
       "deploy/user-web/dist/assets/index-qPDCn4WU.css",
       "deploy/user-web/dist/index.html",
       "deploy/web/server.mjs",
@@ -207,25 +208,30 @@ describe("platform release", () => {
 
   it("delivers deployment-owned Provider credentials through the Worker", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const managedAgent = readFileSync("deploy/compose/docker-compose.managed-agent.yml", "utf8");
     const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
-    for (const deployment of [compose, worker]) {
+    for (const deployment of [managedAgent, worker]) {
       expect(deployment).toContain("--provider-credential-directory");
       expect(deployment).toContain("/run/cloud-agents/provider-credentials");
     }
+    expect(compose).not.toContain("provider-credential");
+    expect(compose).not.toContain("CLOUD_AGENTS_PLATFORM_WORKER");
+    expect(compose).not.toContain("CLOUD_AGENTS_PLATFORM_ADMISSION");
     expect(worker).toContain("secretName: {{ .Values.runtime.credentialSecretName }}");
   });
 
   it("publishes component capacity limits in Compose and Helm", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const managedAgent = readFileSync("deploy/compose/docker-compose.managed-agent.yml", "utf8");
     const controlPlane = readFileSync(
       "deploy/helm/cloud-agents/templates/control-plane.yaml",
       "utf8",
     );
     const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
-    for (const deployment of [compose, worker]) {
+    for (const deployment of [managedAgent, worker]) {
       expect(deployment).toContain("--runtime-max-sessions");
     }
-    expect(compose).toContain("CLOUD_AGENTS_RUNTIME_MAX_SESSIONS:-4");
+    expect(managedAgent).toContain("CLOUD_AGENTS_RUNTIME_MAX_SESSIONS:-4");
     expect(worker).toContain(".Values.runtime.maxSessions");
     for (const deployment of [compose, controlPlane]) {
       expect(deployment).toContain("--max-concurrent-requests");
@@ -346,7 +352,11 @@ describe("platform release", () => {
     expect(migrationJob).toContain("readOnlyRootFilesystem: true");
     expect(migrationJob).toContain("drop: [ALL]");
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
-    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(6);
+    const managedAgent = readFileSync("deploy/compose/docker-compose.managed-agent.yml", "utf8");
+    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(5);
+    expect(
+      managedAgent.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu),
+    ).toHaveLength(1);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY");
     expect(compose).toContain("CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY");

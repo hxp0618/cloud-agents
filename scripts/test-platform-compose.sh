@@ -60,7 +60,9 @@ fi
 smoke_directory=$(mktemp -d "$candidate_directory/.compose-smoke.XXXXXX")
 project="cloud-agents-compose-smoke-$$"
 environment_file="$smoke_directory/compose.env"
+base_environment_file="$smoke_directory/compose.no-agent.env"
 compose_file="$smoke_directory/deployment/deploy/compose/docker-compose.yml"
+managed_agent_compose_file="$smoke_directory/deployment/deploy/compose/docker-compose.managed-agent.yml"
 compose_override_file="$smoke_directory/compose-target-override.yml"
 docker_proxy_pid=
 opensandbox_proxy_pid=
@@ -78,7 +80,10 @@ retry_provider_credentials_volume="${project}-retry-provider-credentials"
 project_id=
 profile_environment_id=
 compose() {
-  docker compose --env-file "$environment_file" -f "$compose_file" -f "$compose_override_file" "$@"
+  docker compose --env-file "$environment_file" -f "$compose_file" -f "$managed_agent_compose_file" -f "$compose_override_file" "$@"
+}
+compose_base() {
+  docker compose --env-file "$base_environment_file" -f "$compose_file" -f "$compose_override_file" "$@"
 }
 cleanup() {
   status=$?
@@ -490,6 +495,13 @@ const values = [
   `CLOUD_AGENTS_ADMISSION_TOKEN=${admissionToken}`,
 ];
 writeFileSync(`${state}/compose.env`, `${values.join("\n")}\n`);
+const managedAgentPrefixes = [
+  "CLOUD_AGENTS_RUNTIME_ENV_FILE=", "CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR=",
+  "CLOUD_AGENTS_WORKER_", "CLOUD_AGENTS_WORKSPACE_DIR=", "CLOUD_AGENTS_RUNTIME_MAX_SESSIONS=",
+  "CLOUD_AGENTS_ADMISSION_",
+];
+writeFileSync(`${state}/compose.no-agent.env`, `${values.filter((value) =>
+  !managedAgentPrefixes.some((prefix) => value.startsWith(prefix))).join("\n")}\n`);
 chmodSync(`${state}/auth.json`, 0o444);
 chmodSync(`${state}/access-grant.key`, 0o600);
 chmodSync(`${state}/opensandbox-api-key`, 0o600);
@@ -511,6 +523,7 @@ chmodSync(`${state}/admin-denied-curl.conf`, 0o600);
 chmodSync(`${state}/user-curl.conf`, 0o600);
 chmodSync(`${state}/ssh-askpass.sh`, 0o700);
 chmodSync(`${state}/compose.env`, 0o600);
+chmodSync(`${state}/compose.no-agent.env`, 0o600);
 NODE
 
 chmod 0444 "$smoke_directory"/target-worker-credentials/server.* \
@@ -562,8 +575,13 @@ test "$(curl --silent --show-error --fail \
   --key "$smoke_directory/docker-target-credentials/docker-compose-target/key.pem" \
   "https://127.0.0.1:$docker_proxy_port/_ping")" = OK
 
-compose config --quiet
-compose --profile bootstrap run --rm bootstrap >/dev/null
+compose_base config --quiet
+compose_base config >"$smoke_directory/no-agent-config.yml"
+if grep -Eq 'provider-credentials|CLOUD_AGENTS_PLATFORM_(WORKER|ADMISSION)|^[[:space:]]+worker:' "$smoke_directory/no-agent-config.yml"; then
+  echo "default Compose configuration contains Managed Agent Runtime authority" >&2
+  exit 1
+fi
+compose_base --profile bootstrap run --rm bootstrap >/dev/null
 docker run -d --name "$opensandbox_container" \
   --network "${project}_default" --network-alias opensandbox \
   --add-host host.docker.internal:host-gateway \
@@ -615,7 +633,41 @@ writeFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_CREDENTIAL,
   { mode: 0o444 });
 chmodSync(process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_CREDENTIAL, 0o444);
 NODE
-compose --profile tenant-bootstrap run --rm tenant-bootstrap >/dev/null
+compose_base --profile tenant-bootstrap run --rm tenant-bootstrap >/dev/null
+compose_base up -d --build >/dev/null
+for service in postgres control-plane access-gateway admin-web user-web; do
+  compose_base ps --services --status running | grep -Fx "$service" >/dev/null || {
+    echo "default Compose service did not start: $service" >&2
+    exit 1
+  }
+done
+if compose_base ps --services --status running | grep -Fx worker >/dev/null; then
+  echo "default Compose unexpectedly started the Managed Agent Worker" >&2
+  exit 1
+fi
+base_endpoint=$(compose_base port control-plane 8080)
+attempt=0
+until curl --silent --show-error --fail --noproxy '*' --cacert "$smoke_directory/ca.crt" "https://$base_endpoint/readyz" >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 60 ]; then
+    compose_base logs --no-color --tail=200 control-plane migrate postgres >&2
+    exit 1
+  fi
+  sleep 1
+done
+for service_port in user-web:4173 admin-web:4174; do
+  service=${service_port%:*}
+  port=${service_port##*:}
+  web_endpoint=$(compose_base port "$service" "$port")
+  curl --silent --show-error --fail --noproxy '*' "http://$web_endpoint/" >"$smoke_directory/no-agent-$service.html"
+  asset=$(sed -n 's/.*src="\([^"]*\.js\)".*/\1/p' "$smoke_directory/no-agent-$service.html")
+  if [ -z "$asset" ] || ! curl --silent --show-error --fail --noproxy '*' "http://$web_endpoint$asset" >/dev/null; then
+    echo "default Compose $service did not serve its packaged application assets" >&2
+    cat "$smoke_directory/no-agent-$service.html" >&2
+    compose_base exec -T "$service" sh -c 'find /opt/cloud-agents/web/dist -maxdepth 2 -type f -print; sed -n "1,20p" /opt/cloud-agents/web/dist/index.html' >&2 || true
+    exit 1
+  fi
+done
 compose up -d --build >/dev/null
 
 endpoint=

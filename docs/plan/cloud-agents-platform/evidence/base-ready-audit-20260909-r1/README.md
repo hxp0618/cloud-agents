@@ -17,6 +17,15 @@ and the Linux amd64 RemoteWorker SHA-256 is
 `5d6e48637c77e77750ea59d444ed1c2cefed7da7f12c10c5b2a447819ab6f56e`.
 This prepares the external run but is not deployment evidence.
 
+The audit also exposed a packaging defect: the default Compose and Helm inputs
+still required the legacy Coding Agent Worker and Provider/admission inputs.
+That defect is closed by the subsequent
+[default no-Agent deployment evidence](../base-m5-no-agent-deployment-20260909-r1/README.md):
+the final unpublished `0.3.0-dev.103` candidate passed default no-Agent
+Compose, opt-in compatibility regression, and a packaged Helm run that removed
+the Worker and all five Worker/admission/Provider Secrets before restarting the
+Control Plane. This does not change the external-node gap below.
+
 Commands executed for this audit:
 
 ```sh
@@ -42,7 +51,7 @@ change firewall rules or write remote files.
 
 | Item | Current evidence | Result |
 | --- | --- | --- |
-| 1 | `base-m1-controller-admin-20260906.md`; `base-m2-sandbox-exec-20260906.md`; PTY and Files evidence from the same BASE-M2 series | Proven for the current API/SDK/CLI and no-Agent Docker path |
+| 1 | `base-m1-controller-admin-20260906.md`; `base-m2-sandbox-exec-20260906.md`; PTY and Files evidence from the same BASE-M2 series; `base-m5-no-agent-deployment-20260909-r1/README.md` | Proven for the current API/SDK/CLI and default no-Agent Docker/Helm path |
 | 2 | `base-m1-sandbox-lifecycle-20260906.md`; `base-m1-sandbox-ttl-20260906.md` | Proven for Stop, TTL, Rebuild and retained Workspace bytes |
 | 3 | `base-m1-controller-admin-20260906.md`; `base-m5-fault-soak-docker-20260909-r2/evidence.json` | Proven for durable Operation recovery, adopt/compensation and no duplicate runtime |
 | 4 | `base-m3-remote-worker-reconnect-20260907/evidence.json`; `base-m4-remote-worker-capacity-reservation-20260907-v2/evidence.json` | Proven for writer/generation fencing, stale command rejection and aggregate reservation |
@@ -50,7 +59,7 @@ change firewall rules or write remote files.
 | 6 | BASE-M3 enrollment through reconnect evidence; `base-m5-remote-worker-bootstrap-20260908-r5/evidence.json` | Proven on an isolated outbound Debian node, but not yet on either available external Linux host |
 | 7 | `base-m5-fault-soak-docker-20260909-r2/evidence.json`; `base-m5-kubernetes-fault-soak-20260909-r1/evidence.json`; `base-m5-remote-worker-gateway-soak-docker-20260909-r2/evidence.json` | Docker and Kubernetes are proven; the customer-node run is real and isolated but remains local rather than an external host |
 | 8 | `base-m2-sandbox-network-policy-20260906.md`; `base-m4-strong-isolation-gvisor-20260908/evidence.json`; current OIDC/RLS/RBAC evidence | Proven for the stated local Docker/Kubernetes matrix |
-| 9 | Docker Snapshot/Restore/Retention evidence; `base-m5-helm-upgrade-rollback-20260908-r4/evidence.json`; certificate rotation, Compose backup/restore and fault evidence | Proven within the recorded local deployment and recovery boundaries |
+| 9 | Docker Snapshot/Restore/Retention evidence; `base-m5-helm-upgrade-rollback-20260908-r4/evidence.json`; certificate rotation, Compose backup/restore, no-Agent deployment and fault evidence | Proven within the recorded local deployment and recovery boundaries |
 | 10 | Docker allocation/volume/network usage evidence; `base-m5-sandbox-usage-correction-docker-20260909-r5/evidence.json`; current fault/soak evidence and runbooks | Proven for the currently declared non-billing facts and measured local recovery boundary |
 | 11 | `base-m5-admin-acceptance-docker-20260909-r7/evidence.json`; `admin-m4-oidc-audience-boundary-20260909-r1/evidence.json` | Proven for live Admin authority, content isolation, dangerous actions and ordinary-user denial |
 | 12 | BASE-ADMIN-V1 audit below | Not closable while BASE-ADMIN-V1 item 10 remains open on an external customer node |
@@ -59,7 +68,7 @@ change firewall rules or write remote files.
 
 | Item | Current evidence | Result |
 | --- | --- | --- |
-| 1 | `base-m5-user-admin-web-deployment-20260909-r1/evidence.json` | Proven for independent Compose and Helm build/deployment |
+| 1 | `base-m5-user-admin-web-deployment-20260909-r1/evidence.json`; `base-m5-no-agent-deployment-20260909-r1/README.md` | Proven for independent default no-Agent Compose/Helm build and deployment, with legacy Worker only by explicit opt-in |
 | 2 | `base-runtime-profile-api-20260905.md`; current User Sandbox/Environment APIs | Proven for user-safe published specifications and owned Workspace/Sandbox access |
 | 3 | `base-m5-user-web-boundary-20260909-r1/evidence.json`; `admin-m4-user-api-boundary-20260909-r1/evidence.json` | Proven for page, request, storage and User API infrastructure-field removal |
 | 4 | Kubernetes foundation, RemoteWorker Target and `base-m5-external-ssh-probe-soak-20260909-r2/evidence.json` | Proven for Admin Docker/Kubernetes/RemoteWorker management and legacy SSH register/Probe compatibility |

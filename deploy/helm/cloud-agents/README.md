@@ -1,6 +1,12 @@
 # Cloud Agents Helm deployment
 
-This chart installs the Control Plane, Worker, Access Gateway, and independent User/Admin Web services against a deployment-owned PostgreSQL database. Build or load every image from the same platform release, create the Secrets named in `values.yaml`, then install with digest-pinned image values.
+By default this chart installs the no-Agent foundation: Control Plane, Access
+Gateway, and independent User/Admin Web services against a deployment-owned
+PostgreSQL database. The legacy Coding Agent Worker is rendered only when
+`worker.enabled=true`; only that compatibility mode requires the Worker TLS,
+admission, Runtime environment and Provider credential Secrets. Build or load
+the enabled images from the same platform release, create only the Secrets used
+by that mode, then install with digest-pinned image values.
 
 The Access Gateway mounts only the runtime database URL, its TLS/SSH identity, and the configured Kubernetes target credential directory. User Web and Admin Web mount only the Control Plane CA; User Web proxies non-Admin `/v1` routes and Admin Web proxies only `/v1/admin` to the internal Control Plane Service. None of these Pods receives a Docker socket or Provider credentials, and all disable ServiceAccount token mounting.
 

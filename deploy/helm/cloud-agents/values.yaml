@@ -87,6 +87,7 @@ remoteWorker:
   trustDomain: ""
 
 worker:
+  enabled: false
   replicas: 1
   service:
     port: 8091

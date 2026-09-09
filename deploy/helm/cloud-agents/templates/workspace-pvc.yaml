@@ -1,4 +1,4 @@
-{{- if not .Values.runtime.workspace.existingClaim }}
+{{- if and .Values.worker.enabled (not .Values.runtime.workspace.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
