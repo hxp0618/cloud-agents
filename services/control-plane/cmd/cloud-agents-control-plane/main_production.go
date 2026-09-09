@@ -298,10 +298,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("SSH target credential directory is invalid")
 		}
 	}
-	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(userVerifier, coordinationService, dockerProber, kubernetesProber, sshProber)
-	if err != nil {
-		return errors.New("deployment target HTTP server is unavailable")
-	}
 	adminDeploymentTargetServer, err := server.NewAdminDeploymentTargetHTTPServer(adminVerifier, coordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("admin deployment target HTTP server is unavailable")
@@ -462,7 +458,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.RoleBindingCollectionRoute, rbacServer)
 	mux.Handle(server.ManagedHostProjectRoute, projectServer)
 	mux.Handle(server.ManagedHostRoleBindingRoute, rbacServer)
-	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesFoundationPath(request.URL.Path) {
@@ -479,10 +474,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
 			publishedEnvironmentProfileServer.ServeHTTP(writer, request)
-			return
-		}
-		if server.HandlesDeploymentTargetPath(request.URL.Path) {
-			deploymentTargetServer.ServeHTTP(writer, request)
 			return
 		}
 		if server.HandlesRBACPath(request.URL.Path) {

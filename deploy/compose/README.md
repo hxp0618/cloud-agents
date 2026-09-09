@@ -264,31 +264,39 @@ Add `<credentialRef>.deployment.json` with the same non-secret
 `workerImageRepository`, `workerCredentialRef`, `workerSpiffeId`, and
 `workerServerName` fields used by a Docker target. The host must already contain
 the exact Worker image and the named Worker/provider credential volumes. A
-Lease starts the same read-only Worker image with an isolated workspace volume,
-the requested CPU/memory limits, generation labels, and `unless-stopped`
-restart policy. Exact retries reuse the owned container; an
-`environment-lease upgrade` starts the next generation on the same workspace
-and keeps the previous generation until the new Worker is ready. Termination
-removes the active generation and its anonymous workspace volume. A container
-with mismatched ownership, generation, image, or credential references is never
-replaced or deleted.
+published Environment Profile starts the same read-only Worker image with an
+isolated workspace volume, its fixed CPU/memory limits, generation labels, and
+`unless-stopped` restart policy. Exact User Environment retries reuse the owned
+container. Admin upgrade/rollback operations replace the Worker generation on
+the same workspace, while User Environment termination removes the active
+generation and its anonymous workspace volume. A container with mismatched
+ownership, generation, image, or credential references is never replaced or
+deleted.
 
 After a target is ready, run `cloud-agentsctl ... target cleanup
---expected-generation GENERATION` to remove stale managed Docker/SSH Worker
-containers or Kubernetes Deployments, Services, and PVCs. Cleanup retains every
-exact active Environment Lease, validates the target and Lease generations
-before deletion, and never deletes target Secrets or named credential volumes.
+--expected-generation GENERATION --confirm-target-id TARGET_ID` with an Admin
+token to remove stale managed Docker/SSH Worker containers or Kubernetes
+Deployments, Services, and PVCs. Cleanup retains every exact active Environment
+Lease, validates the target and Lease generations before deletion, and never
+deletes target Secrets or named credential volumes.
 
 Run the real Kubernetes target acceptance with
 `sh scripts/test-platform-kubernetes-target.sh`.
-It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_TOKEN_FILE`,
-`CLOUD_AGENTS_TENANT`, `CLOUD_AGENTS_PROJECT`, `CLOUD_AGENTS_TARGET_ID`,
+It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_ADMIN_TOKEN_FILE`,
+`CLOUD_AGENTS_USER_TOKEN_FILE`, `CLOUD_AGENTS_TENANT`, `CLOUD_AGENTS_PROJECT`,
+`CLOUD_AGENTS_TARGET_ID`,
 `CLOUD_AGENTS_TARGET_ENDPOINT`, `CLOUD_AGENTS_TARGET_CREDENTIAL_REF`,
-`CLOUD_AGENTS_RELEASE_DIGEST`, `CLOUD_AGENTS_PROVIDER_SECRET_REF`,
+`CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY`, `CLOUD_AGENTS_RELEASE_DIGEST`,
+`CLOUD_AGENTS_WORKER_ARCHITECTURE`, `CLOUD_AGENTS_PLATFORM_VERSION`,
+`CLOUD_AGENTS_RUNTIME_VERSION`, `CLOUD_AGENTS_CODEX_VERSION`,
+`CLOUD_AGENTS_CLAUDE_CODE_VERSION`, `CLOUD_AGENTS_PROVIDER_SECRET_REF`,
 `CLOUD_AGENTS_KUBECONFIG`, `CLOUD_AGENTS_KUBERNETES_NAMESPACE`, and a new
 `CLOUD_AGENTS_E2E_OUTPUT_DIR`. The Control Plane credential directory and target
-Secrets must already contain the files described above. The script runs a real
-Codex Turn, restarts the Worker Deployment, resumes the Codex Session, runs a
+Secrets must already contain the files described above. The Admin token must
+use the Admin audience and the User token the User audience. The script
+registers the release and policies, publishes a fixed Profile, creates and
+terminates the Environment through the User API, runs a real Codex Turn,
+restarts the Worker Deployment, resumes the Codex Session, runs a
 real Claude Turn, resolves real approval and user-input requests, cancels and
 interrupts live executions, validates downloaded Artifacts, terminates twice to
 verify idempotency, runs orphan cleanup, and retains non-secret JSON/JSONL

@@ -952,6 +952,9 @@ type UserEnvironmentCreateRequest struct {
 	ProfileID      string `json:"profileId"`
 	ProfileVersion int64  `json:"profileVersion"`
 }
+type UserEnvironmentTerminateRequest struct {
+	ExpectedGeneration int64 `json:"expectedGeneration"`
+}
 type UserEnvironment struct {
 	APIVersion      string            `json:"apiVersion"`
 	Kind            string            `json:"kind"`
@@ -4759,6 +4762,27 @@ func EncodeUserEnvironmentCreateRequestJSON(value UserEnvironmentCreateRequest) 
 		return nil, err
 	}
 	if _, err := DecodeUserEnvironmentCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeUserEnvironmentTerminateRequestJSON(data []byte) (UserEnvironmentTerminateRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedGeneration"}, []string{"expectedGeneration"})
+	if err != nil {
+		return UserEnvironmentTerminateRequest{}, err
+	}
+	generation, err := fieldInt64(fields, "expectedGeneration", "/expectedGeneration")
+	if err != nil || generation < 1 {
+		return UserEnvironmentTerminateRequest{}, common.ContractError("INVALID_GENERATION", "/expectedGeneration")
+	}
+	return UserEnvironmentTerminateRequest{ExpectedGeneration: generation}, nil
+}
+func EncodeUserEnvironmentTerminateRequestJSON(value UserEnvironmentTerminateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeUserEnvironmentTerminateRequestJSON(raw); err != nil {
 		return nil, err
 	}
 	return raw, nil

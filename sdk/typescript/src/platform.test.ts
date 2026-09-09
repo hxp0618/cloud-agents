@@ -937,7 +937,7 @@ describe("generated platform JSON models", () => {
     );
     expect(seen[3]?.body).toBeUndefined();
   });
-  it("lists managed-host environment leases with project-bound pagination", async () => {
+  it("lists environment leases only through the Admin API", async () => {
     const page = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "EnvironmentLeasePage",
@@ -984,7 +984,7 @@ describe("generated platform JSON models", () => {
       seen.push(request);
       return { status: 200, headers: {}, body: page };
     });
-    const result = await client.listManagedHostEnvironmentLeases(
+    const result = await client.listAdminEnvironmentLeases(
       "tenant-alpha",
       "project-alpha",
       "request-alpha",
@@ -992,17 +992,7 @@ describe("generated platform JSON models", () => {
       "lease-page-token-1",
     );
     expect(result.value.environmentLeases[0]?.metadata.uid).toBe("lease-alpha");
-    await client.listAdminEnvironmentLeases(
-      "tenant-alpha",
-      "project-alpha",
-      "request-alpha",
-      1,
-      "lease-page-token-1",
-    );
     expect(seen[0]?.path).toBe(
-      "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
-    );
-    expect(seen[1]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
     );
   });
@@ -1934,7 +1924,7 @@ describe("generated platform JSON models", () => {
       "GET /v1/admin/tenants/tenant-alpha/projects/project-alpha/network-policies/network-public/audit-events?pageSize=1",
     ]);
   });
-  it("creates and reads an environment using only immutable Profile identity", async () => {
+  it("creates, reads, and terminates an environment without infrastructure input", async () => {
     const value = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "UserEnvironment",
@@ -1961,10 +1951,11 @@ describe("generated platform JSON models", () => {
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
+      const terminating = request.path.endsWith(":terminate");
       return {
-        status: request.method === "POST" ? 201 : 200,
+        status: request.method === "POST" && !terminating ? 201 : 200,
         headers: {},
-        body,
+        body: terminating ? JSON.stringify({ ...value, observedPhase: "terminated" }) : body,
       };
     });
     await client.createEnvironment(
@@ -1980,14 +1971,23 @@ describe("generated platform JSON models", () => {
       "environment-alpha",
       "request-environment-get",
     );
+    await client.terminateEnvironment(
+      "tenant-alpha",
+      "project-alpha",
+      "environment-alpha",
+      "request-environment-terminate",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R9",
+      { expectedGeneration: 1 },
+    );
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/environments",
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha:terminate",
     ]);
     expect(seen[0]?.body).toBe('{"profileId":"development","profileVersion":1}');
     expect(seen[0]?.body).not.toMatch(/target|credential|release|cpu|memory|storage|network/i);
   });
-  it("lists deployment targets with project-bound pagination", async () => {
+  it("lists deployment targets only through the Admin API", async () => {
     const page = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "DeploymentTargetPage",
@@ -2070,7 +2070,7 @@ describe("generated platform JSON models", () => {
       seen.push(request);
       return { status: 200, headers: {}, body: page };
     });
-    const result = await client.listDeploymentTargets(
+    const result = await client.listAdminDeploymentTargets(
       "tenant-alpha",
       "project-alpha",
       "request-alpha",
@@ -2078,17 +2078,7 @@ describe("generated platform JSON models", () => {
       "target-page-token-1",
     );
     expect(result.value.deploymentTargets[0]?.metadata.uid).toBe("docker-alpha");
-    await client.listAdminDeploymentTargets(
-      "tenant-alpha",
-      "project-alpha",
-      "request-alpha",
-      1,
-      "target-page-token-1",
-    );
     expect(seen[0]?.path).toBe(
-      "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
-    );
-    expect(seen[1]?.path).toBe(
       "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets?pageSize=1&pageToken=target-page-token-1",
     );
   });

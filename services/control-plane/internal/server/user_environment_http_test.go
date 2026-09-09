@@ -111,3 +111,51 @@ func TestUserEnvironmentHTTPRequiresDedicatedScope(t *testing.T) {
 		t.Fatalf("status=%d body=%s creates=%d", response.Code, response.Body.String(), store.create)
 	}
 }
+
+func TestUserEnvironmentHTTPTerminatesWithSafeResponse(t *testing.T) {
+	now := time.Date(2026, time.September, 9, 9, 0, 0, 0, time.UTC)
+	result := internalmanagedhost.ProfileEnvironmentSnapshot{
+		ProfileID: "profile-alpha", ProfileVersion: 3,
+		Lease: internalmanagedhost.Snapshot{
+			Scope:   internalmanagedhost.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
+			LeaseID: "environment-alpha", LeaseName: "environment-alpha", EnvironmentID: "environment-alpha",
+			Generation: 1, DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none",
+			ExpiresAt: now.Add(time.Hour), ResourceVersion: 2, CreatedAt: now, UpdatedAt: now,
+		},
+	}
+	store := &userEnvironmentStoreFake{result: result}
+	leaseStore := &managedHostEnvironmentLeaseStoreFake{snapshot: result.Lease}
+	verifier := &environmentProfileVerifierFake{}
+	actuator, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, leaseStore, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewUserEnvironmentHTTPServer(verifier, store, actuator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha:terminate", strings.NewReader(`{"expectedGeneration":1}`))
+	request.Header.Set("Authorization", "Bearer user-token")
+	request.Header.Set("X-Request-ID", "request-environment-terminate")
+	request.Header.Set("Idempotency-Key", "idem-environment-terminate-01")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	decoded, decodeErr := platformv1alpha1.DecodeUserEnvironmentResponseJSON(response.Body.Bytes())
+	if response.Code != http.StatusOK || decodeErr != nil || decoded.Value.ObservedPhase != "terminated" || leaseStore.terminate != 1 || leaseStore.finalize != 1 {
+		t.Fatalf("status=%d body=%s decoded=%#v err=%v terminate=%d finalize=%d", response.Code, response.Body.String(), decoded, decodeErr, leaseStore.terminate, leaseStore.finalize)
+	}
+	for _, forbidden := range []string{"target", "releaseDigest", "credential", "cpu", "memory", "worker", "endpoint", "spiffe", "generation", "cleanupPhase"} {
+		if strings.Contains(strings.ToLower(response.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("response contains forbidden field %q: %s", forbidden, response.Body.String())
+		}
+	}
+	wantPermissions := []string{"projects.act", "environments.delete", "projects.get", "projects.act", "projects.act"}
+	if len(verifier.requests) != len(wantPermissions) {
+		t.Fatalf("verification requests=%#v", verifier.requests)
+	}
+	for index, permission := range wantPermissions {
+		if verifier.requests[index].RequiredPermission != permission {
+			t.Fatalf("verification requests=%#v", verifier.requests)
+		}
+	}
+}

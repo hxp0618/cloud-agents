@@ -1,0 +1,121 @@
+{
+  "source": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "head": "194fd97449cd4289e8a3e04c98bca778f4e22780",
+    "dirty": true,
+    "migrationHead": "000088"
+  },
+  "release": {
+    "version": "0.3.0-dev.99",
+    "candidateDirectory": "/tmp/cloud-agents-user-api-boundary-20260909-r2/release",
+    "sourceCommit": "194fd97449cd4289e8a3e04c98bca778f4e22780",
+    "sourceDirty": true,
+    "artifactCount": 22,
+    "manifestSha256": "sha256:629fc298115c3e7ecc46e865ab78262618560a0a8c7d70c7c6efbd3db4eb6253",
+    "deploymentArtifact": {
+      "filename": "cloud-agents-deployment-000088.tar",
+      "sizeBytes": 1644032,
+      "sha256": "sha256:1f3511e7b30751f241c4a4af5c58b71d193ace45c0f887935541f5350ac22533"
+    },
+    "published": false
+  },
+  "userApiBoundary": {
+    "legacyDeploymentTargetRoutes": "removed from OpenAPI and production/localdev mux; GET returned 404 in Compose",
+    "legacyManagedHostLeaseRoutes": "removed from OpenAPI and production/localdev mux; GET returned 404 in Compose",
+    "generatedUserTargetAndRawLeaseMethods": "removed from Go and TypeScript clients",
+    "userEnvironmentCreateInput": ["profileId", "profileVersion"],
+    "userEnvironmentTerminateInput": ["expectedGeneration"],
+    "userEnvironmentResponseInfrastructureFields": 0,
+    "adminLeaseProjection": "retained for list/detail/upgrade/rollback and cleanup verification",
+    "ordinaryUserAdminApi": 403,
+    "wrongAudience": 401
+  },
+  "compose": {
+    "command": "sh scripts/test-platform-compose.sh /tmp/cloud-agents-user-api-boundary-20260909-r2/release",
+    "status": "passed on the third overall attempt and first 0.3.0-dev.99 attempt",
+    "passedLog": {
+      "path": "/tmp/cloud-agents-user-api-boundary-20260909-r3-compose.log",
+      "sha256": "sha256:0bde192a8bed02f9791ae2b7ee69a8fe4931ac81017c8df3d71c64d4fa41da7d"
+    },
+    "profileEnvironment": {
+      "publishedProfile": "compose-docker-profile:v1",
+      "createAndReplay": "same generated environment id and ready Worker",
+      "recoverableFailure": "missing provider credential volume produced safe failed state; idempotent replay after volume provisioning recovered to ready",
+      "terminate": "User response remained redacted; Admin Lease projection reached terminated and cleanup complete",
+      "upgradeRollback": "Admin preview and fenced operations passed"
+    },
+    "adminBrowserRequests": 18,
+    "userBrowserRequests": 6,
+    "gateway": ["Files", "PTY", "Preview", "SSH"],
+    "restartAndBackupRestore": "passed",
+    "finalDockerWorkers": 0,
+    "finalOpenSandboxResources": 0,
+    "finalComposeResources": 0,
+    "priorAttempts": [
+      {
+        "candidateVersion": "0.3.0-dev.98",
+        "path": "/tmp/cloud-agents-user-api-boundary-20260909-r1-compose.log",
+        "sha256": "sha256:342a2729af4a1e4e3d6b4fbaf5426921a66d268869d0e6600652d013b1708b9c",
+        "failure": "headless browser timed out after switching from Admin Web to the healthy User Web root; backend Profile/User Environment/Admin Lease checks had already passed"
+      },
+      {
+        "candidateVersion": "0.3.0-dev.98",
+        "path": "/tmp/cloud-agents-user-api-boundary-20260909-r2-compose.log",
+        "sha256": "sha256:662356fc9489a9c9a2d68b912c3f7447f51f8d35954e1420f086b561e21e31fe",
+        "failure": "same headless browser transition timeout; direct candidate root, JS, CSS and rendered form checks returned 200 and rendered successfully"
+      }
+    ],
+    "browserHarnessChange": "timeout diagnostics now include ready state, title, bounded body text and recent resource URLs"
+  },
+  "helm": {
+    "command": "CLOUD_AGENTS_HELM_CONTEXT=orbstack sh scripts/test-platform-helm.sh /tmp/cloud-agents-user-api-boundary-20260909-r2/release",
+    "status": "passed",
+    "log": {
+      "path": "/tmp/cloud-agents-user-api-boundary-20260909-r1-helm.log",
+      "sha256": "sha256:3ed7ac8377f4060f28e698330c21ff7073915d9dd11619271c27227d7460e0ce"
+    },
+    "schemaLedger": {
+      "count": 88,
+      "first": "000001",
+      "last": "000088"
+    },
+    "adminBrowserRequests": 16,
+    "userBrowserRequests": 6,
+    "remoteWorker": "outbound with leaf and CA rotation; old root rejected",
+    "serviceIdentity": "CA rotated; old roots rejected",
+    "gateway": "TLS and SSH passed",
+    "restart": "passed",
+    "finalTestNamespaces": 0,
+    "finalTestPersistentVolumes": 0,
+    "finalTestContainers": 0,
+    "finalTestImageTags": 0
+  },
+  "externalAcceptanceScripts": {
+    "kubernetes": "migrated to separate Admin/User tokens, Admin Target and Profile publication, User Environment create/terminate, Admin Lease verification and confirmed Target cleanup; syntax checked but not executed",
+    "ssh": "migrated to separate Admin/User tokens, Admin Target and Profile publication, User Environment create/replay/terminate, Admin Lease verification and confirmed Target cleanup; syntax checked but not executed"
+  },
+  "verification": {
+    "identitySdkCheck": "current",
+    "jsonSdkCheck": "current",
+    "fullSdkCheck": "blocked outside the JSON contract slice because the repository expects Go 1.26.6 and the host has Go 1.27.1",
+    "contractStandardsCheck": "blocked because the repository expects Bun 1.3.14 and uv 0.12.5 while the host has Bun 1.4.2 and uv 0.6.0",
+    "goFocusedPackages": "passed",
+    "typescriptSdk": "38 passed",
+    "shellSyntax": "passed",
+    "browserHarnessFormat": "passed",
+    "diffCheck": "passed"
+  },
+  "preexistingResources": [
+    {
+      "namespace": "cloud-agents-helm-smoke-15421",
+      "createdAt": "2026-09-08T11:34:51Z",
+      "action": "not deleted because destructive cleanup was not authorized"
+    },
+    {
+      "namespace": "cloud-agents-helm-smoke-78845",
+      "createdAt": "2026-09-08T21:54:48Z",
+      "action": "not deleted because destructive cleanup was not authorized"
+    }
+  ],
+  "boundary": "This is real local Compose and OrbStack Kubernetes evidence from one unpublished dirty-source candidate. It proves the legacy infrastructure-capable User Target and raw Lease HTTP routes are absent, User Environment lifecycle accepts only Profile identity and termination generation, operational Lease details remain Admin-only, and the existing Docker, Gateway, browser, outbound RemoteWorker, identity rotation, restart and exact test-resource cleanup paths still run. The external Kubernetes and SSH acceptance scripts were migrated but not executed because no external Worker environment or Provider credential set was used. This run did not use public OIDC ingress or real Codex or Claude Code Provider credentials, and it is not ADMIN-WEB-V1 completion evidence by itself."
+}

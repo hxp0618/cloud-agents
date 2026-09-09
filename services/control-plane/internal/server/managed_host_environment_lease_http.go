@@ -604,100 +604,83 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	result, err := server.terminateEnvironment(request.Context(), tenantID, projectID, leaseID, bearer, validated.Body.ExpectedGeneration, internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey})
 	if err != nil {
-		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
-		return
-	}
-	result, err := server.store.TerminateManagedHostEnvironmentLease(request.Context(), tenantID, principal, internalmanagedhost.TerminateEnvironmentLeaseInput{Scope: internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, LeaseID: leaseID, ExpectedGeneration: validated.Body.ExpectedGeneration, Mutation: internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey}})
-	if err != nil {
-		status, code := managedHostEnvironmentLeaseErrorStatus(err)
+		status, code := environmentTerminationErrorStatus(err)
 		writePublicProblem(writer, status, code)
 		return
 	}
-	if result.CleanupPhase == "complete" {
-		writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, result)
-		return
+	writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, result)
+}
+
+var (
+	errEnvironmentCleanupUnavailable = errors.New("environment cleanup actuator is unavailable")
+	errEnvironmentCleanupConflict    = errors.New("environment cleanup authority conflicts with current state")
+	errEnvironmentCleanupFailed      = errors.New("environment cleanup failed")
+)
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) terminateEnvironment(ctx context.Context, tenantID, projectID, environmentID, bearer string, expectedGeneration int64, mutation internalmanagedhost.Mutation) (internalmanagedhost.Snapshot, error) {
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil {
+		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 	}
-	cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(request.Context()), environmentActuationTimeout)
+	result, err := server.store.TerminateManagedHostEnvironmentLease(ctx, tenantID, principal, internalmanagedhost.TerminateEnvironmentLeaseInput{Scope: internalmanagedhost.Scope{TenantID: tenantID, ProjectID: projectID}, LeaseID: environmentID, ExpectedGeneration: expectedGeneration, Mutation: mutation})
+	if err != nil || result.CleanupPhase == "complete" {
+		return result, err
+	}
+	cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), environmentActuationTimeout)
+	defer cancelCleanup()
 	if result.WorkerEndpoint != "" && server.dockerCredentials == nil && server.kubernetesCredentials == nil && server.sshCredentials == nil {
-		cancelCleanup()
-		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-		return
+		return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 	}
 	if result.TargetID != "" && result.ProviderCredentialRef != "" && (result.WorkerEndpoint != "" || server.dockerCredentials != nil || server.kubernetesCredentials != nil || server.sshCredentials != nil) {
 		principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 		if err != nil {
-			cancelCleanup()
-			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
-			return
+			return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 		}
 		target, targetErr := server.store.GetDeploymentTarget(cleanupContext, tenantID, principal, projectID, result.TargetID)
 		if targetErr != nil {
-			cancelCleanup()
-			writeDeploymentTargetError(writer, targetErr)
-			return
+			return internalmanagedhost.Snapshot{}, targetErr
 		}
 		if target.Generation != result.TargetGeneration {
-			cancelCleanup()
-			writePublicProblem(writer, http.StatusConflict, "lease_conflict")
-			return
+			return internalmanagedhost.Snapshot{}, errEnvironmentCleanupConflict
 		}
 		var cleanupErr error
 		switch target.Kind {
 		case "docker":
 			if server.dockerCredentials == nil {
-				cancelCleanup()
-				writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-				return
+				return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 			}
-			cleanupErr = server.dockerCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
+			cleanupErr = server.dockerCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, expectedGeneration))
 		case "kubernetes":
 			if server.kubernetesCredentials == nil {
-				cancelCleanup()
-				writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-				return
+				return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 			}
-			cleanupErr = server.kubernetesCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
+			cleanupErr = server.kubernetesCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, expectedGeneration))
 		case "ssh":
 			if server.sshCredentials == nil {
-				cancelCleanup()
-				writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-				return
+				return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 			}
-			cleanupErr = server.sshCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, validated.Body.ExpectedGeneration))
+			cleanupErr = server.sshCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, dockerDeployRequest(tenantID, projectID, result, expectedGeneration))
 		default:
-			cleanupErr = dockertarget.ErrDeploymentConflict
+			cleanupErr = errEnvironmentCleanupConflict
+		}
+		if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, kubernetestarget.ErrDeploymentConflict) || errors.Is(cleanupErr, sshtarget.ErrDeploymentConflict) {
+			return internalmanagedhost.Snapshot{}, errEnvironmentCleanupConflict
 		}
 		if cleanupErr != nil {
-			cancelCleanup()
-			if errors.Is(cleanupErr, dockertarget.ErrDeploymentConflict) || errors.Is(cleanupErr, kubernetestarget.ErrDeploymentConflict) || errors.Is(cleanupErr, sshtarget.ErrDeploymentConflict) {
-				writePublicProblem(writer, http.StatusConflict, "environment_cleanup_conflict")
-			} else {
-				writePublicProblem(writer, http.StatusBadGateway, "environment_cleanup_failed")
-			}
-			return
+			return internalmanagedhost.Snapshot{}, errEnvironmentCleanupFailed
 		}
 	} else if result.WorkerEndpoint != "" {
-		cancelCleanup()
-		writePublicProblem(writer, http.StatusServiceUnavailable, "environment_cleanup_unavailable")
-		return
+		return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 	}
-	cancelCleanup()
 	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
-		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
-		return
+		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 	}
-	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
+	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), deploymentTargetCompletionTimeout)
 	defer cancelCompletion()
-	result, err = server.store.CompleteManagedHostEnvironmentLeaseTermination(completionContext, tenantID, principal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput{Scope: result.Scope, LeaseID: result.LeaseID, ExpectedGeneration: result.Generation})
-	if err != nil {
-		status, code := managedHostEnvironmentLeaseErrorStatus(err)
-		writePublicProblem(writer, status, code)
-		return
-	}
-	writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, result)
+	return server.store.CompleteManagedHostEnvironmentLeaseTermination(completionContext, tenantID, principal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput{Scope: result.Scope, LeaseID: result.LeaseID, ExpectedGeneration: result.Generation})
 }
 
 func writeManagedHostEnvironmentLease(writer http.ResponseWriter, status int, requestID string, snapshot internalmanagedhost.Snapshot) {

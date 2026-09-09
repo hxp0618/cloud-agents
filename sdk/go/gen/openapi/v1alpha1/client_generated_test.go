@@ -407,16 +407,20 @@ func TestGeneratedOpenAPIClientManagesNetworkPolicies(t *testing.T) {
 	}
 }
 
-func TestGeneratedOpenAPIClientCreatesAndGetsUserEnvironment(t *testing.T) {
+func TestGeneratedOpenAPIClientCreatesGetsAndTerminatesUserEnvironment(t *testing.T) {
 	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"UserEnvironment","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"environmentId":"environment-alpha","profileId":"development","profileVersion":1,"observedPhase":"provisioning","expiresAt":"2026-09-04T12:00:00Z"}`)
+	terminatedBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"UserEnvironment","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"environmentId":"environment-alpha","profileId":"development","profileVersion":1,"observedPhase":"terminated","expiresAt":"2026-09-04T12:00:00Z"}`)
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = append(seen, request)
-		status := 200
-		if request.Method == "POST" {
+		status, responseBody := 200, body
+		if request.Method == "POST" && !strings.HasSuffix(request.Path, ":terminate") {
 			status = 201
 		}
-		return Response{Status: status, Body: body}, nil
+		if strings.HasSuffix(request.Path, ":terminate") {
+			responseBody = terminatedBody
+		}
+		return Response{Status: status, Body: responseBody}, nil
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -429,7 +433,11 @@ func TestGeneratedOpenAPIClientCreatesAndGetsUserEnvironment(t *testing.T) {
 	if err != nil || got.Value.ProfileID != "development" {
 		t.Fatalf("get = %#v / %v", got, err)
 	}
-	if len(seen) != 2 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments" || string(seen[0].Body) != `{"profileId":"development","profileVersion":1}` || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha" {
+	terminated, err := client.TerminateEnvironment(context.Background(), "tenant-alpha", "project-alpha", "environment-alpha", "request-terminate", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R9", platform.UserEnvironmentTerminateRequest{ExpectedGeneration: 1})
+	if err != nil || terminated.Value.ObservedPhase != "terminated" {
+		t.Fatalf("terminate = %#v / %v", terminated, err)
+	}
+	if len(seen) != 3 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments" || string(seen[0].Body) != `{"profileId":"development","profileVersion":1}` || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/environments/environment-alpha:terminate" || string(seen[2].Body) != `{"expectedGeneration":1}` {
 		t.Fatalf("requests = %#v", seen)
 	}
 }

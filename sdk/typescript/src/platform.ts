@@ -907,6 +907,7 @@ export type EnvironmentProfileSummaryPage = Readonly<{
   nextPageToken?: string;
 }>;
 export type UserEnvironmentCreateRequest = Readonly<{ profileId: string; profileVersion: number }>;
+export type UserEnvironmentTerminateRequest = Readonly<{ expectedGeneration: number }>;
 export type UserEnvironment = Readonly<{
   apiVersion: typeof platformApiVersion;
   kind: "UserEnvironment";
@@ -4093,6 +4094,24 @@ export function decodeUserEnvironmentCreateRequest(value: unknown): UserEnvironm
 }
 export function encodeUserEnvironmentCreateRequest(value: UserEnvironmentCreateRequest): string {
   return JSON.stringify(decodeUserEnvironmentCreateRequest(value));
+}
+export function decodeUserEnvironmentTerminateRequest(
+  value: unknown,
+): UserEnvironmentTerminateRequest {
+  const source = strictRecord(value, ["expectedGeneration"], ["expectedGeneration"]);
+  return Object.freeze({
+    expectedGeneration: integer(
+      source.expectedGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedGeneration",
+    ),
+  });
+}
+export function encodeUserEnvironmentTerminateRequest(
+  value: UserEnvironmentTerminateRequest,
+): string {
+  return JSON.stringify(decodeUserEnvironmentTerminateRequest(value));
 }
 export function decodeEnvironmentProfileTransitionRequest(
   value: unknown,
@@ -12135,169 +12154,6 @@ export class Client {
       signal,
     );
   }
-  async createManagedHostEnvironmentLease(
-    tenantId: string,
-    projectId: string,
-    requestId: string,
-    idempotencyKey: string,
-    body: EnvironmentLeaseCreateRequest,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<EnvironmentLease>> {
-    validateLeasePath(tenantId, projectId, undefined, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/managed-host/tenants/${tenantId}/projects/${projectId}/environment-leases`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeEnvironmentLeaseCreateRequest(body),
-      },
-      signal,
-    );
-    if (response.status !== 201)
-      throw await this.problem("managedHostCreateEnvironmentLease", response);
-    const result = parseEnvironmentLease(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== body.leaseId ||
-      result.value.spec.projectRef.id !== projectId ||
-      result.value.spec.targetId !== body.targetId ||
-      result.value.spec.targetGeneration !== body.expectedTargetGeneration
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async listManagedHostEnvironmentLeases(
-    tenantId: string,
-    projectId: string,
-    requestId: string,
-    pageSize?: number,
-    pageToken?: string,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<EnvironmentLeasePage>> {
-    validateLeasePath(tenantId, projectId, undefined, requestId);
-    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
-    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
-    const query = new URLSearchParams();
-    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
-    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
-    const suffix = query.toString() ? `?${query.toString()}` : "";
-    const response = await this.call(
-      {
-        method: "GET",
-        path: `/v1/managed-host/tenants/${tenantId}/projects/${projectId}/environment-leases${suffix}`,
-        headers: { "X-Request-ID": requestId },
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostListEnvironmentLeases", response);
-    const result = parseEnvironmentLeasePage(response.body);
-    if (
-      result.value.environmentLeases.some(
-        ({ metadata, spec }) =>
-          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
-      )
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentLeases");
-    return result;
-  }
-  async getManagedHostEnvironmentLease(
-    tenantId: string,
-    projectId: string,
-    leaseId: string,
-    requestId: string,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<EnvironmentLease>> {
-    validateLeasePath(tenantId, projectId, leaseId, requestId);
-    const response = await this.call(
-      {
-        method: "GET",
-        path: `/v1/managed-host/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}`,
-        headers: { "X-Request-ID": requestId },
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostGetEnvironmentLease", response);
-    const result = parseEnvironmentLease(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== leaseId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async terminateManagedHostEnvironmentLease(
-    tenantId: string,
-    projectId: string,
-    leaseId: string,
-    requestId: string,
-    idempotencyKey: string,
-    body: EnvironmentLeaseTerminateRequest,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<EnvironmentLease>> {
-    validateLeasePath(tenantId, projectId, leaseId, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/managed-host/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}:terminate`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeEnvironmentLeaseTerminateRequest(body),
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostTerminateEnvironmentLease", response);
-    const result = parseEnvironmentLease(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== leaseId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async upgradeManagedHostEnvironmentLease(
-    tenantId: string,
-    projectId: string,
-    leaseId: string,
-    requestId: string,
-    idempotencyKey: string,
-    body: EnvironmentLeaseUpgradeRequest,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<EnvironmentLease>> {
-    validateLeasePath(tenantId, projectId, leaseId, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/managed-host/tenants/${tenantId}/projects/${projectId}/environment-leases/${leaseId}:upgrade`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeEnvironmentLeaseUpgradeRequest(body),
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostUpgradeEnvironmentLease", response);
-    const result = parseEnvironmentLease(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== leaseId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
   async listAdminEnvironmentLeases(
     tenantId: string,
     projectId: string,
@@ -13862,6 +13718,39 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId");
     return result;
   }
+  async terminateEnvironment(
+    tenantId: string,
+    projectId: string,
+    environmentId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: UserEnvironmentTerminateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<UserEnvironment>> {
+    validateLeasePath(tenantId, projectId, environmentId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const checked = decodeUserEnvironmentTerminateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/environments/${environmentId}:terminate`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeUserEnvironmentTerminateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("managedAgentTerminateEnvironment", response);
+    const result = parseUserEnvironment(response.body);
+    if (
+      result.value.projectRef.id !== projectId ||
+      result.value.environmentId !== environmentId ||
+      result.value.observedPhase !== "terminated"
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/environmentId");
+    return result;
+  }
   async listAdminRuntimeProfiles(
     tenantId: string,
     projectId: string,
@@ -15005,167 +14894,6 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("adminProbeDeploymentTarget", response);
-    const result = parseDeploymentTarget(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== targetId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async listDeploymentTargets(
-    tenantId: string,
-    projectId: string,
-    requestId: string,
-    pageSize?: number,
-    pageToken?: string,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<DeploymentTargetPage>> {
-    validateDeploymentTargetPath(tenantId, projectId, undefined, requestId);
-    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
-    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
-    const query = new URLSearchParams();
-    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
-    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
-    const suffix = query.toString() ? `?${query.toString()}` : "";
-    const response = await this.call(
-      {
-        method: "GET",
-        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets${suffix}`,
-        headers: { "X-Request-ID": requestId },
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostListDeploymentTargets", response);
-    const result = parseDeploymentTargetPage(response.body);
-    if (
-      result.value.deploymentTargets.some(
-        ({ metadata, spec }) =>
-          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
-      )
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/deploymentTargets");
-    return result;
-  }
-  async registerDeploymentTarget(
-    tenantId: string,
-    projectId: string,
-    requestId: string,
-    idempotencyKey: string,
-    body: DeploymentTargetRegisterRequest,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<DeploymentTarget>> {
-    validateDeploymentTargetPath(tenantId, projectId, undefined, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeDeploymentTargetRegisterRequest(body),
-      },
-      signal,
-    );
-    if (response.status !== 201)
-      throw await this.problem("managedHostRegisterDeploymentTarget", response);
-    const result = parseDeploymentTarget(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== body.targetId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async getDeploymentTarget(
-    tenantId: string,
-    projectId: string,
-    targetId: string,
-    requestId: string,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<DeploymentTarget>> {
-    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
-    const response = await this.call(
-      {
-        method: "GET",
-        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}`,
-        headers: { "X-Request-ID": requestId },
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostGetDeploymentTarget", response);
-    const result = parseDeploymentTarget(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== targetId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async probeDeploymentTarget(
-    tenantId: string,
-    projectId: string,
-    targetId: string,
-    requestId: string,
-    idempotencyKey: string,
-    body: DeploymentTargetProbeRequest,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<DeploymentTarget>> {
-    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:probe`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeDeploymentTargetProbeRequest(body),
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostProbeDeploymentTarget", response);
-    const result = parseDeploymentTarget(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== targetId ||
-      result.value.spec.projectRef.id !== projectId
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
-  }
-  async cleanupDeploymentTarget(
-    tenantId: string,
-    projectId: string,
-    targetId: string,
-    requestId: string,
-    idempotencyKey: string,
-    body: DeploymentTargetProbeRequest,
-    signal?: AbortSignal,
-  ): Promise<ResponseEnvelope<DeploymentTarget>> {
-    validateDeploymentTargetPath(tenantId, projectId, targetId, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/tenants/${tenantId}/projects/${projectId}/deployment-targets/${targetId}:cleanup`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeDeploymentTargetProbeRequest(body),
-      },
-      signal,
-    );
-    if (response.status !== 200)
-      throw await this.problem("managedHostCleanupDeploymentTarget", response);
     const result = parseDeploymentTarget(response.body);
     requireVersion(response, result.value.metadata.resourceVersion);
     if (

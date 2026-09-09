@@ -134,7 +134,12 @@ try {
       await delay(50);
     }
     const href = await evaluate("location.href");
-    throw new Error(`timed out waiting for ${label} at ${href}: ${errors.join("; ")}`);
+    const page = await evaluate(
+      `({ readyState: document.readyState, title: document.title, body: document.body?.textContent?.slice(0, 240), resources: performance.getEntriesByType("resource").map(({ name }) => name).slice(-8) })`,
+    );
+    throw new Error(
+      `timed out waiting for ${label} at ${href}: ${errors.join("; ")}; ${JSON.stringify(page)}`,
+    );
   };
   const navigate = async (url) => {
     const result = await command("Page.navigate", { url });

@@ -78,6 +78,10 @@ func (server *UserEnvironmentHTTPServer) ServeHTTP(writer http.ResponseWriter, r
 		server.create(writer, request, tenantID, projectID, requestID, bearer, principal)
 		return
 	}
+	if action == "terminate" {
+		server.terminate(writer, request, tenantID, projectID, environmentID, requestID, bearer)
+		return
+	}
 	server.get(writer, request, tenantID, projectID, environmentID, requestID, principal)
 }
 
@@ -130,6 +134,41 @@ func (server *UserEnvironmentHTTPServer) get(writer http.ResponseWriter, request
 	writeUserEnvironment(writer, http.StatusOK, requestID, result)
 }
 
+func (server *UserEnvironmentHTTPServer) terminate(writer http.ResponseWriter, request *http.Request, tenantID, projectID, environmentID, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateTerminateUserEnvironmentServerRequest(tenantID, projectID, environmentID, requestID, idempotencyKey, body)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	result, err := server.store.GetUserEnvironment(request.Context(), tenantID, principal, projectID, environmentID)
+	if err != nil {
+		writeUserEnvironmentError(writer, err)
+		return
+	}
+	result.Lease, err = server.actuator.terminateEnvironment(request.Context(), tenantID, projectID, environmentID, bearer, validated.Body.ExpectedGeneration, internalmanagedhost.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey})
+	if err != nil {
+		status, code := environmentTerminationErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	writeUserEnvironment(writer, http.StatusOK, requestID, result)
+}
+
 func writeUserEnvironment(writer http.ResponseWriter, status int, requestID string, snapshot internalmanagedhost.ProfileEnvironmentSnapshot) {
 	value := platformv1alpha1.UserEnvironment{
 		APIVersion: platformv1alpha1.APIVersion, Kind: "UserEnvironment",
@@ -158,6 +197,15 @@ func userEnvironmentPath(path string) (tenantID, projectID, environmentID, actio
 		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "environments" && parts[0] != "" && parts[2] != "" && parts[4] != "" {
+		if strings.HasSuffix(parts[4], ":terminate") {
+			environmentID = strings.TrimSuffix(parts[4], ":terminate")
+			if environmentID != "" {
+				return parts[0], parts[2], environmentID, "terminate", true
+			}
+		}
+		if strings.Contains(parts[4], ":") {
+			return "", "", "", "", false
+		}
 		return parts[0], parts[2], parts[4], "get", true
 	}
 	return "", "", "", "", false
@@ -170,6 +218,9 @@ func userEnvironmentPermission(action, method string) (projectPermission, enviro
 	if action == "get" && method == http.MethodGet {
 		return "projects.get", "environments.get", true
 	}
+	if action == "terminate" && method == http.MethodPost {
+		return "projects.act", "environments.delete", true
+	}
 	return "", "", false
 }
 
@@ -181,4 +232,19 @@ func HandlesUserEnvironmentPath(path string) bool {
 func writeUserEnvironmentError(writer http.ResponseWriter, err error) {
 	status, code := managedHostEnvironmentLeaseErrorStatus(err)
 	writePublicProblem(writer, status, code)
+}
+
+func environmentTerminationErrorStatus(err error) (int, string) {
+	switch {
+	case errors.Is(err, errEnvironmentActuationAuthentication):
+		return http.StatusUnauthorized, "authentication_failed"
+	case errors.Is(err, errEnvironmentCleanupUnavailable):
+		return http.StatusServiceUnavailable, "environment_cleanup_unavailable"
+	case errors.Is(err, errEnvironmentCleanupConflict):
+		return http.StatusConflict, "environment_cleanup_conflict"
+	case errors.Is(err, errEnvironmentCleanupFailed):
+		return http.StatusBadGateway, "environment_cleanup_failed"
+	default:
+		return managedHostEnvironmentLeaseErrorStatus(err)
+	}
 }

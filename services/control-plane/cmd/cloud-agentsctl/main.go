@@ -124,11 +124,11 @@ func run(args []string, stdout io.Writer) error {
 			set.StringVar(&targetEndpoint, "target-endpoint", "", "target HTTPS or SSH endpoint")
 			set.StringVar(&credentialRef, "credential-ref", "", "deployment-owned credential reference")
 		}); err == nil {
-			value, err = client.RegisterDeploymentTarget(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.DeploymentTargetRegisterRequest{TargetID: options.target, TargetName: targetName, TargetKind: kind, Endpoint: targetEndpoint, CredentialRef: credentialRef})
+			value, err = client.RegisterAdminDeploymentTarget(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.DeploymentTargetRegisterRequest{TargetID: options.target, TargetName: targetName, TargetKind: kind, Endpoint: targetEndpoint, CredentialRef: credentialRef})
 		}
 	case "target get":
 		if err = parseActionFlags("target get", actionArgs, nil); err == nil {
-			value, err = client.GetDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID)
+			value, err = client.GetAdminDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID)
 		}
 	case "target probe":
 		var generation int64
@@ -137,16 +137,29 @@ func run(args []string, stdout io.Writer) error {
 		}); err == nil && generation < 1 {
 			err = errors.New("--expected-generation must be greater than zero")
 		} else if err == nil {
-			value, err = client.ProbeDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
+			value, err = client.ProbeAdminDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
 		}
 	case "target cleanup":
 		var generation int64
+		var confirmedTargetID string
 		if err = parseActionFlags("target cleanup", actionArgs, func(set *flag.FlagSet) {
 			set.Int64Var(&generation, "expected-generation", 0, "deployment target fencing generation")
+			set.StringVar(&confirmedTargetID, "confirm-target-id", "", "deployment target ID to confirm cleanup")
 		}); err == nil && generation < 1 {
 			err = errors.New("--expected-generation must be greater than zero")
+		} else if err == nil && confirmedTargetID != options.target {
+			err = errors.New("--confirm-target-id must match --target")
 		} else if err == nil {
-			value, err = client.CleanupDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetProbeRequest{ExpectedGeneration: generation})
+			var preview openapi.DeploymentTargetCleanupPreviewResult
+			preview, err = client.PreviewAdminDeploymentTargetCleanup(ctx, options.tenant, options.project, options.target, options.requestID)
+			if err == nil && preview.Value.Spec.ExpectedGeneration != generation {
+				err = errors.New("--expected-generation does not match the cleanup preview")
+			} else if err == nil {
+				_, err = client.CleanupAdminDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID, options.idempotencyKey, platform.DeploymentTargetCleanupRequest{ExpectedGeneration: generation, ExpectedResourceVersion: preview.Value.Spec.ExpectedResourceVersion, ImpactDigest: preview.Value.Spec.ImpactDigest})
+			}
+			if err == nil {
+				value, err = client.GetAdminDeploymentTarget(ctx, options.tenant, options.project, options.target, options.requestID)
+			}
 		}
 	case "remote-worker-enrollment claim-secret":
 		var expectedResourceVersion int64
@@ -635,58 +648,11 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum environment leases to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque environment lease page token")
 		}); err == nil {
-			value, err = client.ListManagedHostEnvironmentLeases(ctx, options.tenant, options.project, options.requestID, pageSize, pageToken)
-		}
-	case "environment-lease create":
-		var flags struct {
-			name                     string
-			releaseDigest            string
-			providerCredentialRef    string
-			expectedTargetGeneration int64
-			cpuLimitMillis           int64
-			memoryLimitBytes         int64
-			ttlSeconds               int64
-		}
-		if err = parseActionFlags("environment-lease create", actionArgs, func(set *flag.FlagSet) {
-			set.StringVar(&flags.name, "name", "", "lease name")
-			set.StringVar(&flags.releaseDigest, "release-digest", "", "release artifact digest")
-			set.StringVar(&flags.providerCredentialRef, "provider-credential-ref", "", "target-side Provider credential reference")
-			set.Int64Var(&flags.expectedTargetGeneration, "expected-target-generation", 0, "deployment target fencing generation")
-			set.Int64Var(&flags.cpuLimitMillis, "cpu-limit-millis", 0, "Worker CPU limit in millicores")
-			set.Int64Var(&flags.memoryLimitBytes, "memory-limit-bytes", 0, "Worker memory limit in bytes")
-			set.Int64Var(&flags.ttlSeconds, "ttl-seconds", 0, "lease lifetime in seconds")
-		}); err == nil && flags.expectedTargetGeneration <= 0 {
-			err = errors.New("--expected-target-generation must be greater than zero")
-		} else if err == nil {
-			value, err = client.CreateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseCreateRequest{
-				LeaseID: options.lease, LeaseName: flags.name, ReleaseDigest: flags.releaseDigest, TargetID: options.target,
-				ExpectedTargetGeneration: flags.expectedTargetGeneration, ProviderCredentialRef: flags.providerCredentialRef,
-				CPULimitMillis: flags.cpuLimitMillis, MemoryLimitBytes: flags.memoryLimitBytes, TTLSeconds: flags.ttlSeconds,
-			})
+			value, err = client.ListAdminEnvironmentLeases(ctx, options.tenant, options.project, options.requestID, pageSize, pageToken)
 		}
 	case "environment-lease get":
 		if err = parseActionFlags("environment-lease get", actionArgs, nil); err == nil {
-			value, err = client.GetManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID)
-		}
-	case "environment-lease terminate":
-		var generation int64
-		if err = parseActionFlags("environment-lease terminate", actionArgs, func(set *flag.FlagSet) {
-			set.Int64Var(&generation, "generation", 0, "lease fencing generation")
-		}); err == nil && generation <= 0 {
-			err = errors.New("--generation must be greater than zero")
-		} else if err == nil {
-			value, err = client.TerminateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseTerminateRequest{ExpectedGeneration: generation})
-		}
-	case "environment-lease upgrade":
-		var releaseDigest string
-		var generation int64
-		if err = parseActionFlags("environment-lease upgrade", actionArgs, func(set *flag.FlagSet) {
-			set.StringVar(&releaseDigest, "release-digest", "", "new release artifact digest")
-			set.Int64Var(&generation, "generation", 0, "lease fencing generation")
-		}); err == nil && generation <= 0 {
-			err = errors.New("--generation must be greater than zero")
-		} else if err == nil {
-			value, err = client.UpgradeManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseUpgradeRequest{ReleaseDigest: releaseDigest, ExpectedGeneration: generation})
+			value, err = client.GetAdminEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID)
 		}
 	default:
 		return fmt.Errorf("unknown command %q; use cloud-agentsctl help", command+" "+action)
@@ -989,7 +955,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "remote-worker-enrollment issue-certificate", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate", "environment-lease upgrade":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "remote-worker-enrollment issue-certificate", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease get":
 		return true
 	default:
 		return false
@@ -1026,13 +992,13 @@ func requiresPTYSession(command, action string) bool {
 	return command == "pty" && action != "create"
 }
 func requiresLease(command, action string) bool {
-	return command == "environment-lease" && action != "list" || command == "session" && action == "create"
+	return command == "environment-lease" && action == "get" || command == "session" && action == "create"
 }
 func requiresTarget(command, action string) bool {
-	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"
+	return command == "target" && action != "preflight"
 }
 func requiresIdempotency(command, action string) bool {
-	return command == "remote-worker-enrollment" || (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate" || action == "upgrade"))
+	return command == "remote-worker-enrollment" || (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
@@ -1042,7 +1008,7 @@ const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token T
 const help = usage + `
 
 resources and actions:
-  target preflight|register|get|probe|cleanup
+  target preflight|register|get|probe|cleanup (Admin API)
   remote-worker-enrollment claim-secret|issue-certificate
   tenant get
   organization get|list|create
@@ -1061,7 +1027,7 @@ resources and actions:
   role-binding get|list|create|revoke
   managed-host-project get
   managed-host-role-binding get
-  environment-lease get|list|create|upgrade|terminate`
+  environment-lease get|list (Admin API)`
 
 type membershipCreateFlags struct {
 	expectedTenantRevision int64

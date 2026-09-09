@@ -3,13 +3,20 @@
 set -eu
 
 : "${CLOUD_AGENTS_ENDPOINT:?set the public Control Plane HTTPS endpoint}"
-: "${CLOUD_AGENTS_TOKEN_FILE:?set the Control Plane bearer token file}"
+: "${CLOUD_AGENTS_ADMIN_TOKEN_FILE:?set the Admin API bearer token file}"
+: "${CLOUD_AGENTS_USER_TOKEN_FILE:?set the User API bearer token file}"
 : "${CLOUD_AGENTS_TENANT:?set the tenant id}"
 : "${CLOUD_AGENTS_PROJECT:?set the project id}"
 : "${CLOUD_AGENTS_TARGET_ID:?set a stable SSH deployment target id}"
 : "${CLOUD_AGENTS_TARGET_ENDPOINT:?set the target endpoint as ssh://host[:port]}"
 : "${CLOUD_AGENTS_TARGET_CREDENTIAL_REF:?set the mounted SSH credential reference}"
+: "${CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY:?set the Worker image repository without tag or digest}"
 : "${CLOUD_AGENTS_RELEASE_DIGEST:?set the Worker image release digest}"
+: "${CLOUD_AGENTS_WORKER_ARCHITECTURE:?set linux/amd64 or linux/arm64}"
+: "${CLOUD_AGENTS_PLATFORM_VERSION:?set the verified platform version}"
+: "${CLOUD_AGENTS_RUNTIME_VERSION:?set the verified runtime version}"
+: "${CLOUD_AGENTS_CODEX_VERSION:?set the verified Codex version}"
+: "${CLOUD_AGENTS_CLAUDE_CODE_VERSION:?set the verified Claude Code version}"
 : "${CLOUD_AGENTS_PROVIDER_VOLUME_REF:?set the target Provider credential volume name}"
 : "${CLOUD_AGENTS_SSH_HOST:?set the operator SSH host matching the target endpoint}"
 : "${CLOUD_AGENTS_SSH_USER:?set the operator SSH user}"
@@ -24,12 +31,13 @@ ssh_port=${CLOUD_AGENTS_SSH_PORT-22}
 target_name=${CLOUD_AGENTS_TARGET_NAME-$CLOUD_AGENTS_TARGET_ID}
 script_directory=$(CDPATH= cd "$(dirname "$0")" && pwd)
 
-if [ ! -f "$CLOUD_AGENTS_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_SSH_IDENTITY_FILE" ] || [ ! -f "$CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE" ] || [ -e "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ]; then
-  echo "token, SSH identity, and known_hosts files must exist, and CLOUD_AGENTS_E2E_OUTPUT_DIR must be new" >&2
+if [ ! -f "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_USER_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_SSH_IDENTITY_FILE" ] || [ ! -f "$CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE" ] || [ -e "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ]; then
+  echo "Admin/User token, SSH identity, and known_hosts files must exist, and CLOUD_AGENTS_E2E_OUTPUT_DIR must be new" >&2
   exit 1
 fi
 command -v "$cloud_agentsctl" >/dev/null
 command -v "$ssh_client" >/dev/null
+command -v curl >/dev/null
 command -v node >/dev/null
 CLOUD_AGENTS_E2E_TARGET_ENDPOINT="$CLOUD_AGENTS_TARGET_ENDPOINT" CLOUD_AGENTS_E2E_SSH_HOST="$CLOUD_AGENTS_SSH_HOST" CLOUD_AGENTS_E2E_SSH_PORT="$ssh_port" node <<'NODE'
 const endpoint = new URL(process.env.CLOUD_AGENTS_E2E_TARGET_ENDPOINT);
@@ -49,17 +57,50 @@ for identifier in "$CLOUD_AGENTS_TENANT" "$CLOUD_AGENTS_PROJECT" "$CLOUD_AGENTS_
 done
 mkdir -m 0700 "$CLOUD_AGENTS_E2E_OUTPUT_DIR"
 
+admin_curl_config="$CLOUD_AGENTS_E2E_OUTPUT_DIR/.admin-curl.conf"
+user_curl_config="$CLOUD_AGENTS_E2E_OUTPUT_DIR/.user-curl.conf"
+printf 'header = "Authorization: Bearer %s"\n' "$(sed -n '1p' "$CLOUD_AGENTS_ADMIN_TOKEN_FILE")" >"$admin_curl_config"
+printf 'header = "Authorization: Bearer %s"\n' "$(sed -n '1p' "$CLOUD_AGENTS_USER_TOKEN_FILE")" >"$user_curl_config"
+chmod 0600 "$admin_curl_config" "$user_curl_config"
+
 run_id="ssh-e2e-$(date -u +%Y%m%d%H%M%S)-$$"
 lease_id="$run_id-lease"
+release_id="$run_id-release"
+storage_policy_id="$run_id-storage"
+network_policy_id="$run_id-network"
+profile_id="$run_id-profile"
 codex_session="$run_id-codex"
 claude_session="$run_id-claude"
 lease_created=
 
 run_ctl() {
   if [ -n "$ca_file" ]; then
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$CLOUD_AGENTS_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
+    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$CLOUD_AGENTS_USER_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
   else
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$CLOUD_AGENTS_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
+    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$CLOUD_AGENTS_USER_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
+  fi
+}
+
+run_admin_ctl() {
+  if [ -n "$ca_file" ]; then
+    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
+  else
+    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
+  fi
+}
+
+run_api() {
+  config=$1
+  method=$2
+  path=$3
+  request_id=$4
+  shift 4
+  if [ -n "$ca_file" ]; then
+    curl --silent --show-error --fail-with-body --cacert "$ca_file" --config "$config" --request "$method" \
+      --header "X-Request-ID: $request_id" "$@" "$CLOUD_AGENTS_ENDPOINT$path"
+  else
+    curl --silent --show-error --fail-with-body --config "$config" --request "$method" \
+      --header "X-Request-ID: $request_id" "$@" "$CLOUD_AGENTS_ENDPOINT$path"
   fi
 }
 
@@ -69,18 +110,16 @@ run_ssh() {
     -i "$CLOUD_AGENTS_SSH_IDENTITY_FILE" -p "$ssh_port" -l "$CLOUD_AGENTS_SSH_USER" "$CLOUD_AGENTS_SSH_HOST" "$@"
 }
 
-create_lease() {
-  run_ctl --timeout 3m --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" --lease "$lease_id" \
-    --request-id "$run_id-lease-create" --idempotency-key "$run_id-lease-create" \
-    environment-lease create --name "$lease_id" --release-digest "$CLOUD_AGENTS_RELEASE_DIGEST" \
-    --expected-target-generation 1 --provider-credential-ref "$CLOUD_AGENTS_PROVIDER_VOLUME_REF" \
-    --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600
+create_environment() {
+  run_api "$user_curl_config" POST "/v1/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/environments" \
+    "$run_id-environment-create" --header "Idempotency-Key: $run_id-environment-create" --header 'Content-Type: application/json' \
+    --data "{\"profileId\":\"$profile_id\",\"profileVersion\":1}"
 }
 
-terminate_lease() {
-  run_ctl --timeout 3m --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
-    --request-id "$run_id-lease-terminate" --idempotency-key "$run_id-lease-terminate" \
-    environment-lease terminate --generation 1
+terminate_environment() {
+  run_api "$user_curl_config" POST "/v1/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/environments/$lease_id:terminate" \
+    "$run_id-environment-terminate" --header "Idempotency-Key: $run_id-environment-terminate" \
+    --header 'Content-Type: application/json' --data '{"expectedGeneration":1}'
 }
 
 list_remote_workers() {
@@ -94,39 +133,106 @@ list_remote_workers() {
 
 terminate_on_failure() {
   if [ -n "$lease_created" ]; then
-    terminate_lease >/dev/null 2>&1 || true
+    terminate_environment >/dev/null 2>&1 || true
   fi
+  rm -f "$admin_curl_config" "$user_curl_config"
 }
 trap terminate_on_failure EXIT HUP INT TERM
 
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "ssh-target-register-$CLOUD_AGENTS_TARGET_ID" \
   --idempotency-key "ssh-target-register-$CLOUD_AGENTS_TARGET_ID" \
   target register --target-name "$target_name" --kind ssh \
   --target-endpoint "$CLOUD_AGENTS_TARGET_ENDPOINT" --credential-ref "$CLOUD_AGENTS_TARGET_CREDENTIAL_REF" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target.json"
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "$run_id-target-probe" --idempotency-key "$run_id-target-probe" \
   target probe --expected-generation 1 >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-probe.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-probe.json")" in
   *'"targetKind":"ssh"'*'"observedPhase":"ready"'*) ;;
   *) echo "SSH target probe did not become ready" >&2; exit 1 ;;
 esac
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "$run_id-target-status" target get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json")" in
   *'"targetKind":"ssh"'*'"observedPhase":"ready"'*) ;;
   *) echo "SSH target ready status was not persisted" >&2; exit 1 ;;
 esac
 
+release_body_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/release-request.json"
+CLOUD_AGENTS_E2E_RELEASE_ID="$release_id" CLOUD_AGENTS_E2E_WORKER_IMAGE_REPOSITORY="$CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY" \
+  CLOUD_AGENTS_E2E_RELEASE_DIGEST="$CLOUD_AGENTS_RELEASE_DIGEST" CLOUD_AGENTS_E2E_WORKER_ARCHITECTURE="$CLOUD_AGENTS_WORKER_ARCHITECTURE" \
+  CLOUD_AGENTS_E2E_PLATFORM_VERSION="$CLOUD_AGENTS_PLATFORM_VERSION" CLOUD_AGENTS_E2E_RUNTIME_VERSION="$CLOUD_AGENTS_RUNTIME_VERSION" \
+  CLOUD_AGENTS_E2E_CODEX_VERSION="$CLOUD_AGENTS_CODEX_VERSION" CLOUD_AGENTS_E2E_CLAUDE_CODE_VERSION="$CLOUD_AGENTS_CLAUDE_CODE_VERSION" \
+  node >"$release_body_file" <<'NODE'
+const value = {
+  releaseId: process.env.CLOUD_AGENTS_E2E_RELEASE_ID,
+  releaseName: process.env.CLOUD_AGENTS_E2E_RELEASE_ID,
+  imageRepository: process.env.CLOUD_AGENTS_E2E_WORKER_IMAGE_REPOSITORY,
+  releaseDigest: process.env.CLOUD_AGENTS_E2E_RELEASE_DIGEST,
+  platformVersion: process.env.CLOUD_AGENTS_E2E_PLATFORM_VERSION,
+  runtimeVersion: process.env.CLOUD_AGENTS_E2E_RUNTIME_VERSION,
+  codexVersion: process.env.CLOUD_AGENTS_E2E_CODEX_VERSION,
+  claudeCodeVersion: process.env.CLOUD_AGENTS_E2E_CLAUDE_CODE_VERSION,
+  architectures: [process.env.CLOUD_AGENTS_E2E_WORKER_ARCHITECTURE],
+  verificationEvidenceDigest: process.env.CLOUD_AGENTS_E2E_RELEASE_DIGEST,
+};
+process.stdout.write(JSON.stringify(value));
+NODE
+run_api "$admin_curl_config" POST "/v1/admin/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/worker-releases" \
+  "$run_id-release-register" --header "Idempotency-Key: $run_id-release-register" --header 'Content-Type: application/json' \
+  --data-binary "@$release_body_file" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/release.json"
+run_api "$admin_curl_config" PUT "/v1/admin/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/storage-policies/$storage_policy_id" \
+  "$run_id-storage-policy" --header "Idempotency-Key: $run_id-storage-policy" --header 'Content-Type: application/json' \
+  --data "{\"expectedResourceVersion\":\"0\",\"policyName\":\"$storage_policy_id\",\"userSummary\":\"20 GiB managed workspace\",\"workspaceType\":\"managed-volume\",\"workspaceCapacityBytes\":21474836480,\"retentionSeconds\":0,\"cleanupOnLeaseTermination\":true,\"allowWorkspaceReuse\":true}" \
+  >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/storage-policy.json"
+run_api "$admin_curl_config" PUT "/v1/admin/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/network-policies/$network_policy_id" \
+  "$run_id-network-policy" --header "Idempotency-Key: $run_id-network-policy" --header 'Content-Type: application/json' \
+  --data "{\"expectedResourceVersion\":\"0\",\"policyName\":\"$network_policy_id\",\"userSummary\":\"Public internet access\",\"defaultEgress\":\"public\",\"allowedEgress\":[],\"ingressEnabled\":false,\"previewEnabled\":false}" \
+  >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/network-policy.json"
+profile_body_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/profile-request.json"
+CLOUD_AGENTS_E2E_PROFILE_ID="$profile_id" CLOUD_AGENTS_E2E_STORAGE_POLICY_ID="$storage_policy_id" \
+  CLOUD_AGENTS_E2E_NETWORK_POLICY_ID="$network_policy_id" CLOUD_AGENTS_E2E_RELEASE_DIGEST="$CLOUD_AGENTS_RELEASE_DIGEST" \
+  CLOUD_AGENTS_E2E_TARGET_ID="$CLOUD_AGENTS_TARGET_ID" CLOUD_AGENTS_E2E_PROVIDER_CREDENTIAL_REF="$CLOUD_AGENTS_PROVIDER_VOLUME_REF" \
+  node >"$profile_body_file" <<'NODE'
+const value = {
+  profileId: process.env.CLOUD_AGENTS_E2E_PROFILE_ID,
+  profileName: process.env.CLOUD_AGENTS_E2E_PROFILE_ID,
+  version: 1,
+  description: "SSH target real E2E",
+  providerKinds: ["codex", "claudeAgent"],
+  cpuLimitMillis: 1000,
+  memoryLimitBytes: 536870912,
+  storagePolicyRef: process.env.CLOUD_AGENTS_E2E_STORAGE_POLICY_ID,
+  networkPolicyRef: process.env.CLOUD_AGENTS_E2E_NETWORK_POLICY_ID,
+  releaseDigest: process.env.CLOUD_AGENTS_E2E_RELEASE_DIGEST,
+  targetRefs: [process.env.CLOUD_AGENTS_E2E_TARGET_ID],
+  providerCredentialRef: process.env.CLOUD_AGENTS_E2E_PROVIDER_CREDENTIAL_REF,
+};
+process.stdout.write(JSON.stringify(value));
+NODE
+run_api "$admin_curl_config" POST "/v1/admin/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/environment-profiles" \
+  "$run_id-profile-create" --header "Idempotency-Key: $run_id-profile-create" --header 'Content-Type: application/json' \
+  --data-binary "@$profile_body_file" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/profile.json"
+run_api "$admin_curl_config" POST "/v1/admin/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/environment-profiles/$profile_id/versions/1:publish" \
+  "$run_id-profile-publish" --header "Idempotency-Key: $run_id-profile-publish" --header 'Content-Type: application/json' \
+  --data '{"expectedResourceVersion":"1"}' >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/profile-published.json"
+
+create_environment >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json"
+lease_id=$(CLOUD_AGENTS_E2E_ENVIRONMENT_FILE="$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_ENVIRONMENT_FILE, "utf8"));
+if (typeof value.environmentId !== "string" || value.environmentId === "") throw new Error("User API omitted the Environment id");
+process.stdout.write(value.environmentId);
+NODE
+)
 lease_created=1
-create_lease >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json"
-create_lease >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-replay.json"
+create_environment >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-replay.json"
 cmp "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json" "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-replay.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease.json")" in
-  *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*) ;;
+  *'"observedPhase":"ready"'*) ;;
   *) echo "SSH target Worker did not become ready" >&2; exit 1 ;;
 esac
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
   --request-id "$run_id-lease-status" environment-lease get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json")" in
   *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"'"$CLOUD_AGENTS_TARGET_ID"'"'*) ;;
@@ -237,18 +343,24 @@ for session_id in "$codex_session" "$claude_session"; do
     --idempotency-key "$session_id-close" session close >/dev/null
 done
 
-terminate_lease >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate.json"
-terminate_lease >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate-replay.json"
+terminate_environment >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate.json"
+terminate_environment >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate-replay.json"
 cmp "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate.json" "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate-replay.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate.json")" in
-  *'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *'"observedPhase":"terminated"'*) ;;
   *) echo "SSH target Lease did not terminate cleanly" >&2; exit 1 ;;
+esac
+run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+  --request-id "$run_id-lease-terminated-status" environment-lease get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminated-status.json"
+case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminated-status.json")" in
+  *'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *) echo "SSH target Admin Lease projection did not record cleanup" >&2; exit 1 ;;
 esac
 lease_created=
 
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "$run_id-target-cleanup" --idempotency-key "$run_id-target-cleanup" \
-  target cleanup --expected-generation 1 >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-cleanup.json"
+  target cleanup --expected-generation 1 --confirm-target-id "$CLOUD_AGENTS_TARGET_ID" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-cleanup.json"
 list_remote_workers >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/remote-workers-final.txt"
 if [ -s "$CLOUD_AGENTS_E2E_OUTPUT_DIR/remote-workers-final.txt" ]; then
   echo "SSH target retained the terminated Worker" >&2

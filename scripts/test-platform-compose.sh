@@ -352,23 +352,22 @@ const issueToken = (tokenId, tokenAudience, scopes) => {
   return `${signingInput}.${signature}`;
 };
 const adminScopes = [
-  "audit.list", "environments.create", "environments.get", "environment-profiles.list",
+  "audit.list", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
   "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
   "snapshots.act", "snapshots.create", "snapshots.delete", "snapshots.get", "snapshots.list",
 ];
 const userScopes = [
-	"environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
+	"environment-quotas.get", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
 	"organizations.list", "projects.act", "projects.create", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
 ];
 const adminToken = issueToken("compose-smoke-admin-token", adminAudience, adminScopes);
 const adminDeniedToken = issueToken("compose-smoke-admin-denied-token", adminAudience, userScopes);
-const legacyOperatorToken = issueToken("compose-smoke-legacy-operator-token", audience, adminScopes);
 const userToken = issueToken("compose-smoke-user-token", audience, userScopes);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
-writeFileSync(`${state}/token`, `${legacyOperatorToken}\n`);
+writeFileSync(`${state}/token`, `${adminToken}\n`);
 writeFileSync(`${state}/admin-token`, `${adminToken}\n`);
 writeFileSync(`${state}/admin-denied-token`, `${adminDeniedToken}\n`);
 writeFileSync(`${state}/user-token`, `${userToken}\n`);
@@ -989,7 +988,7 @@ case "$kubernetes_target_get_output" in
 esac
 kubernetes_cleanup_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
   --request-id compose-smoke-kubernetes-target-cleanup --idempotency-key compose-smoke-kubernetes-target-cleanup \
-  target cleanup --expected-generation 1)
+  target cleanup --expected-generation 1 --confirm-target-id kubernetes-compose-target)
 case "$kubernetes_cleanup_output" in
   *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
   *) echo "Compose Kubernetes target cleanup failed" >&2; exit 1 ;;
@@ -1018,60 +1017,16 @@ case "$target_get_output" in
   *) echo "Compose Docker target ready state was not persisted" >&2; exit 1 ;;
 esac
 
-failed_lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
-  --lease lease-compose-target-retry --request-id compose-smoke-retry-lease-create \
-  --idempotency-key compose-smoke-retry-lease-create environment-lease create \
-  --name lease-compose-target-retry --release-digest "$worker_release_digest" \
-  --expected-target-generation 1 --provider-credential-ref "$retry_provider_credentials_volume" \
-  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
-case "$failed_lease_output" in
-  *'"generation":1'*'"observedPhase":"failed"'*'"cleanupPhase":"none"'*'"stableErrorCode":"docker-deployment-config-unavailable"'*) ;;
-  *) echo "Compose missing credential volume did not persist a recoverable failed deployment: $failed_lease_output" >&2; exit 1 ;;
-esac
-retry_container_count=$(docker ps -aq \
-  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-  --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
-if [ "$retry_container_count" -ne 0 ]; then
-  echo "Compose failed deployment left a target Worker" >&2
-  exit 1
-fi
-docker volume create "$retry_provider_credentials_volume" >/dev/null
-docker run --rm --user 0 --entrypoint /bin/sh \
-  -v "$retry_provider_credentials_volume:/target" \
-  -v "$smoke_directory/target-provider-credentials:/source:ro" \
-  postgres:17.6-bookworm -ec \
-  'cp /source/tenant-compose-smoke.unavailable-provider.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
-recovered_lease_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --target docker-compose-target \
-  --lease lease-compose-target-retry --request-id compose-smoke-retry-lease-create \
-  --idempotency-key compose-smoke-retry-lease-create environment-lease create \
-  --name lease-compose-target-retry --release-digest "$worker_release_digest" \
-  --expected-target-generation 1 --provider-credential-ref "$retry_provider_credentials_volume" \
-  --cpu-limit-millis 1000 --memory-limit-bytes 536870912 --ttl-seconds 3600)
-case "$recovered_lease_output" in
-  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*'"stableErrorCode"'*)
-    echo "Compose failed deployment recovery retained an error: $recovered_lease_output" >&2; exit 1 ;;
-  *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
-  *) echo "Compose failed deployment did not recover: $recovered_lease_output" >&2; exit 1 ;;
-esac
-retry_container_count=$(docker ps -q \
-  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-  --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
-if [ "$retry_container_count" -ne 1 ]; then
-  echo "Compose failed deployment recovery created $retry_container_count Workers, expected 1" >&2
-  exit 1
-fi
-retry_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease lease-compose-target-retry \
-  --request-id compose-smoke-retry-lease-terminate --idempotency-key compose-smoke-retry-lease-terminate \
-  environment-lease terminate --generation 1)
-case "$retry_terminate_output" in
-  *'"generation":2'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
-  *) echo "Compose recovered deployment did not terminate cleanly: $retry_terminate_output" >&2; exit 1 ;;
-esac
-retry_container_count=$(docker ps -aq \
-  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-  --filter label=cloud-agents.dev/lease=lease-compose-target-retry | wc -l | tr -d ' ')
-if [ "$retry_container_count" -ne 0 ]; then
-  echo "Compose recovered deployment left a target Worker after termination" >&2
+legacy_target_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-legacy-target-removed" --output /dev/null --write-out '%{http_code}' \
+  "https://$endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/deployment-targets")
+legacy_lease_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+  --config "$smoke_directory/user-curl.conf" --request GET \
+  --header "X-Request-ID: compose-smoke-legacy-lease-removed" --output /dev/null --write-out '%{http_code}' \
+  "https://$endpoint/v1/managed-host/tenants/tenant-compose-smoke/projects/$project_id/environment-leases")
+if [ "$legacy_target_status" -ne 404 ] || [ "$legacy_lease_status" -ne 404 ]; then
+  echo "Compose still exposed legacy User Target/Lease routes: target=$legacy_target_status lease=$legacy_lease_status" >&2
   exit 1
 fi
 
@@ -1349,6 +1304,104 @@ if (value.kind !== "EnvironmentProfile" || value.spec?.profileId !== process.env
   throw new Error("Admin API did not publish the Profile");
 }
 NODE
+
+retry_profile_id=compose-retry-profile
+retry_profile_body=$(CLOUD_AGENTS_COMPOSE_PROFILE_BODY="$profile_create_body" \
+  CLOUD_AGENTS_COMPOSE_RETRY_CREDENTIAL_REF="$retry_provider_credentials_volume" node <<'NODE'
+const value = JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_PROFILE_BODY);
+value.profileId = "compose-retry-profile";
+value.profileName = "compose-retry-profile";
+value.description = "Recoverable deployment profile";
+value.providerCredentialRef = process.env.CLOUD_AGENTS_COMPOSE_RETRY_CREDENTIAL_REF;
+process.stdout.write(JSON.stringify(value));
+NODE
+)
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles" \
+  compose-smoke-retry-profile-create --header "Idempotency-Key: compose-smoke-retry-profile-create" \
+  --data "$retry_profile_body" >"$smoke_directory/retry-profile-create.json"
+control_plane_api "$smoke_directory/admin-curl.conf" POST \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles/$retry_profile_id/versions/1:publish" \
+  compose-smoke-retry-profile-publish --header "Idempotency-Key: compose-smoke-retry-profile-publish" \
+  --data '{"expectedResourceVersion":"1"}' >"$smoke_directory/retry-profile-publish.json"
+retry_environment_body='{"profileId":"compose-retry-profile","profileVersion":1}'
+retry_environment_file="$smoke_directory/retry-environment.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments" \
+  compose-smoke-retry-environment-create --header "Idempotency-Key: compose-smoke-retry-environment-create" \
+  --data "$retry_environment_body" >"$retry_environment_file"
+retry_environment_id=$(CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$retry_environment_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE, "utf8"));
+if (value.observedPhase !== "failed" || value.stableErrorCode !== "docker-deployment-config-unavailable") {
+  throw new Error("Profile deployment failure did not persist a safe recoverable state");
+}
+process.stdout.write(value.environmentId);
+NODE
+)
+retry_container_count=$(docker ps -aq \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$retry_environment_id" | wc -l | tr -d ' ')
+if [ "$retry_container_count" -ne 0 ]; then
+  echo "Compose failed Profile deployment left a target Worker" >&2
+  exit 1
+fi
+docker volume create "$retry_provider_credentials_volume" >/dev/null
+docker run --rm --user 0 --entrypoint /bin/sh \
+  -v "$retry_provider_credentials_volume:/target" \
+  -v "$smoke_directory/target-provider-credentials:/source:ro" \
+  postgres:17.6-bookworm -ec \
+  'cp /source/tenant-compose-smoke.unavailable-provider.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+recovered_environment_file="$smoke_directory/retry-environment-recovered.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments" \
+  compose-smoke-retry-environment-create --header "Idempotency-Key: compose-smoke-retry-environment-create" \
+  --data "$retry_environment_body" >"$recovered_environment_file"
+CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$recovered_environment_file" \
+  CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID="$retry_environment_id" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE, "utf8"));
+if (value.environmentId !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID || value.observedPhase !== "ready" || "stableErrorCode" in value) {
+  throw new Error("Profile deployment did not recover through idempotent User API replay");
+}
+NODE
+retry_container_count=$(docker ps -q \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$retry_environment_id" | wc -l | tr -d ' ')
+if [ "$retry_container_count" -ne 1 ]; then
+  echo "Compose recovered Profile deployment created $retry_container_count Workers, expected 1" >&2
+  exit 1
+fi
+retry_terminate_file="$smoke_directory/retry-environment-terminate.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments/$retry_environment_id:terminate" \
+  compose-smoke-retry-environment-terminate --header "Idempotency-Key: compose-smoke-retry-environment-terminate" \
+  --data '{"expectedGeneration":1}' >"$retry_terminate_file"
+CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$retry_terminate_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE, "utf8"));
+const keys = Object.keys(value).sort().join("\n");
+const expected = ["apiVersion", "environmentId", "expiresAt", "kind", "observedPhase", "profileId", "profileVersion", "projectRef"].sort().join("\n");
+if (value.observedPhase !== "terminated" || keys !== expected) throw new Error("User environment termination response crossed the infrastructure boundary");
+NODE
+retry_lease_file="$smoke_directory/retry-environment-admin-lease.json"
+control_plane_api "$smoke_directory/admin-curl.conf" GET \
+  "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-leases/$retry_environment_id" \
+  compose-smoke-retry-environment-admin-get >"$retry_lease_file"
+CLOUD_AGENTS_COMPOSE_LEASE_FILE="$retry_lease_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_LEASE_FILE, "utf8"));
+if (value.spec?.generation !== 2 || value.spec?.observedPhase !== "terminated" || value.spec?.cleanupPhase !== "complete") {
+  throw new Error("Admin Lease projection did not record recovered environment cleanup");
+}
+NODE
+retry_container_count=$(docker ps -aq \
+  --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+  --filter label=cloud-agents.dev/lease="$retry_environment_id" | wc -l | tr -d ' ')
+if [ "$retry_container_count" -ne 0 ]; then
+  echo "Compose recovered Profile environment left a target Worker after termination" >&2
+  exit 1
+fi
 
 user_admin_profile_file="$smoke_directory/user-admin-profile-denied.json"
 user_admin_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
@@ -1918,13 +1971,16 @@ control_plane_api "$smoke_directory/user-curl.conf" POST \
   --data "$user_environment_body" >"$resumed_environment_file"
 resumed_environment_id=$(CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$resumed_environment_file" node -e \
   'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE,"utf8"));if(value.observedPhase!=="ready")process.exit(1);process.stdout.write(value.environmentId)')
-resumed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$resumed_environment_id" \
-  --request-id compose-smoke-resumed-environment-terminate \
-  --idempotency-key compose-smoke-resumed-environment-terminate environment-lease terminate --generation 1)
-case "$resumed_terminate_output" in
-  *'"generation":2'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
-  *) echo "Compose resumed Target environment did not terminate cleanly: $resumed_terminate_output" >&2; exit 1 ;;
-esac
+resumed_terminate_file="$smoke_directory/resumed-environment-terminate.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments/$resumed_environment_id:terminate" \
+  compose-smoke-resumed-environment-terminate --header "Idempotency-Key: compose-smoke-resumed-environment-terminate" \
+  --data '{"expectedGeneration":1}' >"$resumed_terminate_file"
+CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE="$resumed_terminate_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_FILE, "utf8"));
+if (value.observedPhase !== "terminated") throw new Error("Resumed Target environment did not terminate cleanly");
+NODE
 
 scheduling_operations_file="$smoke_directory/target-scheduling-operations.json"
 scheduling_audit_file="$smoke_directory/target-scheduling-audit.json"
@@ -2356,23 +2412,29 @@ if [ -n "$real_provider_credentials_directory" ]; then
   run_real_provider_turn claudeAgent claude
 fi
 
-terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$profile_environment_id" \
-  --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
-  environment-lease terminate --generation 3)
-case "$terminate_output" in
-  *'"generation":4'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
-  *) echo "Compose Docker target Lease did not terminate cleanly: $terminate_output" >&2; exit 1 ;;
-esac
-replayed_terminate_output=$(cloud_agentsctl --timeout 60s --project "$project_id" --lease "$profile_environment_id" \
-  --request-id compose-smoke-lease-terminate --idempotency-key compose-smoke-lease-terminate \
-  environment-lease terminate --generation 3)
-if [ "$replayed_terminate_output" != "$terminate_output" ]; then
+terminate_file="$smoke_directory/user-environment-terminate.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments/$profile_environment_id:terminate" \
+  compose-smoke-lease-terminate --header "Idempotency-Key: compose-smoke-lease-terminate" \
+  --data '{"expectedGeneration":3}' >"$terminate_file"
+replayed_terminate_file="$smoke_directory/user-environment-terminate-replayed.json"
+control_plane_api "$smoke_directory/user-curl.conf" POST \
+  "/v1/tenants/tenant-compose-smoke/projects/$project_id/environments/$profile_environment_id:terminate" \
+  compose-smoke-lease-terminate --header "Idempotency-Key: compose-smoke-lease-terminate" \
+  --data '{"expectedGeneration":3}' >"$replayed_terminate_file"
+if ! cmp -s "$replayed_terminate_file" "$terminate_file"; then
   echo "Compose Docker target termination was not idempotent" >&2
   exit 1
 fi
+terminated_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+  --request-id compose-smoke-terminated-lease environment-lease get)
+case "$terminated_lease_output" in
+  *'"generation":4'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
+  *) echo "Admin Lease projection did not record User environment termination: $terminated_lease_output" >&2; exit 1 ;;
+esac
 docker_cleanup_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
   --request-id compose-smoke-docker-target-cleanup --idempotency-key compose-smoke-docker-target-cleanup \
-  target cleanup --expected-generation 1)
+  target cleanup --expected-generation 1 --confirm-target-id docker-compose-target)
 case "$docker_cleanup_output" in
   *'"generation":1'*'"targetKind":"docker"'*'"observedPhase":"ready"'*) ;;
   *) echo "Compose Docker target cleanup failed" >&2; exit 1 ;;

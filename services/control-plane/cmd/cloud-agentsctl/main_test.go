@@ -29,7 +29,7 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 			if err := run([]string{argument}, &stdout); err != nil {
 				t.Fatal(err)
 			}
-			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list|create|upgrade|terminate"} {
+			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list (Admin API)"} {
 				if !strings.Contains(stdout.String(), expected) {
 					t.Fatalf("help output %q does not contain %q", stdout.String(), expected)
 				}
@@ -91,7 +91,7 @@ func TestRunRegistersDeploymentTargetThroughControlPlane(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if request.Method != http.MethodPost || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets" || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" || request.Header.Get("Idempotency-Key") != "register-alpha-key" || !strings.Contains(string(body), `"targetId":"docker-alpha"`) || !strings.Contains(string(body), `"credentialRef":"docker-alpha-mtls"`) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/deployment-targets" || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" || request.Header.Get("Idempotency-Key") != "register-alpha-key" || !strings.Contains(string(body), `"targetId":"docker-alpha"`) || !strings.Contains(string(body), `"credentialRef":"docker-alpha-mtls"`) {
 			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.Path, request.Header, body)
 		}
 		writer.Header().Set("X-Resource-Version", "1")
@@ -887,99 +887,32 @@ func TestRunRBACMutations(t *testing.T) {
 	}
 }
 
-func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
+func TestRunEnvironmentLeaseGetUsesAdminAPI(t *testing.T) {
 	const releaseDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	const responseBody = `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"CloudEnvironmentLease","metadata":{"uid":"lease-alpha","name":"lease-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"desiredPhase":"active","observedPhase":"provisioning","cleanupPhase":"none","environmentId":"lease-alpha","releaseDigest":"` + releaseDigest + `","targetId":"docker-alpha","targetGeneration":1,"providerCredentialRef":"provider-alpha","cpuLimitMillis":1000,"memoryLimitBytes":536870912,"expiresAt":"2026-08-29T09:00:00Z"}}`
-	decoded, err := platform.DecodeEnvironmentLeaseResponseJSON([]byte(responseBody))
-	if err != nil || decoded.Value.Spec.TargetID != "docker-alpha" || decoded.Value.Spec.TargetGeneration != 1 {
-		t.Fatalf("decode target binding: value=%#v err=%v", decoded.Value.Spec, err)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		writer.Header().Set("X-Resource-Version", "1")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(responseBody))
+	}))
+	defer server.Close()
+	args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--lease", "lease-alpha", "--request-id", "request-alpha", "environment-lease", "get"}
+	var stdout bytes.Buffer
+	if err := run(args, &stdout); err != nil {
+		t.Fatal(err)
 	}
-	tests := []struct {
-		name        string
-		globalArgs  []string
-		actionArgs  []string
-		method      string
-		path        string
-		status      int
-		idempotency string
-		bodyParts   []string
-	}{
-		{
-			name:        "create",
-			globalArgs:  []string{"--idempotency-key", "lease-create-key-1234", "--target", "docker-alpha"},
-			actionArgs:  []string{"environment-lease", "create", "--name", "lease-alpha", "--release-digest", releaseDigest, "--expected-target-generation", "1", "--provider-credential-ref", "provider-alpha", "--cpu-limit-millis", "1000", "--memory-limit-bytes", "536870912", "--ttl-seconds", "3600"},
-			method:      http.MethodPost,
-			path:        "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases",
-			status:      http.StatusCreated,
-			idempotency: "lease-create-key-1234",
-			bodyParts:   []string{`"leaseId":"lease-alpha"`, `"leaseName":"lease-alpha"`, `"releaseDigest":"` + releaseDigest + `"`, `"targetId":"docker-alpha"`, `"expectedTargetGeneration":1`, `"providerCredentialRef":"provider-alpha"`, `"cpuLimitMillis":1000`, `"memoryLimitBytes":536870912`, `"ttlSeconds":3600`},
-		},
-		{
-			name:       "get",
-			actionArgs: []string{"environment-lease", "get"},
-			method:     http.MethodGet,
-			path:       "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha",
-			status:     http.StatusOK,
-		},
-		{
-			name:        "terminate",
-			globalArgs:  []string{"--idempotency-key", "lease-terminate-key"},
-			actionArgs:  []string{"environment-lease", "terminate", "--generation", "1"},
-			method:      http.MethodPost,
-			path:        "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:terminate",
-			status:      http.StatusOK,
-			idempotency: "lease-terminate-key",
-			bodyParts:   []string{`"expectedGeneration":1`},
-		},
-		{
-			name:        "upgrade",
-			globalArgs:  []string{"--idempotency-key", "lease-upgrade-key"},
-			actionArgs:  []string{"environment-lease", "upgrade", "--release-digest", releaseDigest, "--generation", "1"},
-			method:      http.MethodPost,
-			path:        "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:upgrade",
-			status:      http.StatusOK,
-			idempotency: "lease-upgrade-key",
-			bodyParts:   []string{`"releaseDigest":"` + releaseDigest + `"`, `"expectedGeneration":1`},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var gotBody string
-			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-				if request.Method != test.method || request.URL.Path != test.path || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" || request.Header.Get("Idempotency-Key") != test.idempotency {
-					t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.Path, request.Header)
-				}
-				contents, _ := io.ReadAll(request.Body)
-				gotBody = string(contents)
-				writer.Header().Set("X-Resource-Version", "1")
-				writer.Header().Set("Content-Type", "application/json")
-				writer.WriteHeader(test.status)
-				_, _ = writer.Write([]byte(responseBody))
-			}))
-			defer server.Close()
-
-			args := append([]string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--lease", "lease-alpha", "--request-id", "request-alpha"}, test.globalArgs...)
-			args = append(args, test.actionArgs...)
-			var stdout bytes.Buffer
-			if err := run(args, &stdout); err != nil {
-				t.Fatalf("run: %v request_body=%s args=%v", err, gotBody, args)
-			}
-			for _, part := range test.bodyParts {
-				if !strings.Contains(gotBody, part) {
-					t.Fatalf("body %q does not contain %q", gotBody, part)
-				}
-			}
-			if !strings.Contains(stdout.String(), `"kind":"CloudEnvironmentLease"`) {
-				t.Fatalf("output = %q", stdout.String())
-			}
-		})
+	if !strings.Contains(stdout.String(), `"kind":"CloudEnvironmentLease"`) {
+		t.Fatalf("output = %q", stdout.String())
 	}
 }
 
 func TestRunEnvironmentLeaseListDoesNotRequireLeaseID(t *testing.T) {
 	const responseBody = `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentLeasePage","environmentLeases":[],"nextPageToken":"lease-page-token-2"}`
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.RequestURI() != "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1" {
+		if request.Method != http.MethodGet || request.URL.RequestURI() != "/v1/admin/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1" {
 			t.Fatalf("request = %s %s", request.Method, request.URL.RequestURI())
 		}
 		writer.Header().Set("Content-Type", "application/json")

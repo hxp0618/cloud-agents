@@ -482,10 +482,6 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local SSH target credential directory is invalid")
 		}
 	}
-	deploymentTargetHTTPServer, err := server.NewDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber, sshProber)
-	if err != nil {
-		return errors.New("local deployment target HTTP server is unavailable")
-	}
 	adminDeploymentTargetHTTPServer, err := server.NewAdminDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("local admin deployment target HTTP server is unavailable")
@@ -578,7 +574,6 @@ func run(ctx context.Context, args []string) error {
 	mux.Handle(server.RoleBindingCollectionRoute, rbacHTTPServer)
 	mux.Handle(server.ManagedHostRoleBindingRoute, rbacHTTPServer)
 	mux.Handle(server.PlatformTenantRoute, tenantHTTPServer)
-	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseHTTPServer)
 	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	if runtimeSupervisor == nil {
@@ -597,10 +592,6 @@ func run(ctx context.Context, args []string) error {
 			}
 			if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
 				publishedEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
-				return
-			}
-			if server.HandlesDeploymentTargetPath(request.URL.Path) {
-				deploymentTargetHTTPServer.ServeHTTP(writer, request)
 				return
 			}
 			projectGetHTTPServer.ServeHTTP(writer, request)
@@ -649,10 +640,6 @@ func run(ctx context.Context, args []string) error {
 			}
 			if server.HandlesPublishedEnvironmentProfilePath(request.URL.Path) {
 				publishedEnvironmentProfileHTTPServer.ServeHTTP(writer, request)
-				return
-			}
-			if server.HandlesDeploymentTargetPath(request.URL.Path) {
-				deploymentTargetHTTPServer.ServeHTTP(writer, request)
 				return
 			}
 			if server.HandlesManagedAgentExecutionPath(request.URL.Path) {

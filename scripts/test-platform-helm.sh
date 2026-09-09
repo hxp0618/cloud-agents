@@ -353,7 +353,7 @@ const issue = (jti, tokenAudience, scopes) => {
   return `${input}.${createSign("RSA-SHA256").update(input).end().sign(privateKey).toString("base64url")}`;
 };
 const adminScopes = [
-  "audit.list", "environments.create", "environments.get", "environment-profiles.list",
+  "audit.list", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
   "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update",
@@ -364,7 +364,7 @@ const adminScopes = [
   "snapshots.get", "snapshots.list",
 ];
 const userScopes = [
-  "environment-quotas.get", "environments.create", "environments.get", "environment-profiles.list",
+  "environment-quotas.get", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
   "organizations.list", "projects.act", "projects.create", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
 ];
 writeFileSync(`${state}/admin-token`, `${issue("helm-smoke-admin", adminAudience, adminScopes)}\n`);

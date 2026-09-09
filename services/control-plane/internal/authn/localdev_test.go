@@ -86,6 +86,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		{"environment-profiles.list", "project", "project-1"},
 		{"environment-quotas.get", "project", "project-1"},
 		{"environments.create", "project", "project-1"},
+		{"environments.delete", "project", "project-1"},
 		{"environments.get", "project", "project-1"},
 		{"memberships.create", "tenant", "tenant-1"},
 		{"memberships.delete", "tenant", "tenant-1"},
