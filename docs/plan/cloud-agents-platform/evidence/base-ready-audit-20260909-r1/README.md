@@ -1,21 +1,22 @@
 # BASE-READY / BASE-ADMIN-V1 current-source audit (2026-09-09)
 
-This is a requirement-by-requirement closure audit, not a new runtime run or a
-Gate closure. It uses branch `codex/cloud-agents-platform-p0` at
-`5616e5408d0221eed40db4e60dc58da848a5bf2f`. The unrelated dirty paths listed
+This is a requirement-by-requirement closure audit, not a formal Gate closure.
+It uses branch `codex/cloud-agents-platform-p0` at
+`ff715138f9b3443e01684c16e9ac08192b305e8d`. The unrelated dirty paths listed
 in [06](../../06-status-tracker.md) were preserved and were not used as passing
 evidence.
 
-A local, unpublished `0.3.0-dev.100` candidate was built from that HEAD with
-`--allow-dirty` at
-`/tmp/cloud-agents-base-ready-external-20260909-r1/release`. Its manifest marks
-`sourceDirty=true`; all 22 artifact checksums passed. The manifest SHA-256 is
-`ceaa97782afc353d73a844f42572795b9adfe3029fe802acdd82d86892db2590`,
+The final unpublished `0.3.0-dev.105` candidate was built from that HEAD with
+`--allow-dirty` at `/tmp/cloud-agents-base-external-20260909-r2`; its manifest
+marks `sourceDirty=true` and all 22 artifact checksums passed. The manifest
+SHA-256 is
+`fd7b34ce80e8e6b0e4e9ae16ffae9e9f6dd8e6bf41068b4859524f032c4bafe5`,
 the deployment tar SHA-256 is
-`4fa38cb96d825d1276ff939561771c82b2b9ee5d9981b128ecd96d57c8b93cb4`,
+`c07b1c34ef89b6dbf4c6b8aa15b67bcccac002e61ae029f49fcded84a7717ef6`,
 and the Linux amd64 RemoteWorker SHA-256 is
-`5d6e48637c77e77750ea59d444ed1c2cefed7da7f12c10c5b2a447819ab6f56e`.
-This prepares the external run but is not deployment evidence.
+`a0961e838471c7b6caabc255a8c82b09af25e2fbc7adb394ccc88986e43b3a57`.
+It was deployed in the authorized two-host
+[external outbound customer-node run](../base-m5-external-remote-worker-20260909-r1/README.md).
 
 The audit also exposed a packaging defect: the default Compose and Helm inputs
 still required the legacy Coding Agent Worker and Provider/admission inputs.
@@ -56,13 +57,13 @@ change firewall rules or write remote files.
 | 3 | `base-m1-controller-admin-20260906.md`; `base-m5-fault-soak-docker-20260909-r2/evidence.json` | Proven for durable Operation recovery, adopt/compensation and no duplicate runtime |
 | 4 | `base-m3-remote-worker-reconnect-20260907/evidence.json`; `base-m4-remote-worker-capacity-reservation-20260907-v2/evidence.json` | Proven for writer/generation fencing, stale command rejection and aggregate reservation |
 | 5 | BASE-M2 PTY, Files, Preview, SSH and network-policy evidence; `base-m5-remote-worker-gateway-soak-docker-20260909-r2/evidence.json` | Proven for bounded access, negative isolation and Gateway recovery |
-| 6 | BASE-M3 enrollment through reconnect evidence; `base-m5-remote-worker-bootstrap-20260908-r5/evidence.json` | Proven on an isolated outbound Debian node, but not yet on either available external Linux host |
-| 7 | `base-m5-fault-soak-docker-20260909-r2/evidence.json`; `base-m5-kubernetes-fault-soak-20260909-r1/evidence.json`; `base-m5-remote-worker-gateway-soak-docker-20260909-r2/evidence.json` | Docker and Kubernetes are proven; the customer-node run is real and isolated but remains local rather than an external host |
+| 6 | BASE-M3 enrollment/reconnect evidence; `base-m5-remote-worker-bootstrap-20260908-r5/evidence.json`; [external customer-node run](../base-m5-external-remote-worker-20260909-r1/README.md) | Proven on an external Debian customer node for outbound enrollment, Drain, disconnect/offline retention, reconnect and reconciliation |
+| 7 | `base-m5-fault-soak-docker-20260909-r2/evidence.json`; `base-m5-kubernetes-fault-soak-20260909-r1/evidence.json`; `base-m5-remote-worker-gateway-soak-docker-20260909-r2/evidence.json`; [external customer-node run](../base-m5-external-remote-worker-20260909-r1/README.md) | Proven for real Docker, Kubernetes and external outbound customer-node execution, recovery, capability enforcement and exact cleanup |
 | 8 | `base-m2-sandbox-network-policy-20260906.md`; `base-m4-strong-isolation-gvisor-20260908/evidence.json`; current OIDC/RLS/RBAC evidence | Proven for the stated local Docker/Kubernetes matrix |
 | 9 | Docker Snapshot/Restore/Retention evidence; `base-m5-helm-upgrade-rollback-20260908-r4/evidence.json`; certificate rotation, Compose backup/restore, no-Agent deployment and fault evidence | Proven within the recorded local deployment and recovery boundaries |
 | 10 | Docker allocation/volume/network usage evidence; `base-m5-sandbox-usage-correction-docker-20260909-r5/evidence.json`; current fault/soak evidence and runbooks | Proven for the currently declared non-billing facts and measured local recovery boundary |
 | 11 | `base-m5-admin-acceptance-docker-20260909-r7/evidence.json`; `admin-m4-oidc-audience-boundary-20260909-r1/evidence.json` | Proven for live Admin authority, content isolation, dangerous actions and ordinary-user denial |
-| 12 | BASE-ADMIN-V1 audit below | Not closable while BASE-ADMIN-V1 item 10 remains open on an external customer node |
+| 12 | BASE-ADMIN-V1 audit below | Proven: all thirteen BASE-ADMIN-V1 items have current-source evidence |
 
 ## BASE-ADMIN-V1
 
@@ -77,29 +78,31 @@ change firewall rules or write remote files.
 | 7 | BASE-M1 lifecycle, BASE-M3 command and Admin acceptance evidence | Proven for generation/impact confirmation, Operation and Audit |
 | 8 | BASE-M2 content-isolation evidence and Admin acceptance response scans | Proven: no user message, Workspace/Artifact content or Secret bytes are returned |
 | 9 | `admin-m4-oidc-audience-boundary-20260909-r1/evidence.json` | Proven for server-side 403 and cross-audience 401 boundaries |
-| 10 | Current Docker, OrbStack Kubernetes and local isolated outbound RemoteWorker evidence | Open: the Goal requires a real customer node; neither available external Linux host has run the workload yet |
+| 10 | Current Docker and OrbStack Kubernetes evidence; [external outbound customer-node run](../base-m5-external-remote-worker-20260909-r1/README.md) | Proven for real deployment, retained-data recovery and exact cleanup across Docker, Kubernetes and an external customer node |
 | 11 | `base-m5-admin-acceptance-docker-20260909-r7/evidence.json` | Proven for keyboard, focus, contrast, error recovery and reduced motion |
 | 12 | Same Admin acceptance evidence and fixed Daytona `v0.190.0` captures | Proven for the fixed shell/list/detail/form/state visual matrix |
 | 13 | Same Admin acceptance evidence | Proven for zh-CN/en-US switching, persistence/fallback and both theme/viewport matrices |
 
-## Current external preflight and next action
+## External customer-node closure
 
-Read-only SSH preflight found that `hostdzire-4c6g` and `tianliyun-2c2g` are
-Debian x86_64 hosts running as uid 0 with systemd, apt and sufficient free disk.
-Neither has Docker or Podman. The local machine exposes only the `default` and
-`orbstack` Kubernetes contexts and no `CLOUD_AGENTS_*` acceptance inputs.
+After explicit authorization, `hostdzire-4c6g` ran the packaged Control
+Plane/PostgreSQL and `tianliyun-2c2g` ran fixed-digest OpenSandbox plus the
+outbound RemoteWorker. The run covered Profile publication, Workspace/Sandbox
+create, Exec, Files, PTY, short-lived SSH, TTL Stop, Rebuild data readback,
+disconnect/offline retention, reconnect, Drain/Resume, Operation/Audit and
+ordinary-user Admin 403. A create-retry defect found by the real run was fixed
+at the shared command assembly point and candidate `.105` completed the flow.
 
-The smallest remaining acceptance run is therefore:
+The same physical Workspace volume retained a 31-byte file with SHA-256
+`ee4c8236e71f9c271f5d24e0ca2363c162bd496ad5759002557029994237930c`
+across Stop/Rebuild and node disconnect/reconnect. Final authorized cleanup
+left zero test-owned containers, volumes, networks, images, listeners and run
+directories on both hosts; Docker packages remain installed and enabled. Full
+commands, versions, failure accounting, security scans and cleanup inventory
+are in the
+[external run evidence](../base-m5-external-remote-worker-20260909-r1/README.md).
 
-1. deploy a temporary package-local Control Plane/PostgreSQL endpoint on one
-   explicitly authorized host;
-2. install Docker/OpenSandbox plus the packaged outbound RemoteWorker on the
-   other explicitly authorized host;
-3. run no-Agent Profile publication, Workspace/Sandbox create, Exec/Files,
-   Stop/Rebuild data readback, disconnect/reconnect, Drain/Resume and exact
-   test-owned cleanup through the Admin/User APIs;
-4. record versions, digests, commands, observed recovery and final residue.
-
-Installing Docker, starting services, changing reachable ports and deleting
-the resulting test resources are external mutations. They were not performed
-without explicit host and cleanup authorization.
+The current-source evidence set now satisfies all twelve BASE-READY and all
+thirteen BASE-ADMIN-V1 items. This audit does not approve a Release, Beta/GA or
+formal historical Gate, and it does not change the archived ADMIN-WEB-V1 or
+APP-M1 Codex/Claude acceptance state.
