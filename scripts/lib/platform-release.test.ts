@@ -136,6 +136,7 @@ describe("platform release", () => {
       "deploy/compose/README.md",
       "deploy/compose/cloud-agents-up.sh",
       "deploy/compose/docker-compose.managed-agent.yml",
+      "deploy/compose/docker-compose.remote-worker.yml",
       "deploy/compose/docker-compose.yml",
       "deploy/compose/provision.sql",
       "deploy/compose/runtime.env.example",
@@ -218,6 +219,16 @@ describe("platform release", () => {
     expect(compose).not.toContain("CLOUD_AGENTS_PLATFORM_WORKER");
     expect(compose).not.toContain("CLOUD_AGENTS_PLATFORM_ADMISSION");
     expect(worker).toContain("secretName: {{ .Values.runtime.credentialSecretName }}");
+  });
+
+  it("packages opt-in Compose RemoteWorker authority", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const remoteWorker = readFileSync("deploy/compose/docker-compose.remote-worker.yml", "utf8");
+    expect(compose).not.toContain("CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY");
+    expect(remoteWorker).toContain("CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT");
+    expect(remoteWorker).toContain("CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY");
+    expect(remoteWorker).toContain("CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN");
+    expect(remoteWorker).toContain(":/run/cloud-agents/remote-worker-ca:ro");
   });
 
   it("publishes component capacity limits in Compose and Helm", () => {

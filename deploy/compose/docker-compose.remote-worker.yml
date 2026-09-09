@@ -1,0 +1,8 @@
+services:
+  control-plane:
+    environment:
+      CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT: /run/cloud-agents/remote-worker-ca/ca.crt
+      CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY: /run/cloud-agents/remote-worker-ca/ca.key
+      CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN: ${CLOUD_AGENTS_REMOTE_WORKER_TRUST_DOMAIN:?set the RemoteWorker trust domain}
+    volumes:
+      - ${CLOUD_AGENTS_REMOTE_WORKER_CA_DIR:?set the RemoteWorker CA directory}:/run/cloud-agents/remote-worker-ca:ro

@@ -118,7 +118,18 @@ credential directory. The file contains only `endpoint` and `apiKey`; it is
 mounted into the Control Plane and Gateway, never copied into an API body,
 browser, or release archive.
 
-For an outbound customer node, create one RemoteWorker enrollment in Admin Web
+To enable outbound customer nodes, configure
+`CLOUD_AGENTS_REMOTE_WORKER_CA_DIR` with `ca.crt` and `ca.key`, set the trust
+domain, and include the packaged authority override:
+
+```sh
+docker compose --env-file .env \
+  -f docker-compose.yml \
+  -f docker-compose.remote-worker.yml \
+  up --build
+```
+
+Then create one RemoteWorker enrollment in Admin Web
 and deliver a separately scoped bootstrap token file to the node operator. From
 the same extracted release directory, run the packaged bootstrap script into a
 new deployment-owned directory:
