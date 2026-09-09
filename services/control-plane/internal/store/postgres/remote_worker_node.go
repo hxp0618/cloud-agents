@@ -285,38 +285,46 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 	if claim.DatabaseOutcome != DatabaseCommitted {
 		return RemoteWorkerHeartbeatResult{}, ErrMutationCommitUnknown
 	}
-	command := internalremoteworker.SandboxCommand{
-		CommandID: internalremoteworker.SandboxCommandID(claim.Claim.OperationID, int64(claim.Claim.DeliveryAttempts)),
-		Attempt:   int64(claim.Claim.DeliveryAttempts), Action: claim.Claim.Action,
-		OperationID: claim.Claim.OperationID, WorkspaceID: claim.Claim.WorkspaceID,
-		WorkspaceName: claim.Claim.WorkspaceName, TargetID: claim.Claim.TargetID,
-		SandboxID: claim.Claim.SandboxID, SandboxGeneration: claim.Claim.SandboxGeneration,
-		WorkloadTrust: claim.Claim.WorkloadTrust, IsolationRuntime: claim.Claim.IsolationRuntime,
-		ImageURI: claim.Claim.ImageURI, CPUMillis: claim.Claim.CPUMillis, MemoryBytes: claim.Claim.MemoryBytes,
-		SpecDigest: claim.Claim.SpecDigest, NetworkPolicyID: claim.Claim.NetworkPolicyID,
-		NetworkAllowedEgress: claim.Claim.NetworkAllowedEgress, Deadline: claim.Claim.ClaimExpiresAt,
-	}
-	if claim.Claim.PhysicalVolumeName != nil {
-		command.PhysicalVolumeName = *claim.Claim.PhysicalVolumeName
-	}
-	if claim.Claim.RuntimeID != nil {
-		command.RuntimeID = *claim.Claim.RuntimeID
-	}
-	command.RuntimeState = claim.Claim.RuntimeState
-	if claim.Claim.RuntimeOperationID != nil {
-		command.RuntimeOperationID = *claim.Claim.RuntimeOperationID
-	}
-	if claim.Claim.RuntimeGeneration != nil {
-		command.RuntimeGeneration = *claim.Claim.RuntimeGeneration
-	}
-	if claim.Claim.RuntimeSpecDigest != nil {
-		command.RuntimeSpecDigest = *claim.Claim.RuntimeSpecDigest
-	}
-	if command.Validate() != nil {
-		return RemoteWorkerHeartbeatResult{}, ErrCoordinationResultDrift
+	command, err := remoteWorkerSandboxCommand(claim.Claim)
+	if err != nil {
+		return RemoteWorkerHeartbeatResult{}, err
 	}
 	result.SandboxCommand = &command
 	return result, nil
+}
+
+func remoteWorkerSandboxCommand(claim FoundationSandboxClaim) (internalremoteworker.SandboxCommand, error) {
+	command := internalremoteworker.SandboxCommand{
+		CommandID: internalremoteworker.SandboxCommandID(claim.OperationID, int64(claim.DeliveryAttempts)),
+		Attempt:   int64(claim.DeliveryAttempts), Action: claim.Action,
+		OperationID: claim.OperationID, WorkspaceID: claim.WorkspaceID,
+		WorkspaceName: claim.WorkspaceName, TargetID: claim.TargetID,
+		SandboxID: claim.SandboxID, SandboxGeneration: claim.SandboxGeneration,
+		WorkloadTrust: claim.WorkloadTrust, IsolationRuntime: claim.IsolationRuntime,
+		ImageURI: claim.ImageURI, CPUMillis: claim.CPUMillis, MemoryBytes: claim.MemoryBytes,
+		SpecDigest: claim.SpecDigest, NetworkPolicyID: claim.NetworkPolicyID,
+		NetworkAllowedEgress: claim.NetworkAllowedEgress, Deadline: claim.ClaimExpiresAt,
+	}
+	if claim.Action != "sandbox.create" && claim.PhysicalVolumeName != nil {
+		command.PhysicalVolumeName = *claim.PhysicalVolumeName
+	}
+	if claim.RuntimeID != nil {
+		command.RuntimeID = *claim.RuntimeID
+	}
+	command.RuntimeState = claim.RuntimeState
+	if claim.RuntimeOperationID != nil {
+		command.RuntimeOperationID = *claim.RuntimeOperationID
+	}
+	if claim.RuntimeGeneration != nil {
+		command.RuntimeGeneration = *claim.RuntimeGeneration
+	}
+	if claim.RuntimeSpecDigest != nil {
+		command.RuntimeSpecDigest = *claim.RuntimeSpecDigest
+	}
+	if command.Validate() != nil {
+		return internalremoteworker.SandboxCommand{}, ErrCoordinationResultDrift
+	}
+	return command, nil
 }
 
 func (service *DurableCoordinationService) claimRemoteWorkerSandboxExec(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string) (*internalremoteworker.SandboxExecCommand, error) {
