@@ -53,7 +53,7 @@
   "devDependencies": {
     "tsdown": "0.20.3",
     "typescript": "5.7.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "peerDependencies": {
     "@synara/cloud-agent-provider-api": "0.1.0-rc.1"
