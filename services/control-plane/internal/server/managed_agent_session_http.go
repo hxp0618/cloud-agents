@@ -18,6 +18,7 @@ import (
 )
 
 const ManagedAgentSessionRoutePrefix = "/v1/tenants/"
+const AdminManagedAgentRuntimeRoutePrefix = "/v1/admin/tenants/"
 
 var ErrInvalidManagedAgentSessionHTTPServer = errors.New("managed agent session HTTP server configuration is invalid")
 
@@ -31,6 +32,25 @@ type managedAgentSessionStore interface {
 type ManagedAgentSessionHTTPServer struct {
 	verifier AccessTokenVerifier
 	store    managedAgentSessionStore
+}
+
+// AdminManagedAgentRuntimeRequest maps the narrow Admin Runtime read and
+// reconciliation surface onto the existing Managed Agent handlers.
+func AdminManagedAgentRuntimeRequest(request *http.Request) (*http.Request, bool) {
+	if request == nil || !strings.HasPrefix(request.URL.Path, AdminManagedAgentRuntimeRoutePrefix) {
+		return nil, false
+	}
+	path := ManagedAgentSessionRoutePrefix + strings.TrimPrefix(request.URL.Path, AdminManagedAgentRuntimeRoutePrefix)
+	read := request.Method == http.MethodGet && (HandlesManagedAgentSessionPath(path) || HandlesManagedAgentExecutionPath(path) || HandlesManagedAgentEventsPath(path))
+	reconcile := request.Method == http.MethodPost && strings.HasSuffix(path, ":reconcile") && HandlesManagedAgentExecutionPath(path)
+	if !read && !reconcile {
+		return nil, false
+	}
+	mapped := request.Clone(request.Context())
+	url := *request.URL
+	url.Path, url.RawPath = path, ""
+	mapped.URL = &url
+	return mapped, true
 }
 
 func NewManagedAgentSessionHTTPServer(verifier AccessTokenVerifier, store managedAgentSessionStore) (*ManagedAgentSessionHTTPServer, error) {
@@ -124,7 +144,7 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind", "environmentLeaseId"}, []string{"sessionId", "providerKind", "environmentLeaseId"})
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind", "environmentLeaseId", "workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion"}, []string{"sessionId", "providerKind"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
@@ -139,8 +159,33 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	environmentLeaseID, err := managedAgentIdentifierField(fields, "environmentLeaseId", "/environmentLeaseId", 128)
+	environmentLeaseID, hasEnvironmentLease, err := optionalManagedAgentIdentifierField(fields, "environmentLeaseId", "/environmentLeaseId", 128)
 	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	workspaceID, hasWorkspace, err := optionalManagedAgentIdentifierField(fields, "workspaceId", "/workspaceId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	sandboxID, hasSandbox, err := optionalManagedAgentIdentifierField(fields, "sandboxId", "/sandboxId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	sandboxGeneration, hasSandboxGeneration, err := optionalManagedAgentIntegerField(fields, "sandboxGeneration", "/sandboxGeneration", 9007199254740991)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	environmentProfileID, hasProfile, err := optionalManagedAgentIdentifierField(fields, "environmentProfileId", "/environmentProfileId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	environmentProfileVersion, hasProfileVersion, err := optionalManagedAgentIntegerField(fields, "environmentProfileVersion", "/environmentProfileVersion", 2147483647)
+	if err != nil || hasEnvironmentLease == (hasWorkspace || hasSandbox || hasSandboxGeneration || hasProfile || hasProfileVersion) || !hasEnvironmentLease && !(hasWorkspace && hasSandbox && hasSandboxGeneration && hasProfile && hasProfileVersion) {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -150,8 +195,11 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		return
 	}
 	snapshot, err := server.store.CreateManagedAgentSession(request.Context(), tenantID, principal, internalmanagedagent.CreateSessionInput{
-		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, ProviderKind: providerKind, EnvironmentLeaseID: environmentLeaseID,
-		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
+		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, ProviderKind: providerKind,
+		EnvironmentLeaseID: environmentLeaseID, WorkspaceID: workspaceID, SandboxID: sandboxID,
+		SandboxGeneration: sandboxGeneration, EnvironmentProfileID: environmentProfileID,
+		EnvironmentProfileVersion: environmentProfileVersion,
+		Mutation:                  internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
 		status, code := managedAgentSessionErrorStatus(err)
@@ -200,9 +248,14 @@ func (server *ManagedAgentSessionHTTPServer) get(writer http.ResponseWriter, req
 }
 
 type managedAgentSessionCreateBody struct {
-	SessionID          string `json:"sessionId"`
-	ProviderKind       string `json:"providerKind"`
-	EnvironmentLeaseID string `json:"environmentLeaseId"`
+	SessionID                 string `json:"sessionId"`
+	ProviderKind              string `json:"providerKind"`
+	EnvironmentLeaseID        string `json:"environmentLeaseId"`
+	WorkspaceID               string `json:"workspaceId"`
+	SandboxID                 string `json:"sandboxId"`
+	SandboxGeneration         uint64 `json:"sandboxGeneration"`
+	EnvironmentProfileID      string `json:"environmentProfileId"`
+	EnvironmentProfileVersion uint64 `json:"environmentProfileVersion"`
 }
 
 type managedAgentSessionResource struct {
@@ -224,6 +277,9 @@ type managedAgentSessionResourceSpec struct {
 	ProviderKind              string `json:"providerKind"`
 	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
 	EnvironmentGeneration     uint64 `json:"environmentGeneration,omitempty"`
+	WorkspaceID               string `json:"workspaceId,omitempty"`
+	SandboxID                 string `json:"sandboxId,omitempty"`
+	SandboxGeneration         uint64 `json:"sandboxGeneration,omitempty"`
 	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
 	EnvironmentProfileVersion uint64 `json:"environmentProfileVersion,omitempty"`
 	State                     string `json:"state"`
@@ -245,7 +301,9 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 		Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
 		Spec: managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, EnvironmentLeaseID: snapshot.EnvironmentLeaseID,
-			EnvironmentGeneration: snapshot.EnvironmentGeneration, EnvironmentProfileID: snapshot.EnvironmentProfileID,
+			EnvironmentGeneration: snapshot.EnvironmentGeneration, WorkspaceID: snapshot.WorkspaceID,
+			SandboxID: snapshot.SandboxID, SandboxGeneration: snapshot.SandboxGeneration,
+			EnvironmentProfileID:      snapshot.EnvironmentProfileID,
 			EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion, State: string(snapshot.State)},
 	})
 }
@@ -353,6 +411,26 @@ func managedAgentIdentifierField(fields map[string]json.RawMessage, key, path st
 		return "", err
 	}
 	return value, nil
+}
+
+func optionalManagedAgentIdentifierField(fields map[string]json.RawMessage, key, path string, maximum int) (string, bool, error) {
+	if _, ok := fields[key]; !ok {
+		return "", false, nil
+	}
+	value, err := managedAgentIdentifierField(fields, key, path, maximum)
+	return value, true, err
+}
+
+func optionalManagedAgentIntegerField(fields map[string]json.RawMessage, key, path string, maximum uint64) (uint64, bool, error) {
+	raw, ok := fields[key]
+	if !ok {
+		return 0, false, nil
+	}
+	var value *uint64
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil || *value < 1 || *value > maximum {
+		return 0, true, commonv1alpha1.ContractError("INVALID_FIELD_TYPE", path)
+	}
+	return *value, true, nil
 }
 
 func managedAgentSessionPath(path string) (tenantID, projectID, sessionID, action string, ok bool) {

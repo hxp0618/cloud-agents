@@ -20,6 +20,18 @@
       "kind": "claudeAgent",
       "package": "@cloud-agents/cloud-agent-provider-claude",
       "version": "0.1.0-rc.1"
+    },
+    {
+      "kind": "pi",
+      "package": "@cloud-agents/cloud-agent-provider-pi",
+      "version": "0.1.0-rc.1",
+      "upstream": { "package": "@earendil-works/pi-coding-agent", "version": "0.85.1" }
+    },
+    {
+      "kind": "deepseek-harness",
+      "package": "@cloud-agents/cloud-agent-provider-deepseek-harness",
+      "version": "0.1.0-rc.1",
+      "upstream": { "package": "@deepseek-ai/dsh-sdk-client", "version": "0.1.2-rc.1" }
     }
   ],
   "entrypoints": { "node": "./dist/index.mjs", "stdio": "./dist/stdio.mjs" },

@@ -235,7 +235,7 @@ run_real_turn() {
   artifact_path=".cloud-agents-acceptance/$run_id-$provider-$phase.txt"
   expected_content="cloud-agents Kubernetes target $provider $phase real E2E"
   case "$provider" in
-    codex) file_tool="Use apply_patch to create" ;;
+    codex) file_tool="Use the workspace.write_text_file tool to create" ;;
     claudeAgent) file_tool="Use the Write tool to create" ;;
     *) echo "unsupported Provider $provider" >&2; exit 1 ;;
   esac

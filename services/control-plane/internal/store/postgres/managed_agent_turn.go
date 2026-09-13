@@ -89,7 +89,7 @@ func (service *DurableCoordinationService) CreateManagedAgentTurn(
 		if bindErr != nil {
 			return mapVerifiedCoordinationAuthorizationError(bindErr)
 		}
-		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		transactionErr := service.runner.withTenantReadCommittedMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
 				if err := scanManagedAgentTurn(handle.transaction.queryRow(ctx, createManagedAgentTurnSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, inputDigest,

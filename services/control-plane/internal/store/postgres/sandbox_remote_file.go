@@ -64,14 +64,27 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxFile(ctx context.Cont
 	case "write":
 		writeContent = append([]byte{}, input.Content...)
 	}
-	err := store.runner.withTenantMutation(ctx, access.Scope.TenantID, func(handle *tenantReadHandle) error {
-		return scanRemoteWorkerSandboxFile(handle.transaction.queryRow(ctx, requestRemoteWorkerSandboxFileSQL,
-			access.Scope.TenantID, access.Scope.ProjectID, result.Receipt.CommandID, input.EventID,
-			input.Authority.GrantID, input.TokenDigest, access.TargetID, access.WorkspaceID,
-			access.SandboxID, access.Generation, access.RuntimeID, access.RuntimeOperationID,
-			access.RuntimeSpecDigest, input.Action, input.Path, readOffset, readLimit, readVersion,
-			writeContent, input.RequestID), &result)
-	})
+	var err error
+	for attempt := 0; ; attempt++ {
+		err = store.runner.withTenantReadCommittedMutation(ctx, access.Scope.TenantID, func(handle *tenantReadHandle) error {
+			return scanRemoteWorkerSandboxFile(handle.transaction.queryRow(ctx, requestRemoteWorkerSandboxFileSQL,
+				access.Scope.TenantID, access.Scope.ProjectID, result.Receipt.CommandID, input.EventID,
+				input.Authority.GrantID, input.TokenDigest, access.TargetID, access.WorkspaceID,
+				access.SandboxID, access.Generation, access.RuntimeID, access.RuntimeOperationID,
+				access.RuntimeSpecDigest, input.Action, input.Path, readOffset, readLimit, readVersion,
+				writeContent, input.RequestID), &result)
+		})
+		if !isRemoteWorkerSandboxFileDeadlock(err) || attempt >= 2 {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return platform.RemoteWorkerSandboxFileCommandReceipt{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 	if err != nil {
 		return platform.RemoteWorkerSandboxFileCommandReceipt{}, mapRemoteWorkerSandboxFileError(err)
 	}
@@ -98,6 +111,11 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxFile(ctx context.Cont
 		}
 	}
 	return result.Receipt, nil
+}
+
+func isRemoteWorkerSandboxFileDeadlock(err error) bool {
+	var postgresError *pgconn.PgError
+	return errors.As(err, &postgresError) && postgresError.Code == "40P01"
 }
 
 func scanRemoteWorkerSandboxFile(row rowScanner, result *remoteWorkerSandboxFileResult) error {

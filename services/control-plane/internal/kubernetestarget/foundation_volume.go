@@ -125,25 +125,35 @@ func inspectFoundationWorkspaceVolume(ctx context.Context, client *http.Client, 
 }
 
 func (directory *CredentialDirectory) foundationNamespace(credentialRef string) (string, error) {
+	config, err := directory.foundationConfig(credentialRef)
+	return config.Namespace, err
+}
+
+type foundationConfig struct {
+	Namespace string `json:"namespace"`
+	NodeName  string `json:"nodeName"`
+}
+
+func (directory *CredentialDirectory) foundationConfig(credentialRef string) (foundationConfig, error) {
 	if directory == nil || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
-		return "", ErrDeploymentConfigInvalid
+		return foundationConfig{}, ErrDeploymentConfigInvalid
 	}
 	root, err := os.OpenRoot(directory.path)
 	if err != nil {
-		return "", ErrDeploymentConfigUnavailable
+		return foundationConfig{}, ErrDeploymentConfigUnavailable
 	}
 	defer root.Close()
 	value, err := readCredential(root, credentialRef+".foundation.json")
 	if err != nil {
-		return "", ErrDeploymentConfigUnavailable
+		return foundationConfig{}, ErrDeploymentConfigUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(value))
 	decoder.DisallowUnknownFields()
-	var config struct {
-		Namespace string `json:"namespace"`
+	var config foundationConfig
+	if decoder.Decode(&config) != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		!dnsLabelPattern.MatchString(config.Namespace) ||
+		(config.NodeName != "" && !validDNSSubdomain(config.NodeName)) {
+		return foundationConfig{}, ErrDeploymentConfigInvalid
 	}
-	if decoder.Decode(&config) != nil || decoder.Decode(&struct{}{}) != io.EOF || !dnsLabelPattern.MatchString(config.Namespace) {
-		return "", ErrDeploymentConfigInvalid
-	}
-	return config.Namespace, nil
+	return config, nil
 }

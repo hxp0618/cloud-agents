@@ -16,6 +16,9 @@ import {
   type EnvironmentLeaseUpgradePreview,
   type EnvironmentProfile,
   type MaintenanceOperation,
+  type ManagedAgentEvent,
+  type ManagedAgentExecution,
+  type ManagedAgentSession,
   type ProjectLeaseQuota,
   type RuntimeProfile,
   type StoragePolicy,
@@ -90,12 +93,22 @@ export type AdminClient = Pick<
   | "revokeAdminSandboxAccessGrant"
   | "stopAdminSandboxSession"
   | "rebuildAdminSandboxSession"
+  | "listAdminManagedAgentSessions"
+  | "listAdminManagedAgentExecutions"
+  | "listAdminManagedAgentEvents"
+  | "reconcileAdminManagedAgentSideEffect"
   | "listAdminWorkspaceSnapshots"
   | "createAdminWorkspaceSnapshot"
   | "getAdminWorkspaceSnapshot"
   | "cleanupAdminWorkspaceSnapshot"
   | "restoreAdminWorkspaceSnapshot"
 >;
+
+export type AdminManagedAgentRuntime = Readonly<{
+  sessions: readonly ManagedAgentSession[];
+  executions: readonly ManagedAgentExecution[];
+  events: readonly ManagedAgentEvent[];
+}>;
 
 export function remoteWorkerFoundationSupport(
   node: Pick<RemoteWorkerNodeStatus, "architecture" | "capabilities" | "capacity">,
@@ -766,6 +779,84 @@ export async function listAdminSandboxes(
       ),
     ),
   );
+}
+
+export async function loadAdminManagedAgentRuntime(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  sandboxId: string,
+  signal: AbortSignal,
+): Promise<AdminManagedAgentRuntime> {
+  const sessions: ManagedAgentSession[] = [];
+  const seenSessionTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await client.listAdminManagedAgentSessions(
+      tenantId,
+      projectId,
+      newRequestId(),
+      200,
+      pageToken,
+      signal,
+    );
+    sessions.push(...page.value.sessions.filter(({ spec }) => spec.sandboxId === sandboxId));
+    pageToken = page.value.nextPageToken;
+    if (pageToken !== undefined) {
+      if (seenSessionTokens.has(pageToken)) throw new AdminUIError("error.agentSessionPageToken");
+      seenSessionTokens.add(pageToken);
+    }
+  } while (pageToken !== undefined);
+
+  const executions: ManagedAgentExecution[] = [];
+  const events: ManagedAgentEvent[] = [];
+  for (const session of sessions) {
+    const seenExecutionTokens = new Set<string>();
+    let executionToken: string | undefined;
+    do {
+      const page = await client.listAdminManagedAgentExecutions(
+        tenantId,
+        projectId,
+        session.metadata.uid,
+        newRequestId(),
+        200,
+        executionToken,
+        signal,
+      );
+      executions.push(...page.value.executions);
+      executionToken = page.value.nextPageToken;
+      if (executionToken !== undefined) {
+        if (seenExecutionTokens.has(executionToken))
+          throw new AdminUIError("error.agentExecutionPageToken");
+        seenExecutionTokens.add(executionToken);
+      }
+    } while (executionToken !== undefined);
+
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    do {
+      const page = await client.listAdminManagedAgentEvents(
+        tenantId,
+        projectId,
+        session.metadata.uid,
+        newRequestId(),
+        cursor,
+        64,
+        signal,
+      );
+      events.push(...page.value.events);
+      if (!page.value.hasMore) break;
+      cursor = page.value.nextCursor;
+      if (seenCursors.has(cursor) || events.length >= 4096)
+        throw new AdminUIError("error.agentEventCursor");
+      seenCursors.add(cursor);
+    } while (true);
+  }
+  return Object.freeze({
+    sessions: Object.freeze(sessions),
+    executions: Object.freeze(executions),
+    events: Object.freeze(events.slice(-64).reverse()),
+  });
 }
 
 export async function listAdminSandboxAccessGrants(

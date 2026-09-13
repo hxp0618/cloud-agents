@@ -134,7 +134,10 @@ describe("generated platform JSON models", () => {
       "operation-alpha",
     );
     expect(() =>
-      decodeRemoteWorkerSandboxExecCommand({ ...command, command: "界".repeat(2731) }),
+      decodeRemoteWorkerSandboxExecCommand({
+        ...command,
+        command: "界".repeat(2731),
+      }),
     ).toThrow(TypeError);
     expect(
       decodeRemoteWorkerSandboxExecCommandReceipt({
@@ -222,6 +225,24 @@ describe("generated platform JSON models", () => {
   });
 
   it("fences RemoteWorker Sandbox PTY frames and receipts", () => {
+    const create = {
+      commandId: "rwpty-create",
+      grantId: "grant-alpha",
+      workspaceId: "workspace-alpha",
+      targetId: "target-alpha",
+      sandboxId: "sandbox-alpha",
+      sandboxGeneration: 3,
+      runtimeId: "runtime-alpha",
+      runtimeOperationId: "operation-alpha",
+      runtimeSpecDigest: `sha256:${"a".repeat(64)}`,
+      action: "create",
+      command: "exec /usr/local/bin/cloud-agent-runtime",
+      deadline: "2026-09-07T12:01:00Z",
+    };
+    expect(decodeRemoteWorkerSandboxPTYCommand(create).command).toBe(create.command);
+    expect(() =>
+      decodeRemoteWorkerSandboxPTYCommand({ ...create, command: "runtime\nleak" }),
+    ).toThrow(TypeError);
     const command = {
       commandId: "rwpty-alpha",
       grantId: "grant-alpha",
@@ -241,6 +262,9 @@ describe("generated platform JSON models", () => {
       deadline: "2026-09-07T12:01:00Z",
     };
     expect(decodeRemoteWorkerSandboxPTYCommand(command).pty).toBe(false);
+    expect(() => decodeRemoteWorkerSandboxPTYCommand({ ...command, command: "runtime" })).toThrow(
+      TypeError,
+    );
     const receipt = {
       commandId: "rwpty-alpha",
       grantId: "grant-alpha",
@@ -256,7 +280,10 @@ describe("generated platform JSON models", () => {
     };
     expect(decodeRemoteWorkerSandboxPTYCommandReceipt(receipt).frames).toHaveLength(1);
     expect(() =>
-      decodeRemoteWorkerSandboxPTYCommandReceipt({ ...receipt, bytesTransferred: 2 }),
+      decodeRemoteWorkerSandboxPTYCommandReceipt({
+        ...receipt,
+        bytesTransferred: 2,
+      }),
     ).toThrow(TypeError);
   });
 
@@ -303,7 +330,10 @@ describe("generated platform JSON models", () => {
     };
     expect(decodeRemoteWorkerSandboxPreviewCommandReceipt(receipt).statusCode).toBe(201);
     expect(() =>
-      decodeRemoteWorkerSandboxPreviewCommandReceipt({ ...receipt, bytesTransferred: 1 }),
+      decodeRemoteWorkerSandboxPreviewCommandReceipt({
+        ...receipt,
+        bytesTransferred: 1,
+      }),
     ).toThrow(TypeError);
   });
 
@@ -328,7 +358,10 @@ describe("generated platform JSON models", () => {
       }).action,
     ).toBe("sandbox.create");
     expect(
-      decodeRemoteWorkerSandboxCommandReceipt({ ...base, action: "sandbox.stop" }).action,
+      decodeRemoteWorkerSandboxCommandReceipt({
+        ...base,
+        action: "sandbox.stop",
+      }).action,
     ).toBe("sandbox.stop");
     expect(() =>
       decodeRemoteWorkerSandboxCommandReceipt({
@@ -360,7 +393,10 @@ describe("generated platform JSON models", () => {
     };
     expect(decodeRemoteWorkerSandboxCommand(rebuild).action).toBe("sandbox.rebuild");
     expect(() =>
-      decodeRemoteWorkerSandboxCommand({ ...rebuild, physicalVolumeName: undefined }),
+      decodeRemoteWorkerSandboxCommand({
+        ...rebuild,
+        physicalVolumeName: undefined,
+      }),
     ).toThrow(TypeError);
     expect(
       decodeRemoteWorkerSandboxCommandReceipt({
@@ -381,13 +417,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "enrollment-alpha",
         name: "worker-alpha",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "3",
         createdAt: "2026-09-06T12:00:00Z",
         updatedAt: "2026-09-06T12:01:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         targetId: "rwt-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         workerId: "worker-alpha",
         state: "enrolled",
@@ -412,7 +456,11 @@ describe("generated platform JSON models", () => {
           architecture: "arm64",
           kernelVersion: "6.12.1",
           capabilities: ["docker", "exec", "files"],
-          capacity: { cpuMillis: 4000, memoryBytes: 8589934592, diskBytes: 42949672960 },
+          capacity: {
+            cpuMillis: 4000,
+            memoryBytes: 8589934592,
+            diskBytes: 42949672960,
+          },
           placement: {
             regionId: "region-local",
             resourcePoolId: "pool-remote-worker",
@@ -445,14 +493,21 @@ describe("generated platform JSON models", () => {
           ...active.spec,
           node: {
             ...active.spec.node,
-            placement: { ...active.spec.node.placement, nodeId: "another-node" },
+            placement: {
+              ...active.spec.node.placement,
+              nodeId: "another-node",
+            },
           },
         },
       }),
     ).toThrow(TypeError);
     const revoked = {
       ...active,
-      metadata: { ...active.metadata, resourceVersion: "4", updatedAt: "2026-09-06T12:20:00Z" },
+      metadata: {
+        ...active.metadata,
+        resourceVersion: "4",
+        updatedAt: "2026-09-06T12:20:00Z",
+      },
       spec: {
         ...active.spec,
         certificateState: "revoked",
@@ -478,12 +533,19 @@ describe("generated platform JSON models", () => {
       architecture: "arm64",
       kernelVersion: "6.12.1",
       capabilities: ["docker", "exec", "files"],
-      capacity: { cpuMillis: 4000, memoryBytes: 8589934592, diskBytes: 42949672960 },
+      capacity: {
+        cpuMillis: 4000,
+        memoryBytes: 8589934592,
+        diskBytes: 42949672960,
+      },
       sandboxCommandId: "rwsc-alpha",
     });
     expect(request.sandboxCommandId).toBe("rwsc-alpha");
     expect(() =>
-      decodeRemoteWorkerHeartbeatRequest({ ...request, sandboxCommandId: "invalid command" }),
+      decodeRemoteWorkerHeartbeatRequest({
+        ...request,
+        sandboxCommandId: "invalid command",
+      }),
     ).toThrow(TypeError);
     const seen: FixtureRequest[] = [];
     const client = new Client(async (input) => {
@@ -494,7 +556,11 @@ describe("generated platform JSON models", () => {
         body: JSON.stringify({
           apiVersion: "platform.cloud-agents.dev/v1alpha1",
           kind: "RemoteWorkerHeartbeat",
-          projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+          projectRef: {
+            namespace: "cloud-agents",
+            kind: "project",
+            id: "project-alpha",
+          },
           enrollmentId: "enrollment-alpha",
           workerId: "worker-alpha",
           incarnationId: "incarnation-alpha",
@@ -513,6 +579,23 @@ describe("generated platform JSON models", () => {
             desiredState: "drained",
             deadline: "2026-09-06T12:00:30Z",
           },
+          sandboxPtyCommand: {
+            commandId: "rwpty-alpha",
+            grantId: "grant-alpha",
+            workspaceId: "workspace-alpha",
+            targetId: "target-alpha",
+            sandboxId: "sandbox-alpha",
+            sandboxGeneration: 1,
+            runtimeId: "runtime-alpha",
+            runtimeOperationId: "operation-alpha",
+            runtimeSpecDigest: `sha256:${"a".repeat(64)}`,
+            action: "exchange",
+            sessionId: "session-alpha",
+            since: 0,
+            takeover: true,
+            pty: false,
+            deadline: "2026-09-06T12:00:30Z",
+          },
         }),
       };
     });
@@ -529,6 +612,7 @@ describe("generated platform JSON models", () => {
       desiredState: "drained",
       deadline: "2026-09-06T12:00:30Z",
     });
+    expect(response.value.sandboxPtyCommand?.pty).toBe(false);
     expect(seen).toEqual([
       {
         method: "POST",
@@ -543,7 +627,11 @@ describe("generated platform JSON models", () => {
     const response = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "SandboxExecResult",
-      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      projectRef: {
+        namespace: "cloud-agents",
+        kind: "project",
+        id: "project-alpha",
+      },
       sandboxId: "sandbox-alpha",
       generation: 3,
       exitCode: 7,
@@ -580,13 +668,25 @@ describe("generated platform JSON models", () => {
       }),
     ).toThrow("INVALID_COMMAND");
     expect(() =>
-      decodeSandboxExecResult({ ...response, stdout: "界".repeat(349526), stderr: "" }),
+      decodeSandboxExecResult({
+        ...response,
+        stdout: "界".repeat(349526),
+        stderr: "",
+      }),
     ).toThrow("INVALID_SANDBOX_EXEC_RESULT");
   });
 
   it("uses fixed Grant, PTY, Files, Preview, and SSH credentials without exposing infrastructure authority", async () => {
-    const projectRef = { namespace: "cloud-agents", kind: "project", id: "project-alpha" } as const;
-    const tenantRef = { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" } as const;
+    const projectRef = {
+      namespace: "cloud-agents",
+      kind: "project",
+      id: "project-alpha",
+    } as const;
+    const tenantRef = {
+      namespace: "cloud-agents",
+      kind: "tenant",
+      id: "tenant-alpha",
+    } as const;
     const grant = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "SandboxAccessGrant",
@@ -810,7 +910,11 @@ describe("generated platform JSON models", () => {
       "grant-alpha",
       "request-alpha",
       "revoke-idempotency-0001",
-      { expectedGeneration: 3, expectedResourceVersion: "1", confirmedGrantId: "grant-alpha" },
+      {
+        expectedGeneration: 3,
+        expectedResourceVersion: "1",
+        confirmedGrantId: "grant-alpha",
+      },
     );
     expect(seen.map(({ method }) => method)).toEqual([
       "POST",
@@ -908,6 +1012,21 @@ describe("generated platform JSON models", () => {
         environmentLeaseId: "lease-alpha",
       },
     );
+    await client.createManagedAgentSession(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4",
+      {
+        sessionId: "session-alpha",
+        providerKind: "codex",
+        workspaceId: "workspace-alpha",
+        sandboxId: "sandbox-alpha",
+        sandboxGeneration: 7,
+        environmentProfileId: "profile-alpha",
+        environmentProfileVersion: 3,
+      },
+    );
     await client.getManagedAgentSession(
       "tenant-alpha",
       "project-alpha",
@@ -928,11 +1047,14 @@ describe("generated platform JSON models", () => {
       "request-alpha",
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3",
     );
-    expect(seen).toHaveLength(4);
+    expect(seen).toHaveLength(5);
     expect(seen[0]?.body).toBe(
       '{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}',
     );
-    expect(seen[2]?.path).toBe(
+    expect(seen[1]?.body).toBe(
+      '{"sessionId":"session-alpha","providerKind":"codex","workspaceId":"workspace-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":7,"environmentProfileId":"profile-alpha","environmentProfileVersion":3}',
+    );
+    expect(seen[3]?.path).toBe(
       "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1",
     );
     expect(seen[3]?.body).toBeUndefined();
@@ -1089,24 +1211,40 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "quota-project-alpha",
         name: "project-lease-quota",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-05T01:00:00Z",
         updatedAt: "2026-09-05T01:00:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         maxConcurrentLeases: 2,
         maxCpuMillis: 4000,
         maxMemoryBytes: 8589934592,
         maxLeaseTtlSeconds: 3600,
       },
-      status: { activeLeases: 1, usedCpuMillis: 2000, usedMemoryBytes: 4294967296 },
+      status: {
+        activeLeases: 1,
+        usedCpuMillis: 2000,
+        usedMemoryBytes: 4294967296,
+      },
     });
     const summary = JSON.stringify({
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "ProjectLeaseQuotaSummary",
-      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      projectRef: {
+        namespace: "cloud-agents",
+        kind: "project",
+        id: "project-alpha",
+      },
       maxConcurrentLeases: 2,
       activeLeases: 1,
       maxCpuMillis: 4000,
@@ -1120,7 +1258,10 @@ describe("generated platform JSON models", () => {
     expect(decodeProjectLeaseQuotaSummary(JSON.parse(summary)).maxConcurrentLeases).toBe(2);
     expect(parseProjectLeaseQuotaSummary(summary).value.maxLeaseTtlSeconds).toBe(3600);
     expect(() =>
-      decodeProjectLeaseQuotaSummary({ ...JSON.parse(summary), credentialRef: "secret" }),
+      decodeProjectLeaseQuotaSummary({
+        ...JSON.parse(summary),
+        credentialRef: "secret",
+      }),
     ).toThrow();
 
     const audit = JSON.stringify({
@@ -1535,13 +1676,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "rp-0123456789abcdef0123456789abcdef",
         name: "foundation",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-05T03:00:00Z",
         updatedAt: "2026-09-05T03:00:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         profileId: "foundation",
         version: 1,
         description: "Retained no-agent workspace",
@@ -1559,7 +1708,11 @@ describe("generated platform JSON models", () => {
     const summary = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "RuntimeProfileSummary",
-      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      projectRef: {
+        namespace: "cloud-agents",
+        kind: "project",
+        id: "project-alpha",
+      },
       profileId: "foundation",
       name: "foundation",
       version: 1,
@@ -1573,7 +1726,11 @@ describe("generated platform JSON models", () => {
     const sandbox = {
       apiVersion: "platform.cloud-agents.dev/v1alpha1",
       kind: "SandboxSession",
-      projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+      projectRef: {
+        namespace: "cloud-agents",
+        kind: "project",
+        id: "project-alpha",
+      },
       operationId: "operation-sandbox",
       workspaceId: "workspace",
       sandboxId: "sandbox",
@@ -1613,12 +1770,18 @@ describe("generated platform JSON models", () => {
         ...selectorProfile,
         spec: {
           ...selectorProfile.spec,
-          targetSelector: { ...selectorProfile.spec.targetSelector, runtime: "ssh" },
+          targetSelector: {
+            ...selectorProfile.spec.targetSelector,
+            runtime: "ssh",
+          },
         },
       }),
     ).toThrow();
     expect(() =>
-      decodeRuntimeProfile({ ...profile, spec: { ...profile.spec, targetId: undefined } }),
+      decodeRuntimeProfile({
+        ...profile,
+        spec: { ...profile.spec, targetId: undefined },
+      }),
     ).toThrow();
     expect(parseRuntimeProfile(JSON.stringify(profile)).value.spec.status).toBe("draft");
     expect(decodeSandboxSession(sandbox).observedState).toBe("pending");
@@ -1699,7 +1862,10 @@ describe("generated platform JSON models", () => {
       },
     );
     expect(JSON.parse(seen[1]?.body ?? "{}")).toMatchObject({
-      targetSelector: { regionId: "region-local", resourcePoolId: "pool-remote-worker" },
+      targetSelector: {
+        regionId: "region-local",
+        resourcePoolId: "pool-remote-worker",
+      },
     });
     expect(JSON.parse(seen[1]?.body ?? "{}")).not.toHaveProperty("targetId");
     await client.listAdminRuntimeProfiles(
@@ -1741,13 +1907,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "storage-standard",
         name: "storage-standard",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-05T03:00:00Z",
         updatedAt: "2026-09-05T03:00:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         userSummary: "20 GiB managed workspace",
         workspaceType: "managed-volume",
         workspaceCapacityBytes: 21474836480,
@@ -1766,7 +1940,10 @@ describe("generated platform JSON models", () => {
     expect(parseStoragePolicy(JSON.stringify(policy)).value.metadata.uid).toBe("storage-standard");
     expect(parseStoragePolicyPage(JSON.stringify(page)).value.storagePolicies).toHaveLength(1);
     expect(() =>
-      decodeStoragePolicy({ ...policy, spec: { ...policy.spec, retentionSeconds: 1 } }),
+      decodeStoragePolicy({
+        ...policy,
+        spec: { ...policy.spec, retentionSeconds: 1 },
+      }),
     ).toThrow();
 
     const seen: FixtureRequest[] = [];
@@ -1786,7 +1963,11 @@ describe("generated platform JSON models", () => {
       if (request.path.endsWith("/storage-policies?pageSize=1")) {
         return { status: 200, headers: {}, body: JSON.stringify(page) };
       }
-      return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(policy) };
+      return {
+        status: 200,
+        headers: { "X-Resource-Version": "1" },
+        body: JSON.stringify(policy),
+      };
     });
     await client.listAdminStoragePolicies(
       "tenant-alpha",
@@ -1838,13 +2019,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "network-public",
         name: "network-public",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-05T04:00:00Z",
         updatedAt: "2026-09-05T04:00:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         userSummary: "Public internet access",
         defaultEgress: "public",
         allowedEgress: [],
@@ -1862,7 +2051,10 @@ describe("generated platform JSON models", () => {
     expect(parseNetworkPolicy(JSON.stringify(policy)).value.metadata.uid).toBe("network-public");
     expect(parseNetworkPolicyPage(JSON.stringify(page)).value.networkPolicies).toHaveLength(1);
     expect(() =>
-      decodeNetworkPolicy({ ...policy, spec: { ...policy.spec, endpoint: "tcp://host" } }),
+      decodeNetworkPolicy({
+        ...policy,
+        spec: { ...policy.spec, endpoint: "tcp://host" },
+      }),
     ).toThrow();
 
     const seen: FixtureRequest[] = [];
@@ -1880,7 +2072,11 @@ describe("generated platform JSON models", () => {
         };
       if (request.path.endsWith("/network-policies?pageSize=1"))
         return { status: 200, headers: {}, body: JSON.stringify(page) };
-      return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(policy) };
+      return {
+        status: 200,
+        headers: { "X-Resource-Version": "1" },
+        body: JSON.stringify(policy),
+      };
     });
     await client.listAdminNetworkPolicies(
       "tenant-alpha",
@@ -2574,6 +2770,11 @@ describe("generated platform JSON models", () => {
       spec: {
         generation: 1,
         state: "succeeded",
+        attemptNumber: 2,
+        recoveryState: "recovered",
+        recoveryMode: "cross-node-takeover",
+        recoverySourceTargetId: "docker-source",
+        recoveryTargetId: "docker-target",
         resultDigest: `sha256:${"a".repeat(64)}`,
       },
       messages: [
@@ -2589,9 +2790,18 @@ describe("generated platform JSON models", () => {
         },
       ],
     });
-    expect(decodeManagedAgentExecution(JSON.parse(execution)).messages?.[0]?.messageType).toBe(
-      "Result",
-    );
+    const decodedExecution = decodeManagedAgentExecution(JSON.parse(execution));
+    expect(decodedExecution.messages?.[0]?.messageType).toBe("Result");
+    expect(decodedExecution.spec.recoveryMode).toBe("cross-node-takeover");
+    expect(() =>
+      decodeManagedAgentExecution({
+        ...JSON.parse(execution),
+        spec: {
+          ...JSON.parse(execution).spec,
+          recoveryTargetId: "docker-source",
+        },
+      }),
+    ).toThrow("INVALID_RECOVERY_PLACEMENT");
     expect(parseManagedAgentExecution(execution).value.kind).toBe("Execution");
     const executionPage = JSON.stringify({
       apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
@@ -2608,7 +2818,9 @@ describe("generated platform JSON models", () => {
       seen.push(request);
       return {
         status:
-          request.path.endsWith(":resolveApproval") || request.path.endsWith(":resolveUserInput")
+          request.path.endsWith(":reconcile") ||
+          request.path.endsWith(":resolveApproval") ||
+          request.path.endsWith(":resolveUserInput")
             ? 204
             : 200,
         headers: { "X-Resource-Version": "3" },
@@ -2669,6 +2881,20 @@ describe("generated platform JSON models", () => {
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY",
       { generation: 1 },
     );
+    await client.reconcileManagedAgentSideEffect(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-alpha",
+      "request-reconcile",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ",
+      {
+        generation: 1,
+        checkpointDigest: `sha256:${"b".repeat(64)}`,
+        outcome: "confirmed",
+      },
+    );
     await client.resolveManagedAgentApproval(
       "tenant-alpha",
       "project-alpha",
@@ -2716,6 +2942,7 @@ describe("generated platform JSON models", () => {
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:reconcile",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput",
     ]);
@@ -2725,9 +2952,12 @@ describe("generated platform JSON models", () => {
     expect(seen[3]?.body).toBe('{"generation":1}');
     expect(seen[4]?.body).toBe('{"generation":1}');
     expect(seen[5]?.body).toBe(
-      '{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}',
+      `{"generation":1,"checkpointDigest":"sha256:${"b".repeat(64)}","outcome":"confirmed"}`,
     );
     expect(seen[6]?.body).toBe(
+      '{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}',
+    );
+    expect(seen[7]?.body).toBe(
       '{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"__proto__":["one","two"]}}',
     );
   });
@@ -2845,13 +3075,21 @@ describe("generated platform JSON models", () => {
       metadata: {
         uid: "sandbox-alpha",
         name: "sandbox-alpha",
-        tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+        tenantRef: {
+          namespace: "cloud-agents",
+          kind: "tenant",
+          id: "tenant-alpha",
+        },
         resourceVersion: "1",
         createdAt: "2026-09-08T12:00:00Z",
         updatedAt: "2026-09-08T12:01:00Z",
       },
       spec: {
-        projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+        projectRef: {
+          namespace: "cloud-agents",
+          kind: "project",
+          id: "project-alpha",
+        },
         operationId: "operation-alpha",
         operationState: "succeeded",
         cleanupPhase: "complete",
@@ -2923,7 +3161,10 @@ describe("generated platform JSON models", () => {
         ...value,
         spec: {
           ...value.spec,
-          workspaceVolumeUsage: { ...value.spec.workspaceVolumeUsage, usedBytes: undefined },
+          workspaceVolumeUsage: {
+            ...value.spec.workspaceVolumeUsage,
+            usedBytes: undefined,
+          },
         },
       }),
     ).toThrow(/INVALID_WORKSPACE_VOLUME_USAGE/u);
@@ -2932,7 +3173,10 @@ describe("generated platform JSON models", () => {
         ...value,
         spec: {
           ...value.spec,
-          networkUsage: { ...value.spec.networkUsage, transmittedBytes: undefined },
+          networkUsage: {
+            ...value.spec.networkUsage,
+            transmittedBytes: undefined,
+          },
         },
       }),
     ).toThrow(/INVALID_SANDBOX_NETWORK_USAGE/u);
@@ -2949,7 +3193,11 @@ describe("generated platform JSON models", () => {
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
-      return { status: 200, headers: { "X-Resource-Version": "1" }, body: JSON.stringify(value) };
+      return {
+        status: 200,
+        headers: { "X-Resource-Version": "1" },
+        body: JSON.stringify(value),
+      };
     });
     await client.correctAdminSandboxUsage(
       "tenant-alpha",
@@ -3174,7 +3422,11 @@ describe("generated platform client", () => {
         JSON.stringify({
           apiVersion: "platform.cloud-agents.dev/v1alpha1",
           kind: "RemoteWorkerCertificate",
-          projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+          projectRef: {
+            namespace: "cloud-agents",
+            kind: "project",
+            id: "project-alpha",
+          },
           enrollmentId: "enrollment-alpha",
           workerId: "worker-alpha",
           incarnationId: "incarnation-alpha",

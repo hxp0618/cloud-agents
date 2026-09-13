@@ -55,6 +55,12 @@ function validManifests(): TestManifest[] {
     "@cloud-agents/cloud-agent-provider-claude": {
       "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
     },
+    "@cloud-agents/cloud-agent-provider-pi": {
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
+    },
+    "@cloud-agents/cloud-agent-provider-deepseek-harness": {
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
+    },
     "@cloud-agents/cloud-agent-testkit": {
       "@cloud-agents/cloud-agent-protocol": versions["@cloud-agents/cloud-agent-protocol"],
       "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
@@ -63,17 +69,29 @@ function validManifests(): TestManifest[] {
       "@cloud-agents/cloud-agent-protocol": versions["@cloud-agents/cloud-agent-protocol"],
       "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
       "@cloud-agents/cloud-agent-runtime": versions["@cloud-agents/cloud-agent-runtime"],
-      "@cloud-agents/cloud-agent-provider-codex": versions["@cloud-agents/cloud-agent-provider-codex"],
-      "@cloud-agents/cloud-agent-provider-claude": versions["@cloud-agents/cloud-agent-provider-claude"],
+      "@cloud-agents/cloud-agent-provider-codex":
+        versions["@cloud-agents/cloud-agent-provider-codex"],
+      "@cloud-agents/cloud-agent-provider-claude":
+        versions["@cloud-agents/cloud-agent-provider-claude"],
+      "@cloud-agents/cloud-agent-provider-pi": versions["@cloud-agents/cloud-agent-provider-pi"],
+      "@cloud-agents/cloud-agent-provider-deepseek-harness":
+        versions["@cloud-agents/cloud-agent-provider-deepseek-harness"],
     },
   } satisfies Record<(typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number], Record<string, string>>;
   return CLOUD_AGENT_PUBLIC_PACKAGES.map((name) => ({
     name,
     version: versions[name],
-    dependencies:
-      name === "@cloud-agents/cloud-agent-provider-claude"
+    dependencies: {
+      ...(name === "@cloud-agents/cloud-agent-provider-claude"
         ? { "@anthropic-ai/claude-agent-sdk": "0.3.207" }
-        : {},
+        : {}),
+      ...(name === "@cloud-agents/cloud-agent-provider-pi"
+        ? { "@earendil-works/pi-coding-agent": "0.85.1" }
+        : {}),
+      ...(name === "@cloud-agents/cloud-agent-provider-deepseek-harness"
+        ? { "@deepseek-ai/dsh-sdk-client": "0.1.2-rc.1" }
+        : {}),
+    },
     peerDependencies: peerDependencies[name],
   }));
 }
@@ -141,6 +159,16 @@ describe("Cloud Agent packed release validation", () => {
         "@cloud-agents/cloud-agent-provider-api",
         "@cloud-agents/cloud-agent-provider-claude",
       ],
+      "@cloud-agents/cloud-agent-provider-pi": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-provider-pi",
+      ],
+      "@cloud-agents/cloud-agent-provider-deepseek-harness": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-provider-deepseek-harness",
+      ],
       "@cloud-agents/cloud-agent-testkit": [
         "@cloud-agents/cloud-agent-protocol",
         "@cloud-agents/cloud-agent-provider-api",
@@ -152,6 +180,8 @@ describe("Cloud Agent packed release validation", () => {
         "@cloud-agents/cloud-agent-runtime",
         "@cloud-agents/cloud-agent-provider-codex",
         "@cloud-agents/cloud-agent-provider-claude",
+        "@cloud-agents/cloud-agent-provider-pi",
+        "@cloud-agents/cloud-agent-provider-deepseek-harness",
         "@cloud-agents/cloud-agent-distribution",
       ],
     } satisfies Record<
@@ -203,14 +233,15 @@ describe("Cloud Agent packed release validation", () => {
     ).toThrow(/legacy Provider facade/);
   });
 
-  it("requires all seven tarballs and exact cross-package pins", () => {
+  it("requires every tarball and exact cross-package pins", () => {
     const manifests = validManifests();
     expect(() => validatePackedCloudAgentSet(manifests)).not.toThrow();
     expect(() =>
       validatePackedCloudAgentSet(
         replacePeerDependencies(manifests, "@cloud-agents/cloud-agent-distribution", {
-          ...manifests.find((manifest) => manifest.name === "@cloud-agents/cloud-agent-distribution")!
-            .peerDependencies,
+          ...manifests.find(
+            (manifest) => manifest.name === "@cloud-agents/cloud-agent-distribution",
+          )!.peerDependencies,
           "@cloud-agents/cloud-agent-runtime": "^0.2.0",
         }),
       ),
@@ -218,10 +249,26 @@ describe("Cloud Agent packed release validation", () => {
   });
 
   it.each([
-    ["Runtime to Provider", "@cloud-agents/cloud-agent-runtime", "@cloud-agents/cloud-agent-provider-codex"],
-    ["Runtime to Distribution", "@cloud-agents/cloud-agent-runtime", "@cloud-agents/cloud-agent-distribution"],
-    ["Runtime to Testkit", "@cloud-agents/cloud-agent-runtime", "@cloud-agents/cloud-agent-testkit"],
-    ["Provider API to Runtime", "@cloud-agents/cloud-agent-provider-api", "@cloud-agents/cloud-agent-runtime"],
+    [
+      "Runtime to Provider",
+      "@cloud-agents/cloud-agent-runtime",
+      "@cloud-agents/cloud-agent-provider-codex",
+    ],
+    [
+      "Runtime to Distribution",
+      "@cloud-agents/cloud-agent-runtime",
+      "@cloud-agents/cloud-agent-distribution",
+    ],
+    [
+      "Runtime to Testkit",
+      "@cloud-agents/cloud-agent-runtime",
+      "@cloud-agents/cloud-agent-testkit",
+    ],
+    [
+      "Provider API to Runtime",
+      "@cloud-agents/cloud-agent-provider-api",
+      "@cloud-agents/cloud-agent-runtime",
+    ],
     [
       "Protocol to Provider API",
       "@cloud-agents/cloud-agent-protocol",
@@ -290,20 +337,29 @@ describe("Cloud Agent packed release validation", () => {
     ).toThrow(/not devDependencies/);
   });
 
-  it("requires the exact Claude Agent SDK production dependency", () => {
-    const manifests = validManifests();
-    const claude = manifests.find(
-      (manifest) => manifest.name === "@cloud-agents/cloud-agent-provider-claude",
-    )!;
-    expect(() =>
-      validatePackedCloudAgentSet(
-        replaceDependencies(manifests, claude.name, {
-          ...claude.dependencies,
-          "@anthropic-ai/claude-agent-sdk": "^0.3.207",
-        }),
-      ),
-    ).toThrow(/exclusively pin/);
-  });
+  it.each([
+    ["@cloud-agents/cloud-agent-provider-claude", "@anthropic-ai/claude-agent-sdk", "^0.3.207"],
+    ["@cloud-agents/cloud-agent-provider-pi", "@earendil-works/pi-coding-agent", "^0.85.1"],
+    [
+      "@cloud-agents/cloud-agent-provider-deepseek-harness",
+      "@deepseek-ai/dsh-sdk-client",
+      "^0.1.2-rc.1",
+    ],
+  ] as const)(
+    "requires the exact upstream dependency for %s",
+    (provider, dependency, invalidVersion) => {
+      const manifests = validManifests();
+      const manifest = manifests.find(({ name }) => name === provider)!;
+      expect(() =>
+        validatePackedCloudAgentSet(
+          replaceDependencies(manifests, manifest.name, {
+            ...manifest.dependencies,
+            [dependency]: invalidVersion,
+          }),
+        ),
+      ).toThrow(/exclusively pin/);
+    },
+  );
 
   it("rejects --skip-build so candidates always rebuild from source", () => {
     expect(() =>

@@ -171,7 +171,7 @@ func TestHTTPClientAcceptsMaximumRuntimeResultResponse(t *testing.T) {
 	body, err := json.Marshal(ManagedAgentExecution{
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Execution",
 		Metadata: ManagedAgentExecutionMetadata{UID: "execution-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-alpha", ResourceVersion: "3", CreatedAt: "2026-08-29T08:00:00Z", UpdatedAt: "2026-08-29T08:01:00Z"},
-		Spec:     ManagedAgentExecutionSpec{Generation: 1, State: "succeeded"}, Messages: []ManagedAgentExecutionMessage{sdkMessage},
+		Spec:     ManagedAgentExecutionSpec{Generation: 1, State: "succeeded", AttemptNumber: 1, RecoveryState: "none"}, Messages: []ManagedAgentExecutionMessage{sdkMessage},
 	})
 	if err != nil || len(body) <= runtimeprotocol.MaxMessageBytes || len(body) > maxHTTPJSONResponseBytes {
 		t.Fatalf("response bytes=%d err=%v", len(body), err)

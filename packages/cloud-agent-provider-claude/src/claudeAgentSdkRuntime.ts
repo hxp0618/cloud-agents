@@ -198,6 +198,7 @@ class ClaudeAgentSdkRuntime {
   private readonly pendingUserInputs = new Map<string, PendingUserInput>();
   private readonly cancelledApprovalRequestIds = new Set<string>();
   private readonly cancelledUserInputRequestIds = new Set<string>();
+  private readonly consumedResumeInteractions = new Set<number>();
   private activeQuery: ClaudeQueryRuntime | undefined;
   private activePromptStream: PromptStream | undefined;
   private resumeCursor: string | undefined;
@@ -263,7 +264,9 @@ class ClaudeAgentSdkRuntime {
   private async runWithResume(
     reviewTarget?: ProviderReviewTarget,
   ): Promise<Extract<RunnerMessage, { type: "result" }>> {
-    const cursor = trimmedString(this.options.input.providerResumeCursor);
+    const cursor = this.canUseNativeResume()
+      ? trimmedString(this.options.input.providerResumeCursor)
+      : undefined;
     const historyAvailable = hasAuthoritativeResumeData(
       this.options.input.workload,
       this.options.input.memoryDocuments,
@@ -301,6 +304,13 @@ class ClaudeAgentSdkRuntime {
       }
     }
     return this.runAttempt(authoritativePrompt, undefined, authoritativeReconstruction);
+  }
+
+  private canUseNativeResume(): boolean {
+    const recorded = this.options.input.workload.resumeSnapshot?.resumeRecordedInteractions;
+    // A native Provider Session can remain blocked on the obsolete callback. Rebuild from the
+    // authoritative snapshot when a persisted interaction must be applied to a new attempt.
+    return !Array.isArray(recorded) || !recorded.some((entry) => asRecord(entry)?.request);
   }
 
   private async runAttempt(
@@ -467,15 +477,17 @@ class ClaudeAgentSdkRuntime {
   }
 
   private queryEnvironment(): NodeJS.ProcessEnv {
+    const controlledStateDirectory =
+      this.options.input.providerStateDirectory ?? this.options.input.runtimeOutputDirectory;
     return {
       ...this.options.environment,
       CLAUDE_AGENT_SDK_CLIENT_APP: "cloud-agents-provider-host/0.2.0",
-      ...(!this.options.usesAmbientAuthentication && this.options.input.runtimeOutputDirectory
+      ...(!this.options.usesAmbientAuthentication && controlledStateDirectory
         ? {
-            CLAUDE_CONFIG_DIR: this.options.input.runtimeOutputDirectory,
+            CLAUDE_CONFIG_DIR: controlledStateDirectory,
             ...(process.platform === "win32"
               ? {
-                  CLAUDE_SECURESTORAGE_CONFIG_DIR: this.options.input.runtimeOutputDirectory,
+                  CLAUDE_SECURESTORAGE_CONFIG_DIR: controlledStateDirectory,
                 }
               : {}),
           }
@@ -674,6 +686,8 @@ class ClaudeAgentSdkRuntime {
         if (!this.options.interactive) {
           return { behavior: "deny", message: "Interactive user input is unavailable." };
         }
+        const resumed = this.takeRecordedUserInput(toolInput);
+        if (resumed) return resumed;
         return this.requestUserInput(toolInput, callbackOptions);
       }
       if (toolName === "ExitPlanMode" && this.options.input.workload.interactionMode === "plan") {
@@ -704,8 +718,64 @@ class ClaudeAgentSdkRuntime {
       ) {
         return { behavior: "allow", updatedInput: toolInput };
       }
+      const resumed = this.takeRecordedApproval(toolName, toolInput, callbackOptions);
+      if (resumed) return resumed;
       return this.requestApproval(toolName, toolInput, callbackOptions);
     };
+  }
+
+  private takeRecordedApproval(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    callbackOptions: Parameters<CanUseTool>[2],
+  ): PermissionResult | undefined {
+    const sensitiveAction = classifySensitiveAction({ toolName, toolInput });
+    if (sensitiveAction.requiresFreshApproval) return;
+    const candidate = this.approvalPayload("resume", toolName, toolInput, callbackOptions);
+    const entry = this.takeRecordedInteraction("approval", (request) =>
+      sameResumeApproval(request, candidate),
+    );
+    if (!entry) return;
+    const resolution = asRecord(entry.resolution);
+    return readString(resolution, "decision") === "accept"
+      ? this.resumeOutcome() === "confirmed"
+        ? { behavior: "deny", message: "The fenced tool effect was already confirmed." }
+        : { behavior: "allow", updatedInput: toolInput }
+      : { behavior: "deny", message: "User declined tool execution." };
+  }
+
+  private takeRecordedUserInput(toolInput: Record<string, unknown>): PermissionResult | undefined {
+    if (this.resumeOutcome() === "confirmed") return;
+    const questions = this.userInputQuestions(toolInput);
+    const entry = this.takeRecordedInteraction("user-input", (request) =>
+      JSON.stringify(request?.questions ?? null) === JSON.stringify(questions),
+    );
+    if (!entry) return;
+    const answers = asRecord(asRecord(entry.resolution)?.answers);
+    if (!answers) return;
+    return {
+      behavior: "allow",
+      updatedInput: { questions: toolInput.questions, answers: remapAnswers(questions, answers) },
+    };
+  }
+
+  private takeRecordedInteraction(
+    kind: string,
+    matches: (request: Record<string, unknown> | undefined) => boolean,
+  ): Record<string, unknown> | undefined {
+    const entries = this.options.input.workload.resumeSnapshot?.resumeRecordedInteractions;
+    if (!Array.isArray(entries)) return;
+    for (let index = 0; index < entries.length; index += 1) {
+      if (this.consumedResumeInteractions.has(index)) continue;
+      const entry = asRecord(entries[index]);
+      if (entry?.kind !== kind || !matches(asRecord(entry.request))) continue;
+      this.consumedResumeInteractions.add(index);
+      return entry;
+    }
+  }
+
+  private resumeOutcome(): string | undefined {
+    return this.options.input.workload.resumeSnapshot?.sideEffectReconciliation?.outcome;
   }
 
   private requestApproval(
@@ -1863,6 +1933,23 @@ function nonNegativeIntegerField(
   return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0
     ? candidate
     : undefined;
+}
+
+function sameResumeApproval(
+  left: Record<string, unknown> | undefined,
+  right: Record<string, unknown>,
+): boolean {
+  if (!left) return false;
+  const stable = (value: Record<string, unknown>) =>
+    JSON.stringify({
+      provider: value.provider,
+      requestKind: value.requestKind,
+      toolName: value.toolName,
+      command: value.command,
+      path: value.path,
+      cwd: value.cwd,
+    });
+  return stable(left) === stable(right);
 }
 
 function classifyRequestKind(toolName: string): string {

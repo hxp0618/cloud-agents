@@ -115,6 +115,10 @@ spec:
             {{- if .Values.worker.enabled }}
             - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
               value: /workspace
+            - name: CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY
+              value: /snapshots
+            - name: CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY
+              value: /run/cloud-agents/provider-credentials
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
               valueFrom:
                 secretKeyRef:
@@ -165,6 +169,11 @@ spec:
             - name: worker-ca
               mountPath: /run/cloud-agents/worker-ca
               readOnly: true
+            - name: provider-credentials
+              mountPath: /run/cloud-agents/provider-credentials
+              readOnly: true
+            - name: snapshots
+              mountPath: /snapshots
             {{- end }}
             - name: access-grant
               mountPath: /run/cloud-agents/secrets
@@ -204,6 +213,12 @@ spec:
             items:
               - key: ca.crt
                 path: ca.crt
+        - name: provider-credentials
+          secret:
+            secretName: {{ .Values.runtime.credentialSecretName }}
+        - name: snapshots
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-snapshots" (include "cloud-agents.fullname" .)) .Values.runtime.snapshot.existingClaim }}
         {{- end }}
         - name: access-grant-source
           secret:

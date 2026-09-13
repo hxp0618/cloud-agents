@@ -62,11 +62,18 @@ function newResourceId(prefix: string): string {
 }
 
 function providerKind(value: string | undefined): ProviderKind {
-  return value === "claudeAgent" ? "claudeAgent" : "codex";
+  return value === "claudeAgent" || value === "pi" || value === "deepseek-harness"
+    ? value
+    : "codex";
 }
 
 function providerLabel(value: ProviderKind): string {
-  return value === "claudeAgent" ? "Claude Code" : "Codex";
+  return {
+    codex: "Codex",
+    claudeAgent: "Claude Code",
+    pi: "Pi",
+    "deepseek-harness": "deepseek-harness",
+  }[value];
 }
 
 function replaceSession(
@@ -137,7 +144,8 @@ export function AgentWorkspace({
   const pendingExecution =
     pendingSubmission?.sessionId === selectedSessionId ? pendingSubmission : undefined;
   const readyEnvironment = environment?.observedPhase === "ready" ? environment : undefined;
-  const availableProviders = profile?.providerKinds ?? (["codex", "claudeAgent"] as const);
+  const availableProviders =
+    profile?.providerKinds ?? (["codex", "claudeAgent", "pi", "deepseek-harness"] as const);
   const pollingNeeded =
     selectedSession !== undefined &&
     (pendingExecution !== undefined || !initialEventsRead || isExecutionActive(selectedExecution));

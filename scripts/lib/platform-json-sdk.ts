@@ -135,6 +135,8 @@ const PLATFORM_SCHEMAS = [
   "remote-worker-sandbox-preview-command.schema.json",
   "remote-worker-sandbox-command-receipt.schema.json",
   "remote-worker-sandbox-command.schema.json",
+  "remote-worker-workspace-snapshot-command-receipt.schema.json",
+  "remote-worker-workspace-snapshot-command.schema.json",
   "remote-worker-heartbeat-request.schema.json",
   "remote-worker-heartbeat.schema.json",
   "remote-worker-enrollment-create-request.schema.json",
@@ -178,21 +180,26 @@ const PLATFORM_SCHEMAS = [
   "network-policy.schema.json",
 ] as const;
 const MANAGED_AGENT_SCHEMAS = [
+  "artifact-content-disposition.schema.json",
+  "artifact.schema.json",
   "event-page.schema.json",
   "event.schema.json",
   "execution-approval-resolution-request.schema.json",
   "execution-cancel-request.schema.json",
   "execution-interrupt-request.schema.json",
+  "execution-side-effect-reconciliation-request.schema.json",
   "execution-create-request.schema.json",
   "execution-page.schema.json",
   "execution.schema.json",
   "execution-user-input-resolution-request.schema.json",
+  "message-index.schema.json",
   "session-create-request.schema.json",
   "session-page.schema.json",
   "session.schema.json",
   "turn-create-request.schema.json",
   "turn-page.schema.json",
   "turn.schema.json",
+  "www-authenticate.schema.json",
 ] as const;
 
 const SELECTED_COMMON_SCHEMA_REFS = new Set(COMMON_SCHEMAS.map((name) => `../schemas/${name}`));
@@ -414,6 +421,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentListRoles",
     "managedAgentListSessions",
     "managedAgentListTurns",
+    "managedAgentReconcileSideEffect",
     "managedAgentResolveApproval",
     "managedAgentResolveUserInput",
     "managedAgentResumeMembership",

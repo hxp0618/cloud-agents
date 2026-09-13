@@ -10,13 +10,31 @@
     "metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uid", "projectId", "sessionId", "turnId", "resourceVersion", "createdAt", "updatedAt"],
+      "required": [
+        "uid",
+        "projectId",
+        "sessionId",
+        "turnId",
+        "resourceVersion",
+        "createdAt",
+        "updatedAt"
+      ],
       "properties": {
-        "uid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "sessionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "turnId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-        "resourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "uid": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "projectId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "sessionId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "turnId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "resourceVersion": {
+          "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json"
+        },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       }
@@ -24,11 +42,70 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["generation", "state"],
+      "required": ["generation", "state", "attemptNumber", "recoveryState"],
       "properties": {
-        "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
-        "state": { "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
-        "resultDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "state": {
+          "enum": ["queued", "running", "succeeded", "failed", "cancelled"]
+        },
+        "attemptNumber": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "recoveryState": {
+          "enum": ["none", "recovering", "recovered", "awaiting_reconciliation"]
+        },
+        "recoveryReason": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" },
+        "recoveryMode": {
+          "enum": ["same-node-reconnect", "process-restart", "cross-node-takeover"]
+        },
+        "recoverySourceTargetId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "recoveryTargetId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        },
+        "claimExpiresAt": { "type": "string", "format": "date-time" },
+        "checkpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sequence",
+            "digest",
+            "protocol",
+            "createdAt",
+            "pendingSideEffect",
+            "pendingInteractionCount"
+          ],
+          "properties": {
+            "sequence": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            },
+            "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+            "protocol": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+            },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "pendingSideEffect": { "type": "boolean" },
+            "pendingInteractionCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64
+            }
+          }
+        },
+        "resultDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
         "errorCode": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" }
       }
     },
@@ -38,9 +115,19 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["requestId", "protocolVersion", "executionId", "generation", "commandId", "occurredAt", "messageType"],
+        "required": [
+          "requestId",
+          "protocolVersion",
+          "executionId",
+          "generation",
+          "commandId",
+          "occurredAt",
+          "messageType"
+        ],
         "properties": {
-          "requestId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+          "requestId": {
+            "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+          },
           "protocolVersion": {
             "type": "object",
             "additionalProperties": false,
@@ -50,16 +137,46 @@
               "minor": { "type": "integer", "minimum": 0, "maximum": 3 }
             }
           },
-          "executionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-          "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
-          "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+          "executionId": {
+            "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807
+          },
+          "commandId": {
+            "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+          },
           "occurredAt": { "type": "string", "format": "date-time" },
-          "messageType": { "enum": ["Error", "Event", "InteractionRequest", "ArtifactCandidate", "Checkpoint", "Result", "Progress"] },
-          "payload": { "type": ["object"], "additionalProperties": true, "description": "Runtime-defined JSON object payload." },
+          "messageType": {
+            "enum": [
+              "Error",
+              "Event",
+              "InteractionRequest",
+              "ArtifactCandidate",
+              "Checkpoint",
+              "Result",
+              "Progress"
+            ]
+          },
+          "payload": {
+            "type": ["object"],
+            "additionalProperties": true,
+            "description": "Runtime-defined JSON object payload."
+          },
           "error": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["code", "message", "retryable", "requiresNewExecution", "requiresUserAction", "canReconstructFromHistory", "canMoveWorker"],
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "requiresNewExecution",
+              "requiresUserAction",
+              "canReconstructFromHistory",
+              "canMoveWorker"
+            ],
             "properties": {
               "code": { "type": "string", "minLength": 1, "maxLength": 128 },
               "message": { "type": "string", "maxLength": 4096 },

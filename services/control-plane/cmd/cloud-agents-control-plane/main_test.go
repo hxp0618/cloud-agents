@@ -30,6 +30,7 @@ func TestParseControlPlaneConfigAcceptsLocalRuntimeBridge(t *testing.T) {
 	config, err := parseControlPlaneConfig([]string{
 		"--database-url", "postgres://task-local", "--listen", "127.0.0.1:9090",
 		"--worker-endpoint", "http://127.0.0.1:8091", "--worker-token-file", "/tmp/cloud-agents-worker.token", "--workspace-directory", "/tmp/workspace",
+		"--provider-credentials-directory", "/tmp/provider-credentials",
 		"--docker-credentials-directory", "/tmp/docker-targets",
 		"--kubernetes-credentials-directory", "/tmp/kubernetes-targets",
 		"--ssh-credentials-directory", "/tmp/ssh-targets",
@@ -37,7 +38,7 @@ func TestParseControlPlaneConfigAcceptsLocalRuntimeBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" || config.dockerCredentials != "/tmp/docker-targets" || config.kubernetesCredentials != "/tmp/kubernetes-targets" || config.sshCredentials != "/tmp/ssh-targets" {
+	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" || config.providerCredentials != "/tmp/provider-credentials" || config.dockerCredentials != "/tmp/docker-targets" || config.kubernetesCredentials != "/tmp/kubernetes-targets" || config.sshCredentials != "/tmp/ssh-targets" {
 		t.Fatalf("config = %#v", config)
 	}
 }

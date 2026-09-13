@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import claudePackage from "../../cloud-agent-provider-claude/package.json";
 import codexPackage from "../../cloud-agent-provider-codex/package.json";
+import deepseekHarnessPackage from "../../cloud-agent-provider-deepseek-harness/package.json";
+import piPackage from "../../cloud-agent-provider-pi/package.json";
 import runtimePackage from "../../cloud-agent-runtime/package.json";
 import distributionPackage from "../package.json";
 import {
@@ -15,7 +17,7 @@ import { CLOUD_AGENT_ENVELOPE_V2_SCHEMA } from "./schemas";
 describe("cloud-agent distribution", () => {
   it("registers only the pinned allowlisted providers", () => {
     const runtime = createDefaultCloudAgentRuntime();
-    expect(runtime.providerKinds).toEqual(["claudeAgent", "codex"]);
+    expect(runtime.providerKinds).toEqual(["claudeAgent", "codex", "deepseek-harness", "pi"]);
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.protocol).toBe("2.3");
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.runtime).toEqual({
       package: "@cloud-agents/cloud-agent-runtime",
@@ -34,12 +36,28 @@ describe("cloud-agent distribution", () => {
     });
   });
 
+  it("describes the pinned Pi and deepseek-harness machine runtimes", async () => {
+    await expect(createDefaultCloudAgentRuntime().describe("pi")).resolves.toMatchObject({
+      runtime: { name: "@earendil-works/pi-coding-agent", version: "0.85.1", compatible: true },
+    });
+    await expect(
+      createDefaultCloudAgentRuntime().describe("deepseek-harness"),
+    ).resolves.toMatchObject({
+      runtime: { name: "@deepseek-ai/dsh-sdk-client", version: "0.1.2-rc.1", compatible: true },
+    });
+  });
+
   it("pins manifest versions to the package manifests and deeply freezes release metadata", () => {
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.distributionVersion).toBe(distributionPackage.version);
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.runtime.version).toBe(runtimePackage.version);
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.providers).toEqual([
       expect.objectContaining({ kind: "codex", version: codexPackage.version }),
       expect.objectContaining({ kind: "claudeAgent", version: claudePackage.version }),
+      expect.objectContaining({ kind: "pi", version: piPackage.version }),
+      expect.objectContaining({
+        kind: "deepseek-harness",
+        version: deepseekHarnessPackage.version,
+      }),
     ]);
     expect(Object.isFrozen(CLOUD_AGENT_DISTRIBUTION_MANIFEST)).toBe(true);
     expect(Object.isFrozen(CLOUD_AGENT_DISTRIBUTION_MANIFEST.runtime)).toBe(true);

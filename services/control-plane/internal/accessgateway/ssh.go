@@ -401,28 +401,22 @@ func (bridge *sshBridge) remoteExchange(ctx context.Context, input *platform.Rem
 
 func (bridge *sshBridge) awaitRemoteConnected(ctx context.Context) error {
 	for {
-		frames, running, err := bridge.remoteExchange(ctx, nil)
+		frames, _, err := bridge.remoteExchange(ctx, nil)
 		if err != nil {
 			return err
 		}
-		connected := false
 		for _, frame := range frames {
-			switch frame.event {
-			case "connected":
-				connected = true
-			case "":
+			if frame.event == "" {
 				frame.data = append([]byte(nil), frame.data...)
 				bridge.pending = append(bridge.pending, frame)
-			default:
+			} else {
 				bridge.pending = append(bridge.pending, frame)
 			}
 		}
-		if connected {
-			return nil
-		}
-		if !running {
-			return opensandbox.ErrUnavailable
-		}
+		// remoteExchange only succeeds after the worker has consumed the
+		// candidate's initial connected frame. A successful empty exchange is
+		// therefore already the attachment barrier for SSH.
+		return nil
 	}
 }
 

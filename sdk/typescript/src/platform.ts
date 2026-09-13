@@ -515,6 +515,33 @@ export type RemoteWorkerSandboxCommandReceipt = Readonly<{
   stableErrorCode?: string;
   cleanupComplete: boolean;
 }>;
+export type RemoteWorkerWorkspaceSnapshotCommand = Readonly<{
+  commandId: string;
+  attempt: number;
+  action: "workspace.snapshot";
+  operationId: string;
+  workspaceId: string;
+  targetId: string;
+  snapshotId: string;
+  sourceVolumeName: string;
+  imageUri: string;
+  deadline: string;
+}>;
+export type RemoteWorkerWorkspaceSnapshotCommandReceipt = Readonly<{
+  commandId: string;
+  attempt: number;
+  action: "workspace.snapshot";
+  operationId: string;
+  workspaceId: string;
+  targetId: string;
+  snapshotId: string;
+  result: "succeeded" | "failed";
+  volumeName?: string;
+  contentDigest?: `sha256:${string}`;
+  sizeBytes?: number;
+  stableErrorCode?: string;
+  cleanupComplete: boolean;
+}>;
 export type RemoteWorkerSandboxCommand = Readonly<{
   commandId: string;
   attempt: number;
@@ -539,6 +566,11 @@ export type RemoteWorkerSandboxCommand = Readonly<{
   runtimeOperationId?: string;
   runtimeGeneration?: number;
   runtimeSpecDigest?: `sha256:${string}`;
+  restoreSnapshotId?: string;
+  restoreSourceWorkspaceId?: string;
+  restoreSnapshotVolume?: string;
+  restoreContentDigest?: `sha256:${string}`;
+  restoreSnapshotResourceVersion?: number;
   deadline: string;
 }>;
 export type RemoteWorkerSandboxExecCommandReceipt = Readonly<{
@@ -616,6 +648,7 @@ export type RemoteWorkerSandboxPTYCommand = Readonly<{
   runtimeOperationId: string;
   runtimeSpecDigest: `sha256:${string}`;
   action: "create" | "get" | "delete" | "exchange";
+  command?: string;
   sessionId?: string;
   since?: number;
   takeover?: boolean;
@@ -688,12 +721,14 @@ export type RemoteWorkerHeartbeatRequest = Readonly<{
     | "preview"
     | "pty"
     | "ssh"
+    | "workspace-snapshot"
     | "workspace-volume"
   )[];
   capacity: RemoteWorkerCapacity;
   sandboxCommandId?: string;
   commandReceipt?: RemoteWorkerCommandReceipt;
   sandboxCommandReceipt?: RemoteWorkerSandboxCommandReceipt;
+  workspaceSnapshotCommandReceipt?: RemoteWorkerWorkspaceSnapshotCommandReceipt;
   sandboxExecCommandReceipt?: RemoteWorkerSandboxExecCommandReceipt;
   sandboxFileCommandReceipt?: RemoteWorkerSandboxFileCommandReceipt;
   sandboxPtyCommandReceipt?: RemoteWorkerSandboxPTYCommandReceipt;
@@ -735,6 +770,7 @@ export type RemoteWorkerNodeStatus = Readonly<{
     | "preview"
     | "pty"
     | "ssh"
+    | "workspace-snapshot"
     | "workspace-volume"
   )[];
   capacity: RemoteWorkerCapacity;
@@ -762,6 +798,7 @@ export type RemoteWorkerHeartbeat = Readonly<{
   reconcileRequired: boolean;
   command?: RemoteWorkerCommand;
   sandboxCommand?: RemoteWorkerSandboxCommand;
+  workspaceSnapshotCommand?: RemoteWorkerWorkspaceSnapshotCommand;
   sandboxExecCommand?: RemoteWorkerSandboxExecCommand;
   sandboxFileCommand?: RemoteWorkerSandboxFileCommand;
   sandboxPtyCommand?: RemoteWorkerSandboxPTYCommand;
@@ -846,7 +883,7 @@ export type EnvironmentProfileCreateRequest = Readonly<{
   profileName: string;
   version: number;
   description: string;
-  providerKinds: readonly ("codex" | "claudeAgent")[];
+  providerKinds: readonly ("codex" | "claudeAgent" | "pi" | "deepseek-harness")[];
   cpuLimitMillis: number;
   memoryLimitBytes: number;
   storagePolicyRef: string;
@@ -866,7 +903,7 @@ export type EnvironmentProfile = Readonly<{
     version: number;
     description: string;
     status: "draft" | "published" | "disabled";
-    providerKinds: readonly ("codex" | "claudeAgent")[];
+    providerKinds: readonly ("codex" | "claudeAgent" | "pi" | "deepseek-harness")[];
     cpuLimitMillis: number;
     memoryLimitBytes: number;
     storagePolicyRef: string;
@@ -894,7 +931,7 @@ export type EnvironmentProfileSummary = Readonly<{
   description: string;
   status: "published";
   availability: "available";
-  providerKinds: readonly ("codex" | "claudeAgent")[];
+  providerKinds: readonly ("codex" | "claudeAgent" | "pi" | "deepseek-harness")[];
   cpuLimitMillis: number;
   memoryLimitBytes: number;
   storageSummary: string;
@@ -1307,7 +1344,8 @@ export type WorkspaceSnapshot = Readonly<{
     projectRef: NamespaceRef;
     sourceWorkspaceId: string;
     sourceWorkspaceResourceVersion: string;
-    backend: "docker-volume-v1";
+    sourceTargetId: string;
+    backend: "docker-volume-v1" | "portable-tar-v1";
     consistencyMode: "offline";
     status:
       | "pending"
@@ -1636,11 +1674,26 @@ export type DeploymentTargetSchedulingPreview = Readonly<{
     activeLeases: readonly DeploymentTargetSchedulingLease[];
   }>;
 }>;
-export type ManagedAgentSessionCreateRequest = Readonly<{
-  sessionId: string;
-  providerKind: string;
-  environmentLeaseId: string;
-}>;
+export type ManagedAgentSessionCreateRequest = Readonly<
+  { sessionId: string; providerKind: string } & (
+    | {
+        environmentLeaseId: string;
+        workspaceId?: never;
+        sandboxId?: never;
+        sandboxGeneration?: never;
+        environmentProfileId?: never;
+        environmentProfileVersion?: never;
+      }
+    | {
+        environmentLeaseId?: never;
+        workspaceId: string;
+        sandboxId: string;
+        sandboxGeneration: number;
+        environmentProfileId: string;
+        environmentProfileVersion: number;
+      }
+  )
+>;
 export type ManagedAgentSession = Readonly<{
   apiVersion: "managed-agent.cloud-agents.dev/v1alpha1";
   kind: "Session";
@@ -1655,6 +1708,9 @@ export type ManagedAgentSession = Readonly<{
     providerKind: string;
     environmentLeaseId?: string;
     environmentGeneration?: number;
+    workspaceId?: string;
+    sandboxId?: string;
+    sandboxGeneration?: number;
     environmentProfileId?: string;
     environmentProfileVersion?: number;
     state: "active" | "closed";
@@ -1700,6 +1756,11 @@ export type ManagedAgentExecutionCreateRequest = Readonly<{
 }>;
 export type ManagedAgentExecutionCancelRequest = Readonly<{ generation: number }>;
 export type ManagedAgentExecutionInterruptRequest = Readonly<{ generation: number }>;
+export type ManagedAgentSideEffectReconciliationRequest = Readonly<{
+  generation: number;
+  checkpointDigest: `sha256:${string}`;
+  outcome: "confirmed" | "not-applied";
+}>;
 export type ManagedAgentApprovalResolutionRequest = Readonly<{
   generation: number;
   requestId: string;
@@ -1737,6 +1798,14 @@ export type ManagedAgentExecutionMessage = Readonly<{
   payload?: unknown;
   error?: ManagedAgentExecutionError;
 }>;
+export type ManagedAgentExecutionCheckpoint = Readonly<{
+  sequence: number;
+  digest: `sha256:${string}`;
+  protocol: string;
+  createdAt: string;
+  pendingSideEffect: boolean;
+  pendingInteractionCount: number;
+}>;
 export type ManagedAgentExecution = Readonly<{
   apiVersion: "managed-agent.cloud-agents.dev/v1alpha1";
   kind: "Execution";
@@ -1752,6 +1821,14 @@ export type ManagedAgentExecution = Readonly<{
   spec: Readonly<{
     generation: number;
     state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+    attemptNumber: number;
+    recoveryState: "none" | "recovering" | "recovered" | "awaiting_reconciliation";
+    recoveryReason?: string;
+    recoveryMode?: "same-node-reconnect" | "process-restart" | "cross-node-takeover";
+    recoverySourceTargetId?: string;
+    recoveryTargetId?: string;
+    claimExpiresAt?: string;
+    checkpoint?: ManagedAgentExecutionCheckpoint;
     resultDigest?: `sha256:${string}`;
     errorCode?: string;
   }>;
@@ -2313,6 +2390,7 @@ const remoteWorkerHeartbeatResponseShape: ResponseShape = {
         sessionId: scalarResponseShape,
         since: scalarResponseShape,
         takeover: scalarResponseShape,
+        pty: scalarResponseShape,
         input: {
           fields: { messageType: scalarResponseShape, payloadBase64Url: scalarResponseShape },
         },
@@ -2677,7 +2755,7 @@ const adminSandboxSessionResponseShape = resourceResponseShape({
   },
 });
 (
-  adminSandboxSessionResponseShape.fields!.spec.fields as Record<string, ResponseShape>
+  adminSandboxSessionResponseShape.fields!.spec!.fields! as Record<string, ResponseShape>
 ).usageCorrections = {
   item: {
     fields: {
@@ -2705,6 +2783,7 @@ const workspaceSnapshotResponseShape = resourceResponseShape({
   projectRef: referenceResponseShape,
   sourceWorkspaceId: scalarResponseShape,
   sourceWorkspaceResourceVersion: scalarResponseShape,
+  sourceTargetId: scalarResponseShape,
   backend: scalarResponseShape,
   consistencyMode: scalarResponseShape,
   status: scalarResponseShape,
@@ -2866,6 +2945,9 @@ const managedAgentSessionResponseShape: ResponseShape = {
         providerKind: scalarResponseShape,
         environmentLeaseId: scalarResponseShape,
         environmentGeneration: scalarResponseShape,
+        workspaceId: scalarResponseShape,
+        sandboxId: scalarResponseShape,
+        sandboxGeneration: scalarResponseShape,
         environmentProfileId: scalarResponseShape,
         environmentProfileVersion: scalarResponseShape,
         state: scalarResponseShape,
@@ -2931,6 +3013,23 @@ const managedAgentExecutionResponseShape: ResponseShape = {
       fields: {
         generation: scalarResponseShape,
         state: scalarResponseShape,
+        attemptNumber: scalarResponseShape,
+        recoveryState: scalarResponseShape,
+        recoveryReason: scalarResponseShape,
+        recoveryMode: scalarResponseShape,
+        recoverySourceTargetId: scalarResponseShape,
+        recoveryTargetId: scalarResponseShape,
+        claimExpiresAt: scalarResponseShape,
+        checkpoint: {
+          fields: {
+            sequence: scalarResponseShape,
+            digest: scalarResponseShape,
+            protocol: scalarResponseShape,
+            createdAt: scalarResponseShape,
+            pendingSideEffect: scalarResponseShape,
+            pendingInteractionCount: scalarResponseShape,
+          },
+        },
         resultDigest: scalarResponseShape,
         errorCode: scalarResponseShape,
       },
@@ -3495,13 +3594,20 @@ function policySummary(value: unknown, path: string): string {
   }
   return text;
 }
-function profileProviderKinds(value: unknown, path: string): readonly ("codex" | "claudeAgent")[] {
+function profileProviderKinds(
+  value: unknown,
+  path: string,
+): readonly ("codex" | "claudeAgent" | "pi" | "deepseek-harness")[] {
   const values: unknown[] = Array.isArray(value)
     ? value
     : error("INVALID_PROFILE_PROVIDER_KINDS", path);
-  if (values.length < 1 || values.length > 2) error("INVALID_PROFILE_PROVIDER_KINDS", path);
+  if (values.length < 1 || values.length > 4) error("INVALID_PROFILE_PROVIDER_KINDS", path);
   const kinds = values.map((entry, index) =>
-    enumValue(entry, ["codex", "claudeAgent"] as const, `${path}/${index}`),
+    enumValue(
+      entry,
+      ["codex", "claudeAgent", "pi", "deepseek-harness"] as const,
+      `${path}/${index}`,
+    ),
   );
   if (new Set(kinds).size !== kinds.length) error("INVALID_PROFILE_PROVIDER_KINDS", path);
   return Object.freeze(kinds);
@@ -6534,6 +6640,7 @@ function remoteWorkerCapabilities(
         "preview",
         "pty",
         "ssh",
+        "workspace-snapshot",
         "workspace-volume",
       ] as const,
       `${path}/${index}`,
@@ -6592,6 +6699,134 @@ export function decodeRemoteWorkerCommand(value: unknown): RemoteWorkerCommand {
     deadline: dateTime(source.deadline, "/deadline"),
   });
 }
+export function decodeRemoteWorkerWorkspaceSnapshotCommand(
+  value: unknown,
+): RemoteWorkerWorkspaceSnapshotCommand {
+  const source = strictRecord(
+    value,
+    [
+      "commandId",
+      "attempt",
+      "action",
+      "operationId",
+      "workspaceId",
+      "targetId",
+      "snapshotId",
+      "sourceVolumeName",
+      "imageUri",
+      "deadline",
+    ],
+    [
+      "commandId",
+      "attempt",
+      "action",
+      "operationId",
+      "workspaceId",
+      "targetId",
+      "snapshotId",
+      "sourceVolumeName",
+      "imageUri",
+      "deadline",
+    ],
+  );
+  const sourceVolumeName = identifier(source.sourceVolumeName, "/sourceVolumeName");
+  if (sourceVolumeName.length > 63)
+    error("INVALID_REMOTE_WORKER_WORKSPACE_SNAPSHOT_COMMAND", "/sourceVolumeName");
+  return Object.freeze({
+    commandId: identifier(source.commandId, "/commandId"),
+    attempt: integer(source.attempt, 1, 8, "/attempt"),
+    action: enumValue(source.action, ["workspace.snapshot"] as const, "/action"),
+    operationId: identifier(source.operationId, "/operationId"),
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    targetId: identifier(source.targetId, "/targetId"),
+    snapshotId: identifier(source.snapshotId, "/snapshotId"),
+    sourceVolumeName,
+    imageUri: runtimeImage(source.imageUri, "/imageUri"),
+    deadline: dateTime(source.deadline, "/deadline"),
+  });
+}
+export function decodeRemoteWorkerWorkspaceSnapshotCommandReceipt(
+  value: unknown,
+): RemoteWorkerWorkspaceSnapshotCommandReceipt {
+  const source = strictRecord(
+    value,
+    [
+      "commandId",
+      "attempt",
+      "action",
+      "operationId",
+      "workspaceId",
+      "targetId",
+      "snapshotId",
+      "result",
+      "volumeName",
+      "contentDigest",
+      "sizeBytes",
+      "stableErrorCode",
+      "cleanupComplete",
+    ],
+    [
+      "commandId",
+      "attempt",
+      "action",
+      "operationId",
+      "workspaceId",
+      "targetId",
+      "snapshotId",
+      "result",
+      "cleanupComplete",
+    ],
+  );
+  const result = enumValue(source.result, ["succeeded", "failed"] as const, "/result"),
+    volumeName =
+      source.volumeName === undefined ? undefined : identifier(source.volumeName, "/volumeName"),
+    contentDigest =
+      source.contentDigest === undefined
+        ? undefined
+        : (digest(source.contentDigest, "/contentDigest") as `sha256:${string}`),
+    sizeBytes =
+      source.sizeBytes === undefined
+        ? undefined
+        : integer(source.sizeBytes, 0, 67108864, "/sizeBytes"),
+    stableErrorCode =
+      source.stableErrorCode === undefined
+        ? undefined
+        : identifier(source.stableErrorCode, "/stableErrorCode"),
+    cleanupComplete = boolean(source.cleanupComplete, "/cleanupComplete");
+  if (volumeName !== undefined && volumeName.length > 128)
+    error("INVALID_REMOTE_WORKER_WORKSPACE_SNAPSHOT_RECEIPT", "/volumeName");
+  if (
+    result === "succeeded"
+      ? volumeName === undefined ||
+        contentDigest === undefined ||
+        sizeBytes === undefined ||
+        stableErrorCode !== undefined
+      : stableErrorCode === undefined ||
+        volumeName !== undefined ||
+        contentDigest !== undefined ||
+        sizeBytes !== undefined
+  )
+    error("INVALID_REMOTE_WORKER_WORKSPACE_SNAPSHOT_RECEIPT", "/result");
+  const receipt = {
+    commandId: identifier(source.commandId, "/commandId"),
+    attempt: integer(source.attempt, 1, 8, "/attempt"),
+    action: enumValue(source.action, ["workspace.snapshot"] as const, "/action"),
+    operationId: identifier(source.operationId, "/operationId"),
+    workspaceId: identifier(source.workspaceId, "/workspaceId"),
+    targetId: identifier(source.targetId, "/targetId"),
+    snapshotId: identifier(source.snapshotId, "/snapshotId"),
+    result,
+    cleanupComplete,
+  };
+  return Object.freeze({
+    ...receipt,
+    ...(volumeName === undefined ? {} : { volumeName }),
+    ...(contentDigest === undefined ? {} : { contentDigest }),
+    ...(sizeBytes === undefined ? {} : { sizeBytes }),
+    ...(stableErrorCode === undefined ? {} : { stableErrorCode }),
+  });
+}
+
 export function decodeRemoteWorkerSandboxCommandReceipt(
   value: unknown,
 ): RemoteWorkerSandboxCommandReceipt {
@@ -6713,6 +6948,11 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
       "runtimeOperationId",
       "runtimeGeneration",
       "runtimeSpecDigest",
+      "restoreSnapshotId",
+      "restoreSourceWorkspaceId",
+      "restoreSnapshotVolume",
+      "restoreContentDigest",
+      "restoreSnapshotResourceVersion",
       "deadline",
     ] as const,
     required = [
@@ -6804,6 +7044,40 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
         : physicalVolumeName !== undefined || !noRuntime
   )
     error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/action");
+  const restoreSnapshotId =
+      source.restoreSnapshotId === undefined
+        ? undefined
+        : identifier(source.restoreSnapshotId, "/restoreSnapshotId"),
+    restoreSourceWorkspaceId =
+      source.restoreSourceWorkspaceId === undefined
+        ? undefined
+        : identifier(source.restoreSourceWorkspaceId, "/restoreSourceWorkspaceId"),
+    restoreSnapshotVolume =
+      source.restoreSnapshotVolume === undefined
+        ? undefined
+        : identifier(source.restoreSnapshotVolume, "/restoreSnapshotVolume"),
+    restoreContentDigest =
+      source.restoreContentDigest === undefined
+        ? undefined
+        : (digest(source.restoreContentDigest, "/restoreContentDigest") as `sha256:${string}`),
+    restoreSnapshotResourceVersion =
+      source.restoreSnapshotResourceVersion === undefined
+        ? undefined
+        : integer(
+            source.restoreSnapshotResourceVersion,
+            1,
+            Number.MAX_SAFE_INTEGER,
+            "/restoreSnapshotResourceVersion",
+          ),
+    restoreCount = [
+      restoreSnapshotId,
+      restoreSourceWorkspaceId,
+      restoreSnapshotVolume,
+      restoreContentDigest,
+      restoreSnapshotResourceVersion,
+    ].filter((entry) => entry !== undefined).length;
+  if (action === "sandbox.create" ? restoreCount !== 0 && restoreCount !== 5 : restoreCount !== 0)
+    error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/restoreSnapshotId");
   return Object.freeze({
     commandId: identifier(source.commandId, "/commandId"),
     attempt: integer(source.attempt, 1, 8, "/attempt"),
@@ -6827,6 +7101,11 @@ export function decodeRemoteWorkerSandboxCommand(value: unknown): RemoteWorkerSa
     ...(runtimeOperationId === undefined ? {} : { runtimeOperationId }),
     ...(runtimeGeneration === undefined ? {} : { runtimeGeneration }),
     ...(runtimeSpecDigest === undefined ? {} : { runtimeSpecDigest }),
+    ...(restoreSnapshotId === undefined ? {} : { restoreSnapshotId }),
+    ...(restoreSourceWorkspaceId === undefined ? {} : { restoreSourceWorkspaceId }),
+    ...(restoreSnapshotVolume === undefined ? {} : { restoreSnapshotVolume }),
+    ...(restoreContentDigest === undefined ? {} : { restoreContentDigest }),
+    ...(restoreSnapshotResourceVersion === undefined ? {} : { restoreSnapshotResourceVersion }),
     deadline: dateTime(source.deadline, "/deadline"),
   });
 }
@@ -7222,6 +7501,7 @@ export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorke
       "runtimeOperationId",
       "runtimeSpecDigest",
       "action",
+      "command",
       "sessionId",
       "since",
       "takeover",
@@ -7274,8 +7554,20 @@ export function decodeRemoteWorkerSandboxPTYCommand(value: unknown): RemoteWorke
       source.input !== undefined
     )
       error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/action");
-    return Object.freeze(command);
+    const runtimeCommand =
+      source.command === undefined ? undefined : boundedString(source.command, 1, 4096, "/command");
+    if (
+      runtimeCommand !== undefined &&
+      (/[\u0000\r\n]/u.test(runtimeCommand) ||
+        new TextEncoder().encode(runtimeCommand).length > 4096)
+    )
+      error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/command");
+    return Object.freeze({
+      ...command,
+      ...(runtimeCommand === undefined ? {} : { command: runtimeCommand }),
+    });
   }
+  if (source.command !== undefined) error("INVALID_REMOTE_WORKER_SANDBOX_PTY_COMMAND", "/command");
   const sessionId = identifier(source.sessionId, "/sessionId");
   if (action === "get" || action === "delete") {
     if (
@@ -7617,6 +7909,7 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       "sandboxCommandId",
       "commandReceipt",
       "sandboxCommandReceipt",
+      "workspaceSnapshotCommandReceipt",
       "sandboxExecCommandReceipt",
       "sandboxFileCommandReceipt",
       "sandboxPtyCommandReceipt",
@@ -7662,6 +7955,13 @@ export function decodeRemoteWorkerHeartbeatRequest(value: unknown): RemoteWorker
       : {
           sandboxCommandReceipt: decodeRemoteWorkerSandboxCommandReceipt(
             source.sandboxCommandReceipt,
+          ),
+        }),
+    ...(source.workspaceSnapshotCommandReceipt === undefined
+      ? {}
+      : {
+          workspaceSnapshotCommandReceipt: decodeRemoteWorkerWorkspaceSnapshotCommandReceipt(
+            source.workspaceSnapshotCommandReceipt,
           ),
         }),
     ...(source.sandboxExecCommandReceipt === undefined
@@ -7875,6 +8175,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       "reconcileRequired",
       "command",
       "sandboxCommand",
+      "workspaceSnapshotCommand",
       "sandboxExecCommand",
       "sandboxFileCommand",
       "sandboxPtyCommand",
@@ -7938,6 +8239,10 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       source.sandboxCommand === undefined
         ? undefined
         : decodeRemoteWorkerSandboxCommand(source.sandboxCommand),
+    workspaceSnapshotCommand =
+      source.workspaceSnapshotCommand === undefined
+        ? undefined
+        : decodeRemoteWorkerWorkspaceSnapshotCommand(source.workspaceSnapshotCommand),
     sandboxExecCommand =
       source.sandboxExecCommand === undefined
         ? undefined
@@ -7961,6 +8266,11 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
       Date.parse(command.deadline) <= Date.parse(acceptedAt))
   )
     error("INVALID_REMOTE_WORKER_COMMAND", "/command");
+  if (
+    workspaceSnapshotCommand !== undefined &&
+    Date.parse(workspaceSnapshotCommand.deadline) <= Date.parse(acceptedAt)
+  )
+    error("INVALID_REMOTE_WORKER_WORKSPACE_SNAPSHOT_COMMAND", "/workspaceSnapshotCommand");
   if (sandboxCommand !== undefined && Date.parse(sandboxCommand.deadline) <= Date.parse(acceptedAt))
     error("INVALID_REMOTE_WORKER_SANDBOX_COMMAND", "/sandboxCommand");
   if (
@@ -7986,6 +8296,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
   if (
     [
       sandboxCommand,
+      workspaceSnapshotCommand,
       sandboxExecCommand,
       sandboxFileCommand,
       sandboxPtyCommand,
@@ -7997,6 +8308,7 @@ export function decodeRemoteWorkerHeartbeat(value: unknown): RemoteWorkerHeartbe
     ...heartbeat,
     ...(command === undefined ? {} : { command }),
     ...(sandboxCommand === undefined ? {} : { sandboxCommand }),
+    ...(workspaceSnapshotCommand === undefined ? {} : { workspaceSnapshotCommand }),
     ...(sandboxExecCommand === undefined ? {} : { sandboxExecCommand }),
     ...(sandboxFileCommand === undefined ? {} : { sandboxFileCommand }),
     ...(sandboxPtyCommand === undefined ? {} : { sandboxPtyCommand }),
@@ -9120,6 +9432,7 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
       "projectRef",
       "sourceWorkspaceId",
       "sourceWorkspaceResourceVersion",
+      "sourceTargetId",
       "backend",
       "consistencyMode",
       "status",
@@ -9137,6 +9450,7 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
       "projectRef",
       "sourceWorkspaceId",
       "sourceWorkspaceResourceVersion",
+      "sourceTargetId",
       "backend",
       "consistencyMode",
       "status",
@@ -9229,7 +9543,12 @@ export function decodeWorkspaceSnapshot(value: unknown): WorkspaceSnapshot {
       projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
       sourceWorkspaceId: identifier(spec.sourceWorkspaceId, "/spec/sourceWorkspaceId"),
       sourceWorkspaceResourceVersion,
-      backend: enumValue(spec.backend, ["docker-volume-v1"] as const, "/spec/backend"),
+      sourceTargetId: identifier(spec.sourceTargetId, "/spec/sourceTargetId"),
+      backend: enumValue(
+        spec.backend,
+        ["docker-volume-v1", "portable-tar-v1"] as const,
+        "/spec/backend",
+      ),
       consistencyMode: enumValue(
         spec.consistencyMode,
         ["offline"] as const,
@@ -9895,6 +10214,9 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
       "providerKind",
       "environmentLeaseId",
       "environmentGeneration",
+      "workspaceId",
+      "sandboxId",
+      "sandboxGeneration",
       "environmentProfileId",
       "environmentProfileVersion",
       "state",
@@ -9905,8 +10227,18 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
   const hasEnvironmentLease = spec.environmentLeaseId !== undefined;
   if (hasEnvironmentLease !== (spec.environmentGeneration !== undefined))
     error("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId");
+  const hasSandbox = spec.sandboxId !== undefined;
+  if (
+    hasSandbox !== (spec.workspaceId !== undefined) ||
+    hasSandbox !== (spec.sandboxGeneration !== undefined) ||
+    (hasEnvironmentLease && hasSandbox)
+  )
+    error("INVALID_SANDBOX_BINDING", "/spec/sandboxId");
   const hasEnvironmentProfile = spec.environmentProfileId !== undefined;
-  if (hasEnvironmentProfile !== (spec.environmentProfileVersion !== undefined))
+  if (
+    hasEnvironmentProfile !== (spec.environmentProfileVersion !== undefined) ||
+    (hasSandbox && !hasEnvironmentProfile)
+  )
     error("INVALID_ENVIRONMENT_PROFILE_BINDING", "/spec/environmentProfileId");
   const resourceVersion = string(stable.resourceVersion, "/metadata/resourceVersion");
   if (!/^(?:0|[1-9][0-9]*)$/u.test(resourceVersion) || resourceVersion.length > 20)
@@ -9931,6 +10263,18 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
               1,
               Number.MAX_SAFE_INTEGER,
               "/spec/environmentGeneration",
+            ),
+          }
+        : {}),
+      ...(hasSandbox
+        ? {
+            workspaceId: identifier(spec.workspaceId, "/spec/workspaceId"),
+            sandboxId: identifier(spec.sandboxId, "/spec/sandboxId"),
+            sandboxGeneration: integer(
+              spec.sandboxGeneration,
+              1,
+              Number.MAX_SAFE_INTEGER,
+              "/spec/sandboxGeneration",
             ),
           }
         : {}),
@@ -9978,10 +10322,32 @@ export function decodeManagedAgentSessionPage(value: unknown): ManagedAgentSessi
 export function encodeManagedAgentSessionCreateRequest(
   value: ManagedAgentSessionCreateRequest,
 ): string {
+  const sessionId = identifier(value.sessionId, "/sessionId");
+  const providerKind = boundedString(value.providerKind, 1, 64, "/providerKind");
+  if (value.environmentLeaseId !== undefined)
+    return JSON.stringify({
+      sessionId,
+      providerKind,
+      environmentLeaseId: identifier(value.environmentLeaseId, "/environmentLeaseId"),
+    });
   return JSON.stringify({
-    sessionId: identifier(value.sessionId, "/sessionId"),
-    providerKind: boundedString(value.providerKind, 1, 64, "/providerKind"),
-    environmentLeaseId: identifier(value.environmentLeaseId, "/environmentLeaseId"),
+    sessionId,
+    providerKind,
+    workspaceId: identifier(value.workspaceId, "/workspaceId"),
+    sandboxId: identifier(value.sandboxId, "/sandboxId"),
+    sandboxGeneration: integer(
+      value.sandboxGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/sandboxGeneration",
+    ),
+    environmentProfileId: identifier(value.environmentProfileId, "/environmentProfileId"),
+    environmentProfileVersion: integer(
+      value.environmentProfileVersion,
+      1,
+      2147483647,
+      "/environmentProfileVersion",
+    ),
   });
 }
 export function decodeManagedAgentTurn(value: unknown): ManagedAgentTurn {
@@ -10081,8 +10447,21 @@ export function decodeManagedAgentExecution(value: unknown): ManagedAgentExecuti
   );
   const spec = strictRecord(
     source.spec,
-    ["generation", "state", "resultDigest", "errorCode"],
-    ["generation", "state"],
+    [
+      "generation",
+      "state",
+      "attemptNumber",
+      "recoveryState",
+      "recoveryReason",
+      "recoveryMode",
+      "recoverySourceTargetId",
+      "recoveryTargetId",
+      "claimExpiresAt",
+      "checkpoint",
+      "resultDigest",
+      "errorCode",
+    ],
+    ["generation", "state", "attemptNumber", "recoveryState"],
     "/spec",
   );
   const resourceVersion = string(stable.resourceVersion, "/metadata/resourceVersion");
@@ -10095,6 +10474,14 @@ export function decodeManagedAgentExecution(value: unknown): ManagedAgentExecuti
     spec: {
       generation: number;
       state: ManagedAgentExecution["spec"]["state"];
+      attemptNumber: number;
+      recoveryState: ManagedAgentExecution["spec"]["recoveryState"];
+      recoveryReason?: string;
+      recoveryMode?: Exclude<ManagedAgentExecution["spec"]["recoveryMode"], undefined>;
+      recoverySourceTargetId?: string;
+      recoveryTargetId?: string;
+      claimExpiresAt?: string;
+      checkpoint?: ManagedAgentExecutionCheckpoint;
       resultDigest?: `sha256:${string}`;
       errorCode?: string;
     };
@@ -10118,8 +10505,89 @@ export function decodeManagedAgentExecution(value: unknown): ManagedAgentExecuti
         ["queued", "running", "succeeded", "failed", "cancelled"] as const,
         "/spec/state",
       ),
+      attemptNumber: integer(spec.attemptNumber, 0, Number.MAX_SAFE_INTEGER, "/spec/attemptNumber"),
+      recoveryState: enumValue(
+        spec.recoveryState,
+        ["none", "recovering", "recovered", "awaiting_reconciliation"] as const,
+        "/spec/recoveryState",
+      ),
     },
   };
+  if (spec.recoveryReason !== undefined)
+    result.spec.recoveryReason = boundedString(spec.recoveryReason, 1, 64, "/spec/recoveryReason");
+  if (spec.recoveryMode !== undefined)
+    result.spec.recoveryMode = enumValue(
+      spec.recoveryMode,
+      ["same-node-reconnect", "process-restart", "cross-node-takeover"] as const,
+      "/spec/recoveryMode",
+    );
+  if (spec.recoverySourceTargetId !== undefined)
+    result.spec.recoverySourceTargetId = identifier(
+      spec.recoverySourceTargetId,
+      "/spec/recoverySourceTargetId",
+    );
+  if (spec.recoveryTargetId !== undefined)
+    result.spec.recoveryTargetId = identifier(spec.recoveryTargetId, "/spec/recoveryTargetId");
+  if (
+    result.spec.recoveryMode === "cross-node-takeover" &&
+    (result.spec.recoverySourceTargetId === undefined ||
+      result.spec.recoveryTargetId === undefined ||
+      result.spec.recoverySourceTargetId === result.spec.recoveryTargetId)
+  )
+    error("INVALID_RECOVERY_PLACEMENT", "/spec/recoveryMode");
+  if (
+    result.spec.recoveryMode === undefined &&
+    (result.spec.recoverySourceTargetId !== undefined || result.spec.recoveryTargetId !== undefined)
+  )
+    error("INVALID_RECOVERY_PLACEMENT", "/spec/recoveryMode");
+  if (spec.claimExpiresAt !== undefined)
+    result.spec.claimExpiresAt = dateTime(spec.claimExpiresAt, "/spec/claimExpiresAt");
+  if (spec.checkpoint !== undefined) {
+    const checkpoint = strictRecord(
+      spec.checkpoint,
+      [
+        "sequence",
+        "digest",
+        "protocol",
+        "createdAt",
+        "pendingSideEffect",
+        "pendingInteractionCount",
+      ],
+      [
+        "sequence",
+        "digest",
+        "protocol",
+        "createdAt",
+        "pendingSideEffect",
+        "pendingInteractionCount",
+      ],
+      "/spec/checkpoint",
+    );
+    const checkpointDigest = string(checkpoint.digest, "/spec/checkpoint/digest");
+    if (!/^sha256:[0-9a-f]{64}$/u.test(checkpointDigest))
+      error("INVALID_CHECKPOINT_DIGEST", "/spec/checkpoint/digest");
+    result.spec.checkpoint = Object.freeze({
+      sequence: integer(
+        checkpoint.sequence,
+        1,
+        Number.MAX_SAFE_INTEGER,
+        "/spec/checkpoint/sequence",
+      ),
+      digest: checkpointDigest as `sha256:${string}`,
+      protocol: boundedString(checkpoint.protocol, 1, 80, "/spec/checkpoint/protocol"),
+      createdAt: dateTime(checkpoint.createdAt, "/spec/checkpoint/createdAt"),
+      pendingSideEffect: boolean(
+        checkpoint.pendingSideEffect,
+        "/spec/checkpoint/pendingSideEffect",
+      ),
+      pendingInteractionCount: integer(
+        checkpoint.pendingInteractionCount,
+        0,
+        64,
+        "/spec/checkpoint/pendingInteractionCount",
+      ),
+    });
+  }
   if (spec.resultDigest !== undefined) {
     const digest = string(spec.resultDigest, "/spec/resultDigest");
     if (!/^sha256:[0-9a-f]{64}$/u.test(digest))
@@ -10307,6 +10775,18 @@ export function encodeManagedAgentExecutionInterruptRequest(
 ): string {
   return JSON.stringify({
     generation: integer(value.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+  });
+}
+export function encodeManagedAgentSideEffectReconciliationRequest(
+  value: ManagedAgentSideEffectReconciliationRequest,
+): string {
+  const checkpointDigest = string(value.checkpointDigest, "/checkpointDigest");
+  if (!/^sha256:[0-9a-f]{64}$/u.test(checkpointDigest))
+    error("INVALID_CHECKPOINT_DIGEST", "/checkpointDigest");
+  return JSON.stringify({
+    generation: integer(value.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    checkpointDigest,
+    outcome: enumValue(value.outcome, ["confirmed", "not-applied"] as const, "/outcome"),
   });
 }
 export function encodeManagedAgentApprovalResolutionRequest(
@@ -11314,6 +11794,37 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/sessions");
     return result;
   }
+  async listAdminManagedAgentSessions(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ManagedAgentSessionPage>> {
+    validatePath(tenantId, requestId);
+    identifier(projectId, "/projectId");
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sessions${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListManagedAgentSessions", response);
+    const result = parseManagedAgentSessionPage(response.body);
+    if (result.value.sessions.some(({ metadata }) => metadata.projectId !== projectId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/sessions");
+    return result;
+  }
   async createManagedAgentTurn(
     tenantId: string,
     projectId: string,
@@ -11466,6 +11977,41 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("managedAgentListExecutions", response);
+    const result = parseManagedAgentExecutionPage(response.body);
+    if (
+      result.value.executions.some(
+        ({ metadata }) => metadata.projectId !== projectId || metadata.sessionId !== sessionId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/executions");
+    return result;
+  }
+  async listAdminManagedAgentExecutions(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ManagedAgentExecutionPage>> {
+    validateSessionPath(tenantId, projectId, requestId, sessionId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams();
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/executions${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminListManagedAgentExecutions", response);
     const result = parseManagedAgentExecutionPage(response.body);
     if (
       result.value.executions.some(
@@ -11632,6 +12178,58 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  async reconcileManagedAgentSideEffect(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    turnId: string,
+    executionId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: ManagedAgentSideEffectReconciliationRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateExecutionPath(tenantId, projectId, requestId, sessionId, turnId, executionId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/turns/${turnId}/executions/${executionId}:reconcile`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeManagedAgentSideEffectReconciliationRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 204)
+      throw await this.problem("managedAgentReconcileSideEffect", response);
+  }
+  async reconcileAdminManagedAgentSideEffect(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    turnId: string,
+    executionId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: ManagedAgentSideEffectReconciliationRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateExecutionPath(tenantId, projectId, requestId, sessionId, turnId, executionId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/turns/${turnId}/executions/${executionId}:reconcile`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeManagedAgentSideEffectReconciliationRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 204)
+      throw await this.problem("adminReconcileManagedAgentSideEffect", response);
+  }
   async resolveManagedAgentApproval(
     tenantId: string,
     projectId: string,
@@ -11701,6 +12299,33 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("managedAgentListEvents", response);
+    return parseManagedAgentEventPage(response.body);
+  }
+  async listAdminManagedAgentEvents(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    requestId: string,
+    cursor?: string,
+    limit?: number,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ManagedAgentEventPage>> {
+    validateSessionPath(tenantId, projectId, requestId, sessionId);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 64))
+      error("INVALID_EVENT_LIMIT", "/limit");
+    const query = new URLSearchParams();
+    if (cursor !== undefined && cursor !== "") query.set("cursor", cursor);
+    if (limit !== undefined) query.set("limit", String(limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/events${suffix}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListManagedAgentEvents", response);
     return parseManagedAgentEventPage(response.body);
   }
   async createMembership(

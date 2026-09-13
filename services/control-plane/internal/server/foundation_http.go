@@ -1100,7 +1100,7 @@ func workspaceSnapshotResource(snapshot postgres.WorkspaceSnapshot) platform.Wor
 	}}, Spec: platform.WorkspaceSnapshotSpec{
 		ProjectRef:        common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID},
 		SourceWorkspaceID: snapshot.SourceWorkspaceID, SourceWorkspaceResourceVersion: strconv.FormatInt(snapshot.SourceWorkspaceResourceVersion, 10),
-		Backend: snapshot.Backend, ConsistencyMode: snapshot.ConsistencyMode, Status: snapshot.Status,
+		SourceTargetID: snapshot.SourceTargetID, Backend: snapshot.Backend, ConsistencyMode: snapshot.ConsistencyMode, Status: snapshot.Status,
 		OperationID: snapshot.OperationID, RetentionSeconds: snapshot.RetentionSeconds, ExpiresAt: expiresAt,
 		CleanupOperationID: cleanupOperationID, CleanupTrigger: cleanupTrigger, SizeBytes: snapshot.SizeBytes,
 		StableErrorCode: stableErrorCode, ObservedAt: observedAt, DeletedAt: deletedAt,

@@ -536,7 +536,7 @@ func remoteWorkerRunCommand(name, image string, request dockertarget.DeployReque
 func remoteWorkerRunCommandWithWorkspace(name, image string, request dockertarget.DeployRequest, config dockertarget.DeploymentConfig, labels map[string]string, workspaceSource string) string {
 	arguments := []string{
 		"run", "--detach", "--pull", "never", "--name", name, "--user", "1000:1000",
-		"--env", "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
+		"--env", "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
 		"--env", "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
 		"--read-only", "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
 		"--restart", "unless-stopped", "--memory", strconv.FormatInt(request.MemoryLimitBytes, 10),

@@ -233,12 +233,12 @@ func validAuditAction(action string) bool {
 }
 
 func validProviderKinds(values []string) bool {
-	if len(values) < 1 || len(values) > 2 {
+	if len(values) < 1 || len(values) > 4 {
 		return false
 	}
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		if value != "codex" && value != "claudeAgent" {
+		if value != "codex" && value != "claudeAgent" && value != "pi" && value != "deepseek-harness" {
 			return false
 		}
 		if _, duplicate := seen[value]; duplicate {

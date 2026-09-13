@@ -80,8 +80,26 @@ try {
   if (!page) throw new Error("browser did not expose a page target");
   socket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve, { once: true });
-    socket.addEventListener("error", reject, { once: true });
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error("browser DevTools websocket did not open within 5 seconds"));
+    }, 5000);
+    socket.addEventListener(
+      "open",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "error",
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+      { once: true },
+    );
   });
 
   let nextId = 1;
@@ -246,6 +264,33 @@ try {
     "project context",
   );
 
+  let runtimeVisible = false;
+  if (process.env.CLOUD_AGENTS_ADMIN_RUNTIME_SMOKE === "1") {
+    await evaluate("document.querySelector('[data-page=\"sandboxes\"]').click()");
+    await waitFor(
+      "[...document.querySelectorAll('.sandbox-table tbody tr')].some(row => row.textContent.includes('compose-agent-sandbox'))",
+      "Managed Agent Sandbox row",
+    );
+    await evaluate(`(() => {
+      const row = [...document.querySelectorAll('.sandbox-table tbody tr')].find(row => row.textContent.includes('compose-agent-sandbox'));
+      row?.querySelector('button')?.click();
+      return row !== undefined;
+    })()`);
+    await waitFor(
+      "document.querySelector('#managed-agent-runtime-title') !== null",
+      "Anywhere Runtime section",
+    );
+    const runtime = await evaluate(`(() => {
+      const section = document.querySelector('#managed-agent-runtime-title')?.closest('section');
+      return { text: section?.textContent ?? '', fields: section?.querySelectorAll('input, textarea').length ?? 0 };
+    })()`);
+    assert.ok(runtime.text.includes("Anywhere Runtime"));
+    assert.ok(!runtime.text.includes("approved interaction E2E"));
+    assert.ok(!runtime.text.includes("which environment to use"));
+    assert.equal(runtime.fields, 0);
+    runtimeVisible = true;
+  }
+
   const desktop = await evaluate(
     "({ width: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, stored: JSON.stringify({...localStorage, ...sessionStorage}) })",
   );
@@ -272,6 +317,29 @@ try {
   );
   let usageCorrection;
   if (snapshotMode) {
+    await evaluate("document.querySelector('[data-page=\"storage\"]').click()");
+    await waitFor(
+      "[...document.querySelectorAll('table tbody tr')].some(row => row.textContent.includes('snapshot'))",
+      "Workspace Snapshot table",
+    );
+    const portableFailover = process.env.CLOUD_AGENTS_FOUNDATION_CROSS_TARGET_RESTORE === "1";
+    const snapshotRestore = await evaluate(`(() => {
+      const row = [...document.querySelectorAll('table tbody tr')].find(row => row.textContent.includes('snapshot'));
+      const snapshotSelect = [...document.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'snapshot'));
+      if (!row || !snapshotSelect) return null;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(snapshotSelect, 'snapshot');
+      snapshotSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      return { row: row.textContent };
+    })()`);
+    assert.ok(snapshotRestore, "Snapshot restore controls must be rendered");
+    if (portableFailover) {
+      assert.ok(snapshotRestore.row.includes("portable-tar-v1"));
+      assert.ok(snapshotRestore.row.includes("target"));
+      await waitFor(
+        "[...document.querySelectorAll('select option')].some(option => option.textContent.includes('target-restore'))",
+        "cross-Target restore profile",
+      );
+    }
     await evaluate("document.querySelector('[data-page=\"sandboxes\"]').click()");
     await waitFor(
       "document.querySelector('.sandbox-table tbody tr button') !== null",
@@ -316,9 +384,12 @@ try {
   assert.equal(mobile.width, mobile.clientWidth, "mobile layout must not overflow horizontally");
   assert.equal(mobile.navVisible, true, "mobile resource navigation must remain reachable");
   assert.ok(apiRequests.length >= 10, "Admin Web must load real Admin API resources");
+  const managedAgentRuntimePrefix = `/v1/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/sessions`;
   assert.ok(
     apiRequests.every(
-      ({ origin: value, path }) => value === origin && path.startsWith("/v1/admin/"),
+      ({ origin: value, path }) =>
+        value === origin &&
+        (path.startsWith("/v1/admin/") || path.startsWith(managedAgentRuntimePrefix)),
     ),
   );
   assert.deepEqual(errors, []);
@@ -465,13 +536,16 @@ try {
     desktopWidth: 1440,
     mobileWidth: 390,
     usageCorrectionVisible: usageCorrection !== undefined,
+    runtimeVisible,
+    portableFailoverVisible:
+      process.env.CLOUD_AGENTS_FOUNDATION_CROSS_TARGET_RESTORE === "1" ? true : undefined,
     screenshot: snapshotMode ? "admin-sandbox-usage-correction.png" : undefined,
     fullCapture: fullCaptureResult,
   };
   process.stdout.write(
     snapshotMode
       ? `FOUNDATION_SNAPSHOT_BROWSER=${JSON.stringify(browserResult)}\n`
-      : `User/Admin Web browser smoke passed (admin-requests=${browserResult.requests}, user-requests=${userRequestCount ?? 0}, user-admin=403, locale=en-US, theme=${originalTheme}->${updatedTheme}, widths=1440/390)\n`,
+      : `User/Admin Web browser smoke passed (admin-requests=${browserResult.requests}, user-requests=${userRequestCount ?? 0}, user-admin=403, runtime=${browserResult.runtimeVisible}, locale=en-US, theme=${originalTheme}->${updatedTheme}, widths=1440/390)\n`,
   );
 } finally {
   socket?.close();

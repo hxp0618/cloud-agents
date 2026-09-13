@@ -24,6 +24,7 @@ const (
 type Controller struct {
 	store       *postgres.DurableCoordinationService
 	docker      *dockertarget.CredentialDirectory
+	archives    *dockertarget.FoundationSnapshotArchiveDirectory
 	kubernetes  *kubernetestarget.CredentialDirectory
 	opensandbox *opensandbox.CredentialDirectory
 	targetKinds []string
@@ -39,7 +40,7 @@ type EffectResult struct {
 	Err                                                error
 }
 
-func New(store *postgres.DurableCoordinationService, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory) (*Controller, error) {
+func New(store *postgres.DurableCoordinationService, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, archives *dockertarget.FoundationSnapshotArchiveDirectory) (*Controller, error) {
 	if store == nil || sandbox == nil || docker == nil && kubernetes == nil {
 		return nil, errors.New("foundation controller configuration is invalid")
 	}
@@ -50,7 +51,7 @@ func New(store *postgres.DurableCoordinationService, docker *dockertarget.Creden
 	if kubernetes != nil {
 		targetKinds = append(targetKinds, "kubernetes")
 	}
-	return &Controller{store: store, docker: docker, kubernetes: kubernetes, opensandbox: sandbox, targetKinds: targetKinds,
+	return &Controller{store: store, docker: docker, archives: archives, kubernetes: kubernetes, opensandbox: sandbox, targetKinds: targetKinds,
 		holder: "foundation-controller", incarnation: randomIdentifier("inc")}, nil
 }
 
@@ -84,7 +85,7 @@ func (controller *Controller) RunOne(ctx context.Context) (bool, error) {
 		return false, errors.New("foundation usage checkpoint outcome is unknown")
 	}
 	subject := digest("foundation-controller")
-	if controller.docker != nil {
+	if controller.docker != nil || controller.kubernetes != nil {
 		worked, err := controller.runWorkspaceSnapshotOne(ctx, subject)
 		if worked || err != nil {
 			return worked, err
@@ -342,10 +343,19 @@ func (controller *Controller) executeSnapshotCleanupWithRenewal(ctx context.Cont
 	defer cancel()
 	results := make(chan EffectResult, 1)
 	go func() {
-		err := controller.docker.CleanupFoundationWorkspaceSnapshot(effectCtx, claim.TargetEndpoint, claim.CredentialRef,
-			dockertarget.FoundationWorkspaceSnapshotCleanup{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
-				TargetID: claim.TargetID, SourceWorkspaceID: claim.SourceWorkspaceID,
-				SnapshotID: claim.SnapshotID, PhysicalSnapshotID: claim.PhysicalSnapshotID})
+		input := dockertarget.FoundationWorkspaceSnapshotCleanup{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+			TargetID: claim.TargetID, SourceWorkspaceID: claim.SourceWorkspaceID,
+			SnapshotID: claim.SnapshotID, PhysicalSnapshotID: claim.PhysicalSnapshotID}
+		var err error
+		if dockertarget.IsPortableFoundationSnapshot(claim.PhysicalSnapshotID) && controller.archives != nil {
+			err = controller.archives.Remove(input)
+		} else if dockertarget.IsPortableFoundationSnapshot(claim.PhysicalSnapshotID) {
+			err = dockertarget.ErrDeploymentConflict
+		} else if claim.TargetKind == "docker" && controller.docker != nil {
+			err = controller.docker.CleanupFoundationWorkspaceSnapshot(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input)
+		} else {
+			err = dockertarget.ErrDeploymentConflict
+		}
 		results <- EffectResult{CleanupComplete: err == nil, Err: err}
 	}()
 	ticker := time.NewTicker(renewInterval)
@@ -375,10 +385,18 @@ func (controller *Controller) executeSnapshotWithRenewal(ctx context.Context, cl
 	defer cancel()
 	results := make(chan EffectResult, 1)
 	go func() {
-		result, err := controller.docker.SnapshotFoundationWorkspace(effectCtx, claim.TargetEndpoint, claim.CredentialRef,
-			dockertarget.FoundationWorkspaceSnapshot{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
-				TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID, SnapshotID: claim.SnapshotID,
-				SourceVolumeName: claim.SourceVolumeName, ImageURI: claim.ImageURI})
+		input := dockertarget.FoundationWorkspaceSnapshot{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+			TargetID: claim.TargetID, WorkspaceID: claim.WorkspaceID, SnapshotID: claim.SnapshotID,
+			SourceVolumeName: claim.SourceVolumeName, ImageURI: claim.ImageURI}
+		var result dockertarget.FoundationWorkspaceSnapshotResult
+		var err error
+		if claim.TargetKind == "kubernetes" {
+			result, err = controller.kubernetes.SnapshotFoundationWorkspacePortable(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input, controller.archives)
+		} else if controller.archives == nil {
+			result, err = controller.docker.SnapshotFoundationWorkspace(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input)
+		} else {
+			result, err = controller.docker.SnapshotFoundationWorkspacePortable(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input, controller.archives)
+		}
 		results <- EffectResult{VolumeName: result.VolumeName, ContentDigest: result.ContentDigest,
 			SizeBytes: result.SizeBytes, CleanupComplete: result.CleanupComplete, Err: err}
 	}()
@@ -409,7 +427,7 @@ func (controller *Controller) executeWithRenewal(ctx context.Context, claim *pos
 	defer cancel()
 	results := make(chan EffectResult, 1)
 	go func() {
-		results <- ExecuteEffect(effectCtx, controller.docker, controller.kubernetes, controller.opensandbox, *claim)
+		results <- ExecuteEffect(effectCtx, controller.docker, controller.kubernetes, controller.opensandbox, controller.archives, *claim)
 	}()
 	ticker := time.NewTicker(renewInterval)
 	defer ticker.Stop()
@@ -433,7 +451,7 @@ func (controller *Controller) executeWithRenewal(ctx context.Context, claim *pos
 	}
 }
 
-func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, claim postgres.FoundationSandboxClaim) EffectResult {
+func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, archives *dockertarget.FoundationSnapshotArchiveDirectory, claim postgres.FoundationSandboxClaim) EffectResult {
 	if ctx == nil || sandbox == nil || (claim.TargetKind != "kubernetes" && docker == nil) || (claim.TargetKind == "kubernetes" && kubernetes == nil) {
 		return EffectResult{Err: errors.New("foundation executor configuration is invalid")}
 	}
@@ -473,11 +491,21 @@ func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory
 		} else if !errors.Is(findErr, opensandbox.ErrNotFound) {
 			return EffectResult{Err: findErr}
 		} else {
-			restored, restoreErr := docker.RestoreFoundationWorkspace(ctx, claim.TargetEndpoint, claim.CredentialRef,
-				dockertarget.FoundationWorkspaceRestore{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
-					TargetID: claim.TargetID, SourceWorkspaceID: *claim.RestoreSourceWorkspaceID,
-					SnapshotID: *claim.RestoreSnapshotID, SnapshotVolumeName: *claim.RestoreSnapshotVolume,
-					ContentDigest: *claim.RestoreContentDigest, WorkspaceID: claim.WorkspaceID, ImageURI: claim.ImageURI})
+			input := dockertarget.FoundationWorkspaceRestore{TenantID: claim.TenantID, ProjectID: claim.ProjectID,
+				TargetID: claim.TargetID, SourceWorkspaceID: *claim.RestoreSourceWorkspaceID,
+				SnapshotID: *claim.RestoreSnapshotID, SnapshotVolumeName: *claim.RestoreSnapshotVolume,
+				ContentDigest: *claim.RestoreContentDigest, WorkspaceID: claim.WorkspaceID, ImageURI: claim.ImageURI}
+			var restored dockertarget.FoundationWorkspaceRestoreResult
+			var restoreErr error
+			if dockertarget.IsPortableFoundationSnapshot(*claim.RestoreSnapshotVolume) && claim.TargetKind == "kubernetes" {
+				restored, restoreErr = kubernetes.RestoreFoundationWorkspacePortable(ctx, claim.TargetEndpoint, claim.CredentialRef, input, archives)
+			} else if dockertarget.IsPortableFoundationSnapshot(*claim.RestoreSnapshotVolume) {
+				restored, restoreErr = docker.RestoreFoundationWorkspacePortable(ctx, claim.TargetEndpoint, claim.CredentialRef, input, archives)
+			} else if claim.TargetKind == "docker" && docker != nil {
+				restored, restoreErr = docker.RestoreFoundationWorkspace(ctx, claim.TargetEndpoint, claim.CredentialRef, input)
+			} else {
+				restoreErr = dockertarget.ErrDeploymentConflict
+			}
 			if restoreErr != nil {
 				return EffectResult{VolumeName: restored.VolumeName, CleanupComplete: restored.CleanupComplete, Err: restoreErr}
 			}

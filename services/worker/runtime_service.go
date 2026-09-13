@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
@@ -71,13 +72,22 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if err != nil {
 		return err
 	}
+	runtimeLeaseKey := open.GetTenantId() + "\x00" + open.GetExecutionId()
+	sessionContext, cancel := context.WithCancel(ctx)
+	lease := &runtimeLease{cancel: cancel, done: make(chan struct{})}
+	if err := s.acquireRuntimeLease(runtimeLeaseKey, lease); err != nil {
+		cancel()
+		return err
+	}
+	defer cancel()
+	defer s.releaseRuntimeLease(runtimeLeaseKey, lease)
 	select {
 	case s.runtimeSlots <- struct{}{}:
 		defer func() { <-s.runtimeSlots }()
 	default:
 		return runtimeSessionFailure(connect.CodeResourceExhausted, "capacity_exhausted", "Runtime session capacity is exhausted")
 	}
-	client, err := runtimeprocess.New(ctx, runtimeprocess.Config{
+	client, err := runtimeprocess.New(sessionContext, runtimeprocess.Config{
 		Command: s.runtimeCommand, Environment: s.runtimeEnvironment, Directory: s.runtimeDirectory, CredentialFile: credentialFile,
 	})
 	if err != nil {
@@ -97,8 +107,6 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 		return err
 	}
 
-	sessionContext, cancel := context.WithCancel(ctx)
-	defer cancel()
 	var commands sync.WaitGroup
 	eventsDone := make(chan error, 1)
 	var sessionErr error
@@ -168,6 +176,10 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 			defer commands.Done()
 			message, executeErr := client.Execute(sessionContext, command)
 			if executeErr != nil && message.MessageType == "" {
+				// Keep the transport response generic, but retain the local process
+				// exit detail in Worker logs so a fenced or crashed Runtime can be
+				// distinguished from a Provider Error without exposing credentials.
+				_, _ = fmt.Fprintf(os.Stderr, "cloud-agent-worker: runtime command %s failed: %v\n", command.CommandType, executeErr)
 				_ = sendRuntimeError(send, "runtime_execution_failed", "Runtime command failed")
 				cancel()
 			}
@@ -269,7 +281,42 @@ func (s *Service) ReadArtifact(ctx context.Context, request *connect.Request[wor
 const (
 	runtimeArtifactChunkBytes         = 64 << 10
 	maxRuntimeProviderCredentialBytes = 65 << 10
+	runtimeWriterFenceTimeout         = 5 * time.Second
 )
+
+func (s *Service) acquireRuntimeLease(executionID string, lease *runtimeLease) error {
+	// ponytail: one bounded global fence lock keeps takeover ordering explicit; shard only after measured concurrent Runtime opens.
+	s.runtimeFenceMu.Lock()
+	defer s.runtimeFenceMu.Unlock()
+	s.runtimeMu.Lock()
+	previous := s.runtimeSessions[executionID]
+	s.runtimeMu.Unlock()
+	if previous != nil {
+		previous.cancel()
+		timer := time.NewTimer(runtimeWriterFenceTimeout)
+		select {
+		case <-previous.done:
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
+			return runtimeSessionFailure(connect.CodeFailedPrecondition, "writer_fence_timeout", "the previous Runtime writer did not stop")
+		}
+	}
+	s.runtimeMu.Lock()
+	s.runtimeSessions[executionID] = lease
+	s.runtimeMu.Unlock()
+	return nil
+}
+
+func (s *Service) releaseRuntimeLease(executionID string, lease *runtimeLease) {
+	s.runtimeMu.Lock()
+	if s.runtimeSessions[executionID] == lease {
+		delete(s.runtimeSessions, executionID)
+	}
+	s.runtimeMu.Unlock()
+	close(lease.done)
+}
 
 var runtimeArtifactSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 

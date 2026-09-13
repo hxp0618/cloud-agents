@@ -119,7 +119,7 @@ func TestFoundationKubernetesLifecycle(t *testing.T) {
 	defer httpServer.Close()
 	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, tokens[0], httpServer.Client())
 	user, _ := api.NewHTTPClientWithClient(httpServer.URL, tokens[1], httpServer.Client())
-	controller, err := foundationcontroller.New(store, nil, kubernetes, sandboxCredentials)
+	controller, err := foundationcontroller.New(store, nil, kubernetes, sandboxCredentials, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func prepareFoundationKubernetesFault(t *testing.T, ctx context.Context, owner *
 	if err != nil || claimed.DatabaseOutcome != postgres.DatabaseCommitted || !claimed.Found || claimed.Claim.SandboxID != "sandbox" {
 		t.Fatalf("claim Kubernetes Sandbox: value=%+v err=%v", claimed, err)
 	}
-	result := foundationcontroller.ExecuteEffect(ctx, nil, kubernetes, sandboxCredentials, claimed.Claim)
+	result := foundationcontroller.ExecuteEffect(ctx, nil, kubernetes, sandboxCredentials, nil, claimed.Claim)
 	if result.Err != nil || result.RuntimeState != "Running" || result.RuntimeID == "" || result.VolumeName == "" {
 		t.Fatalf("physical Kubernetes effect: value=%+v", result)
 	}

@@ -33,6 +33,13 @@ cleanup() {
 }
 trap cleanup 0 HUP INT TERM
 tar -xf "$1" -C "$smoke_directory"
+set -- "$candidate_directory"/cloud-agents-migrations-*.tar
+if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+  echo "platform release must contain exactly one migration package" >&2
+  exit 1
+fi
+migration_head=${1##*-}
+migration_head=${migration_head%.tar}
 
 for image in control-plane worker migrate; do
   docker buildx build \
@@ -64,21 +71,24 @@ expect_startup_failure() {
   esac
 }
 
-expect_startup_failure control-plane 2 "invalid control-plane configuration"
+expect_startup_failure control-plane 2 "database, authentication, TLS, and access Grant configuration are required"
 expect_startup_failure worker 2 "startup or shutdown failed"
-expect_startup_failure migrate 1 "database URL, repository root, and product-000049 selector are required"
+expect_startup_failure migrate 1 "database URL, repository root, and product-$migration_head selector are required"
 
 test "$(docker run --rm --entrypoint /usr/local/bin/codex "$image_prefix:worker" --version)" = "codex-cli 0.150.1"
 test "$(docker run --rm --entrypoint /usr/local/bin/claude "$image_prefix:worker" --version)" = "2.1.207 (Claude Code)"
+test "$(docker run --rm --entrypoint /usr/local/bin/dsh "$image_prefix:worker" --version)" = "0.1.2-rc.1"
 docker run --rm --entrypoint /usr/bin/test "$image_prefix:migrate" \
-	-r /opt/cloud-agents/migrations/services/control-plane/migrations/product/000049/manifest.json
+	-r "/opt/cloud-agents/migrations/services/control-plane/migrations/product/$migration_head/manifest.json"
 
 runtime_output=$(
   printf '%s\n' \
     '{"requestId":"oci-smoke-describe-codex","protocolVersion":{"major":2,"minor":3},"executionId":"oci-smoke","generation":1,"commandType":"Describe","commandId":"oci-smoke-describe-codex","occurredAt":"2026-09-01T00:00:00.000Z","payload":{"provider":"codex"}}' \
-    '{"requestId":"oci-smoke-describe-claude","protocolVersion":{"major":2,"minor":3},"executionId":"oci-smoke","generation":1,"commandType":"Describe","commandId":"oci-smoke-describe-claude","occurredAt":"2026-09-01T00:00:00.000Z","payload":{"provider":"claudeAgent"}}' |
+    '{"requestId":"oci-smoke-describe-claude","protocolVersion":{"major":2,"minor":3},"executionId":"oci-smoke","generation":1,"commandType":"Describe","commandId":"oci-smoke-describe-claude","occurredAt":"2026-09-01T00:00:00.000Z","payload":{"provider":"claudeAgent"}}' \
+    '{"requestId":"oci-smoke-describe-pi","protocolVersion":{"major":2,"minor":3},"executionId":"oci-smoke","generation":1,"commandType":"Describe","commandId":"oci-smoke-describe-pi","occurredAt":"2026-09-01T00:00:00.000Z","payload":{"provider":"pi"}}' \
+    '{"requestId":"oci-smoke-describe-dsh","protocolVersion":{"major":2,"minor":3},"executionId":"oci-smoke","generation":1,"commandType":"Describe","commandId":"oci-smoke-describe-dsh","occurredAt":"2026-09-01T00:00:00.000Z","payload":{"provider":"deepseek-harness"}}' |
     docker run --rm -i \
-      --env CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent \
+      --env CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness \
       --entrypoint /usr/local/bin/cloud-agent-runtime \
       "$image_prefix:worker" \
       --protocol-v2
@@ -90,4 +100,12 @@ esac
 case "$runtime_output" in
   *'"providerKind":"claudeAgent"'*'"name":"@anthropic-ai/claude-agent-sdk","version":"0.3.207","available":true,"compatible":true'*) ;;
   *) echo "Worker image Claude Runtime descriptor is unavailable or incompatible" >&2; exit 1 ;;
+esac
+case "$runtime_output" in
+  *'"providerKind":"pi"'*'"name":"@earendil-works/pi-coding-agent","version":"0.85.1","available":true,"compatible":true'*) ;;
+  *) echo "Worker image Pi Runtime descriptor is unavailable or incompatible" >&2; exit 1 ;;
+esac
+case "$runtime_output" in
+  *'"providerKind":"deepseek-harness"'*'"name":"@deepseek-ai/dsh-sdk-client","version":"0.1.2-rc.1","available":true,"compatible":true'*) ;;
+  *) echo "Worker image DeepSeek Harness Runtime descriptor is unavailable or incompatible" >&2; exit 1 ;;
 esac

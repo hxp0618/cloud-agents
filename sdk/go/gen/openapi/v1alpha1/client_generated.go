@@ -243,14 +243,22 @@ type ManagedAgentSessionSpec struct {
 	ProviderKind              string `json:"providerKind"`
 	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
 	EnvironmentGeneration     int64  `json:"environmentGeneration,omitempty"`
+	WorkspaceID               string `json:"workspaceId,omitempty"`
+	SandboxID                 string `json:"sandboxId,omitempty"`
+	SandboxGeneration         int64  `json:"sandboxGeneration,omitempty"`
 	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
 	EnvironmentProfileVersion int64  `json:"environmentProfileVersion,omitempty"`
 	State                     string `json:"state"`
 }
 type ManagedAgentSessionCreateRequest struct {
-	SessionID          string `json:"sessionId"`
-	ProviderKind       string `json:"providerKind"`
-	EnvironmentLeaseID string `json:"environmentLeaseId"`
+	SessionID                 string `json:"sessionId"`
+	ProviderKind              string `json:"providerKind"`
+	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
+	WorkspaceID               string `json:"workspaceId,omitempty"`
+	SandboxID                 string `json:"sandboxId,omitempty"`
+	SandboxGeneration         int64  `json:"sandboxGeneration,omitempty"`
+	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
+	EnvironmentProfileVersion int64  `json:"environmentProfileVersion,omitempty"`
 }
 type ManagedAgentTurn struct {
 	APIVersion string                   `json:"apiVersion"`
@@ -295,6 +303,11 @@ type ManagedAgentExecutionCancelRequest struct {
 type ManagedAgentExecutionInterruptRequest struct {
 	Generation uint64 `json:"generation"`
 }
+type ManagedAgentSideEffectReconciliationRequest struct {
+	Generation       uint64 `json:"generation"`
+	CheckpointDigest string `json:"checkpointDigest"`
+	Outcome          string `json:"outcome"`
+}
 type ManagedAgentApprovalResolutionRequest struct {
 	Generation uint64 `json:"generation"`
 	RequestID  string `json:"requestId"`
@@ -328,10 +341,26 @@ type ManagedAgentExecutionMetadata struct {
 	UpdatedAt       string `json:"updatedAt"`
 }
 type ManagedAgentExecutionSpec struct {
-	Generation   uint64 `json:"generation"`
-	State        string `json:"state"`
-	ResultDigest string `json:"resultDigest,omitempty"`
-	ErrorCode    string `json:"errorCode,omitempty"`
+	Generation             uint64                           `json:"generation"`
+	State                  string                           `json:"state"`
+	AttemptNumber          uint64                           `json:"attemptNumber"`
+	RecoveryState          string                           `json:"recoveryState"`
+	RecoveryReason         string                           `json:"recoveryReason,omitempty"`
+	RecoveryMode           string                           `json:"recoveryMode,omitempty"`
+	RecoverySourceTargetID string                           `json:"recoverySourceTargetId,omitempty"`
+	RecoveryTargetID       string                           `json:"recoveryTargetId,omitempty"`
+	ClaimExpiresAt         string                           `json:"claimExpiresAt,omitempty"`
+	Checkpoint             *ManagedAgentExecutionCheckpoint `json:"checkpoint,omitempty"`
+	ResultDigest           string                           `json:"resultDigest,omitempty"`
+	ErrorCode              string                           `json:"errorCode,omitempty"`
+}
+type ManagedAgentExecutionCheckpoint struct {
+	Sequence                uint64 `json:"sequence"`
+	Digest                  string `json:"digest"`
+	Protocol                string `json:"protocol"`
+	CreatedAt               string `json:"createdAt"`
+	PendingSideEffect       bool   `json:"pendingSideEffect"`
+	PendingInteractionCount uint32 `json:"pendingInteractionCount"`
 }
 type ManagedAgentExecutionProtocol struct {
 	Major uint32 `json:"major"`
@@ -3561,6 +3590,26 @@ func (client *Client) InterruptManagedAgentExecution(ctx context.Context, tenant
 	}
 	return value, nil
 }
+func (client *Client) ReconcileManagedAgentSideEffect(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID, idempotencyKey string, body ManagedAgentSideEffectReconciliationRequest) error {
+	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {
+		return err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return err
+	}
+	bodyBytes, err := encodeManagedAgentSideEffectReconciliationRequest(body)
+	if err != nil {
+		return err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sessions/" + sessionID + "/turns/" + turnID + "/executions/" + executionID + ":reconcile", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return client.problemError("managedAgentReconcileSideEffect", response)
+	}
+	return nil
+}
 func (client *Client) ResolveManagedAgentApproval(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID string, body ManagedAgentApprovalResolutionRequest) error {
 	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {
 		return err
@@ -3599,7 +3648,7 @@ func (client *Client) ResolveManagedAgentUserInput(ctx context.Context, tenantID
 var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
-	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "environmentProfileId": common.ScalarResponseShape(), "environmentProfileVersion": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
+	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "environmentProfileId": common.ScalarResponseShape(), "environmentProfileVersion": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
 })
 
 func DecodeManagedAgentSessionResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentSession], error) {
@@ -3721,7 +3770,7 @@ func EncodeManagedAgentTurnPageResponseJSON(value common.ResponseEnvelope[Manage
 var managedAgentExecutionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "turnId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
-	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"generation": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape()}),
+	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"generation": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "attemptNumber": common.ScalarResponseShape(), "recoveryState": common.ScalarResponseShape(), "recoveryReason": common.ScalarResponseShape(), "recoveryMode": common.ScalarResponseShape(), "recoverySourceTargetId": common.ScalarResponseShape(), "recoveryTargetId": common.ScalarResponseShape(), "claimExpiresAt": common.ScalarResponseShape(), "checkpoint": common.ObjectResponseShape(map[string]common.ResponseShape{"sequence": common.ScalarResponseShape(), "digest": common.ScalarResponseShape(), "protocol": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "pendingSideEffect": common.ScalarResponseShape(), "pendingInteractionCount": common.ScalarResponseShape()}), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape()}),
 	"messages": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"requestId": common.ScalarResponseShape(), "protocolVersion": common.ObjectResponseShape(map[string]common.ResponseShape{"major": common.ScalarResponseShape(), "minor": common.ScalarResponseShape()}), "executionId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "commandId": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape(), "messageType": common.ScalarResponseShape(), "payload": common.ScalarResponseShape(), "error": common.ObjectResponseShape(map[string]common.ResponseShape{"code": common.ScalarResponseShape(), "message": common.ScalarResponseShape(), "retryable": common.ScalarResponseShape(), "requiresNewExecution": common.ScalarResponseShape(), "requiresUserAction": common.ScalarResponseShape(), "canReconstructFromHistory": common.ScalarResponseShape(), "canMoveWorker": common.ScalarResponseShape()})})),
 })
 
@@ -3851,7 +3900,8 @@ func decodeManagedAgentExecution(data []byte) (ManagedAgentExecution, error) {
 	if err != nil {
 		return ManagedAgentExecution{}, err
 	}
-	if _, err := common.DecodeStrictObject(fields["spec"], []string{"generation", "state", "resultDigest", "errorCode"}, []string{"generation", "state"}); err != nil {
+	spec, err := common.DecodeStrictObject(fields["spec"], []string{"generation", "state", "attemptNumber", "recoveryState", "recoveryReason", "recoveryMode", "recoverySourceTargetId", "recoveryTargetId", "claimExpiresAt", "checkpoint", "resultDigest", "errorCode"}, []string{"generation", "state", "attemptNumber", "recoveryState"})
+	if err != nil {
 		return ManagedAgentExecution{}, err
 	}
 	for _, field := range []struct {
@@ -3881,6 +3931,55 @@ func decodeManagedAgentExecution(data []byte) (ManagedAgentExecution, error) {
 	case "queued", "running", "succeeded", "failed", "cancelled":
 	default:
 		return ManagedAgentExecution{}, common.ContractError("INVALID_STATE", "/spec/state")
+	}
+	switch value.Spec.RecoveryState {
+	case "none", "recovering", "recovered", "awaiting_reconciliation":
+	default:
+		return ManagedAgentExecution{}, common.ContractError("INVALID_RECOVERY_STATE", "/spec/recoveryState")
+	}
+	if value.Spec.RecoveryReason != "" {
+		if err := common.ValidateString(value.Spec.RecoveryReason, 1, 64, "/spec/recoveryReason"); err != nil {
+			return ManagedAgentExecution{}, err
+		}
+	}
+	switch value.Spec.RecoveryMode {
+	case "", "same-node-reconnect", "process-restart", "cross-node-takeover":
+	default:
+		return ManagedAgentExecution{}, common.ContractError("INVALID_RECOVERY_MODE", "/spec/recoveryMode")
+	}
+	if value.Spec.RecoverySourceTargetID != "" {
+		if err := common.ValidateIdentifier(value.Spec.RecoverySourceTargetID, "/spec/recoverySourceTargetId"); err != nil {
+			return ManagedAgentExecution{}, err
+		}
+	}
+	if value.Spec.RecoveryTargetID != "" {
+		if err := common.ValidateIdentifier(value.Spec.RecoveryTargetID, "/spec/recoveryTargetId"); err != nil {
+			return ManagedAgentExecution{}, err
+		}
+	}
+	if value.Spec.RecoveryMode == "" && (value.Spec.RecoverySourceTargetID != "" || value.Spec.RecoveryTargetID != "") || value.Spec.RecoveryMode == "cross-node-takeover" && (value.Spec.RecoverySourceTargetID == "" || value.Spec.RecoveryTargetID == "" || value.Spec.RecoverySourceTargetID == value.Spec.RecoveryTargetID) {
+		return ManagedAgentExecution{}, common.ContractError("INVALID_RECOVERY_PLACEMENT", "/spec/recoveryMode")
+	}
+	if value.Spec.ClaimExpiresAt != "" {
+		if err := common.ValidateDateTime(value.Spec.ClaimExpiresAt, "/spec/claimExpiresAt"); err != nil {
+			return ManagedAgentExecution{}, err
+		}
+	}
+	if checkpointRaw, ok := spec["checkpoint"]; ok {
+		checkpointFields, err := common.DecodeStrictObject(checkpointRaw, []string{"sequence", "digest", "protocol", "createdAt", "pendingSideEffect", "pendingInteractionCount"}, []string{"sequence", "digest", "protocol", "createdAt", "pendingSideEffect", "pendingInteractionCount"})
+		if err != nil {
+			return ManagedAgentExecution{}, err
+		}
+		if value.Spec.Checkpoint == nil || value.Spec.Checkpoint.Sequence == 0 || value.Spec.Checkpoint.PendingInteractionCount > 64 || !strings.HasPrefix(value.Spec.Checkpoint.Digest, "sha256:") || len(value.Spec.Checkpoint.Digest) != 71 {
+			return ManagedAgentExecution{}, common.ContractError("INVALID_CHECKPOINT", "/spec/checkpoint")
+		}
+		if err := common.ValidateString(value.Spec.Checkpoint.Protocol, 1, 80, "/spec/checkpoint/protocol"); err != nil {
+			return ManagedAgentExecution{}, err
+		}
+		if err := common.ValidateDateTime(value.Spec.Checkpoint.CreatedAt, "/spec/checkpoint/createdAt"); err != nil {
+			return ManagedAgentExecution{}, err
+		}
+		_ = checkpointFields
 	}
 	if value.Spec.ResultDigest != "" && (!strings.HasPrefix(value.Spec.ResultDigest, "sha256:") || len(value.Spec.ResultDigest) != 71) {
 		return ManagedAgentExecution{}, common.ContractError("INVALID_RESULT_DIGEST", "/spec/resultDigest")
@@ -3963,6 +4062,18 @@ func encodeManagedAgentExecutionCancelRequest(value ManagedAgentExecutionCancelR
 func encodeManagedAgentExecutionInterruptRequest(value ManagedAgentExecutionInterruptRequest) ([]byte, error) {
 	if value.Generation == 0 || value.Generation > 9223372036854775807 {
 		return nil, common.ContractError("INVALID_GENERATION", "/generation")
+	}
+	return json.Marshal(value)
+}
+func encodeManagedAgentSideEffectReconciliationRequest(value ManagedAgentSideEffectReconciliationRequest) ([]byte, error) {
+	if value.Generation == 0 || value.Generation > 9223372036854775807 {
+		return nil, common.ContractError("INVALID_GENERATION", "/generation")
+	}
+	if !strings.HasPrefix(value.CheckpointDigest, "sha256:") || len(value.CheckpointDigest) != 71 {
+		return nil, common.ContractError("INVALID_CHECKPOINT_DIGEST", "/checkpointDigest")
+	}
+	if value.Outcome != "confirmed" && value.Outcome != "not-applied" {
+		return nil, common.ContractError("INVALID_OUTCOME", "/outcome")
 	}
 	return json.Marshal(value)
 }
@@ -4113,7 +4224,7 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
-	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "environmentProfileId", "environmentProfileVersion", "state"}, []string{"providerKind", "state"})
+	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion", "state"}, []string{"providerKind", "state"})
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
@@ -4154,9 +4265,23 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 			return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_BINDING", "/spec/environmentLeaseId")
 		}
 	}
+	_, hasSandboxID := spec["sandboxId"]
+	_, hasWorkspaceID := spec["workspaceId"]
+	_, hasSandboxGeneration := spec["sandboxGeneration"]
+	if hasSandboxID != hasWorkspaceID || hasSandboxID != hasSandboxGeneration || hasEnvironmentLeaseID && hasSandboxID {
+		return ManagedAgentSession{}, common.ContractError("INVALID_SANDBOX_BINDING", "/spec/sandboxId")
+	}
+	if hasSandboxID {
+		if err := common.ValidateIdentifier(value.Spec.WorkspaceID, "/spec/workspaceId"); err != nil {
+			return ManagedAgentSession{}, common.ContractError("INVALID_SANDBOX_BINDING", "/spec/workspaceId")
+		}
+		if err := common.ValidateIdentifier(value.Spec.SandboxID, "/spec/sandboxId"); err != nil || value.Spec.SandboxGeneration < 1 || value.Spec.SandboxGeneration > 9007199254740991 {
+			return ManagedAgentSession{}, common.ContractError("INVALID_SANDBOX_BINDING", "/spec/sandboxId")
+		}
+	}
 	_, hasEnvironmentProfileID := spec["environmentProfileId"]
 	_, hasEnvironmentProfileVersion := spec["environmentProfileVersion"]
-	if hasEnvironmentProfileID != hasEnvironmentProfileVersion {
+	if hasEnvironmentProfileID != hasEnvironmentProfileVersion || hasSandboxID && !hasEnvironmentProfileID {
 		return ManagedAgentSession{}, common.ContractError("INVALID_ENVIRONMENT_PROFILE_BINDING", "/spec/environmentProfileId")
 	}
 	if hasEnvironmentProfileID {
@@ -4173,8 +4298,21 @@ func encodeManagedAgentSessionCreateRequest(value ManagedAgentSessionCreateReque
 	if err := common.ValidateString(value.ProviderKind, 1, 64, "/providerKind"); err != nil {
 		return nil, err
 	}
-	if err := common.ValidateIdentifier(value.EnvironmentLeaseID, "/environmentLeaseId"); err != nil {
-		return nil, err
+	legacy := value.EnvironmentLeaseID != "" && value.WorkspaceID == "" && value.SandboxID == "" && value.SandboxGeneration == 0 && value.EnvironmentProfileID == "" && value.EnvironmentProfileVersion == 0
+	foundation := value.EnvironmentLeaseID == "" && value.WorkspaceID != "" && value.SandboxID != "" && value.SandboxGeneration > 0 && value.SandboxGeneration <= 9007199254740991 && value.EnvironmentProfileID != "" && value.EnvironmentProfileVersion > 0 && value.EnvironmentProfileVersion <= 2147483647
+	if !legacy && !foundation {
+		return nil, common.ContractError("INVALID_ENVIRONMENT_BINDING", "/environmentLeaseId")
+	}
+	if legacy {
+		if err := common.ValidateIdentifier(value.EnvironmentLeaseID, "/environmentLeaseId"); err != nil {
+			return nil, err
+		}
+	} else {
+		for _, field := range []struct{ value, path string }{{value.WorkspaceID, "/workspaceId"}, {value.SandboxID, "/sandboxId"}, {value.EnvironmentProfileID, "/environmentProfileId"}} {
+			if err := common.ValidateIdentifier(field.value, field.path); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return json.Marshal(value)
 }

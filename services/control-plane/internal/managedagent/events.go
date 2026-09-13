@@ -13,7 +13,7 @@ const (
 	// LifecycleEventProfileID identifies the local, transport-neutral event
 	// projection. It is not a public HTTP or durable-storage version.
 	LifecycleEventProfileID     = "cloud-agents/managed-agent-events/v1alpha1"
-	lifecycleEventProfileDigest = "sha256:e38816e4df5b8aff6338537283f7eb7f9757aef9333b9a4e464dcec365a913b4"
+	lifecycleEventProfileDigest = "sha256:1236e7544235c1c76ca9a76114bce928708b553e904691c34813202f64457c05"
 	lifecycleEventAlgorithm     = "global-sequence-scope-filter-v1"
 	lifecycleEventFields        = "event_id|sequence|scope|operation|resource|session_id|turn_id|execution_id|generation|occurred_at|mutation_digest|input_digest|result_digest|error_code|changes(resource,from,to,version)"
 	maxEventPageSize            = 64
@@ -25,6 +25,12 @@ var lifecycleEventOperations = [...]string{
 	"turn.create",
 	"execution.create",
 	"execution.start",
+	"execution.reconnect",
+	"execution.restart",
+	"execution.takeover",
+	"execution.recovery-blocked",
+	"execution.reconcile",
+	"execution.receipt-rejected",
 	"execution.complete",
 	"execution.fail",
 	"turn.interrupt",

@@ -249,15 +249,16 @@ describe("Claude Agent SDK runtime", () => {
     }
   });
 
-  it("binds the agentd-created Runtime Output Root for controlled Claude credentials", async () => {
+  it("binds the agentd-created Provider State Root for controlled Claude credentials", async () => {
     const runtimeOutputDirectory = "/tmp/cloud-agents-claude-runtime-output";
+    const providerStateDirectory = "/tmp/cloud-agents-claude-provider-state";
     const queryFactory: ClaudeQueryFactory = ({ options }) =>
       fakeQuery(
         (async function* () {
           const environment = requiredOptions(options).env;
-          expect(environment?.CLAUDE_CONFIG_DIR).toBe(runtimeOutputDirectory);
+          expect(environment?.CLAUDE_CONFIG_DIR).toBe(providerStateDirectory);
           if (process.platform === "win32") {
-            expect(environment?.CLAUDE_SECURESTORAGE_CONFIG_DIR).toBe(runtimeOutputDirectory);
+            expect(environment?.CLAUDE_SECURESTORAGE_CONFIG_DIR).toBe(providerStateDirectory);
           } else {
             expect(environment?.CLAUDE_SECURESTORAGE_CONFIG_DIR).toBeUndefined();
           }
@@ -267,7 +268,11 @@ describe("Claude Agent SDK runtime", () => {
       );
 
     const run = startProviderHostRun(
-      claudeInput({ inputText: "use controlled output", runtimeOutputDirectory }),
+      claudeInput({
+        inputText: "use controlled output",
+        runtimeOutputDirectory,
+        providerStateDirectory,
+      }),
       { payload: { apiKey: "provider-secret" } },
       () => {},
       { claudeQueryFactory: queryFactory },
@@ -2280,6 +2285,7 @@ function claudeInput(input: {
   interactionMode?: "default" | "plan";
   generation?: number;
   runtimeOutputDirectory?: string;
+  providerStateDirectory?: string;
   workspaceDirectory?: string;
 }): RunnerInput {
   return {
@@ -2297,6 +2303,9 @@ function claudeInput(input: {
     workspaceDirectory: input.workspaceDirectory ?? "/tmp/cloud-agents-claude-runtime",
     ...(input.runtimeOutputDirectory
       ? { runtimeOutputDirectory: input.runtimeOutputDirectory }
+      : {}),
+    ...(input.providerStateDirectory
+      ? { providerStateDirectory: input.providerStateDirectory }
       : {}),
   };
 }

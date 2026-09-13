@@ -392,7 +392,7 @@ func validFoundationSandboxClaim(claim FoundationSandboxClaim) bool {
 	if claim.RestoreSnapshotResourceVersion != nil {
 		restoreFields++
 	}
-	validRestore := restoreFields == 0 || restoreFields == 5 && claim.Action == "sandbox.create" && claim.TargetKind == "docker" &&
+	validRestore := restoreFields == 0 || restoreFields == 5 && claim.Action == "sandbox.create" && (claim.TargetKind == "docker" || claim.TargetKind == "kubernetes" || claim.TargetKind == "remote-worker") &&
 		validMutationIdentifier(*claim.RestoreSnapshotID) && validMutationIdentifier(*claim.RestoreSourceWorkspaceID) &&
 		validMutationIdentifier(*claim.RestoreSnapshotVolume) && validCoordinationDigest(*claim.RestoreContentDigest) &&
 		*claim.RestoreSnapshotResourceVersion > 0

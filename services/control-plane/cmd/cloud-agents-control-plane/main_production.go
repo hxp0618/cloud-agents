@@ -51,7 +51,9 @@ const (
 	productionWorkerClientKeyEnvironment         = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
 	productionWorkerCAEnvironment                = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
 	productionWorkspaceEnvironment               = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	productionProviderCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY"
 	productionDockerCredentialsEnvironment       = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
+	productionSnapshotDirectoryEnvironment       = "CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY"
 	productionKubernetesCredentialsEnvironment   = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
 	productionSSHCredentialsEnvironment          = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
 	productionAccessGrantKeyEnvironment          = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
@@ -63,7 +65,7 @@ const (
 	productionAdmissionTokenEnvironment          = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
 	maxAuthConfigBytes                           = 1 << 20
 	maxProductionCABytes                         = 1 << 20
-	productionRuntimeMaxDuration                 = 5 * time.Minute
+	productionRuntimeMaxDuration                 = 30 * time.Minute
 	productionHTTPWriteGrace                     = 15 * time.Second
 	productionJWKSFetchTimeout                   = 5 * time.Second
 	maxJWKSResponseBytes                         = 1 << 20
@@ -85,7 +87,9 @@ type productionConfig struct {
 	workerClientKey         string
 	workerCA                string
 	workspaceDirectory      string
+	providerCredentials     string
 	dockerCredentials       string
+	snapshotDirectory       string
 	kubernetesCredentials   string
 	sshCredentials          string
 	accessGrantKey          string
@@ -236,14 +240,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 				return errors.New("worker transport configuration is invalid")
 			}
 		}
-		runtimeCoordinator, err = internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
-			Store: coordinationService, Supervisor: workerSupervisor, WorkerClientCertificate: workerClientCertificate, WorkerRootCAs: workerCAs, Clock: time.Now,
-			FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
-			WorkspaceDirectory: config.workspaceDirectory, MaxDuration: productionRuntimeMaxDuration,
-		})
-		if err != nil {
-			return errors.New("managed agent Runtime coordinator is unavailable")
-		}
 	}
 	projectCreator, err := server.NewDurableProjectCreateServer(coordinationService)
 	if err != nil {
@@ -254,6 +250,13 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("project HTTP server is unavailable")
 	}
 	var dockerProber *dockertarget.CredentialDirectory
+	var snapshotArchives *dockertarget.FoundationSnapshotArchiveDirectory
+	if config.snapshotDirectory != "" {
+		snapshotArchives, err = dockertarget.NewFoundationSnapshotArchiveDirectory(config.snapshotDirectory)
+		if err != nil {
+			return errors.New("Workspace snapshot directory is invalid")
+		}
+	}
 	grantCodec, err := accessgrant.Load(config.accessGrantKey)
 	if err != nil {
 		return errors.New("Sandbox access Grant key is invalid")
@@ -279,12 +282,13 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		credentialDirectories = append(credentialDirectories, config.kubernetesCredentials)
 	}
 	var sandboxCredentials *opensandbox.CredentialDirectory
+	var foundationRuntime *internalmanagedagent.FoundationRuntime
 	if len(credentialDirectories) != 0 {
 		sandboxCredentials, err = opensandbox.NewCredentialDirectory(credentialDirectories...)
 		if err != nil {
 			return errors.New("OpenSandbox credential directory is invalid")
 		}
-		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, kubernetesProber, sandboxCredentials)
+		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, kubernetesProber, sandboxCredentials, snapshotArchives)
 		if controllerErr != nil {
 			return errors.New("foundation controller is unavailable")
 		}
@@ -295,6 +299,22 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			foundationController.Run(foundationContext, logger)
 		}()
 		defer func() { cancelFoundation(); <-foundationDone }()
+	}
+	if config.providerCredentials != "" {
+		foundationRuntime, err = internalmanagedagent.NewFoundationRuntime(sandboxCredentials, config.providerCredentials, coordinationService)
+		if err != nil {
+			return errors.New("Foundation Runtime configuration is invalid")
+		}
+	}
+	if config.workerClientCert != "" || foundationRuntime != nil {
+		runtimeCoordinator, err = internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
+			Store: coordinationService, Supervisor: workerSupervisor, FoundationRuntime: foundationRuntime, WorkerClientCertificate: workerClientCertificate, WorkerRootCAs: workerCAs, Clock: time.Now,
+			FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
+			WorkspaceDirectory: config.workspaceDirectory, MaxDuration: productionRuntimeMaxDuration,
+		})
+		if err != nil {
+			return errors.New("managed agent Runtime coordinator is unavailable")
+		}
 	}
 	var sshProber *sshtarget.CredentialDirectory
 	if config.sshCredentials != "" {
@@ -351,11 +371,11 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("RemoteWorker client CA pool is invalid")
 		}
 	}
-	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(userVerifier, coordinationService, remoteWorkerCertificateAuthority)
+	remoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(userVerifier, coordinationService, remoteWorkerCertificateAuthority, snapshotArchives)
 	if err != nil {
 		return errors.New("RemoteWorker enrollment HTTP server is unavailable")
 	}
-	adminRemoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(adminVerifier, coordinationService, remoteWorkerCertificateAuthority)
+	adminRemoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(adminVerifier, coordinationService, remoteWorkerCertificateAuthority, snapshotArchives)
 	if err != nil {
 		return errors.New("admin RemoteWorker enrollment HTTP server is unavailable")
 	}
@@ -403,12 +423,24 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed agent turn HTTP server is unavailable")
 	}
-	var executionServer *server.ManagedAgentExecutionHTTPServer
+	adminSessionServer, err := server.NewManagedAgentSessionHTTPServer(adminVerifier, coordinationService)
+	if err != nil {
+		return errors.New("admin managed agent session HTTP server is unavailable")
+	}
+	adminEventsServer, err := server.NewManagedAgentEventsHTTPServer(adminVerifier, coordinationService)
+	if err != nil {
+		return errors.New("admin managed agent events HTTP server is unavailable")
+	}
+	var executionServer, adminExecutionServer *server.ManagedAgentExecutionHTTPServer
 	var userEnvironmentServer *server.UserEnvironmentHTTPServer
 	if runtimeCoordinator != nil {
 		executionServer, err = server.NewManagedAgentExecutionHTTPServer(userVerifier, coordinationService, runtimeCoordinator)
 		if err != nil {
 			return errors.New("managed agent execution HTTP server is unavailable")
+		}
+		adminExecutionServer, err = server.NewManagedAgentExecutionHTTPServer(adminVerifier, coordinationService, runtimeCoordinator)
+		if err != nil {
+			return errors.New("admin managed agent execution HTTP server is unavailable")
 		}
 		leaseServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(userVerifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
 		if leaseErr != nil {
@@ -421,6 +453,22 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(adminVerifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if runtimeRequest, ok := server.AdminManagedAgentRuntimeRequest(request); ok {
+			if server.HandlesManagedAgentExecutionPath(runtimeRequest.URL.Path) {
+				if adminExecutionServer == nil {
+					http.NotFound(writer, request)
+					return
+				}
+				adminExecutionServer.ServeHTTP(writer, runtimeRequest)
+				return
+			}
+			if server.HandlesManagedAgentEventsPath(runtimeRequest.URL.Path) {
+				adminEventsServer.ServeHTTP(writer, runtimeRequest)
+				return
+			}
+			adminSessionServer.ServeHTTP(writer, runtimeRequest)
+			return
+		}
 		if server.HandlesFoundationPath(request.URL.Path) {
 			adminFoundationServer.ServeHTTP(writer, request)
 			return
@@ -607,7 +655,9 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	workerClientKey := set.String("worker-client-key", "", "Worker mTLS client key path")
 	workerCA := set.String("worker-ca", "", "Worker CA certificate path")
 	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
+	providerCredentials := set.String("provider-credentials-directory", "", "tenant Provider credential directory for Foundation Runtime")
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
+	snapshotDirectory := set.String("snapshot-directory", "", "persistent portable Workspace snapshot directory")
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
 	accessGrantKey := set.String("access-grant-key-file", "", "shared 32-64 byte Sandbox access Grant key file")
@@ -640,7 +690,9 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(workerClientKey, productionWorkerClientKeyEnvironment)
 	fill(workerCA, productionWorkerCAEnvironment)
 	fill(workspaceDirectory, productionWorkspaceEnvironment)
+	fill(providerCredentials, productionProviderCredentialsEnvironment)
 	fill(dockerCredentials, productionDockerCredentialsEnvironment)
+	fill(snapshotDirectory, productionSnapshotDirectoryEnvironment)
 	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
 	fill(sshCredentials, productionSSHCredentialsEnvironment)
 	fill(accessGrantKey, productionAccessGrantKeyEnvironment)
@@ -648,7 +700,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(remoteWorkerCAKey, productionRemoteWorkerCAKeyEnvironment)
 	fill(remoteWorkerTrustDomain, productionRemoteWorkerTrustDomainEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
+	if strings.TrimSpace(*providerCredentials) != *providerCredentials || strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*snapshotDirectory) != *snapshotDirectory || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -671,8 +723,11 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 		}
 	}
 	staticWorker := *workerEndpoint != "" || *workerSPIFFE != "" || *admissionLeaseID != "" || *admissionGeneration != 0
-	managedAgentRuntime := staticWorker || *workerClientCert != "" || *workerClientKey != "" || *workerCA != "" || *workspaceDirectory != "" || admissionToken != ""
-	if managedAgentRuntime && (*workerClientCert == "" || *workerClientKey == "" || *workerCA == "" || *workspaceDirectory == "" || admissionToken == "") ||
+	legacyRuntime := staticWorker || *workerClientCert != "" || *workerClientKey != "" || *workerCA != "" || admissionToken != ""
+	managedAgentRuntime := legacyRuntime || *providerCredentials != "" || *workspaceDirectory != ""
+	if legacyRuntime && (*workerClientCert == "" || *workerClientKey == "" || *workerCA == "" || *workspaceDirectory == "" || admissionToken == "") ||
+		managedAgentRuntime && (*workspaceDirectory == "" || !legacyRuntime && *providerCredentials == "") || *providerCredentials != "" && *dockerCredentials == "" && *kubernetesCredentials == "" || *snapshotDirectory != "" && *dockerCredentials == "" && *kubernetesCredentials == "" ||
+		managedAgentRuntime && *kubernetesCredentials != "" && *snapshotDirectory == "" ||
 		staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0) || len(admissionToken) > 1<<20 {
 		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
 	}
@@ -683,7 +738,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, providerCredentials: *providerCredentials, dockerCredentials: *dockerCredentials, snapshotDirectory: *snapshotDirectory, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

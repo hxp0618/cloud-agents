@@ -32,6 +32,8 @@ const runtimePackageBuildOrder = [
   "packages/cloud-agent-runtime",
   "packages/cloud-agent-provider-codex",
   "packages/cloud-agent-provider-claude",
+  "packages/cloud-agent-provider-pi",
+  "packages/cloud-agent-provider-deepseek-harness",
   "packages/cloud-agent-testkit",
   "packages/cloud-agent-distribution",
 ] as const;

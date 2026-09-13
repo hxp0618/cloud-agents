@@ -1,0 +1,16 @@
+{{- if and .Values.worker.enabled (not .Values.runtime.snapshot.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-snapshots
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.runtime.snapshot.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.runtime.snapshot.size }}
+{{- end }}

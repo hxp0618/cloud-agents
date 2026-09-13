@@ -19,14 +19,15 @@ import (
 )
 
 type managedAgentExecutionStoreFake struct {
-	execution internalmanagedagent.ExecutionSnapshot
-	gotTurn   string
-	gotExec   string
-	cancel    internalmanagedagent.CancelTurnInput
-	list      int
-	page      postgres.ManagedAgentExecutionPage
-	after     string
-	limit     int
+	execution      internalmanagedagent.ExecutionSnapshot
+	gotTurn        string
+	gotExec        string
+	cancel         internalmanagedagent.CancelTurnInput
+	list           int
+	page           postgres.ManagedAgentExecutionPage
+	after          string
+	limit          int
+	reconciliation internalmanagedagent.ReconcileRuntimeSideEffectInput
 }
 
 func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.RuntimeSessionSnapshot, error) {
@@ -47,6 +48,31 @@ func (fake *managedAgentExecutionStoreFake) CreateManagedAgentTurn(context.Conte
 
 func (fake *managedAgentExecutionStoreFake) CreateManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CreateExecutionInput) (internalmanagedagent.ExecutionSnapshot, error) {
 	return internalmanagedagent.ExecutionSnapshot{}, errors.New("not used")
+}
+
+func (fake *managedAgentExecutionStoreFake) ClaimManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.ClaimRuntimeExecutionInput) (internalmanagedagent.RuntimeExecutionClaim, error) {
+	return internalmanagedagent.RuntimeExecutionClaim{}, errors.New("not used")
+}
+
+func (fake *managedAgentExecutionStoreFake) RenewManagedAgentExecutionClaim(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.RuntimeExecutionClaim, int32) (time.Time, error) {
+	return time.Time{}, errors.New("not used")
+}
+
+func (fake *managedAgentExecutionStoreFake) ReleaseQueuedManagedAgentExecutionClaim(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.RuntimeExecutionClaim) error {
+	return errors.New("not used")
+}
+
+func (fake *managedAgentExecutionStoreFake) CheckpointManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CheckpointRuntimeExecutionInput) (internalmanagedagent.RuntimeExecutionCheckpoint, error) {
+	return internalmanagedagent.RuntimeExecutionCheckpoint{}, errors.New("not used")
+}
+
+func (fake *managedAgentExecutionStoreFake) ResolveManagedAgentExecutionInteraction(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.ResolveRuntimeInteractionInput) (internalmanagedagent.RuntimeInteractionResolution, error) {
+	return internalmanagedagent.RuntimeInteractionResolution{}, errors.New("not used")
+}
+
+func (fake *managedAgentExecutionStoreFake) ReconcileManagedAgentExecutionSideEffect(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedagent.ReconcileRuntimeSideEffectInput) (internalmanagedagent.RuntimeSideEffectReconciliation, error) {
+	fake.reconciliation = input
+	return internalmanagedagent.RuntimeSideEffectReconciliation{CheckpointDigest: input.CheckpointDigest, Outcome: input.Outcome, CreatedAt: time.Now()}, nil
 }
 
 func (fake *managedAgentExecutionStoreFake) StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.StartExecutionInput) (internalmanagedagent.ExecutionTransitionResult, error) {
@@ -370,6 +396,17 @@ func TestManagedAgentExecutionHTTPServerExposesActiveTranscriptAndResolvesIntera
 	if rejected.Code != http.StatusBadRequest {
 		t.Fatalf("invalid approval status=%d body=%s", rejected.Code, rejected.Body.String())
 	}
+
+	checkpointDigest := "sha256:" + strings.Repeat("a", 64)
+	reconcile := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:reconcile", strings.NewReader(`{"generation":7,"checkpointDigest":"`+checkpointDigest+`","outcome":"confirmed"}`))
+	reconcile.Header.Set("Authorization", "Bearer access-token")
+	reconcile.Header.Set("X-Request-ID", "request-reconcile")
+	reconcile.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ")
+	reconciled := httptest.NewRecorder()
+	handler.ServeHTTP(reconciled, reconcile)
+	if reconciled.Code != http.StatusNoContent || verifier.seen.RequiredPermission != "projects.act" || store.reconciliation.Generation != 7 || store.reconciliation.CheckpointDigest != checkpointDigest || store.reconciliation.Outcome != "confirmed" {
+		t.Fatalf("reconcile status=%d verification=%#v input=%#v body=%s", reconciled.Code, verifier.seen, store.reconciliation, reconciled.Body.String())
+	}
 }
 
 func TestManagedAgentExecutionHTTPServerAcceptsMaximumEscapedInput(t *testing.T) {
@@ -484,6 +521,7 @@ func TestManagedAgentExecutionHTTPServerRejectsInvalidMutationInputs(t *testing.
 		{name: "interrupt generation overflow", action: "interrupt", body: `{"generation":9223372036854775808}`},
 		{name: "cancel unknown field", action: "cancel", body: `{"generation":7,"extra":true}`},
 		{name: "interrupt zero generation", action: "interrupt", body: `{"generation":0}`},
+		{name: "reconcile invalid outcome", action: "reconcile", body: `{"generation":7,"checkpointDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","outcome":"unknown"}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -3,6 +3,8 @@ package postgres
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,24 +21,42 @@ import (
 
 var ErrManagedAgentExecutionNotFound = errors.New("managed agent execution was not found")
 
+const managedAgentExecutionAuditProjectionSQL = `SELECT state, recovery_state, resource_version
+FROM cloud_agents.managed_agent_executions
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1
+    AND session_uid = $2 AND turn_uid = $3 AND execution_uid = $4`
+
 type ManagedAgentExecutionPage struct {
 	Executions []internalmanagedagent.ExecutionSnapshot
 	NextTurnID string
 }
 
 type managedAgentExecutionPageRow struct {
-	TenantID        string    `json:"tenant_id"`
-	ProjectID       string    `json:"project_uid"`
-	SessionID       string    `json:"session_uid"`
-	TurnID          string    `json:"turn_uid"`
-	ExecutionID     string    `json:"execution_uid"`
-	Generation      int64     `json:"generation"`
-	State           string    `json:"state"`
-	ResultDigest    *string   `json:"result_digest"`
-	ErrorCode       *string   `json:"error_code"`
-	ResourceVersion int64     `json:"resource_version"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	TenantID                string     `json:"tenant_id"`
+	ProjectID               string     `json:"project_uid"`
+	SessionID               string     `json:"session_uid"`
+	TurnID                  string     `json:"turn_uid"`
+	ExecutionID             string     `json:"execution_uid"`
+	Generation              int64      `json:"generation"`
+	State                   string     `json:"state"`
+	ResultDigest            *string    `json:"result_digest"`
+	ErrorCode               *string    `json:"error_code"`
+	AttemptNumber           int64      `json:"attempt_number"`
+	ClaimExpiresAt          *time.Time `json:"claim_expires_at"`
+	CheckpointSequence      int64      `json:"checkpoint_sequence"`
+	CheckpointDigest        *string    `json:"checkpoint_digest"`
+	CheckpointedAt          *time.Time `json:"checkpointed_at"`
+	CheckpointProtocol      *string    `json:"checkpoint_protocol"`
+	PendingSideEffect       bool       `json:"pending_side_effect"`
+	PendingInteractionCount int32      `json:"pending_interaction_count"`
+	RecoveryState           string     `json:"recovery_state"`
+	RecoveryReason          *string    `json:"recovery_reason"`
+	RecoveryMode            *string    `json:"recovery_mode"`
+	RecoverySourceTargetID  *string    `json:"recovery_source_target_uid"`
+	RecoveryTargetID        *string    `json:"recovery_target_uid"`
+	ResourceVersion         int64      `json:"resource_version"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 const (
@@ -44,17 +64,45 @@ const (
 FROM cloud_agents.create_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	startManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.start_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
+FROM cloud_agents.start_claimed_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	settleManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.settle_managed_agent_execution_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+FROM cloud_agents.settle_claimed_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
 	cancelManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.cancel_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
+FROM cloud_agents.cancel_managed_agent_execution_v2($1, $2, $3, $4, $5, $6, $7, $8)`
 	interruptManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.interrupt_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
-	getManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at, terminal_message, runtime_messages
+FROM cloud_agents.interrupt_managed_agent_execution_v2($1, $2, $3, $4, $5, $6, $7, $8)`
+	claimManagedAgentExecutionSQL = `SELECT acquired, attempt_number, claim_expires_at, recovery_state, recovery_reason,
+checkpoint_sequence, checkpoint_digest, checkpointed_at, checkpoint_protocol, pending_side_effect,
+pending_interaction_count, checkpoint_provider_resume_cursor
+FROM cloud_agents.claim_managed_agent_execution_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+	renewManagedAgentExecutionClaimSQL         = `SELECT cloud_agents.renew_managed_agent_execution_claim_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`
+	releaseQueuedManagedAgentExecutionClaimSQL = `SELECT cloud_agents.release_queued_managed_agent_execution_claim_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+	checkpointManagedAgentExecutionSQL         = `SELECT checkpoint_sequence, claim_expires_at, checkpointed_at
+FROM cloud_agents.checkpoint_managed_agent_execution_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
+	resolveManagedAgentExecutionInteractionSQL  = `SELECT cloud_agents.resolve_managed_agent_execution_interaction_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`
+	reconcileManagedAgentExecutionSideEffectSQL = `SELECT cloud_agents.reconcile_managed_agent_execution_side_effect_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+	getManagedAgentExecutionSQL                 = `SELECT execution_uid, generation, attempt_number, state, result_digest, error_code,
+resource_version, created_at, updated_at, terminal_message, runtime_messages, claim_expires_at,
+checkpoint_sequence, checkpoint_digest, checkpointed_at, checkpoint_protocol,
+checkpoint_provider_resume_cursor, pending_side_effect, pending_interaction_count, recovery_state, recovery_reason,
+recovery_mode, recovery_source_target_uid, recovery_target_uid,
+side_effect_reconciliation_checkpoint_digest, side_effect_reconciliation_outcome,
+side_effect_reconciliation_digest, side_effect_reconciled_at,
+COALESCE((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+    'interactionRequestId', resolution.interaction_request_uid,
+    'interactionType', resolution.interaction_type,
+    'requestId', resolution.request_uid,
+    'digest', resolution.resolution_digest,
+    'payload', resolution.resolution_payload::pg_catalog.jsonb,
+    'createdAt', resolution.created_at
+) ORDER BY resolution.created_at, resolution.interaction_request_uid)
+FROM cloud_agents.managed_agent_execution_interaction_resolutions AS resolution
+WHERE resolution.tenant_id = cloud_agents.require_tenant_id()
+    AND resolution.project_uid = $1 AND resolution.session_uid = $2 AND resolution.turn_uid = $3
+    AND resolution.execution_uid = $4), '[]'::pg_catalog.jsonb)
 FROM cloud_agents.managed_agent_executions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3 AND execution_uid = $4`
@@ -65,8 +113,12 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
 	listManagedAgentExecutionsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(managed_execution)
     ORDER BY managed_execution.turn_uid), '[]'::jsonb)
 FROM (
-    SELECT tenant_id, project_uid, session_uid, turn_uid, execution_uid, generation, state,
-        result_digest, error_code, resource_version, created_at, updated_at
+	    SELECT tenant_id, project_uid, session_uid, turn_uid, execution_uid, generation, state,
+	        result_digest, error_code, attempt_number, claim_expires_at,
+	        checkpoint_sequence, checkpoint_digest, checkpointed_at, checkpoint_protocol,
+	        pending_side_effect, pending_interaction_count, recovery_state, recovery_reason,
+	        recovery_mode, recovery_source_target_uid, recovery_target_uid,
+	        resource_version, created_at, updated_at
     FROM cloud_agents.managed_agent_executions
     WHERE tenant_id = cloud_agents.require_tenant_id()
         AND project_uid = $1
@@ -126,6 +178,227 @@ func (service *DurableCoordinationService) CreateManagedAgentExecution(
 	return result, err
 }
 
+func (service *DurableCoordinationService) ClaimManagedAgentExecution(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	input internalmanagedagent.ClaimRuntimeExecutionInput,
+) (internalmanagedagent.RuntimeExecutionClaim, error) {
+	claim := internalmanagedagent.RuntimeExecutionClaim{RuntimeExecutionReference: input.RuntimeExecutionReference,
+		HolderID: input.HolderID, Incarnation: input.Incarnation, Token: input.Token}
+	if service == nil || service.runner == nil || ctx == nil || input.Scope.TenantID != tenantID ||
+		input.Generation > math.MaxInt64 || input.LeaseSeconds < 1 || input.LeaseSeconds > 60 ||
+		!validMutationIdentifier(input.HolderID) || !validMutationIdentifier(input.Incarnation) || !validMutationIdentifier(input.Token) {
+		return claim, ErrCoordinationInvalidInput
+	}
+	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		var attempt, sequence int64
+		var expiresAt, checkpointedAt *time.Time
+		var recoveryReason, checkpointDigest, checkpointProtocol, providerResumeCursor *string
+		var pendingInteractions int32
+		if err := handle.transaction.queryRow(ctx, claimManagedAgentExecutionSQL,
+			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
+			int64(input.Generation), input.HolderID, input.Incarnation, input.Token, input.LeaseSeconds,
+		).Scan(&claim.Acquired, &attempt, &expiresAt, &claim.RecoveryState, &recoveryReason, &sequence,
+			&checkpointDigest, &checkpointedAt, &checkpointProtocol, &claim.PendingSideEffect,
+			&pendingInteractions, &providerResumeCursor); err != nil {
+			return mapMutationDatabaseError("managed agent execution claim", err)
+		}
+		if attempt < 0 || sequence < 0 || pendingInteractions < 0 || pendingInteractions > 64 {
+			return ErrCoordinationResultDrift
+		}
+		claim.AttemptNumber = uint64(attempt)
+		claim.CheckpointSequence = uint64(sequence)
+		claim.PendingInteractionCount = uint32(pendingInteractions)
+		if expiresAt != nil {
+			claim.ExpiresAt = *expiresAt
+		}
+		if recoveryReason != nil {
+			claim.RecoveryReason = *recoveryReason
+		}
+		if checkpointDigest != nil {
+			claim.CheckpointDigest = *checkpointDigest
+		}
+		if checkpointedAt != nil {
+			claim.CheckpointedAt = *checkpointedAt
+		}
+		if checkpointProtocol != nil {
+			claim.CheckpointProtocol = *checkpointProtocol
+		}
+		if providerResumeCursor != nil {
+			claim.CheckpointProviderResumeCursor = *providerResumeCursor
+		}
+		if claim.RecoveryState == "recovering" || claim.RecoveryState == "awaiting_reconciliation" {
+			var snapshot internalmanagedagent.ExecutionSnapshot
+			if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
+				input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID), input.Scope,
+				input.SessionID, input.TurnID, &snapshot); err != nil {
+				return err
+			}
+			claim.RecoveryMode = snapshot.RecoveryMode
+			claim.RecoverySourceTargetID = snapshot.RecoverySourceTargetID
+			claim.RecoveryTargetID = snapshot.RecoveryTargetID
+			operation := "execution.takeover"
+			if !claim.Acquired {
+				operation = "execution.recovery-blocked"
+			} else if snapshot.RecoveryMode == "same-node-reconnect" {
+				operation = "execution.reconnect"
+			} else if snapshot.RecoveryMode == "process-restart" {
+				operation = "execution.restart"
+			}
+			return appendRuntimeExecutionAuditEvent(ctx, handle.transaction, snapshot, operation,
+				runtimeExecutionClaimEventDigest(input), claim.RecoveryReason,
+				"recovery:none", "recovery:"+claim.RecoveryState)
+		}
+		return nil
+	})
+	return claim, err
+}
+
+func (service *DurableCoordinationService) RenewManagedAgentExecutionClaim(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
+	claim internalmanagedagent.RuntimeExecutionClaim, leaseSeconds int32,
+) (time.Time, error) {
+	if service == nil || service.runner == nil || ctx == nil || claim.Scope.TenantID != tenantID ||
+		claim.Generation > math.MaxInt64 || claim.AttemptNumber > math.MaxInt64 || leaseSeconds < 1 || leaseSeconds > 60 ||
+		!internalmanagedagent.ValidRuntimeExecutionClaim(claim) {
+		return time.Time{}, ErrCoordinationInvalidInput
+	}
+	var expiresAt time.Time
+	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, claim.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		if err := handle.transaction.queryRow(ctx, renewManagedAgentExecutionClaimSQL,
+			claim.Scope.TenantID, claim.Scope.ProjectID, claim.SessionID, claim.TurnID, claim.ExecutionID,
+			int64(claim.Generation), int64(claim.AttemptNumber), claim.HolderID, claim.Incarnation, claim.Token, leaseSeconds,
+		).Scan(&expiresAt); err != nil {
+			return mapMutationDatabaseError("managed agent execution claim", err)
+		}
+		return nil
+	})
+	return expiresAt, err
+}
+
+func (service *DurableCoordinationService) ReleaseQueuedManagedAgentExecutionClaim(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, claim internalmanagedagent.RuntimeExecutionClaim,
+) error {
+	if service == nil || service.runner == nil || ctx == nil || claim.Scope.TenantID != tenantID ||
+		claim.Generation > math.MaxInt64 || claim.AttemptNumber > math.MaxInt64 || !internalmanagedagent.ValidRuntimeExecutionClaim(claim) {
+		return ErrCoordinationInvalidInput
+	}
+	return withManagedAgentProjectMutation(service, ctx, tenantID, principal, claim.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		var released bool
+		if err := handle.transaction.queryRow(ctx, releaseQueuedManagedAgentExecutionClaimSQL,
+			claim.Scope.TenantID, claim.Scope.ProjectID, claim.SessionID, claim.TurnID, claim.ExecutionID,
+			int64(claim.Generation), int64(claim.AttemptNumber), claim.HolderID, claim.Incarnation, claim.Token,
+		).Scan(&released); err != nil || !released {
+			if err != nil {
+				return mapMutationDatabaseError("managed agent execution claim", err)
+			}
+			return ErrCoordinationResultDrift
+		}
+		return nil
+	})
+}
+
+func (service *DurableCoordinationService) CheckpointManagedAgentExecution(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
+	input internalmanagedagent.CheckpointRuntimeExecutionInput,
+) (internalmanagedagent.RuntimeExecutionCheckpoint, error) {
+	claim := input.Claim
+	if service == nil || service.runner == nil || ctx == nil || claim.Scope.TenantID != tenantID ||
+		claim.Generation > math.MaxInt64 || claim.AttemptNumber > math.MaxInt64 || input.PendingInteractions > 64 ||
+		!internalmanagedagent.ValidRuntimeExecutionClaim(claim) {
+		return internalmanagedagent.RuntimeExecutionCheckpoint{}, ErrCoordinationInvalidInput
+	}
+	digest, err := internalmanagedagent.RuntimeMessagesDigest(input.Messages, claim.ExecutionID, claim.Generation)
+	if err != nil || input.Protocol != "runtime-message-checkpoint-v1" {
+		return internalmanagedagent.RuntimeExecutionCheckpoint{}, ErrCoordinationInvalidInput
+	}
+	encoded, err := json.Marshal(input.Messages)
+	if err != nil {
+		return internalmanagedagent.RuntimeExecutionCheckpoint{}, ErrCoordinationInvalidInput
+	}
+	result := internalmanagedagent.RuntimeExecutionCheckpoint{Digest: digest}
+	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, claim.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		var sequence int64
+		if err := handle.transaction.queryRow(ctx, checkpointManagedAgentExecutionSQL,
+			claim.Scope.TenantID, claim.Scope.ProjectID, claim.SessionID, claim.TurnID, claim.ExecutionID,
+			int64(claim.Generation), int64(claim.AttemptNumber), claim.HolderID, claim.Incarnation, claim.Token,
+			int32(30), string(encoded), digest, input.Protocol, nullableString(input.ProviderResumeCursor),
+			input.PendingSideEffect, int32(input.PendingInteractions),
+		).Scan(&sequence, &result.ExpiresAt, &result.CreatedAt); err != nil {
+			return mapMutationDatabaseError("managed agent execution checkpoint", err)
+		}
+		if sequence <= 0 {
+			return ErrCoordinationResultDrift
+		}
+		result.Sequence = uint64(sequence)
+		return nil
+	})
+	return result, err
+}
+
+func (service *DurableCoordinationService) ResolveManagedAgentExecutionInteraction(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
+	input internalmanagedagent.ResolveRuntimeInteractionInput,
+) (internalmanagedagent.RuntimeInteractionResolution, error) {
+	result := internalmanagedagent.RuntimeInteractionResolution{InteractionRequestID: input.InteractionRequestID,
+		InteractionType: input.InteractionType, RequestID: input.RequestID, Payload: input.Payload}
+	digest, payload, err := internalmanagedagent.RuntimeInteractionResolutionDigest(input)
+	if service == nil || service.runner == nil || ctx == nil || input.Scope.TenantID != tenantID ||
+		input.Generation > math.MaxInt64 || err != nil {
+		return result, ErrCoordinationInvalidInput
+	}
+	result.Digest = digest
+	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		var resolved bool
+		if err := handle.transaction.queryRow(ctx, resolveManagedAgentExecutionInteractionSQL,
+			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
+			int64(input.Generation), input.InteractionRequestID, input.InteractionType, input.RequestID, digest, payload,
+		).Scan(&resolved); err != nil || !resolved {
+			if err != nil {
+				return mapMutationDatabaseError("managed agent interaction resolution", err)
+			}
+			return ErrCoordinationResultDrift
+		}
+		result.CreatedAt = time.Now().UTC()
+		return nil
+	})
+	return result, err
+}
+
+func (service *DurableCoordinationService) ReconcileManagedAgentExecutionSideEffect(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal,
+	input internalmanagedagent.ReconcileRuntimeSideEffectInput,
+) (internalmanagedagent.RuntimeSideEffectReconciliation, error) {
+	result := internalmanagedagent.RuntimeSideEffectReconciliation{CheckpointDigest: input.CheckpointDigest, Outcome: input.Outcome}
+	digest, err := internalmanagedagent.RuntimeSideEffectReconciliationDigest(input)
+	if service == nil || service.runner == nil || ctx == nil || input.Scope.TenantID != tenantID ||
+		input.Generation > math.MaxInt64 || err != nil {
+		return result, ErrCoordinationInvalidInput
+	}
+	result.Digest = digest
+	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		if err := handle.transaction.queryRow(ctx, reconcileManagedAgentExecutionSideEffectSQL,
+			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
+			int64(input.Generation), input.CheckpointDigest, input.Outcome, digest,
+		).Scan(&result.CreatedAt); err != nil {
+			return mapMutationDatabaseError("managed agent side effect reconciliation", err)
+		}
+		if result.CreatedAt.IsZero() {
+			return ErrCoordinationResultDrift
+		}
+		var snapshot internalmanagedagent.ExecutionSnapshot
+		if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
+			input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID), input.Scope,
+			input.SessionID, input.TurnID, &snapshot); err != nil {
+			return err
+		}
+		return appendRuntimeExecutionAuditEvent(ctx, handle.transaction, snapshot, "execution.reconcile",
+			digest, "", "recovery:awaiting_reconciliation", "recovery:none")
+	})
+	return result, err
+}
+
 func (service *DurableCoordinationService) StartManagedAgentExecution(
 	ctx context.Context,
 	tenantID string,
@@ -138,6 +411,10 @@ func (service *DurableCoordinationService) StartManagedAgentExecution(
 	if input.Scope.TenantID != tenantID || ctx == nil || input.Generation > math.MaxInt64 {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
+	if input.Claim.ExecutionID != input.ExecutionID || input.Claim.Generation != input.Generation ||
+		input.Claim.AttemptNumber > math.MaxInt64 || !internalmanagedagent.ValidRuntimeExecutionClaim(input.Claim) {
+		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+	}
 	digest, err := internalmanagedagent.ExecutionStartMutationDigest(input)
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
@@ -146,7 +423,8 @@ func (service *DurableCoordinationService) StartManagedAgentExecution(
 	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, startManagedAgentExecutionSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
-			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result); err != nil {
+			int64(input.Generation), input.Mutation.IdempotencyKey, digest, int64(input.Claim.AttemptNumber),
+			input.Claim.HolderID, input.Claim.Incarnation, input.Claim.Token), input.Scope, input.SessionID, &result); err != nil {
 			return err
 		}
 		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
@@ -179,7 +457,7 @@ func (service *DurableCoordinationService) CompleteManagedAgentExecution(
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor, string(terminalMessage), string(runtimeMessages))
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor, string(terminalMessage), string(runtimeMessages), input.Claim)
 }
 
 func (service *DurableCoordinationService) FailManagedAgentExecution(
@@ -200,7 +478,7 @@ func (service *DurableCoordinationService) FailManagedAgentExecution(
 		}
 		runtimeMessages = string(encoded)
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "", "", runtimeMessages)
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "", "", runtimeMessages, input.Claim)
 }
 
 func (service *DurableCoordinationService) CancelManagedAgentExecution(
@@ -277,18 +555,22 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	sessionID, turnID, executionID string,
 	generation uint64,
 	outcome, resultDigest, errorCode, idempotencyKey, requestDigest, providerResumeCursor, terminalMessage, runtimeMessages string,
+	claim internalmanagedagent.RuntimeExecutionClaim,
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
 	if service == nil || service.runner == nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrNilCoordinationRunner
 	}
-	if scope.TenantID != tenantID || ctx == nil || generation > math.MaxInt64 {
+	if scope.TenantID != tenantID || ctx == nil || generation > math.MaxInt64 ||
+		claim.ExecutionID != executionID || claim.Generation != generation || claim.AttemptNumber > math.MaxInt64 ||
+		!internalmanagedagent.ValidRuntimeExecutionClaim(claim) {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
 	var result internalmanagedagent.ExecutionTransitionResult
 	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
-			nullableString(resultDigest), nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage), nullableString(runtimeMessages)), scope, sessionID, &result); err != nil {
+			nullableString(resultDigest), nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage), nullableString(runtimeMessages),
+			int64(claim.AttemptNumber), claim.HolderID, claim.Incarnation, claim.Token), scope, sessionID, &result); err != nil {
 			return err
 		}
 		operation := "execution.complete"
@@ -309,7 +591,59 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 			},
 		})
 	})
+	if err != nil && errors.Is(err, ErrMutationConflict) {
+		auditErr := service.recordRejectedRuntimeReceipt(ctx, tenantID, principal, scope, sessionID,
+			turnID, executionID, generation, requestDigest)
+		if auditErr != nil {
+			return result, errors.Join(err, auditErr)
+		}
+	}
 	return result, err
+}
+
+func (service *DurableCoordinationService) recordRejectedRuntimeReceipt(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, scope internalmanagedagent.Scope,
+	sessionID, turnID, executionID string, generation uint64, requestDigest string,
+) error {
+	return withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
+		var state, recoveryState string
+		var version int64
+		if err := handle.transaction.queryRow(ctx, managedAgentExecutionAuditProjectionSQL,
+			scope.ProjectID, sessionID, turnID, executionID).Scan(&state, &recoveryState, &version); err != nil {
+			return mapMutationDatabaseError("managed agent rejected receipt audit", err)
+		}
+		if version <= 0 {
+			return ErrCoordinationResultDrift
+		}
+		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
+			Scope: scope, SessionID: sessionID, Operation: "execution.receipt-rejected",
+			Resource: internalmanagedagent.ResourceExecution, TurnID: turnID, ExecutionID: executionID,
+			Generation: generation, MutationDigest: requestDigest, ErrorCode: "stale_or_conflicting_receipt",
+			Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceExecution,
+				From: state + "/" + recoveryState, To: state + "/" + recoveryState, Version: uint64(version)}},
+		})
+	})
+}
+
+func appendRuntimeExecutionAuditEvent(
+	ctx context.Context, transaction tenantTransaction, snapshot internalmanagedagent.ExecutionSnapshot,
+	operation, digest, errorCode, from, to string,
+) error {
+	return appendManagedAgentEvent(ctx, transaction, managedAgentEventInput{
+		Scope: snapshot.Scope, SessionID: snapshot.SessionID, Operation: operation,
+		Resource: internalmanagedagent.ResourceExecution, TurnID: snapshot.TurnID,
+		ExecutionID: snapshot.ExecutionID, Generation: snapshot.Generation, MutationDigest: digest,
+		ErrorCode: errorCode, Changes: []internalmanagedagent.LifecycleStateChange{{
+			Resource: internalmanagedagent.ResourceExecution, From: from, To: to, Version: snapshot.Version,
+		}},
+	})
+}
+
+func runtimeExecutionClaimEventDigest(input internalmanagedagent.ClaimRuntimeExecutionInput) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s\x00%s\x00%s",
+		input.SessionID, input.TurnID, input.ExecutionID, input.Generation,
+		input.HolderID, input.Incarnation, input.Token)))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func (service *DurableCoordinationService) GetManagedAgentExecution(
@@ -408,7 +742,7 @@ func withManagedAgentProjectMutation(service *DurableCoordinationService, ctx co
 		if bindErr != nil {
 			return mapVerifiedCoordinationAuthorizationError(bindErr)
 		}
-		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		transactionErr := service.runner.withTenantReadCommittedMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}, func() error { return callback(handle) })
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -432,7 +766,8 @@ func decodeManagedAgentExecutionPageRows(raw []byte, tenantID, projectID, sessio
 		state := internalmanagedagent.ExecutionState(row.State)
 		if row.TenantID != tenantID || row.ProjectID != projectID || row.SessionID != sessionID ||
 			!validMutationIdentifier(row.TurnID) || !validMutationIdentifier(row.ExecutionID) ||
-			row.Generation < 1 || row.ResourceVersion < 1 || !validManagedAgentExecutionState(state) ||
+			row.Generation < 1 || row.AttemptNumber < 0 || row.CheckpointSequence < 0 || row.PendingInteractionCount < 0 || row.PendingInteractionCount > 64 ||
+			row.ResourceVersion < 1 || !validManagedAgentExecutionState(state) ||
 			row.ResultDigest != nil && !validCoordinationDigest(*row.ResultDigest) ||
 			row.ErrorCode != nil && !internalmanagedagent.ValidRuntimeErrorCode(*row.ErrorCode) ||
 			state == internalmanagedagent.ExecutionSucceeded && row.ResultDigest == nil ||
@@ -443,13 +778,42 @@ func decodeManagedAgentExecutionPageRows(raw []byte, tenantID, projectID, sessio
 		execution := internalmanagedagent.ExecutionSnapshot{
 			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
 			TurnID: row.TurnID, ExecutionID: row.ExecutionID, Generation: uint64(row.Generation), State: state,
+			AttemptNumber: uint64(row.AttemptNumber), CheckpointSequence: uint64(row.CheckpointSequence),
+			PendingSideEffect: row.PendingSideEffect, PendingInteractionCount: uint32(row.PendingInteractionCount), RecoveryState: row.RecoveryState,
 			Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if row.ClaimExpiresAt != nil {
+			execution.ClaimExpiresAt = *row.ClaimExpiresAt
+		}
+		if row.CheckpointDigest != nil {
+			execution.CheckpointDigest = *row.CheckpointDigest
+		}
+		if row.CheckpointedAt != nil {
+			execution.CheckpointedAt = *row.CheckpointedAt
+		}
+		if row.CheckpointProtocol != nil {
+			execution.CheckpointProtocol = *row.CheckpointProtocol
+		}
+		if row.RecoveryReason != nil {
+			execution.RecoveryReason = *row.RecoveryReason
+		}
+		if row.RecoveryMode != nil {
+			execution.RecoveryMode = *row.RecoveryMode
+		}
+		if row.RecoverySourceTargetID != nil {
+			execution.RecoverySourceTargetID = *row.RecoverySourceTargetID
+		}
+		if row.RecoveryTargetID != nil {
+			execution.RecoveryTargetID = *row.RecoveryTargetID
 		}
 		if row.ResultDigest != nil {
 			execution.ResultDigest = *row.ResultDigest
 		}
 		if row.ErrorCode != nil {
 			execution.ErrorCode = *row.ErrorCode
+		}
+		if !validExecutionRecoveryProjection(execution) {
+			return ManagedAgentExecutionPage{}, ErrCoordinationResultDrift
 		}
 		executions = append(executions, execution)
 	}
@@ -471,10 +835,20 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
-	var generation, version int64
+	var generation, attempt, version, checkpointSequence int64
+	var pendingInteractions int32
 	var state string
-	var resultDigest, errorCode, terminalMessage, runtimeMessages *string
-	if err := row.Scan(&result.ExecutionID, &generation, &state, &resultDigest, &errorCode, &version, &result.CreatedAt, &result.UpdatedAt, &terminalMessage, &runtimeMessages); err != nil {
+	var resultDigest, errorCode, terminalMessage, runtimeMessages, checkpointDigest, checkpointProtocol, checkpointCursor, recoveryReason *string
+	var recoveryMode, recoverySourceTargetID, recoveryTargetID *string
+	var reconciliationCheckpointDigest, reconciliationOutcome, reconciliationDigest *string
+	var claimExpiresAt, checkpointedAt, reconciledAt *time.Time
+	var resolutionsJSON []byte
+	if err := row.Scan(&result.ExecutionID, &generation, &attempt, &state, &resultDigest, &errorCode,
+		&version, &result.CreatedAt, &result.UpdatedAt, &terminalMessage, &runtimeMessages, &claimExpiresAt,
+		&checkpointSequence, &checkpointDigest, &checkpointedAt, &checkpointProtocol, &checkpointCursor,
+		&result.PendingSideEffect, &pendingInteractions, &result.RecoveryState, &recoveryReason,
+		&recoveryMode, &recoverySourceTargetID, &recoveryTargetID,
+		&reconciliationCheckpointDigest, &reconciliationOutcome, &reconciliationDigest, &reconciledAt, &resolutionsJSON); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -484,6 +858,9 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	result.SessionID = sessionID
 	result.TurnID = turnID
 	result.Generation = uint64(generation)
+	result.AttemptNumber = uint64(attempt)
+	result.CheckpointSequence = uint64(checkpointSequence)
+	result.PendingInteractionCount = uint32(pendingInteractions)
 	result.State = internalmanagedagent.ExecutionState(state)
 	if resultDigest != nil {
 		result.ResultDigest = *resultDigest
@@ -491,7 +868,44 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	if errorCode != nil {
 		result.ErrorCode = *errorCode
 	}
-	if generation <= 0 || version <= 0 || result.ExecutionID == "" || !validManagedAgentExecutionState(result.State) || result.CreatedAt.IsZero() || result.UpdatedAt.IsZero() {
+	if claimExpiresAt != nil {
+		result.ClaimExpiresAt = *claimExpiresAt
+	}
+	if checkpointDigest != nil {
+		result.CheckpointDigest = *checkpointDigest
+	}
+	if checkpointedAt != nil {
+		result.CheckpointedAt = *checkpointedAt
+	}
+	if checkpointProtocol != nil {
+		result.CheckpointProtocol = *checkpointProtocol
+	}
+	if checkpointCursor != nil {
+		result.CheckpointProviderResumeCursor = *checkpointCursor
+	}
+	if recoveryReason != nil {
+		result.RecoveryReason = *recoveryReason
+	}
+	if recoveryMode != nil {
+		result.RecoveryMode = *recoveryMode
+	}
+	if recoverySourceTargetID != nil {
+		result.RecoverySourceTargetID = *recoverySourceTargetID
+	}
+	if recoveryTargetID != nil {
+		result.RecoveryTargetID = *recoveryTargetID
+	}
+	if reconciliationCheckpointDigest != nil && reconciliationOutcome != nil && reconciliationDigest != nil && reconciledAt != nil {
+		result.SideEffectReconciliation = &internalmanagedagent.RuntimeSideEffectReconciliation{
+			CheckpointDigest: *reconciliationCheckpointDigest, Outcome: *reconciliationOutcome,
+			Digest: *reconciliationDigest, CreatedAt: *reconciledAt,
+		}
+	} else if reconciliationCheckpointDigest != nil || reconciliationOutcome != nil || reconciliationDigest != nil || reconciledAt != nil {
+		return fmt.Errorf("%w: managed agent side effect reconciliation projection", ErrCoordinationResultDrift)
+	}
+	if generation <= 0 || attempt < 0 || version <= 0 || checkpointSequence < 0 || pendingInteractions < 0 || pendingInteractions > 64 ||
+		result.ExecutionID == "" || !validManagedAgentExecutionState(result.State) || result.CreatedAt.IsZero() || result.UpdatedAt.IsZero() ||
+		!validExecutionRecoveryProjection(*result) {
 		return fmt.Errorf("%w: managed agent execution projection", ErrCoordinationResultDrift)
 	}
 	if (result.State == internalmanagedagent.ExecutionSucceeded && result.ResultDigest == "") || (result.State == internalmanagedagent.ExecutionFailed && result.ErrorCode == "") {
@@ -514,6 +928,20 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 		}
 		result.Messages = []runtimeprotocol.Message{message}
 	}
+	if result.State == internalmanagedagent.ExecutionRunning {
+		if len(result.Messages) == 0 || result.CheckpointSequence == 0 {
+			if result.CheckpointSequence != 0 || len(result.Messages) != 0 {
+				return fmt.Errorf("%w: managed agent execution checkpoint projection", ErrCoordinationResultDrift)
+			}
+		} else if digest, err := internalmanagedagent.RuntimeMessagesDigest(result.Messages, result.ExecutionID, result.Generation); err != nil || digest != result.CheckpointDigest {
+			return fmt.Errorf("%w: managed agent execution checkpoint digest", ErrCoordinationResultDrift)
+		}
+	}
+	resolutions, err := decodeManagedAgentInteractionResolutions(resolutionsJSON)
+	if err != nil {
+		return fmt.Errorf("%w: managed agent interaction resolutions", ErrCoordinationResultDrift)
+	}
+	result.ResolvedInteractions = resolutions
 	if len(result.Messages) > 0 && result.State == internalmanagedagent.ExecutionSucceeded {
 		terminal := result.Messages[len(result.Messages)-1]
 		digest, err := internalmanagedagent.RuntimeMessageDigest(terminal)
@@ -523,6 +951,66 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	}
 	result.Version = uint64(version)
 	return nil
+}
+
+func validExecutionRecoveryProjection(result internalmanagedagent.ExecutionSnapshot) bool {
+	if result.RecoveryState != "none" && result.RecoveryState != "recovering" && result.RecoveryState != "recovered" && result.RecoveryState != "awaiting_reconciliation" {
+		return false
+	}
+	if result.RecoveryReason != "" && !internalmanagedagent.ValidRuntimeErrorCode(result.RecoveryReason) {
+		return false
+	}
+	if result.RecoveryMode == "" {
+		if result.RecoverySourceTargetID != "" || result.RecoveryTargetID != "" {
+			return false
+		}
+	} else {
+		if result.RecoveryMode != "same-node-reconnect" && result.RecoveryMode != "process-restart" && result.RecoveryMode != "cross-node-takeover" ||
+			result.RecoverySourceTargetID != "" && !validMutationIdentifier(result.RecoverySourceTargetID) ||
+			result.RecoveryTargetID != "" && !validMutationIdentifier(result.RecoveryTargetID) ||
+			result.RecoveryMode == "cross-node-takeover" && (result.RecoverySourceTargetID == "" || result.RecoveryTargetID == "" || result.RecoverySourceTargetID == result.RecoveryTargetID) {
+			return false
+		}
+	}
+	if result.SideEffectReconciliation != nil {
+		reconciliation := result.SideEffectReconciliation
+		if reconciliation.Outcome != "confirmed" && reconciliation.Outcome != "not-applied" ||
+			!validCoordinationDigest(reconciliation.CheckpointDigest) || !validCoordinationDigest(reconciliation.Digest) ||
+			reconciliation.CreatedAt.IsZero() || result.CheckpointSequence == 0 {
+			return false
+		}
+	}
+	if result.CheckpointSequence == 0 {
+		return result.CheckpointDigest == "" && result.CheckpointedAt.IsZero() && result.CheckpointProtocol == "" && result.CheckpointProviderResumeCursor == "" && !result.PendingSideEffect && result.PendingInteractionCount == 0 && result.SideEffectReconciliation == nil
+	}
+	return validCoordinationDigest(result.CheckpointDigest) && !result.CheckpointedAt.IsZero() && result.CheckpointProtocol == "runtime-message-checkpoint-v1"
+}
+
+func decodeManagedAgentInteractionResolutions(raw []byte) ([]internalmanagedagent.RuntimeInteractionResolution, error) {
+	var rows []struct {
+		InteractionRequestID string         `json:"interactionRequestId"`
+		InteractionType      string         `json:"interactionType"`
+		RequestID            string         `json:"requestId"`
+		Digest               string         `json:"digest"`
+		Payload              map[string]any `json:"payload"`
+		CreatedAt            time.Time      `json:"createdAt"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > 64 {
+		return nil, ErrCoordinationResultDrift
+	}
+	result := make([]internalmanagedagent.RuntimeInteractionResolution, 0, len(rows))
+	for _, row := range rows {
+		input := internalmanagedagent.ResolveRuntimeInteractionInput{RuntimeExecutionReference: internalmanagedagent.RuntimeExecutionReference{
+			Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 1,
+		}, InteractionRequestID: row.InteractionRequestID, InteractionType: row.InteractionType, RequestID: row.RequestID, Payload: row.Payload}
+		digest, _, err := internalmanagedagent.RuntimeInteractionResolutionDigest(input)
+		if err != nil || digest != row.Digest || row.CreatedAt.IsZero() {
+			return nil, ErrCoordinationResultDrift
+		}
+		result = append(result, internalmanagedagent.RuntimeInteractionResolution{InteractionRequestID: row.InteractionRequestID,
+			InteractionType: row.InteractionType, RequestID: row.RequestID, Digest: row.Digest, Payload: row.Payload, CreatedAt: row.CreatedAt})
+	}
+	return result, nil
 }
 
 func decodePersistedRuntimeMessage(value string) (runtimeprotocol.Message, error) {
@@ -572,6 +1060,10 @@ func decodePersistedRuntimeMessages(value, executionID string, generation uint64
 	} else if state == internalmanagedagent.ExecutionFailed {
 		input := internalmanagedagent.FailRuntimeExecutionInput{FailExecutionInput: internalmanagedagent.FailExecutionInput{Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: executionID, Generation: generation, ErrorCode: errorCode, Mutation: mutation}, Messages: messages}
 		if _, validateErr := internalmanagedagent.RuntimeExecutionFailMutationDigest(input); validateErr != nil {
+			return nil, ErrCoordinationResultDrift
+		}
+	} else if state == internalmanagedagent.ExecutionRunning {
+		if _, validateErr := internalmanagedagent.RuntimeMessagesDigest(messages, executionID, generation); validateErr != nil {
 			return nil, ErrCoordinationResultDrift
 		}
 	} else {

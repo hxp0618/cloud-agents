@@ -670,7 +670,7 @@ func createWorkerContainerNamed(ctx context.Context, client *http.Client, base s
 		"Image": image,
 		"User":  "1000:1000",
 		"Env": []string{
-			"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
+			"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
 			"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
 		},
 		"Cmd": []string{

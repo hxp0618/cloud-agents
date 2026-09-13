@@ -597,6 +597,24 @@ func (runner *TenantTransactionRunner) withTenantMutationBinder(
 	callback tenantMutationCallback,
 	binder tenantBinder,
 ) error {
+	return runner.withTenantMutationBinderIsolation(ctx, tenantID, callback, binder, pgx.Serializable)
+}
+
+func (runner *TenantTransactionRunner) withTenantReadCommittedMutation(
+	ctx context.Context,
+	tenantID string,
+	callback tenantMutationCallback,
+) error {
+	return runner.withTenantMutationBinderIsolation(ctx, tenantID, callback, bindTenant, pgx.ReadCommitted)
+}
+
+func (runner *TenantTransactionRunner) withTenantMutationBinderIsolation(
+	ctx context.Context,
+	tenantID string,
+	callback tenantMutationCallback,
+	binder tenantBinder,
+	isolation pgx.TxIsoLevel,
+) error {
 	if ctx == nil {
 		return ErrNilContext
 	}
@@ -619,7 +637,7 @@ func (runner *TenantTransactionRunner) withTenantMutationBinder(
 	}()
 
 	transaction, err := connection.beginTx(ctx, pgx.TxOptions{
-		IsoLevel:       pgx.Serializable,
+		IsoLevel:       isolation,
 		AccessMode:     pgx.ReadWrite,
 		DeferrableMode: pgx.NotDeferrable,
 	})

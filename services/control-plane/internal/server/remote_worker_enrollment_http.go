@@ -14,6 +14,7 @@ import (
 	openapiv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
@@ -39,19 +40,31 @@ type RemoteWorkerEnrollmentHTTPServer struct {
 	verifier  AccessTokenVerifier
 	store     remoteWorkerEnrollmentStore
 	authority *internalremoteworker.CertificateAuthority
+	archives  *dockertarget.FoundationSnapshotArchiveDirectory
 }
 
-func NewRemoteWorkerEnrollmentHTTPServer(verifier AccessTokenVerifier, store remoteWorkerEnrollmentStore, authority *internalremoteworker.CertificateAuthority) (*RemoteWorkerEnrollmentHTTPServer, error) {
+func NewRemoteWorkerEnrollmentHTTPServer(verifier AccessTokenVerifier, store remoteWorkerEnrollmentStore, authority *internalremoteworker.CertificateAuthority, archives ...*dockertarget.FoundationSnapshotArchiveDirectory) (*RemoteWorkerEnrollmentHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("remote worker enrollment HTTP server configuration is invalid")
 	}
-	return &RemoteWorkerEnrollmentHTTPServer{verifier: verifier, store: store, authority: authority}, nil
+	var archiveDirectory *dockertarget.FoundationSnapshotArchiveDirectory
+	if len(archives) > 1 {
+		return nil, errors.New("remote worker enrollment HTTP server archive configuration is invalid")
+	}
+	if len(archives) == 1 {
+		archiveDirectory = archives[0]
+	}
+	return &RemoteWorkerEnrollmentHTTPServer{verifier: verifier, store: store, authority: authority, archives: archiveDirectory}, nil
 }
 
 func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
 	if server == nil || server.verifier == nil || server.store == nil || request == nil {
 		writePublicProblem(writer, 500, "internal_error")
+		return
+	}
+	if tenantID, projectID, enrollmentID, snapshotID, snapshotAction, snapshotOK := remoteWorkerWorkspaceSnapshotPath(request.URL.Path); snapshotOK {
+		server.workspaceSnapshot(writer, request, tenantID, projectID, enrollmentID, snapshotID, snapshotAction)
 		return
 	}
 	tenantID, projectID, enrollmentID, action, ok := remoteWorkerEnrollmentPath(request.URL.Path)
@@ -457,6 +470,112 @@ func (server *RemoteWorkerEnrollmentHTTPServer) rotateCertificate(writer http.Re
 	writeRemoteWorkerCertificate(writer, requestID, projectID, enrollmentID, value, value.CertificateNotBefore)
 }
 
+func (server *RemoteWorkerEnrollmentHTTPServer) workspaceSnapshot(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, snapshotID, action string) {
+	if server.authority == nil || server.archives == nil {
+		writePublicProblem(writer, 503, "workspace_snapshot_archive_unavailable")
+		return
+	}
+	peer, err := server.authority.PeerIdentity(request.TLS)
+	if err != nil || peer.Scope.TenantID != tenantID || peer.Scope.ProjectID != projectID || peer.EnrollmentID != enrollmentID {
+		writePublicProblem(writer, 401, "authentication_failed")
+		return
+	}
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	expectedTargetID := internalremoteworker.TargetID(internalremoteworker.Scope{TenantID: tenantID, ProjectID: projectID}, enrollmentID)
+	if request.Method == http.MethodPut {
+		targetID, workspaceID, sourceVolumeName, imageURI, contentDigest, headersOK := snapshotHeaderSet(request)
+		if !headersOK || targetID != expectedTargetID || len(snapshotID) == 0 {
+			writePublicProblem(writer, 400, "invalid_request")
+			return
+		}
+		archive, readErr := io.ReadAll(http.MaxBytesReader(writer, request.Body, dockertarget.FoundationSnapshotMaxBytes+1))
+		if readErr != nil || len(archive) > dockertarget.FoundationSnapshotMaxBytes {
+			writePublicProblem(writer, 413, "workspace_snapshot_too_large")
+			return
+		}
+		physical, putErr := server.archives.Put(dockertarget.FoundationWorkspaceSnapshot{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, WorkspaceID: workspaceID, SnapshotID: snapshotID, SourceVolumeName: sourceVolumeName, ImageURI: imageURI}, archive, contentDigest)
+		if putErr != nil {
+			writePublicProblem(writer, 409, "workspace_snapshot_archive_conflict")
+			return
+		}
+		writer.Header().Set("X-Request-ID", requestID)
+		writer.Header().Set("X-Workspace-Snapshot-Volume", physical)
+		writer.Header().Set("X-Content-Digest", contentDigest)
+		writer.Header().Set("X-Size-Bytes", strconv.Itoa(len(archive)))
+		writer.WriteHeader(http.StatusCreated)
+		return
+	}
+	if request.Method != http.MethodGet {
+		writePublicProblem(writer, 405, "method_not_allowed")
+		return
+	}
+	targetID, sourceWorkspaceID, workspaceID, snapshotVolume, imageURI, contentDigest, headersOK := restoreHeaderSet(request)
+	if !headersOK || targetID != expectedTargetID {
+		writePublicProblem(writer, 400, "invalid_request")
+		return
+	}
+	archive, readErr := server.archives.Read(dockertarget.FoundationWorkspaceRestore{TenantID: tenantID, ProjectID: projectID, TargetID: targetID, SourceWorkspaceID: sourceWorkspaceID, SnapshotID: snapshotID, SnapshotVolumeName: snapshotVolume, ContentDigest: contentDigest, WorkspaceID: workspaceID, ImageURI: imageURI})
+	if readErr != nil {
+		writePublicProblem(writer, 404, "workspace_snapshot_archive_not_found")
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Content-Type", "application/octet-stream")
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("X-Content-Digest", contentDigest)
+	writer.Header().Set("Content-Length", strconv.Itoa(len(archive)))
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(archive)
+}
+func snapshotHeaderSet(request *http.Request) (targetID, workspaceID, sourceVolumeName, imageURI, contentDigest string, ok bool) {
+	targetID, ok = exactSingleHeader(request.Header, "X-Target-ID")
+	if !ok {
+		return
+	}
+	workspaceID, ok = exactSingleHeader(request.Header, "X-Workspace-ID")
+	if !ok {
+		return
+	}
+	sourceVolumeName, ok = exactSingleHeader(request.Header, "X-Source-Volume-Name")
+	if !ok {
+		return
+	}
+	imageURI, ok = exactSingleHeader(request.Header, "X-Image-URI")
+	if !ok {
+		return
+	}
+	contentDigest, ok = exactSingleHeader(request.Header, "X-Content-Digest")
+	return
+}
+func restoreHeaderSet(request *http.Request) (targetID, sourceWorkspaceID, workspaceID, snapshotVolume, imageURI, contentDigest string, ok bool) {
+	targetID, ok = exactSingleHeader(request.Header, "X-Target-ID")
+	if !ok {
+		return
+	}
+	sourceWorkspaceID, ok = exactSingleHeader(request.Header, "X-Source-Workspace-ID")
+	if !ok {
+		return
+	}
+	workspaceID, ok = exactSingleHeader(request.Header, "X-Workspace-ID")
+	if !ok {
+		return
+	}
+	snapshotVolume, ok = exactSingleHeader(request.Header, "X-Workspace-Snapshot-Volume")
+	if !ok {
+		return
+	}
+	imageURI, ok = exactSingleHeader(request.Header, "X-Image-URI")
+	if !ok {
+		return
+	}
+	contentDigest, ok = exactSingleHeader(request.Header, "X-Content-Digest")
+	return
+}
+
 func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWriter, request *http.Request, tenantID, projectID, enrollmentID, requestID string) {
 	if server.authority == nil {
 		writePublicProblem(writer, 503, "remote_worker_certificate_authority_unavailable")
@@ -487,14 +606,15 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		ObservedState: validated.Body.ObservedState,
 		WorkerVersion: validated.Body.WorkerVersion, OS: validated.Body.OS, Architecture: validated.Body.Architecture,
 		KernelVersion: validated.Body.KernelVersion, Capabilities: validated.Body.Capabilities,
-		SandboxCommandID:             validated.Body.SandboxCommandID,
-		Capacity:                     internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
-		CommandReceipt:               remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
-		SandboxCommandReceipt:        remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
-		SandboxExecCommandReceipt:    remoteWorkerSandboxExecCommandReceipt(validated.Body.SandboxExecCommandReceipt),
-		SandboxFileCommandReceipt:    validated.Body.SandboxFileCommandReceipt,
-		SandboxPTYCommandReceipt:     validated.Body.SandboxPTYCommandReceipt,
-		SandboxPreviewCommandReceipt: validated.Body.SandboxPreviewCommandReceipt,
+		SandboxCommandID:                validated.Body.SandboxCommandID,
+		Capacity:                        internalremoteworker.Capacity{CPUMillis: validated.Body.Capacity.CPUMillis, MemoryBytes: validated.Body.Capacity.MemoryBytes, DiskBytes: validated.Body.Capacity.DiskBytes},
+		CommandReceipt:                  remoteWorkerCommandReceipt(validated.Body.CommandReceipt),
+		SandboxCommandReceipt:           remoteWorkerSandboxCommandReceipt(validated.Body.SandboxCommandReceipt),
+		WorkspaceSnapshotCommandReceipt: remoteWorkerWorkspaceSnapshotCommandReceipt(validated.Body.WorkspaceSnapshotCommandReceipt),
+		SandboxExecCommandReceipt:       remoteWorkerSandboxExecCommandReceipt(validated.Body.SandboxExecCommandReceipt),
+		SandboxFileCommandReceipt:       validated.Body.SandboxFileCommandReceipt,
+		SandboxPTYCommandReceipt:        validated.Body.SandboxPTYCommandReceipt,
+		SandboxPreviewCommandReceipt:    validated.Body.SandboxPreviewCommandReceipt,
 	})
 	if err != nil {
 		writeRemoteWorkerEnrollmentError(writer, err)
@@ -509,12 +629,13 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 		DesiredState: node.DesiredState, ObservedState: node.ObservedState, HealthState: node.HealthState,
 		AcceptedAt: node.LastHeartbeatAt.UTC().Format(time.RFC3339Nano), ExpiresAt: node.HeartbeatExpiresAt.UTC().Format(time.RFC3339Nano),
 		NextHeartbeatAfterSeconds: int64(internalremoteworker.HeartbeatInterval / time.Second), ReconcileRequired: result.ReconcileRequired,
-		Command:               remoteWorkerCommandResource(result.Command),
-		SandboxCommand:        remoteWorkerSandboxCommandResource(result.SandboxCommand),
-		SandboxExecCommand:    remoteWorkerSandboxExecCommandResource(result.SandboxExecCommand),
-		SandboxFileCommand:    result.SandboxFileCommand,
-		SandboxPTYCommand:     result.SandboxPTYCommand,
-		SandboxPreviewCommand: result.SandboxPreviewCommand,
+		Command:                  remoteWorkerCommandResource(result.Command),
+		SandboxCommand:           remoteWorkerSandboxCommandResource(result.SandboxCommand),
+		WorkspaceSnapshotCommand: remoteWorkerWorkspaceSnapshotCommandResource(result.WorkspaceSnapshotCommand),
+		SandboxExecCommand:       remoteWorkerSandboxExecCommandResource(result.SandboxExecCommand),
+		SandboxFileCommand:       result.SandboxFileCommand,
+		SandboxPTYCommand:        result.SandboxPTYCommand,
+		SandboxPreviewCommand:    result.SandboxPreviewCommand,
 	}})
 	if err != nil {
 		writePublicProblem(writer, 500, "internal_error")
@@ -522,6 +643,13 @@ func (server *RemoteWorkerEnrollmentHTTPServer) heartbeat(writer http.ResponseWr
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writeJSONResponse(writer, 200, requestID, responseBody)
+}
+
+func remoteWorkerWorkspaceSnapshotCommandReceipt(value *platformv1alpha1.RemoteWorkerWorkspaceSnapshotCommandReceipt) *internalremoteworker.WorkspaceSnapshotCommandReceipt {
+	if value == nil {
+		return nil
+	}
+	return &internalremoteworker.WorkspaceSnapshotCommandReceipt{CommandID: value.CommandID, Attempt: value.Attempt, Action: value.Action, OperationID: value.OperationID, WorkspaceID: value.WorkspaceID, TargetID: value.TargetID, SnapshotID: value.SnapshotID, Result: value.Result, VolumeName: value.VolumeName, ContentDigest: value.ContentDigest, SizeBytes: value.SizeBytes, StableErrorCode: value.StableErrorCode, CleanupComplete: value.CleanupComplete}
 }
 
 func remoteWorkerSandboxExecCommandReceipt(value *platformv1alpha1.RemoteWorkerSandboxExecCommandReceipt) *internalremoteworker.SandboxExecCommandReceipt {
@@ -558,6 +686,13 @@ func remoteWorkerCommandResource(value *internalremoteworker.Command) *platformv
 	return &platformv1alpha1.RemoteWorkerCommand{CommandID: value.CommandID, Generation: value.Generation, DesiredState: value.DesiredState, Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
 }
 
+func remoteWorkerWorkspaceSnapshotCommandResource(value *internalremoteworker.WorkspaceSnapshotCommand) *platformv1alpha1.RemoteWorkerWorkspaceSnapshotCommand {
+	if value == nil {
+		return nil
+	}
+	return &platformv1alpha1.RemoteWorkerWorkspaceSnapshotCommand{CommandID: value.CommandID, Attempt: value.Attempt, Action: value.Action, OperationID: value.OperationID, WorkspaceID: value.WorkspaceID, TargetID: value.TargetID, SnapshotID: value.SnapshotID, SourceVolumeName: value.SourceVolumeName, ImageURI: value.ImageURI, Deadline: value.Deadline}
+}
+
 func remoteWorkerSandboxCommandResource(value *internalremoteworker.SandboxCommand) *platformv1alpha1.RemoteWorkerSandboxCommand {
 	if value == nil {
 		return nil
@@ -570,7 +705,7 @@ func remoteWorkerSandboxCommandResource(value *internalremoteworker.SandboxComma
 		MemoryBytes: value.MemoryBytes, SpecDigest: value.SpecDigest, NetworkPolicyID: value.NetworkPolicyID,
 		NetworkAllowedEgress: value.NetworkAllowedEgress, PhysicalVolumeName: value.PhysicalVolumeName,
 		RuntimeID: value.RuntimeID, RuntimeState: value.RuntimeState, RuntimeOperationID: value.RuntimeOperationID,
-		RuntimeGeneration: value.RuntimeGeneration, RuntimeSpecDigest: value.RuntimeSpecDigest,
+		RuntimeGeneration: value.RuntimeGeneration, RuntimeSpecDigest: value.RuntimeSpecDigest, RestoreSnapshotID: value.RestoreSnapshotID, RestoreSourceWorkspaceID: value.RestoreSourceWorkspaceID, RestoreSnapshotVolume: value.RestoreSnapshotVolume, RestoreContentDigest: value.RestoreContentDigest, RestoreSnapshotResourceVersion: value.RestoreSnapshotResourceVersion,
 		Deadline: value.Deadline.UTC().Format(time.RFC3339Nano)}
 }
 
@@ -782,6 +917,21 @@ func writeRemoteWorkerEnrollment(writer http.ResponseWriter, status int, request
 	}
 	writer.Header().Set("X-Resource-Version", strconv.FormatInt(value.ResourceVersion, 10))
 	writeJSONResponse(writer, status, requestID, body)
+}
+
+func remoteWorkerWorkspaceSnapshotPath(path string) (tenantID, projectID, enrollmentID, snapshotID, action string, ok bool) {
+	const prefix = "/v1/remote-workers/tenants/"
+	if !strings.HasPrefix(path, prefix) {
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
+	if len(parts) != 6 || parts[1] != "projects" || parts[3] != "remote-worker-enrollments" || parts[4] == "" || parts[5] == "" {
+		return
+	}
+	if !strings.HasSuffix(parts[4], ":workspaceSnapshot") {
+		return
+	}
+	return parts[0], parts[2], strings.TrimSuffix(parts[4], ":workspaceSnapshot"), parts[5], "workspace-snapshot", true
 }
 
 func remoteWorkerEnrollmentPath(path string) (tenantID, projectID, enrollmentID, action string, ok bool) {

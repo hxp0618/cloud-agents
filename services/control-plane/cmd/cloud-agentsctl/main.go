@@ -273,9 +273,33 @@ func run(args []string, stdout io.Writer) error {
 			})
 		}
 	case "session create":
-		var provider string
-		if err = parseActionFlags("session create", actionArgs, func(set *flag.FlagSet) { set.StringVar(&provider, "provider", "", "provider kind") }); err == nil {
-			value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{SessionID: options.session, ProviderKind: provider, EnvironmentLeaseID: options.lease})
+		var flags struct {
+			provider                  string
+			workspace                 string
+			sandbox                   string
+			sandboxGeneration         int64
+			environmentProfile        string
+			environmentProfileVersion int64
+		}
+		if err = parseActionFlags("session create", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&flags.provider, "provider", "", "provider kind")
+			set.StringVar(&flags.workspace, "workspace", "", "Foundation Workspace identifier")
+			set.StringVar(&flags.sandbox, "sandbox", "", "Foundation Sandbox identifier")
+			set.Int64Var(&flags.sandboxGeneration, "sandbox-generation", 0, "Foundation Sandbox fencing generation")
+			set.StringVar(&flags.environmentProfile, "environment-profile", "", "published EnvironmentProfile identifier")
+			set.Int64Var(&flags.environmentProfileVersion, "environment-profile-version", 0, "published EnvironmentProfile version")
+		}); err == nil {
+			legacy := options.lease != "" && flags.workspace == "" && flags.sandbox == "" && flags.sandboxGeneration == 0 && flags.environmentProfile == "" && flags.environmentProfileVersion == 0
+			foundation := options.lease == "" && flags.workspace != "" && flags.sandbox != "" && flags.sandboxGeneration > 0 && flags.environmentProfile != "" && flags.environmentProfileVersion > 0
+			if !legacy && !foundation {
+				err = errors.New("session create requires either --lease or the complete Foundation binding")
+			} else {
+				value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{
+					SessionID: options.session, ProviderKind: flags.provider, EnvironmentLeaseID: options.lease,
+					WorkspaceID: flags.workspace, SandboxID: flags.sandbox, SandboxGeneration: flags.sandboxGeneration,
+					EnvironmentProfileID: flags.environmentProfile, EnvironmentProfileVersion: flags.environmentProfileVersion,
+				})
+			}
 		}
 	case "sandbox exec":
 		var generation, timeoutSeconds int64
@@ -496,6 +520,21 @@ func run(args []string, stdout io.Writer) error {
 			} else {
 				err = errors.New("--answers-json must be a JSON object mapping question identifiers to string arrays")
 			}
+		}
+	case "execution reconcile":
+		var generation uint64
+		var checkpointDigest, outcome string
+		if err = parseActionFlags("execution reconcile", actionArgs, func(set *flag.FlagSet) {
+			set.Uint64Var(&generation, "generation", 0, "execution fencing generation")
+			set.StringVar(&checkpointDigest, "checkpoint-digest", "", "checkpoint digest to reconcile")
+			set.StringVar(&outcome, "outcome", "", "side-effect outcome: confirmed or not-applied")
+		}); err == nil && generation == 0 {
+			err = errors.New("--generation must be greater than zero")
+		} else if err == nil {
+			err = client.ReconcileManagedAgentSideEffect(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, options.idempotencyKey, openapi.ManagedAgentSideEffectReconciliationRequest{
+				Generation: generation, CheckpointDigest: checkpointDigest, Outcome: outcome,
+			})
+			value = map[string]bool{"reconciled": err == nil}
 		}
 	case "events list":
 		var cursor string
@@ -955,7 +994,7 @@ func watchManagedAgentEvents(ctx context.Context, client *openapi.Client, stdout
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "remote-worker-enrollment issue-certificate", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease get":
+	case "target preflight", "target register", "target get", "target probe", "target cleanup", "remote-worker-enrollment claim-secret", "remote-worker-enrollment issue-certificate", "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "sandbox exec", "sandbox grant", "pty create", "pty get", "pty delete", "pty attach", "files list", "files read", "files write", "files delete", "preview register", "preview revoke", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "execution reconcile", "events list", "events watch", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease get":
 		return true
 	default:
 		return false
@@ -992,13 +1031,13 @@ func requiresPTYSession(command, action string) bool {
 	return command == "pty" && action != "create"
 }
 func requiresLease(command, action string) bool {
-	return command == "environment-lease" && action == "get" || command == "session" && action == "create"
+	return command == "environment-lease" && action == "get"
 }
 func requiresTarget(command, action string) bool {
 	return command == "target" && action != "preflight"
 }
 func requiresIdempotency(command, action string) bool {
-	return command == "remote-worker-enrollment" || (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt"))
+	return command == "remote-worker-enrollment" || (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt" || action == "reconcile"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
@@ -1020,7 +1059,7 @@ resources and actions:
   preview register|revoke
   session get|list|create|close
   turn get|list|create
-  execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input
+  execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input|reconcile
   events list|watch
   membership get|list|create|resume|suspend|revoke
   role get|list

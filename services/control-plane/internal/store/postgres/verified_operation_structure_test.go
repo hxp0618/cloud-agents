@@ -332,7 +332,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.GetRemoteWorkerEnrollment",
 		"*DurableCoordinationService.GetRuntimeProfile",
 		"*DurableCoordinationService.GetWorkspaceSnapshot",
-		"*DurableCoordinationService.IssueSandboxAccessGrant",
+		"*DurableCoordinationService.issueSandboxAccessGrant",
 		"*DurableCoordinationService.ListAdminSandboxes",
 		"*DurableCoordinationService.ListPublishedRuntimeProfiles",
 		"*DurableCoordinationService.ListRemoteWorkerEnrollmentAuditEvents",
@@ -343,7 +343,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ListWorkspaceSnapshots",
 		"*DurableCoordinationService.PreviewRemoteWorkerScheduling",
 		"*DurableCoordinationService.RestoreWorkspaceSnapshot",
-		"*DurableCoordinationService.RevokeSandboxAccessGrant",
+		"*DurableCoordinationService.revokeSandboxAccessGrant",
 		"*DurableCoordinationService.RevokeRemoteWorkerEnrollment",
 		"*DurableCoordinationService.TransitionFoundationSandbox",
 		"*DurableCoordinationService.TransitionRemoteWorkerScheduling",
@@ -599,5 +599,21 @@ func TestProtectedTransactionKernelProductionCallerSetIsExact(t *testing.T) {
 			t.Fatalf("transaction kernel %s is absent, a method, or exported", kernel)
 		}
 		requireCallerClosure(t, tree, kernel, callers...)
+	}
+}
+
+func TestManagedAgentAdmissionMutationsUseReadCommittedLocks(t *testing.T) {
+	tree := parseAllProductionAST(t)
+	for _, name := range []string{
+		"*AccessGatewayStore.ExecuteRemoteWorkerSandboxFile",
+		"*DurableCoordinationService.CreateManagedAgentSession",
+		"*DurableCoordinationService.CreateManagedAgentTurn",
+		"withManagedAgentProjectMutation",
+	} {
+		function := tree.functions[name]
+		requireOneCall(t, function.Body, "withTenantReadCommittedMutation")
+		if len(callsNamed(function.Body, "withTenantMutation")) != 0 {
+			t.Fatalf("%s still uses serializable admission reads", name)
+		}
 	}
 }

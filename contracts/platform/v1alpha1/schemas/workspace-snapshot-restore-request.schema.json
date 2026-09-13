@@ -24,7 +24,8 @@
   },
   "x-cloud-agents-semantic-constraints": [
     "The server resolves the source Target, physical snapshot, digest, image, resources and credentials",
-    "The initial Docker backend requires a published RuntimeProfile fixed to the snapshot source Target",
+    "docker-volume-v1 requires a published RuntimeProfile fixed to the snapshot source Target; portable-tar-v1 accepts any compatible ready Docker Target",
+    "Cross-Target restore revalidates the stopped source and fences all future writers for its source Workspace before accepting the destination",
     "Restore creates a new Workspace volume and Sandbox and never overwrites an existing destination"
   ]
 }

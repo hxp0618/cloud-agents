@@ -25,7 +25,7 @@ var (
 	ErrInvalidHeartbeat  = errors.New("remote worker heartbeat is invalid")
 	workerVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 	capabilitySet        = map[string]struct{}{
-		"dedicated-node": {}, "docker": {}, "exec": {}, "files": {}, "isolation-gvisor": {}, "network-dns-nft": {}, "network-internal-deny": {}, "preview": {}, "pty": {}, "ssh": {}, "workspace-volume": {},
+		"dedicated-node": {}, "docker": {}, "exec": {}, "files": {}, "isolation-gvisor": {}, "network-dns-nft": {}, "network-internal-deny": {}, "preview": {}, "pty": {}, "ssh": {}, "workspace-snapshot": {}, "workspace-volume": {},
 	}
 )
 
@@ -47,25 +47,26 @@ type CapacityReservation struct {
 }
 
 type HeartbeatInput struct {
-	Scope                        Scope
-	EnrollmentID                 string
-	PeerCertificateSHA256        string
-	IncarnationID                string
-	ObservedGeneration           int64
-	ObservedState                string
-	WorkerVersion                string
-	OS                           string
-	Architecture                 string
-	KernelVersion                string
-	Capabilities                 []string
-	Capacity                     Capacity
-	SandboxCommandID             string
-	CommandReceipt               *CommandReceipt
-	SandboxCommandReceipt        *SandboxCommandReceipt
-	SandboxExecCommandReceipt    *SandboxExecCommandReceipt
-	SandboxFileCommandReceipt    *SandboxFileCommandReceipt
-	SandboxPTYCommandReceipt     *SandboxPTYCommandReceipt
-	SandboxPreviewCommandReceipt *SandboxPreviewCommandReceipt
+	Scope                           Scope
+	EnrollmentID                    string
+	PeerCertificateSHA256           string
+	IncarnationID                   string
+	ObservedGeneration              int64
+	ObservedState                   string
+	WorkerVersion                   string
+	OS                              string
+	Architecture                    string
+	KernelVersion                   string
+	Capabilities                    []string
+	Capacity                        Capacity
+	SandboxCommandID                string
+	CommandReceipt                  *CommandReceipt
+	SandboxCommandReceipt           *SandboxCommandReceipt
+	WorkspaceSnapshotCommandReceipt *WorkspaceSnapshotCommandReceipt
+	SandboxExecCommandReceipt       *SandboxExecCommandReceipt
+	SandboxFileCommandReceipt       *SandboxFileCommandReceipt
+	SandboxPTYCommandReceipt        *SandboxPTYCommandReceipt
+	SandboxPreviewCommandReceipt    *SandboxPreviewCommandReceipt
 }
 
 type CommandReceipt struct {
@@ -91,16 +92,21 @@ type SandboxCommandReceipt struct {
 	CleanupComplete                         bool
 }
 
+type WorkspaceSnapshotCommand = platformv1alpha1.RemoteWorkerWorkspaceSnapshotCommand
+type WorkspaceSnapshotCommandReceipt = platformv1alpha1.RemoteWorkerWorkspaceSnapshotCommandReceipt
+
 type SandboxCommand struct {
-	CommandID, Action, OperationID, WorkspaceID, WorkspaceName string
-	TargetID, SandboxID, ImageURI, SpecDigest, NetworkPolicyID string
-	WorkloadTrust, IsolationRuntime                            string
-	PhysicalVolumeName, RuntimeID, RuntimeState                string
-	RuntimeOperationID, RuntimeSpecDigest                      string
-	Attempt, SandboxGeneration, CPUMillis, MemoryBytes         int64
-	RuntimeGeneration                                          int64
-	NetworkAllowedEgress                                       []string
-	Deadline                                                   time.Time
+	CommandID, Action, OperationID, WorkspaceID, WorkspaceName                               string
+	TargetID, SandboxID, ImageURI, SpecDigest, NetworkPolicyID                               string
+	WorkloadTrust, IsolationRuntime                                                          string
+	PhysicalVolumeName, RuntimeID, RuntimeState                                              string
+	RuntimeOperationID, RuntimeSpecDigest                                                    string
+	RestoreSnapshotID, RestoreSourceWorkspaceID, RestoreSnapshotVolume, RestoreContentDigest string
+	RestoreSnapshotResourceVersion                                                           int64
+	Attempt, SandboxGeneration, CPUMillis, MemoryBytes                                       int64
+	RuntimeGeneration                                                                        int64
+	NetworkAllowedEgress                                                                     []string
+	Deadline                                                                                 time.Time
 }
 
 type SandboxExecCommandReceipt struct {
@@ -187,6 +193,7 @@ func (input HeartbeatInput) Validate(tenantID string) error {
 		input.SandboxCommandID != "" && (invalidIdentifier(input.SandboxCommandID) || input.SandboxCommandReceipt != nil) ||
 		input.CommandReceipt != nil && input.CommandReceipt.Validate() != nil ||
 		input.SandboxCommandReceipt != nil && input.SandboxCommandReceipt.Validate() != nil ||
+		input.WorkspaceSnapshotCommandReceipt != nil && ValidateWorkspaceSnapshotCommandReceipt(*input.WorkspaceSnapshotCommandReceipt) != nil ||
 		input.SandboxExecCommandReceipt != nil && input.SandboxExecCommandReceipt.Validate() != nil ||
 		input.SandboxFileCommandReceipt != nil && ValidateSandboxFileCommandReceipt(*input.SandboxFileCommandReceipt) != nil ||
 		input.SandboxPTYCommandReceipt != nil && ValidateSandboxPTYCommandReceipt(*input.SandboxPTYCommandReceipt) != nil ||
@@ -256,6 +263,38 @@ func (command SandboxCommand) Validate() error {
 		return ErrInvalidHeartbeat
 	}
 	return nil
+}
+
+func ValidateWorkspaceSnapshotCommand(command WorkspaceSnapshotCommand) error {
+	raw, err := json.Marshal(command)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerWorkspaceSnapshotCommandJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+func ValidateWorkspaceSnapshotCommandReceipt(receipt WorkspaceSnapshotCommandReceipt) error {
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		return ErrInvalidHeartbeat
+	}
+	if _, err := platformv1alpha1.DecodeRemoteWorkerWorkspaceSnapshotCommandReceiptJSON(raw); err != nil {
+		return ErrInvalidHeartbeat
+	}
+	return nil
+}
+func WorkspaceSnapshotCommandReceiptDigest(receipt WorkspaceSnapshotCommandReceipt) (string, error) {
+	if err := ValidateWorkspaceSnapshotCommandReceipt(receipt); err != nil {
+		return "", err
+	}
+	return mutationDigest("remote-worker.workspace-snapshot-receipt", receipt)
+}
+
+func WorkspaceSnapshotCommandID(operationID string, attempt int64) string {
+	sum := sha256.Sum256([]byte("workspace-snapshot|" + operationID + "|" + strconv.FormatInt(attempt, 10)))
+	return "rwws-" + hex.EncodeToString(sum[:16])
 }
 
 func SandboxCommandID(operationID string, attempt int64) string {

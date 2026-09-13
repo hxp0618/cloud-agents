@@ -20,7 +20,9 @@ import (
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
 
-const maxFoundationSnapshotBytes = 64 << 20
+const FoundationSnapshotMaxBytes = 64 << 20
+
+const maxFoundationSnapshotBytes = FoundationSnapshotMaxBytes
 
 var (
 	ErrSnapshotTooLarge        = errors.New("foundation workspace snapshot exceeds the initial size limit")
@@ -240,6 +242,59 @@ func (directory *CredentialDirectory) SnapshotFoundationWorkspace(
 	return result, nil
 }
 
+// SnapshotFoundationWorkspacePortable exports a stopped Workspace into the
+// deployment-mounted archive directory so restore does not depend on source-node storage.
+func (directory *CredentialDirectory) SnapshotFoundationWorkspacePortable(
+	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceSnapshot,
+	archives *FoundationSnapshotArchiveDirectory,
+) (result FoundationWorkspaceSnapshotResult, err error) {
+	if ctx == nil || !input.valid() || archives == nil {
+		return result, ErrDeploymentConfigInvalid
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return result, err
+	}
+	defer transport.CloseIdleConnections()
+	labels := input.labels()
+	defer func() {
+		if cleanupErr := removeSnapshotHelper(ctx, client, base, input.helperName(), labels); cleanupErr != nil {
+			result.CleanupComplete = false
+			if err == nil {
+				err = cleanupErr
+			}
+		} else {
+			result.CleanupComplete = true
+		}
+	}()
+	source := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID, WorkspaceID: input.WorkspaceID}
+	if volume, exists, inspectErr := inspectWorkspaceVolume(ctx, client, base, input.SourceVolumeName); inspectErr != nil || !exists || !exactLabels(volume.Labels, source.labels()) {
+		return result, ErrDeploymentConflict
+	}
+	if err = removeSnapshotHelper(ctx, client, base, input.helperName(), labels); err != nil {
+		return result, err
+	}
+	if err = createArchiveHelper(ctx, client, base, input.helperName(), input.ImageURI,
+		[]string{input.SourceVolumeName + ":/source:ro"}, labels); err != nil {
+		return result, fmt.Errorf("create portable snapshot helper: %w", err)
+	}
+	archive, err := readDockerArchive(ctx, client, base, input.helperName(), "/source/.")
+	if err != nil {
+		return result, fmt.Errorf("read portable snapshot archive: %w", err)
+	}
+	digest, err := snapshotArchiveDigest(archive)
+	if err != nil {
+		return result, ErrDeploymentFailed
+	}
+	result.VolumeName, err = archives.Put(input, archive, digest)
+	if err != nil {
+		return result, err
+	}
+	result.ContentDigest = digest
+	result.SizeBytes = int64(len(archive))
+	return result, nil
+}
+
 // RestoreFoundationWorkspace copies an exact offline snapshot into one new
 // deterministic Workspace volume. Existing non-identical data is never overwritten.
 func (directory *CredentialDirectory) RestoreFoundationWorkspace(
@@ -326,6 +381,82 @@ func (directory *CredentialDirectory) RestoreFoundationWorkspace(
 	return result, nil
 }
 
+// RestoreFoundationWorkspacePortable restores a verified portable archive on
+// the destination Target without contacting the snapshot source Target.
+func (directory *CredentialDirectory) RestoreFoundationWorkspacePortable(
+	ctx context.Context, endpoint, credentialRef string, input FoundationWorkspaceRestore,
+	archives *FoundationSnapshotArchiveDirectory,
+) (result FoundationWorkspaceRestoreResult, err error) {
+	if ctx == nil || archives == nil || !portableRestoreValid(input) {
+		return result, ErrDeploymentConfigInvalid
+	}
+	archive, err := archives.Read(input)
+	if err != nil {
+		return result, err
+	}
+	client, transport, base, err := directory.client(endpoint, credentialRef)
+	if err != nil {
+		return result, err
+	}
+	defer transport.CloseIdleConnections()
+	destination := FoundationWorkspaceVolume{TenantID: input.TenantID, ProjectID: input.ProjectID, TargetID: input.TargetID, WorkspaceID: input.WorkspaceID}
+	result.VolumeName = destination.Name()
+	labels := input.labels()
+	created := false
+	defer func() {
+		if cleanupErr := removeSnapshotHelper(ctx, client, base, input.helperName(), labels); cleanupErr != nil {
+			result.CleanupComplete = false
+			if err == nil {
+				err = cleanupErr
+			}
+		} else {
+			result.CleanupComplete = true
+		}
+		if err != nil && created {
+			if cleanupErr := removeSnapshotVolume(ctx, client, base, result.VolumeName, destination.labels()); cleanupErr != nil {
+				result.CleanupComplete = false
+			}
+		}
+	}()
+	volume, exists, err := inspectWorkspaceVolume(ctx, client, base, result.VolumeName)
+	if err != nil {
+		return result, err
+	}
+	if exists {
+		if !exactLabels(volume.Labels, destination.labels()) {
+			return result, ErrDeploymentConflict
+		}
+	} else {
+		if err = dockerJSON(ctx, client, http.MethodPost, base+"/volumes/create", map[string]any{"Name": result.VolumeName, "Labels": destination.labels()}, http.StatusCreated, &volume); err != nil || volume.Name != result.VolumeName || !exactLabels(volume.Labels, destination.labels()) {
+			return result, ErrDeploymentFailed
+		}
+		created = true
+	}
+	if err = removeSnapshotHelper(ctx, client, base, input.helperName(), labels); err != nil {
+		return result, err
+	}
+	if err = createArchiveHelper(ctx, client, base, input.helperName(), input.ImageURI,
+		[]string{result.VolumeName + ":/workspace"}, labels); err != nil {
+		return result, fmt.Errorf("create portable restore helper: %w", err)
+	}
+	if exists {
+		current, readErr := readDockerArchive(ctx, client, base, input.helperName(), "/workspace/.")
+		currentDigest, digestErr := snapshotArchiveDigest(current)
+		if readErr != nil || digestErr != nil || currentDigest != input.ContentDigest {
+			return result, ErrDeploymentConflict
+		}
+	} else if err = writeDockerArchive(ctx, client, base, input.helperName(), "/workspace", archive); err != nil {
+		return result, fmt.Errorf("write portable restored archive: %w", err)
+	}
+	verified, err := readDockerArchive(ctx, client, base, input.helperName(), "/workspace/.")
+	verifiedDigest, verifyErr := snapshotArchiveDigest(verified)
+	if err != nil || verifyErr != nil || verifiedDigest != input.ContentDigest {
+		return result, fmt.Errorf("verify portable restored archive: %w", ErrDeploymentFailed)
+	}
+	result.ContentDigest = verifiedDigest
+	return result, nil
+}
+
 type snapshotArchiveEntry struct {
 	Name, Link, Digest string
 	Type               byte
@@ -380,6 +511,12 @@ func snapshotArchiveDigest(archive []byte) (string, error) {
 	}
 	digest := sha256.Sum256(canonical)
 	return "sha256:" + hex.EncodeToString(digest[:]), nil
+}
+
+// SnapshotArchiveDigest is shared by target adapters before an archive enters
+// the durable portable snapshot directory.
+func SnapshotArchiveDigest(archive []byte) (string, error) {
+	return snapshotArchiveDigest(archive)
 }
 
 func resetSnapshotVolume(ctx context.Context, client *http.Client, base, name string, labels map[string]string) error {

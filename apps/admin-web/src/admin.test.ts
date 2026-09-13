@@ -28,6 +28,7 @@ import {
   listAdminStoragePolicyAuditEvents,
   listAdminReleases,
   listAdminMaintenanceOperations,
+  loadAdminManagedAgentRuntime,
   listAdminRemoteWorkerOperations,
   listAdminTargetAuditEvents,
   listAdminTargetOperations,
@@ -584,6 +585,58 @@ describe("Admin Web boundary", () => {
       "grants:first",
       "grants:next-grant-page",
     ]);
+  });
+
+  it("loads only opaque Managed Agent recovery metadata bound to a Sandbox", async () => {
+    const calls: string[] = [];
+    const client = {
+      listAdminManagedAgentSessions: async () => ({
+        value: {
+          sessions: [
+            { metadata: { uid: "session-bound" }, spec: { sandboxId: "sandbox-alpha" } },
+            { metadata: { uid: "session-other" }, spec: { sandboxId: "sandbox-other" } },
+          ],
+        },
+      }),
+      listAdminManagedAgentExecutions: async (
+        _tenantId: string,
+        _projectId: string,
+        sessionId: string,
+      ) => {
+        calls.push(`executions:${sessionId}`);
+        return { value: { executions: [{ metadata: { uid: "execution-alpha" } }] } };
+      },
+      listAdminManagedAgentEvents: async (
+        _tenantId: string,
+        _projectId: string,
+        sessionId: string,
+      ) => {
+        calls.push(`events:${sessionId}`);
+        return {
+          value: {
+            events: [
+              { metadata: { uid: "event-1" } },
+              { metadata: { uid: "event-2" } },
+            ],
+            nextCursor: "cursor-2",
+            hasMore: false,
+          },
+        };
+      },
+    } as unknown as AdminClient;
+
+    const result = await loadAdminManagedAgentRuntime(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      "sandbox-alpha",
+      new AbortController().signal,
+    );
+
+    expect(result.sessions.map(({ metadata }) => metadata.uid)).toEqual(["session-bound"]);
+    expect(result.executions.map(({ metadata }) => metadata.uid)).toEqual(["execution-alpha"]);
+    expect(result.events.map(({ metadata }) => metadata.uid)).toEqual(["event-2", "event-1"]);
+    expect(calls).toEqual(["executions:session-bound", "events:session-bound"]);
   });
 
   it("pages and newest-first sorts workspace snapshot metadata from Admin API", async () => {

@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -491,8 +492,8 @@ func TestGeneratedOpenAPIClientFoundationRuntimeProfileAndSandbox(t *testing.T) 
 }
 
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
-	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
-	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}],"nextPageToken":"session-page-token-1"}`)
+	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","workspaceId":"workspace-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":7,"environmentProfileId":"profile-alpha","environmentProfileVersion":3,"state":"active"}}`)
+	sessionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"SessionPage","sessions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","workspaceId":"workspace-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":7,"environmentProfileId":"profile-alpha","environmentProfileVersion":3,"state":"active"}}],"nextPageToken":"session-page-token-1"}`)
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = append(seen, request)
@@ -510,8 +511,11 @@ func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	if err != nil || created.Value.Spec.ProviderKind != "codex" {
 		t.Fatalf("create = %#v / %v", created, err)
 	}
-	if _, err := client.GetManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha"); err != nil {
+	if _, err := client.CreateManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4", ManagedAgentSessionCreateRequest{SessionID: "session-alpha", ProviderKind: "codex", WorkspaceID: "workspace-alpha", SandboxID: "sandbox-alpha", SandboxGeneration: 7, EnvironmentProfileID: "profile-alpha", EnvironmentProfileVersion: 3}); err != nil {
 		t.Fatal(err)
+	}
+	if session, err := client.GetManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha"); err != nil || session.Value.Spec.WorkspaceID != "workspace-alpha" || session.Value.Spec.SandboxGeneration != 7 {
+		t.Fatalf("session = %#v / %v", session, err)
 	}
 	if page, err := client.ListManagedAgentSessions(ctx, "tenant-alpha", "project-alpha", "request-alpha", 1, "session-page-token-1"); err != nil || len(page.Value.Sessions) != 1 || page.Value.NextPageToken == "" {
 		t.Fatalf("session page = %#v / %v", page, err)
@@ -519,7 +523,7 @@ func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	if _, err := client.CloseManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3"); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 4 || string(seen[0].Body) != `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}` || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1" || seen[3].Body != nil {
+	if len(seen) != 5 || string(seen[0].Body) != `{"sessionId":"session-alpha","providerKind":"codex","environmentLeaseId":"lease-alpha"}` || string(seen[1].Body) != `{"sessionId":"session-alpha","providerKind":"codex","workspaceId":"workspace-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":7,"environmentProfileId":"profile-alpha","environmentProfileVersion":3}` || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1" || seen[4].Body != nil {
 		t.Fatalf("session requests = %#v", seen)
 	}
 }
@@ -555,8 +559,8 @@ func TestGeneratedOpenAPIClientManagedAgentTurnLifecycle(t *testing.T) {
 }
 
 func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
-	executionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"messages":[{"requestId":"request-alpha","protocolVersion":{"major":2,"minor":3},"executionId":"execution-alpha","generation":1,"commandId":"command-alpha","occurredAt":"2026-08-29T08:01:00Z","messageType":"Result","payload":{"text":"done"}}]}`)
-	executionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"ExecutionPage","executions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"nextPageToken":"execution-page-token-2"}`)
+	executionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","attemptNumber":2,"recoveryState":"recovered","recoveryMode":"cross-node-takeover","recoverySourceTargetId":"docker-source","recoveryTargetId":"docker-target","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"messages":[{"requestId":"request-alpha","protocolVersion":{"major":2,"minor":3},"executionId":"execution-alpha","generation":1,"commandId":"command-alpha","occurredAt":"2026-08-29T08:01:00Z","messageType":"Result","payload":{"text":"done"}}]}`)
+	executionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"ExecutionPage","executions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","attemptNumber":2,"recoveryState":"recovered","recoveryMode":"cross-node-takeover","recoverySourceTargetId":"docker-source","recoveryTargetId":"docker-target","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"nextPageToken":"execution-page-token-2"}`)
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = append(seen, request)
@@ -568,7 +572,7 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 			body = executionPageBody
 		}
 		status := 200
-		if strings.HasSuffix(request.Path, ":resolveApproval") || strings.HasSuffix(request.Path, ":resolveUserInput") {
+		if strings.HasSuffix(request.Path, ":reconcile") || strings.HasSuffix(request.Path, ":resolveApproval") || strings.HasSuffix(request.Path, ":resolveUserInput") {
 			status = 204
 		}
 		return Response{Status: status, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: body}, nil
@@ -576,9 +580,16 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	invalidPlacement := bytes.Replace(executionBody, []byte(`"docker-target"`), []byte(`"docker-source"`), 1)
+	if _, err := DecodeManagedAgentExecutionResponseJSON(invalidPlacement); err == nil {
+		t.Fatal("cross-node recovery accepted identical source and target")
+	}
 	result, err := client.ExecuteManagedAgent(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", ManagedAgentExecutionCreateRequest{TurnID: "turn-alpha", ExecutionID: "execution-alpha", Model: "codex", RuntimeMode: "approval-required", InteractionMode: "plan", InputText: "hello"})
 	if err != nil || len(result.Value.Messages) != 1 || result.Value.Messages[0].MessageType != "Result" {
 		t.Fatalf("execute = %#v / %v", result, err)
+	}
+	if result.Value.Spec.RecoveryMode != "cross-node-takeover" {
+		t.Fatalf("recovery mode = %q", result.Value.Spec.RecoveryMode)
 	}
 	if _, err := encodeManagedAgentExecutionCreateRequest(ManagedAgentExecutionCreateRequest{TurnID: "turn-alpha", ExecutionID: "execution-alpha", RuntimeMode: "always-allow", InputText: "hello"}); err == nil {
 		t.Fatal("execution request accepted an invalid runtime mode")
@@ -605,6 +616,9 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if _, err := client.InterruptManagedAgentExecution(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-interrupt", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY", ManagedAgentExecutionInterruptRequest{Generation: 1}); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.ReconcileManagedAgentSideEffect(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-reconcile", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ", ManagedAgentSideEffectReconciliationRequest{Generation: 1, CheckpointDigest: "sha256:" + strings.Repeat("b", 64), Outcome: "confirmed"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := client.ResolveManagedAgentApproval(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-approval", ManagedAgentApprovalResolutionRequest{Generation: 1, RequestID: "codex:generation-1:approval:1", Decision: "accept"}); err != nil {
 		t.Fatal(err)
 	}
@@ -614,7 +628,7 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if err := client.ResolveManagedAgentUserInput(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-user-input-invalid", ManagedAgentUserInputResolutionRequest{Generation: 1, RequestID: "claude:generation-1:user-input:2", Answers: map[string][]string{"question-1": {"bad\x00answer"}}}); err == nil {
 		t.Fatal("user-input resolution accepted a NUL answer")
 	}
-	if len(seen) != 8 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/0/artifact" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[5].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || seen[6].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval" || seen[7].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","runtimeMode":"approval-required","interactionMode":"plan","inputText":"hello"}` || string(seen[4].Body) != `{"generation":1}` || string(seen[5].Body) != `{"generation":1}` || string(seen[6].Body) != `{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}` || string(seen[7].Body) != `{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"question-1":["one","two"]}}` {
+	if len(seen) != 9 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/0/artifact" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[5].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || seen[6].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:reconcile" || seen[7].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval" || seen[8].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","runtimeMode":"approval-required","interactionMode":"plan","inputText":"hello"}` || string(seen[4].Body) != `{"generation":1}` || string(seen[5].Body) != `{"generation":1}` || string(seen[6].Body) != `{"generation":1,"checkpointDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","outcome":"confirmed"}` || string(seen[7].Body) != `{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}` || string(seen[8].Body) != `{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"question-1":["one","two"]}}` {
 		t.Fatalf("execution requests = %#v", seen)
 	}
 }

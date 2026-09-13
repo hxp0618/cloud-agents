@@ -448,6 +448,79 @@ FROM cloud_agents.sandbox_usage_corrections WHERE tenant_id='tenant' AND project
 	t.Logf("%s=%s", marker, encoded)
 }
 
+func TestFoundationRestoredSandboxStopPostgres(t *testing.T) {
+	if os.Getenv("CLOUD_AGENTS_FOUNDATION_RESTORED_STOP") != "1" {
+		t.Skip("restored Sandbox stop is not configured")
+	}
+	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
+	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	runtimePool, err := pgxpool.New(ctx, runtimeURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimePool.Close()
+	ownerConfig, err := pgxpool.ParseConfig(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerConfig.AfterConnect = func(ctx context.Context, connection *pgx.Conn) error {
+		_, err := connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner")
+		return err
+	}
+	owner, err := pgxpool.NewWithConfig(ctx, ownerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	verifier, adminToken, userToken := foundationVerifierAndTokens(t)
+	store, err := postgres.NewDurableCoordinationService(runtimePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewFoundationHTTPServer(verifier, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+	admin, _ := api.NewHTTPClientWithClient(httpServer.URL, adminToken, httpServer.Client())
+	user, _ := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
+	current, err := admin.GetAdminSandboxSession(ctx, "tenant", "project", "sandbox-restored", "request-restored-stop-get")
+	if err != nil || current.Value.Spec.ObservedState != "running" || current.Value.Spec.TargetID != "target-restore" {
+		t.Fatalf("restored Sandbox=%+v err=%v", current.Value, err)
+	}
+	body := platform.SandboxSessionLifecycleRequest{ExpectedGeneration: current.Value.Spec.Generation,
+		ExpectedResourceVersion: current.Value.Metadata.ResourceVersion, ConfirmedSandboxID: "sandbox-restored",
+		ComputeDisposition: "delete", WorkspaceDisposition: "retain"}
+	if _, err := user.StopAdminSandboxSession(ctx, "tenant", "project", "sandbox-restored", "request-restored-stop-user", "restored-stop-user-key", body); clientStatus(err) != http.StatusForbidden {
+		t.Fatalf("ordinary user restored stop status=%d err=%v", clientStatus(err), err)
+	}
+	accepted, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "sandbox-restored", "request-restored-stop", "restored-sandbox-stop-key", body)
+	if err != nil || accepted.Value.State != "pending" || accepted.Value.SandboxGeneration != current.Value.Spec.Generation+1 {
+		t.Fatalf("restored stop=%+v err=%v", accepted.Value, err)
+	}
+	replay, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "sandbox-restored", "request-restored-stop-replay", "restored-sandbox-stop-key", body)
+	if err != nil || replay.Value.OperationID != accepted.Value.OperationID {
+		t.Fatalf("restored stop replay=%+v err=%v", replay.Value, err)
+	}
+	if _, err := admin.StopAdminSandboxSession(ctx, "tenant", "project", "sandbox-restored", "request-restored-stop-stale", "restored-sandbox-stop-stale-key", body); clientStatus(err) != http.StatusConflict {
+		t.Fatalf("restored stop stale status=%d err=%v", clientStatus(err), err)
+	}
+	var activities, audits int
+	if err := owner.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM cloud_agents.foundation_sandbox_activity WHERE tenant_id='tenant' AND sandbox_uid='sandbox-restored' AND action='sandbox.stop' AND operation_uid=$1),
+		(SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE tenant_id='tenant' AND operation_id=$1 AND transition='sandbox.stop.accept')`,
+		accepted.Value.OperationID).Scan(&activities, &audits); err != nil || activities != 1 || audits != 1 {
+		t.Fatalf("restored stop authority=%d audit=%d err=%v", activities, audits, err)
+	}
+	receipt, _ := json.Marshal(map[string]any{"operationId": accepted.Value.OperationID,
+		"generation": accepted.Value.SandboxGeneration, "ordinaryUserStatus": 403,
+		"staleFenceStatus": 409, "idempotentReplay": true, "targetId": current.Value.Spec.TargetID})
+	t.Logf("FOUNDATION_RESTORE_STOP_API=%s", receipt)
+}
+
 func TestFoundationWorkspaceSnapshotPostgres(t *testing.T) {
 	runtimeURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL")
 	ownerURL := os.Getenv("CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL")
@@ -590,8 +663,25 @@ func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
 	if err != nil || sourceProfile.Value.Spec.TargetID == "" {
 		t.Fatalf("restore source profile=%+v err=%v", sourceProfile.Value, err)
 	}
+	restoreTargetID := sourceProfile.Value.Spec.TargetID
+	crossTarget := os.Getenv("CLOUD_AGENTS_FOUNDATION_CROSS_TARGET_RESTORE") == "1"
+	if crossTarget {
+		restoreTargetID = "target-restore"
+		command, insertErr := owner.Exec(ctx, `INSERT INTO cloud_agents.deployment_targets (
+			tenant_id,tenant_ref_id,project_uid,target_uid,target_name,target_kind,endpoint,credential_ref,generation,
+			scheduling_state,observed_phase,api_version,engine_version,target_os,target_arch,stable_error_code,last_probe_at,
+			resource_version,create_idempotency_key,create_request_digest,created_at,updated_at)
+		SELECT tenant_id,tenant_ref_id,project_uid,$1,$1,target_kind,endpoint,credential_ref,generation,
+			scheduling_state,observed_phase,api_version,engine_version,target_os,target_arch,stable_error_code,last_probe_at,
+			resource_version,'target-restore-create-key','sha256:' || repeat('e',64),transaction_timestamp(),transaction_timestamp()
+		FROM cloud_agents.deployment_targets
+		WHERE tenant_id='tenant' AND project_uid='project' AND target_uid=$2`, restoreTargetID, sourceProfile.Value.Spec.TargetID)
+		if insertErr != nil || command.RowsAffected() != 1 {
+			t.Fatalf("create cross-target restore destination=%d err=%v", command.RowsAffected(), insertErr)
+		}
+	}
 	restoreProfileRequest := platform.RuntimeProfileCreateRequest{ProfileID: "profile-restore", ProfileName: "profile-restore", Version: 1,
-		Description: "Snapshot restore target", TargetID: sourceProfile.Value.Spec.TargetID,
+		Description: "Snapshot restore target", TargetID: restoreTargetID,
 		WorkloadTrust: sourceProfile.Value.Spec.WorkloadTrust, IsolationRuntime: sourceProfile.Value.Spec.IsolationRuntime,
 		NetworkPolicyRef: sourceProfile.Value.Spec.NetworkPolicyRef, ImageURI: sourceProfile.Value.Spec.ImageURI,
 		ReleaseDigest: sourceProfile.Value.Spec.ReleaseDigest, CPUMillis: sourceProfile.Value.Spec.CPUMillis, MemoryBytes: sourceProfile.Value.Spec.MemoryBytes}
@@ -604,6 +694,18 @@ func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
 		platform.RuntimeProfileTransitionRequest{ExpectedResourceVersion: createdProfile.Value.Metadata.ResourceVersion})
 	if err != nil || publishedProfile.Value.Spec.Status != "published" {
 		t.Fatalf("publish restore profile=%+v err=%v", publishedProfile.Value, err)
+	}
+	if crossTarget {
+		command, updateErr := owner.Exec(ctx, `UPDATE cloud_agents.deployment_targets
+		SET observed_phase='unavailable',api_version='',engine_version='',target_os='',target_arch='',
+			stable_error_code='source-node-unavailable',last_probe_at=transaction_timestamp(),updated_at=transaction_timestamp()
+		WHERE tenant_id='tenant' AND project_uid='project' AND target_uid=$1`, sourceProfile.Value.Spec.TargetID)
+		if updateErr != nil || command.RowsAffected() != 1 {
+			t.Fatalf("mark source unavailable=%d err=%v", command.RowsAffected(), updateErr)
+		}
+	}
+	if os.Getenv("CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT") != "" {
+		verifySnapshotAdminBrowser(t, runtimePool)
 	}
 	version, err := strconv.ParseInt(available.Value.Metadata.ResourceVersion, 10, 64)
 	if err != nil || version < 2 {
@@ -635,14 +737,24 @@ func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
 		t.Fatalf("active restore cleanup status=%d err=%v", clientStatus(err), err)
 	}
 	var restores, audits, writerFences int
+	var restoreTarget string
 	if err := owner.QueryRow(ctx, `SELECT
 (SELECT count(*) FROM cloud_agents.workspace_snapshot_restores WHERE tenant_id='tenant' AND project_uid='project'
   AND snapshot_uid='snapshot' AND workspace_uid='workspace-restored' AND sandbox_uid='sandbox-restored'),
 (SELECT count(*) FROM cloud_agents.coordination_audit_facts WHERE tenant_id='tenant' AND operation_id=$1
   AND transition='workspace.snapshot.restore.accept'),
 (SELECT count(*) FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND project_uid='project'
-  AND workspace_uid='workspace-restored' AND sandbox_uid='sandbox-restored' AND NOT writer_released)`, restored.Value.OperationID).Scan(&restores, &audits, &writerFences); err != nil || restores != 1 || audits != 1 || writerFences != 1 {
+  AND workspace_uid='workspace-restored' AND sandbox_uid='sandbox-restored' AND NOT writer_released),
+(SELECT target_uid FROM cloud_agents.workspace_snapshot_restores WHERE tenant_id='tenant' AND operation_id=$1)`, restored.Value.OperationID).Scan(&restores, &audits, &writerFences, &restoreTarget); err != nil || restores != 1 || audits != 1 || writerFences != 1 || restoreTarget != restoreTargetID {
 		t.Fatalf("restore authority=%d audit=%d fence=%d err=%v", restores, audits, writerFences, err)
+	}
+	if crossTarget {
+		_, fenceErr := owner.Exec(ctx, `UPDATE cloud_agents.sandbox_sessions SET writer_released=false
+			WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'`)
+		var failure *pgconn.PgError
+		if !errors.As(fenceErr, &failure) || failure.Code != "23505" {
+			t.Fatalf("failed-over source writer fence err=%v", fenceErr)
+		}
 	}
 	raw, _ := json.Marshal(restored.Value)
 	for _, forbidden := range []string{"contentDigest", "physicalSnapshot", "endpoint", "credentialRef", "providerCredentialRef", "prompt", "artifact", "fileContent"} {
@@ -653,7 +765,8 @@ func TestFoundationWorkspaceRestorePostgres(t *testing.T) {
 	encoded, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": restored.Value.OperationID,
 		"workspaceId": restored.Value.WorkspaceID, "sandboxId": restored.Value.SandboxID,
 		"ordinaryUserStatus": 403, "staleVersionStatus": 409, "idempotentReplay": true,
-		"writerFenceReserved": true, "activeRestoreCleanupStatus": 409, "adminContentRedacted": true})
+		"writerFenceReserved": true, "activeRestoreCleanupStatus": 409, "adminContentRedacted": true,
+		"crossTarget": crossTarget, "sourceTargetId": sourceProfile.Value.Spec.TargetID, "targetId": restoreTargetID})
 	t.Logf("FOUNDATION_RESTORE_API=%s", encoded)
 }
 

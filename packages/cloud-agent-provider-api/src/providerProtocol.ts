@@ -1,6 +1,18 @@
 // FILE: protocol.ts
 // Purpose: Implements Provider Host Protocol v2 negotiation and command envelopes.
 
+import { randomUUID } from "node:crypto";
+import {
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 
@@ -38,6 +50,8 @@ const MAX_IN_FLIGHT_COMMANDS = 128;
 const MAX_TERMINAL_RECEIPTS = 4_096;
 const STOP_SESSION_QUIESCE_TIMEOUT_MS = 5_000;
 const STOP_SESSION_FORCE_TIMEOUT_MS = 1_000;
+const EMULATED_HISTORY_FILE = "cloud-agent-conversation-history-v1.json";
+const MAX_EMULATED_HISTORY_BYTES = 1 << 20;
 
 function decodeCommand(value: unknown): ProviderHostCommand {
   const validation = validateCloudAgentCommandEnvelope(value);
@@ -189,7 +203,7 @@ function runtimeDescriptor(
 
   if (entry.runtimePolicy.versionSource === "package") {
     const declaredVersion = (options.runtimeVersion ?? "").trim();
-    const version = extractStableSemver(declaredVersion);
+    const version = extractSemver(declaredVersion);
     const available = declaredVersion.length > 0;
     return {
       kind: policy.kind,
@@ -249,8 +263,16 @@ function experimentalProviderAllowlist(
   return providers;
 }
 
+function extractSemver(value: string): string | undefined {
+  const match =
+    /(?:^|[^0-9])(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?![0-9A-Za-z.+-])/u.exec(
+      value,
+    );
+  return match?.[1];
+}
+
 function extractStableSemver(value: string): string | undefined {
-  const match = /(?:^|[^0-9])(\d+\.\d+\.\d+)(?![0-9A-Za-z.+-])/.exec(value);
+  const match = /(?:^|[^0-9])(\d+\.\d+\.\d+)(?![0-9A-Za-z.+-])/u.exec(value);
   return match?.[1];
 }
 
@@ -479,13 +501,20 @@ async function executeCommand(
           canMoveWorker: true,
         });
       }
-      const runnerInput = bindRunnerInputGeneration(
+      let runnerInput = bindRunnerInputGeneration(
         readRunnerInput(command.payload.runnerInput),
         command.generation,
       );
       const provider = readProvider(runnerInput.workload.provider);
       const descriptor = descriptorForProvider(provider);
       assertProviderExecutionAllowed(provider, descriptor);
+      if (
+        command.commandType === "ResumeSession" &&
+        descriptor.capabilityDescriptor.capabilities["resume-session"] === "emulated" &&
+        !hasAuthoritativeResumeData(runnerInput.workload, runnerInput.memoryDocuments)
+      ) {
+        runnerInput = withPersistedConversationHistory(runnerInput, provider);
+      }
       if (
         command.commandType === "ResumeSession" &&
         !runnerInput.providerResumeCursor?.trim() &&
@@ -586,7 +615,7 @@ async function executeCommand(
       if (typeof outputText === "string" && outputText.trim()) {
         history.push({ role: "assistant", text: outputText });
       }
-      state.sessionInput = {
+      const nextSessionInput = {
         ...sessionInput,
         ...(terminalResult.providerResumeCursor
           ? { providerResumeCursor: terminalResult.providerResumeCursor }
@@ -597,6 +626,14 @@ async function executeCommand(
           conversationHistory: history,
         },
       };
+      state.sessionInput = nextSessionInput;
+      const provider = readProvider(nextSessionInput.workload.provider);
+      if (
+        descriptorForProvider(provider).capabilityDescriptor.capabilities["resume-session"] ===
+        "emulated"
+      ) {
+        persistConversationHistory(nextSessionInput, provider);
+      }
       return resultMessage(command, {
         output: terminalResult.output,
         ...(terminalResult.providerResumeCursor
@@ -875,6 +912,71 @@ async function executeCommand(
         canMoveWorker: true,
       });
   }
+}
+
+function withPersistedConversationHistory(input: RunnerInput, provider: string): RunnerInput {
+  const directory = input.providerStateDirectory;
+  if (!directory) throw missingEmulatedHistory();
+  const path = join(directory, EMULATED_HISTORY_FILE);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(path, "r");
+    if (fstatSync(descriptor).size > MAX_EMULATED_HISTORY_BYTES)
+      throw new Error("history too large");
+    const value = JSON.parse(readFileSync(descriptor, "utf8")) as unknown;
+    if (!isRecord(value) || value.version !== 1 || value.provider !== provider) {
+      throw new Error("history identity mismatch");
+    }
+    const messages = value.messages;
+    if (
+      !Array.isArray(messages) ||
+      messages.length === 0 ||
+      messages.length > 512 ||
+      messages.some(
+        (message) =>
+          !isRecord(message) ||
+          (message.role !== "user" && message.role !== "assistant") ||
+          typeof message.text !== "string" ||
+          Buffer.byteLength(message.text) > 64 << 10,
+      )
+    ) {
+      throw new Error("history payload invalid");
+    }
+    return { ...input, workload: { ...input.workload, conversationHistory: messages } };
+  } catch {
+    throw missingEmulatedHistory();
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function persistConversationHistory(input: RunnerInput, provider: string): void {
+  const directory = input.providerStateDirectory;
+  const messages = input.workload.conversationHistory;
+  if (!directory || !messages?.length) throw missingEmulatedHistory();
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const path = join(directory, EMULATED_HISTORY_FILE);
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    const encoded = `${JSON.stringify({ version: 1, provider, messages })}\n`;
+    if (Buffer.byteLength(encoded) > MAX_EMULATED_HISTORY_BYTES) throw missingEmulatedHistory();
+    writeFileSync(temporary, encoded, { flag: "wx", mode: 0o600 });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+function missingEmulatedHistory(): ProtocolFailure {
+  return new ProtocolFailure({
+    code: "session_resume_invalid",
+    message: "Emulated Provider resume requires valid persisted authoritative history.",
+    retryable: false,
+    requiresNewExecution: false,
+    requiresUserAction: false,
+    canReconstructFromHistory: false,
+    canMoveWorker: true,
+  });
 }
 
 type TextGenerationRequest = {

@@ -18,11 +18,15 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const [output] = process.argv.slice(2);
-assert.ok(output, "usage: node scripts/test-foundation-controller-docker.mjs NEW_OUTPUT_DIRECTORY");
+assert.ok(
+  output,
+  "usage: node scripts/test-foundation-controller-docker.mjs NEW_OUTPUT_DIRECTORY",
+);
 const remoteWorkerOnly = process.argv.includes("--remote-worker-only");
 const gvisorOnly = process.argv.includes("--gvisor-only");
 const snapshotOnly = process.argv.includes("--snapshot-only");
 const snapshotRestoreOnly = process.argv.includes("--snapshot-restore-only");
+const snapshotFailoverOnly = process.argv.includes("--snapshot-failover-only");
 const snapshotCleanupOnly = process.argv.includes("--snapshot-cleanup-only");
 const faultSoakOnly = process.argv.includes("--fault-soak-only");
 const sshProbeOnly = process.argv.includes("--ssh-probe-only");
@@ -32,6 +36,7 @@ assert.ok(
     gvisorOnly,
     snapshotOnly,
     snapshotRestoreOnly,
+    snapshotFailoverOnly,
     snapshotCleanupOnly,
     faultSoakOnly,
     sshProbeOnly,
@@ -42,14 +47,20 @@ const remoteWorkerComplete = Symbol("remote-worker-complete");
 const snapshotComplete = Symbol("snapshot-complete");
 const sshProbeComplete = Symbol("ssh-probe-complete");
 const root = resolve(import.meta.dirname, "..");
-const currentHead = readdirSync(resolve(root, "services/control-plane/migrations/product"))
+const currentHead = readdirSync(
+  resolve(root, "services/control-plane/migrations/product"),
+)
   .filter((entry) => /^\d{6}$/.test(entry))
   .sort()
   .at(-1);
 assert.ok(currentHead, "product migration package is required");
 const evidenceDirectory = resolve(output);
 mkdirSync(evidenceDirectory, { mode: 0o700 });
-const build = mkdtempSync(resolve(tmpdir(), "cloud-agents-foundation-controller-"));
+const build = mkdtempSync(
+  resolve(tmpdir(), "cloud-agents-foundation-controller-"),
+);
+const snapshotDirectory = resolve(build, "snapshots");
+mkdirSync(snapshotDirectory, { mode: 0o700 });
 const run = `foundation-controller-${randomUUID()}`;
 const postgresName = `${run}-postgres`;
 const sandboxServerName = `${run}-opensandbox`;
@@ -65,12 +76,15 @@ const execdImage =
   "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd";
 const egressImage =
   "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a";
-const sandboxImage = "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5";
+const sandboxImage =
+  "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5";
 const failureImage =
   "rancher/mirrored-pause:3.6@sha256:74c4244427b7312c5b901fe0f67cbc53683d06f4f24c6faee65d4182bf0fa893";
-const dindImage = "docker@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e";
+const dindImage =
+  "docker@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e";
 const registryImage = "registry:2";
-const registryImageID = "sha256:33eeff39e0aaabe61ca826fd7502396183462451be0783133e1a8fa944fc7350";
+const registryImageID =
+  "sha256:33eeff39e0aaabe61ca826fd7502396183462451be0783133e1a8fa944fc7350";
 const runscPath =
   process.env.CLOUD_AGENTS_GVISOR_RUNSC ??
   "/tmp/cloud-agents-gvisor-release-20260622.0-aarch64/runsc";
@@ -124,6 +138,15 @@ const parseMarker = (text, marker) => {
   assert.ok(match, `${marker} missing from ${text}`);
   return JSON.parse(match[1]);
 };
+const checkedOutput = (file, args, options) => {
+  const result = spawnSync(file, args, { ...options, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(
+      `${file} failed (${result.status})\n${result.stdout ?? ""}${result.stderr ?? ""}`,
+    );
+  }
+  return result.stdout;
+};
 const request = async (base, path, method = "GET") => {
   const response = await fetch(base + path, {
     method,
@@ -174,7 +197,10 @@ try {
     docker("image", "inspect", image);
   }
   if (gvisorOnly) {
-    assert.equal(docker("image", "inspect", registryImage, "--format", "{{.Id}}"), registryImageID);
+    assert.equal(
+      docker("image", "inspect", registryImage, "--format", "{{.Id}}"),
+      registryImageID,
+    );
   }
   const dockerHost = docker(
     "context",
@@ -240,7 +266,9 @@ try {
       "postgres",
     ],
     {
-      input: readFileSync(resolve(root, "services/control-plane/migrations/bootstrap/roles.sql")),
+      input: readFileSync(
+        resolve(root, "services/control-plane/migrations/bootstrap/roles.sql"),
+      ),
       timeout: 120_000,
     },
   );
@@ -271,10 +299,20 @@ try {
   const serverTestBinary = resolve(build, "server.test");
   const controllerTestBinary = resolve(build, "foundationcontroller.test");
   const remoteWorkerBinary = resolve(build, "cloud-agents-remote-worker");
-  goBuild(migrateBinary, "./services/control-plane/cmd/cloud-agents-product-migrate");
+  goBuild(
+    migrateBinary,
+    "./services/control-plane/cmd/cloud-agents-product-migrate",
+  );
   goBuild(serverTestBinary, "./services/control-plane/internal/server", true);
-  goBuild(controllerTestBinary, "./services/control-plane/internal/foundationcontroller", true);
-  goBuild(remoteWorkerBinary, "./services/control-plane/cmd/cloud-agents-remote-worker");
+  goBuild(
+    controllerTestBinary,
+    "./services/control-plane/internal/foundationcontroller",
+    true,
+  );
+  goBuild(
+    remoteWorkerBinary,
+    "./services/control-plane/cmd/cloud-agents-remote-worker",
+  );
   const migration = JSON.parse(
     execFileSync(
       migrateBinary,
@@ -328,10 +366,15 @@ try {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-    assert.equal(aliases.length, 2, "set exactly two comma-separated SSH aliases");
+    assert.equal(
+      aliases.length,
+      2,
+      "set exactly two comma-separated SSH aliases",
+    );
     const credentialDirectory = resolve(build, "ssh-live-credentials");
     mkdirSync(credentialDirectory, { mode: 0o700 });
-    const expandSSHPath = (value) => value.replace(/^~/u, homedir()).replaceAll("%d", homedir());
+    const expandSSHPath = (value) =>
+      value.replace(/^~/u, homedir()).replaceAll("%d", homedir());
     const targets = aliases.map((alias, index) => {
       const config = new Map();
       for (const line of execFileSync("ssh", ["-G", alias], {
@@ -340,7 +383,10 @@ try {
       }).split("\n")) {
         const separator = line.indexOf(" ");
         if (separator > 0 && !config.has(line.slice(0, separator))) {
-          config.set(line.slice(0, separator), line.slice(separator + 1).trim());
+          config.set(
+            line.slice(0, separator),
+            line.slice(separator + 1).trim(),
+          );
         }
       }
       const user = config.get("user");
@@ -367,11 +413,15 @@ try {
         .trim()
         .split("\n");
       assert.deepEqual(remoteFacts, ["Linux", "x86_64", "no-docker"]);
-      const scan = execFileSync("ssh-keyscan", ["-T", "10", "-p", port, "-t", "ed25519", host], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 30_000,
-      })
+      const scan = execFileSync(
+        "ssh-keyscan",
+        ["-T", "10", "-p", port, "-t", "ed25519", host],
+        {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+          timeout: 30_000,
+        },
+      )
         .trim()
         .split("\n")
         .find((line) => !line.startsWith("#"));
@@ -395,16 +445,29 @@ try {
           });
           return (found.stdout ?? "")
             .split("\n")
-            .some((line) => line.trim().split(/\s+/u).slice(1, 3).join(" ") === pinnedKey);
+            .some(
+              (line) =>
+                line.trim().split(/\s+/u).slice(1, 3).join(" ") === pinnedKey,
+            );
         }),
       );
-      assert.ok(pinned, `scanned host key for SSH alias ${index + 1} was not already pinned`);
+      assert.ok(
+        pinned,
+        `scanned host key for SSH alias ${index + 1} was not already pinned`,
+      );
       const credentialRef = `ssh-live-${index + 1}`;
-      copyFileSync(identity, resolve(credentialDirectory, `${credentialRef}.key`));
+      copyFileSync(
+        identity,
+        resolve(credentialDirectory, `${credentialRef}.key`),
+      );
       chmodSync(resolve(credentialDirectory, `${credentialRef}.key`), 0o600);
-      writeFileSync(resolve(credentialDirectory, `${credentialRef}.user`), `${user}\n`, {
-        mode: 0o600,
-      });
+      writeFileSync(
+        resolve(credentialDirectory, `${credentialRef}.user`),
+        `${user}\n`,
+        {
+          mode: 0o600,
+        },
+      );
       writeFileSync(
         resolve(credentialDirectory, `${credentialRef}.host-key.pub`),
         `${pinnedKey}\n`,
@@ -431,7 +494,9 @@ try {
     );
     writeFileSync(
       resolve(credentialDirectory, `${mismatch.credentialRef}.user`),
-      readFileSync(resolve(credentialDirectory, `${targets[0].credentialRef}.user`)),
+      readFileSync(
+        resolve(credentialDirectory, `${targets[0].credentialRef}.user`),
+      ),
       { mode: 0o600 },
     );
     writeFileSync(
@@ -439,7 +504,10 @@ try {
       `${targets[1].pinnedKey}\n`,
       { mode: 0o600 },
     );
-    chmodSync(resolve(credentialDirectory, `${mismatch.credentialRef}.key`), 0o600);
+    chmodSync(
+      resolve(credentialDirectory, `${mismatch.credentialRef}.key`),
+      0o600,
+    );
     const input = JSON.stringify({
       targets: targets.map(({ pinnedKey: _pinnedKey, ...target }) => target),
       mismatch,
@@ -453,7 +521,8 @@ try {
           env: {
             ...process.env,
             CLOUD_AGENTS_FOUNDATION_SSH_RUNTIME_DATABASE_URL: runtimeURL,
-            CLOUD_AGENTS_FOUNDATION_SSH_CREDENTIAL_DIRECTORY: credentialDirectory,
+            CLOUD_AGENTS_FOUNDATION_SSH_CREDENTIAL_DIRECTORY:
+              credentialDirectory,
             CLOUD_AGENTS_FOUNDATION_SSH_TARGETS: input,
             CLOUD_AGENTS_FOUNDATION_SSH_PHASE: phase,
           },
@@ -498,7 +567,8 @@ try {
         before,
         after,
         totalRequests: 160,
-        recoveryToFirstSuccessfulProbeMilliseconds: after.recoveryToFirstSuccessMilliseconds,
+        recoveryToFirstSuccessfulProbeMilliseconds:
+          after.recoveryToFirstSuccessMilliseconds,
       },
       checks: [
         `product migration ${migration.schema_head} applied to disposable PostgreSQL`,
@@ -516,7 +586,10 @@ try {
       resolve(evidenceDirectory, "evidence.json"),
       JSON.stringify(evidence, null, 2) + "\n",
     );
-    writeFileSync(resolve(evidenceDirectory, "before-restart.log"), beforeOutput);
+    writeFileSync(
+      resolve(evidenceDirectory, "before-restart.log"),
+      beforeOutput,
+    );
     writeFileSync(resolve(evidenceDirectory, "after-restart.log"), afterOutput);
     process.stdout.write(
       `Verified external SSH Target probe/soak; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
@@ -587,7 +660,9 @@ try {
         timeout: 120_000,
       },
     );
-    assert.ok(serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"));
+    assert.ok(
+      serverOutput.includes("--- PASS: TestFoundationRuntimeProfilePostgres"),
+    );
   }
 
   let sandboxDockerGateway = dockerGateway;
@@ -628,7 +703,11 @@ try {
       }).trim();
     for (let attempt = 0; ; attempt++) {
       try {
-        assert.equal(innerDocker("info", "--format", "{{json .Runtimes.runsc}}") !== "null", true);
+        assert.equal(
+          innerDocker("info", "--format", "{{json .Runtimes.runsc}}") !==
+            "null",
+          true,
+        );
         break;
       } catch {
         if (attempt === 300) throw new Error("gVisor DinD did not start");
@@ -646,7 +725,15 @@ try {
       registryImage,
     );
     innerDocker("image", "load", "-i", archive);
-    innerDocker("run", "-d", "--name", `${run}-registry`, "-p", "5000:5000", registryImage);
+    innerDocker(
+      "run",
+      "-d",
+      "--name",
+      `${run}-registry`,
+      "-p",
+      "5000:5000",
+      registryImage,
+    );
     await delay(300);
     innerDocker(
       "tag",
@@ -682,9 +769,14 @@ try {
       "com.docker.network.bridge.enable_icc=false",
       gvisorNetwork,
     );
-    const network = JSON.parse(innerDocker("network", "inspect", gvisorNetwork))[0];
+    const network = JSON.parse(
+      innerDocker("network", "inspect", gvisorNetwork),
+    )[0];
     assert.equal(network.Internal, true);
-    assert.equal(network.Options["com.docker.network.bridge.enable_icc"], "false");
+    assert.equal(
+      network.Options["com.docker.network.bridge.enable_icc"],
+      "false",
+    );
     sandboxDockerGateway = "127.0.0.1";
   }
 
@@ -732,7 +824,10 @@ try {
     await delay(100);
   }
   const credentialDirectory = resolve(build, "credentials");
-  const fixtureCredentialDirectory = resolve(credentialDirectory, "fixture-only");
+  const fixtureCredentialDirectory = resolve(
+    credentialDirectory,
+    "fixture-only",
+  );
   mkdirSync(fixtureCredentialDirectory, { recursive: true, mode: 0o700 });
   writeFileSync(
     resolve(fixtureCredentialDirectory, "opensandbox.json"),
@@ -751,13 +846,21 @@ try {
           CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
           CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
           CLOUD_AGENTS_REMOTE_WORKER_BINARY: remoteWorkerBinary,
-          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET: gvisorOnly ? "" : dockerSocket,
-          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ADDRESS: gvisorOnly ? dindAddress : "",
+          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_SOCKET: gvisorOnly
+            ? ""
+            : dockerSocket,
+          CLOUD_AGENTS_REMOTE_WORKER_DOCKER_ADDRESS: gvisorOnly
+            ? dindAddress
+            : "",
           CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY: credentialDirectory,
           CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF: "fixture-only",
           CLOUD_AGENTS_REMOTE_WORKER_SUCCESS_IMAGE_URI: remoteSandboxImage,
-          CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS: gvisorOnly ? "" : `${allowedSinkIP}/32`,
-          CLOUD_AGENTS_REMOTE_WORKER_ISOLATION_RUNTIME: gvisorOnly ? "gvisor" : "runc",
+          CLOUD_AGENTS_REMOTE_WORKER_ALLOWED_EGRESS: gvisorOnly
+            ? ""
+            : `${allowedSinkIP}/32`,
+          CLOUD_AGENTS_REMOTE_WORKER_ISOLATION_RUNTIME: gvisorOnly
+            ? "gvisor"
+            : "runc",
         },
         timeout: 180_000,
       },
@@ -774,7 +877,10 @@ try {
     assert.match(remoteWorkerReceipt.kernelAndDmesg, /4\.19\.0-gvisor/u);
     assert.match(remoteWorkerReceipt.kernelAndDmesg, /gVisor/u);
     assert.equal(remoteWorkerReceipt.observedState, "stopped");
-    assert.equal(innerDocker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      innerDocker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+      "",
+    );
     innerDocker("volume", "rm", remoteWorkerReceipt.volumeName);
     assert.equal(
       innerDocker(
@@ -802,8 +908,16 @@ try {
       backend: {
         hostDockerContext: "orbstack",
         hostDockerVersion: docker("version", "--format", "{{.Server.Version}}"),
-        isolatedDockerVersion: innerDocker("version", "--format", "{{.Server.Version}}"),
-        isolatedDockerArchitecture: innerDocker("info", "--format", "{{.Architecture}}"),
+        isolatedDockerVersion: innerDocker(
+          "version",
+          "--format",
+          "{{.Server.Version}}",
+        ),
+        isolatedDockerArchitecture: innerDocker(
+          "info",
+          "--format",
+          "{{.Architecture}}",
+        ),
         postgres: psql("SHOW server_version;"),
         schemaHead: migration.schema_head,
       },
@@ -860,12 +974,30 @@ try {
   assert.equal(remoteWorkerReceipt.reconnectOriginalCommandNotReplayed, true);
   assert.equal(remoteWorkerReceipt.reconnectAttempt, 2);
   assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.heartbeatCycles, 64);
-  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.successfulHeartbeats, 64);
-  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.successfulAdminReads, 64);
-  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.rpo.operationRowsLost, 0);
-  assert.equal(remoteWorkerReceipt.remoteWorkerFaultSoak.rpo.duplicateRuntimes, 0);
-  assert.ok(remoteWorkerReceipt.remoteWorkerFaultSoak.heartbeatLatencyMilliseconds.p95 > 0);
-  assert.ok(remoteWorkerReceipt.remoteWorkerFaultSoak.reconnectToSettlementMilliseconds > 0);
+  assert.equal(
+    remoteWorkerReceipt.remoteWorkerFaultSoak.successfulHeartbeats,
+    64,
+  );
+  assert.equal(
+    remoteWorkerReceipt.remoteWorkerFaultSoak.successfulAdminReads,
+    64,
+  );
+  assert.equal(
+    remoteWorkerReceipt.remoteWorkerFaultSoak.rpo.operationRowsLost,
+    0,
+  );
+  assert.equal(
+    remoteWorkerReceipt.remoteWorkerFaultSoak.rpo.duplicateRuntimes,
+    0,
+  );
+  assert.ok(
+    remoteWorkerReceipt.remoteWorkerFaultSoak.heartbeatLatencyMilliseconds.p95 >
+      0,
+  );
+  assert.ok(
+    remoteWorkerReceipt.remoteWorkerFaultSoak
+      .reconnectToSettlementMilliseconds > 0,
+  );
   assert.equal(remoteWorkerReceipt.gatewayRestart.protocolRecoveries, 4);
   assert.equal(remoteWorkerReceipt.gatewayRestart.rpo.fileBytesLost, 0);
   assert.equal(remoteWorkerReceipt.gatewayRestart.rpo.ptyOutputBytesLost, 0);
@@ -950,16 +1082,31 @@ try {
   assert.equal(remoteWorkerReceipt.sshContentTableHidden, true);
   assert.match(remoteWorkerReceipt.workspaceDigest, /^[0-9a-f]{64}\s+/u);
   assert.equal(remoteWorkerReceipt.observedState, "stopped");
-  for (const runtimeId of [remoteWorkerReceipt.runtimeId, remoteWorkerReceipt.rebuiltRuntimeId]) {
+  for (const runtimeId of [
+    remoteWorkerReceipt.runtimeId,
+    remoteWorkerReceipt.rebuiltRuntimeId,
+  ]) {
     for (let attempt = 0; ; attempt++) {
-      if (docker("ps", "-aq", "--filter", `label=opensandbox.io/id=${runtimeId}`) === "") break;
-      if (attempt === 100) throw new Error("RemoteWorker Sandbox runtime did not terminate");
+      if (
+        docker(
+          "ps",
+          "-aq",
+          "--filter",
+          `label=opensandbox.io/id=${runtimeId}`,
+        ) === ""
+      )
+        break;
+      if (attempt === 100)
+        throw new Error("RemoteWorker Sandbox runtime did not terminate");
       await delay(100);
     }
   }
   docker("volume", "rm", remoteWorkerReceipt.volumeName);
   if (remoteWorkerOnly) {
-    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+      "",
+    );
     assert.equal(
       docker(
         "volume",
@@ -1044,6 +1191,9 @@ try {
     CLOUD_AGENTS_FOUNDATION_LIVE_ALLOWED_IP: allowedSinkIP,
     CLOUD_AGENTS_FOUNDATION_LIVE_BLOCKED_IP: blockedSinkIP,
     CLOUD_AGENTS_FOUNDATION_LIVE_DOCKER_GATEWAY: dockerGateway,
+    ...(snapshotFailoverOnly
+      ? { CLOUD_AGENTS_FOUNDATION_LIVE_SNAPSHOT_DIRECTORY: snapshotDirectory }
+      : {}),
   };
   const prepareOutput = execFileSync(
     controllerTestBinary,
@@ -1069,9 +1219,12 @@ try {
       env: {
         ...commonEnvironment,
         CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "recover",
-        CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prepareReceipt.runtimeId,
-        CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: prepareReceipt.volumeName,
-        CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+        CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID:
+          prepareReceipt.runtimeId,
+        CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME:
+          prepareReceipt.volumeName,
+        CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST:
+          prepareReceipt.proofDigest,
       },
       timeout: 180_000,
     },
@@ -1095,14 +1248,16 @@ try {
   assert.ok(recoverReceipt.networkUsage.initialReceivedBytes > 0);
   assert.ok(recoverReceipt.networkUsage.initialTransmittedBytes > 0);
   assert.ok(
-    recoverReceipt.networkUsage.receivedBytes >= recoverReceipt.networkUsage.initialReceivedBytes,
+    recoverReceipt.networkUsage.receivedBytes >=
+      recoverReceipt.networkUsage.initialReceivedBytes,
   );
   assert.ok(
     recoverReceipt.networkUsage.transmittedBytes >=
       recoverReceipt.networkUsage.initialTransmittedBytes,
   );
   assert.ok(
-    recoverReceipt.networkUsage.receivedBytes > recoverReceipt.networkUsage.initialReceivedBytes ||
+    recoverReceipt.networkUsage.receivedBytes >
+      recoverReceipt.networkUsage.initialReceivedBytes ||
       recoverReceipt.networkUsage.transmittedBytes >
         recoverReceipt.networkUsage.initialTransmittedBytes,
   );
@@ -1136,8 +1291,10 @@ try {
             ...commonEnvironment,
             CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: phase,
             CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: prior.runtimeId,
-            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: prepareReceipt.volumeName,
-            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME:
+              prepareReceipt.volumeName,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST:
+              prepareReceipt.proofDigest,
             CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: prior.operationId,
             CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: prior.specDigest,
           },
@@ -1146,6 +1303,55 @@ try {
       ),
       marker,
     );
+  if (snapshotFailoverOnly) {
+    psql(`BEGIN;
+INSERT INTO cloud_agents.storage_policies (
+  tenant_id,project_uid,policy_uid,policy_name,user_summary,workspace_type,
+  workspace_capacity_bytes,retention_seconds,cleanup_on_lease_termination,
+  snapshot_backend_ref,artifact_backend_ref,allow_workspace_reuse,resource_version,created_at,updated_at)
+VALUES ('tenant','project','storage-restore','storage-restore','Restore test storage','managed-volume',
+  21474836480,0,true,NULL,NULL,true,1,transaction_timestamp(),transaction_timestamp());
+INSERT INTO cloud_agents.worker_releases (
+  tenant_id,project_uid,release_uid,release_name,image_repository,release_digest,
+  platform_version,runtime_version,codex_version,claude_code_version,architectures,
+  status,verification_state,verification_evidence_digest,resource_version,
+  register_idempotency_key,register_request_digest,created_at,updated_at,approved_at)
+SELECT 'tenant','project','release-restore','release-restore','local/cloud-agent-runtime',release_digest,
+  'test','test','test','test',ARRAY['linux/amd64','linux/arm64'],'approved','attested',
+  'sha256:' || repeat('a',64),1,'release-restore-key','sha256:' || repeat('b',64),
+  transaction_timestamp(),transaction_timestamp(),transaction_timestamp()
+FROM cloud_agents.runtime_profiles
+WHERE tenant_id='tenant' AND project_uid='project' AND profile_uid='profile' AND profile_version=1;
+INSERT INTO cloud_agents.environment_profiles (
+  tenant_id,tenant_ref_id,project_uid,profile_version_uid,profile_uid,profile_name,
+  profile_version,description,status,provider_kinds,cpu_limit_millis,memory_limit_bytes,
+  storage_policy_ref,network_policy_ref,release_digest,target_refs,provider_credential_ref,
+  resource_version,create_idempotency_key,create_request_digest,created_at,updated_at,published_at,disabled_at)
+SELECT 'tenant','tenant','project','environment-restore-1','environment-restore','environment-restore',
+  1,'Restore test environment','published',ARRAY['codex'],cpu_millis,memory_bytes,
+  'storage-restore',network_policy_ref,release_digest,ARRAY[target_uid,'target-restore'],'provider-restore',
+  2,'environment-restore-key','sha256:' || repeat('c',64),
+  transaction_timestamp(),transaction_timestamp(),transaction_timestamp(),NULL
+FROM cloud_agents.runtime_profiles
+WHERE tenant_id='tenant' AND project_uid='project' AND profile_uid='profile' AND profile_version=1;
+INSERT INTO cloud_agents.managed_agent_sessions (
+  tenant_id,tenant_ref_id,project_uid,session_uid,provider_kind,state,resource_version,
+  create_idempotency_key,create_request_digest,created_at,updated_at,
+  workspace_uid,sandbox_uid,sandbox_generation,environment_profile_uid,environment_profile_version)
+SELECT 'tenant','tenant','project','session-restore','codex','active',1,
+  'session-restore-key','sha256:' || repeat('d',64),transaction_timestamp(),transaction_timestamp(),
+  sandbox.workspace_uid,sandbox.sandbox_uid,sandbox.generation,'environment-restore',1
+FROM cloud_agents.sandbox_sessions AS sandbox
+WHERE sandbox.tenant_id='tenant' AND sandbox.project_uid='project'
+  AND sandbox.workspace_uid='workspace' AND sandbox.sandbox_uid='sandbox';
+COMMIT;`);
+    assert.equal(
+      psql(`SELECT workspace_uid || '|' || sandbox_uid || '|' || sandbox_generation || '|' || resource_version
+FROM cloud_agents.managed_agent_sessions
+WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-restore';`),
+      "workspace|sandbox|1|1",
+    );
+  }
   const stopAPIReceipt = lifecycleAPI("stop");
   const stopReceipt = lifecycleController("stop", "FOUNDATION_LIVE_STOP");
   assert.equal(stopReceipt.generation, stopAPIReceipt.generation);
@@ -1172,12 +1378,18 @@ try {
   assert.equal(stopReceipt.networkUsage.state, "ready");
   assert.equal(stopReceipt.networkUsage.latestRuntimeGeneration, 1);
   assert.equal(stopReceipt.networkUsage.measurementGeneration, 2);
-  assert.equal(stopReceipt.networkUsage.receivedBytes, recoverReceipt.networkUsage.receivedBytes);
+  assert.equal(
+    stopReceipt.networkUsage.receivedBytes,
+    recoverReceipt.networkUsage.receivedBytes,
+  );
   assert.equal(
     stopReceipt.networkUsage.transmittedBytes,
     recoverReceipt.networkUsage.transmittedBytes,
   );
-  assert.equal(stopReceipt.networkUsage.checkpointedAt, recoverReceipt.networkUsage.checkpointedAt);
+  assert.equal(
+    stopReceipt.networkUsage.checkpointedAt,
+    recoverReceipt.networkUsage.checkpointedAt,
+  );
   const snapshotAPIReceipt = parseMarker(
     execFileSync(
       serverTestBinary,
@@ -1200,13 +1412,19 @@ try {
       ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
       {
         encoding: "utf8",
-        env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot" },
+        env: {
+          ...commonEnvironment,
+          CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot",
+        },
         timeout: 180_000,
       },
     ),
     "FOUNDATION_LIVE_SNAPSHOT",
   );
-  assert.equal(snapshotControllerReceipt.operationId, snapshotAPIReceipt.operationId);
+  assert.equal(
+    snapshotControllerReceipt.operationId,
+    snapshotAPIReceipt.operationId,
+  );
   assert.equal(snapshotControllerReceipt.status, "available");
   if (faultSoakOnly) {
     const runAdminSoak = (phase) =>
@@ -1237,7 +1455,10 @@ try {
     assert.equal(afterRestart.stateDigest, beforeRestart.stateDigest);
     docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
     docker("volume", "rm", prepareReceipt.volumeName);
-    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+      "",
+    );
     assert.equal(
       docker(
         "volume",
@@ -1278,11 +1499,15 @@ try {
         postgres: psql("SHOW server_version;"),
       },
       controllerFault: {
-        injected: "Controller process exited after physical create and before settlement",
+        injected:
+          "Controller process exited after physical create and before settlement",
         claimExpiryWaitMilliseconds: 1200,
-        faultToRecoveryUpperBoundMilliseconds: controllerFaultToRecoveryMilliseconds,
-        restartToRecoveryUpperBoundMilliseconds: controllerRestartToRecoveryMilliseconds,
-        inProcessRecoveryUpperBoundMilliseconds: recoverReceipt.recoveryMilliseconds,
+        faultToRecoveryUpperBoundMilliseconds:
+          controllerFaultToRecoveryMilliseconds,
+        restartToRecoveryUpperBoundMilliseconds:
+          controllerRestartToRecoveryMilliseconds,
+        inProcessRecoveryUpperBoundMilliseconds:
+          recoverReceipt.recoveryMilliseconds,
         rpo: {
           operationRowsLost: 0,
           workspaceBytesLost: 0,
@@ -1299,7 +1524,10 @@ try {
         rpo: { resourceChanges: 0, stateDigest: afterRestart.stateDigest },
         rtoMilliseconds: afterRestart.recoveryToFirstSuccessMilliseconds,
       },
-      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+      snapshot: {
+        api: snapshotAPIReceipt,
+        controller: snapshotControllerReceipt,
+      },
       checks: [
         `product migration ${currentHead} applied to disposable PostgreSQL`,
         "a Controller process exited after physical create and before settlement; a new process reaped the expired claim, adopted the exact runtime and operation, preserved Workspace bytes, and compensated a separate failed runtime",
@@ -1325,7 +1553,11 @@ try {
   if (snapshotCleanupOnly) {
     const cleanupAPIOutput = execFileSync(
       serverTestBinary,
-      ["-test.run", "^TestFoundationWorkspaceSnapshotCleanupPostgres$", "-test.v"],
+      [
+        "-test.run",
+        "^TestFoundationWorkspaceSnapshotCleanupPostgres$",
+        "-test.v",
+      ],
       {
         encoding: "utf8",
         env: {
@@ -1333,12 +1565,16 @@ try {
           CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
           CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
           CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT:
-            process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT ?? evidenceDirectory,
+            process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_OUTPUT ??
+            evidenceDirectory,
         },
         timeout: 120_000,
       },
     );
-    const cleanupAPIReceipt = parseMarker(cleanupAPIOutput, "FOUNDATION_SNAPSHOT_CLEANUP_API");
+    const cleanupAPIReceipt = parseMarker(
+      cleanupAPIOutput,
+      "FOUNDATION_SNAPSHOT_CLEANUP_API",
+    );
     const browserReceipt = process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT
       ? parseMarker(cleanupAPIOutput, "FOUNDATION_SNAPSHOT_BROWSER")
       : undefined;
@@ -1348,18 +1584,28 @@ try {
         ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
         {
           encoding: "utf8",
-          env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot-cleanup" },
+          env: {
+            ...commonEnvironment,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot-cleanup",
+          },
           timeout: 180_000,
         },
       ),
       "FOUNDATION_LIVE_SNAPSHOT_CLEANUP",
     );
-    assert.equal(cleanupControllerReceipt.operationId, cleanupAPIReceipt.operationId);
+    assert.equal(
+      cleanupControllerReceipt.operationId,
+      cleanupAPIReceipt.operationId,
+    );
     assert.equal(cleanupControllerReceipt.status, "deleted");
     const expiryAPIReceipt = parseMarker(
       execFileSync(
         serverTestBinary,
-        ["-test.run", "^TestFoundationWorkspaceSnapshotExpiryPostgres$", "-test.v"],
+        [
+          "-test.run",
+          "^TestFoundationWorkspaceSnapshotExpiryPostgres$",
+          "-test.v",
+        ],
         {
           encoding: "utf8",
           env: {
@@ -1378,7 +1624,10 @@ try {
         ["-test.run", "^TestLiveFoundationControllerRestart$", "-test.v"],
         {
           encoding: "utf8",
-          env: { ...commonEnvironment, CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot-expiry" },
+          env: {
+            ...commonEnvironment,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "snapshot-expiry",
+          },
           timeout: 180_000,
         },
       ),
@@ -1387,7 +1636,10 @@ try {
     assert.equal(expiryControllerReceipt.status, "deleted");
     assert.equal(expiryControllerReceipt.trigger, "retention");
     docker("volume", "rm", prepareReceipt.volumeName);
-    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+      "",
+    );
     assert.equal(
       docker(
         "volume",
@@ -1415,7 +1667,10 @@ try {
           cwd: root,
           encoding: "utf8",
         }).trim(),
-        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
         dirty: true,
         migrationHead: currentHead,
       },
@@ -1425,9 +1680,18 @@ try {
         postgres: psql("SHOW server_version;"),
       },
       stop: { api: stopAPIReceipt, controller: stopReceipt },
-      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
-      manualCleanup: { api: cleanupAPIReceipt, controller: cleanupControllerReceipt },
-      retentionCleanup: { api: expiryAPIReceipt, controller: expiryControllerReceipt },
+      snapshot: {
+        api: snapshotAPIReceipt,
+        controller: snapshotControllerReceipt,
+      },
+      manualCleanup: {
+        api: cleanupAPIReceipt,
+        controller: cleanupControllerReceipt,
+      },
+      retentionCleanup: {
+        api: expiryAPIReceipt,
+        controller: expiryControllerReceipt,
+      },
       ...(browserReceipt === undefined ? {} : { adminBrowser: browserReceipt }),
       checks: [
         `product migration ${currentHead} applied to disposable PostgreSQL`,
@@ -1475,10 +1739,16 @@ try {
       snapshotInfo.Labels?.["cloud-agents.dev/resource"],
       "foundation-workspace-snapshot",
     );
-    assert.equal(snapshotInfo.Labels?.["cloud-agents.dev/snapshot"], "snapshot");
+    assert.equal(
+      snapshotInfo.Labels?.["cloud-agents.dev/snapshot"],
+      "snapshot",
+    );
     docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
     docker("volume", "rm", prepareReceipt.volumeName);
-    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+      "",
+    );
     assert.equal(
       docker(
         "volume",
@@ -1506,7 +1776,10 @@ try {
           cwd: root,
           encoding: "utf8",
         }).trim(),
-        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
         dirty: true,
         migrationHead: currentHead,
       },
@@ -1518,7 +1791,10 @@ try {
       prepare: prepareReceipt,
       recover: recoverReceipt,
       stop: { api: stopAPIReceipt, controller: stopReceipt },
-      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+      snapshot: {
+        api: snapshotAPIReceipt,
+        controller: snapshotControllerReceipt,
+      },
       checks: [
         `product migration ${currentHead} applied to disposable PostgreSQL`,
         "ordinary user token received 403 from Admin Workspace Snapshot API",
@@ -1549,23 +1825,45 @@ try {
     );
     throw snapshotComplete;
   }
-  if (snapshotRestoreOnly) {
-    const restoreAPIReceipt = parseMarker(
-      execFileSync(
-        serverTestBinary,
-        ["-test.run", "^TestFoundationWorkspaceRestorePostgres$", "-test.v"],
-        {
-          encoding: "utf8",
-          env: {
-            ...process.env,
-            CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
-            CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
-          },
-          timeout: 120_000,
+  if (snapshotRestoreOnly || snapshotFailoverOnly) {
+    const failoverStarted = process.hrtime.bigint();
+    if (snapshotFailoverOnly) {
+      assert.equal(snapshotControllerReceipt.backend, "portable-tar-v1");
+      docker("volume", "rm", prepareReceipt.volumeName);
+      assert.equal(
+        docker(
+          "volume",
+          "ls",
+          "-q",
+          "--filter",
+          `name=^${prepareReceipt.volumeName}$`,
+        ),
+        "",
+      );
+    }
+    const restoreAPIOutput = execFileSync(
+      serverTestBinary,
+      ["-test.run", "^TestFoundationWorkspaceRestorePostgres$", "-test.v"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
+          CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
+          ...(snapshotFailoverOnly
+            ? { CLOUD_AGENTS_FOUNDATION_CROSS_TARGET_RESTORE: "1" }
+            : {}),
         },
-      ),
+        timeout: 120_000,
+      },
+    );
+    const restoreAPIReceipt = parseMarker(
+      restoreAPIOutput,
       "FOUNDATION_RESTORE_API",
     );
+    const browserReceipt = process.env.CLOUD_AGENTS_FOUNDATION_BROWSER_SCRIPT
+      ? parseMarker(restoreAPIOutput, "FOUNDATION_SNAPSHOT_BROWSER")
+      : undefined;
     const restoreControllerReceipt = parseMarker(
       execFileSync(
         controllerTestBinary,
@@ -1575,16 +1873,40 @@ try {
           env: {
             ...commonEnvironment,
             CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "restore",
-            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_PROOF_DIGEST:
+              prepareReceipt.proofDigest,
+            ...(snapshotFailoverOnly
+              ? {
+                  CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_TARGET_ID:
+                    "target-restore",
+                }
+              : {}),
           },
           timeout: 180_000,
         },
       ),
       "FOUNDATION_LIVE_RESTORE",
     );
-    assert.equal(restoreControllerReceipt.operationId, restoreAPIReceipt.operationId);
-    assert.equal(restoreControllerReceipt.workspaceDigest, prepareReceipt.proofDigest);
+    assert.equal(
+      restoreControllerReceipt.operationId,
+      restoreAPIReceipt.operationId,
+    );
+    assert.equal(
+      restoreControllerReceipt.workspaceDigest,
+      prepareReceipt.proofDigest,
+    );
     assert.equal(restoreControllerReceipt.status, "running");
+    const managedAgentSessionBinding = snapshotFailoverOnly
+      ? psql(`SELECT workspace_uid || '|' || sandbox_uid || '|' || sandbox_generation || '|' || resource_version
+FROM cloud_agents.managed_agent_sessions
+WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-restore';`)
+      : undefined;
+    if (snapshotFailoverOnly) {
+      assert.equal(
+        managedAgentSessionBinding,
+        "workspace-restored|sandbox-restored|1|2",
+      );
+    }
     assert.equal(
       docker(
         "ps",
@@ -1595,9 +1917,15 @@ try {
       "",
     );
     const restoreStopAPIReceipt = parseMarker(
-      execFileSync(
+      checkedOutput(
         serverTestBinary,
-        ["-test.run", "^TestFoundationSandboxLifecyclePostgres$", "-test.v"],
+        [
+          "-test.run",
+          snapshotFailoverOnly
+            ? "^TestFoundationRestoredSandboxStopPostgres$"
+            : "^TestFoundationSandboxLifecyclePostgres$",
+          "-test.v",
+        ],
         {
           encoding: "utf8",
           env: {
@@ -1606,7 +1934,11 @@ try {
             CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
             CLOUD_AGENTS_FOUNDATION_LIFECYCLE_ACTION: "stop",
             CLOUD_AGENTS_FOUNDATION_LIFECYCLE_SANDBOX_ID: "sandbox-restored",
-            CLOUD_AGENTS_FOUNDATION_LIFECYCLE_MARKER: "FOUNDATION_RESTORE_STOP_API",
+            CLOUD_AGENTS_FOUNDATION_LIFECYCLE_MARKER:
+              "FOUNDATION_RESTORE_STOP_API",
+            ...(snapshotFailoverOnly
+              ? { CLOUD_AGENTS_FOUNDATION_RESTORED_STOP: "1" }
+              : {}),
           },
           timeout: 120_000,
         },
@@ -1622,20 +1954,46 @@ try {
           env: {
             ...commonEnvironment,
             CLOUD_AGENTS_FOUNDATION_LIVE_PHASE: "restore-stop",
-            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID: restoreControllerReceipt.runtimeId,
-            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME: restoreControllerReceipt.volumeName,
-            CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID: restoreControllerReceipt.operationId,
-            CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST: restoreControllerReceipt.specDigest,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_RUNTIME_ID:
+              restoreControllerReceipt.runtimeId,
+            CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_VOLUME_NAME:
+              restoreControllerReceipt.volumeName,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_OPERATION_ID:
+              restoreControllerReceipt.operationId,
+            CLOUD_AGENTS_FOUNDATION_LIVE_PRIOR_SPEC_DIGEST:
+              restoreControllerReceipt.specDigest,
+            ...(snapshotFailoverOnly
+              ? {
+                  CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_TARGET_ID:
+                    "target-restore",
+                }
+              : {}),
           },
           timeout: 180_000,
         },
       ),
       "FOUNDATION_LIVE_RESTORE_STOP",
     );
-    assert.equal(restoreStopControllerReceipt.generation, restoreStopAPIReceipt.generation);
-    docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
-    docker("volume", "rm", prepareReceipt.volumeName);
-    assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+    assert.equal(
+      restoreStopControllerReceipt.generation,
+      restoreStopAPIReceipt.generation,
+    );
+    if (snapshotFailoverOnly) {
+      rmSync(
+        resolve(
+          snapshotDirectory,
+          `${snapshotControllerReceipt.physicalVolume}.tar`,
+        ),
+      );
+      assert.deepEqual(readdirSync(snapshotDirectory), []);
+    } else {
+      docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
+      docker("volume", "rm", prepareReceipt.volumeName);
+    }
+    assert.equal(
+      docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+      "",
+    );
     assert.equal(
       docker(
         "volume",
@@ -1663,7 +2021,10 @@ try {
           cwd: root,
           encoding: "utf8",
         }).trim(),
-        head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+        head: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim(),
         dirty: true,
         migrationHead: currentHead,
       },
@@ -1672,33 +2033,57 @@ try {
         dockerVersion: docker("version", "--format", "{{.Server.Version}}"),
         postgres: psql("SHOW server_version;"),
       },
-      snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+      snapshot: {
+        api: snapshotAPIReceipt,
+        controller: snapshotControllerReceipt,
+      },
       restore: { api: restoreAPIReceipt, controller: restoreControllerReceipt },
-      stop: { api: restoreStopAPIReceipt, controller: restoreStopControllerReceipt },
+      browser: browserReceipt,
+      stop: {
+        api: restoreStopAPIReceipt,
+        controller: restoreStopControllerReceipt,
+      },
+      failover: snapshotFailoverOnly
+        ? {
+            sourceTargetUnavailable: true,
+            sourceVolumeUnavailable: true,
+            destinationTargetId: "target-restore",
+            managedAgentSessionBinding,
+            rpoBytes: 0,
+            rtoMilliseconds:
+              Number(process.hrtime.bigint() - failoverStarted) / 1e6,
+          }
+        : undefined,
       checks: [
         `product migration ${currentHead} applied to disposable PostgreSQL`,
         "ordinary user token received 403 and stale snapshot resourceVersion received 409 from the Admin restore API",
         "Admin restore replay returned the same durable Sandbox Operation and response excluded snapshot internals, endpoint and credentials",
-        "restore acceptance bound the available snapshot, fixed same-Target published RuntimeProfile, new Workspace and new Sandbox under the existing single-writer fence",
+        snapshotFailoverOnly
+          ? "restore acceptance fenced the old writer and bound the verified portable snapshot to a different ready Target after the source Target and volume became unavailable; when the destination Sandbox reached running authority, its database transaction atomically rebound the compatible active Managed Agent Session to the restored Workspace/Sandbox generation"
+          : "restore acceptance bound the available snapshot, fixed same-Target published RuntimeProfile, new Workspace and new Sandbox under the existing single-writer fence",
         "Controller verified exact snapshot ownership and content digest, copied through a never-started helper, and mounted only the new deterministic Workspace volume",
         "the restored real Sandbox returned the original proof-file SHA-256 from /workspace",
         "the existing Sandbox stop lifecycle deleted restored compute, released its writer and retained the restored volume until explicit test cleanup",
         "exact-owned restore helper, snapshot volume, source/restored Workspace volumes and runtime containers were removed after verification",
       ],
-      boundary:
-        "Local OrbStack Docker and disposable PostgreSQL only; offline restore to a new same-Target Workspace/Sandbox is verified, while retention cleanup policy, Kubernetes/SSH snapshot backends and browser visual QA remain unverified",
+      boundary: snapshotFailoverOnly
+        ? "Two database-authoritative Docker Targets, deleted source volume, closed prior controller endpoint, portable controller archive and disposable PostgreSQL; a separate two-daemon check proves physical source-node loss"
+        : "Local OrbStack Docker and disposable PostgreSQL only; offline restore to a new same-Target Workspace/Sandbox is verified, while retention cleanup policy, Kubernetes/SSH snapshot backends and browser visual QA remain unverified",
     };
     writeFileSync(
       resolve(evidenceDirectory, "evidence.json"),
       JSON.stringify(evidence, null, 2) + "\n",
     );
     process.stdout.write(
-      `Verified offline Docker Workspace Snapshot restore; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
+      `Verified ${snapshotFailoverOnly ? "cross-Target" : "offline Docker"} Workspace Snapshot restore; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
     );
     throw snapshotComplete;
   }
   const rebuildAPIReceipt = lifecycleAPI("rebuild");
-  const rebuildReceipt = lifecycleController("rebuild", "FOUNDATION_LIVE_REBUILD");
+  const rebuildReceipt = lifecycleController(
+    "rebuild",
+    "FOUNDATION_LIVE_REBUILD",
+  );
   assert.equal(rebuildReceipt.generation, rebuildAPIReceipt.generation);
   assert.equal(rebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
   assert.equal(rebuildReceipt.lifecycleTrigger, "manual");
@@ -1712,8 +2097,10 @@ try {
           ...process.env,
           CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
           CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
-          CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY: credentialDirectory,
-          CLOUD_AGENTS_FOUNDATION_EXPECTED_PROOF_DIGEST: prepareReceipt.proofDigest,
+          CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY:
+            credentialDirectory,
+          CLOUD_AGENTS_FOUNDATION_EXPECTED_PROOF_DIGEST:
+            prepareReceipt.proofDigest,
         },
         timeout: 120_000,
       },
@@ -1723,7 +2110,10 @@ try {
   assert.equal(execReceipt.generation, rebuildReceipt.generation);
   assert.equal(execReceipt.exitCode, 7);
   assert.equal(execReceipt.proofDigestVerified, true);
-  assert.ok(execReceipt.executionTimeMillis >= 0 && execReceipt.executionTimeMillis <= 65000);
+  assert.ok(
+    execReceipt.executionTimeMillis >= 0 &&
+      execReceipt.executionTimeMillis <= 65000,
+  );
   assert.equal(execReceipt.adminStatus, 403);
   assert.equal(execReceipt.staleGenerationStatus, 409);
   assert.equal(execReceipt.outputLimitStatus, 413);
@@ -1738,7 +2128,8 @@ try {
           ...process.env,
           CLOUD_AGENTS_FOUNDATION_PROFILE_RUNTIME_DATABASE_URL: runtimeURL,
           CLOUD_AGENTS_FOUNDATION_PROFILE_OWNER_DATABASE_URL: migrationURL,
-          CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY: credentialDirectory,
+          CLOUD_AGENTS_FOUNDATION_ACCESS_CREDENTIAL_DIRECTORY:
+            credentialDirectory,
         },
         timeout: 180_000,
       },
@@ -1788,7 +2179,10 @@ try {
   assert.ok(ptyReceipt.boundedOutputOffset >= 1_100_000);
   assert.ok(ptyReceipt.boundedReplayOffset > 0);
   assert.ok(ptyReceipt.boundedReplayBytes <= 1 << 20);
-  assert.notEqual(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
+  assert.notEqual(
+    docker("ps", "-aq", "--filter", "label=opensandbox.io/id"),
+    "",
+  );
   psql(
     "SET ROLE cloud_agents_migration_owner; UPDATE cloud_agents.sandbox_sessions SET expires_at=clock_timestamp()+interval '2 seconds' WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox';",
     "foundation_migration",
@@ -1806,7 +2200,11 @@ try {
     await delay(500);
   }
   assert.ok(expired, "database TTL did not elapse");
-  const ttlReceipt = lifecycleController("ttl", "FOUNDATION_LIVE_TTL", rebuildReceipt);
+  const ttlReceipt = lifecycleController(
+    "ttl",
+    "FOUNDATION_LIVE_TTL",
+    rebuildReceipt,
+  );
   assert.equal(ttlReceipt.generation, 4);
   assert.equal(ttlReceipt.lifecycleTrigger, "ttl");
   assert.equal(ttlReceipt.workspaceVolume, prepareReceipt.volumeName);
@@ -1816,12 +2214,18 @@ try {
     "FOUNDATION_LIVE_REBUILD_FINAL",
     rebuildReceipt,
   );
-  assert.equal(finalRebuildReceipt.generation, finalRebuildAPIReceipt.generation);
+  assert.equal(
+    finalRebuildReceipt.generation,
+    finalRebuildAPIReceipt.generation,
+  );
   assert.equal(finalRebuildReceipt.workspaceDigest, prepareReceipt.proofDigest);
   const snapshotInfo = JSON.parse(
     docker("volume", "inspect", snapshotControllerReceipt.physicalVolume),
   )[0];
-  assert.equal(snapshotInfo.Labels?.["cloud-agents.dev/resource"], "foundation-workspace-snapshot");
+  assert.equal(
+    snapshotInfo.Labels?.["cloud-agents.dev/resource"],
+    "foundation-workspace-snapshot",
+  );
   assert.equal(snapshotInfo.Labels?.["cloud-agents.dev/snapshot"], "snapshot");
   docker("volume", "rm", snapshotControllerReceipt.physicalVolume);
   assert.equal(docker("ps", "-aq", "--filter", "label=opensandbox.io/id"), "");
@@ -1866,7 +2270,10 @@ try {
     remoteWorker: remoteWorkerReceipt,
     recover: recoverReceipt,
     stop: { api: stopAPIReceipt, controller: stopReceipt },
-    snapshot: { api: snapshotAPIReceipt, controller: snapshotControllerReceipt },
+    snapshot: {
+      api: snapshotAPIReceipt,
+      controller: snapshotControllerReceipt,
+    },
     rebuild: { api: rebuildAPIReceipt, controller: rebuildReceipt },
     exec: execReceipt,
     pty: ptyReceipt,
@@ -1937,10 +2344,16 @@ try {
     `Verified Controller restart/adoption and failure compensation; evidence ${resolve(evidenceDirectory, "evidence.json")}\n`,
   );
 } catch (error) {
-  if (error !== remoteWorkerComplete && error !== snapshotComplete && error !== sshProbeComplete)
+  if (
+    error !== remoteWorkerComplete &&
+    error !== snapshotComplete &&
+    error !== sshProbeComplete
+  )
     throw error;
 } finally {
-  const ownedRuntimeIDs = new Set(prepareReceipt?.runtimeId ? [prepareReceipt.runtimeId] : []);
+  const ownedRuntimeIDs = new Set(
+    prepareReceipt?.runtimeId ? [prepareReceipt.runtimeId] : [],
+  );
   if (postgresStarted) {
     try {
       for (const id of psql(
@@ -1953,17 +2366,27 @@ try {
     } catch {}
   }
   if (sandboxServerStarted) {
-    const logs = spawnSync("docker", ["--context", "orbstack", "logs", sandboxServerName], {
-      encoding: "utf8",
-      timeout: 10_000,
-    });
+    const logs = spawnSync(
+      "docker",
+      ["--context", "orbstack", "logs", sandboxServerName],
+      {
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
     writeFileSync(
       resolve(evidenceDirectory, "opensandbox.log"),
-      `${logs.stdout ?? ""}${logs.stderr ?? ""}`.replaceAll(apiKey, "[REDACTED]"),
+      `${logs.stdout ?? ""}${logs.stderr ?? ""}`.replaceAll(
+        apiKey,
+        "[REDACTED]",
+      ),
       { mode: 0o600 },
     );
     try {
-      const page = await request(sandboxBase, "/v1/sandboxes?page=1&pageSize=100");
+      const page = await request(
+        sandboxBase,
+        "/v1/sandboxes?page=1&pageSize=100",
+      );
       if (page.status === 200) {
         for (const item of JSON.parse(page.text).items ?? []) {
           if (
@@ -1976,7 +2399,12 @@ try {
       }
     } catch {}
   }
-  for (const container of docker("ps", "-aq", "--filter", "label=opensandbox.io/id")
+  for (const container of docker(
+    "ps",
+    "-aq",
+    "--filter",
+    "label=opensandbox.io/id",
+  )
     .split("\n")
     .filter(Boolean)) {
     const runtimeID = docker(
@@ -2024,14 +2452,21 @@ try {
     if (
       info.Labels?.["cloud-agents.dev/tenant"] === "tenant" &&
       info.Labels?.["cloud-agents.dev/project"] === "project" &&
-      ["snapshot", "snapshot-expiring"].includes(info.Labels?.["cloud-agents.dev/snapshot"])
+      ["snapshot", "snapshot-expiring"].includes(
+        info.Labels?.["cloud-agents.dev/snapshot"],
+      )
     ) {
       docker("volume", "rm", volume);
     }
   }
   if (dindStarted && innerDocker !== undefined) {
     try {
-      for (const container of innerDocker("ps", "-aq", "--filter", "label=opensandbox.io/id")
+      for (const container of innerDocker(
+        "ps",
+        "-aq",
+        "--filter",
+        "label=opensandbox.io/id",
+      )
         .split("\n")
         .filter(Boolean)) {
         innerDocker("rm", "-f", container);
@@ -2064,7 +2499,12 @@ try {
   if (postgresStarted) docker("rm", "-f", "-v", postgresName);
   rmSync(build, { recursive: true, force: true });
   assert.equal(
-    docker("ps", "-aq", "--filter", `label=cloud-agents-foundation-controller-test=${run}`),
+    docker(
+      "ps",
+      "-aq",
+      "--filter",
+      `label=cloud-agents-foundation-controller-test=${run}`,
+    ),
     "",
   );
 }

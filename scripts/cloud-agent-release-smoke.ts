@@ -39,6 +39,11 @@ const packageDirectories: ReadonlyArray<readonly [CloudAgentPublicPackageName, s
   ["@cloud-agents/cloud-agent-runtime", "packages/cloud-agent-runtime"],
   ["@cloud-agents/cloud-agent-provider-codex", "packages/cloud-agent-provider-codex"],
   ["@cloud-agents/cloud-agent-provider-claude", "packages/cloud-agent-provider-claude"],
+  ["@cloud-agents/cloud-agent-provider-pi", "packages/cloud-agent-provider-pi"],
+  [
+    "@cloud-agents/cloud-agent-provider-deepseek-harness",
+    "packages/cloud-agent-provider-deepseek-harness",
+  ],
   ["@cloud-agents/cloud-agent-testkit", "packages/cloud-agent-testkit"],
   ["@cloud-agents/cloud-agent-distribution", "packages/cloud-agent-distribution"],
 ];
@@ -243,7 +248,7 @@ function runExternalNode24Smoke(
           'const distribution = await import("@cloud-agents/cloud-agent-distribution");',
           'const schemas = await import("@cloud-agents/cloud-agent-distribution/schemas");',
           "const runtime = distribution.createDefaultCloudAgentRuntime();",
-          'if (JSON.stringify(runtime.providerKinds) !== JSON.stringify(["claudeAgent", "codex"])) throw new Error("ESM registry allowlist mismatch");',
+          'if (JSON.stringify(runtime.providerKinds) !== JSON.stringify(["claudeAgent", "codex", "deepseek-harness", "pi"])) throw new Error("ESM registry allowlist mismatch");',
           'const claude = await runtime.describe("claudeAgent");',
           'if (!claude.runtime.available || !claude.runtime.compatible || claude.runtime.version !== "0.3.207") throw new Error("ESM Claude SDK descriptor mismatch");',
           'if (schemas.CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id !== "https://schemas.cloud-agents.dev/cloud-agent/envelope-v2.schema.json") throw new Error("ESM schema export mismatch");',
@@ -251,7 +256,7 @@ function runExternalNode24Smoke(
         cjsSmoke.push(
           'const distribution = require("@cloud-agents/cloud-agent-distribution");',
           'const schemas = require("@cloud-agents/cloud-agent-distribution/schemas");',
-          'if (JSON.stringify(distribution.createDefaultCloudAgentRuntime().providerKinds) !== JSON.stringify(["claudeAgent", "codex"])) throw new Error("CJS registry allowlist mismatch");',
+          'if (JSON.stringify(distribution.createDefaultCloudAgentRuntime().providerKinds) !== JSON.stringify(["claudeAgent", "codex", "deepseek-harness", "pi"])) throw new Error("CJS registry allowlist mismatch");',
           'if (schemas.CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id !== "https://schemas.cloud-agents.dev/cloud-agent/envelope-v2.schema.json") throw new Error("CJS schema export mismatch");',
         );
       }
@@ -403,7 +408,7 @@ function assertInstalledCloudAgentClosure(
 }
 
 function runDistributionBinSmoke(externalRoot: string): PackedBinConformanceReport {
-  const describes = ["codex", "claudeAgent"].map((provider) =>
+  const describes = ["codex", "claudeAgent", "pi", "deepseek-harness"].map((provider) =>
     JSON.stringify({
       requestId: `release-smoke-describe-${provider}`,
       protocolVersion: { major: 2, minor: 3 },
@@ -462,7 +467,7 @@ function assertDistributionDescribeOutput(output: string, label: string): void {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as JSONRecord);
-  for (const provider of ["codex", "claudeAgent"]) {
+  for (const provider of ["codex", "claudeAgent", "pi", "deepseek-harness"]) {
     const terminal = messages.find(
       (message) =>
         message.commandId === `release-smoke-describe-${provider}` &&
@@ -540,6 +545,8 @@ function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): voi
   const expected = [
     ["codex", "@cloud-agents/cloud-agent-provider-codex"],
     ["claudeAgent", "@cloud-agents/cloud-agent-provider-claude"],
+    ["pi", "@cloud-agents/cloud-agent-provider-pi"],
+    ["deepseek-harness", "@cloud-agents/cloud-agent-provider-deepseek-harness"],
   ] as const;
   if (manifestProviders.length !== expected.length) {
     throw new Error("Distribution manifest Provider allowlist contains an unexpected entry.");

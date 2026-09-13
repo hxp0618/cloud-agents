@@ -20,7 +20,7 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 const toolchainRoot = process.env.CLOUD_AGENTS_A24_TOOLCHAIN;
 const bun = toolchainRoot ? join(toolchainRoot, "bun") : "bun";
 const go = toolchainRoot ? join(toolchainRoot, "go") : "go";
-const packageVersion = "0.0.0-a3.2";
+const packageVersion = process.env.CLOUD_AGENTS_SDK_PACKAGE_VERSION ?? "0.0.0-a3.2";
 const version = `v${packageVersion}`;
 const modulePath = "github.com/hxp0618/cloud-agents/sdk/go";
 const sdkPackage = "@cloud-agents/cloud-agent-platform-sdk";
@@ -84,6 +84,19 @@ type FixtureServer = Readonly<{
   stop: () => Promise<void>;
 }>;
 
+type LiveConfig = Readonly<{
+  endpoint: string;
+  caFile?: string;
+  token: string;
+  tenantId: string;
+  projectId: string;
+  workspaceId: string;
+  sandboxId: string;
+  sandboxGeneration: number;
+  environmentProfileId: string;
+  environmentProfileVersion: number;
+}>;
+
 async function main(): Promise<void> {
   const temporaryBase = resolve(repositoryRoot, ".tmp");
   mkdirSync(temporaryBase, { recursive: true });
@@ -94,14 +107,27 @@ async function main(): Promise<void> {
     const npmRegistry = prepareNpmRegistry(temporaryRoot);
     const goProxy = buildGoModuleProxy(temporaryRoot);
     fixtureServer = await startArtifactServer(temporaryRoot);
-    runFreshTypeScriptConsumer(
+    const typescriptConsumer = runFreshTypeScriptConsumer(
       temporaryRoot,
       typescriptArtifact,
       npmRegistry,
       fixtureServer.baseUrl,
       fixtureServer.requestLogPath,
     );
-    runFreshGoConsumer(temporaryRoot, goProxy, fixtureServer.baseUrl, fixtureServer.requestLogPath);
+    const goConsumer = runFreshGoConsumer(
+      temporaryRoot,
+      goProxy,
+      fixtureServer.baseUrl,
+      fixtureServer.requestLogPath,
+    );
+    const live = readLiveConfig();
+    if (live !== undefined) {
+      runLiveTypeScriptConsumer(
+        typescriptConsumer,
+        live,
+      );
+      runLiveGoConsumer(goConsumer, live, fixtureServer.baseUrl);
+    }
     process.stdout.write("platform-sdk-consumers: fresh TypeScript and Go consumers passed\n");
     process.stdout.write(
       `platform-sdk-consumers: typescriptArtifactSha256=${typescriptArtifact.sha256}\n`,
@@ -141,12 +167,17 @@ void main().catch((error: unknown) => {
 });
 
 function packTypeScriptSDK(root: string): Artifact {
-  run(bun, ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
   const output = join(root, "typescript-pack");
   mkdirSync(output, { recursive: true });
   const filename = `cloud-agents-cloud-agent-platform-sdk-${packageVersion}.tgz`;
   const path = join(output, filename);
-  writeFileSync(path, buildPlatformTypeScriptSDKPackage(repositoryRoot, packageVersion));
+  const configured = process.env.CLOUD_AGENTS_SDK_TYPESCRIPT_ARTIFACT;
+  if (configured === undefined) {
+    run(bun, ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
+    writeFileSync(path, buildPlatformTypeScriptSDKPackage(repositoryRoot, packageVersion));
+  } else {
+    cpSync(resolve(configured), path);
+  }
   return artifact(path);
 }
 
@@ -171,7 +202,7 @@ function prepareNpmRegistry(root: string): NpmRegistry {
       ),
     ) as Array<Record<string, unknown>>;
     const filename = packed[0]?.filename;
-    if (filename !== expectedFilename)
+    if (typeof filename !== "string" || filename !== expectedFilename)
       throw new Error(`Offline npm dependency filename drifted: ${name}`);
     const packedArtifact = artifact(join(output, filename));
     artifacts[name] = {
@@ -224,7 +255,7 @@ function runFreshTypeScriptConsumer(
   npmRegistry: NpmRegistry,
   baseUrl: string,
   requestLogPath: string,
-): void {
+): string {
   const consumer = join(root, "typescript-consumer");
   mkdirSync(consumer, { recursive: true });
   const filename = sdk.path.split("/").pop();
@@ -426,6 +457,7 @@ try {
     assertRequestLogged(requestLogPath, npmTarballPath(root, dependency));
   run(bun, ["run", "check"], consumer);
   run(bun, ["run", "main.ts"], consumer);
+  return consumer;
 }
 
 function buildGoModuleProxy(root: string): ModuleProxy {
@@ -433,7 +465,13 @@ function buildGoModuleProxy(root: string): ModuleProxy {
   const proxy = join(root, "go-proxy");
   const moduleRoot = join(staging, `${modulePath}@${version}`);
   mkdirSync(staging, { recursive: true });
-  cpSync(resolve(repositoryRoot, "sdk/go"), moduleRoot, { recursive: true });
+  mkdirSync(moduleRoot, { recursive: true });
+  const configured = process.env.CLOUD_AGENTS_SDK_GO_ARTIFACT;
+  if (configured === undefined) {
+    cpSync(resolve(repositoryRoot, "sdk/go"), moduleRoot, { recursive: true });
+  } else {
+    run("tar", ["-xf", resolve(configured), "-C", moduleRoot], repositoryRoot);
+  }
   normalizeArchiveTimestamps(moduleRoot);
   const moduleVersionRoot = join(proxy, modulePath, "@v");
   mkdirSync(moduleVersionRoot, { recursive: true });
@@ -449,6 +487,279 @@ function buildGoModuleProxy(root: string): ModuleProxy {
     zip: artifact(zipPath),
     goModSha256: sha256File(modPath),
   };
+}
+
+function readLiveConfig(): LiveConfig | undefined {
+  const endpoint = process.env.CLOUD_AGENTS_SDK_LIVE_ENDPOINT;
+  if (endpoint === undefined) return undefined;
+  const tokenFile = process.env.CLOUD_AGENTS_SDK_LIVE_TOKEN_FILE;
+  const tenantId = process.env.CLOUD_AGENTS_SDK_LIVE_TENANT;
+  const projectId = process.env.CLOUD_AGENTS_SDK_LIVE_PROJECT;
+  const workspaceId = process.env.CLOUD_AGENTS_SDK_LIVE_WORKSPACE;
+  const sandboxId = process.env.CLOUD_AGENTS_SDK_LIVE_SANDBOX;
+  const sandboxGeneration = Number(process.env.CLOUD_AGENTS_SDK_LIVE_SANDBOX_GENERATION);
+  const environmentProfileId = process.env.CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE;
+  const environmentProfileVersion = Number(
+    process.env.CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE_VERSION ?? "1",
+  );
+  if (
+    tokenFile === undefined ||
+    tenantId === undefined ||
+    projectId === undefined ||
+    workspaceId === undefined ||
+    sandboxId === undefined ||
+    environmentProfileId === undefined ||
+    !Number.isSafeInteger(sandboxGeneration) ||
+    sandboxGeneration < 1 ||
+    !Number.isSafeInteger(environmentProfileVersion) ||
+    environmentProfileVersion < 1
+  )
+    throw new Error("live SDK mode requires endpoint, token, tenant/project and Sandbox binding");
+  const token = readFileSync(resolve(tokenFile), "utf8").trim();
+  if (token === "" || token.includes("\n") || token.includes("\r"))
+    throw new Error("live SDK token file is empty or malformed");
+  const caFile = process.env.CLOUD_AGENTS_SDK_LIVE_CA_FILE;
+  return Object.freeze({
+    endpoint,
+    ...(caFile === undefined ? {} : { caFile: resolve(caFile) }),
+    token,
+    tenantId,
+    projectId,
+    workspaceId,
+    sandboxId,
+    sandboxGeneration,
+    environmentProfileId,
+    environmentProfileVersion,
+  });
+}
+
+function runLiveTypeScriptConsumer(consumer: string, live: LiveConfig): void {
+  writeFileSync(
+    join(consumer, "main-live.ts"),
+    `import { createHTTPClient } from "${sdkPackage}/platform";
+
+const endpoint = process.env.CLOUD_AGENTS_SDK_LIVE_ENDPOINT!;
+const token = process.env.CLOUD_AGENTS_SDK_LIVE_TOKEN!;
+const tenantId = process.env.CLOUD_AGENTS_SDK_LIVE_TENANT!;
+const projectId = process.env.CLOUD_AGENTS_SDK_LIVE_PROJECT!;
+const workspaceId = process.env.CLOUD_AGENTS_SDK_LIVE_WORKSPACE!;
+const sandboxId = process.env.CLOUD_AGENTS_SDK_LIVE_SANDBOX!;
+const sandboxGeneration = Number(process.env.CLOUD_AGENTS_SDK_LIVE_SANDBOX_GENERATION);
+const environmentProfileId = process.env.CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE!;
+const environmentProfileVersion = Number(process.env.CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE_VERSION);
+const client = createHTTPClient(endpoint, token);
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const ids = (name: string) => \`sdk-ts-\${name}-\${Date.now()}\`;
+
+async function waitForMessage(sessionId: string, turnId: string, executionId: string, type: string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    let execution: Awaited<ReturnType<typeof client.getManagedAgentExecution>>;
+    try {
+      execution = await client.getManagedAgentExecution(tenantId, projectId, sessionId, turnId, executionId, \`\${executionId}-poll-\${attempt}\`);
+    } catch (error) {
+      if (typeof error !== "object" || error === null || (error as { status?: unknown }).status !== 404) throw error;
+      await sleep(500);
+      continue;
+    }
+    const message = (execution.value.messages ?? []).find((candidate) => {
+      const payload = candidate.payload;
+      return candidate.messageType === "InteractionRequest" && typeof payload === "object" && payload !== null && (payload as { interactionType?: unknown }).interactionType === type;
+    });
+    if (message !== undefined) return { execution: execution.value, message };
+    if (execution.value.spec.state !== "queued" && execution.value.spec.state !== "running") throw new Error(\`execution ended before \${type}: \${execution.value.spec.state}\`);
+    await sleep(500);
+  }
+  throw new Error(\`timed out waiting for \${type}\`);
+}
+
+async function waitForRunning(sessionId: string, turnId: string, executionId: string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    let execution: Awaited<ReturnType<typeof client.getManagedAgentExecution>>;
+    try {
+      execution = await client.getManagedAgentExecution(tenantId, projectId, sessionId, turnId, executionId, \`\${executionId}-running-\${attempt}\`);
+    } catch (error) {
+      if (typeof error !== "object" || error === null || (error as { status?: unknown }).status !== 404) throw error;
+      await sleep(500);
+      continue;
+    }
+    if (execution.value.spec.state === "running") return execution.value.spec.generation;
+    if (execution.value.spec.state !== "queued") throw new Error(\`execution ended before cancel: \${execution.value.spec.state}\`);
+    await sleep(500);
+  }
+  throw new Error("timed out waiting for a running execution");
+}
+
+async function main() {
+  const sessionId = ids("session");
+  const turnId = ids("turn");
+  const executionId = ids("execution");
+  const artifactSessionId = ids("artifact-session");
+  const artifactTurnId = ids("artifact-turn");
+  const artifactExecutionId = ids("artifact-execution");
+  const cancelSessionId = ids("cancel-session");
+  const cancelTurnId = ids("cancel-turn");
+  const cancelExecutionId = ids("cancel-execution");
+  try {
+    await client.createManagedAgentSession(tenantId, projectId, \`\${sessionId}-create\`, \`\${sessionId}-idempotency\`, { sessionId, providerKind: "codex", workspaceId, sandboxId, sandboxGeneration, environmentProfileId, environmentProfileVersion });
+    const prompt = "Reply with exactly SDK TypeScript live ok.";
+    await client.createManagedAgentTurn(tenantId, projectId, sessionId, \`\${turnId}-create\`, \`\${turnId}-idempotency\`, { turnId, inputText: prompt });
+    const replayedTurn = await client.createManagedAgentTurn(tenantId, projectId, sessionId, \`\${turnId}-replay\`, \`\${turnId}-idempotency\`, { turnId, inputText: prompt });
+    if (replayedTurn.value.metadata.uid !== turnId) throw new Error("TypeScript SDK idempotent turn retry changed the Turn");
+    const execution = await client.executeManagedAgent(tenantId, projectId, sessionId, \`\${executionId}-run\`, \`\${executionId}-idempotency\`, { turnId, executionId, runtimeMode: "full-access", interactionMode: "default", inputText: prompt });
+    if (execution.value.spec.state !== "succeeded" || !(execution.value.messages ?? []).some((message) => message.messageType === "Result")) throw new Error(\`TypeScript SDK execution did not succeed: \${execution.value.spec.state}\`);
+    const firstEvents = await client.listManagedAgentEvents(tenantId, projectId, sessionId, \`\${sessionId}-events-1\`, undefined, 1);
+    if (firstEvents.value.events.length !== 1) throw new Error("TypeScript SDK event page did not return one persisted event");
+    const resumedEvents = await client.listManagedAgentEvents(tenantId, projectId, sessionId, \`\${sessionId}-events-2\`, firstEvents.value.nextCursor, 64);
+    const firstUIDs = new Set(firstEvents.value.events.map((event) => event.metadata.uid));
+    if (resumedEvents.value.events.some((event) => firstUIDs.has(event.metadata.uid))) throw new Error("TypeScript SDK event resume duplicated an event");
+
+    const artifactPath = \`.cloud-agents-acceptance/\${artifactExecutionId}.txt\`;
+    await client.createManagedAgentSession(tenantId, projectId, \`\${artifactSessionId}-create\`, \`\${artifactSessionId}-idempotency\`, { sessionId: artifactSessionId, providerKind: "claudeAgent", workspaceId, sandboxId, sandboxGeneration, environmentProfileId, environmentProfileVersion });
+    const artifactPrompt = \`Use the Write tool to create exactly one file at \${artifactPath} containing the single line 'sdk typescript artifact' followed by a newline. Wait for approval when requested, then reply done.\`;
+    await client.createManagedAgentTurn(tenantId, projectId, artifactSessionId, \`\${artifactTurnId}-create\`, \`\${artifactTurnId}-idempotency\`, { turnId: artifactTurnId, inputText: artifactPrompt });
+    const artifactExecutionPromise = client.executeManagedAgent(tenantId, projectId, artifactSessionId, \`\${artifactExecutionId}-run\`, \`\${artifactExecutionId}-idempotency\`, { turnId: artifactTurnId, executionId: artifactExecutionId, runtimeMode: "approval-required", interactionMode: "default", inputText: artifactPrompt }).then((value) => ({ value }), (error: unknown) => ({ error }));
+    const interaction = await waitForMessage(artifactSessionId, artifactTurnId, artifactExecutionId, "approval");
+    const payload = interaction.message.payload as { requestId?: unknown };
+    if (typeof payload.requestId !== "string") throw new Error("TypeScript SDK approval request is missing requestId");
+    await client.resolveManagedAgentApproval(tenantId, projectId, artifactSessionId, artifactTurnId, artifactExecutionId, \`\${artifactExecutionId}-resolve\`, { generation: interaction.execution.spec.generation, requestId: payload.requestId, decision: "accept" });
+    const artifactOutcome = await artifactExecutionPromise;
+    if ("error" in artifactOutcome) throw artifactOutcome.error;
+    const artifactExecution = artifactOutcome.value;
+    const artifactIndex = (artifactExecution.value.messages ?? []).findIndex((message) => {
+      const candidate = message.payload;
+      const artifact = typeof candidate === "object" && candidate !== null ? (candidate as { artifact?: Record<string, unknown> }).artifact : undefined;
+      return message.messageType === "ArtifactCandidate" && artifact?.sourceRoot === "workspace" && artifact.path === artifactPath;
+    });
+    if (artifactIndex < 0) throw new Error("TypeScript SDK approval execution did not produce an ArtifactCandidate");
+    const artifact = await client.downloadManagedAgentArtifact(tenantId, projectId, artifactSessionId, artifactTurnId, artifactExecutionId, \`\${artifactExecutionId}-artifact\`, artifactIndex);
+    if (new TextDecoder().decode(artifact.data) !== "sdk typescript artifact\\n") throw new Error("TypeScript SDK artifact bytes changed");
+
+    await client.createManagedAgentSession(tenantId, projectId, \`\${cancelSessionId}-create\`, \`\${cancelSessionId}-idempotency\`, { sessionId: cancelSessionId, providerKind: "codex", workspaceId, sandboxId, sandboxGeneration, environmentProfileId, environmentProfileVersion });
+    const cancelPrompt = "Use the shell tool now to run exactly: sleep 120. Do not finish until it completes.";
+    await client.createManagedAgentTurn(tenantId, projectId, cancelSessionId, \`\${cancelTurnId}-create\`, \`\${cancelTurnId}-idempotency\`, { turnId: cancelTurnId, inputText: cancelPrompt });
+    const cancelPromise = client.executeManagedAgent(tenantId, projectId, cancelSessionId, \`\${cancelExecutionId}-run\`, \`\${cancelExecutionId}-idempotency\`, { turnId: cancelTurnId, executionId: cancelExecutionId, runtimeMode: "full-access", interactionMode: "default", inputText: cancelPrompt }).then((value) => ({ value }), (error: unknown) => ({ error }));
+    const generation = await waitForRunning(cancelSessionId, cancelTurnId, cancelExecutionId);
+    const cancelled = await client.cancelManagedAgentExecution(tenantId, projectId, cancelSessionId, cancelTurnId, cancelExecutionId, \`\${cancelExecutionId}-cancel\`, \`\${cancelExecutionId}-cancel-idempotency\`, { generation });
+    const cancelOutcome = await cancelPromise;
+    const executeCancelled = "error" in cancelOutcome
+      ? typeof cancelOutcome.error === "object" && cancelOutcome.error !== null
+        && (cancelOutcome.error as { status?: unknown }).status === 499
+        && (cancelOutcome.error as { problem?: { error?: { code?: unknown } } }).problem?.error?.code === "CANCELLED"
+      : cancelOutcome.value.value.spec.state === "cancelled";
+    if (cancelled.value.spec.state !== "cancelled" || cancelled.value.spec.errorCode !== "cancelled" || !executeCancelled) throw new Error("TypeScript SDK cancellation did not produce a cancelled execution");
+    console.log("live-typescript-consumer-ok session-turn-events-resume-approval-artifact-cancel");
+  } finally {
+    for (const [activeSessionId, name] of [[sessionId, "session"], [artifactSessionId, "artifact"], [cancelSessionId, "cancel"]] as const) {
+      await client.closeManagedAgentSession(tenantId, projectId, activeSessionId, \`\${activeSessionId}-close-\${name}\`, \`\${activeSessionId}-close-idempotency\`).catch(() => undefined);
+    }
+  }
+}
+
+await main();
+`,
+  );
+  const tsconfig = join(consumer, "tsconfig.live.json");
+  writeFileSync(
+    tsconfig,
+    `${JSON.stringify({ compilerOptions: { strict: true, target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", outDir: "live-dist", rootDir: ".", skipLibCheck: false }, include: ["main-live.ts"] }, null, 2)}\n`,
+  );
+  run(join(consumer, "node_modules/.bin/tsc"), ["--project", tsconfig], consumer);
+  process.stdout.write(run("node", [join(consumer, "live-dist/main-live.js")], consumer, undefined, {
+    CLOUD_AGENTS_SDK_LIVE_ENDPOINT: live.endpoint,
+    CLOUD_AGENTS_SDK_LIVE_TOKEN: live.token,
+    CLOUD_AGENTS_SDK_LIVE_TENANT: live.tenantId,
+    CLOUD_AGENTS_SDK_LIVE_PROJECT: live.projectId,
+    CLOUD_AGENTS_SDK_LIVE_WORKSPACE: live.workspaceId,
+    CLOUD_AGENTS_SDK_LIVE_SANDBOX: live.sandboxId,
+    CLOUD_AGENTS_SDK_LIVE_SANDBOX_GENERATION: String(live.sandboxGeneration),
+    CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE: live.environmentProfileId,
+    CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE_VERSION: String(live.environmentProfileVersion),
+    ...(live.caFile === undefined ? {} : { NODE_EXTRA_CA_CERTS: live.caFile }),
+  }));
+}
+
+function runLiveGoConsumer(consumer: string, live: LiveConfig, artifactBaseUrl: string): void {
+  writeFileSync(
+    join(consumer, "main.go"),
+    `package main
+
+import (
+  "context"
+  "crypto/tls"
+  "crypto/x509"
+  "fmt"
+  "net/http"
+  "os"
+  "strconv"
+  "time"
+
+  platformv1alpha1 "${modulePath}/gen/openapi/v1alpha1"
+)
+
+func main() {
+  ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+  defer cancel()
+  endpoint := os.Getenv("CLOUD_AGENTS_SDK_LIVE_ENDPOINT")
+  token := os.Getenv("CLOUD_AGENTS_SDK_LIVE_TOKEN")
+  tenantID := os.Getenv("CLOUD_AGENTS_SDK_LIVE_TENANT")
+  projectID := os.Getenv("CLOUD_AGENTS_SDK_LIVE_PROJECT")
+  workspaceID := os.Getenv("CLOUD_AGENTS_SDK_LIVE_WORKSPACE")
+  sandboxID := os.Getenv("CLOUD_AGENTS_SDK_LIVE_SANDBOX")
+  sandboxGeneration, err := strconv.ParseInt(os.Getenv("CLOUD_AGENTS_SDK_LIVE_SANDBOX_GENERATION"), 10, 64); if err != nil { panic(err) }
+  environmentProfileVersion, err := strconv.ParseInt(os.Getenv("CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE_VERSION"), 10, 64); if err != nil { panic(err) }
+  var httpClient *http.Client
+  if caFile := os.Getenv("CLOUD_AGENTS_SDK_LIVE_CA_FILE"); caFile != "" {
+    caBytes, err := os.ReadFile(caFile); if err != nil { panic(err) }
+    roots := x509.NewCertPool(); if !roots.AppendCertsFromPEM(caBytes) { panic("invalid SDK CA") }
+    httpClient = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}}
+  } else { httpClient = http.DefaultClient }
+  client, err := platformv1alpha1.NewHTTPClientWithClient(endpoint, token, httpClient); if err != nil { panic(err) }
+  suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+  sessionID, turnID, executionID := "sdk-go-session-"+suffix, "sdk-go-turn-"+suffix, "sdk-go-execution-"+suffix
+  defer func() { _, _ = client.CloseManagedAgentSession(context.Background(), tenantID, projectID, sessionID, sessionID+"-close", sessionID+"-close-idempotency") }()
+  _, err = client.CreateManagedAgentSession(ctx, tenantID, projectID, sessionID+"-create", sessionID+"-idempotency", platformv1alpha1.ManagedAgentSessionCreateRequest{SessionID: sessionID, ProviderKind: "claudeAgent", WorkspaceID: workspaceID, SandboxID: sandboxID, SandboxGeneration: sandboxGeneration, EnvironmentProfileID: os.Getenv("CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE"), EnvironmentProfileVersion: environmentProfileVersion}); if err != nil { panic(err) }
+  prompt := "Reply with exactly SDK Go live ok."
+  _, err = client.CreateManagedAgentTurn(ctx, tenantID, projectID, sessionID, turnID+"-create", turnID+"-idempotency", platformv1alpha1.ManagedAgentTurnCreateRequest{TurnID: turnID, InputText: prompt}); if err != nil { panic(err) }
+  replay, err := client.CreateManagedAgentTurn(ctx, tenantID, projectID, sessionID, turnID+"-replay", turnID+"-idempotency", platformv1alpha1.ManagedAgentTurnCreateRequest{TurnID: turnID, InputText: prompt}); if err != nil || replay.Value.Metadata.UID != turnID { panic("Go SDK idempotent Turn retry changed the Turn") }
+  executionCh := make(chan struct { state string; err error }, 1)
+  go func() { value, err := client.ExecuteManagedAgent(ctx, tenantID, projectID, sessionID, executionID+"-run", executionID+"-idempotency", platformv1alpha1.ManagedAgentExecutionCreateRequest{TurnID: turnID, ExecutionID: executionID, RuntimeMode: "full-access", InteractionMode: "default", InputText: prompt}); executionCh <- struct { state string; err error }{value.Value.Spec.State, err} }()
+  var generation uint64
+  for attempt := 0; attempt < 120; attempt++ { current, err := client.GetManagedAgentExecution(ctx, tenantID, projectID, sessionID, turnID, executionID, executionID+"-poll"); if err == nil && current.Value.Spec.State == "running" { generation = current.Value.Spec.Generation; break }; if err == nil && current.Value.Spec.State != "queued" { panic("Go SDK execution ended before cancel: "+current.Value.Spec.State) }; time.Sleep(500*time.Millisecond) }
+  if generation == 0 { panic("Go SDK execution did not become running") }
+  cancelled, err := client.CancelManagedAgentExecution(ctx, tenantID, projectID, sessionID, turnID, executionID, executionID+"-cancel", executionID+"-cancel-idempotency", platformv1alpha1.ManagedAgentExecutionCancelRequest{Generation: generation}); if err != nil { panic(err) }
+  completed := <-executionCh
+  executeCancelled := completed.state == "cancelled"
+  if completed.err != nil {
+    clientErr, ok := completed.err.(*platformv1alpha1.ClientError)
+    if !ok || clientErr.Status != 499 || clientErr.Problem == nil || clientErr.Problem.Error.Code != "CANCELLED" { panic(completed.err) }
+    executeCancelled = true
+  }
+  if cancelled.Value.Spec.State != "cancelled" || cancelled.Value.Spec.ErrorCode != "cancelled" || !executeCancelled { panic("Go SDK cancellation did not produce a cancelled execution") }
+  events, err := client.ListManagedAgentEvents(ctx, tenantID, projectID, sessionID, sessionID+"-events", "", 1); if err != nil || len(events.Value.Events) != 1 { panic("Go SDK did not list one persisted event") }
+  resumed, err := client.ListManagedAgentEvents(ctx, tenantID, projectID, sessionID, sessionID+"-events-resume", events.Value.NextCursor, 64); if err != nil { panic(err) }; if len(resumed.Value.Events) > 0 && resumed.Value.Events[0].Metadata.UID == events.Value.Events[0].Metadata.UID { panic("Go SDK event resume duplicated an event") }
+  fmt.Println("live-go-consumer-ok session-turn-events-resume-cancel")
+}
+`,
+  );
+  process.stdout.write(run(go, ["run", "."], consumer, undefined, {
+    CLOUD_AGENTS_SDK_LIVE_ENDPOINT: live.endpoint,
+    CLOUD_AGENTS_SDK_LIVE_TOKEN: live.token,
+    CLOUD_AGENTS_SDK_LIVE_TENANT: live.tenantId,
+    CLOUD_AGENTS_SDK_LIVE_PROJECT: live.projectId,
+    CLOUD_AGENTS_SDK_LIVE_WORKSPACE: live.workspaceId,
+    CLOUD_AGENTS_SDK_LIVE_SANDBOX: live.sandboxId,
+    CLOUD_AGENTS_SDK_LIVE_SANDBOX_GENERATION: String(live.sandboxGeneration),
+    CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE: live.environmentProfileId,
+    CLOUD_AGENTS_SDK_LIVE_ENVIRONMENT_PROFILE_VERSION: String(live.environmentProfileVersion),
+    CLOUD_AGENTS_SDK_LIVE_CA_FILE: live.caFile ?? "",
+    GOPROXY: `${artifactBaseUrl}/go-proxy,https://proxy.golang.org`,
+    GOSUMDB: "sum.golang.org",
+    GONOSUMDB: modulePath,
+    GOMODCACHE: join(resolve(consumer, ".."), "go-mod-cache"),
+    GOWORK: "off",
+    GOTOOLCHAIN: "local",
+    GOFLAGS: "-mod=readonly",
+  }));
 }
 
 function normalizeArchiveTimestamps(path: string): void {
@@ -467,7 +778,7 @@ function runFreshGoConsumer(
   module: ModuleProxy,
   baseUrl: string,
   requestLogPath: string,
-): void {
+): string {
   const consumer = join(root, "go-consumer");
   mkdirSync(consumer, { recursive: true });
   run(go, ["mod", "init", "example.com/fresh-cloud-agents-sdk-consumer"], consumer);
@@ -608,6 +919,7 @@ func main() {
   ) {
     throw new Error("Fresh Go consumer go.sum did not bind the exact module and go.mod checksums.");
   }
+  return consumer;
 }
 
 function startArtifactServer(root: string): Promise<FixtureServer> {

@@ -25,6 +25,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gorilla/websocket"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/networkpolicy"
 )
 
@@ -781,6 +782,30 @@ func (c *Client) PTYWebSocketTarget(ctx context.Context, input PTYInput, session
 	}
 	execdPath(target, "/pty/"+sessionID+"/ws")
 	return target, headers, nil
+}
+
+// AwaitPTYConnected consumes the required first control frame before callers
+// send stdin. Execd may reject input written before this attachment barrier.
+func AwaitPTYConnected(ctx context.Context, connection *websocket.Conn) error {
+	if ctx == nil || connection == nil {
+		return ErrInvalid
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	if err := connection.SetReadDeadline(deadline); err != nil {
+		return ErrUnavailable
+	}
+	messageType, payload, err := connection.ReadMessage()
+	_ = connection.SetReadDeadline(time.Time{})
+	var control struct {
+		Type string `json:"type"`
+	}
+	if err != nil || messageType != websocket.TextMessage || json.Unmarshal(payload, &control) != nil || control.Type != "connected" {
+		return ErrUnavailable
+	}
+	return nil
 }
 
 type candidateFileInfo struct {

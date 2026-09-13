@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 // Real product migration runner against one owned, network-disabled PostgreSQL.
 const root = resolve(import.meta.dirname, "..");
@@ -288,6 +288,191 @@ INSERT INTO cloud_agents.deployment_targets (
     "foundation_migration",
     "foundation_fresh",
   );
+  const runtimeResult = (query) =>
+    psql(
+      `BEGIN; SET LOCAL ROLE cloud_agents_runtime; SET LOCAL cloud_agents.tenant_id='tenant'; ${query}; COMMIT;`,
+      "foundation_runtime",
+      "foundation_fresh",
+    )
+      .split("\n")
+      .filter((line) => !new Set(["BEGIN", "SET", "COMMIT"]).has(line))
+      .at(-1);
+  const digest = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
+  const progress = JSON.stringify({
+    requestId: "runtime-request",
+    protocolVersion: { major: 2, minor: 3 },
+    executionId: "execution-recovery",
+    generation: 7,
+    commandId: "turn-command",
+    occurredAt: "2026-09-10T00:00:00Z",
+    messageType: "Progress",
+    payload: { text: "checkpointed" },
+  });
+  const terminal = JSON.stringify({
+    requestId: "runtime-request",
+    protocolVersion: { major: 2, minor: 3 },
+    executionId: "execution-recovery",
+    generation: 7,
+    commandId: "turn-command",
+    occurredAt: "2026-09-10T00:00:01Z",
+    messageType: "Result",
+    payload: { text: "recovered" },
+  });
+  const checkpointMessages = `[${progress}]`;
+  const settledMessages = `[${progress},${terminal}]`;
+  const sideEffectProgress = JSON.stringify({
+    ...JSON.parse(progress),
+    executionId: "execution-side-effect",
+    messageType: "Event",
+    payload: { eventType: "item.started", payload: { data: { providerItemId: "tool-1" } } },
+  });
+  const sideEffectMessages = `[${sideEffectProgress}]`;
+  const sideEffectCheckpointDigest = digest(sideEffectMessages);
+  const reconciliationDigest = digest(
+    JSON.stringify({ checkpointDigest: sideEffectCheckpointDigest, outcome: "confirmed" }),
+  );
+  const d = "sha256:" + "1".repeat(64);
+  psql(
+    `SET ROLE cloud_agents_migration_owner;
+INSERT INTO cloud_agents.managed_agent_sessions (
+  tenant_id,tenant_ref_id,project_uid,session_uid,provider_kind,state,resource_version,
+  create_idempotency_key,create_request_digest,created_at,updated_at
+) VALUES ('tenant','tenant','project','session-recovery','codex','active',1,
+  'session-recovery-key','${d}',clock_timestamp(),clock_timestamp());
+INSERT INTO cloud_agents.managed_agent_turns (
+  tenant_id,tenant_ref_id,project_uid,session_uid,turn_uid,input_digest,state,resource_version,
+  create_idempotency_key,create_request_digest,created_at,updated_at
+) VALUES ('tenant','tenant','project','session-recovery','turn-recovery','${d}','queued',1,
+  'turn-recovery-key-1','${d}',clock_timestamp(),clock_timestamp()),
+  ('tenant','tenant','project','session-recovery','turn-side-effect','${d}','queued',1,
+  'turn-recovery-key-2','${d}',clock_timestamp(),clock_timestamp());
+INSERT INTO cloud_agents.managed_agent_executions (
+  tenant_id,tenant_ref_id,project_uid,session_uid,turn_uid,execution_uid,generation,state,
+  resource_version,create_idempotency_key,create_request_digest,created_at,updated_at
+) VALUES ('tenant','tenant','project','session-recovery','turn-recovery','execution-recovery',7,
+  'queued',1,'execution-recovery-key','${d}',clock_timestamp(),clock_timestamp()),
+  ('tenant','tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+  'queued',1,'execution-side-effect-key','${d}',clock_timestamp(),clock_timestamp());
+UPDATE cloud_agents.managed_agent_turns SET execution_uid='execution-recovery'
+WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-recovery'
+  AND turn_uid='turn-recovery';
+UPDATE cloud_agents.managed_agent_turns SET execution_uid='execution-side-effect'
+WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-recovery'
+  AND turn_uid='turn-side-effect';`,
+    "foundation_migration",
+    "foundation_fresh",
+  );
+  assert.equal(
+    runtimeResult(`SELECT acquired || '|' || attempt_number FROM cloud_agents.claim_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-recovery','execution-recovery',7,
+      'control-plane-a','incarnation-a','claim-a',1)`),
+    "true|1",
+  );
+  runtimeResult(`SELECT execution_state FROM cloud_agents.start_claimed_managed_agent_execution_v1(
+    'tenant','project','session-recovery','turn-recovery','execution-recovery',7,
+    'execution-start-key','${d}',1,'control-plane-a','incarnation-a','claim-a')`);
+  assert.equal(
+    runtimeResult(`SELECT checkpoint_sequence FROM cloud_agents.checkpoint_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-recovery','execution-recovery',7,1,
+      'control-plane-a','incarnation-a','claim-a',1,'${checkpointMessages}',
+      '${digest(checkpointMessages)}','runtime-message-checkpoint-v1',NULL,false,0)`),
+    "1",
+  );
+  assert.equal(
+    runtimeResult(`SELECT acquired || '|' || attempt_number FROM cloud_agents.claim_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'control-plane-a','incarnation-a','claim-side-effect-a',1)`),
+    "true|1",
+  );
+  runtimeResult(`SELECT execution_state FROM cloud_agents.start_claimed_managed_agent_execution_v1(
+    'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+    'execution-side-effect-start','${d}',1,'control-plane-a','incarnation-a','claim-side-effect-a')`);
+  runtimeResult(`SELECT checkpoint_sequence FROM cloud_agents.checkpoint_managed_agent_execution_v1(
+    'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,1,
+    'control-plane-a','incarnation-a','claim-side-effect-a',1,'${sideEffectMessages}',
+    '${sideEffectCheckpointDigest}','runtime-message-checkpoint-v1',NULL,true,0)`);
+  assert.throws(
+    () => runtimeResult(`SELECT cloud_agents.reconcile_managed_agent_execution_side_effect_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      '${sideEffectCheckpointDigest}','confirmed','${reconciliationDigest}')`),
+    /not awaiting reconciliation/,
+  );
+  await delay(1100);
+  assert.equal(
+    runtimeResult(`SELECT acquired || '|' || attempt_number || '|' || recovery_state FROM cloud_agents.claim_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-recovery','execution-recovery',7,
+      'control-plane-b','incarnation-b','claim-b',30)`),
+    "true|2|recovering",
+  );
+  assert.equal(
+    runtimeResult(`SELECT recovery_mode FROM cloud_agents.managed_agent_executions
+      WHERE project_uid='project' AND execution_uid='execution-recovery'`),
+    "process-restart",
+  );
+  assert.equal(
+    runtimeResult(`SELECT acquired || '|' || attempt_number || '|' || recovery_state || '|' || recovery_reason
+      FROM cloud_agents.claim_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'control-plane-b','incarnation-b','claim-side-effect-b',30)`),
+    "false|1|awaiting_reconciliation|side_effect_outcome_unknown",
+  );
+  runtimeResult(`SELECT cloud_agents.reconcile_managed_agent_execution_side_effect_v1(
+    'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+    '${sideEffectCheckpointDigest}','confirmed','${reconciliationDigest}')`);
+  assert.equal(
+    runtimeResult(`SELECT pending_side_effect || '|' || recovery_state || '|' || side_effect_reconciliation_outcome
+      FROM cloud_agents.managed_agent_executions WHERE project_uid='project'
+      AND execution_uid='execution-side-effect'`),
+    "false|none|confirmed",
+  );
+  assert.throws(
+    () => runtimeResult(`SELECT cloud_agents.reconcile_managed_agent_execution_side_effect_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      '${sideEffectCheckpointDigest}','not-applied','${reconciliationDigest}')`),
+    /reconciliation conflicts/,
+  );
+  assert.equal(
+    runtimeResult(`SELECT acquired || '|' || attempt_number || '|' || recovery_state FROM cloud_agents.claim_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'control-plane-b','incarnation-b','claim-side-effect-b',30)`),
+    "true|2|recovering",
+  );
+  assert.throws(
+    () => runtimeResult(`SELECT checkpoint_sequence FROM cloud_agents.checkpoint_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,1,
+      'control-plane-a','incarnation-a','claim-side-effect-a',30,'${sideEffectMessages}',
+      '${sideEffectCheckpointDigest}','runtime-message-checkpoint-v1',NULL,true,0)`),
+    /claim is stale/,
+  );
+  assert.throws(
+    () =>
+      runtimeResult(`SELECT checkpoint_sequence FROM cloud_agents.checkpoint_managed_agent_execution_v1(
+        'tenant','project','session-recovery','turn-recovery','execution-recovery',7,1,
+        'control-plane-a','incarnation-a','claim-a',30,'${checkpointMessages}',
+        '${digest(checkpointMessages)}','runtime-message-checkpoint-v1',NULL,false,0)`),
+    /claim is stale/,
+  );
+  assert.throws(
+    () =>
+      runtimeResult(`SELECT execution_state FROM cloud_agents.settle_claimed_managed_agent_execution_v1(
+        'tenant','project','session-recovery','turn-recovery','execution-recovery',7,'succeeded',
+        '${digest(terminal)}',NULL,'execution-finish-key','${d}',NULL,'${terminal}',
+        '${settledMessages}',1,'control-plane-a','incarnation-a','claim-a')`),
+    /claim is stale/,
+  );
+  assert.equal(
+    runtimeResult(`SELECT execution_state FROM cloud_agents.settle_claimed_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-recovery','execution-recovery',7,'succeeded',
+      '${digest(terminal)}',NULL,'execution-finish-key','${d}',NULL,'${terminal}',
+      '${settledMessages}',2,'control-plane-b','incarnation-b','claim-b')`),
+    "succeeded",
+  );
+  assert.equal(
+    runtimeResult(`SELECT state || '|' || attempt_number || '|' || recovery_state
+      FROM cloud_agents.managed_agent_executions WHERE project_uid='project'
+      AND execution_uid='execution-recovery'`),
+    "succeeded|2|recovered",
+  );
   const runServerTest = (testName) =>
     docker(
       "exec",
@@ -350,6 +535,7 @@ INSERT INTO cloud_agents.deployment_targets (
         "generation/resource-version fencing, exact idempotency and receipt replay, deadline failure and Operation/Audit closure",
         "database-time RemoteWorker online, degraded and offline Admin projection without secret or certificate bytes",
         "server-owned RemoteWorker DeploymentTarget unprobed, ready, offline, reconnect and revoked projection",
+        "managed Agent checkpoint recovery with expired-claim takeover, stale-writer fencing and side-effect reconciliation",
       ],
       boundary:
         "Disposable PostgreSQL, in-process Control Plane HTTPS/mTLS and short-lived outbound RemoteWorker processes; Drain/Resume changes node scheduling state only, and no customer-node Sandbox workload or external Controller is started",

@@ -146,8 +146,13 @@ try {
         rules: [
           {
             apiGroups: [""],
-            resources: ["persistentvolumeclaims"],
-            verbs: ["create", "get", "list", "watch"],
+            resources: ["persistentvolumeclaims", "pods"],
+            verbs: ["create", "get", "list", "watch", "delete"],
+          },
+          {
+            apiGroups: [""],
+            resources: ["pods/exec"],
+            verbs: ["get", "create"],
           },
         ],
       },

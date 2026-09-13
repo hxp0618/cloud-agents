@@ -118,11 +118,19 @@ type Service struct {
 	runtimeDirectory           string
 	runtimeCredentialDirectory string
 	runtimeSlots               chan struct{}
+	runtimeMu                  sync.Mutex
+	runtimeFenceMu             sync.Mutex
+	runtimeSessions            map[string]*runtimeLease
 	admissions                 map[string]admissionRecord
 	executor                   OperationExecutor
 	receipts                   map[string]receiptRecord
 	receiptsByAttempt          map[string]string
 	receiptSequence            uint64
+}
+
+type runtimeLease struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 type binding struct {
@@ -204,7 +212,7 @@ func NewService(cfg Config) (*Service, error) {
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
 		admissionToken: append([]byte(nil), cfg.AdmissionToken...),
-		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory, runtimeSlots: runtimeSlots,
+		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory, runtimeSlots: runtimeSlots, runtimeSessions: make(map[string]*runtimeLease),
 		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
 		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil
 }
@@ -231,7 +239,7 @@ func (s *Service) ProtocolDescriptor() *workerv1alpha1.ProtocolDescriptor {
 func (s *Service) ready() bool {
 	return s != nil && s.workerIdentity != nil && s.capabilities != nil && s.identity != nil &&
 		s.newID != nil && s.now != nil && s.bindings != nil && s.admissions != nil &&
-		s.receipts != nil && s.receiptsByAttempt != nil && (len(s.runtimeCommand) == 0 || s.runtimeSlots != nil)
+		s.receipts != nil && s.receiptsByAttempt != nil && s.runtimeSessions != nil && (len(s.runtimeCommand) == 0 || s.runtimeSlots != nil)
 }
 
 func (s *Service) Negotiate(ctx context.Context, req *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {

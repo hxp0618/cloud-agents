@@ -1,4 +1,15 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 
 import { codexDeveloperInstructionsForMode } from "./codexCollaborationMode";
@@ -84,6 +95,7 @@ type CodexRunOptions = {
   nativeResumePrompt: string;
   interactive: boolean;
   toolPolicyHookCommand?: string;
+  managedWriteReceiptDelayMs?: number;
   operation?: ProviderPrimaryOperation;
 };
 
@@ -92,6 +104,33 @@ const INTERRUPT_GRACE_MS = 2_000;
 const COMMAND_TERMINAL_DRAIN_MS = 10_000;
 const MAX_STDERR_BYTES = 64 * 1024;
 const MAX_WIRE_LINE_BYTES = 4 * 1024 * 1024;
+const MAX_MANAGED_TEXT_FILE_BYTES = 1024 * 1024;
+const MANAGED_WORKSPACE_TOOL_NAMESPACE = "workspace";
+const MANAGED_WRITE_TEXT_FILE_TOOL_NAME = "write_text_file";
+export const MANAGED_CODEX_DYNAMIC_TOOLS = [
+  {
+    type: "namespace" as const,
+    name: MANAGED_WORKSPACE_TOOL_NAMESPACE,
+    description: "Host-owned tools for bounded changes inside the current Cloud Agents Workspace.",
+    tools: [
+      {
+        type: "function" as const,
+        name: MANAGED_WRITE_TEXT_FILE_TOOL_NAME,
+        description:
+          "Atomically create or replace one UTF-8 text file inside the current Workspace. Use this instead of a shell command for file writes.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            path: { type: "string", minLength: 1, maxLength: 4_096 },
+            content: { type: "string" },
+          },
+          required: ["path", "content"],
+        },
+      },
+    ],
+  },
+] as const;
 export const MANAGED_CODEX_APP_SERVER_ARGUMENTS = codexExecutableConfigIsolationArguments();
 
 export function managedCodexAppServerArguments(toolPolicyHookCommand?: string): readonly string[] {
@@ -145,9 +184,12 @@ class CodexAppServerRuntime {
   private readonly pendingRequests = new Map<string, PendingRequest>();
   private readonly pendingApprovals = new Map<string, PendingInteraction>();
   private readonly pendingUserInputs = new Map<string, PendingInteraction>();
+  private readonly consumedResumeInteractions = new Set<number>();
   private readonly fileChangeAssessments = new Map<string, SensitiveActionAssessment>();
   private readonly commandTerminals = new Map<string, CodexTerminalState>();
   private readonly completedCommandItems = new Set<string>();
+  private readonly pendingManagedToolCalls = new Set<string>();
+  private readonly deferredManagedToolCompletions = new Map<string, JsonRpcNotification>();
   private readonly generatedFiles: WorkspaceGeneratedFileCollector;
   private readonly turnDiffs: TurnDiffCollector;
   private readonly outputText: string[] = [];
@@ -167,6 +209,7 @@ class CodexAppServerRuntime {
   private forceKillTimer: NodeJS.Timeout | undefined;
   private commandTerminalDrainTimer: NodeJS.Timeout | undefined;
   private completedTurnPendingTerminalDrain: Record<string, unknown> | undefined;
+  private deferredManagedTurnCompletion: JsonRpcNotification | undefined;
 
   constructor(private readonly options: CodexRunOptions) {
     this.generatedFiles = new WorkspaceGeneratedFileCollector({
@@ -355,7 +398,10 @@ class CodexAppServerRuntime {
     requireNativeResume = false,
     allowFreshThreadOnResumeFailure = false,
   ): Promise<boolean> {
-    const cursor = trimmedString(this.options.input.providerResumeCursor);
+    const recorded = this.options.input.workload.resumeSnapshot?.resumeRecordedInteractions;
+    const cursor = requireNativeResume || !Array.isArray(recorded) || !recorded.some((entry) => asRecord(entry)?.request)
+      ? trimmedString(this.options.input.providerResumeCursor)
+      : undefined;
     const historyAvailable = hasAuthoritativeResumeData(
       this.options.input.workload,
       this.options.input.memoryDocuments,
@@ -372,7 +418,15 @@ class CodexAppServerRuntime {
         ? { model: trimmedString(this.options.input.workload.model) }
         : {}),
       cwd: this.options.input.workspaceDirectory,
-      ...(this.options.toolPolicyHookCommand ? { config: CODEX_TOOL_POLICY_THREAD_CONFIG } : {}),
+      config: {
+        ...(this.options.toolPolicyHookCommand ? CODEX_TOOL_POLICY_THREAD_CONFIG : {}),
+        features: {
+          code_mode: {
+            enabled: false,
+            direct_only_tool_namespaces: [MANAGED_WORKSPACE_TOOL_NAMESPACE],
+          },
+        },
+      },
       ...permissions,
     } as const;
 
@@ -431,8 +485,12 @@ class CodexAppServerRuntime {
       throw new Error("Codex app-server native Session operation requires a Provider Cursor.");
     }
 
+    const startParams =
+      this.options.operation?.commandType === "GenerateText"
+        ? common
+        : { ...common, dynamicTools: MANAGED_CODEX_DYNAMIC_TOOLS };
     this.applyThreadOpenResponse(
-      asRecord(await this.sendRequest("thread/start", common)),
+      asRecord(await this.sendRequest("thread/start", startParams)),
       "thread/start",
     );
     return false;
@@ -563,11 +621,17 @@ class CodexAppServerRuntime {
         this.failRuntime(new Error(`Codex app-server reused approval request ${requestId}.`));
         return;
       }
+      const approval = approvalPayload(request.method, requestId, params, fileChangeAssessment);
+      const resumedDecision = this.takeRecordedApproval(approval);
+      if (resumedDecision) {
+        this.writeMessage({ id: request.id, result: { decision: resumedDecision } });
+        return;
+      }
       this.pendingApprovals.set(requestId, { jsonRpcId: request.id });
       this.options.emit({
         type: "interaction",
         interactionType: "approval",
-        payload: approvalPayload(request.method, requestId, params, fileChangeAssessment),
+        payload: approval,
       });
       return;
     }
@@ -576,12 +640,24 @@ class CodexAppServerRuntime {
         this.failRuntime(new Error(`Codex app-server reused user-input request ${requestId}.`));
         return;
       }
+      const input = userInputPayload(requestId, params);
+      const resumedAnswers = this.takeRecordedUserInput(input);
+      if (resumedAnswers) {
+        this.writeMessage({ id: request.id, result: { answers: codexUserInputAnswers(resumedAnswers) } });
+        return;
+      }
       this.pendingUserInputs.set(requestId, { jsonRpcId: request.id });
       this.options.emit({
         type: "interaction",
         interactionType: "user-input",
-        payload: userInputPayload(requestId, params),
+        payload: input,
       });
+      return;
+    }
+    if (request.method === "item/tool/call") {
+      void this.handleManagedDynamicToolCall(request, params).catch((error) =>
+        this.failRuntime(error instanceof Error ? error : new Error(String(error))),
+      );
       return;
     }
 
@@ -591,9 +667,81 @@ class CodexAppServerRuntime {
     });
   }
 
+  private async handleManagedDynamicToolCall(
+    request: JsonRpcRequest,
+    params: Record<string, unknown>,
+  ): Promise<void> {
+    const callId = readString(params, "callId");
+    const validIdentity =
+      readString(params, "threadId") === this.threadId &&
+      readString(params, "turnId") === this.turnId &&
+      !!callId;
+    const tool = readString(params, "tool");
+    if (
+      !validIdentity ||
+      tool !== MANAGED_WRITE_TEXT_FILE_TOOL_NAME ||
+      readString(params, "namespace") !== MANAGED_WORKSPACE_TOOL_NAMESPACE
+    ) {
+      this.writeMessage({
+        id: request.id,
+        result: managedDynamicToolResult(false, "Managed Workspace tool request rejected."),
+      });
+      if (callId) this.finishManagedToolCall(callId);
+      return;
+    }
+    this.pendingManagedToolCalls.add(callId);
+
+    const input = asRecord(params.arguments);
+    const candidate = input && Object.keys(input).length === 2 ? input.path : undefined;
+    const content = input?.content;
+    const relativePath = this.generatedFiles.resolveRelativePath(candidate);
+    if (
+      !relativePath ||
+      typeof content !== "string" ||
+      Buffer.byteLength(content, "utf8") > MAX_MANAGED_TEXT_FILE_BYTES
+    ) {
+      this.writeMessage({
+        id: request.id,
+        result: managedDynamicToolResult(false, "Managed Workspace text write rejected."),
+      });
+      this.finishManagedToolCall(callId);
+      return;
+    }
+
+    try {
+      writeManagedWorkspaceTextFile(this.options.input.workspaceDirectory, relativePath, content);
+      this.generatedFiles.observe(relativePath);
+    } catch {
+      this.writeMessage({
+        id: request.id,
+        result: managedDynamicToolResult(false, "Managed Workspace text write failed."),
+      });
+      this.finishManagedToolCall(callId);
+      return;
+    }
+    await delayManagedWriteReceipt(this.options.managedWriteReceiptDelayMs);
+    if (this.turnSettled || this.processExited) return;
+    this.writeMessage({
+      id: request.id,
+      result: managedDynamicToolResult(true, `Wrote ${relativePath}`),
+    });
+    this.finishManagedToolCall(callId);
+  }
+
   private handleNotification(notification: JsonRpcNotification): void {
     if (this.turnSettled) return;
     const params = asRecord(notification.params) ?? {};
+    if (notification.method === "turn/completed" && this.pendingManagedToolCalls.size > 0) {
+      this.deferredManagedTurnCompletion = notification;
+      return;
+    }
+    if (notification.method === "item/completed") {
+      const itemId = readString(asRecord(params.item), "id");
+      if (itemId && this.pendingManagedToolCalls.has(itemId)) {
+        this.deferredManagedToolCompletions.set(itemId, notification);
+        return;
+      }
+    }
     if (
       this.completedTurnPendingTerminalDrain &&
       !this.isPendingCommandTerminalNotification(notification.method, params)
@@ -648,6 +796,10 @@ class CodexAppServerRuntime {
         const item = asRecord(params.item);
         const itemType = readString(item, "type");
         if (!itemType || itemType === "agentMessage" || itemType === "userMessage") return;
+        const itemId = readString(item, "id");
+        if (notification.method === "item/started" && itemId && itemType === "dynamicToolCall") {
+          this.pendingManagedToolCalls.add(itemId);
+        }
         if (
           notification.method === "item/started" &&
           this.options.operation?.commandType === "GenerateText" &&
@@ -656,7 +808,6 @@ class CodexAppServerRuntime {
           this.failRuntime(new Error("Codex attempted to invoke a tool during GenerateText."));
           return;
         }
-        const itemId = readString(item, "id");
         if (itemType === "fileChange" && itemId && item) {
           if (notification.method === "item/started") {
             const paths = readCodexFileChangePaths(item);
@@ -967,6 +1118,40 @@ class CodexAppServerRuntime {
     this.writeMessage({ id: pending.jsonRpcId, result: { decision } });
   }
 
+  private takeRecordedApproval(payload: Record<string, unknown>): "accept" | "decline" | undefined {
+    const entry = this.takeRecordedInteraction("approval", (request) => sameResumeApproval(request, payload));
+    if (!entry) return;
+    return readString(asRecord(entry.resolution), "decision") === "accept" && this.resumeOutcome() !== "confirmed" ? "accept" : "decline";
+  }
+
+  private takeRecordedUserInput(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+    if (this.resumeOutcome() === "confirmed") return;
+    const entry = this.takeRecordedInteraction("user-input", (request) =>
+      request?.requestId === payload.requestId ||
+      JSON.stringify(request?.questions ?? null) === JSON.stringify(payload.questions ?? null),
+    );
+    return entry ? asRecord(asRecord(entry.resolution)?.answers) : undefined;
+  }
+
+  private takeRecordedInteraction(
+    kind: string,
+    matches: (request: Record<string, unknown> | undefined) => boolean,
+  ): Record<string, unknown> | undefined {
+    const entries = this.options.input.workload.resumeSnapshot?.resumeRecordedInteractions;
+    if (!Array.isArray(entries)) return;
+    for (let index = 0; index < entries.length; index += 1) {
+      if (this.consumedResumeInteractions.has(index)) continue;
+      const entry = asRecord(entries[index]);
+      if (entry?.kind !== kind || !matches(asRecord(entry.request))) continue;
+      this.consumedResumeInteractions.add(index);
+      return entry;
+    }
+  }
+
+  private resumeOutcome(): string | undefined {
+    return this.options.input.workload.resumeSnapshot?.sideEffectReconciliation?.outcome;
+  }
+
   private resolveUserInput(payload: Record<string, unknown>): void {
     const requestId = requiredString(payload.requestId, "ResolveUserInput requestId");
     const pending = this.pendingUserInputs.get(requestId);
@@ -1067,6 +1252,19 @@ class CodexAppServerRuntime {
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
+  private finishManagedToolCall(callId: string): void {
+    this.pendingManagedToolCalls.delete(callId);
+    const completion = this.deferredManagedToolCompletions.get(callId);
+    if (completion) {
+      this.deferredManagedToolCompletions.delete(callId);
+      this.handleNotification(completion);
+    }
+    if (this.pendingManagedToolCalls.size > 0 || !this.deferredManagedTurnCompletion) return;
+    const turnCompletion = this.deferredManagedTurnCompletion;
+    this.deferredManagedTurnCompletion = undefined;
+    this.handleNotification(turnCompletion);
+  }
+
   private settleTurn(error?: Error, turn: Record<string, unknown> = {}): void {
     if (this.turnSettled) return;
     this.turnSettled = true;
@@ -1074,6 +1272,9 @@ class CodexAppServerRuntime {
     if (this.commandTerminalDrainTimer) clearTimeout(this.commandTerminalDrainTimer);
     this.commandTerminalDrainTimer = undefined;
     this.completedTurnPendingTerminalDrain = undefined;
+    this.pendingManagedToolCalls.clear();
+    this.deferredManagedToolCompletions.clear();
+    this.deferredManagedTurnCompletion = undefined;
     this.fileChangeAssessments.clear();
     if (error) this.rejectTurn(error);
     else this.resolveTurn(turn);
@@ -1221,6 +1422,22 @@ function approvalPayload(
       : {}),
     ...(sensitiveAction.requiresFreshApproval ? { sensitiveAction } : {}),
   };
+}
+
+function sameResumeApproval(
+  left: Record<string, unknown> | undefined,
+  right: Record<string, unknown>,
+): boolean {
+  if (!left) return false;
+  const stable = (value: Record<string, unknown>) =>
+    JSON.stringify({
+      provider: value.provider,
+      requestKind: value.requestKind,
+      command: value.command,
+      cwd: value.cwd,
+      grantRoot: value.grantRoot,
+    });
+  return stable(left) === stable(right);
 }
 
 function codexAuthoritativeResumeHistory(
@@ -1388,6 +1605,85 @@ function codexTerminalOutput(item: Record<string, unknown> | undefined): string 
   return [terminalResultText(item.stdout), terminalResultText(item.stderr)]
     .filter((value) => value.length > 0)
     .join("\n");
+}
+
+function managedDynamicToolResult(success: boolean, text: string): Record<string, unknown> {
+  return { success, contentItems: [{ type: "inputText", text }] };
+}
+
+async function delayManagedWriteReceipt(milliseconds: number | undefined): Promise<void> {
+  if (!milliseconds) return;
+  await new Promise<void>((resolveDelay) => {
+    const timer = setTimeout(resolveDelay, milliseconds);
+    timer.unref();
+  });
+}
+
+function writeManagedWorkspaceTextFile(
+  workspaceDirectory: string,
+  relativePath: string,
+  content: string,
+): void {
+  const workspace = realpathSync(workspaceDirectory);
+  const destination = resolve(workspace, relativePath);
+  const parent = dirname(destination);
+  ensureManagedWorkspaceDirectory(workspace, relative(workspace, parent));
+
+  let mode = 0o600;
+  try {
+    const existing = lstatSync(destination);
+    if (existing.isSymbolicLink() || !existing.isFile()) {
+      throw new Error("Managed Workspace destination is not a regular file.");
+    }
+    mode = existing.mode & 0o777;
+  } catch (error) {
+    if (nodeErrorCode(error) !== "ENOENT") throw error;
+  }
+
+  const temporary = join(parent, `.cloud-agents-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, content, { encoding: "utf8", flag: "wx", mode });
+    chmodSync(temporary, mode);
+    renameSync(temporary, destination);
+  } finally {
+    try {
+      unlinkSync(temporary);
+    } catch (error) {
+      if (nodeErrorCode(error) !== "ENOENT") throw error;
+    }
+  }
+}
+
+function ensureManagedWorkspaceDirectory(workspace: string, relativeDirectory: string): void {
+  if (relativeDirectory === "" || relativeDirectory === ".") return;
+  let current = workspace;
+  for (const segment of relativeDirectory.split(sep)) {
+    current = join(current, segment);
+    try {
+      const existing = lstatSync(current);
+      if (existing.isSymbolicLink() || !existing.isDirectory()) {
+        throw new Error("Managed Workspace path contains a non-directory segment.");
+      }
+    } catch (error) {
+      if (nodeErrorCode(error) !== "ENOENT") throw error;
+      try {
+        mkdirSync(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if (nodeErrorCode(mkdirError) !== "EEXIST") throw mkdirError;
+      }
+      const created = lstatSync(current);
+      if (created.isSymbolicLink() || !created.isDirectory()) {
+        throw new Error("Managed Workspace path contains a non-directory segment.");
+      }
+    }
+  }
+  if (realpathSync(current) !== current) {
+    throw new Error("Managed Workspace path contains a symbolic link.");
+  }
+}
+
+function nodeErrorCode(value: unknown): string | undefined {
+  return value instanceof Error ? (value as NodeJS.ErrnoException).code : undefined;
 }
 
 function readSafeInteger(

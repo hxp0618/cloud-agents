@@ -192,6 +192,37 @@ func TestRuntimeSessionCapacityConfigDefaultsAndRejectsInvalidBounds(t *testing.
 	}
 }
 
+func TestRuntimeLeaseFencesPreviousWriterBeforeTakeover(t *testing.T) {
+	service := &Service{runtimeSessions: make(map[string]*runtimeLease)}
+	firstContext, firstCancel := context.WithCancel(context.Background())
+	first := &runtimeLease{cancel: firstCancel, done: make(chan struct{})}
+	if err := service.acquireRuntimeLease("execution", first); err != nil {
+		t.Fatal(err)
+	}
+	fenced := make(chan struct{})
+	go func() {
+		<-firstContext.Done()
+		close(fenced)
+		service.releaseRuntimeLease("execution", first)
+	}()
+	secondContext, secondCancel := context.WithCancel(context.Background())
+	second := &runtimeLease{cancel: secondCancel, done: make(chan struct{})}
+	if err := service.acquireRuntimeLease("execution", second); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fenced:
+	default:
+		t.Fatal("previous Runtime writer was not fenced before takeover")
+	}
+	if service.runtimeSessions["execution"] != second {
+		t.Fatal("replacement Runtime writer was not registered")
+	}
+	secondCancel()
+	service.releaseRuntimeLease("execution", second)
+	<-secondContext.Done()
+}
+
 func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
 	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor", TrustDomain: "cloud-agents.test"}

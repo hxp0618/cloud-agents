@@ -112,6 +112,10 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 		server.interrupt(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer)
 		return
 	}
+	if action == "reconcile" && request.Method == http.MethodPost {
+		server.reconcileSideEffect(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer)
+		return
+	}
 	if (action == "resolveApproval" || action == "resolveUserInput") && request.Method == http.MethodPost {
 		server.resolveInteraction(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer, action)
 		return
@@ -368,7 +372,7 @@ func (server *ManagedAgentExecutionHTTPServer) resolveInteraction(writer http.Re
 			return
 		}
 		reference.Generation = body.Generation
-		err = server.runner.ResolveApproval(request.Context(), internalmanagedagent.RuntimeApprovalResolutionInput{RuntimeExecutionReference: reference, RequestID: requestID, InteractionRequestID: body.RequestID, Decision: body.Decision})
+		err = server.runner.ResolveApproval(request.Context(), internalmanagedagent.RuntimeApprovalResolutionInput{RuntimeExecutionReference: reference, Principal: principal, RequestID: requestID, InteractionRequestID: body.RequestID, Decision: body.Decision})
 	} else {
 		var body managedAgentUserInputResolutionBody
 		if _, err := decodeManagedAgentJSON(request.Body, &body, []string{"generation", "requestId", "answers"}, []string{"generation", "requestId", "answers"}); err != nil || !validManagedAgentInteractionGenerationAndRequest(body.Generation, body.RequestID) || !validManagedAgentInteractionAnswers(body.Answers) {
@@ -376,8 +380,40 @@ func (server *ManagedAgentExecutionHTTPServer) resolveInteraction(writer http.Re
 			return
 		}
 		reference.Generation = body.Generation
-		err = server.runner.ResolveUserInput(request.Context(), internalmanagedagent.RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, RequestID: requestID, InteractionRequestID: body.RequestID, Answers: body.Answers})
+		err = server.runner.ResolveUserInput(request.Context(), internalmanagedagent.RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, Principal: principal, RequestID: requestID, InteractionRequestID: body.RequestID, Answers: body.Answers})
 	}
+	if err != nil {
+		status, code := managedAgentExecutionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *ManagedAgentExecutionHTTPServer) reconcileSideEffect(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	var body managedAgentSideEffectReconciliationBody
+	if _, err := decodeManagedAgentJSON(request.Body, &body, []string{"generation", "checkpointDigest", "outcome"}, []string{"generation", "checkpointDigest", "outcome"}); err != nil ||
+		body.Generation == 0 || body.Generation > maxManagedAgentGeneration ||
+		len(body.CheckpointDigest) != 71 || !strings.HasPrefix(body.CheckpointDigest, "sha256:") ||
+		(body.Outcome != "confirmed" && body.Outcome != "not-applied") {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil || principal == nil {
+		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	_, err = server.store.ReconcileManagedAgentExecutionSideEffect(request.Context(), tenantID, principal, internalmanagedagent.ReconcileRuntimeSideEffectInput{
+		RuntimeExecutionReference: runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, body.Generation),
+		CheckpointDigest:          body.CheckpointDigest, Outcome: body.Outcome, RequestID: requestID,
+	})
 	if err != nil {
 		status, code := managedAgentExecutionErrorStatus(err)
 		writeManagedAgentSessionError(writer, status, code)
@@ -406,6 +442,12 @@ type managedAgentExecutionCancelBody struct {
 
 type managedAgentExecutionInterruptBody struct {
 	Generation uint64 `json:"generation"`
+}
+
+type managedAgentSideEffectReconciliationBody struct {
+	Generation       uint64 `json:"generation"`
+	CheckpointDigest string `json:"checkpointDigest"`
+	Outcome          string `json:"outcome"`
 }
 
 type managedAgentApprovalResolutionBody struct {
@@ -479,10 +521,27 @@ type managedAgentExecutionMetadata struct {
 }
 
 type managedAgentExecutionSpec struct {
-	Generation   uint64 `json:"generation"`
-	State        string `json:"state"`
-	ResultDigest string `json:"resultDigest,omitempty"`
-	ErrorCode    string `json:"errorCode,omitempty"`
+	Generation             uint64                           `json:"generation"`
+	State                  string                           `json:"state"`
+	AttemptNumber          uint64                           `json:"attemptNumber"`
+	RecoveryState          string                           `json:"recoveryState"`
+	RecoveryReason         string                           `json:"recoveryReason,omitempty"`
+	RecoveryMode           string                           `json:"recoveryMode,omitempty"`
+	RecoverySourceTargetID string                           `json:"recoverySourceTargetId,omitempty"`
+	RecoveryTargetID       string                           `json:"recoveryTargetId,omitempty"`
+	ClaimExpiresAt         string                           `json:"claimExpiresAt,omitempty"`
+	Checkpoint             *managedAgentExecutionCheckpoint `json:"checkpoint,omitempty"`
+	ResultDigest           string                           `json:"resultDigest,omitempty"`
+	ErrorCode              string                           `json:"errorCode,omitempty"`
+}
+
+type managedAgentExecutionCheckpoint struct {
+	Sequence                uint64 `json:"sequence"`
+	Digest                  string `json:"digest"`
+	Protocol                string `json:"protocol"`
+	CreatedAt               string `json:"createdAt"`
+	PendingSideEffect       bool   `json:"pendingSideEffect"`
+	PendingInteractionCount uint32 `json:"pendingInteractionCount"`
 }
 
 func writeManagedAgentExecution(writer http.ResponseWriter, status int, requestID string, transition internalmanagedagent.ExecutionTransitionResult, messages []runtimeprotocol.Message) {
@@ -495,10 +554,21 @@ func writeManagedAgentExecution(writer http.ResponseWriter, status int, requestI
 }
 
 func managedAgentExecutionResourceFromSnapshot(execution internalmanagedagent.ExecutionSnapshot, messages []runtimeprotocol.Message) managedAgentExecutionResource {
+	recoveryState := execution.RecoveryState
+	if recoveryState == "" {
+		recoveryState = "none"
+	}
+	spec := managedAgentExecutionSpec{Generation: execution.Generation, State: string(execution.State), AttemptNumber: execution.AttemptNumber, RecoveryState: recoveryState, RecoveryReason: execution.RecoveryReason, RecoveryMode: execution.RecoveryMode, RecoverySourceTargetID: execution.RecoverySourceTargetID, RecoveryTargetID: execution.RecoveryTargetID, ResultDigest: execution.ResultDigest, ErrorCode: execution.ErrorCode}
+	if !execution.ClaimExpiresAt.IsZero() {
+		spec.ClaimExpiresAt = execution.ClaimExpiresAt.UTC().Format(timeFormat)
+	}
+	if execution.CheckpointSequence > 0 {
+		spec.Checkpoint = &managedAgentExecutionCheckpoint{Sequence: execution.CheckpointSequence, Digest: execution.CheckpointDigest, Protocol: execution.CheckpointProtocol, CreatedAt: execution.CheckpointedAt.UTC().Format(timeFormat), PendingSideEffect: execution.PendingSideEffect, PendingInteractionCount: execution.PendingInteractionCount}
+	}
 	return managedAgentExecutionResource{
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Execution",
 		Metadata: managedAgentExecutionMetadata{UID: execution.ExecutionID, ProjectID: execution.Scope.ProjectID, SessionID: execution.SessionID, TurnID: execution.TurnID, ResourceVersion: strconv.FormatUint(execution.Version, 10), CreatedAt: execution.CreatedAt.UTC().Format(timeFormat), UpdatedAt: execution.UpdatedAt.UTC().Format(timeFormat)},
-		Spec:     managedAgentExecutionSpec{Generation: execution.Generation, State: string(execution.State), ResultDigest: execution.ResultDigest, ErrorCode: execution.ErrorCode},
+		Spec:     spec,
 		Messages: messages,
 	}
 }
@@ -541,7 +611,7 @@ func managedAgentExecutionPath(path string) (tenantID, projectID, sessionID, tur
 		return parts[0], parts[2], parts[4], parts[6], parts[8], "get", true
 	}
 	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") {
-		for _, candidate := range []struct{ suffix, action string }{{":cancel", "cancel"}, {":interrupt", "interrupt"}, {":resolveApproval", "resolveApproval"}, {":resolveUserInput", "resolveUserInput"}} {
+		for _, candidate := range []struct{ suffix, action string }{{":cancel", "cancel"}, {":interrupt", "interrupt"}, {":reconcile", "reconcile"}, {":resolveApproval", "resolveApproval"}, {":resolveUserInput", "resolveUserInput"}} {
 			executionID = strings.TrimSuffix(parts[8], candidate.suffix)
 			if executionID != parts[8] && executionID != "" {
 				return parts[0], parts[2], parts[4], parts[6], executionID, candidate.action, true
@@ -620,6 +690,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "execution_in_progress"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeEnvironmentUnavailable):
 		return http.StatusConflict, "environment_unavailable"
+	case errors.Is(err, internalmanagedagent.ErrRuntimeRecoveryRequiresUserAction):
+		return http.StatusConflict, "recovery_requires_reconciliation"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeCapacityExhausted):
 		return http.StatusBadGateway, "runtime_capacity_exhausted"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeInteractionUnavailable), errors.Is(err, internalmanagedagent.ErrRuntimeInteractionConflict):

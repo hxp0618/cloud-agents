@@ -242,6 +242,7 @@ export function classifyMigrationStatement(
   if (first === "CREATE") {
     if (tokens[1] === "TRIGGER") {
       let on = simpleBeforeRowTrigger(tokens);
+      if (on < 0) on = simpleAfterUpdateRowTrigger(tokens);
       if (
         on < 0 &&
         migrationId === "000067" &&
@@ -359,6 +360,14 @@ export function classifyMigrationStatement(
         "000081",
         "000082",
         "000084",
+        "000089",
+        "000090",
+        "000091",
+        "000092",
+        "000094",
+        "000095",
+        "000096",
+        "000097",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -597,6 +606,67 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000089",
+          [
+            "function:unquoted:cloud_agents/unquoted:is_valid_network_egress_list_v1(unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:guard_managed_agent_target_admission_v1()",
+            "function:unquoted:cloud_agents/unquoted:transition_environment_profile_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000090",
+          [
+            "function:unquoted:cloud_agents/unquoted:create_environment_profile_draft_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000091",
+          [
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_restore_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000092",
+          [
+            "function:unquoted:cloud_agents/unquoted:append_managed_agent_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:jsonb)",
+          ],
+        ],
+        [
+          "000094",
+          [
+            "function:unquoted:cloud_agents/unquoted:request_remote_worker_sandbox_pty_v3(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:boolean,unquoted:text,unquoted:bytea,unquoted:boolean,unquoted:boolean,unquoted:text)",
+          ],
+        ],
+        [
+          "000095",
+          [
+            "function:unquoted:cloud_agents/unquoted:cancel_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:interrupt_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:resolve_managed_agent_execution_interaction_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000096",
+          [
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_restore_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000097",
+          [
+            "function:unquoted:cloud_agents/unquoted:is_valid_remote_worker_capabilities(unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:reap_foundation_workspace_snapshot_claim_v1(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_remote_worker_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_restore_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -702,6 +772,27 @@ export function classifyMigrationStatement(
         targetIdentity === "table:unquoted:cloud_agents/unquoted:environment_profile_activity" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILE_ACTIVITY_ACTION"].join("\0");
+      const dropEnvironmentProfileProviderKindsConstraint =
+        migrationId === "000090" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:environment_profiles" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILES_PROVIDER_KINDS"].join("\0");
+      const dropManagedAgentRuntimeMessagesConstraint =
+        migrationId === "000092" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_executions" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "MANAGED_AGENT_EXECUTIONS_RUNTIME_MESSAGES"].join("\0");
+      const dropManagedAgentEventOperationConstraint =
+        migrationId === "000092" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "MANAGED_AGENT_EVENTS_OPERATION"].join("\0");
+      const dropRemoteWorkerPTYShapeConstraint =
+        migrationId === "000093" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:remote_worker_sandbox_pty_commands" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "REMOTE_WORKER_SANDBOX_PTY_SSH_SHAPE"].join("\0");
       const dropRemoteWorkerEnrollmentActivityConstraint =
         migrationId === "000063" &&
         targetIdentity ===
@@ -732,11 +823,13 @@ export function classifyMigrationStatement(
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
       const dropWorkspaceSnapshotConstraint =
-        migrationId === "000084" &&
+        new Set(["000084", "000091"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:workspace_snapshots" &&
-        new Set(["WORKSPACE_SNAPSHOTS_STATUS_CHECK", "WORKSPACE_SNAPSHOTS_CHECK"]).has(
-          subcommand[2] ?? "",
-        ) &&
+        new Set([
+          "WORKSPACE_SNAPSHOTS_STATUS_CHECK",
+          "WORKSPACE_SNAPSHOTS_CHECK",
+          "WORKSPACE_SNAPSHOTS_BACKEND_CHECK",
+        ]).has(subcommand[2] ?? "") &&
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
       if (
@@ -750,6 +843,10 @@ export function classifyMigrationStatement(
         !dropDeploymentTargetConstraint &&
         !dropDeploymentTargetActivityConstraint &&
         !dropEnvironmentProfileActivityConstraint &&
+        !dropEnvironmentProfileProviderKindsConstraint &&
+        !dropManagedAgentRuntimeMessagesConstraint &&
+        !dropManagedAgentEventOperationConstraint &&
+        !dropRemoteWorkerPTYShapeConstraint &&
         !dropRemoteWorkerEnrollmentActivityConstraint &&
         !dropAdminDeniedWriteConstraint &&
         !dropFoundationObservationConstraint &&
@@ -946,6 +1043,44 @@ function simpleBeforeRowTrigger(tokens: ReadonlyArray<string>): number {
     ";",
   ];
   return validEvent && tokens.slice(on + 1).join("\0") === tail.join("\0") ? on : -1;
+}
+
+function simpleAfterUpdateRowTrigger(tokens: ReadonlyArray<string>): number {
+  const on = tokens.indexOf("ON", 4);
+  if (
+    on < 0 ||
+    !simpleUnquotedIdentifier(tokens[2]) ||
+    !simpleUnquotedIdentifier(tokens[on + 3]) ||
+    !simpleUnquotedIdentifier(tokens[on + 11])
+  )
+    return -1;
+  const event = tokens.slice(3, on);
+  if (event.slice(0, 3).join("\0") !== ["AFTER", "UPDATE", "OF"].join("\0")) return -1;
+  const columns = event.slice(3);
+  if (
+    columns.length === 0 ||
+    columns.some((token, index) =>
+      index % 2 === 0 ? !simpleUnquotedIdentifier(token) : token !== ",",
+    )
+  )
+    return -1;
+  const tail = [
+    "CLOUD_AGENTS",
+    ".",
+    tokens[on + 3]!,
+    "FOR",
+    "EACH",
+    "ROW",
+    "EXECUTE",
+    "FUNCTION",
+    "CLOUD_AGENTS",
+    ".",
+    tokens[on + 11]!,
+    "(",
+    ")",
+    ";",
+  ];
+  return tokens.slice(on + 1).join("\0") === tail.join("\0") ? on : -1;
 }
 
 function simpleUnquotedIdentifier(value: string | undefined): boolean {

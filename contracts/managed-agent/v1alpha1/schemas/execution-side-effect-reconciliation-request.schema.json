@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/execution-side-effect-reconciliation-request.schema.json",
+  "title": "ManagedAgentSideEffectReconciliationRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "checkpointDigest", "outcome"],
+  "properties": {
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "checkpointDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "outcome": { "enum": ["confirmed", "not-applied"] }
+  }
+}

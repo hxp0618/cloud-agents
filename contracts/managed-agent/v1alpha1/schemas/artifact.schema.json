@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/artifact.schema.json",
+  "type": "string",
+  "format": "binary",
+  "maxLength": 16777216
+}

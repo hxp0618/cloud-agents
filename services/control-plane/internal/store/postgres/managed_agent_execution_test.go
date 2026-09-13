@@ -16,7 +16,7 @@ func TestScanManagedAgentExecutionBuildsDetachedSnapshot(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
 	terminal, terminalJSON, resultDigest := persistedTerminalForTest(t)
 	var snapshot internalmanagedagent.ExecutionSnapshot
-	err := scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "succeeded", &resultDigest, nil, int64(3), now, now, &terminalJSON, nil), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+	err := scanManagedAgentExecution(managedExecutionRowValues("execution-alpha", 7, "succeeded", &resultDigest, nil, 3, now, &terminalJSON, nil), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,9 +37,45 @@ func TestScanManagedAgentExecutionRestoresRuntimeTranscript(t *testing.T) {
 	}
 	transcriptJSON := string(encoded)
 	var snapshot internalmanagedagent.ExecutionSnapshot
-	err = scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "succeeded", &resultDigest, nil, int64(3), now, now, &terminalJSON, &transcriptJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+	err = scanManagedAgentExecution(managedExecutionRowValues("execution-alpha", 7, "succeeded", &resultDigest, nil, 3, now, &terminalJSON, &transcriptJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
 	if err != nil || len(snapshot.Messages) != 2 || snapshot.Messages[0].MessageType != "Progress" || snapshot.Messages[1].MessageType != "Result" {
 		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
+	}
+}
+
+func TestScanManagedAgentExecutionRejectsUnusableCheckpoint(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
+	progress, _, _ := persistedTerminalForTest(t)
+	progress.MessageType = "Progress"
+	progress.Payload = map[string]any{"text": "working"}
+	encoded, err := json.Marshal([]runtimeprotocol.Message{progress})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript := string(encoded)
+	digest, err := internalmanagedagent.RuntimeMessagesDigest([]runtimeprotocol.Message{progress}, "execution-alpha", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name       string
+		transcript *string
+		digest     string
+		protocol   string
+	}{
+		{name: "missing", digest: digest, protocol: "runtime-message-checkpoint-v1"},
+		{name: "corrupt", transcript: &transcript, digest: "sha256:" + strings.Repeat("0", 64), protocol: "runtime-message-checkpoint-v1"},
+		{name: "incompatible", transcript: &transcript, digest: digest, protocol: "runtime-message-checkpoint-v0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var snapshot internalmanagedagent.ExecutionSnapshot
+			err := scanManagedAgentExecution(rowValues("execution-alpha", int64(7), int64(1), "running", nil, nil, int64(3), now, now,
+				nil, test.transcript, nil, int64(1), &test.digest, &now, &test.protocol, nil, false, int32(0), "none", nil,
+				nil, nil, nil, nil, nil, nil, nil, []byte("[]")), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+			if !errors.Is(err, ErrCoordinationResultDrift) {
+				t.Fatalf("error = %v, want ErrCoordinationResultDrift", err)
+			}
+		})
 	}
 }
 
@@ -53,7 +89,7 @@ func TestScanManagedAgentExecutionRestoresRejectedRuntimeResult(t *testing.T) {
 	transcriptJSON := string(encoded)
 	errorCode := "runtime_result_invalid"
 	var snapshot internalmanagedagent.ExecutionSnapshot
-	err = scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "failed", nil, &errorCode, int64(3), now, now, nil, &transcriptJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+	err = scanManagedAgentExecution(managedExecutionRowValues("execution-alpha", 7, "failed", nil, &errorCode, 3, now, nil, &transcriptJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
 	if err != nil || len(snapshot.Messages) != 1 || snapshot.Messages[0].MessageType != "Result" {
 		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
 	}
@@ -71,6 +107,12 @@ func persistedTerminalForTest(t *testing.T) (runtimeprotocol.Message, string, st
 		t.Fatal(err)
 	}
 	return message, string(encoded), digest
+}
+
+func managedExecutionRowValues(executionID string, generation int64, state string, resultDigest, errorCode *string, version int64, now time.Time, terminalMessage, runtimeMessages *string) rowScanner {
+	return rowValues(executionID, generation, int64(1), state, resultDigest, errorCode, version, now, now,
+		terminalMessage, runtimeMessages, nil, int64(0), nil, nil, nil, nil, false, int32(0), "none", nil,
+		nil, nil, nil, nil, nil, nil, nil, []byte("[]"))
 }
 
 func TestScanManagedAgentExecutionTransitionPreservesNullableTerminalFields(t *testing.T) {
@@ -123,8 +165,8 @@ func TestDecodeManagedAgentExecutionPageRowsBindsSessionAndCursor(t *testing.T) 
 	now := time.Date(2026, time.August, 31, 8, 0, 0, 0, time.UTC)
 	digest := "sha256:" + strings.Repeat("a", 64)
 	raw, err := json.Marshal([]managedAgentExecutionPageRow{
-		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 1, State: "queued", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now},
-		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-beta", ExecutionID: "execution-beta", Generation: 2, State: "succeeded", ResultDigest: &digest, ResourceVersion: 3, CreatedAt: now, UpdatedAt: now},
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 1, State: "queued", RecoveryState: "none", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now},
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-beta", ExecutionID: "execution-beta", Generation: 2, State: "succeeded", ResultDigest: &digest, RecoveryState: "none", ResourceVersion: 3, CreatedAt: now, UpdatedAt: now},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +192,7 @@ func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 			t.Fatalf("%s SQL is not tenant-bound execution SQL: %s", name, sql)
 		}
 	}
-	if !strings.Contains(settleManagedAgentExecutionSQL, "settle_managed_agent_execution_v4") {
+	if !strings.Contains(settleManagedAgentExecutionSQL, "settle_claimed_managed_agent_execution_v1") || !strings.Contains(checkpointManagedAgentExecutionSQL, "checkpoint_managed_agent_execution_v1") {
 		t.Fatal("execution settlement does not persist the Runtime transcript")
 	}
 	if strings.Contains(createManagedAgentExecutionSQL, "managed_agent_executions") {

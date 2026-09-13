@@ -53,6 +53,11 @@
     "runtimeOperationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "runtimeGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
     "runtimeSpecDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "restoreSnapshotId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "restoreSourceWorkspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "restoreSnapshotVolume": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "restoreContentDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "restoreSnapshotResourceVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
     "deadline": { "type": "string", "format": "date-time", "maxLength": 64 }
   },
   "allOf": [
@@ -85,6 +90,23 @@
             ]
           }
         }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "sandbox.create" } }, "required": ["action"] },
+      "then": {
+        "allOf": [
+          { "if": { "required": ["restoreSnapshotId"] }, "then": { "required": ["restoreSourceWorkspaceId", "restoreSnapshotVolume", "restoreContentDigest", "restoreSnapshotResourceVersion"] } },
+          { "if": { "required": ["restoreSourceWorkspaceId"] }, "then": { "required": ["restoreSnapshotId", "restoreSnapshotVolume", "restoreContentDigest", "restoreSnapshotResourceVersion"] } },
+          { "if": { "required": ["restoreSnapshotVolume"] }, "then": { "required": ["restoreSnapshotId", "restoreSourceWorkspaceId", "restoreContentDigest", "restoreSnapshotResourceVersion"] } },
+          { "if": { "required": ["restoreContentDigest"] }, "then": { "required": ["restoreSnapshotId", "restoreSourceWorkspaceId", "restoreSnapshotVolume", "restoreSnapshotResourceVersion"] } },
+          { "if": { "required": ["restoreSnapshotResourceVersion"] }, "then": { "required": ["restoreSnapshotId", "restoreSourceWorkspaceId", "restoreSnapshotVolume", "restoreContentDigest"] } }
+        ]
+      },
+      "else": {
+        "not": { "anyOf": [
+          { "required": ["restoreSnapshotId"] }, { "required": ["restoreSourceWorkspaceId"] }, { "required": ["restoreSnapshotVolume"] }, { "required": ["restoreContentDigest"] }, { "required": ["restoreSnapshotResourceVersion"] }
+        ] }
       }
     }
   ],

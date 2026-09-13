@@ -8,6 +8,7 @@ export const CLOUD_AGENT_ENVIRONMENT = Object.freeze({
   providerNoProxy: "CLOUD_AGENT_PROVIDER_NO_PROXY",
   providerNpmConfigUserconfig: "CLOUD_AGENT_PROVIDER_NPM_CONFIG_USERCONFIG",
   providerPipConfigFile: "CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE",
+  deepSeekHarnessBin: "CLOUD_AGENT_DEEPSEEK_HARNESS_BIN",
   codexNoToolOperation: "CLOUD_AGENT_CODEX_NO_TOOL_OPERATION",
 } as const satisfies Record<string, `CLOUD_AGENT_${string}`>);
 

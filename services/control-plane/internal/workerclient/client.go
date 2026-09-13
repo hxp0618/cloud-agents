@@ -42,9 +42,15 @@ const (
 	workerMaxPayloadBytes     uint32 = 64 << 10
 	workerMaxDeadlineSeconds  uint32 = 300
 	workerMaxIdentifierBytes  uint32 = 256
+	runtimeReadyTimeout              = 15 * time.Second
 )
 
 var errInvalidConfig = errors.New("worker client configuration is invalid")
+
+// ErrRuntimeProcessUnavailable identifies a Worker Runtime process exit after
+// the stream was opened. Durable execution may recover from this only after a
+// persisted checkpoint has been written.
+var ErrRuntimeProcessUnavailable = errors.New("worker runtime process unavailable")
 
 type Clock func() time.Time
 
@@ -61,6 +67,7 @@ type Supervisor struct {
 	runtimeClient  workerruntimev1alpha1connect.WorkerRuntimeServiceClient
 	workerIdentity *workerv1alpha1.WorkloadIdentity
 	now            Clock
+	readyTimeout   time.Duration
 	bindMu         sync.Mutex
 	mu             sync.RWMutex
 	binding        *bindingState
@@ -80,7 +87,7 @@ func New(config Config) (*Supervisor, error) {
 	if config.Clock == nil {
 		config.Clock = time.Now
 	}
-	return &Supervisor{client: config.Client, runtimeClient: config.RuntimeClient, workerIdentity: cloneIdentity(config.ExpectedWorkerIdentity), now: config.Clock}, nil
+	return &Supervisor{client: config.Client, runtimeClient: config.RuntimeClient, workerIdentity: cloneIdentity(config.ExpectedWorkerIdentity), now: config.Clock, readyTimeout: runtimeReadyTimeout}, nil
 }
 
 func (supervisor *Supervisor) BindRuntime(ctx context.Context) error {
@@ -176,13 +183,20 @@ func (supervisor *Supervisor) ensureBinding(ctx context.Context) error {
 	if state != nil {
 		supervisor.clearBinding(state)
 	}
-	return supervisor.BindRuntime(ctx)
+	timeout := supervisor.readyTimeout
+	if timeout <= 0 {
+		timeout = runtimeReadyTimeout
+	}
+	bindContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return supervisor.BindRuntime(bindContext)
 }
 
 type RuntimeSession struct {
 	stream     *connect.BidiStreamForClient[workerruntimev1alpha1.RuntimeSessionRequest, workerruntimev1alpha1.RuntimeSessionResponse]
 	execution  string
 	generation uint64
+	cancel     context.CancelFunc
 	sendMu     sync.Mutex
 }
 
@@ -277,10 +291,22 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, 
 	if fencing.GetGeneration() != generation || fencing.GetLeaseId() == "" || len(fencing.GetToken()) == 0 {
 		return nil, fail(connect.CodeInvalidArgument, "runtime_fencing_invalid")
 	}
-	stream := supervisor.runtimeClient.OpenSession(ctx)
+	streamContext, cancel := context.WithCancel(ctx)
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(supervisor.readyTimeout, func() {
+		close(timedOut)
+		cancel()
+	})
+	stream := supervisor.runtimeClient.OpenSession(streamContext)
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), ProviderKind: providerKind, TenantId: tenantID,
 	}}}); err != nil {
+		timerStopped := timer.Stop()
+		cancel()
+		if !timerStopped && ctx.Err() == nil {
+			<-timedOut
+			return nil, fail(connect.CodeDeadlineExceeded, "runtime_ready_timeout")
+		}
 		if retryStaleBinding && staleBindingError(err) {
 			supervisor.clearBinding(state)
 			_ = stream.CloseRequest()
@@ -290,7 +316,14 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, 
 		return nil, rpcFailure("runtime_open", err)
 	}
 	ready, err := stream.Receive()
+	timerStopped := timer.Stop()
+	if !timerStopped && ctx.Err() == nil {
+		<-timedOut
+		cancel()
+		return nil, fail(connect.CodeDeadlineExceeded, "runtime_ready_timeout")
+	}
 	if err != nil {
+		cancel()
 		if retryStaleBinding && staleBindingError(err) {
 			supervisor.clearBinding(state)
 			_ = stream.CloseRequest()
@@ -300,9 +333,10 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, 
 		return nil, rpcFailure("runtime_ready", err)
 	}
 	if ready == nil || ready.GetReady() == nil || ready.GetReady().GetExecutionId() != executionID || ready.GetReady().GetGeneration() != generation || ready.GetReady().GetProtocolMajor() != runtimeprotocol.ProtocolMajor || ready.GetReady().GetProtocolMinor() != runtimeprotocol.ProtocolMinor {
+		cancel()
 		return nil, fail(connect.CodeInternal, "runtime_ready_invalid")
 	}
-	return &RuntimeSession{stream: stream, execution: executionID, generation: generation}, nil
+	return &RuntimeSession{stream: stream, execution: executionID, generation: generation, cancel: cancel}, nil
 }
 
 func (session *RuntimeSession) Send(ctx context.Context, command runtimeprotocol.Command) error {
@@ -339,6 +373,9 @@ func (session *RuntimeSession) Receive() (runtimeprotocol.Message, error) {
 		return runtimeprotocol.Message{}, fail(connect.CodeInternal, "runtime_message_invalid")
 	}
 	if runtimeError := response.GetError(); runtimeError != nil {
+		if runtimeError.GetCode() == "runtime_execution_failed" {
+			return runtimeprotocol.Message{}, fmt.Errorf("%w: %s", ErrRuntimeProcessUnavailable, runtimeError.GetMessage())
+		}
 		return runtimeprotocol.Message{}, fmt.Errorf("runtime %s: %s", runtimeError.GetCode(), runtimeError.GetMessage())
 	}
 	if len(response.GetJson()) == 0 || len(response.GetJson()) > runtimeprotocol.MaxMessageBytes {
@@ -366,6 +403,9 @@ func (session *RuntimeSession) CloseRequest() error {
 func (session *RuntimeSession) CloseResponse() error {
 	if session == nil || session.stream == nil {
 		return nil
+	}
+	if session.cancel != nil {
+		session.cancel()
 	}
 	return session.stream.CloseResponse()
 }

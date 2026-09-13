@@ -501,7 +501,7 @@ func (service *DurableCoordinationService) BeginAdminEnvironmentLeaseUpgrade(
 		if digestErr != nil {
 			return authz.ErrOperationDenied
 		}
-		return service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		return service.runner.withTenantReadCommittedMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
 				authority, authorityErr := readAdminEnvironmentLeaseUpgradeAuthority(ctx, handle.transaction, tenantID, input.Scope.ProjectID, input.LeaseID, input.ReleaseDigest)
 				if authorityErr != nil {

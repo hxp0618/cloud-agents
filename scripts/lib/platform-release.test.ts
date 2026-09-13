@@ -125,11 +125,19 @@ describe("platform release", () => {
   it("packages the independent Compose and Helm deployment inputs", () => {
     const archive = buildPlatformDeploymentPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
-    expect(entries.map(({ path }) => path)).toEqual([
+    const paths = entries.map(({ path }) => path);
+    const adminAssets = paths.filter((path) => path.startsWith("deploy/admin-web/dist/assets/"));
+    const userAssets = paths.filter((path) => path.startsWith("deploy/user-web/dist/assets/"));
+    const indexDigest = (app: "admin-web" | "user-web") =>
+      createHash("sha256")
+        .update(readFileSync(`apps/${app}/dist/index.html`))
+        .digest("hex");
+    expect(adminAssets).toHaveLength(2);
+    expect(userAssets).toHaveLength(2);
+    expect(paths).toEqual([
       "LICENSE",
-      "deploy/admin-web/dist/assets/index-BHDZ5Pig.js",
-      "deploy/admin-web/dist/assets/index-CQUuSaJ-.css",
-      "deploy/admin-web/dist/index.html",
+      ...adminAssets,
+      `deploy/admin-web/dist/index-${indexDigest("admin-web")}.html`,
       "deploy/bootstrap/database.sql",
       "deploy/bootstrap/roles.sql",
       "deploy/compose/.env.example",
@@ -155,15 +163,15 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/control-plane.yaml",
       "deploy/helm/cloud-agents/templates/migrate-job.yaml",
       "deploy/helm/cloud-agents/templates/network-policy.yaml",
+      "deploy/helm/cloud-agents/templates/snapshot-pvc.yaml",
       "deploy/helm/cloud-agents/templates/tenant-bootstrap-job.yaml",
       "deploy/helm/cloud-agents/templates/user-web.yaml",
       "deploy/helm/cloud-agents/templates/worker.yaml",
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
-      "deploy/user-web/dist/assets/index-CWeVyaxP.js",
-      "deploy/user-web/dist/assets/index-qPDCn4WU.css",
-      "deploy/user-web/dist/index.html",
+      ...userAssets,
+      `deploy/user-web/dist/index-${indexDigest("user-web")}.html`,
       "deploy/web/server.mjs",
       "scripts/bootstrap-platform-remote-worker.sh",
       "scripts/prepare-platform-docker-target.sh",
@@ -174,6 +182,16 @@ describe("platform release", () => {
       "scripts/test-platform-kubernetes-target.sh",
       "scripts/test-platform-ssh-target.sh",
     ]);
+    for (const app of ["admin-web", "user-web"]) {
+      const dockerfile = new TextDecoder().decode(
+        entries.find(({ path }) => path === `deploy/docker/${app}.Dockerfile`)!.data,
+      );
+      expect(dockerfile).toContain(
+        `COPY ${app}/dist/index-${indexDigest(app)}.html /opt/cloud-agents/web/dist/index.html`,
+      );
+      expect(dockerfile).toContain(`COPY ${app}/dist/assets /opt/cloud-agents/web/dist/assets`);
+      expect(dockerfile).not.toContain(`COPY ${app}/dist /opt/cloud-agents/web/dist`);
+    }
   });
 
   it("keeps process-local coordinators on singleton replicas", () => {
@@ -392,6 +410,9 @@ describe("platform release", () => {
       '"@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@0.3.207"',
     );
     expect(workerDockerfile).toContain('test "$(claude --version)" = "2.1.207 (Claude Code)"');
+    expect(workerDockerfile).toContain("@deepseek-ai/dsh@0.1.2-rc.1");
+    expect(workerDockerfile).toContain('test "$(dsh --version)" = "0.1.2-rc.1"');
+    expect(workerDockerfile).toContain("CLOUD_AGENT_DEEPSEEK_HARNESS_BIN=/usr/local/bin/dsh");
     expect(workerDockerfile).toContain("chown 1000:1000 /workspace");
     expect(workerDockerfile).toContain("chmod 0700 /workspace");
     expect(workerDockerfile).not.toContain("@openai/codex@latest");

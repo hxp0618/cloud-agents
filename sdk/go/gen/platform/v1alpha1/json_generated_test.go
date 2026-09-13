@@ -181,6 +181,15 @@ func TestRemoteWorkerHeartbeatResponseKeepsSandboxCommand(t *testing.T) {
 	}
 }
 
+func TestRemoteWorkerHeartbeatResponseKeepsSandboxPTYMode(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	body := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RemoteWorkerHeartbeat","projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"enrollmentId":"enrollment-alpha","workerId":"worker-alpha","incarnationId":"incarnation-alpha","generation":1,"observedGeneration":1,"desiredState":"active","observedState":"active","healthState":"online","acceptedAt":"2026-09-06T12:00:00Z","expiresAt":"2026-09-06T12:00:30Z","nextHeartbeatAfterSeconds":5,"reconcileRequired":false,"sandboxPtyCommand":{"commandId":"rwpty-alpha","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":1,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","action":"exchange","sessionId":"session-alpha","since":0,"takeover":true,"pty":false,"deadline":"2026-09-06T12:01:00Z"}}`)
+	heartbeat, err := DecodeRemoteWorkerHeartbeatResponseJSON(body)
+	if err != nil || heartbeat.Value.SandboxPTYCommand == nil || heartbeat.Value.SandboxPTYCommand.PTY == nil || *heartbeat.Value.SandboxPTYCommand.PTY || len(heartbeat.Unknown) != 0 {
+		t.Fatalf("sandbox PTY command = %#v, unknown = %#v, error = %v", heartbeat.Value.SandboxPTYCommand, heartbeat.Unknown, err)
+	}
+}
+
 func TestRemoteWorkerHeartbeatRequestKeepsSandboxClaimRenewal(t *testing.T) {
 	body := []byte(`{"incarnationId":"incarnation-alpha","observedGeneration":1,"observedState":"active","workerVersion":"v0.1.0","os":"linux","architecture":"arm64","kernelVersion":"6.12.1","capabilities":["docker","exec","files"],"capacity":{"cpuMillis":4000,"memoryBytes":8589934592,"diskBytes":42949672960},"sandboxCommandId":"rwsc-alpha"}`)
 	request, err := DecodeRemoteWorkerHeartbeatRequestJSON(body)
@@ -233,9 +242,19 @@ func TestRemoteWorkerSandboxFileCommandBoundaries(t *testing.T) {
 
 func TestRemoteWorkerSandboxPTYCommandBoundaries(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
+	create := []byte(`{"commandId":"rwpty-create","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","action":"create","command":"exec /usr/local/bin/cloud-agent-runtime","deadline":"2026-09-07T12:01:00Z"}`)
+	if decoded, err := DecodeRemoteWorkerSandboxPTYCommandJSON(create); err != nil || decoded.Command != "exec /usr/local/bin/cloud-agent-runtime" {
+		t.Fatalf("PTY create=%#v error=%v", decoded, err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxPTYCommandJSON([]byte(strings.Replace(string(create), `exec /usr/local/bin/cloud-agent-runtime`, "exec runtime\\nleak", 1))); err == nil {
+		t.Fatal("PTY create accepted a multiline command")
+	}
 	command := []byte(`{"commandId":"rwpty-alpha","grantId":"grant-alpha","workspaceId":"workspace-alpha","targetId":"target-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"runtimeId":"runtime-alpha","runtimeOperationId":"operation-alpha","runtimeSpecDigest":"` + digest + `","action":"exchange","sessionId":"session-alpha","since":0,"takeover":false,"pty":false,"input":{"messageType":"binary","payloadBase64Url":"AGhp"},"deadline":"2026-09-07T12:01:00Z"}`)
 	if decoded, err := DecodeRemoteWorkerSandboxPTYCommandJSON(command); err != nil || decoded.Since == nil || *decoded.Since != 0 || decoded.PTY == nil || *decoded.PTY || decoded.Input == nil {
 		t.Fatalf("PTY command=%#v error=%v", decoded, err)
+	}
+	if _, err := DecodeRemoteWorkerSandboxPTYCommandJSON([]byte(strings.Replace(string(command), `"action":"exchange"`, `"action":"exchange","command":"runtime"`, 1))); err == nil {
+		t.Fatal("PTY exchange accepted a process command")
 	}
 	receipt := []byte(`{"commandId":"rwpty-alpha","grantId":"grant-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"action":"exchange","result":"succeeded","bytesTransferred":3,"sessionId":"session-alpha","running":true,"outputOffset":2,"frames":[{"messageType":"binary","payloadBase64Url":"AWhp"}]}`)
 	if decoded, err := DecodeRemoteWorkerSandboxPTYCommandReceiptJSON(receipt); err != nil || decoded.Frames == nil || decoded.BytesTransferred != 3 {

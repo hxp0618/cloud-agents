@@ -3,7 +3,7 @@
   "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/session-create-request.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["sessionId", "providerKind", "environmentLeaseId"],
+  "required": ["sessionId", "providerKind"],
   "properties": {
     "sessionId": {
       "type": "string",
@@ -15,6 +15,43 @@
     },
     "environmentLeaseId": {
       "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "workspaceId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "sandboxId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "sandboxGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "environmentProfileId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "environmentProfileVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": ["environmentLeaseId"],
+      "not": {
+        "anyOf": [
+          { "required": ["workspaceId"] },
+          { "required": ["sandboxId"] },
+          { "required": ["sandboxGeneration"] },
+          { "required": ["environmentProfileId"] },
+          { "required": ["environmentProfileVersion"] }
+        ]
+      }
+    },
+    {
+      "required": ["workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion"],
+      "not": { "required": ["environmentLeaseId"] }
+    }
+  ]
 }

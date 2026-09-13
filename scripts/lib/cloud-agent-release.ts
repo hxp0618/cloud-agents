@@ -8,6 +8,8 @@ export const CLOUD_AGENT_PUBLIC_PACKAGES = [
   "@cloud-agents/cloud-agent-runtime",
   "@cloud-agents/cloud-agent-provider-codex",
   "@cloud-agents/cloud-agent-provider-claude",
+  "@cloud-agents/cloud-agent-provider-pi",
+  "@cloud-agents/cloud-agent-provider-deepseek-harness",
   "@cloud-agents/cloud-agent-testkit",
   "@cloud-agents/cloud-agent-distribution",
 ] as const;
@@ -26,8 +28,14 @@ const LOCAL_PROTOCOL = /^(?:workspace|catalog|file|link|portal):/u;
 const EXACT_SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const PUBLIC_PACKAGE_SET = new Set<string>(CLOUD_AGENT_PUBLIC_PACKAGES);
-const CLAUDE_AGENT_SDK = "@anthropic-ai/claude-agent-sdk";
-const CLAUDE_AGENT_SDK_VERSION = "0.3.207";
+const PINNED_PROVIDER_DEPENDENCIES = {
+  "@anthropic-ai/claude-agent-sdk": ["@cloud-agents/cloud-agent-provider-claude", "0.3.207"],
+  "@earendil-works/pi-coding-agent": ["@cloud-agents/cloud-agent-provider-pi", "0.85.1"],
+  "@deepseek-ai/dsh-sdk-client": [
+    "@cloud-agents/cloud-agent-provider-deepseek-harness",
+    "0.1.2-rc.1",
+  ],
+} as const;
 const EXPECTED_INTERNAL_DEPENDENCIES = {
   "@cloud-agents/cloud-agent-protocol": [],
   "@cloud-agents/cloud-agent-provider-api": ["@cloud-agents/cloud-agent-protocol"],
@@ -37,6 +45,8 @@ const EXPECTED_INTERNAL_DEPENDENCIES = {
   ],
   "@cloud-agents/cloud-agent-provider-codex": ["@cloud-agents/cloud-agent-provider-api"],
   "@cloud-agents/cloud-agent-provider-claude": ["@cloud-agents/cloud-agent-provider-api"],
+  "@cloud-agents/cloud-agent-provider-pi": ["@cloud-agents/cloud-agent-provider-api"],
+  "@cloud-agents/cloud-agent-provider-deepseek-harness": ["@cloud-agents/cloud-agent-provider-api"],
   "@cloud-agents/cloud-agent-testkit": [
     "@cloud-agents/cloud-agent-protocol",
     "@cloud-agents/cloud-agent-provider-api",
@@ -47,6 +57,8 @@ const EXPECTED_INTERNAL_DEPENDENCIES = {
     "@cloud-agents/cloud-agent-runtime",
     "@cloud-agents/cloud-agent-provider-codex",
     "@cloud-agents/cloud-agent-provider-claude",
+    "@cloud-agents/cloud-agent-provider-pi",
+    "@cloud-agents/cloud-agent-provider-deepseek-harness",
   ],
 } as const satisfies Readonly<
   Record<CloudAgentPublicPackageName, ReadonlyArray<CloudAgentPublicPackageName>>
@@ -233,30 +245,20 @@ export function validatePackedCloudAgentSet(manifests: ReadonlyArray<JSONRecord>
     }
   }
 
-  for (const [name, manifest] of byName) {
-    for (const section of DEPENDENCY_SECTIONS) {
-      const sdkVersion = dependencyRecord(manifest[section])[CLAUDE_AGENT_SDK];
-      if (sdkVersion === undefined) continue;
-      if (name !== "@cloud-agents/cloud-agent-provider-claude") {
-        throw new Error(`${name} must not carry the Claude Agent SDK.`);
-      }
-      if (section !== "dependencies") {
-        throw new Error(`Claude Provider must declare ${CLAUDE_AGENT_SDK} in dependencies only.`);
-      }
-      if (sdkVersion !== CLAUDE_AGENT_SDK_VERSION) {
-        throw new Error(
-          `Claude Provider must exclusively pin ${CLAUDE_AGENT_SDK} ${CLAUDE_AGENT_SDK_VERSION}.`,
-        );
+  for (const [dependency, [owner, version]] of Object.entries(PINNED_PROVIDER_DEPENDENCIES)) {
+    for (const [name, manifest] of byName) {
+      for (const section of DEPENDENCY_SECTIONS) {
+        const actual = dependencyRecord(manifest[section])[dependency];
+        if (actual === undefined) continue;
+        if (name !== owner || section !== "dependencies" || actual !== version)
+          throw new Error(
+            `${owner} must exclusively pin ${dependency} ${version} in dependencies.`,
+          );
       }
     }
-  }
-  const claudeDependencies = dependencyRecord(
-    byName.get("@cloud-agents/cloud-agent-provider-claude")!.dependencies,
-  );
-  if (claudeDependencies[CLAUDE_AGENT_SDK] !== CLAUDE_AGENT_SDK_VERSION) {
-    throw new Error(
-      `Claude Provider must exclusively pin ${CLAUDE_AGENT_SDK} ${CLAUDE_AGENT_SDK_VERSION}.`,
-    );
+    if (dependencyRecord(byName.get(owner)!.dependencies)[dependency] !== version) {
+      throw new Error(`${owner} must exclusively pin ${dependency} ${version} in dependencies.`);
+    }
   }
 }
 

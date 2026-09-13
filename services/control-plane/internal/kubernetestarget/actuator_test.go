@@ -31,7 +31,7 @@ func TestCredentialDirectoryListsAndCleansManagedWorkers(t *testing.T) {
 			t.Errorf("authorization = %q", incoming.Header.Get("Authorization"))
 		}
 		if incoming.Method == http.MethodGet && !strings.HasSuffix(incoming.URL.Path, "/"+name) {
-			if incoming.URL.Query().Get("labelSelector") != "cloud-agents.dev/managed=true" || incoming.URL.Query().Get("limit") != "200" {
+			if incoming.URL.Query().Get("labelSelector") != "cloud-agents.dev/managed=true,cloud-agents.dev/worker" || incoming.URL.Query().Get("limit") != "200" {
 				t.Errorf("list query = %q", incoming.URL.RawQuery)
 			}
 			_ = json.NewEncoder(writer).Encode(map[string]any{"metadata": map[string]string{}, "items": []resource{{Metadata: resourceMetadata{Name: name, Namespace: config.Namespace, Annotations: annotations}}}})

@@ -16,6 +16,7 @@
         "projectRef",
         "sourceWorkspaceId",
         "sourceWorkspaceResourceVersion",
+        "sourceTargetId",
         "backend",
         "consistencyMode",
         "status",
@@ -25,7 +26,8 @@
         "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
         "sourceWorkspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "sourceWorkspaceResourceVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,18}$" },
-        "backend": { "const": "docker-volume-v1" },
+        "sourceTargetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "backend": { "enum": ["docker-volume-v1", "portable-tar-v1"] },
         "consistencyMode": { "const": "offline" },
         "status": {
           "enum": ["pending", "available", "unknown", "failed", "deleting", "cleanup_failed", "deleted"]
@@ -48,6 +50,7 @@
     "Admin projection is metadata-only and never exposes paths, file bytes, content digests, endpoints, credentials or Secret bytes",
     "available requires sizeBytes and observedAt; failed requires stableErrorCode and observedAt",
     "docker-volume-v1 uses an offline copy after the source Workspace writer is durably fenced",
+    "portable-tar-v1 is content-verified controller storage that remains readable without the source Docker Target",
     "retentionSeconds and expiresAt are immutable database-clock authority for snapshots created after retention support was introduced",
     "cleanupOperationId and cleanupTrigger never expose a physical volume name, endpoint, credential, digest or content",
     "deleted snapshots retain metadata and size for audit but cannot be restored"

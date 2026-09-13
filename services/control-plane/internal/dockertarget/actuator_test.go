@@ -66,7 +66,7 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 	}
 	environment, _ := create["Env"].([]any)
 	if create["Image"] != image || !containsJSONStrings(environment,
-		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
+		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
 		"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
 	) {
 		t.Fatalf("image/env = %#v/%#v", create["Image"], create["Env"])

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
@@ -16,6 +17,7 @@ type RemoteWorkerSandboxPTYRequest struct {
 	Authority            SandboxAccessGrantAuthority
 	CommandID, RequestID string
 	TokenDigest, Action  string
+	Command              string
 	SessionID            string
 	Since                int64
 	Takeover             bool
@@ -33,8 +35,8 @@ type remoteWorkerSandboxPTYResult struct {
 const requestRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at,
     bytes_transferred, result_session_uid, result_running, result_output_offset,
     result_frames, stable_error_code
-FROM cloud_agents.request_remote_worker_sandbox_pty_v2(
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`
+FROM cloud_agents.request_remote_worker_sandbox_pty_v3(
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`
 
 const getRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at,
     bytes_transferred, result_session_uid, result_running, result_output_offset,
@@ -47,14 +49,18 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxPTY(ctx context.Conte
 		!validMutationIdentifier(input.CommandID) || !validMutationIdentifier(input.RequestID) ||
 		!validCoordinationDigest(input.TokenDigest) ||
 		(input.Action != "create" && input.Action != "get" && input.Action != "delete" && input.Action != "exchange") ||
+		(input.Command != "" && (input.Action != "create" || len(input.Command) > 4096 || strings.ContainsAny(input.Command, "\x00\r\n"))) ||
+		input.Action != "create" && input.Command != "" ||
 		input.Action != "create" && !validMutationIdentifier(input.SessionID) ||
 		input.Action == "create" && (input.SessionID != "" || input.Since != 0 || input.Takeover || input.PTY != nil || input.Input != nil) ||
 		input.Action != "exchange" && (input.PTY != nil || input.Input != nil) ||
-		input.Action == "exchange" && (input.Since < 0 || input.Since > 9007199254740991 || input.SSH && input.PTY == nil) ||
-		!input.SSH && input.PTY != nil {
+		input.Action == "exchange" && (input.Since < 0 || input.Since > 9007199254740991 || input.SSH && input.PTY == nil) {
 		return platform.RemoteWorkerSandboxPTYCommandReceipt{}, ErrCoordinationInvalidInput
 	}
-	var session, since, takeover, messageType, payload, pty any
+	var command, session, since, takeover, messageType, payload, pty any
+	if input.Command != "" {
+		command = input.Command
+	}
 	switch input.Action {
 	case "get", "delete":
 		session = input.SessionID
@@ -76,12 +82,12 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxPTY(ctx context.Conte
 		CommandID: input.CommandID, GrantID: input.Authority.GrantID,
 		SandboxID: access.SandboxID, SandboxGeneration: access.Generation, Action: input.Action,
 	}}
-	err := store.runner.withTenantMutation(ctx, access.Scope.TenantID, func(handle *tenantReadHandle) error {
+	err := store.runner.withTenantReadCommittedMutation(ctx, access.Scope.TenantID, func(handle *tenantReadHandle) error {
 		return scanRemoteWorkerSandboxPTY(handle.transaction.queryRow(ctx, requestRemoteWorkerSandboxPTYSQL,
 			access.Scope.TenantID, access.Scope.ProjectID, input.CommandID, input.Authority.GrantID,
 			input.TokenDigest, access.TargetID, access.WorkspaceID, access.SandboxID,
 			access.Generation, access.RuntimeID, access.RuntimeOperationID, access.RuntimeSpecDigest,
-			input.Action, session, since, takeover, messageType, payload, input.SSH, pty,
+			input.Action, command, session, since, takeover, messageType, payload, input.SSH, pty,
 			input.RequestID), &result)
 	})
 	if err != nil {

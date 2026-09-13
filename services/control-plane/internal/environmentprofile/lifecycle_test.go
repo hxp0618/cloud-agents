@@ -11,7 +11,7 @@ func TestDraftProfileValidationAndDigestBindSchedulingInputs(t *testing.T) {
 	input := CreateInput{
 		Scope:     Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
 		ProfileID: "standard", ProfileName: "standard", Version: 1, Description: "Standard workspace",
-		ProviderKinds: []string{"codex", "claudeAgent"}, CPULimitMillis: 2000, MemoryLimitBytes: 4294967296,
+		ProviderKinds: []string{"codex", "claudeAgent", "pi", "deepseek-harness"}, CPULimitMillis: 2000, MemoryLimitBytes: 4294967296,
 		StoragePolicyRef: "workspace-8gb", NetworkPolicyRef: "public-egress",
 		ReleaseDigest: "sha256:" + strings.Repeat("a", 64), TargetRefs: []string{"docker-primary"},
 		ProviderCredentialRef: "provider-primary",
@@ -49,6 +49,9 @@ func TestDraftProfileValidationAndDigestBindSchedulingInputs(t *testing.T) {
 func TestProfileRejectsDuplicateAuthorityLists(t *testing.T) {
 	if validProviderKinds([]string{"codex", "codex"}) || validIdentifiers([]string{"target-a", "target-a"}, 32) {
 		t.Fatal("profile accepted duplicate provider or target authority")
+	}
+	if validProviderKinds([]string{"codex", "claudeAgent", "pi", "deepseek-harness", "cursor"}) {
+		t.Fatal("profile accepted more than four Provider kinds")
 	}
 }
 

@@ -182,10 +182,10 @@ func snapshotLiveController(t *testing.T, ctx context.Context, environment liveC
 	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
 		t.Fatalf("snapshot reconcile = %v / %v", worked, err)
 	}
-	var status, physical, contentDigest, operationID, operationState, cleanupPhase string
+	var status, backend, physical, contentDigest, operationID, operationState, cleanupPhase string
 	var sizeBytes int64
 	var writerReleased bool
-	err := environment.owner.QueryRow(ctx, `SELECT snapshot.status,snapshot.physical_snapshot_uid,snapshot.content_digest,
+	err := environment.owner.QueryRow(ctx, `SELECT snapshot.status,snapshot.backend,snapshot.physical_snapshot_uid,snapshot.content_digest,
 		snapshot.size_bytes,snapshot.operation_id,operation.state,operation.cleanup_phase,source.writer_released
 		FROM cloud_agents.workspace_snapshots snapshot JOIN cloud_agents.platform_operations operation
 		ON operation.tenant_id=snapshot.tenant_id AND operation.operation_id=snapshot.operation_id
@@ -193,23 +193,31 @@ func snapshotLiveController(t *testing.T, ctx context.Context, environment liveC
 		JOIN cloud_agents.sandbox_sessions source ON source.tenant_id=snapshot.tenant_id
 		AND source.project_uid=snapshot.project_uid AND source.sandbox_uid=snapshot.source_sandbox_uid
 		WHERE snapshot.tenant_id='tenant' AND snapshot.project_uid='project' AND snapshot.snapshot_uid='snapshot'`).Scan(
-		&status, &physical, &contentDigest, &sizeBytes, &operationID, &operationState, &cleanupPhase, &writerReleased)
+		&status, &backend, &physical, &contentDigest, &sizeBytes, &operationID, &operationState, &cleanupPhase, &writerReleased)
 	if err != nil || status != "available" || operationState != "succeeded" || cleanupPhase != "complete" ||
 		!strings.HasPrefix(contentDigest, "sha256:") || sizeBytes <= 0 || !writerReleased {
 		t.Fatalf("snapshot settlement=%s/%s/%s/%d/%s writerReleased=%t err=%v", status, operationState, cleanupPhase, sizeBytes, contentDigest, writerReleased, err)
 	}
-	statusCode, body := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodGet, "/volumes/"+physical)
-	var volume struct {
-		Name   string            `json:"Name"`
-		Labels map[string]string `json:"Labels"`
-	}
-	if statusCode != http.StatusOK || json.Unmarshal(body, &volume) != nil || volume.Name != physical ||
-		volume.Labels["cloud-agents.dev/resource"] != "foundation-workspace-snapshot" ||
-		volume.Labels["cloud-agents.dev/snapshot"] != "snapshot" || volume.Labels["cloud-agents.dev/workspace"] != "workspace" {
-		t.Fatalf("snapshot volume status=%d body=%s", statusCode, body)
+	if backend == "portable-tar-v1" {
+		archiveDirectory := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_SNAPSHOT_DIRECTORY")
+		info, statErr := os.Stat(filepath.Join(archiveDirectory, physical+".tar"))
+		if statErr != nil || !info.Mode().IsRegular() || info.Size() != sizeBytes {
+			t.Fatalf("portable snapshot file=%s size=%d err=%v", physical, sizeBytes, statErr)
+		}
+	} else {
+		statusCode, body := liveDockerRequest(t, ctx, environment.dockerSocket, http.MethodGet, "/volumes/"+physical)
+		var volume struct {
+			Name   string            `json:"Name"`
+			Labels map[string]string `json:"Labels"`
+		}
+		if statusCode != http.StatusOK || json.Unmarshal(body, &volume) != nil || volume.Name != physical ||
+			volume.Labels["cloud-agents.dev/resource"] != "foundation-workspace-snapshot" ||
+			volume.Labels["cloud-agents.dev/snapshot"] != "snapshot" || volume.Labels["cloud-agents.dev/workspace"] != "workspace" {
+			t.Fatalf("snapshot volume status=%d body=%s", statusCode, body)
+		}
 	}
 	receipt, _ := json.Marshal(map[string]any{"snapshotId": "snapshot", "operationId": operationID,
-		"physicalVolume": physical, "contentDigest": contentDigest, "sizeBytes": sizeBytes,
+		"physicalVolume": physical, "backend": backend, "contentDigest": contentDigest, "sizeBytes": sizeBytes,
 		"archiveVerified": true, "helperStarted": false, "status": status, "writerFenceReleased": true})
 	t.Logf("FOUNDATION_LIVE_SNAPSHOT=%s", receipt)
 }
@@ -267,7 +275,11 @@ func restoreStopLiveController(t *testing.T, ctx context.Context, environment li
 	if _, err := environment.sandbox.Find(ctx, identity); !errors.Is(err, opensandbox.ErrNotFound) {
 		t.Fatalf("restored runtime still exists: %v", err)
 	}
-	removeLiveVolume(t, ctx, environment.dockerSocket, current.volumeName, "workspace-restored")
+	targetID := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_TARGET_ID")
+	if targetID == "" {
+		targetID = "target"
+	}
+	removeLiveVolume(t, ctx, environment.dockerSocket, current.volumeName, targetID, "workspace-restored")
 	receipt, _ := json.Marshal(map[string]any{"runtimeId": priorRuntime, "runtimeDeleted": true,
 		"workspaceVolume": current.volumeName, "workspaceVolumeDeleted": true, "writerReleased": true,
 		"generation": current.generation, "status": current.observedState})
@@ -281,6 +293,7 @@ func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControl
 	sandboxEndpoint := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_OPENSANDBOX_ENDPOINT")
 	sandboxKey := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_OPENSANDBOX_KEY")
 	dockerSocket := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_DOCKER_SOCKET")
+	snapshotDirectory := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_SNAPSHOT_DIRECTORY")
 	if runtimeURL == "" || ownerURL == "" || sandboxEndpoint == "" || sandboxKey == "" || dockerSocket == "" {
 		t.Fatal("live foundation Controller environment is incomplete")
 	}
@@ -341,7 +354,7 @@ func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControl
 	t.Cleanup(owner.Close)
 	if command, err := owner.Exec(ctx, `UPDATE cloud_agents.deployment_targets
 		SET endpoint=$1, updated_at=transaction_timestamp()
-		WHERE tenant_id='tenant' AND project_uid='project' AND target_uid='target'`, server.URL); err != nil || command.RowsAffected() != 1 {
+		WHERE tenant_id='tenant' AND project_uid='project' AND target_uid IN ('target','target-restore')`, server.URL); err != nil || command.RowsAffected() < 1 {
 		t.Fatalf("bind live Docker endpoint = %d / %v", command.RowsAffected(), err)
 	}
 
@@ -366,7 +379,14 @@ func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControl
 	if err != nil {
 		t.Fatal(err)
 	}
-	controller, err := New(store, dockerDirectory, nil, sandboxDirectory)
+	var archives *dockertarget.FoundationSnapshotArchiveDirectory
+	if snapshotDirectory != "" {
+		archives, err = dockertarget.NewFoundationSnapshotArchiveDirectory(snapshotDirectory)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	controller, err := New(store, dockerDirectory, nil, sandboxDirectory, archives)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +404,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if err != nil || claimed.DatabaseOutcome != postgres.DatabaseCommitted || !claimed.Found || claimed.Claim.SandboxID != "sandbox" {
 		t.Fatalf("prepare claim = %#v / %v", claimed, err)
 	}
-	result := ExecuteEffect(ctx, environment.controller.docker, nil, environment.controller.opensandbox, claimed.Claim)
+	result := ExecuteEffect(ctx, environment.controller.docker, nil, environment.controller.opensandbox, environment.controller.archives, claimed.Claim)
 	if result.Err != nil || result.RuntimeState != "Running" {
 		t.Fatalf("prepare physical effect = %#v", result)
 	}
@@ -480,7 +500,7 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		t.Fatalf("failed runtime still exists: %v", err)
 	}
 
-	removeLiveVolume(t, ctx, environment.dockerSocket, failure.volumeName, failure.workspaceID)
+	removeLiveVolume(t, ctx, environment.dockerSocket, failure.volumeName, "target", failure.workspaceID)
 	if count := liveSandboxCount(t, ctx, environment); count != 1 {
 		t.Fatalf("OpenSandbox residue = %d", count)
 	}
@@ -727,7 +747,7 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 	if err := environment.sandbox.Delete(ctx, currentIdentity, current.runtimeID); err != nil {
 		t.Fatalf("delete rebuilt runtime: %v", err)
 	}
-	removeLiveVolume(t, ctx, environment.dockerSocket, current.volumeName, current.workspaceID)
+	removeLiveVolume(t, ctx, environment.dockerSocket, current.volumeName, "target", current.workspaceID)
 	if count := liveSandboxCount(t, ctx, environment); count != 0 {
 		t.Fatalf("OpenSandbox residue = %d", count)
 	}
@@ -893,7 +913,7 @@ func liveCommand(t *testing.T, ctx context.Context, environment liveControllerEn
 	return string(result)
 }
 
-func removeLiveVolume(t *testing.T, ctx context.Context, socket, name, workspace string) {
+func removeLiveVolume(t *testing.T, ctx context.Context, socket, name, target, workspace string) {
 	t.Helper()
 	status, body := liveDockerRequest(t, ctx, socket, http.MethodGet, "/volumes/"+name)
 	var volume struct {
@@ -906,7 +926,7 @@ func removeLiveVolume(t *testing.T, ctx context.Context, socket, name, workspace
 	expected := map[string]string{
 		"cloud-agents.dev/managed": "true", "cloud-agents.dev/resource": "foundation-workspace",
 		"cloud-agents.dev/tenant": "tenant", "cloud-agents.dev/project": "project",
-		"cloud-agents.dev/target": "target", "cloud-agents.dev/workspace": workspace,
+		"cloud-agents.dev/target": target, "cloud-agents.dev/workspace": workspace,
 	}
 	if volume.Name != name || !reflect.DeepEqual(volume.Labels, expected) {
 		t.Fatalf("refuse volume cleanup: %#v", volume)

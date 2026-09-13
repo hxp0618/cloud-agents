@@ -54,6 +54,7 @@ describe("createClaudeProvider", () => {
       const call = vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0];
       expect(call?.input.workload.model).toBe("claude-test");
       expect(call?.environment.ANTHROPIC_BASE_URL).toBe("https://provider.example");
+      expect(call?.environment.CLAUDE_CODE_EFFORT_LEVEL).toBe("unset");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

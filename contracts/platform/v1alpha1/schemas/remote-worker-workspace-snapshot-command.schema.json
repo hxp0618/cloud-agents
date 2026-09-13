@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-workspace-snapshot-command.schema.json",
+  "title": "RemoteWorkerWorkspaceSnapshotCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "attempt", "action", "operationId", "workspaceId", "targetId", "snapshotId", "sourceVolumeName", "imageUri", "deadline"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "action": { "const": "workspace.snapshot" },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "snapshotId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "sourceVolumeName": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$" },
+    "imageUri": { "type": "string", "maxLength": 1024, "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$" },
+    "deadline": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "the mTLS route supplies tenant, project, enrollment, and incarnation authority",
+    "the command is issued only after the source Sandbox writer is fenced and stopped",
+    "the Worker exports only the exact deterministic Workspace volume and uploads its verified digest before acknowledging the receipt"
+  ]
+}

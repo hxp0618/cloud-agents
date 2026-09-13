@@ -29,7 +29,7 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 			if err := run([]string{argument}, &stdout); err != nil {
 				t.Fatal(err)
 			}
-			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list (Admin API)"} {
+			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input|reconcile", "environment-lease get|list (Admin API)"} {
 				if !strings.Contains(stdout.String(), expected) {
 					t.Fatalf("help output %q does not contain %q", stdout.String(), expected)
 				}
@@ -311,6 +311,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"execution", "execute", "help"}, expected: "-runtime-mode string"},
 		{args: []string{"execution", "download-artifact", "help"}, expected: "-message-index int"},
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
+		{args: []string{"execution", "reconcile", "help"}, expected: "-checkpoint-digest string"},
 		{args: []string{"events", "watch", "help"}, expected: "-until-terminal"},
 		{args: []string{"sandbox", "exec", "help"}, expected: "-expected-generation int"},
 		{args: []string{"sandbox", "grant", "help"}, expected: "-ttl-seconds int"},
@@ -939,7 +940,7 @@ func TestRunExecutionMutationUsesGenerationAndIdempotency(t *testing.T) {
 				body = string(contents)
 				writer.Header().Set("X-Resource-Version", "2")
 				writer.Header().Set("Content-Type", "application/json")
-				_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":7,"state":"cancelled"}}`))
+				_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":7,"attemptNumber":1,"recoveryState":"none","state":"cancelled"}}`))
 			}))
 			defer server.Close()
 			args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "--idempotency-key", "idempotency-alpha", "execution", action, "--generation", "7"}
@@ -985,5 +986,33 @@ func TestRunExecutionResolvesInteractions(t *testing.T) {
 				t.Fatalf("path=%q body=%q output=%q", path, body, stdout.String())
 			}
 		})
+	}
+}
+
+func TestRunExecutionReconcilesUnknownSideEffect(t *testing.T) {
+	var path, body string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		path = request.URL.Path
+		contents, _ := io.ReadAll(request.Body)
+		body = string(contents)
+		if request.Header.Get("Idempotency-Key") != "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ" {
+			t.Fatalf("idempotency key = %q", request.Header.Get("Idempotency-Key"))
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	digest := "sha256:" + strings.Repeat("b", 64)
+	args := []string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
+		"--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha",
+		"--request-id", "request-alpha", "--idempotency-key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ", "execution", "reconcile",
+		"--generation", "7", "--checkpoint-digest", digest, "--outcome", "not-applied",
+	}
+	var stdout bytes.Buffer
+	if err := run(args, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(path, ":reconcile") || body != `{"generation":7,"checkpointDigest":"`+digest+`","outcome":"not-applied"}` || !strings.Contains(stdout.String(), `"reconciled":true`) {
+		t.Fatalf("path=%q body=%q output=%q", path, body, stdout.String())
 	}
 }

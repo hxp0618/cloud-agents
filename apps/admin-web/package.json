@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cloud-agents/cloud-agent-protocol": "workspace:*",
     "@cloud-agents/cloud-agent-platform-sdk": "workspace:*",
     "react": "19.2.8",
     "react-dom": "19.2.8"

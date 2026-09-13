@@ -350,7 +350,11 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "./schemas/session-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/session-page.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -370,15 +374,25 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/session-create-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/session-create-request.schema.json"
+              }
             }
           }
         },
         "responses": {
           "201": {
             "description": "Created",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/session.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/session.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -400,8 +414,16 @@
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/session.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/session.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -424,8 +446,16 @@
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/session.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/session.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -449,7 +479,11 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "./schemas/turn-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/turn-page.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -477,8 +511,16 @@
         "responses": {
           "201": {
             "description": "Created",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/turn.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/turn.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -503,7 +545,11 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "./schemas/event-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/event-page.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -525,8 +571,16 @@
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/turn.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/turn.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -549,7 +603,11 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "./schemas/execution-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/execution-page.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -570,15 +628,25 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/execution-create-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/execution-create-request.schema.json"
+              }
             }
           }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/execution.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/execution.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -604,8 +672,16 @@
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/execution.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/execution.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -632,12 +708,16 @@
             "headers": {
               "Content-Disposition": {
                 "description": "Attachment disposition carrying the validated artifact basename.",
-                "schema": { "type": "string", "pattern": "^attachment;\\s*filename(?:\\*=[Uu][Tt][Ff]-8''|=).+$", "maxLength": 16384 }
+                "schema": {
+                  "$ref": "./schemas/artifact-content-disposition.schema.json"
+                }
               }
             },
             "content": {
-              "*/*": {
-                "schema": { "type": "string", "format": "binary", "maxLength": 16777216 }
+            "*/*": {
+              "schema": {
+                "$ref": "./schemas/artifact.schema.json"
+              }
               }
             }
           },
@@ -666,15 +746,25 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/execution-cancel-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/execution-cancel-request.schema.json"
+              }
             }
           }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/execution.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/execution.schema.json" }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -702,16 +792,60 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/execution-interrupt-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/execution-interrupt-request.schema.json"
+              }
             }
           }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "./schemas/execution.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "./schemas/execution.schema.json" }
+              }
+            }
           },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/turns/{turnId}/executions/{executionId}:reconcile": {
+      "post": {
+        "operationId": "managedAgentReconcileSideEffect",
+        "x-cloud-agents-coordination": "durable-runtime",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/TurnId" },
+          { "$ref": "#/components/parameters/ExecutionId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/execution-side-effect-reconciliation-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Side effect outcome reconciled" },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
           "403": { "$ref": "#/components/responses/Problem" },
@@ -736,7 +870,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/execution-approval-resolution-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/execution-approval-resolution-request.schema.json"
+              }
             }
           }
         },
@@ -766,7 +902,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/execution-user-input-resolution-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/execution-user-input-resolution-request.schema.json"
+              }
             }
           }
         },
@@ -793,7 +931,13 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/membership-page.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -808,13 +952,29 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-create-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-create-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "201": {
             "description": "Created",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -879,13 +1039,29 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -906,13 +1082,29 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -933,13 +1125,29 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -962,7 +1170,13 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role-page.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1027,7 +1241,13 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-binding-page.schema.json" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role-binding-page.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1042,13 +1262,29 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-binding-create-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/role-binding-create-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "201": {
             "description": "Created",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1113,13 +1349,29 @@
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-binding-revoke-request.schema.json" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/role-binding-revoke-request.schema.json"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "OK",
-            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
-            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
           },
           "400": { "$ref": "#/components/responses/Problem" },
           "401": { "$ref": "#/components/responses/Problem" },
@@ -1233,9 +1485,7 @@
         "in": "path",
         "required": true,
         "schema": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 63
+          "$ref": "./schemas/message-index.schema.json"
         }
       },
       "MembershipId": {
@@ -1305,7 +1555,7 @@
         "headers": {
           "WWW-Authenticate": {
             "description": "Bearer authentication challenge returned with 401 responses.",
-            "schema": { "type": "string" }
+            "schema": { "$ref": "./schemas/www-authenticate.schema.json" }
           }
         },
         "content": {

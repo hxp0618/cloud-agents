@@ -160,11 +160,16 @@ type Mutation struct {
 }
 
 type CreateSessionInput struct {
-	Scope              Scope
-	SessionID          string
-	ProviderKind       string
-	EnvironmentLeaseID string
-	Mutation           Mutation
+	Scope                     Scope
+	SessionID                 string
+	ProviderKind              string
+	EnvironmentLeaseID        string
+	WorkspaceID               string
+	SandboxID                 string
+	SandboxGeneration         uint64
+	EnvironmentProfileID      string
+	EnvironmentProfileVersion uint64
+	Mutation                  Mutation
 }
 
 type CloseSessionInput struct {
@@ -197,6 +202,7 @@ type StartExecutionInput struct {
 	ExecutionID string
 	Generation  uint64
 	Mutation    Mutation
+	Claim       RuntimeExecutionClaim
 }
 
 type CompleteExecutionInput struct {
@@ -215,6 +221,7 @@ type CompleteRuntimeExecutionInput struct {
 	CompleteExecutionInput
 	ProviderResumeCursor string
 	Messages             []runtimeprotocol.Message
+	Claim                RuntimeExecutionClaim
 }
 
 type FailExecutionInput struct {
@@ -230,6 +237,7 @@ type FailExecutionInput struct {
 type FailRuntimeExecutionInput struct {
 	FailExecutionInput
 	Messages []runtimeprotocol.Message
+	Claim    RuntimeExecutionClaim
 }
 
 type InterruptTurnInput struct {
@@ -256,6 +264,9 @@ type SessionSnapshot struct {
 	ProviderKind              string
 	EnvironmentLeaseID        string
 	EnvironmentGeneration     uint64
+	WorkspaceID               string
+	SandboxID                 string
+	SandboxGeneration         uint64
 	EnvironmentProfileID      string
 	EnvironmentProfileVersion uint64
 	State                     SessionState
@@ -268,11 +279,17 @@ type SessionSnapshot struct {
 // ProviderResumeCursor must never be serialized by the public Control Plane.
 type RuntimeSessionSnapshot struct {
 	SessionSnapshot
-	ProviderResumeCursor string
-	WorkerEndpoint       string
-	WorkerSPIFFEID       string
-	WorkerServerName     string
-	EnvironmentReady     bool
+	ProviderResumeCursor        string
+	WorkerEndpoint              string
+	WorkerSPIFFEID              string
+	WorkerServerName            string
+	EnvironmentReady            bool
+	FoundationTargetKind        string
+	FoundationTargetCredential  string
+	FoundationRuntimeID         string
+	FoundationRuntimeOperation  string
+	FoundationRuntimeSpecDigest string
+	FoundationSandboxReady      bool
 }
 
 type TurnSnapshot struct {
@@ -288,18 +305,34 @@ type TurnSnapshot struct {
 }
 
 type ExecutionSnapshot struct {
-	Scope        Scope
-	SessionID    string
-	TurnID       string
-	ExecutionID  string
-	Generation   uint64
-	State        ExecutionState
-	ResultDigest string
-	ErrorCode    string
-	Messages     []runtimeprotocol.Message
-	Version      uint64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	Scope                          Scope
+	SessionID                      string
+	TurnID                         string
+	ExecutionID                    string
+	Generation                     uint64
+	AttemptNumber                  uint64
+	State                          ExecutionState
+	ResultDigest                   string
+	ErrorCode                      string
+	Messages                       []runtimeprotocol.Message
+	ClaimExpiresAt                 time.Time
+	CheckpointSequence             uint64
+	CheckpointDigest               string
+	CheckpointedAt                 time.Time
+	CheckpointProtocol             string
+	CheckpointProviderResumeCursor string
+	PendingSideEffect              bool
+	PendingInteractionCount        uint32
+	RecoveryState                  string
+	RecoveryReason                 string
+	RecoveryMode                   string
+	RecoverySourceTargetID         string
+	RecoveryTargetID               string
+	ResolvedInteractions           []RuntimeInteractionResolution
+	SideEffectReconciliation       *RuntimeSideEffectReconciliation
+	Version                        uint64
+	CreatedAt                      time.Time
+	UpdatedAt                      time.Time
 }
 
 // ExecutionTransitionResult returns both coupled rows after an execution
@@ -379,7 +412,7 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 	if err := validateIdentifier(input.ProviderKind, maxProviderBytes, "provider kind"); err != nil {
 		return SessionSnapshot{}, err
 	}
-	if err := validateIdentifier(input.EnvironmentLeaseID, maxIdentifierBytes, "environment lease id"); err != nil {
+	if err := validateSessionBinding(input); err != nil {
 		return SessionSnapshot{}, err
 	}
 	if err := input.Mutation.validate(); err != nil {
@@ -388,15 +421,23 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "session.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, ProviderKind: input.ProviderKind, EnvironmentLeaseID: input.EnvironmentLeaseID,
+		WorkspaceID: input.WorkspaceID, SandboxID: input.SandboxID, SandboxGeneration: input.SandboxGeneration,
+		EnvironmentProfileID: input.EnvironmentProfileID, EnvironmentProfileVersion: input.EnvironmentProfileVersion,
 	})
 	record, err := store.mutate(ctx, input.Scope, "session.create", input.Mutation, digest, func(now time.Time) (mutationRecord, error) {
 		key := sessionKey{scope: input.Scope, id: input.SessionID}
 		if _, exists := store.sessions[key]; exists {
 			return mutationRecord{}, ErrAlreadyExists
 		}
+		environmentGeneration := uint64(0)
+		if input.EnvironmentLeaseID != "" {
+			environmentGeneration = 1
+		}
 		snapshot := SessionSnapshot{
 			Scope: input.Scope, SessionID: input.SessionID, ProviderKind: input.ProviderKind,
-			EnvironmentLeaseID: input.EnvironmentLeaseID, EnvironmentGeneration: 1,
+			EnvironmentLeaseID: input.EnvironmentLeaseID, EnvironmentGeneration: environmentGeneration,
+			WorkspaceID: input.WorkspaceID, SandboxID: input.SandboxID, SandboxGeneration: input.SandboxGeneration,
+			EnvironmentProfileID: input.EnvironmentProfileID, EnvironmentProfileVersion: input.EnvironmentProfileVersion,
 			State: SessionActive, Version: 1, CreatedAt: now, UpdatedAt: now,
 		}
 		store.sessions[key] = sessionRecord{snapshot: snapshot}
@@ -973,7 +1014,7 @@ func SessionCreateMutationDigest(input CreateSessionInput) (string, error) {
 	if err := validateIdentifier(input.ProviderKind, maxProviderBytes, "provider kind"); err != nil {
 		return "", err
 	}
-	if err := validateIdentifier(input.EnvironmentLeaseID, maxIdentifierBytes, "environment lease id"); err != nil {
+	if err := validateSessionBinding(input); err != nil {
 		return "", err
 	}
 	if err := input.Mutation.validate(); err != nil {
@@ -982,7 +1023,30 @@ func SessionCreateMutationDigest(input CreateSessionInput) (string, error) {
 	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "session.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, ProviderKind: input.ProviderKind, EnvironmentLeaseID: input.EnvironmentLeaseID,
+		WorkspaceID: input.WorkspaceID, SandboxID: input.SandboxID, SandboxGeneration: input.SandboxGeneration,
+		EnvironmentProfileID: input.EnvironmentProfileID, EnvironmentProfileVersion: input.EnvironmentProfileVersion,
 	}), nil
+}
+
+func validateSessionBinding(input CreateSessionInput) error {
+	legacy := input.EnvironmentLeaseID != "" && input.WorkspaceID == "" && input.SandboxID == "" && input.SandboxGeneration == 0 && input.EnvironmentProfileID == "" && input.EnvironmentProfileVersion == 0
+	foundation := input.EnvironmentLeaseID == "" && input.WorkspaceID != "" && input.SandboxID != "" && input.SandboxGeneration > 0 && input.SandboxGeneration <= 9007199254740991 && input.EnvironmentProfileID != "" && input.EnvironmentProfileVersion > 0 && input.EnvironmentProfileVersion <= 2147483647
+	if !legacy && !foundation {
+		return fmt.Errorf("%w: environment binding", ErrInvalidInput)
+	}
+	for value, field := range map[string]string{
+		input.EnvironmentLeaseID:   "environment lease id",
+		input.WorkspaceID:          "workspace id",
+		input.SandboxID:            "sandbox id",
+		input.EnvironmentProfileID: "environment profile id",
+	} {
+		if value != "" {
+			if err := validateIdentifier(value, maxIdentifierBytes, field); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // SessionCloseMutationDigest returns the canonical request digest used by
@@ -1320,21 +1384,26 @@ type mutationRecord struct {
 }
 
 type mutationDigestInput struct {
-	Operation              string `json:"operation"`
-	TenantID               string `json:"tenant_id"`
-	ProjectID              string `json:"project_id"`
-	SessionID              string `json:"session_id,omitempty"`
-	TurnID                 string `json:"turn_id,omitempty"`
-	ExecutionID            string `json:"execution_id,omitempty"`
-	TargetExecutionID      string `json:"target_execution_id,omitempty"`
-	ProviderKind           string `json:"provider_kind,omitempty"`
-	EnvironmentLeaseID     string `json:"environment_lease_id,omitempty"`
-	Generation             uint64 `json:"generation,omitempty"`
-	InputDigest            string `json:"input_digest,omitempty"`
-	ResultDigest           string `json:"result_digest,omitempty"`
-	ProviderResumeCursor   string `json:"provider_resume_cursor,omitempty"`
-	ErrorCode              string `json:"error_code,omitempty"`
-	ExecutionBindingDigest string `json:"execution_binding_digest,omitempty"`
+	Operation                 string `json:"operation"`
+	TenantID                  string `json:"tenant_id"`
+	ProjectID                 string `json:"project_id"`
+	SessionID                 string `json:"session_id,omitempty"`
+	TurnID                    string `json:"turn_id,omitempty"`
+	ExecutionID               string `json:"execution_id,omitempty"`
+	TargetExecutionID         string `json:"target_execution_id,omitempty"`
+	ProviderKind              string `json:"provider_kind,omitempty"`
+	EnvironmentLeaseID        string `json:"environment_lease_id,omitempty"`
+	WorkspaceID               string `json:"workspace_id,omitempty"`
+	SandboxID                 string `json:"sandbox_id,omitempty"`
+	SandboxGeneration         uint64 `json:"sandbox_generation,omitempty"`
+	EnvironmentProfileID      string `json:"environment_profile_id,omitempty"`
+	EnvironmentProfileVersion uint64 `json:"environment_profile_version,omitempty"`
+	Generation                uint64 `json:"generation,omitempty"`
+	InputDigest               string `json:"input_digest,omitempty"`
+	ResultDigest              string `json:"result_digest,omitempty"`
+	ProviderResumeCursor      string `json:"provider_resume_cursor,omitempty"`
+	ErrorCode                 string `json:"error_code,omitempty"`
+	ExecutionBindingDigest    string `json:"execution_binding_digest,omitempty"`
 }
 
 func digestMutation(input mutationDigestInput) string {

@@ -159,6 +159,12 @@ rules:
   - apiGroups: [""]
     resources: ["services", "persistentvolumeclaims"]
     verbs: ["get", "list", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -189,6 +195,9 @@ for resource in deployments.apps services persistentvolumeclaims; do
   for verb in get list create patch delete; do
     can_i "$verb" "$resource"
   done
+done
+for permission in "get pods" "create pods" "delete pods" "get pods/exec" "create pods/exec"; do
+  can_i $permission
 done
 
 for secret in "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF"; do

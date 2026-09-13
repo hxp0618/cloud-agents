@@ -91,6 +91,8 @@
     "@cloud-agents/cloud-agent-provider-api": "0.1.0-rc.1",
     "@cloud-agents/cloud-agent-provider-claude": "0.1.0-rc.1",
     "@cloud-agents/cloud-agent-provider-codex": "0.1.0-rc.1",
+    "@cloud-agents/cloud-agent-provider-deepseek-harness": "0.1.0-rc.1",
+    "@cloud-agents/cloud-agent-provider-pi": "0.1.0-rc.1",
     "@cloud-agents/cloud-agent-runtime": "0.2.0-rc.1"
   },
   "engines": {

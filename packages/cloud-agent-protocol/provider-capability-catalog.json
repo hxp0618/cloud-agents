@@ -334,21 +334,69 @@
     },
     {
       "provider": "pi",
-      "supportTier": "local-only",
-      "adapterVersion": "pi-local-only",
+      "supportTier": "experimental",
+      "adapterVersion": "pi-rpc-v1",
       "runtimePolicy": {
-        "kind": "local",
-        "name": "pi",
-        "versionSource": "build",
-        "compatibleRange": { "minimumInclusive": "0.0.0" }
+        "kind": "sdk",
+        "name": "@earendil-works/pi-coding-agent",
+        "versionSource": "package",
+        "compatibleRange": {
+          "minimumInclusive": "0.85.1",
+          "maximumExclusive": "0.86.0"
+        }
       },
       "capabilities": {
-        "discovery": "unsupported",
-        "start-session": "unsupported",
-        "resume-session": "unsupported",
-        "send-turn": "unsupported",
+        "discovery": "native",
+        "start-session": "native",
+        "resume-session": "native",
+        "send-turn": "native",
+        "steer-turn": "native",
+        "interrupt-turn": "native",
+        "suspend-active-turn": "unsupported",
+        "approval": "unsupported",
+        "structured-user-input": "unsupported",
+        "plan-mode": "unsupported",
+        "review": "unsupported",
+        "compact": "native",
+        "rollback": "unsupported",
+        "fork": "unsupported",
+        "read-history": "native",
+        "model-list": "native",
+        "model-switch": "unsupported",
+        "skill-discovery": "unsupported",
+        "skill-mentions": "unsupported",
+        "plugin-discovery": "unsupported",
+        "plugin-mentions": "unsupported",
+        "native-commands": "unsupported",
+        "tool-events": "native",
+        "diff-events": "unsupported",
+        "usage-events": "native",
+        "checkpoint": "unsupported",
+        "credential-injection": "native",
+        "authoritative-history-reconstruction": "emulated",
+        "worker-migration": "unsupported"
+      }
+    },
+    {
+      "provider": "deepseek-harness",
+      "supportTier": "experimental",
+      "adapterVersion": "deepseek-harness-sdk-v1",
+      "runtimePolicy": {
+        "kind": "sdk",
+        "name": "@deepseek-ai/dsh-sdk-client",
+        "versionSource": "package",
+        "compatibleRange": {
+          "minimumInclusive": "0.1.2-rc.1",
+          "maximumExclusive": "0.1.3"
+        }
+      },
+      "capabilities": {
+        "discovery": "native",
+        "start-session": "native",
+        "resume-session": "emulated",
+        "send-turn": "native",
         "steer-turn": "unsupported",
-        "interrupt-turn": "unsupported",
+        "interrupt-turn": "emulated",
         "suspend-active-turn": "unsupported",
         "approval": "unsupported",
         "structured-user-input": "unsupported",
@@ -365,12 +413,12 @@
         "plugin-discovery": "unsupported",
         "plugin-mentions": "unsupported",
         "native-commands": "unsupported",
-        "tool-events": "unsupported",
+        "tool-events": "native",
         "diff-events": "unsupported",
-        "usage-events": "unsupported",
+        "usage-events": "native",
         "checkpoint": "unsupported",
-        "credential-injection": "unsupported",
-        "authoritative-history-reconstruction": "unsupported",
+        "credential-injection": "native",
+        "authoritative-history-reconstruction": "emulated",
         "worker-migration": "unsupported"
       }
     }

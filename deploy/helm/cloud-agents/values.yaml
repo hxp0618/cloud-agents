@@ -68,6 +68,10 @@ runtime:
     existingClaim: ""
     storageClassName: ""
     size: 20Gi
+  snapshot:
+    existingClaim: ""
+    storageClassName: ""
+    size: 20Gi
 
 controlPlane:
   replicas: 1

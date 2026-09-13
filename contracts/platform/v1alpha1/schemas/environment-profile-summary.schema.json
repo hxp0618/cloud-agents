@@ -18,9 +18,9 @@
     "providerKinds": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 2,
+      "maxItems": 4,
       "uniqueItems": true,
-      "items": { "enum": ["codex", "claudeAgent"] }
+      "items": { "enum": ["codex", "claudeAgent", "pi", "deepseek-harness"] }
     },
     "cpuLimitMillis": { "type": "integer", "minimum": 100, "maximum": 64000 },
     "memoryLimitBytes": { "type": "integer", "minimum": 134217728, "maximum": 1099511627776 },

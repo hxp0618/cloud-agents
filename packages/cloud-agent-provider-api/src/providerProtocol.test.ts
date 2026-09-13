@@ -6,6 +6,9 @@ import {
   type CloudAgentCommandEnvelope as ProviderHostCommandEnvelope,
   type CloudAgentMessageEnvelope as ProviderHostMessageEnvelope,
 } from "@cloud-agents/cloud-agent-protocol";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +20,13 @@ import {
   runProviderHostProtocolV2,
   type ProviderVersionProbeResult,
 } from "./providerProtocol";
-import type { ProviderRunController, RunnerInput, RunnerMessage } from "./internalExecution";
+import {
+  reconstructedPrompt,
+  validateRunnerInput,
+  type ProviderRunController,
+  type RunnerInput,
+  type RunnerMessage,
+} from "./internalExecution";
 import { ProviderInterruptedError } from "./providerRunErrors";
 
 type ProviderHostProviderKind = string;
@@ -44,6 +53,27 @@ function command(
 }
 
 describe("Provider Host Protocol v2", () => {
+  it("binds a reconciled side effect to the recovery prompt without authorizing replay", () => {
+    const input = remoteRunnerInput(false);
+    input.workload.resumeSnapshot = {
+      version: 1,
+      sessionId: "session-1",
+      turnId: "turn-2",
+      provider: "codex",
+      messages: [{ role: "assistant", text: "partial progress" }],
+      sideEffectReconciliation: {
+        checkpointDigest: `sha256:${"a".repeat(64)}`,
+        outcome: "confirmed",
+        reconciledAt: "2026-09-01T05:00:00Z",
+      },
+    };
+
+    expect(() => validateRunnerInput(input)).not.toThrow();
+    const prompt = reconstructedPrompt(input);
+    expect(prompt).toContain('"outcome":"confirmed"');
+    expect(prompt).toContain("must not be replayed");
+  });
+
   it("describes the fixed ordered 8 by 29 Provider matrix from the catalog", () => {
     for (const provider of PROVIDER_HOST_PROVIDER_KINDS) {
       const descriptor = enabledDescriptorForProvider(provider);
@@ -591,6 +621,69 @@ describe("Provider Host Protocol v2", () => {
     expect(runInputs[1]?.workload.conversationHistory).toEqual([
       { role: "user", text: "replacement history" },
     ]);
+  });
+
+  it("restores authoritative history for an emulated Provider across host processes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-emulated-history-"));
+    const descriptorForProvider = (provider: ProviderHostProviderKind) =>
+      providerHostDescriptor(provider, {
+        environment: {
+          CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "deepseek-harness",
+        },
+        runtimeVersion: "0.1.2-rc.1",
+      });
+    const runnerInput = {
+      execution: { id: "execution-1" },
+      workload: { provider: "deepseek-harness", inputText: "", model: "model-dsh" },
+      workspaceDirectory: join(root, "workspace"),
+      providerStateDirectory: join(root, "provider-state"),
+    } satisfies RunnerInput;
+    try {
+      const first = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider,
+        startRun: () => ({
+          result: Promise.resolve({
+            type: "result",
+            output: { text: "first answer" },
+            providerResumeCursor: "session-first",
+          }),
+          interrupt: () => {},
+        }),
+      });
+      await first(command("StartSession", { runnerInput }, "session-first"));
+      await first(command("SendTurn", { inputText: "first question" }, "turn-first"));
+
+      let resumedInput: RunnerInput | undefined;
+      const second = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider,
+        startRun: (input) => {
+          resumedInput = input;
+          return {
+            result: Promise.resolve({ type: "result", output: { text: "second answer" } }),
+            interrupt: () => {},
+          };
+        },
+      });
+      await second(
+        command(
+          "ResumeSession",
+          { runnerInput: { ...runnerInput, providerResumeCursor: "session-first" } },
+          "session-resume",
+        ),
+      );
+      await second(command("SendTurn", { inputText: "second question" }, "turn-second"));
+
+      expect(resumedInput?.workload.conversationHistory).toEqual([
+        { role: "user", text: "first question" },
+        { role: "assistant", text: "first answer" },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("does not resolve SuspendTurn before the active SendTurn reaches an interrupted terminal", async () => {
@@ -1441,7 +1534,7 @@ function compatibleCodexProbe(): ProviderVersionProbeResult {
 function enabledDescriptorForProvider(provider: ProviderHostProviderKind) {
   return providerHostDescriptor(provider, {
     environment: {
-      CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex,claudeAgent",
+      CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex,claudeAgent,pi,deepseek-harness",
     },
     runtimeVersionProbe: compatibleCodexProbe,
     runtimeVersion: "0.3.207",

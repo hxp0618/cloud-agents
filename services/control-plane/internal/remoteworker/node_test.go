@@ -148,3 +148,25 @@ func TestSandboxPreviewCommandAndReceiptUseGeneratedValidation(t *testing.T) {
 		t.Fatal("accepted a Preview receipt with a mismatched byte count")
 	}
 }
+
+func TestWorkspaceSnapshotCommandAndReceiptValidate(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := WorkspaceSnapshotCommand{CommandID: "rwws-alpha", Attempt: 1, Action: "workspace.snapshot", OperationID: "operation-alpha", WorkspaceID: "workspace-alpha", TargetID: "target-alpha", SnapshotID: "snapshot-alpha", SourceVolumeName: "ca-ws-alpha", ImageURI: "registry.example/worker@" + digest, Deadline: time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
+	if err := ValidateWorkspaceSnapshotCommand(command); err != nil {
+		t.Fatal(err)
+	}
+	receipt := WorkspaceSnapshotCommandReceipt{CommandID: command.CommandID, Attempt: command.Attempt, Action: command.Action, OperationID: command.OperationID, WorkspaceID: command.WorkspaceID, TargetID: command.TargetID, SnapshotID: command.SnapshotID, Result: "succeeded", VolumeName: "ca-portable-snapshot-alpha", ContentDigest: digest, SizeBytes: 17, CleanupComplete: true}
+	first, err := WorkspaceSnapshotCommandReceiptDigest(receipt)
+	second, replayErr := WorkspaceSnapshotCommandReceiptDigest(receipt)
+	if err != nil || replayErr != nil || first == "" || first != second {
+		t.Fatalf("receipt digests=%q/%q errors=%v/%v", first, second, err, replayErr)
+	}
+	receipt.ContentDigest = "sha256:" + strings.Repeat("b", 64)
+	if err := ValidateWorkspaceSnapshotCommandReceipt(receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.Result, receipt.VolumeName, receipt.ContentDigest, receipt.SizeBytes, receipt.StableErrorCode = "failed", "", "", 0, "workspace_snapshot_archive_unavailable"
+	if err := ValidateWorkspaceSnapshotCommandReceipt(receipt); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -20,6 +20,10 @@ import {
   type EnvironmentProfile,
   type EnvironmentProfileCreateRequest,
   type MaintenanceOperation,
+  type ManagedAgentEvent,
+  type ManagedAgentExecution,
+  type ManagedAgentSession,
+  type ManagedAgentSideEffectReconciliationRequest,
   type NetworkPolicy,
   type ProjectLeaseQuota,
   type ProjectLeaseQuotaSetRequest,
@@ -40,6 +44,10 @@ import {
   type WorkspaceSnapshotCreateRequest,
   type WorkspaceSnapshotRestoreRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
+import {
+  CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG,
+  type CloudAgentProviderCapabilityCatalogEntry,
+} from "@cloud-agents/cloud-agent-protocol";
 import { ResourceRefresh } from "./ResourceRefresh";
 import { SuccessToast } from "./SuccessToast";
 
@@ -58,6 +66,7 @@ import {
   leaseReleaseRequestFromPreview,
   listAdminLeases,
   listAdminMaintenanceOperations,
+  loadAdminManagedAgentRuntime,
   listAdminProjectLeaseQuotaAuditEvents,
   listAdminStoragePolicies,
   listAdminNetworkPolicies,
@@ -379,7 +388,10 @@ function targetKindLabel(kind: TargetKind, t: Translate): string {
 }
 
 function providerLabel(provider: string): string {
-  return provider === "claudeAgent" ? "Claude Code" : "Codex";
+  if (provider === "claudeAgent") return "Claude Code";
+  if (provider === "deepseek-harness") return "deepseek-harness";
+  if (provider === "pi") return "Pi";
+  return provider === "codex" ? "Codex" : provider;
 }
 
 function shortDigest(value: string): string {
@@ -586,6 +598,15 @@ export function App() {
   );
   const [selectedRuntimeProfileVersionId, setSelectedRuntimeProfileVersionId] = useState("");
   const [sandboxes, setSandboxes] = useState<readonly AdminSandboxSession[]>(Object.freeze([]));
+  const [managedAgentSessions, setManagedAgentSessions] = useState<
+    readonly ManagedAgentSession[]
+  >(Object.freeze([]));
+  const [managedAgentExecutions, setManagedAgentExecutions] = useState<
+    readonly ManagedAgentExecution[]
+  >(Object.freeze([]));
+  const [managedAgentEvents, setManagedAgentEvents] = useState<readonly ManagedAgentEvent[]>(
+    Object.freeze([]),
+  );
   const [workspaceSnapshots, setWorkspaceSnapshots] = useState<readonly WorkspaceSnapshot[]>(
     Object.freeze([]),
   );
@@ -765,12 +786,13 @@ export function App() {
   const selectedRestoreSnapshot = workspaceSnapshots.find(
     ({ metadata }) => metadata.uid === restoreForm.snapshotId,
   );
-  const restoreSourceTargetId = sandboxes.find(
-    ({ spec }) => spec.workspaceId === selectedRestoreSnapshot?.spec.sourceWorkspaceId,
-  )?.spec.targetId;
+  const restoreSourceTargetId = selectedRestoreSnapshot?.spec.sourceTargetId;
   const restoreRuntimeProfiles = runtimeProfiles.filter(
     ({ spec }) =>
-      spec.status === "published" && "targetId" in spec && spec.targetId === restoreSourceTargetId,
+      spec.status === "published" &&
+      "targetId" in spec &&
+      (selectedRestoreSnapshot?.spec.backend === "portable-tar-v1" ||
+        spec.targetId === restoreSourceTargetId),
   );
   const selectedStoragePolicyReferenced = profiles.some(
     ({ spec }) => spec.storagePolicyRef === selectedStoragePolicyId,
@@ -1115,6 +1137,9 @@ export function App() {
     setSelectedSandboxId("");
     setSandboxAccessGrants(Object.freeze([]));
     setSandboxGrantRevoke(null);
+    setManagedAgentSessions(Object.freeze([]));
+    setManagedAgentExecutions(Object.freeze([]));
+    setManagedAgentEvents(Object.freeze([]));
     setStoragePolicies(Object.freeze([]));
     setNetworkPolicies([]);
     setNetworkEditorEpoch((current) => current + 1);
@@ -1667,13 +1692,16 @@ export function App() {
     setSandboxLifecycleTransition(null);
     setSandboxGrantRevoke(null);
     setSandboxAccessGrants(Object.freeze([]));
+    setManagedAgentSessions(Object.freeze([]));
+    setManagedAgentExecutions(Object.freeze([]));
+    setManagedAgentEvents(Object.freeze([]));
     setSelectedSandboxId(sandboxId);
     if (client === null) return;
     void runOperation(
       `get-sandbox:${sandboxId}`,
       { key: "operation.sandboxDetail" },
       async (signal) => {
-        const [result, grants] = await Promise.all([
+        const [result, grants, agentRuntime] = await Promise.all([
           client.getAdminSandboxSession(
             connection.tenantId,
             connection.projectId,
@@ -1688,6 +1716,13 @@ export function App() {
             sandboxId,
             signal,
           ),
+          loadAdminManagedAgentRuntime(
+            client,
+            connection.tenantId,
+            connection.projectId,
+            sandboxId,
+            signal,
+          ),
         ]);
         setSandboxes((current) =>
           Object.freeze(
@@ -1695,7 +1730,48 @@ export function App() {
           ),
         );
         setSandboxAccessGrants(grants);
+        setManagedAgentSessions(agentRuntime.sessions);
+        setManagedAgentExecutions(agentRuntime.executions);
+        setManagedAgentEvents(agentRuntime.events);
       },
+    );
+  }
+
+  function reconcileManagedAgentSideEffect(
+    execution: ManagedAgentExecution,
+    outcome: ManagedAgentSideEffectReconciliationRequest["outcome"],
+  ) {
+    if (client === null || execution.spec.checkpoint === undefined) return;
+    const checkpoint = execution.spec.checkpoint;
+    const key = `managed-agent:reconcile:${execution.metadata.uid}:${execution.metadata.resourceVersion}:${checkpoint.digest}:${outcome}`;
+    void runOperation(
+      key,
+      { key: "operation.reconcileAgentExecution", values: { name: execution.metadata.uid } },
+      async (signal) => {
+        await client.reconcileAdminManagedAgentSideEffect(
+          connection.tenantId,
+          connection.projectId,
+          execution.metadata.sessionId,
+          execution.metadata.turnId,
+          execution.metadata.uid,
+          newRequestId(),
+          idempotencyKey(key),
+          { generation: execution.spec.generation, checkpointDigest: checkpoint.digest, outcome },
+          signal,
+        );
+        if (selectedSandbox === undefined) return;
+        const runtime = await loadAdminManagedAgentRuntime(
+          client,
+          connection.tenantId,
+          connection.projectId,
+          selectedSandbox.metadata.uid,
+          signal,
+        );
+        setManagedAgentSessions(runtime.sessions);
+        setManagedAgentExecutions(runtime.executions);
+        setManagedAgentEvents(runtime.events);
+      },
+      true,
     );
   }
 
@@ -3535,7 +3611,8 @@ export function App() {
                           .filter(({ spec }) => spec.status === "available")
                           .map((snapshot) => (
                             <option key={snapshot.metadata.uid} value={snapshot.metadata.uid}>
-                              {snapshot.metadata.name} · {snapshot.spec.sourceWorkspaceId}
+                              {snapshot.metadata.name} · {snapshot.spec.backend} ·{" "}
+                              {snapshot.spec.sourceTargetId}
                             </option>
                           ))}
                       </select>
@@ -3555,7 +3632,8 @@ export function App() {
                         <option value="">{t("workspaceSnapshot.selectRestoreProfile")}</option>
                         {restoreRuntimeProfiles.map((profile) => (
                           <option key={profile.metadata.uid} value={profile.metadata.uid}>
-                            {profile.metadata.name} · v{number(profile.spec.version)}
+                            {profile.metadata.name} · v{number(profile.spec.version)} ·{" "}
+                            {runtimeProfileTargetLabel(profile)}
                           </option>
                         ))}
                       </select>
@@ -4134,10 +4212,15 @@ export function App() {
             <SandboxDetail
               sandbox={selectedSandbox}
               grants={sandboxAccessGrants}
+              sessions={managedAgentSessions}
+              executions={managedAgentExecutions}
+              events={managedAgentEvents}
+              runtimeProfiles={runtimeProfiles}
               disabled={busy !== null}
               onTransition={setSandboxLifecycleTransition}
               onRevokeGrant={setSandboxGrantRevoke}
               onCorrectUsage={correctSandboxUsage}
+              onReconcileSideEffect={reconcileManagedAgentSideEffect}
             />
           </aside>
         </AdminSheet>
@@ -5937,6 +6020,8 @@ function WorkspaceSnapshotTable({
           <tr>
             <th>{t("workspaceSnapshot.id")}</th>
             <th>{t("workspaceSnapshot.sourceWorkspace")}</th>
+            <th>{t("workspaceSnapshot.sourceTarget")}</th>
+            <th>{t("workspaceSnapshot.backend")}</th>
             <th>{t("table.status")}</th>
             <th>{t("workspaceSnapshot.size")}</th>
             <th>{t("workspaceSnapshot.retention")}</th>
@@ -5957,6 +6042,8 @@ function WorkspaceSnapshotTable({
                 <span className="mono">{snapshot.spec.sourceWorkspaceId}</span>
                 <small>rv{snapshot.spec.sourceWorkspaceResourceVersion}</small>
               </td>
+              <td className="mono">{snapshot.spec.sourceTargetId}</td>
+              <td className="mono">{snapshot.spec.backend}</td>
               <td>
                 <span className={`phase ${phaseTone(snapshot.spec.status)}`}>
                   <i /> {phaseLabel(snapshot.spec.status, t)}
@@ -7593,18 +7680,31 @@ function RuntimeProfileDetail({
 function SandboxDetail({
   sandbox,
   grants,
+  sessions,
+  executions,
+  events,
+  runtimeProfiles,
   disabled,
   onTransition,
   onRevokeGrant,
   onCorrectUsage,
+  onReconcileSideEffect,
 }: Readonly<{
   sandbox: AdminSandboxSession;
   grants: readonly AdminSandboxAccessGrant[];
+  sessions: readonly ManagedAgentSession[];
+  executions: readonly ManagedAgentExecution[];
+  events: readonly ManagedAgentEvent[];
+  runtimeProfiles: readonly RuntimeProfile[];
   disabled: boolean;
   onTransition: (action: SandboxLifecycleAction) => void;
   onRevokeGrant: (grant: AdminSandboxAccessGrant) => void;
   onCorrectUsage: (
     correction: Pick<SandboxUsageCorrectionRequest, "metric" | "adjustment" | "reasonCode">,
+  ) => void;
+  onReconcileSideEffect: (
+    execution: ManagedAgentExecution,
+    outcome: ManagedAgentSideEffectReconciliationRequest["outcome"],
   ) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
@@ -7893,6 +7993,15 @@ function SandboxDetail({
           </div>
         )}
       </dl>
+      <ManagedAgentRuntimeSection
+        sandbox={sandbox}
+        sessions={sessions}
+        executions={executions}
+        events={events}
+        runtimeProfiles={runtimeProfiles}
+        disabled={disabled}
+        onReconcileSideEffect={onReconcileSideEffect}
+      />
       <section className="action-block" aria-labelledby="sandbox-usage-corrections-title">
         <div className="activity-heading">
           <h3 id="sandbox-usage-corrections-title">{t("sandbox.usageCorrections.title")}</h3>
@@ -8104,6 +8213,249 @@ function SandboxDetail({
       <p className="boundary-note">{t("sandbox.boundary")}</p>
     </>
   );
+}
+
+function ManagedAgentRuntimeSection({
+  sandbox,
+  sessions,
+  executions,
+  events,
+  runtimeProfiles,
+  disabled,
+  onReconcileSideEffect,
+}: Readonly<{
+  sandbox: AdminSandboxSession;
+  sessions: readonly ManagedAgentSession[];
+  executions: readonly ManagedAgentExecution[];
+  events: readonly ManagedAgentEvent[];
+  runtimeProfiles: readonly RuntimeProfile[];
+  disabled: boolean;
+  onReconcileSideEffect: (
+    execution: ManagedAgentExecution,
+    outcome: ManagedAgentSideEffectReconciliationRequest["outcome"],
+  ) => void;
+}>) {
+  const { t, number, dateTime } = useI18n();
+  const [confirmedExecutionId, setConfirmedExecutionId] = useState("");
+  const profile = runtimeProfiles.find(
+    ({ spec }) =>
+      spec.profileId === sandbox.spec.runtimeProfileId &&
+      spec.version === sandbox.spec.runtimeProfileVersion,
+  );
+  const providerEntry = (providerKind: string): CloudAgentProviderCapabilityCatalogEntry | undefined =>
+    CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG.providers.find(
+      ({ provider }) => provider === providerKind,
+    );
+  return (
+    <section className="activity-block" aria-labelledby="managed-agent-runtime-title">
+      <div className="activity-heading">
+        <h3 id="managed-agent-runtime-title">{t("agentRuntime.title")}</h3>
+        <span className="mono">{number(sessions.length)}</span>
+      </div>
+      <p>{t("agentRuntime.description")}</p>
+      {sessions.length === 0 ? (
+        <p className="activity-empty">{t("agentRuntime.empty")}</p>
+      ) : (
+        <ul className="activity-list">
+          {sessions.map((session) => {
+            const provider = providerEntry(session.spec.providerKind);
+            const sessionExecutions = executions.filter(
+              ({ metadata }) => metadata.sessionId === session.metadata.uid,
+            );
+            const nativeCapabilities = Object.entries(provider?.capabilities ?? {})
+              .filter(([, support]) => support === "native")
+              .map(([capability]) => capability)
+              .join(", ");
+            const emulatedCapabilities = Object.entries(provider?.capabilities ?? {})
+              .filter(([, support]) => support === "emulated")
+              .map(([capability]) => capability)
+              .join(", ");
+            return (
+              <li key={session.metadata.uid}>
+                <div>
+                  <strong>{providerLabel(session.spec.providerKind)}</strong>
+                  <span className={`phase ${phaseTone(session.spec.state)}`}>
+                    <i /> {phaseLabel(session.spec.state, t)}
+                  </span>
+                </div>
+                <small className="mono break">
+                  {session.metadata.uid} · {provider?.adapterVersion ?? t("common.notAvailable")}
+                </small>
+                <small>
+                  {t("agentRuntime.release", {
+                    release: profile?.spec.releaseDigest
+                      ? shortDigest(profile.spec.releaseDigest)
+                      : t("common.notAvailable"),
+                    version: provider?.runtimePolicy.compatibleRange.minimumInclusive ??
+                      t("common.notAvailable"),
+                  })}
+                </small>
+                <small>{t("agentRuntime.nativeCapabilities", { capabilities: nativeCapabilities })}</small>
+                {emulatedCapabilities ? (
+                  <small>
+                    {t("agentRuntime.emulatedCapabilities", { capabilities: emulatedCapabilities })}
+                  </small>
+                ) : null}
+                <small className="mono break">
+                  {t("agentRuntime.placement", {
+                    target: sandbox.spec.targetId,
+                    runtime: sandbox.spec.runtimeId ?? t("common.notBound"),
+                  })}
+                </small>
+                {sessionExecutions.length === 0 ? (
+                  <small>{t("agentRuntime.executionEmpty")}</small>
+                ) : (
+                  <ul className="activity-list">
+                    {sessionExecutions.map((execution) => {
+                      const checkpoint = execution.spec.checkpoint;
+                      const canReconcile =
+                        execution.spec.recoveryState === "awaiting_reconciliation" &&
+                        execution.spec.recoveryReason === "side_effect_outcome_unknown" &&
+                        checkpoint?.pendingSideEffect === true;
+                      return (
+                        <li key={execution.metadata.uid}>
+                          <div>
+                            <strong className="mono break">{execution.metadata.uid}</strong>
+                            <span className={`phase ${phaseTone(execution.spec.state)}`}>
+                              <i /> {phaseLabel(execution.spec.state, t)}
+                            </span>
+                          </div>
+                          <small>
+                            {t("agentRuntime.attempt", {
+                              attempt: number(execution.spec.attemptNumber),
+                              generation: number(execution.spec.generation),
+                              recovery: execution.spec.recoveryState,
+                            })}
+                          </small>
+                          {execution.spec.recoveryMode === undefined ? null : (
+                            <small className="mono break">
+                              {t(`agentRuntime.recoveryMode.${execution.spec.recoveryMode}`)} · {t(
+                                "agentRuntime.recoveryPlacement",
+                                {
+                                  source:
+                                    execution.spec.recoverySourceTargetId ??
+                                    t("common.notAvailable"),
+                                  target:
+                                    execution.spec.recoveryTargetId ?? t("common.notAvailable"),
+                                },
+                              )}
+                            </small>
+                          )}
+                          <small>
+                            {execution.spec.claimExpiresAt === undefined
+                              ? t("agentRuntime.heartbeatMissing")
+                              : t("agentRuntime.heartbeat", {
+                                  at: dateTime(execution.spec.claimExpiresAt),
+                                })}
+                          </small>
+                          {execution.spec.recoveryReason === undefined ? null : (
+                            <small className="danger-text">
+                              {t("agentRuntime.recoveryReason", {
+                                reason: execution.spec.recoveryReason,
+                              })}
+                            </small>
+                          )}
+                          {checkpoint === undefined ? (
+                            <small>{t("agentRuntime.checkpointMissing")}</small>
+                          ) : (
+                            <small className="mono break">
+                              {t("agentRuntime.checkpoint", {
+                                sequence: number(checkpoint.sequence),
+                                protocol: checkpoint.protocol,
+                                digest: shortDigest(checkpoint.digest),
+                                at: dateTime(checkpoint.createdAt),
+                              })}
+                            </small>
+                          )}
+                          {canReconcile ? (
+                            <div className="resource-form">
+                              <p className="danger-text">{t("agentRuntime.reconcileImpact")}</p>
+                              <label className="confirmation-check">
+                                <input
+                                  type="checkbox"
+                                  checked={confirmedExecutionId === execution.metadata.uid}
+                                  onChange={(event) =>
+                                    setConfirmedExecutionId(
+                                      event.target.checked ? execution.metadata.uid : "",
+                                    )
+                                  }
+                                  disabled={disabled}
+                                />
+                                <span>
+                                  {t("agentRuntime.reconcileReview", {
+                                    name: execution.metadata.uid,
+                                    generation: number(execution.spec.generation),
+                                  })}
+                                </span>
+                              </label>
+                              <div className="button-row">
+                                <button
+                                  className="button danger"
+                                  type="button"
+                                  disabled={disabled || confirmedExecutionId !== execution.metadata.uid}
+                                  onClick={() => {
+                                    setConfirmedExecutionId("");
+                                    onReconcileSideEffect(execution, "confirmed");
+                                  }}
+                                >
+                                  {t("agentRuntime.reconcileConfirmed")}
+                                </button>
+                                <button
+                                  className="button danger"
+                                  type="button"
+                                  disabled={disabled || confirmedExecutionId !== execution.metadata.uid}
+                                  onClick={() => {
+                                    setConfirmedExecutionId("");
+                                    onReconcileSideEffect(execution, "not-applied");
+                                  }}
+                                >
+                                  {t("agentRuntime.reconcileNotApplied")}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="activity-heading">
+        <h3>{t("agentRuntime.auditTitle")}</h3>
+        <span className="mono">{number(events.length)}</span>
+      </div>
+      {events.length === 0 ? (
+        <p className="activity-empty">{t("agentRuntime.auditEmpty")}</p>
+      ) : (
+        <ul className="activity-list">
+          {events.map((event) => (
+            <li key={event.metadata.uid}>
+              <div>
+                <strong>{event.spec.operation}</strong>
+                <span className="mono">#{event.metadata.sequence}</span>
+              </div>
+              <small>
+                {dateTime(event.metadata.occurredAt)} · {event.spec.executionId ?? sessionLabel(event)}
+              </small>
+              <small className="mono break">{shortDigest(event.spec.mutationDigest)}</small>
+              {event.spec.errorCode === undefined ? null : (
+                <small className="danger-text">{event.spec.errorCode}</small>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="boundary-note">{t("agentRuntime.boundary")}</p>
+    </section>
+  );
+}
+
+function sessionLabel(event: ManagedAgentEvent): string {
+  return event.spec.turnId ?? event.metadata.sessionId;
 }
 
 function SandboxLifecycleConfirmation({

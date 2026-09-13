@@ -1416,6 +1416,59 @@ describe("postgresql-lex-v1 bootstrap", () => {
       /SQL_STATEMENT_PROFILE_REJECTED/,
     );
 
+    const checkpointStatements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000092_checkpoint_managed_agent_executions.sql",
+        ),
+      ),
+    );
+    expect(classifyMigrationStatement(checkpointStatements[0]!, "000092").command).toBe("ALTER");
+    expect(() => classifyMigrationStatement(checkpointStatements[0]!, "000091")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+    const restoreRebindTrigger = checkpointStatements.find((statement) =>
+      new TextDecoder()
+        .decode(statement.bytes)
+        .includes("sandbox_sessions_rebind_managed_agents_after_restore"),
+    );
+    expect(classifyMigrationStatement(restoreRebindTrigger!, "000092").object_kind).toBe("TRIGGER");
+    const malformedRestoreRebindTrigger = splitPostgresStatements(
+      new TextEncoder().encode(
+        "CREATE TRIGGER restore_rebind AFTER UPDATE OF observed_state OR DELETE ON cloud_agents.sandbox_sessions FOR EACH ROW EXECUTE FUNCTION cloud_agents.restore_rebind();",
+      ),
+    )[0]!;
+    expect(() => classifyMigrationStatement(malformedRestoreRebindTrigger, "000092")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+
+    const remoteRuntimeStatements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000093_start_provider_runtime_on_remote_worker.sql",
+        ),
+      ),
+    );
+    expect(classifyMigrationStatement(remoteRuntimeStatements[1]!, "000093").command).toBe("ALTER");
+    expect(() => classifyMigrationStatement(remoteRuntimeStatements[1]!, "000092")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+
+    const remotePTYLockStatements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000094_prelock_remote_worker_pty_enrollment.sql",
+        ),
+      ),
+    );
+    expect(classifyMigrationStatement(remotePTYLockStatements[0]!, "000094").command).toBe("CREATE");
+    expect(() => classifyMigrationStatement(remotePTYLockStatements[0]!, "000093")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+
     const mutationStatements = splitPostgresStatements(
       readFileSync(
         resolve(

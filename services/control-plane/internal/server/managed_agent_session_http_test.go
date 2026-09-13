@@ -36,6 +36,11 @@ func (fake *managedAgentSessionStoreFake) CreateManagedAgentSession(_ context.Co
 	fake.snapshot.SessionID = input.SessionID
 	fake.snapshot.ProviderKind = input.ProviderKind
 	fake.snapshot.EnvironmentLeaseID = input.EnvironmentLeaseID
+	fake.snapshot.WorkspaceID = input.WorkspaceID
+	fake.snapshot.SandboxID = input.SandboxID
+	fake.snapshot.SandboxGeneration = input.SandboxGeneration
+	fake.snapshot.EnvironmentProfileID = input.EnvironmentProfileID
+	fake.snapshot.EnvironmentProfileVersion = input.EnvironmentProfileVersion
 	return fake.snapshot, nil
 }
 
@@ -77,6 +82,16 @@ func TestManagedAgentSessionHTTPServerLifecycleRoutes(t *testing.T) {
 	}
 	if !strings.Contains(created.Body.String(), `"kind":"Session"`) || created.Header().Get("X-Resource-Version") != "1" || created.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("create response=%s headers=%v", created.Body.String(), created.Header())
+	}
+
+	foundationCreate := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", strings.NewReader(`{"sessionId":"session-foundation","providerKind":"codex","workspaceId":"workspace-alpha","sandboxId":"sandbox-alpha","sandboxGeneration":3,"environmentProfileId":"profile-alpha","environmentProfileVersion":2}`))
+	foundationCreate.Header.Set("Authorization", "Bearer access-token")
+	foundationCreate.Header.Set("X-Request-ID", "request-foundation")
+	foundationCreate.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4")
+	foundationCreated := httptest.NewRecorder()
+	handler.ServeHTTP(foundationCreated, foundationCreate)
+	if foundationCreated.Code != http.StatusCreated || store.create != 2 || !strings.Contains(foundationCreated.Body.String(), `"workspaceId":"workspace-alpha"`) || !strings.Contains(foundationCreated.Body.String(), `"sandboxGeneration":3`) {
+		t.Fatalf("foundation create status=%d calls=%d body=%s", foundationCreated.Code, store.create, foundationCreated.Body.String())
 	}
 
 	get := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha", nil)

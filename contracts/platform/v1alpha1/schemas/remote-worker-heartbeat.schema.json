@@ -43,6 +43,7 @@
     "sandboxFileCommand": { "$ref": "./remote-worker-sandbox-file-command.schema.json" },
     "sandboxPtyCommand": { "$ref": "./remote-worker-sandbox-pty-command.schema.json" },
     "sandboxPreviewCommand": { "$ref": "./remote-worker-sandbox-preview-command.schema.json" }
+    ,"workspaceSnapshotCommand": { "$ref": "./remote-worker-workspace-snapshot-command.schema.json" }
   },
   "x-cloud-agents-semantic-constraints": [
     "acceptedAt is the database mutation time and expiresAt is exactly 30 seconds later",

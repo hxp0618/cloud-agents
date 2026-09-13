@@ -30,7 +30,9 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 		productionWorkerClientKeyEnvironment:         "/etc/cloud-agents/worker-client.key",
 		productionWorkerCAEnvironment:                "/etc/cloud-agents/worker-ca.crt",
 		productionWorkspaceEnvironment:               "/workspace",
+		productionProviderCredentialsEnvironment:     "/etc/cloud-agents/provider-credentials",
 		productionDockerCredentialsEnvironment:       "/etc/cloud-agents/docker-targets",
+		productionSnapshotDirectoryEnvironment:       "/etc/cloud-agents/snapshots",
 		productionKubernetesCredentialsEnvironment:   "/etc/cloud-agents/kubernetes-targets",
 		productionSSHCredentialsEnvironment:          "/etc/cloud-agents/ssh-targets",
 		productionAccessGrantKeyEnvironment:          "/etc/cloud-agents/access-grant.key",
@@ -47,7 +49,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.accessGrantKey != "/etc/cloud-agents/access-grant.key" || config.remoteWorkerCACert != "/etc/cloud-agents/remote-worker-ca.crt" || config.remoteWorkerCAKey != "/etc/cloud-agents/remote-worker-ca.key" || config.remoteWorkerTrustDomain != "remote-worker.test" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
+	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.providerCredentials != "/etc/cloud-agents/provider-credentials" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.snapshotDirectory != "/etc/cloud-agents/snapshots" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.accessGrantKey != "/etc/cloud-agents/access-grant.key" || config.remoteWorkerCACert != "/etc/cloud-agents/remote-worker-ca.crt" || config.remoteWorkerCAKey != "/etc/cloud-agents/remote-worker-ca.key" || config.remoteWorkerTrustDomain != "remote-worker.test" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
 		t.Fatalf("config = %#v", config)
 	}
 	for _, invalid := range []string{"0", "10001"} {
@@ -134,6 +136,24 @@ func TestParseProductionConfigAllowsEnvironmentRoutedWorkers(t *testing.T) {
 	}
 	if _, err := parseProductionConfig(append(args, "--worker-endpoint", "https://worker:8091"), getenv); err == nil {
 		t.Fatal("accepted partial fixed Worker route")
+	}
+}
+
+func TestParseProductionConfigAllowsFoundationRuntime(t *testing.T) {
+	values := map[string]string{
+		productionDatabaseEnvironment:            "postgres://runtime@db/cloud_agents",
+		productionAuthConfigEnvironment:          "/etc/cloud-agents/auth.json",
+		productionWorkspaceEnvironment:           "/workspace",
+		productionProviderCredentialsEnvironment: "/etc/cloud-agents/provider-credentials",
+		productionDockerCredentialsEnvironment:   "/etc/cloud-agents/docker-targets",
+		productionAccessGrantKeyEnvironment:      "/etc/cloud-agents/access-grant.key",
+	}
+	config, err := parseProductionConfig([]string{"--tls-cert", "/tmp/cert", "--tls-key", "/tmp/key"}, func(name string) string { return values[name] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.providerCredentials == "" || config.workspaceDirectory != "/workspace" || config.workerClientCert != "" || len(config.admissionToken) != 0 {
+		t.Fatalf("Foundation Runtime config = %#v", config)
 	}
 }
 

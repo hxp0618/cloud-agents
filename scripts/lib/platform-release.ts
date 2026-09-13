@@ -188,26 +188,62 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
   ];
   return createDeterministicUstar(
     paths.map((path) => ({
-      path: path.startsWith("services/")
-        ? path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/")
-        : path.startsWith("apps/admin-web/dist/")
-          ? path.replace("apps/admin-web/", "deploy/admin-web/")
-          : path.startsWith("apps/user-web/dist/")
-            ? path.replace("apps/user-web/", "deploy/user-web/")
-            : path,
-      data:
-        path === "deploy/docker/migrate.Dockerfile"
-          ? Buffer.from(
-              readFileSync(resolve(root, path), "utf8")
-                .replaceAll("@PLATFORM_MIGRATION_ARCHIVE@", PLATFORM_RELEASE_MIGRATIONS)
-                .replaceAll(
-                  "@PLATFORM_MIGRATION_MANIFEST@",
-                  `services/control-plane/migrations/product/${PLATFORM_RELEASE_MIGRATION_HEAD}/manifest.json`,
-                ),
-            )
-          : readFileSync(resolve(root, path)),
+      path: deploymentPackagePath(root, path),
+      data: deploymentPackageMember(root, path),
     })),
   );
+}
+
+function deploymentPackagePath(root: string, path: string): string {
+  if (path.startsWith("services/")) {
+    return path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/");
+  }
+  for (const app of ["admin-web", "user-web"] as const) {
+    if (path === `apps/${app}/dist/index.html`) {
+      return `deploy/${app}/dist/index-${webIndexDigest(root, app)}.html`;
+    }
+    if (path.startsWith(`apps/${app}/dist/`)) {
+      return path.replace(`apps/${app}/`, `deploy/${app}/`);
+    }
+  }
+  return path;
+}
+
+function deploymentPackageMember(root: string, path: string): Buffer {
+  const source = readFileSync(resolve(root, path));
+  if (path === "deploy/docker/migrate.Dockerfile") {
+    return Buffer.from(
+      source
+        .toString("utf8")
+        .replaceAll("@PLATFORM_MIGRATION_ARCHIVE@", PLATFORM_RELEASE_MIGRATIONS)
+        .replaceAll(
+          "@PLATFORM_MIGRATION_MANIFEST@",
+          `services/control-plane/migrations/product/${PLATFORM_RELEASE_MIGRATION_HEAD}/manifest.json`,
+        ),
+    );
+  }
+  const app =
+    path === "deploy/docker/admin-web.Dockerfile"
+      ? "admin-web"
+      : path === "deploy/docker/user-web.Dockerfile"
+        ? "user-web"
+        : "";
+  if (app === "") return source;
+  const indexDigest = webIndexDigest(root, app);
+  return Buffer.from(
+    source
+      .toString("utf8")
+      .replace(
+        `COPY ${app}/dist /opt/cloud-agents/web/dist`,
+        `COPY ${app}/dist/assets /opt/cloud-agents/web/dist/assets\nCOPY ${app}/dist/index-${indexDigest}.html /opt/cloud-agents/web/dist/index.html`,
+      ),
+  );
+}
+
+function webIndexDigest(root: string, app: "admin-web" | "user-web"): string {
+  return createHash("sha256")
+    .update(readFileSync(resolve(root, `apps/${app}/dist/index.html`)))
+    .digest("hex");
 }
 
 export function buildPlatformContractPackage(root: string): Uint8Array {

@@ -41,6 +41,8 @@ export {
   type ProviderProvenanceIdentity,
 } from "./providerContentTrustPolicy";
 export const CODEX_PROVIDER_KIND = "codex" as const;
+const CODEX_MANAGED_WRITE_RECEIPT_DELAY_ENV = "CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS";
+const MAX_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS = 30_000;
 
 type CodexProviderRunOptions = ProviderRunOptions & {
   readonly codexToolPolicyHookCommand?: string;
@@ -55,9 +57,11 @@ export function startCodexProviderRun(
   validateRunnerInput(input, { allowEmptyInputText: options.operation !== undefined });
   if (input.workload.provider.trim().toLowerCase() !== "codex")
     throw new Error(`Codex Provider cannot execute provider ${input.workload.provider}.`);
-  requireProviderOuterSandboxProfile(options.environment ?? process.env);
+  const sourceEnvironment = options.environment ?? process.env;
+  requireProviderOuterSandboxProfile(sourceEnvironment);
+  const managedWriteReceiptDelayMs = readManagedWriteReceiptDelay(sourceEnvironment);
   const { environment, redact } = providerEnvironment(
-    options.environment ?? process.env,
+    sourceEnvironment,
     credential,
     applyCodexCredentialEnvironment,
   );
@@ -90,6 +94,7 @@ export function startCodexProviderRun(
     nativeResumePrompt:
       nativeResumeContinuationPrompt(input, options.hostIdentity) ?? input.workload.inputText,
     interactive: options.interactive ?? true,
+    ...(managedWriteReceiptDelayMs ? { managedWriteReceiptDelayMs } : {}),
     ...(options.codexToolPolicyHookCommand
       ? { toolPolicyHookCommand: options.codexToolPolicyHookCommand }
       : {}),
@@ -135,6 +140,22 @@ function probeCodexVersion(): { readonly available: boolean; readonly output?: s
     available: result.error === undefined && result.status !== null,
     ...(output ? { output } : {}),
   };
+}
+
+function readManagedWriteReceiptDelay(environment: NodeJS.ProcessEnv): number {
+  const value = environment[CODEX_MANAGED_WRITE_RECEIPT_DELAY_ENV]?.trim();
+  if (!value) return 0;
+  if (!/^\d+$/u.test(value)) {
+    throw new Error(`${CODEX_MANAGED_WRITE_RECEIPT_DELAY_ENV} is invalid`);
+  }
+  const milliseconds = Number(value);
+  if (
+    !Number.isSafeInteger(milliseconds) ||
+    milliseconds > MAX_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS
+  ) {
+    throw new Error(`${CODEX_MANAGED_WRITE_RECEIPT_DELAY_ENV} is invalid`);
+  }
+  return milliseconds;
 }
 
 function applyCodexCredentialEnvironment(

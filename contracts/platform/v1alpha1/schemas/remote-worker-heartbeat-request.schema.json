@@ -45,6 +45,7 @@
           "preview",
           "pty",
           "ssh",
+          "workspace-snapshot",
           "workspace-volume"
         ]
       }
@@ -73,6 +74,9 @@
     },
     "sandboxPreviewCommandReceipt": {
       "$ref": "./remote-worker-sandbox-preview-command-receipt.schema.json"
+    },
+    "workspaceSnapshotCommandReceipt": {
+      "$ref": "./remote-worker-workspace-snapshot-command-receipt.schema.json"
     }
   },
   "x-cloud-agents-semantic-constraints": [

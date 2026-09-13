@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -168,6 +171,47 @@ func TestRestoreFoundationWorkspaceCreatesNewVolumeAndNeverStartsHelper(t *testi
 	}
 	if starts != 0 || writes != 1 || helper || volumes[destination.Name()] == nil {
 		t.Fatalf("starts=%d writes=%d helper=%t destination=%v", starts, writes, helper, volumes[destination.Name()])
+	}
+}
+
+func TestPortableSnapshotSurvivesSourceTargetLossAndRejectsCorruptionOrMissing(t *testing.T) {
+	root := t.TempDir()
+	archives, err := NewFoundationSnapshotArchiveDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := FoundationWorkspaceSnapshot{TenantID: "tenant", ProjectID: "project", TargetID: "source-target",
+		WorkspaceID: "source-workspace", SnapshotID: "snapshot",
+		ImageURI: "registry.test/runtime@sha256:" + strings.Repeat("a", 64)}
+	snapshot.SourceVolumeName = (FoundationWorkspaceVolume{TenantID: snapshot.TenantID, ProjectID: snapshot.ProjectID,
+		TargetID: snapshot.TargetID, WorkspaceID: snapshot.WorkspaceID}).Name()
+	archive := snapshotTestArchive(t, time.Unix(100, 0))
+	digest, err := snapshotArchiveDigest(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := archives.Put(snapshot, archive, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := FoundationWorkspaceRestore{TenantID: snapshot.TenantID, ProjectID: snapshot.ProjectID,
+		TargetID: "destination-target", SourceWorkspaceID: snapshot.WorkspaceID, SnapshotID: snapshot.SnapshotID,
+		SnapshotVolumeName: id, ContentDigest: digest, WorkspaceID: "destination-workspace", ImageURI: snapshot.ImageURI}
+	read, err := archives.Read(restore)
+	if err != nil || !bytes.Equal(read, archive) {
+		t.Fatalf("cross-target read=%d err=%v", len(read), err)
+	}
+	if err := os.WriteFile(filepath.Join(root, id+".tar"), []byte("corrupted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := archives.Read(restore); !errors.Is(err, ErrDeploymentConflict) {
+		t.Fatalf("corrupted snapshot err=%v", err)
+	}
+	if err := os.Remove(filepath.Join(root, id+".tar")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := archives.Read(restore); !errors.Is(err, ErrDeploymentConflict) {
+		t.Fatalf("missing snapshot err=%v", err)
 	}
 }
 

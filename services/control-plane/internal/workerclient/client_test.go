@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,17 +27,27 @@ import (
 type workerWireFake struct {
 	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
 	workerruntimev1alpha1connect.UnimplementedWorkerRuntimeServiceHandler
-	identity     *workerv1alpha1.WorkloadIdentity
-	capabilities []workerv1alpha1.Capability
-	now          time.Time
-	mu           sync.Mutex
-	negotiations int
-	active       string
-	tenant       string
-	artifact     *workerruntimev1alpha1.RuntimeArtifactReadRequest
+	identity         *workerv1alpha1.WorkloadIdentity
+	capabilities     []workerv1alpha1.Capability
+	now              time.Time
+	mu               sync.Mutex
+	negotiations     int
+	active           string
+	tenant           string
+	artifact         *workerruntimev1alpha1.RuntimeArtifactReadRequest
+	blockReady       bool
+	blockNegotiate   bool
+	runtimeErrorCode string
 }
 
-func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+func (fake *workerWireFake) Negotiate(ctx context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+	fake.mu.Lock()
+	blockNegotiate := fake.blockNegotiate
+	fake.mu.Unlock()
+	if blockNegotiate {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	required := []workerv1alpha1.Capability{
 		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
 		workerv1alpha1.Capability_CAPABILITY_HEALTH,
@@ -66,7 +77,7 @@ func (fake *workerWireFake) CheckHealth(_ context.Context, request *connect.Requ
 	return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: workerDescriptor(fake.capabilities), ObservedAt: timestamppb.New(fake.now)}), nil
 }
 
-func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiStream[workerruntimev1alpha1.RuntimeSessionRequest, workerruntimev1alpha1.RuntimeSessionResponse]) error {
+func (fake *workerWireFake) OpenSession(ctx context.Context, stream *connect.BidiStream[workerruntimev1alpha1.RuntimeSessionRequest, workerruntimev1alpha1.RuntimeSessionResponse]) error {
 	open, err := stream.Receive()
 	if err != nil {
 		return err
@@ -79,7 +90,12 @@ func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiS
 	}
 	fake.mu.Lock()
 	fake.tenant = open.GetOpen().GetTenantId()
+	blockReady := fake.blockReady
 	fake.mu.Unlock()
+	if blockReady {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Ready{Ready: &workerruntimev1alpha1.RuntimeSessionReady{ExecutionId: open.GetOpen().GetExecutionId(), Generation: open.GetOpen().GetGeneration(), ProtocolMajor: runtimeprotocol.ProtocolMajor, ProtocolMinor: runtimeprotocol.ProtocolMinor}}}); err != nil {
 		return err
 	}
@@ -90,6 +106,12 @@ func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiS
 	var command runtimeprotocol.Command
 	if err := json.Unmarshal(request.GetCommand().GetJson(), &command); err != nil {
 		return err
+	}
+	fake.mu.Lock()
+	runtimeErrorCode := fake.runtimeErrorCode
+	fake.mu.Unlock()
+	if runtimeErrorCode != "" {
+		return stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Error{Error: &workerruntimev1alpha1.RuntimeSessionError{Code: runtimeErrorCode, Message: "Runtime command failed"}}})
 	}
 	message, _ := json.Marshal(runtimeprotocol.Message{RequestID: command.RequestID, Protocol: command.Protocol, ExecutionID: command.ExecutionID, Generation: command.Generation, CommandID: command.CommandID, OccurredAt: command.OccurredAt, MessageType: "Result", Payload: map[string]any{"ok": true}})
 	return stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Json{Json: message}})
@@ -189,6 +211,41 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	}
 	if err := session.CloseRequest(); err != nil {
 		t.Fatal(err)
+	}
+	_ = session.CloseResponse()
+	fake.mu.Lock()
+	fake.runtimeErrorCode = "runtime_execution_failed"
+	fake.mu.Unlock()
+	failingSession, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-error", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failingCommand := command
+	failingCommand.ExecutionID = "execution-error"
+	if err := failingSession.Send(context.Background(), failingCommand); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := failingSession.Receive(); !errors.Is(err, ErrRuntimeProcessUnavailable) {
+		t.Fatalf("runtime process error = %v", err)
+	}
+	_ = failingSession.CloseRequest()
+	_ = failingSession.CloseResponse()
+	fake.mu.Lock()
+	fake.blockReady = true
+	fake.mu.Unlock()
+	supervisor.readyTimeout = 20 * time.Millisecond
+	if _, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-2", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")}); connect.CodeOf(err) != connect.CodeDeadlineExceeded {
+		t.Fatalf("blocked Runtime ready error = %v", err)
+	}
+	fake.mu.Lock()
+	fake.blockReady = false
+	fake.blockNegotiate = true
+	fake.mu.Unlock()
+	supervisor.mu.Lock()
+	supervisor.binding = nil
+	supervisor.mu.Unlock()
+	if _, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-3", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")}); connect.CodeOf(err) != connect.CodeDeadlineExceeded {
+		t.Fatalf("blocked Runtime negotiation error = %v", err)
 	}
 }
 

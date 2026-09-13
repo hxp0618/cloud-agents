@@ -102,23 +102,9 @@ func (directory *CredentialDirectory) client(endpoint, credentialRef string) (*h
 	if directory == nil || !validEndpoint(endpoint) || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
 		return nil, nil, "", ErrInvalidEndpoint
 	}
-	root, err := os.OpenRoot(directory.path)
-	if err != nil {
-		return nil, nil, "", ErrCredentialUnavailable
-	}
-	defer root.Close()
-	caPEM, err := readCredential(root, credentialRef+".ca.crt")
+	roots, token, err := directory.credentials(credentialRef)
 	if err != nil {
 		return nil, nil, "", err
-	}
-	tokenBytes, err := readCredential(root, credentialRef+".token")
-	if err != nil {
-		return nil, nil, "", err
-	}
-	token := strings.TrimSuffix(strings.TrimSuffix(string(tokenBytes), "\n"), "\r")
-	roots := x509.NewCertPool()
-	if token == "" || strings.TrimSpace(token) != token || !roots.AppendCertsFromPEM(caPEM) {
-		return nil, nil, "", ErrCredentialInvalid
 	}
 	transport := &http.Transport{
 		DisableCompression: true, ResponseHeaderTimeout: 10 * time.Second,
@@ -126,6 +112,31 @@ func (directory *CredentialDirectory) client(endpoint, credentialRef string) (*h
 	}
 	client := &http.Client{Transport: bearerTransport{base: transport, token: token}, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrInvalidResponse }}
 	return client, transport, strings.TrimSuffix(endpoint, "/"), nil
+}
+
+func (directory *CredentialDirectory) credentials(credentialRef string) (*x509.CertPool, string, error) {
+	if directory == nil || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
+		return nil, "", ErrInvalidEndpoint
+	}
+	root, err := os.OpenRoot(directory.path)
+	if err != nil {
+		return nil, "", ErrCredentialUnavailable
+	}
+	defer root.Close()
+	caPEM, err := readCredential(root, credentialRef+".ca.crt")
+	if err != nil {
+		return nil, "", err
+	}
+	tokenBytes, err := readCredential(root, credentialRef+".token")
+	if err != nil {
+		return nil, "", err
+	}
+	token := strings.TrimSuffix(strings.TrimSuffix(string(tokenBytes), "\n"), "\r")
+	roots := x509.NewCertPool()
+	if token == "" || strings.TrimSpace(token) != token || !roots.AppendCertsFromPEM(caPEM) {
+		return nil, "", ErrCredentialInvalid
+	}
+	return roots, token, nil
 }
 
 type bearerTransport struct {

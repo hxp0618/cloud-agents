@@ -105,11 +105,25 @@ function applyClaudeCredentialEnvironment(
     credentialBaseUrl(payload, "Claude Credential"),
     "Claude Credential baseUrl",
   );
-  if (baseUrl) environment.ANTHROPIC_BASE_URL = normalizeClaudeBaseUrl(baseUrl);
+  if (baseUrl) {
+    const normalizedBaseUrl = normalizeClaudeBaseUrl(baseUrl);
+    environment.ANTHROPIC_BASE_URL = normalizedBaseUrl;
+    if (!isAnthropicApiBaseUrl(normalizedBaseUrl)) {
+      environment.CLAUDE_CODE_EFFORT_LEVEL = "unset";
+    }
+  }
 }
 
 function normalizeClaudeBaseUrl(value: string): string {
   return value.replace(/\/v1\/?$/u, "");
+}
+
+function isAnthropicApiBaseUrl(value: string): boolean {
+  try {
+    return new URL(value).hostname.toLowerCase() === "api.anthropic.com";
+  } catch {
+    return false;
+  }
 }
 
 function withCredentialModel(input: RunnerInput, credential: RunnerCredential | null): RunnerInput {

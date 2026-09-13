@@ -27,6 +27,9 @@ type managedAgentSessionPageRow struct {
 	ProviderKind              string    `json:"provider_kind"`
 	EnvironmentLeaseID        *string   `json:"environment_lease_uid"`
 	EnvironmentGeneration     *int64    `json:"environment_generation"`
+	WorkspaceID               *string   `json:"workspace_uid"`
+	SandboxID                 *string   `json:"sandbox_uid"`
+	SandboxGeneration         *int64    `json:"sandbox_generation"`
 	EnvironmentProfileID      *string   `json:"environment_profile_uid"`
 	EnvironmentProfileVersion *int64    `json:"environment_profile_version"`
 	State                     string    `json:"state"`
@@ -37,11 +40,14 @@ type managedAgentSessionPageRow struct {
 
 const (
 	createManagedAgentSessionSQL = `SELECT session_uid, provider_kind, environment_lease_uid, environment_generation,
-    environment_profile_uid, environment_profile_version, state, resource_version, created_at, updated_at
-FROM cloud_agents.create_managed_agent_session_v3($1, $2, $3, $4, $5, $6, $7)`
+    workspace_uid, sandbox_uid, sandbox_generation, environment_profile_uid,
+    environment_profile_version, state, resource_version, created_at, updated_at
+FROM cloud_agents.create_managed_agent_session_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	closeManagedAgentSessionSQL = `SELECT transition.session_uid, transition.provider_kind,
     session.environment_lease_uid, session.environment_generation,
-    environment.environment_profile_uid, environment.environment_profile_version,
+    session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
+    COALESCE(session.environment_profile_uid, environment.environment_profile_uid),
+    COALESCE(session.environment_profile_version, environment.environment_profile_version),
     transition.state, transition.resource_version, transition.created_at, transition.updated_at
 FROM cloud_agents.close_managed_agent_session_v1($1, $2, $3, $4, $5) AS transition
 JOIN cloud_agents.managed_agent_sessions AS session
@@ -52,7 +58,9 @@ LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
     AND environment.lease_uid = session.environment_lease_uid`
 	getManagedAgentSessionSQL = `SELECT session.session_uid, session.provider_kind,
     session.environment_lease_uid, session.environment_generation,
-    environment.environment_profile_uid, environment.environment_profile_version,
+    session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
+    COALESCE(session.environment_profile_uid, environment.environment_profile_uid),
+    COALESCE(session.environment_profile_version, environment.environment_profile_version),
     session.state, session.resource_version, session.created_at, session.updated_at
 FROM cloud_agents.managed_agent_sessions AS session
 LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
@@ -62,17 +70,45 @@ WHERE session.tenant_id = cloud_agents.require_tenant_id()
     AND session.project_uid = $1 AND session.session_uid = $2`
 	getManagedAgentSessionForExecutionSQL = `SELECT session.session_uid, session.provider_kind,
     session.environment_lease_uid, session.environment_generation,
-    environment.environment_profile_uid, environment.environment_profile_version,
+    session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
+    COALESCE(session.environment_profile_uid, environment.environment_profile_uid),
+    COALESCE(session.environment_profile_version, environment.environment_profile_version),
     session.state, session.resource_version, session.created_at, session.updated_at, session.provider_resume_cursor,
     COALESCE(environment.worker_endpoint, ''), COALESCE(environment.worker_spiffe_id, ''),
     COALESCE(environment.worker_server_name, ''),
     COALESCE(environment.generation = session.environment_generation
         AND environment.desired_phase = 'active' AND environment.observed_phase = 'ready'
-        AND environment.cleanup_phase = 'none' AND environment.expires_at > pg_catalog.transaction_timestamp(), false)
+        AND environment.cleanup_phase = 'none' AND environment.expires_at > pg_catalog.transaction_timestamp(), false),
+    COALESCE(target.target_kind, ''), COALESCE(target.credential_ref, ''),
+    COALESCE(sandbox.runtime_uid, ''), COALESCE(sandbox.runtime_operation_uid, ''),
+    COALESCE(sandbox.runtime_spec_digest, ''),
+    COALESCE(sandbox.workspace_uid = session.workspace_uid
+        AND sandbox.generation = session.sandbox_generation
+        AND sandbox.desired_state = 'running' AND sandbox.observed_state = 'running'
+        AND sandbox.observed_generation = sandbox.generation AND NOT sandbox.writer_released
+        AND sandbox.runtime_uid IS NOT NULL AND sandbox.runtime_state = 'Running'
+        AND sandbox.runtime_generation = sandbox.generation
+        AND sandbox.runtime_spec_digest = sandbox.spec_digest
+        AND (sandbox.expires_at IS NULL OR sandbox.expires_at > pg_catalog.transaction_timestamp())
+        AND volume.observed_state = 'available' AND target.observed_phase = 'ready'
+        AND target.scheduling_state = 'active'
+        AND operation.state = 'succeeded' AND operation.cleanup_phase = 'complete', false)
 FROM cloud_agents.managed_agent_sessions AS session
 LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
     ON environment.tenant_id = session.tenant_id AND environment.project_uid = session.project_uid
     AND environment.lease_uid = session.environment_lease_uid
+LEFT JOIN cloud_agents.sandbox_sessions AS sandbox
+    ON sandbox.tenant_id = session.tenant_id AND sandbox.project_uid = session.project_uid
+    AND sandbox.sandbox_uid = session.sandbox_uid
+LEFT JOIN cloud_agents.workspace_volumes AS volume
+    ON volume.tenant_id = sandbox.tenant_id AND volume.project_uid = sandbox.project_uid
+    AND volume.workspace_uid = sandbox.workspace_uid
+LEFT JOIN cloud_agents.deployment_targets AS target
+    ON target.tenant_id = volume.tenant_id AND target.project_uid = volume.project_uid
+    AND target.target_uid = volume.target_uid
+LEFT JOIN cloud_agents.platform_operations AS operation
+    ON operation.tenant_id = sandbox.tenant_id AND operation.operation_id = sandbox.operation_id
+    AND operation.operation_generation = sandbox.operation_generation
 WHERE session.tenant_id = cloud_agents.require_tenant_id()
     AND session.project_uid = $1 AND session.session_uid = $2`
 	managedAgentSessionPageCursorIdentitySQL = `SELECT 1
@@ -84,7 +120,9 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
 FROM (
 	SELECT session.tenant_id, session.project_uid, session.session_uid, session.provider_kind,
         session.environment_lease_uid, session.environment_generation,
-        environment.environment_profile_uid, environment.environment_profile_version,
+        session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
+        COALESCE(session.environment_profile_uid, environment.environment_profile_uid) AS environment_profile_uid,
+        COALESCE(session.environment_profile_version, environment.environment_profile_version) AS environment_profile_version,
         session.state, session.resource_version, session.created_at, session.updated_at
     FROM cloud_agents.managed_agent_sessions AS session
     LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
@@ -125,11 +163,14 @@ func (service *DurableCoordinationService) CreateManagedAgentSession(
 		if bindErr != nil {
 			return mapVerifiedCoordinationAuthorizationError(bindErr)
 		}
-		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		transactionErr := service.runner.withTenantReadCommittedMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
 				if err := scanManagedAgentSession(handle.transaction.queryRow(ctx, createManagedAgentSessionSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.ProviderKind,
-					input.EnvironmentLeaseID, input.Mutation.IdempotencyKey, digest), input.Scope, &result); err != nil {
+					nullableManagedAgentString(input.EnvironmentLeaseID), nullableManagedAgentString(input.WorkspaceID),
+					nullableManagedAgentString(input.SandboxID), nullableManagedAgentGeneration(input.SandboxGeneration),
+					nullableManagedAgentString(input.EnvironmentProfileID), nullableManagedAgentGeneration(input.EnvironmentProfileVersion),
+					input.Mutation.IdempotencyKey, digest), input.Scope, &result); err != nil {
 					return err
 				}
 				return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{Scope: input.Scope, SessionID: result.SessionID, Operation: "session.create", Resource: internalmanagedagent.ResourceSession, MutationDigest: digest, Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceSession, To: string(result.State), Version: result.Version}}})
@@ -287,15 +328,17 @@ func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, l
 	for _, row := range rows {
 		state := internalmanagedagent.SessionState(row.State)
 		environmentLeaseID, environmentGeneration, validEnvironment := managedAgentSessionEnvironment(row.EnvironmentLeaseID, row.EnvironmentGeneration)
+		workspaceID, sandboxID, sandboxGeneration, validFoundation := managedAgentSessionFoundation(row.WorkspaceID, row.SandboxID, row.SandboxGeneration)
 		environmentProfileID, environmentProfileVersion, validProfile := managedAgentSessionProfile(row.EnvironmentProfileID, row.EnvironmentProfileVersion)
 		if row.TenantID != tenantID || row.ProjectID != projectID || !validMutationIdentifier(row.SessionID) ||
 			!validMutationIdentifier(row.ProviderKind) || state != internalmanagedagent.SessionActive && state != internalmanagedagent.SessionClosed ||
-			!validEnvironment || !validProfile || row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+			!validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(environmentLeaseID, workspaceID, sandboxID, environmentProfileID) || row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
 			return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
 		}
 		sessions = append(sessions, internalmanagedagent.SessionSnapshot{
 			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: row.SessionID,
 			ProviderKind: row.ProviderKind, EnvironmentLeaseID: environmentLeaseID, EnvironmentGeneration: environmentGeneration,
+			WorkspaceID: workspaceID, SandboxID: sandboxID, SandboxGeneration: sandboxGeneration,
 			EnvironmentProfileID: environmentProfileID, EnvironmentProfileVersion: environmentProfileVersion,
 			State: state, Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
@@ -365,13 +408,19 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 				var environmentGeneration *int64
 				var environmentProfileID *string
 				var environmentProfileVersion *int64
+				var workspaceID *string
+				var sandboxID *string
+				var sandboxGeneration *int64
 				var state string
 				var version int64
 				err := handle.transaction.queryRow(readContext, getManagedAgentSessionForExecutionSQL, scope.ProjectID, sessionID).Scan(
 					&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration,
-					&environmentProfileID, &environmentProfileVersion,
+					&workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion,
 					&state, &version, &result.CreatedAt, &result.UpdatedAt, &cursor,
 					&result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.WorkerServerName, &result.EnvironmentReady,
+					&result.FoundationTargetKind, &result.FoundationTargetCredential,
+					&result.FoundationRuntimeID, &result.FoundationRuntimeOperation,
+					&result.FoundationRuntimeSpecDigest, &result.FoundationSandboxReady,
 				)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentSessionNotFound
@@ -384,8 +433,10 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 				var validEnvironment bool
 				var validProfile bool
 				result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
+				var validFoundation bool
+				result.WorkspaceID, result.SandboxID, result.SandboxGeneration, validFoundation = managedAgentSessionFoundation(workspaceID, sandboxID, sandboxGeneration)
 				result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
-				if !validEnvironment || !validProfile || !validManagedAgentSessionSnapshot(result.SessionSnapshot, version) || result.EnvironmentReady && (result.WorkerEndpoint == "" || result.WorkerSPIFFEID == "" || result.WorkerServerName == "") {
+				if !validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(result.EnvironmentLeaseID, result.WorkspaceID, result.SandboxID, result.EnvironmentProfileID) || !validManagedAgentSessionSnapshot(result.SessionSnapshot, version) || result.EnvironmentReady && (result.WorkerEndpoint == "" || result.WorkerSPIFFEID == "" || result.WorkerServerName == "") || result.FoundationSandboxReady && (result.FoundationTargetKind == "" || result.FoundationTargetCredential == "" || result.FoundationRuntimeID == "" || result.FoundationRuntimeOperation == "" || result.FoundationRuntimeSpecDigest == "") {
 					return fmt.Errorf("%w: managed agent execution Session projection", ErrCoordinationResultDrift)
 				}
 				result.Version = uint64(version)
@@ -412,9 +463,12 @@ func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, r
 	var environmentGeneration *int64
 	var environmentProfileID *string
 	var environmentProfileVersion *int64
+	var workspaceID *string
+	var sandboxID *string
+	var sandboxGeneration *int64
 	var state string
 	var version int64
-	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
+	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -425,8 +479,10 @@ func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, r
 	var validEnvironment bool
 	var validProfile bool
 	result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
+	var validFoundation bool
+	result.WorkspaceID, result.SandboxID, result.SandboxGeneration, validFoundation = managedAgentSessionFoundation(workspaceID, sandboxID, sandboxGeneration)
 	result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
-	if !validEnvironment || !validProfile || !validManagedAgentSessionSnapshot(*result, version) {
+	if !validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(result.EnvironmentLeaseID, result.WorkspaceID, result.SandboxID, result.EnvironmentProfileID) || !validManagedAgentSessionSnapshot(*result, version) {
 		return fmt.Errorf("%w: managed agent session projection", ErrCoordinationResultDrift)
 	}
 	result.Version = uint64(version)
@@ -451,6 +507,36 @@ func managedAgentSessionProfile(profileID *string, version *int64) (string, uint
 		return "", 0, false
 	}
 	return *profileID, uint64(*version), true
+}
+
+func managedAgentSessionFoundation(workspaceID, sandboxID *string, generation *int64) (string, string, uint64, bool) {
+	if workspaceID == nil || sandboxID == nil || generation == nil {
+		return "", "", 0, workspaceID == nil && sandboxID == nil && generation == nil
+	}
+	if !validMutationIdentifier(*workspaceID) || !validMutationIdentifier(*sandboxID) || *generation <= 0 {
+		return "", "", 0, false
+	}
+	return *workspaceID, *sandboxID, uint64(*generation), true
+}
+
+func validManagedAgentBinding(environmentLeaseID, workspaceID, sandboxID, environmentProfileID string) bool {
+	return environmentLeaseID == "" && workspaceID == "" && sandboxID == "" && environmentProfileID == "" ||
+		environmentLeaseID != "" && workspaceID == "" && sandboxID == "" ||
+		environmentLeaseID == "" && workspaceID != "" && sandboxID != "" && environmentProfileID != ""
+}
+
+func nullableManagedAgentString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableManagedAgentGeneration(value uint64) any {
+	if value == 0 {
+		return nil
+	}
+	return int64(value)
 }
 
 func validManagedAgentSessionSnapshot(result internalmanagedagent.SessionSnapshot, version int64) bool {

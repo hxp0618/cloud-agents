@@ -36,7 +36,12 @@ function environmentTone(phase: UserEnvironment["observedPhase"]): string {
 }
 
 function providerLabel(provider: EnvironmentProfileSummary["providerKinds"][number]): string {
-  return provider === "claudeAgent" ? "Claude Code" : "Codex";
+  return {
+    codex: "Codex",
+    claudeAgent: "Claude Code",
+    pi: "Pi",
+    "deepseek-harness": "deepseek-harness",
+  }[provider];
 }
 
 export function EnvironmentWorkspace({

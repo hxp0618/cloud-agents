@@ -1,5 +1,7 @@
 import { createClaudeProvider } from "@cloud-agents/cloud-agent-provider-claude";
 import { createCodexProvider } from "@cloud-agents/cloud-agent-provider-codex";
+import { createDeepSeekHarnessProvider } from "@cloud-agents/cloud-agent-provider-deepseek-harness";
+import { createPiProvider } from "@cloud-agents/cloud-agent-provider-pi";
 import {
   createCloudAgentRuntime,
   createCloudAgentStdioClient,
@@ -15,7 +17,12 @@ export function createDefaultCloudAgentRuntime(
   options: { readonly toolPolicyHookCommand?: string } = {},
 ) {
   return createCloudAgentRuntime({
-    providers: [createCodexProvider(options), createClaudeProvider()],
+    providers: [
+      createCodexProvider(options),
+      createClaudeProvider(),
+      createPiProvider(),
+      createDeepSeekHarnessProvider(),
+    ],
   });
 }
 

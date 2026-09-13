@@ -5,6 +5,7 @@ ARG TARGETOS
 ARG TARGETARCH
 COPY cloud-agents-worker-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-worker
 COPY cloud-agent-runtime-standalone.mjs /usr/local/bin/cloud-agent-runtime
+ENV CLOUD_AGENT_DEEPSEEK_HARNESS_BIN=/usr/local/bin/dsh
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
@@ -15,9 +16,11 @@ RUN apt-get update \
     esac \
     && npm install --global --ignore-scripts --omit=dev --no-audit --no-fund \
         @openai/codex@0.150.1 \
+        @deepseek-ai/dsh@0.1.2-rc.1 \
         "@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@0.3.207" \
     && ln -s "/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk-linux-${claude_arch}/claude" /usr/local/bin/claude \
     && test "$(claude --version)" = "2.1.207 (Claude Code)" \
+    && test "$(dsh --version)" = "0.1.2-rc.1" \
     && npm cache clean --force \
     && mkdir -p /workspace \
     && chown 1000:1000 /workspace \

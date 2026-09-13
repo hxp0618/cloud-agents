@@ -42,7 +42,8 @@ type WorkspaceSnapshotRestoreInput struct {
 
 type WorkspaceSnapshot struct {
 	Scope                                           internalcoordination.FoundationScope
-	SnapshotID, SourceWorkspaceID, Backend          string
+	SnapshotID, SourceWorkspaceID, SourceTargetID   string
+	Backend                                         string
 	ConsistencyMode, Status, OperationID            string
 	CleanupOperationID, CleanupTrigger              *string
 	StableErrorCode                                 *string
@@ -62,6 +63,7 @@ type workspaceSnapshotRow struct {
 	ProjectID                      string     `json:"project_uid"`
 	SnapshotID                     string     `json:"snapshot_uid"`
 	SourceWorkspaceID              string     `json:"source_workspace_uid"`
+	SourceTargetID                 string     `json:"target_uid"`
 	Backend                        string     `json:"backend"`
 	ConsistencyMode                string     `json:"consistency_mode"`
 	Status                         string     `json:"status"`
@@ -81,12 +83,12 @@ type workspaceSnapshotRow struct {
 }
 
 type WorkspaceSnapshotClaim struct {
-	TenantID, EventID, OperationID, ProjectID, SnapshotID string
-	WorkspaceID, TargetID, TargetEndpoint, CredentialRef  string
-	SourceVolumeName, ImageURI                            string
-	DeliveryAttempts                                      int32
-	ClaimExpiresAt                                        time.Time
-	HolderID, HolderIncarnation, ClaimToken               string
+	TenantID, EventID, OperationID, ProjectID, SnapshotID            string
+	WorkspaceID, TargetID, TargetKind, TargetEndpoint, CredentialRef string
+	SourceVolumeName, ImageURI                                       string
+	DeliveryAttempts                                                 int32
+	ClaimExpiresAt                                                   time.Time
+	HolderID, HolderIncarnation, ClaimToken                          string
 }
 
 type WorkspaceSnapshotClaimResult struct {
@@ -96,12 +98,12 @@ type WorkspaceSnapshotClaimResult struct {
 }
 
 type WorkspaceSnapshotCleanupClaim struct {
-	TenantID, EventID, OperationID, ProjectID, SnapshotID string
-	SourceWorkspaceID, TargetID, TargetEndpoint           string
-	CredentialRef, PhysicalSnapshotID                     string
-	DeliveryAttempts                                      int32
-	ClaimExpiresAt                                        time.Time
-	HolderID, HolderIncarnation, ClaimToken               string
+	TenantID, EventID, OperationID, ProjectID, SnapshotID   string
+	SourceWorkspaceID, TargetID, TargetKind, TargetEndpoint string
+	CredentialRef, PhysicalSnapshotID                       string
+	DeliveryAttempts                                        int32
+	ClaimExpiresAt                                          time.Time
+	HolderID, HolderIncarnation, ClaimToken                 string
 }
 
 type WorkspaceSnapshotCleanupClaimResult struct {
@@ -147,7 +149,7 @@ type WorkspaceSnapshotReapResult struct {
 }
 
 const workspaceSnapshotColumns = `snapshot.tenant_id, snapshot.project_uid, snapshot.snapshot_uid,
-    snapshot.source_workspace_uid, snapshot.source_workspace_resource_version, snapshot.backend,
+    snapshot.source_workspace_uid, snapshot.source_workspace_resource_version, snapshot.target_uid, snapshot.backend,
     snapshot.consistency_mode, snapshot.status, snapshot.operation_id, snapshot.resource_version,
     snapshot.retention_seconds, snapshot.expires_at, snapshot.cleanup_operation_id, snapshot.cleanup_trigger,
     snapshot.size_bytes, snapshot.stable_error_code, snapshot.created_at, snapshot.updated_at,
@@ -163,7 +165,7 @@ WHERE snapshot.tenant_id = cloud_agents.require_tenant_id() AND snapshot.project
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND snapshot_uid = $2`
 	listWorkspaceSnapshotsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(snapshot_row) ORDER BY snapshot_row.snapshot_uid), '[]'::jsonb)
 FROM (SELECT snapshot.tenant_id, snapshot.project_uid, snapshot.snapshot_uid, snapshot.source_workspace_uid,
-    snapshot.source_workspace_resource_version, snapshot.backend, snapshot.consistency_mode, snapshot.status,
+    snapshot.source_workspace_resource_version, snapshot.target_uid, snapshot.backend, snapshot.consistency_mode, snapshot.status,
     snapshot.operation_id, snapshot.resource_version, snapshot.retention_seconds, snapshot.expires_at,
     snapshot.cleanup_operation_id, snapshot.cleanup_trigger, snapshot.size_bytes, snapshot.stable_error_code,
     snapshot.created_at, snapshot.updated_at, snapshot.observed_at, snapshot.deleted_at
@@ -364,7 +366,7 @@ func (service *DurableCoordinationService) ListWorkspaceSnapshots(ctx context.Co
 
 func scanWorkspaceSnapshot(row rowScanner, value *workspaceSnapshotRow) error {
 	return row.Scan(&value.TenantID, &value.ProjectID, &value.SnapshotID, &value.SourceWorkspaceID,
-		&value.SourceWorkspaceResourceVersion, &value.Backend, &value.ConsistencyMode, &value.Status,
+		&value.SourceWorkspaceResourceVersion, &value.SourceTargetID, &value.Backend, &value.ConsistencyMode, &value.Status,
 		&value.OperationID, &value.ResourceVersion, &value.RetentionSeconds, &value.ExpiresAt,
 		&value.CleanupOperationID, &value.CleanupTrigger, &value.SizeBytes, &value.StableErrorCode,
 		&value.CreatedAt, &value.UpdatedAt, &value.ObservedAt, &value.DeletedAt)
@@ -373,15 +375,16 @@ func scanWorkspaceSnapshot(row rowScanner, value *workspaceSnapshotRow) error {
 func workspaceSnapshotFromRow(row workspaceSnapshotRow, tenantID, projectID string) (WorkspaceSnapshot, error) {
 	value := WorkspaceSnapshot{Scope: internalcoordination.FoundationScope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 		SnapshotID: row.SnapshotID, SourceWorkspaceID: row.SourceWorkspaceID,
-		SourceWorkspaceResourceVersion: row.SourceWorkspaceResourceVersion, Backend: row.Backend,
+		SourceWorkspaceResourceVersion: row.SourceWorkspaceResourceVersion, SourceTargetID: row.SourceTargetID, Backend: row.Backend,
 		ConsistencyMode: row.ConsistencyMode, Status: row.Status, OperationID: row.OperationID,
 		CleanupOperationID: row.CleanupOperationID, CleanupTrigger: row.CleanupTrigger,
 		ResourceVersion: row.ResourceVersion, SizeBytes: row.SizeBytes, RetentionSeconds: row.RetentionSeconds,
 		StableErrorCode: row.StableErrorCode, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		ExpiresAt: row.ExpiresAt, ObservedAt: row.ObservedAt, DeletedAt: row.DeletedAt}
 	if row.TenantID != tenantID || row.ProjectID != projectID || !validMutationIdentifier(value.SnapshotID) ||
-		!validMutationIdentifier(value.SourceWorkspaceID) || !validMutationIdentifier(value.OperationID) ||
-		value.SourceWorkspaceResourceVersion < 1 || value.ResourceVersion < 1 || value.Backend != "docker-volume-v1" || value.ConsistencyMode != "offline" ||
+		!validMutationIdentifier(value.SourceWorkspaceID) || !validMutationIdentifier(value.SourceTargetID) || !validMutationIdentifier(value.OperationID) ||
+		value.SourceWorkspaceResourceVersion < 1 || value.ResourceVersion < 1 ||
+		(value.Backend != "docker-volume-v1" && value.Backend != "portable-tar-v1") || value.ConsistencyMode != "offline" ||
 		(value.Status != "pending" && value.Status != "available" && value.Status != "unknown" && value.Status != "failed" &&
 			value.Status != "deleting" && value.Status != "cleanup_failed" && value.Status != "deleted") ||
 		(value.RetentionSeconds == nil) != (value.ExpiresAt == nil) || value.RetentionSeconds != nil && (*value.RetentionSeconds < 1 || *value.RetentionSeconds > 31536000) ||
@@ -468,6 +471,10 @@ func (service *DurableCoordinationService) ClaimWorkspaceSnapshot(ctx context.Co
 			result.Found = false
 			return nil
 		}
+		if err == nil {
+			err = handle.transaction.queryRow(ctx, `SELECT target_kind FROM cloud_agents.deployment_targets
+WHERE tenant_id=cloud_agents.require_tenant_id() AND project_uid=$1 AND target_uid=$2`, result.Claim.ProjectID, result.Claim.TargetID).Scan(&result.Claim.TargetKind)
+		}
 		return err
 	})
 	if errors.Is(err, ErrMutationCommitUnknown) {
@@ -489,7 +496,7 @@ func validWorkspaceSnapshotClaim(claim WorkspaceSnapshotClaim) bool {
 			return false
 		}
 	}
-	return claim.TargetEndpoint != "" && claim.ImageURI != "" && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 && !claim.ClaimExpiresAt.IsZero() && validMutationIdentifier(claim.HolderID) && validMutationIdentifier(claim.HolderIncarnation) && validMutationIdentifier(claim.ClaimToken)
+	return (claim.TargetKind == "docker" || claim.TargetKind == "kubernetes" || claim.TargetKind == "remote-worker") && claim.TargetEndpoint != "" && claim.ImageURI != "" && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 && !claim.ClaimExpiresAt.IsZero() && validMutationIdentifier(claim.HolderID) && validMutationIdentifier(claim.HolderIncarnation) && validMutationIdentifier(claim.ClaimToken)
 }
 
 func (service *DurableCoordinationService) RenewWorkspaceSnapshot(ctx context.Context, claim WorkspaceSnapshotClaim, leaseSeconds int32) (time.Time, error) {
@@ -617,6 +624,10 @@ func (service *DurableCoordinationService) ClaimWorkspaceSnapshotCleanup(ctx con
 			result.Found = false
 			return nil
 		}
+		if err == nil {
+			err = handle.transaction.queryRow(ctx, `SELECT target_kind FROM cloud_agents.deployment_targets
+WHERE tenant_id=cloud_agents.require_tenant_id() AND project_uid=$1 AND target_uid=$2`, result.Claim.ProjectID, result.Claim.TargetID).Scan(&result.Claim.TargetKind)
+		}
 		return err
 	})
 	if errors.Is(err, ErrMutationCommitUnknown) {
@@ -640,7 +651,7 @@ func validWorkspaceSnapshotCleanupClaim(claim WorkspaceSnapshotCleanupClaim) boo
 			return false
 		}
 	}
-	return claim.TargetEndpoint != "" && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 && !claim.ClaimExpiresAt.IsZero()
+	return (claim.TargetKind == "docker" || claim.TargetKind == "kubernetes" || claim.TargetKind == "remote-worker") && claim.TargetEndpoint != "" && claim.DeliveryAttempts >= 1 && claim.DeliveryAttempts <= 8 && !claim.ClaimExpiresAt.IsZero()
 }
 
 func (service *DurableCoordinationService) RenewWorkspaceSnapshotCleanup(ctx context.Context, claim WorkspaceSnapshotCleanupClaim, leaseSeconds int32) (time.Time, error) {

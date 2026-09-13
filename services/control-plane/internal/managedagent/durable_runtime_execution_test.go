@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -61,11 +62,70 @@ func (fake *durableRuntimeExecutionStoreFake) CreateManagedAgentTurn(_ context.C
 func (fake *durableRuntimeExecutionStoreFake) CreateManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CreateExecutionInput) (ExecutionSnapshot, error) {
 	fake.calls = append(fake.calls, "execution")
 	fake.recordPrincipal(principal)
-	fake.execution.Scope, fake.execution.SessionID, fake.execution.TurnID, fake.execution.ExecutionID = input.Scope, input.SessionID, input.TurnID, input.ExecutionID
+	fake.execution.Scope, fake.execution.SessionID, fake.execution.TurnID, fake.execution.ExecutionID, fake.execution.Generation = input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation
 	if fake.execution.State == "" {
 		fake.execution.State = ExecutionSucceeded
 	}
 	return fake.execution, nil
+}
+
+func (fake *durableRuntimeExecutionStoreFake) ClaimManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input ClaimRuntimeExecutionInput) (RuntimeExecutionClaim, error) {
+	fake.calls = append(fake.calls, "claim")
+	fake.recordPrincipal(principal)
+	attempt := fake.execution.AttemptNumber + 1
+	claim := RuntimeExecutionClaim{RuntimeExecutionReference: input.RuntimeExecutionReference, Acquired: true, AttemptNumber: attempt,
+		HolderID: input.HolderID, Incarnation: input.Incarnation, Token: input.Token, ExpiresAt: time.Now().Add(time.Minute),
+		PendingSideEffect: fake.execution.PendingSideEffect}
+	if fake.execution.State == ExecutionRunning {
+		claim.RecoveryState = "recovering"
+		claim.RecoveryReason = "claim_expired"
+		claim.RecoveryMode = fake.execution.RecoveryMode
+		claim.RecoverySourceTargetID = fake.execution.RecoverySourceTargetID
+		claim.RecoveryTargetID = fake.execution.RecoveryTargetID
+	}
+	if fake.execution.State == ExecutionRunning && (fake.execution.PendingSideEffect || len(fake.execution.Messages) == 0) {
+		claim.Acquired = false
+		claim.RecoveryState = "awaiting_reconciliation"
+		claim.RecoveryReason = "checkpoint_missing"
+		if fake.execution.PendingSideEffect {
+			claim.RecoveryReason = "side_effect_outcome_unknown"
+		}
+	}
+	if claim.Acquired {
+		fake.execution.AttemptNumber = attempt
+	}
+	return claim, nil
+}
+
+func (fake *durableRuntimeExecutionStoreFake) RenewManagedAgentExecutionClaim(_ context.Context, _ string, principal *authn.VerifiedPrincipal, claim RuntimeExecutionClaim, _ int32) (time.Time, error) {
+	fake.recordPrincipal(principal)
+	return claim.ExpiresAt.Add(time.Minute), nil
+}
+
+func (fake *durableRuntimeExecutionStoreFake) ReleaseQueuedManagedAgentExecutionClaim(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ RuntimeExecutionClaim) error {
+	fake.calls = append(fake.calls, "release-claim")
+	fake.recordPrincipal(principal)
+	return nil
+}
+
+func (fake *durableRuntimeExecutionStoreFake) CheckpointManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CheckpointRuntimeExecutionInput) (RuntimeExecutionCheckpoint, error) {
+	fake.calls = append(fake.calls, "checkpoint")
+	fake.recordPrincipal(principal)
+	digest, err := RuntimeMessagesDigest(input.Messages, input.Claim.ExecutionID, input.Claim.Generation)
+	return RuntimeExecutionCheckpoint{Sequence: 1, Digest: digest, ExpiresAt: input.Claim.ExpiresAt.Add(time.Minute), CreatedAt: time.Now()}, err
+}
+
+func (fake *durableRuntimeExecutionStoreFake) ResolveManagedAgentExecutionInteraction(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input ResolveRuntimeInteractionInput) (RuntimeInteractionResolution, error) {
+	fake.calls = append(fake.calls, "resolve-interaction")
+	fake.recordPrincipal(principal)
+	digest, _, err := RuntimeInteractionResolutionDigest(input)
+	return RuntimeInteractionResolution{InteractionRequestID: input.InteractionRequestID, InteractionType: input.InteractionType, RequestID: input.RequestID, Digest: digest, Payload: input.Payload}, err
+}
+
+func (fake *durableRuntimeExecutionStoreFake) ReconcileManagedAgentExecutionSideEffect(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input ReconcileRuntimeSideEffectInput) (RuntimeSideEffectReconciliation, error) {
+	fake.recordPrincipal(principal)
+	digest, err := RuntimeSideEffectReconciliationDigest(input)
+	return RuntimeSideEffectReconciliation{CheckpointDigest: input.CheckpointDigest, Outcome: input.Outcome, Digest: digest, CreatedAt: time.Now()}, err
 }
 
 func (fake *durableRuntimeExecutionStoreFake) StartManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ StartExecutionInput) (ExecutionTransitionResult, error) {
@@ -78,10 +138,12 @@ func (fake *durableRuntimeExecutionStoreFake) StartManagedAgentExecution(_ conte
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnRunning}, Execution: fake.execution}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "complete")
 	fake.recordPrincipal(principal)
-	return ExecutionTransitionResult{}, nil
+	fake.execution.State = ExecutionSucceeded
+	fake.execution.Messages = append([]runtimeprotocol.Message(nil), input.Messages...)
+	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnCompleted}, Execution: fake.execution}, nil
 }
 
 func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input FailRuntimeExecutionInput) (ExecutionTransitionResult, error) {
@@ -118,12 +180,38 @@ func (fake *durableRuntimeExecutionStoreFake) recordPrincipal(principal *authn.V
 
 var _ DurableRuntimeExecutionStore = (*durableRuntimeExecutionStoreFake)(nil)
 
+func TestRuntimeCheckpointStateTracksOnlySideEffectingItems(t *testing.T) {
+	event := func(eventType, itemType, itemID string) runtimeprotocol.Message {
+		return runtimeprotocol.Message{MessageType: "Event", Payload: map[string]any{
+			"eventType": eventType,
+			"payload":   map[string]any{"itemType": itemType, "data": map[string]any{"providerItemId": itemID}},
+		}}
+	}
+	messages := []runtimeprotocol.Message{
+		event("item.started", "reasoning", "reasoning-1"),
+		event("item.started", "command_execution", "command-1"),
+		event("item.completed", "command_execution", "command-1"),
+		event("item.started", "file_change", "file-1"),
+	}
+	pendingSideEffect, pendingInteractions := runtimeCheckpointState(messages, nil, 0)
+	if !pendingSideEffect || pendingInteractions != 0 {
+		t.Fatalf("checkpoint state = (%t, %d), want (true, 0)", pendingSideEffect, pendingInteractions)
+	}
+	pendingSideEffect, _ = runtimeCheckpointState(messages[:3], nil, 0)
+	if pendingSideEffect {
+		t.Fatal("completed side-effect item or reasoning item remained pending")
+	}
+}
+
 type runtimeWorkerFake struct {
 	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
 	workerruntimev1alpha1connect.UnimplementedWorkerRuntimeServiceHandler
-	identity *workerv1alpha1.WorkloadIdentity
-	now      time.Time
-	full     bool
+	identity                        *workerv1alpha1.WorkloadIdentity
+	now                             time.Time
+	full                            bool
+	opened                          chan struct{}
+	disconnectAfterCheckpoint       bool
+	sendRuntimeErrorAfterCheckpoint bool
 }
 
 func (fake *runtimeWorkerFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
@@ -148,17 +236,53 @@ func (fake *runtimeWorkerFake) OpenSession(ctx context.Context, stream *connect.
 		return err
 	}
 	open := request.GetOpen()
+	if fake.opened != nil {
+		fake.opened <- struct{}{}
+	}
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Ready{Ready: &workerruntimev1alpha1.RuntimeSessionReady{
 		ExecutionId: open.GetExecutionId(), Generation: open.GetGeneration(), ProtocolMajor: runtimeprotocol.ProtocolMajor, ProtocolMinor: runtimeprotocol.ProtocolMinor,
 	}}}); err != nil {
 		return err
 	}
 	for {
-		if _, err := stream.Receive(); err != nil {
+		request, err := stream.Receive()
+		if err != nil {
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return nil
 			}
 			return err
+		}
+		if fake.full || len(request.GetCommand().GetJson()) == 0 {
+			continue
+		}
+		var command runtimeprotocol.Command
+		if err := json.Unmarshal(request.GetCommand().GetJson(), &command); err != nil {
+			return err
+		}
+		message := runtimeprotocol.Message{
+			RequestID: command.RequestID, Protocol: command.Protocol, ExecutionID: command.ExecutionID,
+			Generation: command.Generation, CommandID: command.CommandID, OccurredAt: fake.now.Format(time.RFC3339Nano),
+			MessageType: "Result", Payload: map[string]any{"text": "done"},
+		}
+		if fake.disconnectAfterCheckpoint && command.CommandType == "SendTurn" {
+			message.MessageType = "Progress"
+			message.Payload["text"] = "checkpointed"
+		}
+		encoded, err := json.Marshal(message)
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Json{Json: encoded}}); err != nil {
+			return err
+		}
+		if fake.disconnectAfterCheckpoint && command.CommandType == "SendTurn" {
+			if fake.sendRuntimeErrorAfterCheckpoint {
+				return stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Error{Error: &workerruntimev1alpha1.RuntimeSessionError{Code: "runtime_execution_failed", Message: "Runtime command failed"}}})
+			}
+			return connect.NewError(connect.CodeUnavailable, errors.New("worker exited"))
+		}
+		if command.CommandType == "SendTurn" {
+			return nil
 		}
 	}
 }
@@ -167,6 +291,11 @@ func newRuntimeTestSupervisor(t *testing.T, now time.Time, full bool) *workercli
 	t.Helper()
 	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
 	wire := &runtimeWorkerFake{identity: identity, now: now, full: full}
+	return newRuntimeTestSupervisorForWire(t, wire)
+}
+
+func newRuntimeTestSupervisorForWire(t *testing.T, wire *runtimeWorkerFake) *workerclient.Supervisor {
+	t.Helper()
 	mux := http.NewServeMux()
 	workerPath, workerHandler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(wire)
 	runtimePath, runtimeHandler := workerruntimev1alpha1connect.NewWorkerRuntimeServiceHandler(wire)
@@ -179,7 +308,7 @@ func newRuntimeTestSupervisor(t *testing.T, now time.Time, full bool) *workercli
 	supervisor, err := workerclient.New(workerclient.Config{
 		Client:                 workerv1alpha1connect.NewWorkerExecutionServiceClient(server.Client(), server.URL),
 		RuntimeClient:          workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL),
-		ExpectedWorkerIdentity: identity, Clock: func() time.Time { return now },
+		ExpectedWorkerIdentity: wire.identity, Clock: func() time.Time { return wire.now },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +346,7 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 func TestOpenRuntimeSessionWithRetryRecoversUnavailableWorker(t *testing.T) {
 	attempts := 0
 	var openedContext context.Context
-	_, err := openRuntimeSessionWithRetry(context.Background(), func(ctx context.Context) (*workerclient.RuntimeSession, error) {
+	_, err := openRuntimeSessionWithRetry(context.Background(), func(ctx context.Context) (runtimeSession, error) {
 		attempts++
 		if attempts < 3 {
 			return nil, connect.NewError(connect.CodeUnavailable, errors.New("worker unavailable"))
@@ -267,8 +396,9 @@ func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
 		return message, nil
 	}, "turn", func(message runtimeprotocol.Message) (bool, error) {
 		return message.CommandID == "interaction-1", nil
-	}, func(message runtimeprotocol.Message) {
-		accepted = append(accepted, message)
+	}, func(messages []runtimeprotocol.Message) error {
+		accepted = append(accepted[:0], messages...)
+		return nil
 	})
 	if err != nil || !reflect.DeepEqual(collected, wire[1:]) || !reflect.DeepEqual(accepted, wire[1:]) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(wire) {
 		t.Fatalf("messages=%#v accepted=%#v terminal=%#v reads=%d err=%v", collected, accepted, terminal, index, err)
@@ -292,7 +422,8 @@ func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coordinator := &DurableRuntimeExecutionCoordinator{now: func() time.Time { return time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC) }, active: make(map[durableExecutionKey]*activeDurableExecution)}
+	store := &durableRuntimeExecutionStoreFake{}
+	coordinator := &DurableRuntimeExecutionCoordinator{store: store, now: func() time.Time { return time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC) }, active: make(map[durableExecutionKey]*activeDurableExecution)}
 	active, unregister, err := coordinator.registerActiveExecution(key, func() {})
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +443,7 @@ func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 		t.Fatalf("active approval = %#v", got)
 	}
 	resolved := make(chan error, 1)
-	approvalInput := RuntimeApprovalResolutionInput{RuntimeExecutionReference: reference, RequestID: "resolve-approval", InteractionRequestID: "codex:generation-7:approval:1", Decision: "accept"}
+	approvalInput := RuntimeApprovalResolutionInput{RuntimeExecutionReference: reference, Principal: &authn.VerifiedPrincipal{}, RequestID: "resolve-approval", InteractionRequestID: "codex:generation-7:approval:1", Decision: "accept"}
 	go func() { resolved <- coordinator.ResolveApproval(context.Background(), approvalInput) }()
 	command := <-sent
 	if command.CommandType != "ResolveApproval" || command.Payload["requestId"] != approvalInput.InteractionRequestID {
@@ -339,7 +470,7 @@ func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	coordinator.recordActiveRuntimeMessage(key, active, userInput)
 	answered := make(chan error, 1)
 	questionID := strings.Repeat("问", maxRuntimeInteractionRequestIDCharacters)
-	answerInput := RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, RequestID: "resolve-input", InteractionRequestID: "claude:generation-7:user-input:2", Answers: map[string][]string{questionID: {"one", "two"}}}
+	answerInput := RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, Principal: &authn.VerifiedPrincipal{}, RequestID: "resolve-input", InteractionRequestID: "claude:generation-7:user-input:2", Answers: map[string][]string{questionID: {"one", "two"}}}
 	go func() { answered <- coordinator.ResolveUserInput(context.Background(), answerInput) }()
 	command = <-sent
 	if command.CommandType != "ResolveUserInput" {
@@ -370,14 +501,14 @@ func TestReceiveRuntimeMessagesRejectsPublicLimits(t *testing.T) {
 	messages, _, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		reads++
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress"}, nil
-	}, "turn", nil, func(runtimeprotocol.Message) { accepted++ })
+	}, "turn", nil, func([]runtimeprotocol.Message) error { accepted++; return nil })
 	if err == nil || len(messages) != maxRuntimeExecutionMessages || accepted != maxRuntimeExecutionMessages || reads != maxRuntimeExecutionMessages+1 {
 		t.Fatalf("count limit: messages=%d accepted=%d reads=%d err=%v", len(messages), accepted, reads, err)
 	}
 	accepted = 0
 	messages, _, err = receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress", Payload: map[string]any{"text": strings.Repeat("x", runtimeprotocol.MaxMessageBytes)}}, nil
-	}, "turn", nil, func(runtimeprotocol.Message) { accepted++ })
+	}, "turn", nil, func([]runtimeprotocol.Message) error { accepted++; return nil })
 	if err == nil || len(messages) != 0 || accepted != 0 {
 		t.Fatalf("byte limit: messages=%d accepted=%d err=%v", len(messages), accepted, err)
 	}
@@ -542,13 +673,13 @@ func TestDurableRuntimeExecutionLeavesQueuedExecutionRetryableWhenWorkerIsFull(t
 	if !errors.Is(err, ErrRuntimeCapacityExhausted) || result.Transition.Execution.State != ExecutionQueued {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution"}) {
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim", "release-claim"}) {
 		t.Fatalf("capacity exhaustion mutated running state: calls=%v", store.calls)
 	}
-	assertFreshPrincipals(t, store.principals, 4)
+	assertFreshPrincipals(t, store.principals, 6)
 }
 
-func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t *testing.T) {
+func TestDurableRuntimeExecutionRequiresReconciliationWhenRunningCheckpointIsMissing(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
 		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
@@ -561,16 +692,132 @@ func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t
 		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
 		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
 	})
-	if !errors.Is(err, ErrDurableRuntimeExecutionFailed) || result.Transition.Execution.State != ExecutionFailed || result.Transition.Execution.ErrorCode != "orphaned_execution" {
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.State != ExecutionRunning || result.Transition.Execution.RecoveryReason != "checkpoint_missing" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "fail"}) {
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim"}) {
 		t.Fatalf("calls=%v", store.calls)
 	}
 	assertFreshPrincipals(t, store.principals, 5)
 }
 
-func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
+func TestDurableRuntimeExecutionFencesWriterBeforeSideEffectReconciliation(t *testing.T) {
+	now := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
+	opened := make(chan struct{}, 1)
+	worker := &runtimeWorkerFake{
+		identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+		now:      now, opened: opened,
+	}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{
+		State: ExecutionRunning, PendingSideEffect: true,
+		Messages: []runtimeprotocol.Message{{MessageType: "Event", Payload: map[string]any{"eventType": "item.started"}}},
+	}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.RecoveryReason != "side_effect_outcome_unknown" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	select {
+	case <-opened:
+	default:
+		t.Fatal("previous Runtime writer was not fenced before reconciliation")
+	}
+}
+
+func TestDurableRuntimeExecutionFencesWriterBeforeResolvingRecoveredInteraction(t *testing.T) {
+	now := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
+	opened := make(chan struct{}, 1)
+	worker := &runtimeWorkerFake{
+		identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+		now:      now, opened: opened,
+	}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{
+		State: ExecutionRunning, ClaimExpiresAt: now.Add(-time.Second), PendingInteractionCount: 1,
+		Messages: []runtimeprotocol.Message{{MessageType: "InteractionRequest", Payload: map[string]any{"requestId": "approval-1", "interactionType": "approval"}}},
+	}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.PendingInteractionCount != 1 {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	select {
+	case <-opened:
+	default:
+		t.Fatal("previous Runtime writer was not fenced before recovered interaction resolution")
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution"}) {
+		t.Fatalf("interaction fence unexpectedly claimed execution: calls=%v", store.calls)
+	}
+}
+
+func TestDurableRuntimeExecutionLeavesRecoveredExecutionRunningWhenWorkerOpenFails(t *testing.T) {
+	message := runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress", Payload: map[string]any{"text": "checkpointed"}}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning, Messages: []runtimeprotocol.Message{message}, RecoveryMode: "cross-node-takeover", RecoverySourceTargetID: "source", RecoveryTargetID: "target"}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 9, 1, 5, 0, 0, 0, time.UTC) },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeEnvironmentUnavailable) || result.Transition.Execution.State != ExecutionRunning || result.Transition.Execution.RecoveryMode != "cross-node-takeover" || result.Transition.Execution.RecoverySourceTargetID != "source" || result.Transition.Execution.RecoveryTargetID != "target" || !reflect.DeepEqual(result.Messages, []runtimeprotocol.Message{message}) {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim"}) {
+		t.Fatalf("failed recovery mutated durable execution: calls=%v", store.calls)
+	}
+	assertFreshPrincipals(t, store.principals, 5)
+}
+
+func TestDurableRuntimeExecutionLeavesCheckpointedExecutionRunningWhenWorkerExits(t *testing.T) {
+	now := time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)
+	worker := &runtimeWorkerFake{
+		identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+		now:      now, disconnectAfterCheckpoint: true, sendRuntimeErrorAfterCheckpoint: true,
+	}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeEnvironmentUnavailable) || result.Transition.Execution.State != ExecutionRunning || len(result.Messages) != 1 || result.Messages[0].Payload["text"] != "checkpointed" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim", "start", "checkpoint"}) {
+		t.Fatalf("checkpointed execution was settled after Worker exit: calls=%v", store.calls)
+	}
+}
+
+func TestDurableRuntimeExecutionOutlivesCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, cancel: cancel}
@@ -585,13 +832,13 @@ func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
 		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
 		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
 	})
-	if err == nil || !errors.Is(err, context.Canceled) || result.Transition.Execution.State != ExecutionCancelled {
+	if err != nil || result.Transition.Execution.State != ExecutionSucceeded || ctx.Err() != context.Canceled {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "start", "cancel"}) {
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim", "start", "complete"}) {
 		t.Fatalf("calls=%v", store.calls)
 	}
-	assertFreshPrincipals(t, store.principals, 6)
+	assertFreshPrincipals(t, store.principals, 7)
 }
 
 func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {

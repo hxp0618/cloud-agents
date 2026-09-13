@@ -207,7 +207,7 @@ func (directory *CredentialDirectory) ListManagedWorkers(ctx context.Context, en
 	for _, path := range paths {
 		continuation := ""
 		for {
-			query := url.Values{"labelSelector": {"cloud-agents.dev/managed=true"}, "limit": {"200"}}
+			query := url.Values{"labelSelector": {"cloud-agents.dev/managed=true,cloud-agents.dev/worker"}, "limit": {"200"}}
 			if continuation != "" {
 				query.Set("continue", continuation)
 			}
@@ -387,7 +387,7 @@ func desiredResourcesWithStrategy(name string, request DeployRequest, config dep
 				"spec": map[string]any{"automountServiceAccountToken": false, "terminationGracePeriodSeconds": 30, "securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1000, "runAsGroup": 1000, "fsGroup": 1000, "fsGroupChangePolicy": "OnRootMismatch", "seccompProfile": map[string]string{"type": "RuntimeDefault"}}, "containers": []map[string]any{{
 					"name": "worker", "image": config.WorkerImageRepository + "@" + request.ReleaseDigest, "imagePullPolicy": "IfNotPresent",
 					"args":            []string{"--listen", ":8091", "--tls-cert", "/run/cloud-agents/worker-credentials/server.crt", "--tls-key", "/run/cloud-agents/worker-credentials/server.key", "--client-ca", "/run/cloud-agents/worker-credentials/client-ca.crt", "--worker-spiffe-id", config.WorkerSPIFFEID, "--runtime-command", "/usr/local/bin/cloud-agent-runtime", "--runtime-directory", "/workspace", "--runtime-max-sessions", "1", "--provider-credential-directory", "/run/cloud-agents/provider-credentials", "--admission-lease-id", request.LeaseID, "--admission-generation", strconv.FormatInt(request.LeaseGeneration, 10), "--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token"},
-					"env":             []map[string]string{{"name": "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS", "value": "codex,claudeAgent"}, {"name": "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE", "value": "single-tenant-trusted-v1"}},
+					"env":             []map[string]string{{"name": "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS", "value": "codex,claudeAgent,pi,deepseek-harness"}, {"name": "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE", "value": "single-tenant-trusted-v1"}},
 					"ports":           []map[string]any{{"containerPort": workerPort, "name": "https", "protocol": "TCP"}},
 					"resources":       map[string]any{"limits": map[string]string{"cpu": fmt.Sprintf("%dm", request.CPULimitMillis), "memory": strconv.FormatInt(request.MemoryLimitBytes, 10)}, "requests": map[string]string{"cpu": fmt.Sprintf("%dm", request.CPULimitMillis), "memory": strconv.FormatInt(request.MemoryLimitBytes, 10)}},
 					"securityContext": map[string]any{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": map[string]any{"drop": []string{"ALL"}}},

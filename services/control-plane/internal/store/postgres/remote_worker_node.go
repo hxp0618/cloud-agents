@@ -18,14 +18,15 @@ import (
 )
 
 type RemoteWorkerHeartbeatResult struct {
-	Node                  internalremoteworker.NodeStatus
-	ReconcileRequired     bool
-	Command               *internalremoteworker.Command
-	SandboxCommand        *internalremoteworker.SandboxCommand
-	SandboxExecCommand    *internalremoteworker.SandboxExecCommand
-	SandboxFileCommand    *internalremoteworker.SandboxFileCommand
-	SandboxPTYCommand     *internalremoteworker.SandboxPTYCommand
-	SandboxPreviewCommand *internalremoteworker.SandboxPreviewCommand
+	Node                     internalremoteworker.NodeStatus
+	ReconcileRequired        bool
+	Command                  *internalremoteworker.Command
+	SandboxCommand           *internalremoteworker.SandboxCommand
+	WorkspaceSnapshotCommand *internalremoteworker.WorkspaceSnapshotCommand
+	SandboxExecCommand       *internalremoteworker.SandboxExecCommand
+	SandboxFileCommand       *internalremoteworker.SandboxFileCommand
+	SandboxPTYCommand        *internalremoteworker.SandboxPTYCommand
+	SandboxPreviewCommand    *internalremoteworker.SandboxPreviewCommand
 }
 
 type RemoteWorkerOperationPage struct {
@@ -78,6 +79,19 @@ const heartbeatRemoteWorkerSQL = `SELECT enrollment_uid, worker_uid, worker_name
     reconcile_required, command_uid, command_generation, command_desired_state, command_deadline_at
 FROM cloud_agents.heartbeat_remote_worker_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`
 
+const claimRemoteWorkerWorkspaceSnapshotSQL = `SELECT tenant_id,event_id,delivery_attempts,claim_expires_at,operation_id,
+    project_uid,snapshot_uid,workspace_uid,target_uid,target_endpoint,credential_ref,source_volume_uid,image_uri
+FROM cloud_agents.claim_foundation_workspace_snapshot_remote_worker_v1($1,$2,$3,$4,$5,$6)`
+
+const getRemoteWorkerWorkspaceSnapshotClaimSQL = `SELECT event.tenant_id,event.event_id,event.delivery_attempts,event.claim_expires_at,event.operation_id,
+    snapshot.project_uid,snapshot.snapshot_uid,snapshot.source_workspace_uid,snapshot.target_uid,target.target_kind,target.endpoint,target.credential_ref,
+    snapshot.source_physical_volume_uid,snapshot.image_uri,event.claim_holder_id,event.claim_incarnation,event.claim_token
+FROM cloud_agents.outbox_events AS event
+JOIN cloud_agents.workspace_snapshots AS snapshot ON snapshot.tenant_id=event.tenant_id AND snapshot.operation_id=event.operation_id AND snapshot.operation_generation=event.operation_generation AND snapshot.snapshot_uid=event.aggregate_id
+JOIN cloud_agents.deployment_targets AS target ON target.tenant_id=snapshot.tenant_id AND target.project_uid=snapshot.project_uid AND target.target_uid=snapshot.target_uid
+WHERE event.tenant_id=$1 AND event.event_class='operation_effect' AND event.aggregate_kind='workspaceSnapshot'
+  AND event.operation_id=$2 AND event.delivery_attempts=$3 AND event.claim_holder_id=$4 AND event.claim_incarnation=$5 AND event.state='claimed' AND target.target_uid=$6`
+
 const renewRemoteWorkerSandboxSQL = `SELECT cloud_agents.renew_remote_worker_foundation_sandbox_v1(
     $1,$2,$3,$4,$5,$6)`
 
@@ -106,9 +120,9 @@ FROM cloud_agents.settle_remote_worker_sandbox_file_v1(
 
 const claimRemoteWorkerSandboxPTYSQL = `SELECT command_uid, grant_uid, workspace_uid,
     target_uid, sandbox_uid, sandbox_generation, runtime_uid, runtime_operation_uid,
-    runtime_spec_digest, action, session_uid, since_offset, takeover,
+    runtime_spec_digest, action, command_text, session_uid, since_offset, takeover,
     input_message_type, input_payload, pty_enabled, command_deadline_at
-FROM cloud_agents.claim_remote_worker_sandbox_pty_v2($1,$2,$3,$4,$5)`
+FROM cloud_agents.claim_remote_worker_sandbox_pty_v3($1,$2,$3,$4,$5)`
 
 const settleRemoteWorkerSandboxPTYSQL = `SELECT command_state, command_deadline_at
 FROM cloud_agents.settle_remote_worker_sandbox_pty_v1(
@@ -228,6 +242,11 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
 		}
 	}
+	if input.WorkspaceSnapshotCommandReceipt != nil {
+		if err := service.settleRemoteWorkerWorkspaceSnapshot(ctx, result.Node, input.PeerCertificateSHA256, *input.WorkspaceSnapshotCommandReceipt); err != nil {
+			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
+		}
+	}
 	if input.SandboxExecCommandReceipt != nil {
 		if err := service.settleRemoteWorkerSandboxExec(ctx, result.Node, input.PeerCertificateSHA256, *input.SandboxExecCommandReceipt); err != nil {
 			return RemoteWorkerHeartbeatResult{}, mapRemoteWorkerNodeError(err)
@@ -268,16 +287,19 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 		return result, err
 	}
 	if !claim.Found {
-		if slices.Contains(result.Node.Capabilities, "exec") {
+		if slices.Contains(result.Node.Capabilities, "workspace-snapshot") {
+			result.WorkspaceSnapshotCommand, err = service.claimRemoteWorkerWorkspaceSnapshot(ctx, result.Node, input.PeerCertificateSHA256)
+		}
+		if err == nil && result.WorkspaceSnapshotCommand == nil && slices.Contains(result.Node.Capabilities, "exec") {
 			result.SandboxExecCommand, err = service.claimRemoteWorkerSandboxExec(ctx, result.Node, input.PeerCertificateSHA256)
 		}
-		if err == nil && result.SandboxExecCommand == nil && slices.Contains(result.Node.Capabilities, "files") {
+		if err == nil && result.WorkspaceSnapshotCommand == nil && result.SandboxExecCommand == nil && slices.Contains(result.Node.Capabilities, "files") {
 			result.SandboxFileCommand, err = service.claimRemoteWorkerSandboxFile(ctx, result.Node, input.PeerCertificateSHA256)
 		}
-		if err == nil && result.SandboxExecCommand == nil && result.SandboxFileCommand == nil && slices.Contains(result.Node.Capabilities, "pty") {
+		if err == nil && result.WorkspaceSnapshotCommand == nil && result.SandboxExecCommand == nil && result.SandboxFileCommand == nil && slices.Contains(result.Node.Capabilities, "pty") {
 			result.SandboxPTYCommand, err = service.claimRemoteWorkerSandboxPTY(ctx, result.Node, input.PeerCertificateSHA256)
 		}
-		if err == nil && result.SandboxExecCommand == nil && result.SandboxFileCommand == nil && result.SandboxPTYCommand == nil && slices.Contains(result.Node.Capabilities, "preview") {
+		if err == nil && result.WorkspaceSnapshotCommand == nil && result.SandboxExecCommand == nil && result.SandboxFileCommand == nil && result.SandboxPTYCommand == nil && slices.Contains(result.Node.Capabilities, "preview") {
 			result.SandboxPreviewCommand, err = service.claimRemoteWorkerSandboxPreview(ctx, result.Node, input.PeerCertificateSHA256)
 		}
 		return result, err
@@ -291,6 +313,38 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND enro
 	}
 	result.SandboxCommand = &command
 	return result, nil
+}
+
+func remoteWorkerWorkspaceSnapshotCommand(claim WorkspaceSnapshotClaim) (internalremoteworker.WorkspaceSnapshotCommand, error) {
+	command := internalremoteworker.WorkspaceSnapshotCommand{CommandID: internalremoteworker.WorkspaceSnapshotCommandID(claim.OperationID, int64(claim.DeliveryAttempts)), Attempt: int64(claim.DeliveryAttempts), Action: "workspace.snapshot", OperationID: claim.OperationID, WorkspaceID: claim.WorkspaceID, TargetID: claim.TargetID, SnapshotID: claim.SnapshotID, SourceVolumeName: claim.SourceVolumeName, ImageURI: claim.ImageURI, Deadline: claim.ClaimExpiresAt.UTC().Format(time.RFC3339Nano)}
+	if internalremoteworker.ValidateWorkspaceSnapshotCommand(command) != nil {
+		return internalremoteworker.WorkspaceSnapshotCommand{}, ErrCoordinationResultDrift
+	}
+	return command, nil
+}
+
+func (service *DurableCoordinationService) claimRemoteWorkerWorkspaceSnapshot(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string) (*internalremoteworker.WorkspaceSnapshotCommand, error) {
+	claim := WorkspaceSnapshotClaim{HolderID: node.TargetID, HolderIncarnation: node.IncarnationID, ClaimToken: "claim-" + rand.Text()}
+	err := service.runner.withGlobalMutation(ctx, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, claimRemoteWorkerWorkspaceSnapshotSQL, claim.HolderID, claim.HolderIncarnation, claim.ClaimToken, 60, subjectDigest, "audit-"+rand.Text()).Scan(
+			&claim.TenantID, &claim.EventID, &claim.DeliveryAttempts, &claim.ClaimExpiresAt, &claim.OperationID, &claim.ProjectID,
+			&claim.SnapshotID, &claim.WorkspaceID, &claim.TargetID, &claim.TargetEndpoint, &claim.CredentialRef, &claim.SourceVolumeName, &claim.ImageURI)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, mapWorkspaceSnapshotError(err)
+	}
+	claim.TargetKind = "remote-worker"
+	if !validWorkspaceSnapshotClaim(claim) || claim.TargetID != node.TargetID || claim.ProjectID != node.Scope.ProjectID {
+		return nil, ErrCoordinationResultDrift
+	}
+	command, err := remoteWorkerWorkspaceSnapshotCommand(claim)
+	if err != nil {
+		return nil, err
+	}
+	return &command, nil
 }
 
 func remoteWorkerSandboxCommand(claim FoundationSandboxClaim) (internalremoteworker.SandboxCommand, error) {
@@ -320,6 +374,21 @@ func remoteWorkerSandboxCommand(claim FoundationSandboxClaim) (internalremotewor
 	}
 	if claim.RuntimeSpecDigest != nil {
 		command.RuntimeSpecDigest = *claim.RuntimeSpecDigest
+	}
+	if claim.RestoreSnapshotID != nil {
+		command.RestoreSnapshotID = *claim.RestoreSnapshotID
+	}
+	if claim.RestoreSourceWorkspaceID != nil {
+		command.RestoreSourceWorkspaceID = *claim.RestoreSourceWorkspaceID
+	}
+	if claim.RestoreSnapshotVolume != nil {
+		command.RestoreSnapshotVolume = *claim.RestoreSnapshotVolume
+	}
+	if claim.RestoreContentDigest != nil {
+		command.RestoreContentDigest = *claim.RestoreContentDigest
+	}
+	if claim.RestoreSnapshotResourceVersion != nil {
+		command.RestoreSnapshotResourceVersion = *claim.RestoreSnapshotResourceVersion
 	}
 	if command.Validate() != nil {
 		return internalremoteworker.SandboxCommand{}, ErrCoordinationResultDrift
@@ -446,7 +515,7 @@ func (service *DurableCoordinationService) settleRemoteWorkerSandboxFile(ctx con
 
 func (service *DurableCoordinationService) claimRemoteWorkerSandboxPTY(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string) (*internalremoteworker.SandboxPTYCommand, error) {
 	command := internalremoteworker.SandboxPTYCommand{}
-	var session, messageType *string
+	var commandText, session, messageType *string
 	var since *int64
 	var takeover, pty *bool
 	var inputPayload []byte
@@ -457,7 +526,7 @@ func (service *DurableCoordinationService) claimRemoteWorkerSandboxPTY(ctx conte
 			&command.CommandID, &command.GrantID, &command.WorkspaceID, &command.TargetID,
 			&command.SandboxID, &command.SandboxGeneration, &command.RuntimeID,
 			&command.RuntimeOperationID, &command.RuntimeSpecDigest, &command.Action,
-			&session, &since, &takeover, &messageType, &inputPayload, &pty, &deadline)
+			&commandText, &session, &since, &takeover, &messageType, &inputPayload, &pty, &deadline)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -467,6 +536,9 @@ func (service *DurableCoordinationService) claimRemoteWorkerSandboxPTY(ctx conte
 	}
 	if session != nil {
 		command.SessionID = *session
+	}
+	if commandText != nil {
+		command.Command = *commandText
 	}
 	command.Since, command.Takeover, command.PTY = since, takeover, pty
 	if messageType != nil {
@@ -575,6 +647,41 @@ func (service *DurableCoordinationService) settleRemoteWorkerSandboxPreview(ctx 
 			receipt.SandboxGeneration, receipt.Port, receipt.Result, receipt.BytesTransferred,
 			status, headers, body, stableError, digest).Scan(&state, &deadline)
 	})
+}
+
+func (service *DurableCoordinationService) settleRemoteWorkerWorkspaceSnapshot(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.WorkspaceSnapshotCommandReceipt) error {
+	if receipt.TargetID != node.TargetID || receipt.Action != "workspace.snapshot" || receipt.CommandID != internalremoteworker.WorkspaceSnapshotCommandID(receipt.OperationID, receipt.Attempt) {
+		return ErrCoordinationInvalidInput
+	}
+	var claim WorkspaceSnapshotClaim
+	var targetKind string
+	err := service.runner.withTenantMutation(ctx, node.Scope.TenantID, func(handle *tenantReadHandle) error {
+		return handle.transaction.queryRow(ctx, getRemoteWorkerWorkspaceSnapshotClaimSQL, node.Scope.TenantID, receipt.OperationID, receipt.Attempt, node.TargetID, node.IncarnationID, node.TargetID).Scan(
+			&claim.TenantID, &claim.EventID, &claim.DeliveryAttempts, &claim.ClaimExpiresAt, &claim.OperationID,
+			&claim.ProjectID, &claim.SnapshotID, &claim.WorkspaceID, &claim.TargetID, &targetKind, &claim.TargetEndpoint,
+			&claim.CredentialRef, &claim.SourceVolumeName, &claim.ImageURI, &claim.HolderID, &claim.HolderIncarnation, &claim.ClaimToken)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrWorkspaceSnapshotNotFound
+	}
+	if err != nil {
+		return mapWorkspaceSnapshotError(err)
+	}
+	claim.TargetKind = targetKind
+	if !validWorkspaceSnapshotClaim(claim) || claim.TargetKind != "remote-worker" || claim.ProjectID != node.Scope.ProjectID || claim.SnapshotID != receipt.SnapshotID || claim.WorkspaceID != receipt.WorkspaceID || claim.TargetID != receipt.TargetID {
+		return ErrCoordinationResultDrift
+	}
+	transition := "succeeded"
+	stable := ""
+	if receipt.Result == "failed" {
+		transition = "retry"
+		stable = receipt.StableErrorCode
+		if receipt.Attempt >= 8 {
+			transition = "failed"
+		}
+	}
+	_, err = service.SettleWorkspaceSnapshot(ctx, WorkspaceSnapshotSettlement{Claim: claim, Transition: transition, SnapshotVolume: receipt.VolumeName, ContentDigest: receipt.ContentDigest, SizeBytes: receipt.SizeBytes, StableErrorCode: stable, CleanupComplete: receipt.CleanupComplete, SubjectDigest: subjectDigest, AuditFactID: "audit-" + rand.Text()})
+	return err
 }
 
 func (service *DurableCoordinationService) settleRemoteWorkerSandbox(ctx context.Context, node internalremoteworker.NodeStatus, subjectDigest string, receipt internalremoteworker.SandboxCommandReceipt) error {

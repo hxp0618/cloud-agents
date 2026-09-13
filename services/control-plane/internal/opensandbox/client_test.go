@@ -14,10 +14,44 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func identity() Identity {
 	return Identity{"tenant", "project", "workspace", "sandbox", "operation", 1, "sha256:" + strings.Repeat("a", 64)}
+}
+
+func TestAwaitPTYConnectedRequiresTheExecdAttachmentBarrier(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		payload string
+		wantErr bool
+	}{
+		{name: "connected", payload: `{"type":"connected"}`},
+		{name: "exit", payload: `{"type":"exit","exit_code":0}`, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+				if err != nil {
+					return
+				}
+				defer connection.Close()
+				_ = connection.WriteMessage(websocket.TextMessage, []byte(test.payload))
+			}))
+			defer server.Close()
+			connection, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.Close()
+			err = AwaitPTYConnected(context.Background(), connection)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("AwaitPTYConnected() error = %v, want error %v", err, test.wantErr)
+			}
+		})
+	}
 }
 
 func TestReceiptGuards(t *testing.T) {

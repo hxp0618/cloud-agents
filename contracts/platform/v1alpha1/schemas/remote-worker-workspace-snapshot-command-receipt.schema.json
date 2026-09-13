@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/remote-worker-workspace-snapshot-command-receipt.schema.json",
+  "title": "RemoteWorkerWorkspaceSnapshotCommandReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "attempt", "action", "operationId", "workspaceId", "targetId", "snapshotId", "result", "cleanupComplete"],
+  "properties": {
+    "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "action": { "const": "workspace.snapshot" },
+    "operationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "workspaceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "snapshotId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "result": { "enum": ["succeeded", "failed"] },
+    "volumeName": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" },
+    "contentDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 67108864 },
+    "stableErrorCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "cleanupComplete": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "succeeded" } }, "required": ["result"] },
+      "then": { "required": ["volumeName", "contentDigest", "sizeBytes"], "not": { "required": ["stableErrorCode"] } },
+      "else": { "required": ["stableErrorCode"], "not": { "anyOf": [{ "required": ["volumeName"] }, { "required": ["contentDigest"] }, { "required": ["sizeBytes"] }] } }
+    }
+  ]
+}

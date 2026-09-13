@@ -134,6 +134,12 @@ const accessGrantResultColumns = `grant_uid, sandbox_uid, sandbox_generation, ac
 func (service *DurableCoordinationService) IssueSandboxAccessGrant(
 	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input SandboxAccessGrantIssueInput,
 ) (SandboxAccessGrantSnapshot, error) {
+	return service.issueSandboxAccessGrant(ctx, tenantID, principal, "projects.act", input)
+}
+
+func (service *DurableCoordinationService) issueSandboxAccessGrant(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, permission string, input SandboxAccessGrantIssueInput,
+) (SandboxAccessGrantSnapshot, error) {
 	if service == nil || service.runner == nil {
 		return SandboxAccessGrantSnapshot{}, ErrNilCoordinationRunner
 	}
@@ -146,7 +152,7 @@ func (service *DurableCoordinationService) IssueSandboxAccessGrant(
 		return SandboxAccessGrantSnapshot{}, ErrCoordinationInvalidInput
 	}
 	var result SandboxAccessGrantSnapshot
-	err := service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true,
+	err := service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, permission, true,
 		func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 			return handle.transaction.queryRow(operationContext, `SELECT `+accessGrantResultColumns+`
 FROM cloud_agents.issue_sandbox_access_grant_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -164,6 +170,12 @@ FROM cloud_agents.issue_sandbox_access_grant_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
 func (service *DurableCoordinationService) RevokeSandboxAccessGrant(
 	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, input SandboxAccessGrantRevokeInput,
 ) (SandboxAccessGrantSnapshot, error) {
+	return service.revokeSandboxAccessGrant(ctx, tenantID, principal, "projects.act", input)
+}
+
+func (service *DurableCoordinationService) revokeSandboxAccessGrant(
+	ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, permission string, input SandboxAccessGrantRevokeInput,
+) (SandboxAccessGrantSnapshot, error) {
 	if service == nil || service.runner == nil {
 		return SandboxAccessGrantSnapshot{}, ErrNilCoordinationRunner
 	}
@@ -176,7 +188,7 @@ func (service *DurableCoordinationService) RevokeSandboxAccessGrant(
 		return SandboxAccessGrantSnapshot{}, ErrCoordinationInvalidInput
 	}
 	var result SandboxAccessGrantSnapshot
-	err := service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, "projects.act", true,
+	err := service.withFoundationOperation(ctx, tenantID, principal, input.Scope.ProjectID, permission, true,
 		func(operationContext context.Context, handle *tenantReadHandle, subjectDigest string) error {
 			return handle.transaction.queryRow(operationContext, `SELECT `+accessGrantResultColumns+`
 FROM cloud_agents.revoke_sandbox_access_grant_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
