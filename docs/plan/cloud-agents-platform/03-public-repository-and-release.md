@@ -4,9 +4,21 @@
 
 当前联合交付边界由 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md) 定义，实施顺序见 [04](04-extraction-and-migration.md)。底座必须能在不配置 Agent Provider、不创建 AgentSession 的情况下独立安装和验收；Admin Web 与基础设施属于同一个必须完整交付的产品，用户 CloudAgents 和 Synara/T3 是后续消费者。
 
-复用现有公共仓、Go modules、契约生成与发布治理。Controller、Access Gateway、Worker Gateway、RemoteWorker 是职责边界，不要求现在为每项创建服务、仓库或发布列车；先在现有 module 中按已验证的部署需要组合。OpenSandbox 是待固定版本验证的首选 SandboxRuntime 候选，不是已集成或已批准部署的制品。
+复用现有公共仓、Go modules、契约生成与发布治理。Controller、Access Gateway、Worker Gateway、RemoteWorker 是职责边界，不要求现在为每项创建服务、仓库或发布列车；在现有 module 中按已验证的部署需要组合。OpenSandbox 的固定版本、实际集成与验证边界见 [06](06-status-tracker.md)，架构选型本身不构成部署批准。
 
 下文 module/tag/same-bits 规则保留；目录与制品表是目标结构，不是当前功能清单。旧完整 Platform/Agent/Synara/T3 组合候选的验收要求不因底座先行而降低，也不得反过来把用户侧 Agent 接入设为 BASE-READY 前置条件。
+
+### 0.1 Anywhere Runtime 的制品与 SDK
+
+APP-M1 复用当前 Runtime distribution、Provider 包、Worker、契约和生成 SDK；新 Provider 只增加实际适配所需制品，
+不另建 SDK 或发布框架。四种 Agent 的目标范围见 [01](01-product-scope-and-authority.md#13-anywhere-runtime-的产品目标)。
+每个可调度组合固定 Provider/Harness 版本或 commit、Runtime/Worker/image digest、OS/arch、协议与恢复兼容性；
+镜像中安装 CLI 不代表该 Provider 已注册或通过平台验收。
+
+默认 Compose/Helm 保留 no-Agent 安装；Agent 执行通过显式 profile/配置启用，并提供新 Workspace/Sandbox 路径的可复现安装示例。
+旧 managed-agent override 继续作为兼容入口，不能冒充 outbound RemoteWorker 接入。TypeScript/Go SDK 必须在仓外消费者中
+安装固定本地候选制品并完成真实调用，不能依赖 `go.work`、服务 internal 包或仓库源码路径。
+本地候选打包和测试不等于 npm、Registry、镜像或 Release 发布；验收按 [05](05-gates-and-acceptance.md#anywhere-runtime-v1)，发布批准规则不变。
 
 ## 1. 目标目录
 

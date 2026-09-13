@@ -451,6 +451,20 @@ Prompt、消息正文、代码或 Artifact 内容。
 - Snapshot 仅展示归属、source Workspace、时间、容量、状态与恢复 Operation；不得读取快照内容。恢复须验证一致性和单写者 fencing。
 - 复用 Storage、Maintenance、Audit 现有页面承载相关视图；有真实 API 和闭环再增加专门页面，不预建空壳。
 
+### 8.13 Anywhere Runtime 运维（APP-M1）
+
+本节仅用于后续 ANYWHERE-RUNTIME-V1，不向已完成的 BASE-ADMIN-V1 或旧 ADMIN-WEB-V1 追加条件。
+复用 Runtime/Profile、Workspace/Sandbox、Worker、Maintenance、Operation/Audit 页面，不新增对话查看器或空壳页面。
+
+- 显示真实 Provider/Harness release、兼容能力、关联 Workspace/Sandbox、placement、执行 attempt/generation、
+  心跳、恢复阶段和失败原因；明确区分同节点重连、进程重启与跨节点接管。
+- Checkpoint/Snapshot 只展示 opaque 引用、一致性点时间、版本兼容、摘要校验状态与恢复 Operation；
+  不展示 Prompt、源码、对话、工具输入输出、原生 Provider cursor 或 Secret bytes。
+- 提供相应权限下的 Drain、停止、失败对账和恢复/重试操作；显示影响范围、源/目标节点和数据保留结果。
+  危险操作继续要求资源名称/generation 确认；没有 fencing、有效恢复点或目标容量时禁止强制挂载和盲目重放。
+- 副作用结果未知时显示脱敏原因并指向有权用户的处理流程，不能由 Admin 读取内容或代替用户批准工具动作。
+  恢复结果、拒绝原因及旧 attempt 回执处置须可在 Operation/Audit 追溯，沿用 zh-CN/en-US、主题与可访问性要求。
+
 ## 9. 关键流程
 
 ### 9.0 底座独立使用（当前主线）
@@ -691,12 +705,13 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 
 ## 15. 实现验收标准
 
-本节按任务的明确范围选择验收，不能把两套标准合并成旧任务的完成条件：
+本节按任务的明确范围选择验收，不能把后续标准追加为旧任务的完成条件：
 
 | 固定标识 | 适用任务 | 完成含义 |
 | --- | --- | --- |
 | `ADMIN-WEB-V1` | 原 User/Admin 拆分任务的 M1～M4，即 ADMIN-M1～M4 | 原 Target/Lease/Profile/执行 Worker 管理与真实 Agent E2E 完成；不代表新底座就绪 |
 | `BASE-ADMIN-V1` | 当前主计划的 BASE-M0～M5 | 新 Workspace/Sandbox/RemoteWorker 管理与基础设施联合验收；还须满足 05 的 BASE-READY |
+| `ANYWHERE-RUNTIME-V1` | APP-M1 的 Runtime/SDK 切片 | 本文 §8.13 的相关 Admin 闭环与 [05 的完整验收](05-gates-and-acceptance.md#anywhere-runtime-v1)；不替代完整用户对话 UI 或旧验收 |
 
 ### ADMIN-WEB-V1
 
@@ -727,8 +742,8 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 
 ## 16. 执行入口（不单独维护 Goal 计划）
 
-收到继续实施主计划的任务后，在明确授权范围内从 04 最早未完成的 BASE 切片推进，以基础设施＋对应 Admin 工作流为同一个能力交付单元。
-原 ADMIN-M1～M4 任务在收到明确范围迁移指令前仍采用 ADMIN-WEB-V1；“继续原任务”或读取新版文档本身不将它升级成 BASE 任务。需要承接新主线时使用 [04 的任务迁移提示词](04-extraction-and-migration.md#主执行任务迁移提示词)，只替换明确指出的范围、顺序与完成标准，保留仍有效的安全和操作授权边界。
+收到继续实施主计划的任务后，在明确授权范围内按 06 进入 04 最早未完成的 BASE 或 APP 切片，以实际能力＋对应 Admin 工作流为同一个交付单元。
+原 ADMIN-M1～M4 任务在收到明确范围迁移指令前仍采用 ADMIN-WEB-V1；“继续原任务”或读取新版文档不自动扩大其范围。BASE-READY 后的新 Runtime 任务可使用 [04 的 Anywhere Runtime Goal 提示词](04-extraction-and-migration.md#anywhere-runtime-goal)，只应用明确指定的范围、顺序与完成标准，保留仍有效的安全和操作授权边界。
 明确指定的后端、UI、契约、文档修复或审查/验证按该任务范围完成，并覆盖实际受影响的流程，不自动扩成整个阶段；单项任务完成不代表 BASE 阶段通过。阶段完成仍须满足后端＋Admin 联合验收。
 每次恢复核对当前 HEAD、dirty work、实际后端/API/SDK 和证据，复用已完成能力；
 不得仅创建空页面、Mock 数据或没有后端 authority 的按钮。本次计划重排不修改现有 Goal/任务/自动化，

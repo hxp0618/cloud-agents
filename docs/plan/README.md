@@ -4,10 +4,10 @@
 
 ## 从这里开始
 
-- [04：文档清理与执行计划](cloud-agents-platform/04-extraction-and-migration.md) 是唯一当前工作顺序，包含精确清理范围和 BASE 联合切片。
+- [04：实施计划](cloud-agents-platform/04-extraction-and-migration.md) 是唯一当前工作顺序，包含 BASE 联合切片、后续 Anywhere Runtime 和[新 Goal 提示词](cloud-agents-platform/04-extraction-and-migration.md#anywhere-runtime-goal)。
 - [06：当前状态与下一项](cloud-agents-platform/06-status-tracker.md) 是唯一当前进度记录；不要从旧计划的未完成清单选择下一项。
 - [专项文档导航](cloud-agents-platform/README.md) 按问题选择 01/02/03/05/07，不要求每次把整个 docs/plan 读完。
-- 上次合并已撤销；用户现已明确要求目标核对一致后合并本轮文档。此次授权只覆盖文档集成与相关 Git 提交，不授权 push、基础设施实现、部署发布或修改其他任务；实际结果见 06。
+- 历史文档集成与任务迁移的授权记录见 06；以当前请求和仍有效的同范围授权执行，不把旧集成说明当作永久暂停或新的实现授权。
 
 ## Source of truth
 
@@ -20,6 +20,8 @@
 5. Synara/T3 专题、history/、p0/、p1/、standalone/、legacy/、references/ 与旧 Gate/E2E 记录按需查询。它们不提供平台默认下一步或全局暂停指令，但仍有效的安全、兼容和固定制品约束继续适用。
 
 明确的旧 ADMIN-M1～M4 任务使用 [ADMIN-WEB-V1](cloud-agents-platform/07-admin-web-requirements-and-design.md#admin-web-v1)；新底座任务使用 BASE-READY 与 [BASE-ADMIN-V1](cloud-agents-platform/07-admin-web-requirements-and-design.md#base-admin-v1)。旧提示词中的“第 15 节全部标准”按该任务原范围解析，不能因章节更新自动扩权或降低原验收。任务范围明确时无需再询问选哪套；只有实际迁移任务范围时才应用对应明确指令。
+
+BASE-READY 之后的 Runtime/SDK 任务使用 [ANYWHERE-RUNTIME-V1](cloud-agents-platform/05-gates-and-acceptance.md#anywhere-runtime-v1)，目标包含 Codex、Claude Code、Pi、deepseek-harness。它是 APP-M1 的子范围，不改写旧验收，也不等于完整用户对话 UI 已交付。
 
 遇到冲突，指出涉及的具体对象、版本、环境和动作；只暂停必须新决策/权限才能继续的动作，继续独立且已授权的工作。不是所有历史 OPEN Gate 都是当前任务前置条件；也不得通过删除文档免除对应 Gate 的证据/签署。
 

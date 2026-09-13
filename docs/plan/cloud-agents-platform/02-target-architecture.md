@@ -42,7 +42,7 @@ Control Plane 先复用当前 Go 模块做模块化单体；Controller 必须能
 | AgentSession / Turn / Execution | 上层应用 authority | 引用 Workspace/Sandbox，不拥有物理卷的销毁权 |
 
 `infraProvider` 表示资源归属/来源，`isolationRuntime` 表示 runc/gVisor/Kata 等隔离方式，
-`agentProvider` 才表示 Codex/Claude。现有 `EnvironmentProfile.providerKinds` 属于第三类，不能改名冒充
+`agentProvider` 才表示 Codex、Claude Code、Pi、deepseek-harness 等 Agent 接入。现有 `EnvironmentProfile.providerKinds` 属于第三类，不能改名冒充
 前两类。基础 RuntimeProfile 不要求 providerCredentialRef；Agent 专属默认值通过上层模板/绑定组合。
 
 停止 Sandbox、TTL 到期或清理计算残留，只回收计算与访问授权；默认保留 Workspace/Volume。
@@ -84,8 +84,54 @@ Resource health observer 只提供观察，不替代生命周期调谐、到期�
 旧 Lease 的卷仍按其原语义处理；向长期 Workspace 转换须有显式 adopt/migration 操作、归属核验与恢复方案，
 不能因本次文档调整就自动改 TTL、保留策略、绑定或删除任何现有数据。
 
-实施顺序见 [04 的 BASE-M0～M5](04-extraction-and-migration.md#0-当前实施顺序底座先行)，
+实施顺序见 [04 的 BASE 与 APP 切片](04-extraction-and-migration.md#0-当前实施顺序底座先行)，
 不再按下文旧消费者拓扑的出现顺序决定优先级。
+
+### 0.6 Agent Runtime 如何使用 Workspace/Sandbox
+
+以下为 APP-M1 的目标链路；旧 Lease-backed Worker 接入和 no-Agent 底座保持兼容，不能仅更换名词就宣称迁移完成。
+
+```text
+公共 TS/Go SDK / User Web
+  → Agent API：持久化 Session / Turn / Execution / 交互 / 事件
+  → 引用长期 Workspace，申请或绑定允许的 Sandbox / generation
+  → 现有 Controller / Placement / RemoteWorker 命令与回执通道
+  → Sandbox 内受控 Worker/Supervisor → Agent Runtime → 统一 Provider adapter
+                                                   ├─ Codex
+                                                   ├─ Claude Code
+                                                   ├─ Pi
+                                                   └─ deepseek-harness
+       挂载：Workspace 工作目录 + 受保护的 Provider 状态目录
+       凭据：按 Execution / generation 短期授予，不随快照复制
+```
+
+- SDK 只使用公开 Session/Turn、事件、交互、Artifact 和 Workspace/Sandbox 契约；调用方不传节点地址、
+  主机路径或 Docker/Kubernetes 凭据。Agent 绑定必须校验租户、项目、Workspace 单写、profile/release 能力与配额。
+- CP 持有 Agent 控制状态；Sandbox 生命周期仍由底座调谐，Provider 只在授权工作目录执行。
+  Runtime 不创建另一套卷或节点调度器；RemoteWorker 复用 outbound 通道，不把客户节点改为入站 Worker 服务。
+- 统一 adapter 规范命令、事件、审批/输入、取消、使用量、结果和恢复。优先复用现有 Runtime/stdio 与 provider 包；
+  原生 resume 和平台恢复必须分别声明，未知能力 fail closed，不能把 `emulated` 描述当作实测。
+- 模板/Agent release 组合工具链、Provider 制品和受保护状态目录；基础 RuntimeProfile 继续无需 Provider 凭据。
+  Sandbox 替换后路径可以不同，持久绑定使用受验证的引用；关闭 AgentSession 不隐式删除 Workspace。
+
+### 0.7 运行恢复与故障转移
+
+| 状态 | 持久化责任 | 恢复用途 |
+| --- | --- | --- |
+| Workspace 文件与文件系统快照 | 底座 Volume/Snapshot 与存储 adapter | 在兼容目标上恢复代码/文件；不能单独恢复 Agent 推理与工具状态 |
+| Session/Turn/事件/交互与工具执行回执 | CP 的持久记录 | 确认已接受输入、已交付事件、待处理审批及副作用结果 |
+| Agent Checkpoint | 应用记录版本、事件位置、Workspace 一致性点和 Provider state/cursor 引用 | 原生 resume 或经验证的历史重建；数据只经用户授权通道访问 |
+| Execution attempt / Sandbox generation | CP 认领、租约与 fencing | 唯一执行权，拒绝旧实例事件、结果、取密和写卷 |
+
+网络重连优先恢复原执行；CP 重启先发现/对账仍存活执行，不因内存 owner 丢失立即失败或再发同一 Turn。
+确认执行进程或节点不可恢复后，先 fence 旧 writer/撤销授权，选择具备兼容 Provider、存储和网络能力的新目标，
+恢复 Workspace 与匹配的 Agent Checkpoint，再以新 attempt 接管同一逻辑 Turn。不得只凭节点心跳超时强挂卷。
+同目标的 Stop/Rebuild、Kubernetes Pod 重建和已结束会话历史读回，均不能单独证明这条接管链路。
+
+工具执行采用持久意图、幂等标识与回执对账。对无法判定是否已执行的外部副作用，保存“结果未知”并要求有权用户处理，
+不自动重复提交、支付、发信等操作，也不假定旧执行取消成功。可安全恢复的任务必须真实自动接续，不能以一律拒绝恢复完成验收。
+快照/checkpoint 记录一致性策略、缺失窗口与版本兼容；Secret 不进快照。按故障类型测量 RTO/RPO，不承诺通用零丢失或 exactly-once。
+详细故障矩阵由 [05 的 ANYWHERE-RUNTIME-V1](05-gates-and-acceptance.md#anywhere-runtime-v1) 维护。
 
 ## 1. 既有消费者与兼容拓扑
 

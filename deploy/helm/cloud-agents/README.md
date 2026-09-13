@@ -10,6 +10,8 @@ by that mode, then install with digest-pinned image values.
 
 The Access Gateway mounts only the runtime database URL, its TLS/SSH identity, and the configured Kubernetes target credential directory. User Web and Admin Web mount only the Control Plane CA; User Web proxies non-Admin `/v1` routes and Admin Web proxies only `/v1/admin` to the internal Control Plane Service. None of these Pods receives a Docker socket or Provider credentials, and all disable ServiceAccount token mounting.
 
+When `worker.enabled=true`, the chart mounts a persistent snapshot archive at `/snapshots` in the Control Plane and sets `CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY`; use `runtime.snapshot.existingClaim` for an existing claim or let the chart create its single-writer `ReadWriteOnce` claim. The Kubernetes Target credential must permit the namespaced helper Pod lifecycle and `get/create` on `pods/exec` for portable Workspace snapshot export/import.
+
 The access-grant and SSH host private keys are copied by non-root init containers into memory-backed volumes with mode `0400`; projected Secret files are not exposed to the serving containers. Keep the User/Admin Web and Gateway Services private unless deployment-owned TLS/OIDC ingress is configured. A successful `helm lint` or Pod rollout does not replace the real Target, Sandbox, backup/restore, upgrade, and identity-rotation acceptance requirements.
 
 Run the packaged smoke with both adjacent release directories to verify an N-1

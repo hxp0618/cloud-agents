@@ -157,7 +157,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <div class="shell">
 <aside class="sidebar">
   <div class="brand">Coding Agent Cloud<br/>基础架构设计文档</div>
-  <div class="doc-meta">Architecture Baseline v0.3<br/>2026-09-02 · Draft for Review</div>
+  <div class="doc-meta">Architecture Baseline v0.5<br/>2026-09-09 · Anywhere Runtime Target</div>
   <div class="toolbar">
     <button class="tool" onclick="toggleTheme()">切换主题</button>
     <button class="tool" onclick="window.print()">打印 / PDF</button>
@@ -212,11 +212,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   </div>
 </header>
 <div class="callout orange">
-  <b>当前权威与状态（2026-09-05）：</b>产品边界以 <a href="plan/adr/0032-infrastructure-admin-delivery-and-document-routing.md">ADR-0032</a> 为准；
+  <b>文档边界（2026-09-09）：</b>底座分层以 <a href="plan/adr/0032-infrastructure-admin-delivery-and-document-routing.md">ADR-0032</a> 为准，后续 Anywhere Runtime 范围见 <a href="plan/cloud-agents-platform/01-product-scope-and-authority.md#13-anywhere-runtime-的产品目标">01 产品范围</a>；
   顺序、验收和当前状态分别见 <a href="plan/cloud-agents-platform/04-extraction-and-migration.md">04 实施计划</a>、
-  <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md">05 BASE-READY</a>、<a href="plan/cloud-agents-platform/06-status-tracker.md">06 状态追踪</a>。
+  <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md">05 BASE-READY / ANYWHERE-RUNTIME-V1</a>、<a href="plan/cloud-agents-platform/06-status-tracker.md">06 状态追踪</a>。
   本文保留完整目标架构和后续扩展，不是全部功能已实现、全部技术已选定或生产部署已获授权的声明。
-  API/Runtime 示例须映射到本仓契约并验证固定上游版本；本次未复验外部资料。
+  API/Runtime 示例须映射到本仓契约并验证固定上游版本。本次核对 deepseek-harness 官方入口；其他外部资料未全面复验。
 </div>
 
 <section id="summary">
@@ -229,12 +229,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <div class="grid g4">
   <div class="card"><b class="head">两套 Web，两个安全边界</b><div class="small">User Web 面向租户；Control Plane Web 面向管理员。域名、API、身份客户端、权限和发布流水线分开。</div></div>
   <div class="card"><b class="head">Workspace ≠ Sandbox</b><div class="small">Workspace 是长期资产；Sandbox Session 是一次可替换运行实例。删除实例不等于删除代码和数据。</div></div>
-  <div class="card"><b class="head">Provider ≠ Runtime</b><div class="small">Provider 表示资源位置；Runtime 表示隔离方式。同一 Hetzner 裸金属节点可运行 runc、gVisor、Kata 或 MicroVM。</div></div>
+  <div class="card"><b class="head">明确 Provider 与 Runtime</b><div class="small">Infrastructure Provider 表示资源归属；Sandbox Runtime 表示隔离执行；Agent Provider 表示 Codex 等 Harness；Agent Runtime 统一其命令和事件。</div></div>
   <div class="card"><b class="head">平台节点与客户节点并存</b><div class="small">平台自有 Region 与 BYOC/BYON/Edge/IDC 统一通过 Region Controller 和 Remote Worker 接入。</div></div>
 </div>
 <div class="callout green">
   <b>当前主线：</b>BASE-M0 验证候选与领域映射 → M1 长期 Workspace/异步生命周期 → M2 Exec/PTY/Files/Preview/SSH →
-  M3 outbound 客户节点 → M4 Kubernetes/容量/强隔离矩阵 → M5 文件系统快照、独立交付与运维 → BASE-READY → APP-M1 用户 CloudAgents。
+  M3 outbound 客户节点 → M4 Kubernetes/容量/强隔离矩阵 → M5 文件系统快照、独立交付与运维 → BASE-READY → APP-M1 Anywhere Runtime/SDK → 完整用户对话。
   Admin Web 与对应基础设施能力共同完成；no-Agent 不等于无管理界面。安全从首个入口落实。Direct MicroVM、内存快照、Warm Pool、跨 Region 调度和商业账单后置。
 </div>
 </section>
@@ -246,7 +246,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   <b class="head">业务目标</b>
   <ul>
     <li>用户可从 Web、Desktop、CLI、SDK、SSH 创建和进入 Coding Workspace。</li>
-    <li>支持 Codex、Claude Code、OpenCode、VS Code Server、浏览器与常用开发工具链。</li>
+    <li>Agent 目标覆盖 Codex、Claude Code、Pi、deepseek-harness；VS Code Server、浏览器等作为 Workspace 工具链。</li>
     <li>支持平台托管与客户自带计算节点，并对底层云厂商和 Runtime 做产品化抽象。</li>
     <li>支持组织、项目、配额、计量、审计、密钥、持久卷、快照和网络策略。</li>
     <li>对不可信 Agent 代码提供分级隔离与默认安全网络。</li>
@@ -394,7 +394,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nodes">
       <div class="node" style="grid-column:span 2"><b>Identity / Org</b><span>User / Tenant / Team</span></div>
       <div class="node" style="grid-column:span 2"><b>Project / Workspace</b><span>长期产品对象</span></div>
-      <div class="node" style="grid-column:span 2"><b>Agent Service</b><span>Codex / Claude Sessions</span></div>
+      <div class="node" style="grid-column:span 2"><b>Agent Service</b><span>Session / Turn / Recovery</span></div>
       <div class="node" style="grid-column:span 2"><b>Quota / Billing</b><span>Plan / Metering / Wallet</span></div>
       <div class="node" style="grid-column:span 2"><b>Secret Service</b><span>Reference / Binding</span></div>
       <div class="node" style="grid-column:span 2"><b>Audit / Notification</b><span>Events / Alerts</span></div>
@@ -454,6 +454,26 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   <b>实现边界：</b>OpenSandbox 当前仓库已经包含生命周期 Server、execd、Ingress/Egress、SDK/Specs 和 Kubernetes 相关组件；
   本平台应使用它们作为区域 Runtime Engine，而不是把组织、账单、Workspace、节点管理等 SaaS 能力塞回上游代码。
 </div>
+<h3 id="agent-runtime-integration">5.1 Agent Runtime 与 Workspace/Sandbox</h3>
+<p>这是 APP-M1 的目标接入链。统一 SDK 只提交公开资源引用，CP 持久化 Session/Turn 并绑定 Workspace/Sandbox；受控 Worker 在 Sandbox 内启动 Agent Runtime。Docker、outbound RemoteWorker 远程机器与 Kubernetes 共用同一 Agent 契约。默认 no-Agent 安装继续独立可用。</p>
+<pre><code>公共 TypeScript / Go SDK
+  → Agent API：Session / Turn / Execution / 事件 / 交互
+  → Workspace + Sandbox / generation：现有调谐、放置和授权
+  → Sandbox 内 Worker / Supervisor → Agent Runtime → Provider adapter
+                                                  ├─ Codex
+                                                  ├─ Claude Code
+                                                  ├─ Pi
+                                                  └─ deepseek-harness
+       Workspace：持久工作目录 + 受保护 Provider 状态
+       Credential：按执行短期授予，不随快照复制</code></pre>
+<div class="table-wrap"><table>
+<thead><tr><th>责任</th><th>使用关系</th></tr></thead><tbody>
+<tr><td>统一 Provider adapter</td><td>归一命令、事件、审批/输入、取消、使用量、结果和恢复；模型 API endpoint 不是 Harness 接入。固定上游版本并实测原生/适配能力。</td></tr>
+<tr><td>Agent Runtime</td><td>通过现有 Runtime/stdio 与受控执行器使用已挂载目录，不创建第二套节点调度或卷生命周期；旧 Lease Worker 路径保持兼容。</td></tr>
+<tr><td>Workspace / Sandbox</td><td>Workspace 保存长期文件，Sandbox 是可替换计算；AgentSession 结束不隐式删除数据。跨节点须有可用存储副本/快照和旧 writer fencing。</td></tr>
+<tr><td>控制面与 Admin</td><td>CP 唯一持久化 Agent 控制状态；Admin 查看 Provider/执行/恢复运维元数据和 Operation/Audit，不读取对话、源码、原生 cursor 或 Secret。</td></tr>
+</tbody></table></div>
+<p>deepseek-harness 官方将 dsh 标为开发预览；WebUI 启动不证明机器调用或恢复契约可用，须先核验后实现 adapter。详见 <a href="plan/cloud-agents-platform/01-product-scope-and-authority.md#13-anywhere-runtime-的产品目标">Provider 范围与上游依据</a>、<a href="plan/cloud-agents-platform/02-target-architecture.md#06-agent-runtime-如何使用-workspacesandbox">接入与恢复职责</a>。</p>
 </section>
 
 <section id="planes">
@@ -543,7 +563,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <rect x="310" y="70" rx="12" width="180" height="86" class="eb"/><text x="400" y="100" text-anchor="middle" class="et">Project</text><text x="400" y="125" text-anchor="middle" class="es">成员 / Policy Scope</text>
 <rect x="570" y="70" rx="12" width="200" height="86" class="eb"/><text x="670" y="100" text-anchor="middle" class="et">Workspace</text><text x="670" y="125" text-anchor="middle" class="es">Repo / Volume / Secrets</text>
 <rect x="850" y="70" rx="12" width="210" height="86" class="eb"/><text x="955" y="100" text-anchor="middle" class="et">SandboxSession</text><text x="955" y="125" text-anchor="middle" class="es">一次可替换运行实例</text>
-<rect x="1140" y="70" rx="12" width="200" height="86" class="eb"/><text x="1240" y="100" text-anchor="middle" class="et">AgentSession</text><text x="1240" y="125" text-anchor="middle" class="es">Codex / Claude Conversation</text>
+<rect x="1140" y="70" rx="12" width="200" height="86" class="eb"/><text x="1240" y="100" text-anchor="middle" class="et">AgentSession</text><text x="1240" y="125" text-anchor="middle" class="es">Provider Conversation</text>
 
 <rect x="570" y="250" rx="12" width="200" height="86" class="eb"/><text x="670" y="280" text-anchor="middle" class="et">WorkspaceVolume</text><text x="670" y="305" text-anchor="middle" class="es">Persistent Data</text>
 <rect x="850" y="250" rx="12" width="210" height="86" class="eb"/><text x="955" y="280" text-anchor="middle" class="et">RuntimeProfile</text><text x="955" y="305" text-anchor="middle" class="es">Standard / Secure / Isolated</text>
@@ -662,7 +682,7 @@ spec:
 <li>BASE-M4：仅发布已验证的 Runtime 池。可信 <code>standard-runc</code> 与强隔离池分开；不支持所选隔离等级的节点必须拒绝调度，不要求每个 Region 预建所有类型。</li>
 <li>不同 Runtime 节点使用 taint/toleration 和 node label；不要假设所有节点配置同质。</li>
 <li>后续启用 Warm Pool 时，必须按 Runtime + Template + ResourceClass 拆分，避免错误复用。</li>
-<li>Agent 模板要建立兼容矩阵：Codex/Claude Code、Docker-in-Docker、FUSE、ptrace、浏览器、语言工具链。</li>
+<li>Agent 模板要建立兼容矩阵：Codex/Claude Code/Pi/deepseek-harness、Docker-in-Docker、FUSE、ptrace、浏览器、语言工具链；按固定制品与 OS/arch 验证。</li>
 </ul>
 
 <h3>9.4 gVisor 的特殊处理</h3>
@@ -834,6 +854,8 @@ Content-Type: application/json
 <li>Public API 使用产品词汇；Admin/Internal API 才出现 RuntimeClass、Node、Pool、Worker 等概念。</li>
 <li>API 版本与 Worker/execd 协议版本分开；Worker 至少支持 N-1 版本滚动升级。</li>
 </ul>
+<h3>12.4 公共 SDK 的 Agent 闭环</h3>
+<p>复用本仓 JSON Schema/OpenAPI 与生成 TypeScript/Go SDK：Workspace/Sandbox → AgentSession → Turn → 事件续读 → Approval/Input → 取消/中断 → 结果/Artifact → 会话与故障恢复。消费者不依赖节点地址、私有服务包或主机凭据。现有 API 并存不能证明链路已接通；两种 SDK 均须仓外安装固定候选并真实调用，四 Provider × 三环境与故障验收以 <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md#anywhere-runtime-v1">ANYWHERE-RUNTIME-V1</a> 为准。</p>
 </section>
 
 <section id="tenancy">
@@ -914,10 +936,12 @@ BYOC/BYON 的信任边界应明确写入产品与合同：它提供数据驻留�
 <ul>
 <li><b>Template Snapshot：</b>系统镜像、依赖和工具链，可被多个 Workspace 复用。</li>
 <li><b>Workspace Snapshot：</b>用户卷时间点快照，用于恢复；不得自动包含明文 Secret。</li>
+<li><b>Agent Checkpoint：</b>应用持久化事件位置、交互/工具回执、Workspace 一致性点与版本化 Provider state/cursor 引用；支持原生 resume 或经验证的重建，与文件快照分开管理。</li>
 <li><b>Session Snapshot：</b>Runtime 特定能力，可能包含 rootfs/内存；跨 Runtime 兼容性不保证。</li>
 <li>BASE-M5 验收文件系统快照，不承诺进程内存无损恢复。</li>
 <li>跨 Region 恢复以 Object Storage 中的 Snapshot Manifest + 数据复制为基础，不依赖共享全局文件系统。</li>
 </ul>
+<p>Anywhere Runtime V1 先交付同 Region 的跨节点恢复：原节点完全不可用时仍能取得有效数据，在旧 writer 已失效后恢复到不同目标并核对摘要。仅同 Target 恢复、仅重新挂载原节点本地卷或只读回历史，不算 Agent 故障转移。检查一致性与版本，记录实际 RPO/RTO；不将配置目录中的凭据打入快照。</p>
 </section>
 
 <section id="scheduler">
@@ -1021,6 +1045,8 @@ BYOC/BYON 的信任边界应明确写入产品与合同：它提供数据驻留�
 <li>PostgreSQL 使用多 AZ + PITR；Object Storage 开启版本化/生命周期；NATS 使用持久化集群。</li>
 <li>Region Controller 失联时，已有 Sandbox 继续运行；禁止在失联 Region 下发新任务。</li>
 <li>Sandbox Session 本身默认不是 HA 服务；节点故障时先确认旧写入者已停止/fenced，再从 Workspace Volume/Snapshot 恢复，不能因心跳超时直接双挂可写卷。</li>
+<li>APP-M1 的 Agent 恢复由 CP 持久化执行认领、事件/交互和 checkpoint：先对账存活执行，必要时在不同兼容节点以新 attempt 接管同一逻辑 Turn；旧 generation 不得写卷、取密或提交结果。</li>
+<li>工具副作用先持久化意图并对账回执；结果未知时显式待处理，禁止盲目重放。可安全恢复的运行中任务必须真实自动接续，不能以全部拒绝恢复冒充支持。</li>
 <li>用户交互连接必须可重连；PTY 使用 session cursor/有限缓冲，不能无限保留内存。</li>
 <li>中国大陆 Region 可独立部署区域控制与数据服务，跨境仅同步必要元数据；具体合规要求需单独评审。</li>
 </ul>
@@ -1136,7 +1162,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 <tr><td>BASE-M3</td><td>outbound RemoteWorker 注册、证书轮换/撤销、重连与 fencing</td><td>节点归属、能力、心跳、Drain/Resume</td></tr>
 <tr><td>BASE-M4</td><td>Kubernetes、最小 Region/Pool/Node 容量与强隔离能力矩阵</td><td>真实 placement、资源池、限制与健康状态</td></tr>
 <tr><td>BASE-M5</td><td>文件系统快照恢复、独立 Compose/Helm、升级恢复、usage/运维</td><td>快照/容量元数据、维护操作；完整视觉和中英文验收</td></tr>
-<tr><td>BASE-READY → APP-M1</td><td>底座通过独立 no-Agent 验收后，再完善用户 CloudAgents</td><td>保持基础设施与会话内容权限分离</td></tr>
+<tr><td>BASE-READY → APP-M1</td><td>先完成四 Provider 的 Anywhere Runtime/SDK、跨节点数据与运行恢复，再完善用户对话；切片仅见 <a href="plan/cloud-agents-platform/04-extraction-and-migration.md#anywhere-runtime-plan">04</a></td><td>相关 Provider/执行/恢复管理同步交付，保持内容权限分离</td></tr>
 </tbody></table></div>
 <p>后置能力：Direct MicroVM、进程/内存快照、Warm Pool、跨 Region 调度/灾备、自动扩缩容和商业账单。它们不是首轮底座完成条件；基本鉴权、隔离、网络控制、文件系统快照和 usage 不能因此后置。</p>
 <h3>23.1 仓库与模块</h3>
@@ -1179,7 +1205,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 <li>创建/停止/暂停/恢复/删除 Session 幂等</li>
 <li>Workspace 删除与 Session 删除明确分离</li>
 <li>Web Terminal、SSH、Preview、Files 可重连</li>
-<li>BASE：无 Agent 的 Exec/Files/访问闭环；APP-M1：Codex 和 Claude Code 真实 Provider 验收</li>
+<li>BASE：无 Agent 闭环；ANYWHERE-RUNTIME-V1：Codex、Claude Code、Pi、deepseek-harness × Docker/远程机器/Kubernetes 的真实 SDK 验收</li>
 <li>Remote Worker 注册、Drain、离线恢复</li>
 <li>Volume 与 Snapshot 恢复验证</li>
 </ul></div>
@@ -1198,6 +1224,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 <li>Region Controller 断连时运行 Session 不被误删</li>
 <li>数据库 PITR 与 Object Snapshot 恢复演练</li>
 <li>Gateway 实例重启后客户端可重连</li>
+<li>APP-M1：运行中 CP/Agent/Worker/节点故障、跨节点接管、旧节点回归、工具回执丢失均按 <a href="plan/cloud-agents-platform/05-gates-and-acceptance.md#anywhere-runtime-v1">05 故障矩阵</a> 实测</li>
 </ul></div>
 <div class="card"><b class="head">性能与运维</b><ul class="checklist">
 <li>各 Runtime 启动 P50/P95 有基准数据</li>
@@ -1224,6 +1251,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 <div class="source"><code>S9</code> <a href="https://www.daytona.io/docs/en/architecture/" target="_blank">Daytona Platform Architecture</a></div>
 <div class="source"><code>S10</code> <a href="https://www.daytona.io/docs/en/preview/" target="_blank">Daytona Preview 体验</a>；<a href="https://www.daytona.io/docs/en/regions/" target="_blank">Regions</a></div>
 <div class="source"><code>S11</code> <a href="https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/" target="_blank">Kubernetes Agent Sandbox 的 Sandbox/WarmPool 设计参考</a>（非本方案强依赖）</div>
+<div class="source"><code>S12</code> <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank">DeepSeek Harness 官方仓库</a>（2026-09-09 核对开发预览与 WebUI 入口；平台 adapter 和恢复能力仍须固定版本实测）</div>
 </section>
 
 <section id="glossary">
@@ -1238,6 +1266,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 <tr><td>RuntimeProfile</td><td>产品安全等级到具体 Runtime/资源池的内部映射。</td></tr>
 <tr><td>Infrastructure Provider</td><td>计算资源位于哪里、由谁拥有，如 AWS、Hetzner、BYOC。</td></tr>
 <tr><td>Runtime</td><td>Sandbox 如何运行和隔离，如 runc、gVisor、Kata、Firecracker。</td></tr>
+<tr><td>Agent Runtime / Provider</td><td>统一 Agent 命令、事件和恢复协议，以及 Codex、Claude Code、Pi、deepseek-harness 的具体适配；与隔离 Runtime、资源来源及模型 API 分开。</td></tr>
 <tr><td>Region Controller</td><td>区域内负责调谐、Runtime 调用和本地状态协调的组件。</td></tr>
 <tr><td>Remote Worker</td><td>安装在客户或边缘节点、主动连接平台的执行 Agent。</td></tr>
 <tr><td>Preview Proxy</td><td>把 Sandbox 内服务端口安全映射为 Web URL 的网关。</td></tr>
@@ -1245,7 +1274,7 @@ Gateway、Controller 与 Worker 的独立部署由连接负载和安全边界决
 </section>
 
 <div class="footer">
-  Cloud Workspace / Sandbox Architecture v0.4 · 底座边界对齐：2026-09-05<br/>
+  Cloud Workspace / Sandbox Architecture v0.5 · Anywhere Runtime 边界对齐：2026-09-09<br/>
   本文是可用于架构评审与实施拆解的基线；容量数字、SLO 和 Runtime 兼容性需通过 PoC 与压测最终确认。
 </div>
 </main>

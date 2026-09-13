@@ -6,13 +6,15 @@
 
 从 [04 文档清理与实施计划](04-extraction-and-migration.md) 和 [06 当前状态/下一项](06-status-tracker.md) 开始。本页不维护第二份计划或进度；按任务只读所需专题。
 
+后续 Runtime/SDK 实施使用 [04 的 Anywhere Runtime 切片与 Goal](04-extraction-and-migration.md#anywhere-runtime-plan)，完成条件为 [05 的 ANYWHERE-RUNTIME-V1](05-gates-and-acceptance.md#anywhere-runtime-v1)。
+
 | 文档 | 职责 |
 | --- | --- |
 | [01 产品范围与 authority](01-product-scope-and-authority.md) | 基础设施/Admin 与用户对话的能力、归属与兼容边界 |
 | [02 目标架构](02-target-architecture.md) | Workspace/Sandbox/RemoteWorker、调谐、访问和旧 Lease 衔接 |
 | [03 仓库与发布](03-public-repository-and-release.md) | 复用现有模块、独立交付、版本与制品安全 |
-| [04 清理与实施计划](04-extraction-and-migration.md) | 文档清理顺序、具体处置清单和 BASE 联合切片 |
-| [05 验收](05-gates-and-acceptance.md) | 基础设施＋Admin 的 BASE-READY，以及适用的旧正式 Gate |
+| [04 清理与实施计划](04-extraction-and-migration.md) | 文档清理、BASE 联合切片、APP-M1 Runtime/SDK 切片和 Goal 提示词 |
+| [05 验收](05-gates-and-acceptance.md) | BASE-READY、ANYWHERE-RUNTIME-V1，以及适用的旧正式 Gate |
 | [06 状态与下一项](06-status-tracker.md) | 当前进度、已测边界、实际阻塞与固定证据链接 |
 | [07 Admin Web 要求](07-admin-web-requirements-and-design.md) | 完整管理功能、安全交互、Daytona、双语与 UI 验收 |
 | [证据规则](evidence/README.md) | 应用/阶段报告与正式 Gate 的不同要求 |

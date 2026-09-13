@@ -22,7 +22,7 @@
 
 ### 1.2 兼容与最终范围
 
-已有 Agent Runtime/API 保留，当前只做安全、兼容和必要适配，不以新增对话功能推动底座里程碑。
+已有 Agent Runtime/API 保留；BASE 阶段只做安全、兼容和必要适配，不以新增对话功能推动底座里程碑。BASE-READY 后按 APP-M1 推进以下 Anywhere Runtime 目标。
 下列三种运行模式及其 owner 表保留为消费/兼容边界，不再是底座领域模型或当前阶段排序。
 T3 自己的逻辑 Workspace/Git/Checkpoint authority 不等于底座新建的物理 Workspace/Volume authority，
 二者只能显式引用映射，不能双写同一聚合。公共仓最终仍须独立部署，并提供：
@@ -40,6 +40,30 @@ T3 自己的逻辑 Workspace/Git/Checkpoint authority 不等于底座新建的�
 
 “全部公共”指所有 Cloud Agent 通用产品能力只有一个公开可编辑来源。它不等于机械公开 Synara 全部 SaaS
 后台；与 Cloud Agent 无关的企业扩展仍可由 Synara 作为外部消费者/adapter 提供。
+
+### 1.3 Anywhere Runtime 的产品目标
+
+`ANYWHERE-RUNTIME-V1` 是 APP-M1 内的 Runtime/SDK 交付范围：通过同一公共 API 和 TypeScript/Go SDK，
+让 **Codex、Claude Code、Pi、deepseek-harness** 使用长期 Workspace，在 Docker、outbound RemoteWorker
+接入的远程机器、Kubernetes 三类环境执行，并支持运行中任务恢复和跨节点故障转移。完整用户对话 UI 随后承接，
+相关 Admin 运维闭环随能力交付。它不追加或改写已完成的 BASE-READY、BASE-ADMIN-V1 或历史 ADMIN-WEB-V1。
+
+| 概念 | 职责与边界 |
+| --- | --- |
+| Agent Provider / Harness | Codex、Claude Code、Pi、deepseek-harness 的 Agent 循环、工具与原生会话；通过统一 Provider adapter 接入 |
+| Model Provider | 模型 API、模型名称和凭据；更换模型 endpoint 不等于接入一个 Agent Harness |
+| Agent Runtime | 统一命令、事件、交互、取消和恢复协议；由受控执行器在已授权 Sandbox 内启动 Provider |
+| Sandbox Runtime / Infrastructure Provider | Docker/Kubernetes 等计算与隔离、节点归属和放置；不拥有 AgentSession/Turn |
+
+[deepseek-harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness) 在 2026-09-09 核对时将 dsh 标为开发预览，
+并提供 `npx @deepseek-ai/dsh web` WebUI 入口。接入前须固定上游版本/commit，核验机器调用、事件、取消、交互与恢复接口；
+WebUI 可启动不能证明这些接口已满足平台契约。Pi 同样须明确固定上游制品与兼容范围，不以 catalog 占位代表实现。
+
+“Anywhere”指通过已验证的 profile、身份、网络、OS/arch 和存储组合使用同一产品接口，不承诺任意机器零配置运行。
+V1 必须覆盖四个 Provider × 三类环境；跨节点接管先在同一 Region、同一归属且兼容的候选节点间实现，
+不得以排除全部可接管组合来声称完成。跨 Region 灾备、任意异构运行时热迁移和进程内存无损迁移另行验证。
+底座无 Agent 的默认安装继续可用。执行切片见 [04](04-extraction-and-migration.md#anywhere-runtime-plan)，
+完成条件见 [05](05-gates-and-acceptance.md#anywhere-runtime-v1)，当前支持程度只看 [06](06-status-tracker.md)。
 
 ## 2. 三种运行模式
 

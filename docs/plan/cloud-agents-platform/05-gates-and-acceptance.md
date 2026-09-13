@@ -42,9 +42,60 @@ BASE-M5 只有逐项满足以上条件才能标为就绪；未完成项保持开
 下文旧 P0～P6/Platform RC 的 record、签署、审批、安全和发布条件保持不变，不因底座优先而自动关闭或降低。
 底座本地就绪不要求先完成 Synara/T3 或真实 Agent E2E，但也不代表通过仍包含这些条件的旧完整 Platform RC。
 若以后发布独立底座 channel，其适用验收与曝光范围须显式记录并取得原有发布批准；本次不创建或批准该 channel。
-APP-M1 再执行 Managed Agent 的真实 Codex/Claude 与交互/历史/Artifact 验收，后续消费者各自关闭适用 Gate。
+APP-M1 按下节推进 Anywhere Runtime，再完成用户对话产品；后续消费者各自关闭适用 Gate。
 
 原 Admin M1～M4 任务另按 [ADMIN-WEB-V1](07-admin-web-requirements-and-design.md#admin-web-v1) 验收；其中既有 Agent 的真实 Codex/Claude E2E 仍是原任务必需项，不因 BASE 的 no-Agent 范围而豁免。ADMIN-WEB-V1 与 BASE-READY 不互相替代，也不互为启动或完成的通用前置条件；只有明确迁移后的任务才改用 BASE 范围。
+
+<a id="anywhere-runtime-v1"></a>
+
+### 0.2 Anywhere Runtime 验收 ANYWHERE-RUNTIME-V1
+
+这是 BASE-READY 之后 APP-M1 内的 Runtime/SDK 完成条件，不是新的正式审批 Gate，也不改写旧范围的完成结论。
+切片顺序只在 [04](04-extraction-and-migration.md#anywhere-runtime-plan)，实际支持/缺失和证据只在 [06](06-status-tracker.md)。
+
+**Provider × 环境：以下十二格均需真实通过。** 每格固定上游与平台制品、OS/arch、隔离、存储、网络和凭据方式；
+至少由一个公共 SDK 完成新 Workspace/Sandbox → AgentSession → Turn → 增量事件 → 工具修改文件并核对摘要 →
+结果/Artifact → 后续 Turn/会话恢复 → 关闭计算保留数据的完整链路。不是依靠手工进入容器启动 CLI。
+
+| Agent Provider | Docker | 远程机器（outbound RemoteWorker） | Kubernetes |
+| --- | --- | --- | --- |
+| Codex | 必验 | 必验 | 必验 |
+| Claude Code | 必验 | 必验 | 必验 |
+| Pi | 必验 | 必验 | 必验 |
+| deepseek-harness | 必验 | 必验 | 必验 |
+
+不支持的额外能力或环境组合必须明确拒绝；但上表核心路径缺失、缺凭据或未实测时，该格保持未完成。
+可使用经验证的适配实现补齐核心能力；不得靠把 Provider 标为 experimental/unsupported 从十二格中删除它。
+原生 diff、内存 checkpoint 等附加能力分别声明 native/emulated/unsupported，不伪造 Provider 原生能力。
+
+**恢复与故障转移：** 下列故障逐类登记四种 Provider 在三类环境中的适用实例和结果；共享机制的测试可复用，
+但每一 Provider/环境组合都须有运行中 Turn 的真实恢复和跨节点接管证据，不能只测已结束 Turn。
+
+| 故障/窗口 | 必须观察到的行为 |
+| --- | --- |
+| SDK/事件流断连，CP 请求响应丢失 | 幂等重试不新增 Turn；从已持久化 cursor 续读，重复事件可去重，无已确认事件缺口 |
+| 运行中 CP/Controller 崩溃 | 重启认领和对账同一执行，继续接收事件/交互；不因内存 active map 丢失直接终结任务 |
+| Agent 进程或 Worker 退出 | 已确认输入、持久化交互和安全 checkpoint 可恢复；以新 attempt 继续，旧回执不能覆盖结果 |
+| 执行节点彻底不可用 | 在同 Region 的另一兼容节点恢复 Workspace/Agent 状态并接管；核对新节点 ID、数据摘要、后续工具结果及可观察恢复原因 |
+| 旧节点恢复、延迟命令/回执到达 | 原 writer 已 fence；旧 generation 不得写卷、取密、发事件或提交终态；无双执行/双写 |
+| 工具副作用前后崩溃、回执丢失 | 有幂等或可核对结果时安全恢复；结果未知时显式停在待处理状态，禁止自动重复外部副作用 |
+| 快照/checkpoint 缺失、损坏或版本不兼容 | 校验失败并保留原数据，明确可恢复点与丢失窗口；不退回空目录继续冒充恢复 |
+| Approval/User Input 等待中故障，授权过期或撤销 | 交互持久化、回答幂等并重新校验授权；跨租户/旧 attempt/过期 grant 拒绝 |
+
+跨节点验收必须包含旧主机不能提供本地盘的情形，证明存储副本/远端快照可用与旧 writer 隔离；
+Kubernetes Pod 在原节点重建、RemoteWorker 重连原节点、同 Target Docker Snapshot Restore 均不足以替代。
+每类报告 RTO（故障至安全恢复执行）、RPO（可恢复一致性点及未确认窗口）、故障持续时间和恢复尝试；
+区分已接受的控制事件与尚未 checkpoint 的 Provider/文件状态，不从单次通过推导生产 SLO。
+
+**SDK、部署与运维：** TypeScript 与 Go 各在仓外安装固定候选，实际验证 Session/Turn、事件续读、取消/中断、
+Approval/Input、Artifact、恢复状态与幂等错误；用户只使用公开 ID/引用，不依赖节点私网地址或内部服务包。
+覆盖超过当前短 Turn 上限的任务、断连续接、超时/取消与残留进程清理；明确实际时长与资源策略，不承诺无限运行。
+显式 Agent profile 在 Docker/远程节点/Kubernetes 可安装；默认 no-Agent 仍通过受影响回归。
+[07 的 Runtime 运维要求](07-admin-web-requirements-and-design.md#813-anywhere-runtime-运维app-m1) 必须随实际能力完成，
+含权限/租户隔离、故障原因、恢复 Operation/Audit、双语和相关视觉/交互验证，管理员仍不能读取用户内容或 Secret。
+
+沿用现有测试、固定报告与证据目录，记录 source/dirty、命令、制品、输入、结果、未覆盖项和精确清理。
+Mock、build/lint、探活或历史其他制品的成功不替代本节真实验收；全部必需项完成才可标记 ANYWHERE-RUNTIME-V1 VERIFIED。
 
 ## 1. Gate 总表
 

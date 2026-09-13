@@ -10,6 +10,8 @@ Start with the [execution plan](docs/plan/cloud-agents-platform/04-extraction-an
 
 No-Agent acceptance removes the Agent/Provider dependency, not the Admin Web requirement. Existing Lease-owned volumes retain their existing cleanup semantics; documentation changes do not migrate or alter live data.
 
+The next application scope is [Anywhere Runtime](docs/plan/cloud-agents-platform/01-product-scope-and-authority.md#13-anywhere-runtime-的产品目标): Codex, Claude Code, Pi, and deepseek-harness through unified SDKs on Docker, outbound remote nodes, and Kubernetes, with recovery and failover. This is a delivery target; use the [acceptance definition](docs/plan/cloud-agents-platform/05-gates-and-acceptance.md#anywhere-runtime-v1) and current status to distinguish planned capabilities from verified support.
+
 The portable Runtime keeps its host-neutral JavaScript/stdio ABI. Synara and T3 Code remain downstream consumers with their own logical workspace, VCS, checkpoint and application authority; they do not become dependencies of the foundation.
 
 The seven Runtime packages and the public Control Plane SDK use the independent `@cloud-agents/*` namespace. They do not depend on a Synara application root or T3-private package.
