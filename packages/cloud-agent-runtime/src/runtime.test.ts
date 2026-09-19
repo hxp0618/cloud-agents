@@ -62,6 +62,23 @@ describe("createCloudAgentRuntime", () => {
     expect(runtime.providerKinds).toEqual(["claude", "codex"]);
   });
 
+  it("treats omitted providers as disabled at the registry boundary", async () => {
+    const runtime = createCloudAgentRuntime({ providers: [provider("codex")] });
+    expect(runtime.providerKinds).toEqual(["codex"]);
+    await expect(runtime.describe("claude")).rejects.toThrow(/Provider claude is not registered/u);
+    await expect(runtime.createSession("claude", sessionInput(), {} as never)).rejects.toThrow(
+      /Provider claude is not registered/u,
+    );
+  });
+
+  it("rejects incompatible plugin ABIs before registration", () => {
+    expect(() =>
+      createCloudAgentRuntime({
+        providers: [{ ...provider("codex"), abiVersion: 999 as never }],
+      }),
+    ).toThrow(/unsupported ABI 999/u);
+  });
+
   it("rejects duplicate providers", () => {
     expect(() =>
       createCloudAgentRuntime({ providers: [provider("codex"), provider("codex")] }),
@@ -138,26 +155,54 @@ describe("createCloudAgentRuntime", () => {
     );
   });
 
-  it("rejects malformed provider sessions at the runtime boundary", async () => {
-    const runtime = createCloudAgentRuntime({
-      providers: [
-        {
-          ...provider("codex"),
-          createSession: async () => ({
-            sessionId: "",
-            events: emptyEvents(),
-            execute: async () => validMessage(),
-            close: async () => undefined,
-            async [Symbol.asyncDispose]() {},
-          }),
-        },
-      ],
-    });
+  it.each(["dispose", "close", "dispose-failure", "cleanup-failure"])(
+    "releases malformed sessions using %s and preserves the validation error",
+    async (cleanupMode) => {
+      const cleanupCalls: string[] = [];
+      const runtime = createCloudAgentRuntime({
+        providers: [
+          {
+            ...provider("codex"),
+            createSession: async () =>
+              ({
+                sessionId: "",
+                events: emptyEvents(),
+                execute: async () => validMessage(),
+                close: async () => {
+                  cleanupCalls.push("close");
+                  if (cleanupMode === "cleanup-failure") throw new Error("cleanup failed");
+                },
+                ...(cleanupMode === "dispose"
+                  ? {
+                      async [Symbol.asyncDispose]() {
+                        cleanupCalls.push("dispose");
+                      },
+                    }
+                  : cleanupMode === "dispose-failure"
+                    ? {
+                        async [Symbol.asyncDispose]() {
+                          cleanupCalls.push("dispose");
+                          throw new Error("dispose failed");
+                        },
+                      }
+                    : {}),
+              }) as never,
+          },
+        ],
+      });
 
-    await expect(runtime.createSession("codex", sessionInput(), {} as never)).rejects.toThrow(
-      /sessionId/u,
-    );
-  });
+      await expect(runtime.createSession("codex", sessionInput(), {} as never)).rejects.toThrow(
+        /sessionId/u,
+      );
+      expect(cleanupCalls).toEqual(
+        cleanupMode === "dispose"
+          ? ["dispose"]
+          : cleanupMode === "dispose-failure"
+            ? ["dispose", "close"]
+            : ["close"],
+      );
+    },
+  );
 
   it("validates commands, results, and events from provider sessions", async () => {
     const runtime = createCloudAgentRuntime({

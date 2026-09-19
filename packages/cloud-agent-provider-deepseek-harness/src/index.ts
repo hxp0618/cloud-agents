@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -12,18 +12,23 @@ import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provi
 import {
   ProviderInterruptedError,
   WorkspaceGeneratedFileCollector,
+  capabilityTokenEnvironmentName,
   createProviderPlugin,
   hasAuthoritativeResumeData,
+  managedMcpConfiguration,
+  managedSkillBundleDirectories,
   providerEnvironment,
   reconstructedPrompt,
   requireProviderOuterSandboxProfile,
   validateRunnerInput,
+  readCapabilityManifest,
   type ProviderRunController,
   type ProviderRunExecutor,
   type ProviderRunOptions,
   type RunnerCredential,
   type RunnerInput,
   type RunnerMessage,
+  type RuntimeCapabilityManifest,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
 
 export const DEEPSEEK_HARNESS_PROVIDER_KIND = "deepseek-harness" as const;
@@ -48,10 +53,12 @@ export function startDeepSeekHarnessProviderRun(
   if (options.operation && options.operation.commandType !== "GenerateText")
     throw new Error(`deepseek-harness Provider does not support ${options.operation.commandType}.`);
   requireProviderOuterSandboxProfile(options.environment ?? process.env);
+  const sourceEnvironment = options.environment ?? process.env;
+  const capabilityManifest = readCapabilityManifest(sourceEnvironment);
 
   const effectiveInput = withCredentialModel(input, credential);
   const { environment, redact } = providerEnvironment(
-    options.environment ?? process.env,
+    sourceEnvironment,
     credential,
     applyDeepSeekHarnessCredentialEnvironment,
   );
@@ -59,9 +66,13 @@ export function startDeepSeekHarnessProviderRun(
   if (!stateRoot) throw new Error("deepseek-harness Provider requires providerStateDirectory.");
   const model = effectiveInput.workload.model?.trim();
   if (!model) throw new Error("deepseek-harness Provider requires model.");
+  const mcpConfiguration = managedMcpConfiguration(capabilityManifest, sourceEnvironment);
+  Object.assign(environment, mcpConfiguration.environment);
+  const skillDirectories = managedSkillBundleDirectories(capabilityManifest, sourceEnvironment);
   const dshHome = join(stateRoot, "dsh-home");
   mkdirSync(dshHome, { recursive: true, mode: 0o700 });
   const patchPath = writeModelPatch(stateRoot, model);
+  const capabilityPatchPath = writeCapabilityPatch(stateRoot, capabilityManifest, skillDirectories);
   const dshBin = optionalString(
     environment.CLOUD_AGENT_DEEPSEEK_HARNESS_BIN,
     "CLOUD_AGENT_DEEPSEEK_HARNESS_BIN",
@@ -88,7 +99,7 @@ export function startDeepSeekHarnessProviderRun(
     options.harnessFactory ?? ((harnessOptions) => new DeepSeekHarness(harnessOptions))
   )({
     profile: "sdk",
-    patches: [patchPath],
+    patches: [patchPath, ...(capabilityPatchPath ? [capabilityPatchPath] : [])],
     dshHome,
     processCwd: effectiveInput.workspaceDirectory,
     cwd: effectiveInput.workspaceDirectory,
@@ -100,6 +111,7 @@ export function startDeepSeekHarnessProviderRun(
   });
   let interrupted = false;
   let turnFailure: string | undefined;
+  const activeTools = new Map<string, { name: string; capabilityResourceId?: string }>();
   const prompt = hasAuthoritativeResumeData(effectiveInput.workload, effectiveInput.memoryDocuments)
     ? reconstructedPrompt(effectiveInput, options.hostIdentity)
     : effectiveInput.workload.inputText;
@@ -109,8 +121,18 @@ export function startDeepSeekHarnessProviderRun(
       const run = await harness.run(prompt, {
         sessionId,
         onNotification(notification) {
-          const failure = handleHarnessNotification(notification, generatedFiles, emit);
-          if (failure) turnFailure = failure;
+          if (turnFailure) return;
+          const failure = handleHarnessNotification(
+            notification,
+            capabilityManifest,
+            activeTools,
+            generatedFiles,
+            emit,
+          );
+          if (failure) {
+            turnFailure = failure;
+            void harness.close();
+          }
         },
       });
       if (turnFailure) throw new Error(turnFailure);
@@ -170,6 +192,8 @@ function providerResult(run: RunResult, model: string): Extract<RunnerMessage, {
 
 function handleHarnessNotification(
   notification: HarnessNotification,
+  capabilityManifest: RuntimeCapabilityManifest | null,
+  activeTools: Map<string, { name: string; capabilityResourceId?: string }>,
   generatedFiles: WorkspaceGeneratedFileCollector,
   emit: (message: RunnerMessage) => void,
 ): string | undefined {
@@ -186,6 +210,13 @@ function handleHarnessNotification(
       const name = stringValue(block.name) ?? "tool";
       const itemId = stringValue(block.id) ?? name;
       const args = parseRecord(block.arguments);
+      const capabilityResourceId =
+        managedMcpCapabilityResourceId(name, capabilityManifest) ??
+        managedSkillCapabilityResourceId(name, args, capabilityManifest);
+      activeTools.set(itemId, {
+        name,
+        ...(capabilityResourceId ? { capabilityResourceId } : {}),
+      });
       if (/^(?:edit|write|str_replace_editor)$/iu.test(name))
         generatedFiles.observe(args?.path ?? args?.filePath ?? args?.file_path);
       emit({
@@ -196,6 +227,7 @@ function handleHarnessNotification(
           itemType: name,
           itemId,
           status: "inProgress",
+          ...(capabilityResourceId ? { capabilityResourceId } : {}),
         },
       });
     }
@@ -207,23 +239,61 @@ function handleHarnessNotification(
     const message = recordValue(data?.message);
     const source = recordValue(message?.source);
     const itemId = stringValue(source?.callId) ?? "tool";
+    const sourceName = stringValue(source?.name) ?? stringValue(source?.toolName);
+    const activeTool = activeTools.get(itemId);
+    const name = activeTool?.name ?? sourceName ?? "tool";
+    const capabilityResourceId =
+      activeTool?.capabilityResourceId ?? managedMcpCapabilityResourceId(name, capabilityManifest);
+    const failed =
+      message?.isError === true ||
+      message?.status === "error" ||
+      (message?.error !== undefined && message?.error !== null);
+    activeTools.delete(itemId);
     emit({
       type: "event",
       eventType: "runtime.provider.activity",
       payload: {
         provider: DEEPSEEK_HARNESS_PROVIDER_KIND,
-        itemType: "tool",
+        itemType: name,
         itemId,
-        status: "completed",
+        status: failed ? "failed" : "completed",
+        ...(capabilityResourceId ? { capabilityResourceId } : {}),
       },
     });
-    return undefined;
+    return failed ? "deepseek-harness managed tool failed." : undefined;
   }
   if (type !== "turn/end") return undefined;
   const reason = recordValue(data?.reason);
   if (reason?.kind !== "error") return undefined;
   const error = recordValue(reason.error);
   return stringValue(error?.message) ?? "deepseek-harness turn failed.";
+}
+
+function managedMcpCapabilityResourceId(
+  toolName: string,
+  manifest: RuntimeCapabilityManifest | null,
+): string | undefined {
+  if (!manifest || !toolName.startsWith("mcp__")) return undefined;
+  for (const binding of manifest.bindings) {
+    if (binding.resourceKind !== "mcp-server") continue;
+    if (toolName.startsWith(`mcp__${mcpServerName(binding.resourceId)}__`)) {
+      return binding.resourceId;
+    }
+  }
+  return undefined;
+}
+
+function managedSkillCapabilityResourceId(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+  manifest: RuntimeCapabilityManifest | null,
+): string | undefined {
+  if (toolName !== "skill" || !stringValue(args?.name)) return undefined;
+  const skills =
+    manifest?.bindings.filter((binding) => binding.resourceKind === "skill-bundle") ?? [];
+  // A single bound Bundle is authoritative for all model-visible skill names. Multiple Bundles
+  // have no public skill-name-to-bundle contract, so do not guess across them.
+  return skills.length === 1 ? skills[0]?.resourceId : undefined;
 }
 
 function writeModelPatch(stateRoot: string, model: string): string {
@@ -242,6 +312,61 @@ function writeModelPatch(stateRoot: string, model: string): string {
     { mode: 0o600 },
   );
   return path;
+}
+
+function writeCapabilityPatch(
+  stateRoot: string,
+  manifest: RuntimeCapabilityManifest | null,
+  skillDirectories: ReadonlyArray<string>,
+): string | undefined {
+  const mcpBindings =
+    manifest?.bindings.filter((binding) => binding.resourceKind === "mcp-server") ?? [];
+  if (mcpBindings.length === 0 && skillDirectories.length === 0) return undefined;
+
+  const lines = ["# Host-managed MCP and signed Skill Bundle composition."];
+  if (skillDirectories.length > 0) {
+    lines.push(
+      "- id: skill-filesystem",
+      "  config:",
+      "    includeDefaultRoots: false",
+      "    customSkillDirs:",
+      ...skillDirectories.map(
+        (directory) => `      - ${JSON.stringify(join(directory, "skills"))}`,
+      ),
+      "    watch: false",
+    );
+  }
+  if (mcpBindings.length > 0) {
+    lines.push("- insert:");
+    for (const [index, binding] of mcpBindings.entries()) {
+      const tokenEnvironment = capabilityTokenEnvironmentName(binding.resourceId);
+      lines.push(
+        `    - id: cloud-agents-managed-mcp-${index + 1}`,
+        "      name: '@deepseek-ai/dsh-mcp-client'",
+        "      config:",
+        `        serverName: ${mcpServerName(binding.resourceId)}`,
+        "        transport: streamable-http",
+        '        url: !!js "process.env.CLOUD_AGENT_MCP_BROKER_URL"',
+        "        headers:",
+        `          Authorization: !!js '\`Bearer \${process.env.${tokenEnvironment}}\`'`,
+        "        failOnStartupError: true",
+        "        reconnect:",
+        "          enabled: true",
+        "          initialDelayMs: 500",
+        "          maxDelayMs: 30000",
+        "          maxAttempts: 10",
+      );
+    }
+  }
+  const path = join(stateRoot, "cloud-agents-capabilities.cordis.yml");
+  writeFileSync(path, `${lines.join("\n")}\n`, { mode: 0o600 });
+  return path;
+}
+
+function mcpServerName(resourceId: string): string {
+  const normalized = resourceId.replace(/[^A-Za-z0-9_-]/gu, "_").slice(0, 19) || "server";
+  const suffix = createHash("sha256").update(resourceId).digest("hex").slice(0, 8);
+  return `ca_${normalized}_${suffix}`;
 }
 
 function applyDeepSeekHarnessCredentialEnvironment(

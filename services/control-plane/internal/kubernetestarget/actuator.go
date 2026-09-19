@@ -73,11 +73,12 @@ func (worker ManagedWorker) CleanupResourceNames() (namespace, name string) {
 }
 
 type deploymentConfig struct {
-	Namespace                 string `json:"namespace"`
-	WorkerImageRepository     string `json:"workerImageRepository"`
-	WorkerCredentialSecretRef string `json:"workerCredentialSecretRef"`
-	WorkerSPIFFEID            string `json:"workerSpiffeId"`
-	WorkerServerName          string `json:"workerServerName"`
+	Namespace                          string `json:"namespace"`
+	WorkerImageRepository              string `json:"workerImageRepository"`
+	WorkerCredentialSecretRef          string `json:"workerCredentialSecretRef"`
+	CapabilityMaterializationSecretRef string `json:"capabilityMaterializationSecretRef,omitempty"`
+	WorkerSPIFFEID                     string `json:"workerSpiffeId"`
+	WorkerServerName                   string `json:"workerServerName"`
 }
 
 type resourceMetadata struct {
@@ -132,7 +133,11 @@ func (directory *CredentialDirectory) deployWorker(ctx context.Context, endpoint
 		return DeployResult{}, err
 	}
 	defer transport.CloseIdleConnections()
-	for _, secret := range []string{config.WorkerCredentialSecretRef, request.ProviderCredentialRef} {
+	secrets := []string{config.WorkerCredentialSecretRef, request.ProviderCredentialRef}
+	if config.CapabilityMaterializationSecretRef != "" {
+		secrets = append(secrets, config.CapabilityMaterializationSecretRef)
+	}
+	for _, secret := range secrets {
 		if err := requireSecret(ctx, client, base, config.Namespace, secret); err != nil {
 			return DeployResult{}, err
 		}
@@ -306,7 +311,7 @@ func (directory *CredentialDirectory) readDeploymentConfig(credentialRef string)
 
 func validDeploymentConfig(config deploymentConfig) bool {
 	identity, err := url.Parse(config.WorkerSPIFFEID)
-	return dnsLabelPattern.MatchString(config.Namespace) && imageRepositoryPattern.MatchString(config.WorkerImageRepository) && validDNSSubdomain(config.WorkerCredentialSecretRef) &&
+	return dnsLabelPattern.MatchString(config.Namespace) && imageRepositoryPattern.MatchString(config.WorkerImageRepository) && validDNSSubdomain(config.WorkerCredentialSecretRef) && (config.CapabilityMaterializationSecretRef == "" || validDNSSubdomain(config.CapabilityMaterializationSecretRef)) &&
 		err == nil && identity.Scheme == "spiffe" && identity.Host != "" && identity.Path != "" && identity.User == nil && identity.RawQuery == "" && identity.Fragment == "" &&
 		config.WorkerServerName != "" && len(config.WorkerServerName) <= 253 && strings.TrimSpace(config.WorkerServerName) == config.WorkerServerName && !strings.ContainsAny(config.WorkerServerName, "/@") && strings.IndexFunc(config.WorkerServerName, unicode.IsControl) < 0
 }
@@ -321,7 +326,7 @@ func workerResourceName(request DeployRequest) string {
 }
 
 func deploymentAnnotations(request DeployRequest, config deploymentConfig) map[string]string {
-	return map[string]string{
+	annotations := map[string]string{
 		"cloud-agents.dev/managed":                      "true",
 		"cloud-agents.dev/tenant":                       request.TenantID,
 		"cloud-agents.dev/project":                      request.ProjectID,
@@ -337,6 +342,10 @@ func deploymentAnnotations(request DeployRequest, config deploymentConfig) map[s
 		"cloud-agents.dev/worker-spiffe-id":             config.WorkerSPIFFEID,
 		"cloud-agents.dev/worker-server-name":           config.WorkerServerName,
 	}
+	if config.CapabilityMaterializationSecretRef != "" {
+		annotations["cloud-agents.dev/capability-materialization-secret-ref"] = config.CapabilityMaterializationSecretRef
+	}
+	return annotations
 }
 
 func managedWorker(metadata resourceMetadata, expectedTargetGeneration int64, config deploymentConfig) (ManagedWorker, error) {
@@ -351,7 +360,7 @@ func managedWorker(metadata resourceMetadata, expectedTargetGeneration int64, co
 		CPULimitMillis: cpuLimitMillis, MemoryLimitBytes: memoryLimitBytes,
 	}
 	if targetErr != nil || leaseErr != nil || cpuErr != nil || memoryErr != nil || targetGeneration > expectedTargetGeneration || request.validate() != nil || metadata.Namespace != config.Namespace ||
-		annotations["cloud-agents.dev/worker-credential-secret-ref"] != config.WorkerCredentialSecretRef || annotations["cloud-agents.dev/worker-spiffe-id"] != config.WorkerSPIFFEID || annotations["cloud-agents.dev/worker-server-name"] != config.WorkerServerName || metadata.Name != workerResourceName(request) {
+		annotations["cloud-agents.dev/worker-credential-secret-ref"] != config.WorkerCredentialSecretRef || annotations["cloud-agents.dev/capability-materialization-secret-ref"] != config.CapabilityMaterializationSecretRef || annotations["cloud-agents.dev/worker-spiffe-id"] != config.WorkerSPIFFEID || annotations["cloud-agents.dev/worker-server-name"] != config.WorkerServerName || metadata.Name != workerResourceName(request) {
 		return ManagedWorker{}, ErrDeploymentConflict
 	}
 	return ManagedWorker{Request: request, name: metadata.Name, namespace: metadata.Namespace, annotations: deploymentAnnotations(request, config)}, nil
@@ -371,6 +380,16 @@ func desiredResourcesWithStrategy(name string, request DeployRequest, config dep
 	if rolling {
 		strategy = map[string]any{"type": "RollingUpdate", "rollingUpdate": map[string]any{"maxUnavailable": 0, "maxSurge": 1}}
 	}
+	args := []string{"--listen", ":8091", "--tls-cert", "/run/cloud-agents/worker-credentials/server.crt", "--tls-key", "/run/cloud-agents/worker-credentials/server.key", "--client-ca", "/run/cloud-agents/worker-credentials/client-ca.crt", "--worker-spiffe-id", config.WorkerSPIFFEID, "--runtime-command", "/usr/local/bin/cloud-agent-runtime", "--runtime-directory", "/workspace", "--runtime-max-sessions", "1", "--provider-credential-directory", "/run/cloud-agents/provider-credentials", "--admission-lease-id", request.LeaseID, "--admission-generation", strconv.FormatInt(request.LeaseGeneration, 10), "--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token"}
+	volumeMounts := []map[string]any{{"name": "worker-credentials", "mountPath": "/run/cloud-agents/worker-credentials", "readOnly": true}, {"name": "provider-credentials", "mountPath": "/run/cloud-agents/provider-credentials", "readOnly": true}, {"name": "workspace", "mountPath": "/workspace"}, {"name": "tmp", "mountPath": "/tmp"}}
+	volumes := []map[string]any{{"name": "worker-credentials", "secret": map[string]any{"secretName": config.WorkerCredentialSecretRef, "defaultMode": 0o400}}, {"name": "provider-credentials", "secret": map[string]any{"secretName": request.ProviderCredentialRef, "defaultMode": 0o400}}, {"name": "workspace", "persistentVolumeClaim": map[string]string{"claimName": name}}, {"name": "tmp", "emptyDir": map[string]any{"medium": "Memory", "sizeLimit": "64Mi"}}}
+	if config.CapabilityMaterializationSecretRef != "" {
+		args = append(args, "--capability-materialization-directory", "/run/cloud-agents/capabilities")
+		volumeMounts = append(volumeMounts, map[string]any{"name": "capabilities", "mountPath": "/run/cloud-agents/capabilities", "readOnly": true})
+		volumes = append(volumes, map[string]any{"name": "capabilities", "secret": map[string]any{"secretName": config.CapabilityMaterializationSecretRef, "defaultMode": 0o400}})
+		volumeMounts = append(volumeMounts, map[string]any{"name": "skill-runtime", "mountPath": "/run/cloud-agents/skills"})
+		volumes = append(volumes, map[string]any{"name": "skill-runtime", "emptyDir": map[string]any{"medium": "Memory", "sizeLimit": "64Mi"}})
+	}
 	return []desiredResource{
 		{path: base + "/persistentvolumeclaims/" + url.PathEscape(name), body: map[string]any{
 			"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": metadata(),
@@ -386,13 +405,13 @@ func desiredResourcesWithStrategy(name string, request DeployRequest, config dep
 				"metadata": map[string]any{"labels": selector},
 				"spec": map[string]any{"automountServiceAccountToken": false, "terminationGracePeriodSeconds": 30, "securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1000, "runAsGroup": 1000, "fsGroup": 1000, "fsGroupChangePolicy": "OnRootMismatch", "seccompProfile": map[string]string{"type": "RuntimeDefault"}}, "containers": []map[string]any{{
 					"name": "worker", "image": config.WorkerImageRepository + "@" + request.ReleaseDigest, "imagePullPolicy": "IfNotPresent",
-					"args":            []string{"--listen", ":8091", "--tls-cert", "/run/cloud-agents/worker-credentials/server.crt", "--tls-key", "/run/cloud-agents/worker-credentials/server.key", "--client-ca", "/run/cloud-agents/worker-credentials/client-ca.crt", "--worker-spiffe-id", config.WorkerSPIFFEID, "--runtime-command", "/usr/local/bin/cloud-agent-runtime", "--runtime-directory", "/workspace", "--runtime-max-sessions", "1", "--provider-credential-directory", "/run/cloud-agents/provider-credentials", "--admission-lease-id", request.LeaseID, "--admission-generation", strconv.FormatInt(request.LeaseGeneration, 10), "--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token"},
+					"args":            args,
 					"env":             []map[string]string{{"name": "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS", "value": "codex,claudeAgent,pi,deepseek-harness"}, {"name": "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE", "value": "single-tenant-trusted-v1"}},
 					"ports":           []map[string]any{{"containerPort": workerPort, "name": "https", "protocol": "TCP"}},
 					"resources":       map[string]any{"limits": map[string]string{"cpu": fmt.Sprintf("%dm", request.CPULimitMillis), "memory": strconv.FormatInt(request.MemoryLimitBytes, 10)}, "requests": map[string]string{"cpu": fmt.Sprintf("%dm", request.CPULimitMillis), "memory": strconv.FormatInt(request.MemoryLimitBytes, 10)}},
 					"securityContext": map[string]any{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": map[string]any{"drop": []string{"ALL"}}},
-					"volumeMounts":    []map[string]any{{"name": "worker-credentials", "mountPath": "/run/cloud-agents/worker-credentials", "readOnly": true}, {"name": "provider-credentials", "mountPath": "/run/cloud-agents/provider-credentials", "readOnly": true}, {"name": "workspace", "mountPath": "/workspace"}, {"name": "tmp", "mountPath": "/tmp"}},
-				}}, "volumes": []map[string]any{{"name": "worker-credentials", "secret": map[string]any{"secretName": config.WorkerCredentialSecretRef, "defaultMode": 0o400}}, {"name": "provider-credentials", "secret": map[string]any{"secretName": request.ProviderCredentialRef, "defaultMode": 0o400}}, {"name": "workspace", "persistentVolumeClaim": map[string]string{"claimName": name}}, {"name": "tmp", "emptyDir": map[string]any{"medium": "Memory", "sizeLimit": "64Mi"}}}},
+					"volumeMounts":    volumeMounts,
+				}}, "volumes": volumes},
 			}},
 		}},
 	}

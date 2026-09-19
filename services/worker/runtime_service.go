@@ -1,14 +1,17 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -68,8 +71,17 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if err := validateIdentifier(open.GetExecutionId(), "execution_id"); err != nil || open.GetGeneration() == 0 || open.GetGeneration() != open.GetFencing().GetGeneration() {
 		return runtimeSessionFailure(connect.CodeInvalidArgument, "runtime_identity_invalid", "execution id and generation are invalid")
 	}
+	capabilityManifest, err := validateRuntimeCapabilityBindings(open, s.now().UTC())
+	if err != nil {
+		return err
+	}
 	credentialFile, err := runtimeProviderCredentialFile(s.runtimeCredentialDirectory, open.GetTenantId(), open.GetProviderKind())
 	if err != nil {
+		return err
+	}
+	capabilityMaterialization, err := runtimeCapabilityMaterializationFile(s.runtimeCapabilityMaterializationDirectory, open.GetTenantId(), open.GetCapabilityBindings())
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "cloud-agent-worker: capability materialization rejected: %v\n", err)
 		return err
 	}
 	runtimeLeaseKey := open.GetTenantId() + "\x00" + open.GetExecutionId()
@@ -88,7 +100,7 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 		return runtimeSessionFailure(connect.CodeResourceExhausted, "capacity_exhausted", "Runtime session capacity is exhausted")
 	}
 	client, err := runtimeprocess.New(sessionContext, runtimeprocess.Config{
-		Command: s.runtimeCommand, Environment: s.runtimeEnvironment, Directory: s.runtimeDirectory, CredentialFile: credentialFile,
+		Command: s.runtimeCommand, Environment: s.runtimeEnvironment, Directory: s.runtimeDirectory, CredentialFile: credentialFile, CapabilityManifest: capabilityManifest, CapabilityMaterialization: capabilityMaterialization,
 	})
 	if err != nil {
 		return runtimeSessionFailure(connect.CodeFailedPrecondition, "runtime_start_failed", "Runtime process could not be started")
@@ -281,7 +293,9 @@ func (s *Service) ReadArtifact(ctx context.Context, request *connect.Request[wor
 const (
 	runtimeArtifactChunkBytes         = 64 << 10
 	maxRuntimeProviderCredentialBytes = 65 << 10
-	runtimeWriterFenceTimeout         = 5 * time.Second
+	// Base64url Skill bundles expand inside the descriptor; stay below the Kubernetes Secret limit.
+	maxRuntimeCapabilityMaterializationBytes = 768 << 10
+	runtimeWriterFenceTimeout                = 5 * time.Second
 )
 
 func (s *Service) acquireRuntimeLease(executionID string, lease *runtimeLease) error {
@@ -348,7 +362,10 @@ func runtimePathHasControl(value string) bool {
 	return false
 }
 
-var runtimeProviderKindPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
+var (
+	runtimeProviderKindPattern         = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
+	runtimeCapabilityPermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9._:-]{0,127}$`)
+)
 
 func validRuntimeProviderKind(value string) bool {
 	return runtimeProviderKindPattern.MatchString(value)
@@ -373,6 +390,287 @@ func runtimeProviderCredentialFile(directory, tenantID, providerKind string) (st
 		return "", runtimeSessionFailure(connect.CodeFailedPrecondition, "provider_credential_invalid", "Runtime Provider credential is invalid")
 	}
 	return path, nil
+}
+
+type runtimeCapabilityMaterialization struct {
+	Version uint32                        `json:"version"`
+	MCP     []runtimeMcpMaterialization   `json:"mcp"`
+	Skills  []runtimeSkillMaterialization `json:"skills"`
+}
+
+type runtimeMcpMaterialization struct {
+	ResourceID   string   `json:"resourceId"`
+	Version      string   `json:"version"`
+	Digest       string   `json:"digest"`
+	Transport    string   `json:"transport"`
+	Endpoint     string   `json:"endpoint"`
+	Token        string   `json:"token"`
+	AllowedHosts []string `json:"allowedHosts"`
+}
+
+type runtimeSkillMaterialization struct {
+	ResourceID   string `json:"resourceId"`
+	Version      string `json:"version"`
+	Digest       string `json:"digest"`
+	Bundle       string `json:"bundle,omitempty"`
+	Signature    string `json:"signature,omitempty"`
+	PublicKey    string `json:"publicKey,omitempty"`
+	SigningKeyID string `json:"signingKeyId,omitempty"`
+}
+
+// runtimeCapabilityMaterializationFile resolves only an operator-owned,
+// tenant-scoped descriptor. It is never sent over the Worker protobuf and is
+// passed to the child Runtime through a short-lived anonymous FD.
+func runtimeCapabilityMaterializationFile(directory, tenantID string, bindings []*workerruntimev1alpha1.RuntimeCapabilityBinding) ([]byte, error) {
+	var mcp []*workerruntimev1alpha1.RuntimeCapabilityBinding
+	var skills []*workerruntimev1alpha1.RuntimeCapabilityBinding
+	for _, binding := range bindings {
+		if binding == nil {
+			continue
+		}
+		switch binding.GetResourceKind() {
+		case "mcp-server":
+			mcp = append(mcp, binding)
+		case "skill-bundle":
+			skills = append(skills, binding)
+		}
+	}
+	if len(mcp) == 0 && len(skills) == 0 {
+		return nil, nil
+	}
+	if strings.TrimSpace(directory) == "" {
+		return nil, nil
+	}
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil {
+		return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "tenant_invalid", "tenant identity is invalid")
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_unavailable", "capability materialization is unavailable")
+	}
+	defer root.Close()
+	name := tenantID + ".capabilities.json"
+	info, err := root.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 || info.Size() < 1 || info.Size() > maxRuntimeCapabilityMaterializationBytes {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_unavailable", "capability materialization is unavailable")
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_unavailable", "capability materialization is unavailable")
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxRuntimeCapabilityMaterializationBytes+1))
+	if err != nil || len(data) == 0 || len(data) > maxRuntimeCapabilityMaterializationBytes {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+	}
+	var descriptor runtimeCapabilityMaterialization
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&descriptor) != nil || decoder.Decode(&struct{}{}) != io.EOF || descriptor.Version != 1 || len(descriptor.MCP) != len(mcp) || len(descriptor.Skills) != len(skills) {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+	}
+	byID := make(map[string]*workerruntimev1alpha1.RuntimeCapabilityBinding, len(mcp))
+	for _, binding := range mcp {
+		if _, exists := byID[binding.GetResourceId()]; exists {
+			return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+		}
+		byID[binding.GetResourceId()] = binding
+	}
+	for _, item := range descriptor.MCP {
+		binding := byID[item.ResourceID]
+		if binding == nil || item.Version != binding.GetVersion() || item.Digest != binding.GetDigest() || item.Transport != binding.GetTransport() || !validRuntimeMcpMaterialization(item) {
+			return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+		}
+		delete(byID, item.ResourceID)
+	}
+	if len(byID) != 0 {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+	}
+	skillByID := make(map[string]*workerruntimev1alpha1.RuntimeCapabilityBinding, len(skills))
+	for _, binding := range skills {
+		if _, exists := skillByID[binding.GetResourceId()]; exists {
+			return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+		}
+		skillByID[binding.GetResourceId()] = binding
+	}
+	for _, item := range descriptor.Skills {
+		binding := skillByID[item.ResourceID]
+		if binding == nil || item.Version != binding.GetVersion() || item.Digest != binding.GetDigest() || !validRuntimeSkillMaterialization(item) || item.Bundle != "" && !runtimeTrustedSkillKey(root, item.SigningKeyID, item.PublicKey) {
+			return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+		}
+		delete(skillByID, item.ResourceID)
+	}
+	if len(skillByID) != 0 {
+		return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_materialization_invalid", "capability materialization is invalid")
+	}
+	return data, nil
+}
+
+func validRuntimeMcpMaterialization(item runtimeMcpMaterialization) bool {
+	if commonv1alpha1.ValidateIdentifier(item.ResourceID, "/capability/resourceId") != nil || commonv1alpha1.ValidateIdentifier(item.Version, "/capability/version") != nil || !validRuntimeCapabilityDigest(item.Digest) || (item.Transport != "sse" && item.Transport != "streamable-http") || item.Token == "" || len(item.Token) > 4096 {
+		return false
+	}
+	for _, character := range item.Token {
+		if character < 33 || character > 126 {
+			return false
+		}
+	}
+	parsed, err := url.Parse(item.Endpoint)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && isRuntimeLoopbackHost(parsed.Hostname()))) || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if len(item.AllowedHosts) == 0 || len(item.AllowedHosts) > 32 {
+		return false
+	}
+	found := false
+	for _, allowed := range item.AllowedHosts {
+		if !validRuntimeMaterializationHost(allowed) {
+			return false
+		}
+		if strings.ToLower(strings.TrimSuffix(allowed, ".")) == host {
+			found = true
+		}
+	}
+	return found
+}
+
+func validRuntimeSkillMaterialization(item runtimeSkillMaterialization) bool {
+	if commonv1alpha1.ValidateIdentifier(item.ResourceID, "/capability/resourceId") != nil || commonv1alpha1.ValidateIdentifier(item.Version, "/capability/version") != nil || !validRuntimeCapabilityDigest(item.Digest) {
+		return false
+	}
+	return item.Bundle != "" && item.Signature != "" && item.PublicKey != "" && validRuntimeBase64URL(item.Bundle, 700000) && validRuntimeBase64URL(item.Signature, 256) && validRuntimeBase64URL(item.PublicKey, 256) && commonv1alpha1.ValidateIdentifier(item.SigningKeyID, "/capability/signingKeyId") == nil
+}
+
+func runtimeTrustedSkillKey(root *os.Root, keyID, encoded string) bool {
+	if root == nil || commonv1alpha1.ValidateIdentifier(keyID, "/capability/signingKeyId") != nil {
+		return false
+	}
+	file, err := root.Open(keyID + ".pub")
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || info.Size() < 1 || info.Size() > 256 {
+		return false
+	}
+	key, err := io.ReadAll(io.LimitReader(file, 257))
+	return err == nil && len(key) <= 256 && base64.RawURLEncoding.EncodeToString(key) == encoded
+}
+
+func validRuntimeBase64URL(value string, maximum int) bool {
+	if len(value) == 0 || len(value) > maximum {
+		return false
+	}
+	for _, character := range value {
+		if !(character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '_' || character == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func validRuntimeMaterializationHost(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && len(value) <= 253 && !strings.ContainsAny(value, " /:?#@\t\r\n")
+}
+
+func isRuntimeLoopbackHost(value string) bool {
+	host := strings.Trim(strings.ToLower(value), "[]")
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+}
+
+func validRuntimeCapabilityDigest(value string) bool {
+	if len(value) != 71 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[len("sha256:"):] {
+		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+type runtimeCapabilityManifest struct {
+	Version  uint32                           `json:"version"`
+	Bindings []runtimeCapabilityManifestEntry `json:"bindings"`
+}
+
+type runtimeCapabilityManifestEntry struct {
+	ResourceKind        string   `json:"resourceKind"`
+	ResourceID          string   `json:"resourceId"`
+	Version             string   `json:"version"`
+	Digest              string   `json:"digest"`
+	Transport           string   `json:"transport,omitempty"`
+	ConnectionRef       string   `json:"connectionRef,omitempty"`
+	CredentialRef       string   `json:"credentialRef,omitempty"`
+	GrantID             string   `json:"grantId"`
+	NetworkPolicyRef    string   `json:"networkPolicyRef,omitempty"`
+	ExpiresAtUnixSecond uint64   `json:"expiresAtUnixSeconds"`
+	Permissions         []string `json:"permissions,omitempty"`
+	ReadOnly            bool     `json:"readOnly"`
+}
+
+func validateRuntimeCapabilityBindings(open *workerruntimev1alpha1.RuntimeSessionOpen, now time.Time) ([]byte, error) {
+	bindings := open.GetCapabilityBindings()
+	if len(bindings) == 0 {
+		if open.GetCapabilityManifestDigest() != "" {
+			return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_manifest_invalid", "empty capability bindings must not carry a manifest digest")
+		}
+		return nil, nil
+	}
+	if len(bindings) > 32 {
+		return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_binding_invalid", "too many capability bindings")
+	}
+	manifest := runtimeCapabilityManifest{Version: 1, Bindings: make([]runtimeCapabilityManifestEntry, 0, len(bindings))}
+	seen := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if binding == nil || commonv1alpha1.ValidateIdentifier(binding.GetResourceId(), "/capabilityBindings/resourceId") != nil || commonv1alpha1.ValidateIdentifier(binding.GetVersion(), "/capabilityBindings/version") != nil || commonv1alpha1.ValidateIdentifier(binding.GetGrantId(), "/capabilityBindings/grantId") != nil {
+			return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_binding_invalid", "capability identity is invalid")
+		}
+		if _, err := fencingDigestBytes(binding.GetDigest()); err != nil {
+			return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_digest_invalid", "capability digest is invalid")
+		}
+		expiresAt := time.Unix(int64(binding.GetExpiresAtUnixSeconds()), 0).UTC()
+		if !expiresAt.After(now) || expiresAt.After(now.Add(15*time.Minute)) {
+			return nil, runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_grant_expired", "capability grant is expired or exceeds the short-lived window")
+		}
+		entry := runtimeCapabilityManifestEntry{ResourceKind: binding.GetResourceKind(), ResourceID: binding.GetResourceId(), Version: binding.GetVersion(), Digest: binding.GetDigest(), Transport: binding.GetTransport(), ConnectionRef: binding.GetConnectionRef(), CredentialRef: binding.GetCredentialRef(), GrantID: binding.GetGrantId(), NetworkPolicyRef: binding.GetNetworkPolicyRef(), ExpiresAtUnixSecond: binding.GetExpiresAtUnixSeconds(), Permissions: append([]string(nil), binding.GetPermissions()...), ReadOnly: binding.GetReadOnly()}
+		switch entry.ResourceKind {
+		case "mcp-server":
+			if entry.ReadOnly || entry.Transport != "stdio" && entry.Transport != "sse" && entry.Transport != "streamable-http" || commonv1alpha1.ValidateIdentifier(entry.ConnectionRef, "/capabilityBindings/connectionRef") != nil || commonv1alpha1.ValidateIdentifier(entry.CredentialRef, "/capabilityBindings/credentialRef") != nil || commonv1alpha1.ValidateIdentifier(entry.NetworkPolicyRef, "/capabilityBindings/networkPolicyRef") != nil || len(entry.Permissions) == 0 || len(entry.Permissions) > int(MaxRepeatedItems) {
+				return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_binding_invalid", "MCP capability binding is invalid")
+			}
+			for _, permission := range entry.Permissions {
+				if !runtimeCapabilityPermissionPattern.MatchString(permission) || strings.Contains(permission, "*") {
+					return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_permission_invalid", "MCP capability permission is invalid")
+				}
+			}
+		case "skill-bundle":
+			if !entry.ReadOnly || entry.Transport != "" || entry.ConnectionRef != "" || entry.CredentialRef != "" || entry.NetworkPolicyRef != "" || len(entry.Permissions) != 0 {
+				return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_binding_invalid", "Skill capability binding is invalid")
+			}
+		default:
+			return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_binding_invalid", "capability kind is unsupported")
+		}
+		key := entry.ResourceKind + "\x00" + entry.ResourceID + "\x00" + entry.Version + "\x00" + entry.Digest
+		if _, duplicate := seen[key]; duplicate {
+			return nil, runtimeSessionFailure(connect.CodeInvalidArgument, "capability_binding_invalid", "duplicate capability binding")
+		}
+		seen[key] = struct{}{}
+		manifest.Bindings = append(manifest.Bindings, entry)
+	}
+	encoded, err := json.Marshal(manifest)
+	if err != nil || len(encoded) > int(MaxPayloadBytes) {
+		return nil, runtimeSessionFailure(connect.CodeResourceExhausted, "capability_manifest_too_large", "capability manifest exceeds the Runtime limit")
+	}
+	sum := sha256.Sum256(encoded)
+	if open.GetCapabilityManifestDigest() != fmt.Sprintf("sha256:%x", sum[:]) {
+		return nil, runtimeSessionFailure(connect.CodePermissionDenied, "capability_manifest_digest_mismatch", "capability manifest digest does not match the opened session")
+	}
+	return encoded, nil
 }
 
 func runtimeCommandProvider(command runtimeprotocol.Command) (string, bool) {

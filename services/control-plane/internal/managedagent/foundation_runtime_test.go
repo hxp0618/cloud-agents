@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 )
@@ -113,6 +117,38 @@ func TestFoundationRuntimeBootstrapRunsWithoutATerminal(t *testing.T) {
 	}
 }
 
+func TestFoundationRuntimeInjectsOnlyDigestPinnedCapabilityManifest(t *testing.T) {
+	binding := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "skill-bundle", ResourceId: "skill-1", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64), GrantId: "grant-1", ExpiresAtUnixSeconds: 1_900_000_000, ReadOnly: true}
+	session := RuntimeSessionSnapshot{CapabilityBindings: []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}}
+	manifest := foundationCapabilityManifest{Version: 1, Bindings: []foundationCapabilityManifestRef{{ResourceKind: "skill-bundle", ResourceID: "skill-1", Version: "v1", Digest: binding.Digest, GrantID: "grant-1", ExpiresAtUnixSecond: binding.ExpiresAtUnixSeconds, ReadOnly: true}}}
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(encoded)
+	session.CapabilityManifestDigest = fmt.Sprintf("sha256:%x", sum[:])
+	got, err := foundationRuntimeCapabilityManifest(session)
+	if err != nil || string(got) != string(encoded) {
+		t.Fatalf("capability manifest = %q, %v", got, err)
+	}
+	command := foundationRuntimeCommandWithManifest(1, "codex", "docker", got)
+	if !strings.Contains(command, "CLOUD_AGENT_CAPABILITY_MANIFEST_B64="+base64.RawURLEncoding.EncodeToString(encoded)) {
+		t.Fatal("capability manifest was not injected")
+	}
+	materialization := []byte(`{"version":1,"mcp":[{"resourceId":"server-1","version":"v1","digest":"sha256:` + strings.Repeat("b", 64) + `","transport":"streamable-http","endpoint":"https://mcp.example.test/mcp","token":"short-lived","allowedHosts":["mcp.example.test"]}]}`)
+	command = strings.Replace(foundationRuntimeCommandWithMaterialization(1, len(materialization), "codex", "docker", encoded), "exec /usr/local/bin/cloud-agent-runtime", "cat <&4", 1)
+	process := exec.Command("sh", "-c", command)
+	process.Stdin = bytes.NewReader(append([]byte("x"), materialization...))
+	output, commandErr := process.CombinedOutput()
+	if commandErr != nil || !bytes.Contains(output, materialization) || !bytes.Contains(output, []byte(foundationRuntimeInputReady)) || strings.Contains(command, "short-lived") {
+		t.Fatalf("capability materialization bootstrap = %q, error = %v", output, commandErr)
+	}
+	session.CapabilityManifestDigest = "sha256:" + strings.Repeat("b", 64)
+	if _, err := foundationRuntimeCapabilityManifest(session); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("digest mismatch = %v", err)
+	}
+}
+
 func TestCloseFoundationRuntimeConnectionUsesNormalClose(t *testing.T) {
 	closeCode := make(chan int, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -166,5 +202,27 @@ func TestFoundationRuntimeStartsThroughOutboundRemoteWorkerWithoutPersistingCred
 	_ = session.CloseResponse()
 	if !remote.closed {
 		t.Fatal("remote Runtime session was not deleted")
+	}
+}
+
+func TestFoundationCapabilityMaterializationReadsOnlyExactTenantBinding(t *testing.T) {
+	root := t.TempDir()
+	digest := "sha256:" + strings.Repeat("a", 64)
+	binding := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "mcp-server", ResourceId: "server-1", Version: "v1", Digest: digest, Transport: "streamable-http", ConnectionRef: "connection-1", CredentialRef: "credential-1", GrantId: "grant-1", NetworkPolicyRef: "network-1", ExpiresAtUnixSeconds: 1_900_000_000, Permissions: []string{"mcp.call"}}
+	data := []byte(`{"version":1,"mcp":[{"resourceId":"server-1","version":"v1","digest":"` + digest + `","transport":"streamable-http","endpoint":"https://mcp.example.test/mcp","token":"short-lived","allowedHosts":["mcp.example.test"]}]}`)
+	if err := os.WriteFile(filepath.Join(root, "tenant-alpha.capabilities.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := foundationCapabilityMaterializationFile(root, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); err != nil || string(got) != string(data) {
+		t.Fatalf("materialization = %q, %v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tenant-alpha.capabilities.json"), append(data, []byte(`{}`)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := foundationCapabilityMaterializationFile(root, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("trailing materialization error = %v", err)
+	}
+	if _, err := foundationCapabilityMaterializationFile(root, "tenant-beta", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("missing tenant materialization error = %v", err)
 	}
 }

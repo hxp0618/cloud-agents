@@ -16,7 +16,9 @@ import { codexDeveloperInstructionsForMode } from "./codexCollaborationMode";
 import {
   codexAppServerArgumentsWithToolPolicyHook,
   codexExecutableConfigIsolationArguments,
+  codexMcpServersOverride,
   CODEX_TOOL_POLICY_THREAD_CONFIG,
+  isCodexManagedMcpInventoryAttested,
   isCodexRuntimeIsolationConfigAttested,
   isCodexToolPolicyHookAttested,
 } from "./codexRuntimeIsolation";
@@ -97,6 +99,15 @@ type CodexRunOptions = {
   toolPolicyHookCommand?: string;
   managedWriteReceiptDelayMs?: number;
   operation?: ProviderPrimaryOperation;
+  mcpServers?: Readonly<Record<string, { url: string; bearer_token_env_var: string }>>;
+  skillRoots?: ReadonlyArray<string>;
+  skillResourceId?: string;
+};
+
+type CodexSkillUserInput = {
+  type: "skill";
+  name: string;
+  path: string;
 };
 
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -107,6 +118,12 @@ const MAX_WIRE_LINE_BYTES = 4 * 1024 * 1024;
 const MAX_MANAGED_TEXT_FILE_BYTES = 1024 * 1024;
 const MANAGED_WORKSPACE_TOOL_NAMESPACE = "workspace";
 const MANAGED_WRITE_TEXT_FILE_TOOL_NAME = "write_text_file";
+
+// Codex derives MCP namespaces from the server name after replacing every
+// non-ASCII-alphanumeric/underscore character with an underscore.
+export function codexMcpToolNamespace(serverName: string): string {
+  return `mcp__${serverName}`.replace(/[^A-Za-z0-9_]/gu, "_") || "_";
+}
 export const MANAGED_CODEX_DYNAMIC_TOOLS = [
   {
     type: "namespace" as const,
@@ -133,14 +150,15 @@ export const MANAGED_CODEX_DYNAMIC_TOOLS = [
 ] as const;
 export const MANAGED_CODEX_APP_SERVER_ARGUMENTS = codexExecutableConfigIsolationArguments();
 
-export function managedCodexAppServerArguments(toolPolicyHookCommand?: string): readonly string[] {
+export function managedCodexAppServerArguments(
+  toolPolicyHookCommand?: string,
+  mcpServers: Readonly<Record<string, { url: string; bearer_token_env_var: string }>> = {},
+): readonly string[] {
+  const base = codexExecutableConfigIsolationArguments(codexMcpServersOverride(mcpServers));
   if (!toolPolicyHookCommand) {
-    return [...MANAGED_CODEX_APP_SERVER_ARGUMENTS];
+    return [...base];
   }
-  return codexAppServerArgumentsWithToolPolicyHook(
-    MANAGED_CODEX_APP_SERVER_ARGUMENTS,
-    toolPolicyHookCommand,
-  );
+  return codexAppServerArgumentsWithToolPolicyHook(base, toolPolicyHookCommand);
 }
 
 export function isManagedCodexToolPolicyHookAttested(
@@ -190,6 +208,8 @@ class CodexAppServerRuntime {
   private readonly completedCommandItems = new Set<string>();
   private readonly pendingManagedToolCalls = new Set<string>();
   private readonly deferredManagedToolCompletions = new Map<string, JsonRpcNotification>();
+  private readonly managedMcpItemCapabilities = new Map<string, string>();
+  private managedSkillInputs: CodexSkillUserInput[] = [];
   private readonly generatedFiles: WorkspaceGeneratedFileCollector;
   private readonly turnDiffs: TurnDiffCollector;
   private readonly outputText: string[] = [];
@@ -224,7 +244,7 @@ class CodexAppServerRuntime {
     });
     this.child = spawn(
       "codex",
-      [...managedCodexAppServerArguments(options.toolPolicyHookCommand)],
+      [...managedCodexAppServerArguments(options.toolPolicyHookCommand, options.mcpServers)],
       {
         cwd: options.input.workspaceDirectory,
         env: options.environment,
@@ -268,12 +288,14 @@ class CodexAppServerRuntime {
       });
       this.writeMessage({ method: "initialized", params: {} });
       await this.verifyManagedRuntimeIsolation();
+      this.managedSkillInputs = await this.configureManagedSkillRoots();
 
       const operation = this.options.operation?.commandType;
       const resumed = await this.openThread(
         operation === "CompactSession",
         operation === "StartReview",
       );
+      await this.verifyManagedMcpInventory();
       if (this.options.operation?.commandType === "CompactSession") {
         return await this.runCompact();
       }
@@ -283,7 +305,10 @@ class CodexAppServerRuntime {
       const prompt = resumed ? this.options.nativeResumePrompt : this.options.authoritativePrompt;
       const turnParams = {
         threadId: this.threadId,
-        input: [{ type: "text", text: prompt, text_elements: [] }],
+        input: [
+          ...this.managedSkillInputs,
+          { type: "text" as const, text: prompt, text_elements: [] },
+        ],
         ...(trimmedString(this.options.input.workload.model)
           ? { model: trimmedString(this.options.input.workload.model) }
           : {}),
@@ -333,8 +358,27 @@ class CodexAppServerRuntime {
       includeLayers: false,
       cwd: this.options.input.workspaceDirectory,
     });
-    if (!isCodexRuntimeIsolationConfigAttested(configResponse, [])) {
+    const expectedMcpServers = Object.entries(this.options.mcpServers ?? {}).map(
+      ([name, server]) => ({
+        name,
+        url: server.url,
+        bearerTokenEnvVar: server.bearer_token_env_var,
+      }),
+    );
+    if (!isCodexRuntimeIsolationConfigAttested(configResponse, expectedMcpServers)) {
       throw new Error("Codex managed runtime-isolation configuration attestation failed.");
+    }
+  }
+
+  private async verifyManagedMcpInventory(): Promise<void> {
+    const expectedServerNames = Object.keys(this.options.mcpServers ?? {});
+    if (expectedServerNames.length === 0 || !this.threadId) return;
+    const response = await this.sendRequest("mcpServerStatus/list", {
+      threadId: this.threadId,
+      detail: "toolsAndAuthOnly",
+    });
+    if (!isCodexManagedMcpInventoryAttested(response, expectedServerNames)) {
+      throw new Error("Codex managed MCP inventory attestation failed.");
     }
   }
 
@@ -399,9 +443,12 @@ class CodexAppServerRuntime {
     allowFreshThreadOnResumeFailure = false,
   ): Promise<boolean> {
     const recorded = this.options.input.workload.resumeSnapshot?.resumeRecordedInteractions;
-    const cursor = requireNativeResume || !Array.isArray(recorded) || !recorded.some((entry) => asRecord(entry)?.request)
-      ? trimmedString(this.options.input.providerResumeCursor)
-      : undefined;
+    const cursor =
+      requireNativeResume ||
+      !Array.isArray(recorded) ||
+      !recorded.some((entry) => asRecord(entry)?.request)
+        ? trimmedString(this.options.input.providerResumeCursor)
+        : undefined;
     const historyAvailable = hasAuthoritativeResumeData(
       this.options.input.workload,
       this.options.input.memoryDocuments,
@@ -413,6 +460,10 @@ class CodexAppServerRuntime {
       this.options.interactive,
       this.options.operation?.commandType === "GenerateText",
     );
+    const directOnlyToolNamespaces = [
+      MANAGED_WORKSPACE_TOOL_NAMESPACE,
+      ...new Set(Object.keys(this.options.mcpServers ?? {}).map(codexMcpToolNamespace)),
+    ];
     const common = {
       ...(trimmedString(this.options.input.workload.model)
         ? { model: trimmedString(this.options.input.workload.model) }
@@ -420,11 +471,9 @@ class CodexAppServerRuntime {
       cwd: this.options.input.workspaceDirectory,
       config: {
         ...(this.options.toolPolicyHookCommand ? CODEX_TOOL_POLICY_THREAD_CONFIG : {}),
-        features: {
-          code_mode: {
-            enabled: false,
-            direct_only_tool_namespaces: [MANAGED_WORKSPACE_TOOL_NAMESPACE],
-          },
+        "features.code_mode": {
+          enabled: false,
+          direct_only_tool_namespaces: directOnlyToolNamespaces,
         },
       },
       ...permissions,
@@ -488,7 +537,10 @@ class CodexAppServerRuntime {
     const startParams =
       this.options.operation?.commandType === "GenerateText"
         ? common
-        : { ...common, dynamicTools: MANAGED_CODEX_DYNAMIC_TOOLS };
+        : {
+            ...common,
+            dynamicTools: [...MANAGED_CODEX_DYNAMIC_TOOLS],
+          };
     this.applyThreadOpenResponse(
       asRecord(await this.sendRequest("thread/start", startParams)),
       "thread/start",
@@ -643,7 +695,10 @@ class CodexAppServerRuntime {
       const input = userInputPayload(requestId, params);
       const resumedAnswers = this.takeRecordedUserInput(input);
       if (resumedAnswers) {
-        this.writeMessage({ id: request.id, result: { answers: codexUserInputAnswers(resumedAnswers) } });
+        this.writeMessage({
+          id: request.id,
+          result: { answers: codexUserInputAnswers(resumedAnswers) },
+        });
         return;
       }
       this.pendingUserInputs.set(requestId, { jsonRpcId: request.id });
@@ -677,8 +732,15 @@ class CodexAppServerRuntime {
       readString(params, "turnId") === this.turnId &&
       !!callId;
     const tool = readString(params, "tool");
+    if (!validIdentity) {
+      this.writeMessage({
+        id: request.id,
+        result: managedDynamicToolResult(false, "Managed Workspace tool request rejected."),
+      });
+      if (callId) this.finishManagedToolCall(callId);
+      return;
+    }
     if (
-      !validIdentity ||
       tool !== MANAGED_WRITE_TEXT_FILE_TOOL_NAME ||
       readString(params, "namespace") !== MANAGED_WORKSPACE_TOOL_NAMESPACE
     ) {
@@ -686,7 +748,7 @@ class CodexAppServerRuntime {
         id: request.id,
         result: managedDynamicToolResult(false, "Managed Workspace tool request rejected."),
       });
-      if (callId) this.finishManagedToolCall(callId);
+      this.finishManagedToolCall(callId!);
       return;
     }
     this.pendingManagedToolCalls.add(callId);
@@ -726,6 +788,83 @@ class CodexAppServerRuntime {
       result: managedDynamicToolResult(true, `Wrote ${relativePath}`),
     });
     this.finishManagedToolCall(callId);
+  }
+
+  private async configureManagedSkillRoots(): Promise<CodexSkillUserInput[]> {
+    const roots = this.options.skillRoots ?? [];
+    if (roots.length === 0) return [];
+    const responseValue = await this.sendRequest("skills/extraRoots/set", {
+      extraRoots: [...roots],
+    });
+    const response = asRecord(responseValue);
+    if (!response || Object.keys(response).length > 0) {
+      throw new Error("Codex app-server returned an invalid managed Skill root response.");
+    }
+    const listed =
+      asRecord(
+        await this.sendRequest("skills/list", {
+          cwds: [this.options.input.workspaceDirectory],
+          forceReload: true,
+        }),
+      ) ?? {};
+    const entries = Array.isArray(listed.data) ? listed.data : [];
+    if (entries.length === 0) {
+      throw new Error("Codex app-server returned no managed Skill discovery entries.");
+    }
+    const managed = roots.map((root) => resolve(root));
+    const controlledHome = this.options.environment.CODEX_HOME
+      ? resolve(this.options.environment.CODEX_HOME)
+      : undefined;
+    const discovered = entries.flatMap((entry) =>
+      Array.isArray(asRecord(entry)?.skills) ? (asRecord(entry)!.skills as unknown[]) : [],
+    );
+    const managedSkills = discovered.filter((skill) => {
+      const path = readString(asRecord(skill), "path");
+      return (
+        path !== undefined && managed.some((root) => resolve(path).startsWith(`${root}${sep}`))
+      );
+    });
+    for (const skill of discovered) {
+      const skillRecord = asRecord(skill);
+      const path = readString(skillRecord, "path");
+      if (!path) {
+        throw new Error("Codex app-server returned a malformed Skill discovery entry.");
+      }
+      const normalized = resolve(path);
+      const scope = readString(skillRecord, "scope");
+      const isControlledSystemSkill =
+        scope === "system" &&
+        controlledHome !== undefined &&
+        (normalized === controlledHome || normalized.startsWith(`${controlledHome}${sep}`));
+      if (
+        !managed.some((root) => normalized === root || normalized.startsWith(`${root}${sep}`)) &&
+        !isControlledSystemSkill
+      ) {
+        throw new Error("Codex discovered a non-managed Skill outside the Host-owned roots.");
+      }
+    }
+    if (managedSkills.length === 0) {
+      throw new Error("Codex app-server did not discover the Host-managed Skill Bundle.");
+    }
+    return managedSkills.flatMap((skill) => {
+      const record = asRecord(skill);
+      const name = readString(record, "name");
+      const path = readString(record, "path");
+      return name && path ? [{ type: "skill", name, path }] : [];
+    });
+  }
+
+  private managedMcpCapabilityForItem(
+    item: Record<string, unknown> | undefined,
+  ): string | undefined {
+    if (readString(item, "type") !== "mcpToolCall") return undefined;
+    const server = readString(item, "server");
+    if (
+      !server?.startsWith("cloud_agents_") ||
+      !Object.prototype.hasOwnProperty.call(this.options.mcpServers ?? {}, server)
+    )
+      return undefined;
+    return server.slice("cloud_agents_".length);
   }
 
   private handleNotification(notification: JsonRpcNotification): void {
@@ -797,8 +936,12 @@ class CodexAppServerRuntime {
         const itemType = readString(item, "type");
         if (!itemType || itemType === "agentMessage" || itemType === "userMessage") return;
         const itemId = readString(item, "id");
+        const mcpCapabilityResourceId = this.managedMcpCapabilityForItem(item);
         if (notification.method === "item/started" && itemId && itemType === "dynamicToolCall") {
           this.pendingManagedToolCalls.add(itemId);
+        }
+        if (notification.method === "item/started" && itemId && mcpCapabilityResourceId) {
+          this.managedMcpItemCapabilities.set(itemId, mcpCapabilityResourceId);
         }
         if (
           notification.method === "item/started" &&
@@ -839,12 +982,15 @@ class CodexAppServerRuntime {
           terminal.output.flush();
         }
         const terminalBytes = terminal?.output.bytesWritten() ?? 0;
+        const capabilityResourceId =
+          mcpCapabilityResourceId ??
+          (itemId ? this.managedMcpItemCapabilities.get(itemId) : undefined);
         this.options.emit({
           type: "event",
           eventType: "runtime.provider.activity",
           payload: {
             provider: "codex",
-            itemType,
+            itemType: capabilityResourceId ? "mcp_tool_call" : itemType,
             status:
               notification.method === "item/started"
                 ? "started"
@@ -854,6 +1000,12 @@ class CodexAppServerRuntime {
                     ? "failed"
                     : "completed",
             ...(itemId ? { itemId } : {}),
+            ...(itemType === "skill" ? { sourceItemType: "skill" } : {}),
+            ...(itemType === "skill" && this.options.skillResourceId
+              ? { capabilityResourceId: this.options.skillResourceId }
+              : capabilityResourceId
+                ? { capabilityResourceId }
+                : {}),
             ...(terminal
               ? {
                   terminalId: terminal.terminalId,
@@ -931,6 +1083,9 @@ class CodexAppServerRuntime {
             item: item ?? {},
             ...(readString(params, "turnId") ? { turnId: readString(params, "turnId") } : {}),
           });
+        }
+        if (notification.method === "item/completed" && itemId) {
+          this.managedMcpItemCapabilities.delete(itemId);
         }
         return;
       }
@@ -1102,6 +1257,9 @@ class CodexAppServerRuntime {
       );
       return;
     }
+    if (pending.method === "turn/start" || pending.method === "review/start") {
+      this.turnId = readString(asRecord(asRecord(response.result)?.turn), "id") ?? this.turnId;
+    }
     pending.resolve(response.result);
   }
 
@@ -1119,16 +1277,25 @@ class CodexAppServerRuntime {
   }
 
   private takeRecordedApproval(payload: Record<string, unknown>): "accept" | "decline" | undefined {
-    const entry = this.takeRecordedInteraction("approval", (request) => sameResumeApproval(request, payload));
+    const entry = this.takeRecordedInteraction("approval", (request) =>
+      sameResumeApproval(request, payload),
+    );
     if (!entry) return;
-    return readString(asRecord(entry.resolution), "decision") === "accept" && this.resumeOutcome() !== "confirmed" ? "accept" : "decline";
+    return readString(asRecord(entry.resolution), "decision") === "accept" &&
+      this.resumeOutcome() !== "confirmed"
+      ? "accept"
+      : "decline";
   }
 
-  private takeRecordedUserInput(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  private takeRecordedUserInput(
+    payload: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
     if (this.resumeOutcome() === "confirmed") return;
-    const entry = this.takeRecordedInteraction("user-input", (request) =>
-      request?.requestId === payload.requestId ||
-      JSON.stringify(request?.questions ?? null) === JSON.stringify(payload.questions ?? null),
+    const entry = this.takeRecordedInteraction(
+      "user-input",
+      (request) =>
+        request?.requestId === payload.requestId ||
+        JSON.stringify(request?.questions ?? null) === JSON.stringify(payload.questions ?? null),
     );
     return entry ? asRecord(asRecord(entry.resolution)?.answers) : undefined;
   }

@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
@@ -33,6 +34,8 @@ import (
 // the PostgreSQL store and each call carries the verified principal.
 type DurableRuntimeExecutionStore interface {
 	GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (RuntimeSessionSnapshot, error)
+	ResolveManagedAgentCapabilityBindings(context.Context, string, *authn.VerifiedPrincipal, string, string, string, []McpServerRef, []SkillBundleRef) ([]*workerruntimev1alpha1.RuntimeCapabilityBinding, string, error)
+	RecordManagedAgentCapabilityEvent(context.Context, string, *authn.VerifiedPrincipal, CapabilityEventInput) error
 	GetManagedAgentSessionForArtifact(context.Context, string, *authn.VerifiedPrincipal, string, string) (RuntimeSessionSnapshot, error)
 	FindManagedAgentTurnForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string, string) (TurnSnapshot, bool, error)
 	CreateManagedAgentTurn(context.Context, string, *authn.VerifiedPrincipal, CreateTurnInput) (TurnSnapshot, error)
@@ -78,6 +81,8 @@ type DurableRuntimeExecutionInput struct {
 	RuntimeMode     string
 	InteractionMode string
 	InputText       string
+	McpServerRefs   []McpServerRef
+	SkillBundleRefs []SkillBundleRef
 	Mutation        Mutation
 }
 
@@ -399,7 +404,7 @@ func (worker runtimeWorker) open(ctx context.Context, principalSource VerifiedPr
 	}
 	return worker.supervisor.OpenRuntimeSession(ctx, tenantID, executionID, providerKind, worker.generation, &workerv1alpha1.FencingProof{
 		LeaseId: worker.leaseID, Generation: worker.generation, Token: append([]byte(nil), fencingToken...),
-	})
+	}, workerclient.RuntimeSessionOptions{CapabilityBindings: worker.session.CapabilityBindings, CapabilityManifestDigest: worker.session.CapabilityManifestDigest})
 }
 
 func (worker runtimeWorker) readArtifact(ctx context.Context, principalSource VerifiedPrincipalSource, executionID string, fencingToken []byte, rootDirectory, relativePath string, expectedSize *uint64, expectedSHA256 string) ([]byte, error) {
@@ -826,9 +831,31 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
-	execution, err := coordinator.store.CreateManagedAgentExecution(runCtx, input.Scope.TenantID, principal, CreateExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: turn.TurnID, ExecutionID: input.ExecutionID, Generation: worker.generation, Mutation: input.Mutation})
+	execution, err := coordinator.store.CreateManagedAgentExecution(runCtx, input.Scope.TenantID, principal, CreateExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: turn.TurnID, ExecutionID: input.ExecutionID, Generation: worker.generation, McpServerRefs: input.McpServerRefs, SkillBundleRefs: input.SkillBundleRefs, Mutation: input.Mutation})
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
+	}
+	// Execution references are authoritative for this attempt. Resolve them
+	// after the idempotent create so retries use the persisted binding set and
+	// revoked capabilities fail closed before any Runtime side effect.
+	if len(execution.McpServerRefs) != 0 || len(execution.SkillBundleRefs) != 0 {
+		principal, err = nextVerifiedPrincipal(principalSource)
+		if err != nil {
+			return DurableRuntimeExecutionResult{}, err
+		}
+		session.CapabilityBindings, session.CapabilityManifestDigest, err = coordinator.store.ResolveManagedAgentCapabilityBindings(runCtx, input.Scope.TenantID, principal, input.Scope.ProjectID, input.SessionID, session.ProviderKind, execution.McpServerRefs, execution.SkillBundleRefs)
+		if err != nil {
+			if eventErr := coordinator.recordCapabilityResolutionFailureEvent(runCtx, principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, err); eventErr != nil {
+				err = errors.Join(err, eventErr)
+			}
+			return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, err
+		}
+		// workerForSession snapshots the Session. Keep that snapshot aligned with
+		// the persisted Execution pins before opening any Runtime transport.
+		worker.session = session
+		if err := coordinator.recordCapabilityAdmissionEvents(runCtx, principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings); err != nil {
+			return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, err
+		}
 	}
 	recoveringExecution := execution.State == ExecutionRunning
 	if execution.State == ExecutionRunning {
@@ -838,6 +865,9 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		}
 	}
 	if execution.State != ExecutionQueued && execution.State != ExecutionRunning {
+		if err := coordinator.recordCapabilityRuntimeOutcomeEvents(runCtx, principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, execution.Messages); err != nil {
+			return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, err
+		}
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, nil
 	}
 	fenceRuntimeWriter := func() error {
@@ -964,11 +994,31 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		if claim.CheckpointSequence > 0 && recoverableRuntimeTransportError(err) {
 			return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, fmt.Errorf("%w: %v", ErrRuntimeEnvironmentUnavailable, err)
 		}
-		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err, claim)
+		failed, failErr := coordinator.fail(principalSource, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err, claim)
+		if eventErr := coordinator.recordCapabilityExecutionFailureEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, runtimeResult.FailureCode); eventErr != nil {
+			failErr = errors.Join(failErr, eventErr)
+		}
+		if eventErr := coordinator.recordCapabilityRuntimeOutcomeEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, runtimeResult.Messages); eventErr != nil {
+			failErr = errors.Join(failErr, eventErr)
+		}
+		if eventErr := coordinator.recordPendingCapabilityFailureEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, runtimeResult.Messages); eventErr != nil {
+			failErr = errors.Join(failErr, eventErr)
+		}
+		return failed, failErr
 	}
 	if runtimeResult.Terminal.MessageType == "Error" {
 		code := runtimeFailureCode(runtimeResult.Terminal, "runtime_failed")
-		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, code, errors.New(code), claim)
+		failed, failErr := coordinator.fail(principalSource, input, started, runtimeResult.Messages, code, errors.New(code), claim)
+		if eventErr := coordinator.recordCapabilityExecutionFailureEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, code); eventErr != nil {
+			failErr = errors.Join(failErr, eventErr)
+		}
+		if eventErr := coordinator.recordCapabilityRuntimeOutcomeEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, runtimeResult.Messages); eventErr != nil {
+			failErr = errors.Join(failErr, eventErr)
+		}
+		if eventErr := coordinator.recordPendingCapabilityFailureEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, runtimeResult.Messages); eventErr != nil {
+			failErr = errors.Join(failErr, eventErr)
+		}
+		return failed, failErr
 	}
 	terminal := publicRuntimeMessage(runtimeResult.Terminal)
 	digest, err := RuntimeMessageDigest(terminal)
@@ -990,7 +1040,336 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if claim.AttemptNumber > 1 {
 		completed.Execution.RecoveryState = "recovered"
 	}
+	if err := coordinator.recordCapabilityRuntimeOutcomeEvents(context.Background(), principalSource, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, worker.generation, session.CapabilityBindings, runtimeResult.Messages); err != nil {
+		return DurableRuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, err
+	}
 	return DurableRuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) recordCapabilityAdmissionEvents(
+	ctx context.Context,
+	principalSource VerifiedPrincipalSource,
+	scope Scope,
+	sessionID, turnID, executionID string,
+	generation uint64,
+	bindings []*workerruntimev1alpha1.RuntimeCapabilityBinding,
+) error {
+	for _, binding := range bindings {
+		if binding == nil {
+			return ErrInvalidInput
+		}
+		resource := ResourceKind("")
+		resourceID := binding.GetResourceId()
+		operation := ""
+		switch binding.GetResourceKind() {
+		case "mcp-server":
+			resource, operation = ResourceMcpServer, "mcp.call"
+		case "skill-bundle":
+			resource, operation = ResourceSkillBundle, "skill.load"
+		default:
+			return ErrInvalidInput
+		}
+		event := CapabilityEventInput{
+			Scope: scope, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, Generation: generation,
+			Operation: operation, Resource: resource, ResourceID: resourceID, Version: binding.GetVersion(),
+			Digest: binding.GetDigest(), Result: "accepted",
+		}
+		event.MutationDigest = CapabilityEventMutationDigest(event)
+		principal, err := nextVerifiedPrincipal(principalSource)
+		if err != nil {
+			return err
+		}
+		if err := coordinator.store.RecordManagedAgentCapabilityEvent(ctx, scope.TenantID, principal, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) recordCapabilityResolutionFailureEvent(
+	ctx context.Context,
+	principalSource VerifiedPrincipalSource,
+	scope Scope,
+	sessionID, turnID, executionID string,
+	generation uint64,
+	cause error,
+) error {
+	var failure *CapabilityResolutionFailure
+	if !errors.As(cause, &failure) {
+		return nil
+	}
+	operation, result := "", "failed"
+	switch failure.Resource {
+	case ResourceMcpServer:
+		operation = "mcp.fail"
+	case ResourceSkillBundle:
+		operation = "skill.fail"
+	default:
+		return ErrInvalidInput
+	}
+	if failure.Reason == "revoked" {
+		operation = strings.TrimSuffix(operation, ".fail") + ".revoke"
+		result = "revoked"
+	}
+	event := CapabilityEventInput{
+		Scope: scope, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, Generation: generation,
+		Operation: operation, Resource: failure.Resource, ResourceID: failure.ResourceID,
+		Version: failure.Version, Digest: failure.Digest, Result: result,
+		ErrorCode: "capability_" + failure.Reason,
+	}
+	event.MutationDigest = CapabilityEventMutationDigest(event)
+	principal, err := nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return err
+	}
+	return coordinator.store.RecordManagedAgentCapabilityEvent(ctx, scope.TenantID, principal, event)
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) recordCapabilityExecutionFailureEvents(
+	ctx context.Context,
+	principalSource VerifiedPrincipalSource,
+	scope Scope,
+	sessionID, turnID, executionID string,
+	generation uint64,
+	bindings []*workerruntimev1alpha1.RuntimeCapabilityBinding,
+	errorCode string,
+) error {
+	if errorCode != "capability_unsupported" {
+		return nil
+	}
+	for _, binding := range bindings {
+		if binding == nil {
+			return ErrInvalidInput
+		}
+		resource, operation := ResourceKind(""), ""
+		switch binding.GetResourceKind() {
+		case "mcp-server":
+			resource, operation = ResourceMcpServer, "mcp.fail"
+		case "skill-bundle":
+			resource, operation = ResourceSkillBundle, "skill.fail"
+		default:
+			return ErrInvalidInput
+		}
+		event := CapabilityEventInput{
+			Scope: scope, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, Generation: generation,
+			Operation: operation, Resource: resource, ResourceID: binding.GetResourceId(), Version: binding.GetVersion(),
+			Digest: binding.GetDigest(), Result: "failed", ErrorCode: errorCode,
+		}
+		event.MutationDigest = CapabilityEventMutationDigest(event)
+		principal, err := nextVerifiedPrincipal(principalSource)
+		if err != nil {
+			return err
+		}
+		if err := coordinator.store.RecordManagedAgentCapabilityEvent(ctx, scope.TenantID, principal, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) recordCapabilityRuntimeOutcomeEvents(
+	ctx context.Context,
+	principalSource VerifiedPrincipalSource,
+	scope Scope,
+	sessionID, turnID, executionID string,
+	generation uint64,
+	bindings []*workerruntimev1alpha1.RuntimeCapabilityBinding,
+	messages []runtimeprotocol.Message,
+) error {
+	type bindingKey struct {
+		resource ResourceKind
+		id       string
+	}
+	byID := make(map[bindingKey]*workerruntimev1alpha1.RuntimeCapabilityBinding, len(bindings))
+	for _, binding := range bindings {
+		if binding != nil {
+			resource := capabilityResourceKind(binding.GetResourceKind())
+			if resource != "" {
+				byID[bindingKey{resource: resource, id: binding.GetResourceId()}] = binding
+			}
+		}
+	}
+	written := make(map[string]struct{})
+	for _, message := range messages {
+		if message.MessageType != "Event" || message.Payload["eventType"] != "item.completed" {
+			continue
+		}
+		payload, _ := message.Payload["payload"].(map[string]any)
+		data, _ := payload["data"].(map[string]any)
+		resourceID, _ := data["capabilityResourceId"].(string)
+		resource := capabilityRuntimeEventResource(payload)
+		if resource == "" {
+			continue
+		}
+		binding := byID[bindingKey{resource: resource, id: resourceID}]
+		operation := "mcp.call"
+		if resource == ResourceSkillBundle {
+			operation = "skill.load"
+		}
+		if binding == nil {
+			continue
+		}
+		status, _ := payload["status"].(string)
+		result, errorCode := "succeeded", ""
+		switch status {
+		case "completed":
+		case "failed":
+			operation, result, errorCode = capabilityFailureOperation(resource), "failed", "capability_call_failed"
+		case "declined":
+			operation, result, errorCode = capabilityFailureOperation(resource), "failed", "capability_call_declined"
+		default:
+			continue
+		}
+		resultDigest, err := RuntimeMessageDigest(publicRuntimeMessage(message))
+		if err != nil {
+			return err
+		}
+		event := CapabilityEventInput{
+			Scope: scope, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, Generation: generation,
+			Operation: operation, Resource: resource, ResourceID: resourceID, Version: binding.GetVersion(),
+			Digest: binding.GetDigest(), Result: result, ResultDigest: resultDigest, ErrorCode: errorCode,
+		}
+		event.MutationDigest = CapabilityEventMutationDigest(event)
+		if _, exists := written[event.MutationDigest]; exists {
+			continue
+		}
+		written[event.MutationDigest] = struct{}{}
+		principal, err := nextVerifiedPrincipal(principalSource)
+		if err != nil {
+			return err
+		}
+		if err := coordinator.store.RecordManagedAgentCapabilityEvent(ctx, scope.TenantID, principal, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) recordPendingCapabilityFailureEvents(
+	ctx context.Context,
+	principalSource VerifiedPrincipalSource,
+	scope Scope,
+	sessionID, turnID, executionID string,
+	generation uint64,
+	bindings []*workerruntimev1alpha1.RuntimeCapabilityBinding,
+	messages []runtimeprotocol.Message,
+) error {
+	type bindingKey struct {
+		resource ResourceKind
+		id       string
+	}
+	byID := make(map[bindingKey]*workerruntimev1alpha1.RuntimeCapabilityBinding, len(bindings))
+	for _, binding := range bindings {
+		if binding != nil {
+			resource := capabilityResourceKind(binding.GetResourceKind())
+			if resource != "" {
+				byID[bindingKey{resource: resource, id: binding.GetResourceId()}] = binding
+			}
+		}
+	}
+	type pendingCapability struct {
+		resource   ResourceKind
+		resourceID string
+		message    runtimeprotocol.Message
+	}
+	type pendingKey struct {
+		resource   ResourceKind
+		resourceID string
+		itemID     string
+	}
+	pending := make(map[pendingKey]pendingCapability)
+	order := make([]pendingKey, 0)
+	for _, message := range messages {
+		if message.MessageType != "Event" {
+			continue
+		}
+		eventType, _ := message.Payload["eventType"].(string)
+		payload, _ := message.Payload["payload"].(map[string]any)
+		data, _ := payload["data"].(map[string]any)
+		itemID, _ := data["providerItemId"].(string)
+		if itemID == "" {
+			continue
+		}
+		resourceID, _ := data["capabilityResourceId"].(string)
+		resource := capabilityRuntimeEventResource(payload)
+		if resource == "" {
+			continue
+		}
+		key := pendingKey{resource: resource, resourceID: resourceID, itemID: itemID}
+		if eventType == "item.completed" {
+			delete(pending, key)
+			continue
+		}
+		if eventType != "item.started" && eventType != "item.updated" {
+			continue
+		}
+		binding := byID[bindingKey{resource: resource, id: resourceID}]
+		if binding == nil {
+			continue
+		}
+		if _, exists := pending[key]; !exists {
+			order = append(order, key)
+			pending[key] = pendingCapability{resource: resource, resourceID: resourceID, message: message}
+		}
+	}
+	for _, key := range order {
+		activity, exists := pending[key]
+		if !exists {
+			continue
+		}
+		binding := byID[bindingKey{resource: activity.resource, id: activity.resourceID}]
+		inputDigest, err := RuntimeMessageDigest(publicRuntimeMessage(activity.message))
+		if err != nil {
+			return err
+		}
+		event := CapabilityEventInput{
+			Scope: scope, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, Generation: generation,
+			Operation: capabilityFailureOperation(activity.resource), Resource: activity.resource, ResourceID: activity.resourceID,
+			Version: binding.GetVersion(), Digest: binding.GetDigest(), Result: "failed", InputDigest: inputDigest,
+			ErrorCode: "capability_call_unknown",
+		}
+		event.MutationDigest = CapabilityEventMutationDigest(event)
+		principal, err := nextVerifiedPrincipal(principalSource)
+		if err != nil {
+			return err
+		}
+		if err := coordinator.store.RecordManagedAgentCapabilityEvent(ctx, scope.TenantID, principal, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func capabilityResourceKind(value string) ResourceKind {
+	switch value {
+	case "mcp-server":
+		return ResourceMcpServer
+	case "skill-bundle":
+		return ResourceSkillBundle
+	default:
+		return ""
+	}
+}
+
+func capabilityRuntimeEventResource(payload map[string]any) ResourceKind {
+	itemType, _ := payload["itemType"].(string)
+	data, _ := payload["data"].(map[string]any)
+	sourceItemType, _ := data["sourceItemType"].(string)
+	switch {
+	case itemType == "mcp_tool_call":
+		return ResourceMcpServer
+	case itemType == "dynamic_tool_call" && sourceItemType == "skill":
+		return ResourceSkillBundle
+	default:
+		return ""
+	}
+}
+
+func capabilityFailureOperation(resource ResourceKind) string {
+	if resource == ResourceSkillBundle {
+		return "skill.fail"
+	}
+	return "mcp.fail"
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(key durableExecutionKey, cancel context.CancelFunc) (*activeDurableExecution, func() bool, error) {

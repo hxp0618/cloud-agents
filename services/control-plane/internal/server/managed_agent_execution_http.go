@@ -162,7 +162,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentExecutionRequest{}, []string{"turnId", "executionId", "model", "runtimeMode", "interactionMode", "inputText"}, []string{"turnId", "executionId", "inputText"})
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentExecutionRequest{}, []string{"turnId", "executionId", "model", "runtimeMode", "interactionMode", "inputText", "mcpServerRefs", "skillBundleRefs"}, []string{"turnId", "executionId", "inputText"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
@@ -206,6 +206,11 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 			return
 		}
 	}
+	mcpServerRefs, skillBundleRefs, _, err := managedAgentCapabilityRefs(fields)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
 	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
@@ -227,6 +232,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 	result, err := server.runner.Execute(request.Context(), principalSource, internalmanagedagent.DurableRuntimeExecutionInput{
 		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
 		TurnID: turnID, ExecutionID: executionID, Model: model, RuntimeMode: runtimeMode, InteractionMode: interactionMode, InputText: inputText,
+		McpServerRefs: mcpServerRefs, SkillBundleRefs: skillBundleRefs,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
@@ -428,12 +434,14 @@ func runtimeExecutionReference(tenantID, projectID, sessionID, turnID, execution
 }
 
 type managedAgentExecutionRequest struct {
-	TurnID          string `json:"turnId"`
-	ExecutionID     string `json:"executionId"`
-	Model           string `json:"model,omitempty"`
-	RuntimeMode     string `json:"runtimeMode,omitempty"`
-	InteractionMode string `json:"interactionMode,omitempty"`
-	InputText       string `json:"inputText"`
+	TurnID          string                                 `json:"turnId"`
+	ExecutionID     string                                 `json:"executionId"`
+	Model           string                                 `json:"model,omitempty"`
+	RuntimeMode     string                                 `json:"runtimeMode,omitempty"`
+	InteractionMode string                                 `json:"interactionMode,omitempty"`
+	InputText       string                                 `json:"inputText"`
+	McpServerRefs   []openapiv1.ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs []openapiv1.ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
 }
 
 type managedAgentExecutionCancelBody struct {
@@ -521,18 +529,20 @@ type managedAgentExecutionMetadata struct {
 }
 
 type managedAgentExecutionSpec struct {
-	Generation             uint64                           `json:"generation"`
-	State                  string                           `json:"state"`
-	AttemptNumber          uint64                           `json:"attemptNumber"`
-	RecoveryState          string                           `json:"recoveryState"`
-	RecoveryReason         string                           `json:"recoveryReason,omitempty"`
-	RecoveryMode           string                           `json:"recoveryMode,omitempty"`
-	RecoverySourceTargetID string                           `json:"recoverySourceTargetId,omitempty"`
-	RecoveryTargetID       string                           `json:"recoveryTargetId,omitempty"`
-	ClaimExpiresAt         string                           `json:"claimExpiresAt,omitempty"`
-	Checkpoint             *managedAgentExecutionCheckpoint `json:"checkpoint,omitempty"`
-	ResultDigest           string                           `json:"resultDigest,omitempty"`
-	ErrorCode              string                           `json:"errorCode,omitempty"`
+	Generation             uint64                                 `json:"generation"`
+	State                  string                                 `json:"state"`
+	AttemptNumber          uint64                                 `json:"attemptNumber"`
+	RecoveryState          string                                 `json:"recoveryState"`
+	RecoveryReason         string                                 `json:"recoveryReason,omitempty"`
+	RecoveryMode           string                                 `json:"recoveryMode,omitempty"`
+	RecoverySourceTargetID string                                 `json:"recoverySourceTargetId,omitempty"`
+	RecoveryTargetID       string                                 `json:"recoveryTargetId,omitempty"`
+	ClaimExpiresAt         string                                 `json:"claimExpiresAt,omitempty"`
+	Checkpoint             *managedAgentExecutionCheckpoint       `json:"checkpoint,omitempty"`
+	ResultDigest           string                                 `json:"resultDigest,omitempty"`
+	ErrorCode              string                                 `json:"errorCode,omitempty"`
+	McpServerRefs          []openapiv1.ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs        []openapiv1.ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
 }
 
 type managedAgentExecutionCheckpoint struct {
@@ -558,7 +568,7 @@ func managedAgentExecutionResourceFromSnapshot(execution internalmanagedagent.Ex
 	if recoveryState == "" {
 		recoveryState = "none"
 	}
-	spec := managedAgentExecutionSpec{Generation: execution.Generation, State: string(execution.State), AttemptNumber: execution.AttemptNumber, RecoveryState: recoveryState, RecoveryReason: execution.RecoveryReason, RecoveryMode: execution.RecoveryMode, RecoverySourceTargetID: execution.RecoverySourceTargetID, RecoveryTargetID: execution.RecoveryTargetID, ResultDigest: execution.ResultDigest, ErrorCode: execution.ErrorCode}
+	spec := managedAgentExecutionSpec{Generation: execution.Generation, State: string(execution.State), AttemptNumber: execution.AttemptNumber, RecoveryState: recoveryState, RecoveryReason: execution.RecoveryReason, RecoveryMode: execution.RecoveryMode, RecoverySourceTargetID: execution.RecoverySourceTargetID, RecoveryTargetID: execution.RecoveryTargetID, ResultDigest: execution.ResultDigest, ErrorCode: execution.ErrorCode, McpServerRefs: managedAgentMcpServerRefs(execution.McpServerRefs), SkillBundleRefs: managedAgentSkillBundleRefs(execution.SkillBundleRefs)}
 	if !execution.ClaimExpiresAt.IsZero() {
 		spec.ClaimExpiresAt = execution.ClaimExpiresAt.UTC().Format(timeFormat)
 	}
@@ -690,6 +700,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "execution_in_progress"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeEnvironmentUnavailable):
 		return http.StatusConflict, "environment_unavailable"
+	case errors.Is(err, postgres.ErrManagedAgentCapabilityUnavailable):
+		return http.StatusConflict, "capability_unavailable"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeRecoveryRequiresUserAction):
 		return http.StatusConflict, "recovery_requires_reconciliation"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeCapacityExhausted):

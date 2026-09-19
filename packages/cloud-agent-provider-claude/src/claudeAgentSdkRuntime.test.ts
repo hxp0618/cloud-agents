@@ -34,6 +34,89 @@ const startProviderHostRun = startClaudeProviderRun as (
 process.env[PROVIDER_OUTER_SANDBOX_PROFILE_ENV] = "single-tenant-trusted-v1";
 
 describe("Claude Agent SDK runtime", () => {
+  it("projects only the bound opaque ID for a managed MCP tool outcome", async () => {
+    const messages: RunnerMessage[] = [];
+    const capabilityManifest = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        bindings: [
+          {
+            resourceKind: "mcp-server",
+            resourceId: "mcp-1",
+            version: "v1",
+            digest: "sha256:" + "a".repeat(64),
+            transport: "streamable-http",
+            connectionRef: "connection-1",
+            credentialRef: "credential-1",
+            grantId: "grant-1",
+            networkPolicyRef: "policy-1",
+            expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 60,
+            permissions: ["tools.call"],
+            readOnly: false,
+          },
+        ],
+      }),
+    ).toString("base64url");
+    const queryFactory: ClaudeQueryFactory = () =>
+      fakeQuery(
+        (async function* () {
+          yield sdkMessage(systemInit("session-mcp", "claude-test"));
+          yield sdkMessage({
+            type: "assistant",
+            session_id: "session-mcp",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "mcp-call-1",
+                  name: "mcp__cloud_agents_mcp-1__read",
+                  input: { secret: "must-not-cross-the-wire" },
+                },
+              ],
+            },
+          });
+          yield sdkMessage({
+            type: "user",
+            session_id: "session-mcp",
+            message: {
+              content: [
+                { type: "tool_result", tool_use_id: "mcp-call-1", content: "opaque result" },
+              ],
+            },
+          });
+          yield sdkMessage(successResult("session-mcp", "done", {}));
+        })(),
+      );
+    const run = startProviderHostRun(
+      claudeInput({ inputText: "call managed MCP" }),
+      null,
+      (message) => messages.push(message),
+      {
+        claudeQueryFactory: queryFactory,
+        environment: {
+          [PROVIDER_OUTER_SANDBOX_PROFILE_ENV]: "single-tenant-trusted-v1",
+          CLOUD_AGENT_CAPABILITY_MANIFEST_B64: capabilityManifest,
+          CLOUD_AGENT_MCP_BROKER_URL: "http://127.0.0.1:48123/mcp",
+          CLOUD_AGENT_MCP_TOKEN_MCP_1: "runtime-token",
+        },
+      },
+    );
+
+    await expect(run.result).resolves.toMatchObject({ output: { text: "done" } });
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        eventType: "runtime.provider.activity",
+        payload: expect.objectContaining({
+          itemType: "mcp__cloud_agents_mcp-1__read",
+          status: "completed",
+          capabilityResourceId: "mcp-1",
+        }),
+      }),
+    );
+    expect(JSON.stringify(messages)).not.toContain("must-not-cross-the-wire");
+    expect(JSON.stringify(messages)).not.toContain("runtime-token");
+  });
+
   it("stores an oversized native tool Diff as a Runtime Output ArtifactCandidate", async () => {
     const testDirectory = mkdtempSync(join(tmpdir(), "cloud-agents-claude-large-diff-"));
     const canonicalWorkspaceDirectory = join(testDirectory, "workspace");
@@ -1016,6 +1099,19 @@ describe("Claude Agent SDK runtime", () => {
                 tool_input: {},
                 tool_response: { answers: { Environment: "Staging" } },
                 tool_use_id: "trusted-user-answer",
+              } as never,
+              undefined,
+              { signal: new AbortController().signal },
+            ),
+          ).toEqual({ continue: true });
+          expect(
+            await postToolUse?.(
+              {
+                hook_event_name: "PostToolUse",
+                tool_name: "mcp__cloud_agents_mcp-1__capability_marker",
+                tool_input: {},
+                tool_response: [{ type: "text", text: "untrusted MCP result" }],
+                tool_use_id: "mcp-result-shape",
               } as never,
               undefined,
               { signal: new AbortController().signal },

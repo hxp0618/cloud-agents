@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/mcp-server.schema.json",
+  "title": "McpServer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "McpServer" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "version", "digest", "transport", "connectionRef", "credentialRef", "networkPolicyRef", "permissions", "status"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "version": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "transport": { "enum": ["stdio", "sse", "streamable-http"] },
+        "connectionRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "networkPolicyRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "permissions": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9._:-]{0,127}$" } },
+        "status": { "enum": ["active", "revoked"] },
+        "revokedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "connectionRef, credentialRef and networkPolicyRef are opaque Control Plane references; endpoint material and credentials never appear in this resource",
+    "a revoked MCP Server is rejected before every call and cannot be rebound"
+  ]
+}

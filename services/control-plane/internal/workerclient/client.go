@@ -47,9 +47,9 @@ const (
 
 var errInvalidConfig = errors.New("worker client configuration is invalid")
 
-// ErrRuntimeProcessUnavailable identifies a Worker Runtime process exit after
-// the stream was opened. Durable execution may recover from this only after a
-// persisted checkpoint has been written.
+// ErrRuntimeProcessUnavailable identifies a Worker Runtime stream interruption
+// after the stream was opened. Durable execution may recover from this only
+// after a persisted checkpoint has been written.
 var ErrRuntimeProcessUnavailable = errors.New("worker runtime process unavailable")
 
 type Clock func() time.Time
@@ -200,8 +200,13 @@ type RuntimeSession struct {
 	sendMu     sync.Mutex
 }
 
-func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
-	return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, true)
+type RuntimeSessionOptions struct {
+	CapabilityBindings       []*workerruntimev1alpha1.RuntimeCapabilityBinding
+	CapabilityManifestDigest string
+}
+
+func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, options ...RuntimeSessionOptions) (*RuntimeSession, error) {
+	return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, true, options...)
 }
 
 func (supervisor *Supervisor) ReadRuntimeArtifact(ctx context.Context, executionID string, generation uint64, fencing *workerv1alpha1.FencingProof, rootDirectory, relativePath string, expectedSize *uint64, expectedSHA256 string) ([]byte, error) {
@@ -272,7 +277,7 @@ func (supervisor *Supervisor) readRuntimeArtifact(ctx context.Context, execution
 	return artifact.Bytes(), nil
 }
 
-func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, retryStaleBinding bool) (*RuntimeSession, error) {
+func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, retryStaleBinding bool, options ...RuntimeSessionOptions) (*RuntimeSession, error) {
 	if supervisor == nil || !runtimeClientAvailable(supervisor.runtimeClient) || !validIdentity(supervisor.workerIdentity) || tenantID == "" || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
 		return nil, errInvalidConfig
 	}
@@ -298,8 +303,18 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, 
 		cancel()
 	})
 	stream := supervisor.runtimeClient.OpenSession(streamContext)
+	var capabilityOptions RuntimeSessionOptions
+	if len(options) > 0 {
+		capabilityOptions = options[0]
+	}
+	bindings := make([]*workerruntimev1alpha1.RuntimeCapabilityBinding, 0, len(capabilityOptions.CapabilityBindings))
+	for _, binding := range capabilityOptions.CapabilityBindings {
+		if binding != nil {
+			bindings = append(bindings, proto.Clone(binding).(*workerruntimev1alpha1.RuntimeCapabilityBinding))
+		}
+	}
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
-		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), ProviderKind: providerKind, TenantId: tenantID,
+		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), ProviderKind: providerKind, TenantId: tenantID, CapabilityBindings: bindings, CapabilityManifestDigest: capabilityOptions.CapabilityManifestDigest,
 	}}}); err != nil {
 		timerStopped := timer.Stop()
 		cancel()
@@ -311,7 +326,7 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, 
 			supervisor.clearBinding(state)
 			_ = stream.CloseRequest()
 			_ = stream.CloseResponse()
-			return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, false)
+			return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, false, options...)
 		}
 		return nil, rpcFailure("runtime_open", err)
 	}
@@ -328,7 +343,7 @@ func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, tenantID, 
 			supervisor.clearBinding(state)
 			_ = stream.CloseRequest()
 			_ = stream.CloseResponse()
-			return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, false)
+			return supervisor.openRuntimeSession(ctx, tenantID, executionID, providerKind, generation, fencing, false, options...)
 		}
 		return nil, rpcFailure("runtime_ready", err)
 	}
@@ -367,7 +382,7 @@ func (session *RuntimeSession) Receive() (runtimeprotocol.Message, error) {
 		if errors.Is(err, io.EOF) {
 			return runtimeprotocol.Message{}, io.EOF
 		}
-		return runtimeprotocol.Message{}, rpcFailure("runtime_receive", err)
+		return runtimeprotocol.Message{}, fmt.Errorf("%w: %v", ErrRuntimeProcessUnavailable, rpcFailure("runtime_receive", err))
 	}
 	if response == nil {
 		return runtimeprotocol.Message{}, fail(connect.CodeInternal, "runtime_message_invalid")

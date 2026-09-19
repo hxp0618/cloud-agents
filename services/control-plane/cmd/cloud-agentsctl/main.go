@@ -280,6 +280,8 @@ func run(args []string, stdout io.Writer) error {
 			sandboxGeneration         int64
 			environmentProfile        string
 			environmentProfileVersion int64
+			mcpServerRefsJSON         string
+			skillBundleRefsJSON       string
 		}
 		if err = parseActionFlags("session create", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&flags.provider, "provider", "", "provider kind")
@@ -288,17 +290,25 @@ func run(args []string, stdout io.Writer) error {
 			set.Int64Var(&flags.sandboxGeneration, "sandbox-generation", 0, "Foundation Sandbox fencing generation")
 			set.StringVar(&flags.environmentProfile, "environment-profile", "", "published EnvironmentProfile identifier")
 			set.Int64Var(&flags.environmentProfileVersion, "environment-profile-version", 0, "published EnvironmentProfile version")
+			set.StringVar(&flags.mcpServerRefsJSON, "mcp-server-refs-json", "", "JSON array of MCP Server references (opaque serverId, version, digest)")
+			set.StringVar(&flags.skillBundleRefsJSON, "skill-bundle-refs-json", "", "JSON array of Skill Bundle references (opaque bundleId, version, digest)")
 		}); err == nil {
+			var mcpServerRefs []openapi.ManagedAgentMcpServerRef
+			var skillBundleRefs []openapi.ManagedAgentSkillBundleRef
+			mcpServerRefs, skillBundleRefs, err = parseCapabilityRefs(flags.mcpServerRefsJSON, flags.skillBundleRefsJSON)
 			legacy := options.lease != "" && flags.workspace == "" && flags.sandbox == "" && flags.sandboxGeneration == 0 && flags.environmentProfile == "" && flags.environmentProfileVersion == 0
 			foundation := options.lease == "" && flags.workspace != "" && flags.sandbox != "" && flags.sandboxGeneration > 0 && flags.environmentProfile != "" && flags.environmentProfileVersion > 0
-			if !legacy && !foundation {
-				err = errors.New("session create requires either --lease or the complete Foundation binding")
-			} else {
-				value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{
-					SessionID: options.session, ProviderKind: flags.provider, EnvironmentLeaseID: options.lease,
-					WorkspaceID: flags.workspace, SandboxID: flags.sandbox, SandboxGeneration: flags.sandboxGeneration,
-					EnvironmentProfileID: flags.environmentProfile, EnvironmentProfileVersion: flags.environmentProfileVersion,
-				})
+			if err == nil {
+				if !legacy && !foundation {
+					err = errors.New("session create requires either --lease or the complete Foundation binding")
+				} else {
+					value, err = client.CreateManagedAgentSession(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, openapi.ManagedAgentSessionCreateRequest{
+						SessionID: options.session, ProviderKind: flags.provider, EnvironmentLeaseID: options.lease,
+						WorkspaceID: flags.workspace, SandboxID: flags.sandbox, SandboxGeneration: flags.sandboxGeneration,
+						EnvironmentProfileID: flags.environmentProfile, EnvironmentProfileVersion: flags.environmentProfileVersion,
+						McpServerRefs: mcpServerRefs, SkillBundleRefs: skillBundleRefs,
+					})
+				}
 			}
 		}
 	case "sandbox exec":
@@ -455,14 +465,21 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ListManagedAgentExecutions(ctx, options.tenant, options.project, options.session, options.requestID, pageSize, pageToken)
 		}
 	case "execution execute":
-		var model, runtimeMode, interactionMode, inputText string
+		var model, runtimeMode, interactionMode, inputText, mcpServerRefsJSON, skillBundleRefsJSON string
 		if err = parseActionFlags("execution execute", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&model, "model", "", "model identifier")
 			set.StringVar(&runtimeMode, "runtime-mode", "", "runtime permission mode: approval-required or full-access")
 			set.StringVar(&interactionMode, "interaction-mode", "", "interaction mode: default or plan")
 			set.StringVar(&inputText, "input", "", "turn input text")
+			set.StringVar(&mcpServerRefsJSON, "mcp-server-refs-json", "", "JSON array of MCP Server references (opaque serverId, version, digest)")
+			set.StringVar(&skillBundleRefsJSON, "skill-bundle-refs-json", "", "JSON array of Skill Bundle references (opaque bundleId, version, digest)")
 		}); err == nil {
-			value, err = client.ExecuteManagedAgent(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCreateRequest{TurnID: options.turn, ExecutionID: options.execution, Model: model, RuntimeMode: runtimeMode, InteractionMode: interactionMode, InputText: inputText})
+			var mcpServerRefs []openapi.ManagedAgentMcpServerRef
+			var skillBundleRefs []openapi.ManagedAgentSkillBundleRef
+			mcpServerRefs, skillBundleRefs, err = parseCapabilityRefs(mcpServerRefsJSON, skillBundleRefsJSON)
+			if err == nil {
+				value, err = client.ExecuteManagedAgent(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCreateRequest{TurnID: options.turn, ExecutionID: options.execution, Model: model, RuntimeMode: runtimeMode, InteractionMode: interactionMode, InputText: inputText, McpServerRefs: mcpServerRefs, SkillBundleRefs: skillBundleRefs})
+			}
 		}
 	case "execution get":
 		if err = parseActionFlags("execution get", actionArgs, nil); err == nil {
@@ -864,6 +881,35 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 
 func actionHelpRequested(args []string) bool {
 	return len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help")
+}
+
+func parseCapabilityRefs(
+	mcpJSON string,
+	skillJSON string,
+) ([]openapi.ManagedAgentMcpServerRef, []openapi.ManagedAgentSkillBundleRef, error) {
+	var mcp []openapi.ManagedAgentMcpServerRef
+	var skills []openapi.ManagedAgentSkillBundleRef
+	if err := decodeCapabilityRefs(mcpJSON, "--mcp-server-refs-json", &mcp); err != nil {
+		return nil, nil, err
+	}
+	if err := decodeCapabilityRefs(skillJSON, "--skill-bundle-refs-json", &skills); err != nil {
+		return nil, nil, err
+	}
+	return mcp, skills, nil
+}
+
+func decodeCapabilityRefs(raw string, flagName string, destination any) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	if trimmed[0] != '[' || trimmed[len(trimmed)-1] != ']' {
+		return fmt.Errorf("%s must be a JSON array of opaque capability references", flagName)
+	}
+	if err := json.Unmarshal([]byte(trimmed), destination); err != nil {
+		return fmt.Errorf("%s must be a JSON array of opaque capability references", flagName)
+	}
+	return nil
 }
 
 type actionHelpOutput string

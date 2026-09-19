@@ -2,9 +2,10 @@ import {
   CLOUD_AGENT_CAPABILITY_IDS,
   CLOUD_AGENT_TEXT_GENERATION_TASKS,
 } from "@cloud-agents/cloud-agent-protocol";
+import { CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION } from "./abi";
 
 export type ValidatedCloudAgentProviderDescriptor = {
-  readonly abiVersion: 1;
+  readonly abiVersion: typeof CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION;
   readonly providerKind: string;
   readonly displayName: string;
   readonly adapterVersion: string;
@@ -19,7 +20,7 @@ export function assertCloudAgentProviderDescriptor(
 ): asserts value is ValidatedCloudAgentProviderDescriptor {
   const descriptor = asRecord(value);
   if (!descriptor) throw new Error("Cloud Agent Provider descriptor must be an object.");
-  if (descriptor.abiVersion !== 1) {
+  if (descriptor.abiVersion !== CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION) {
     throw new Error(`Unexpected Provider Plugin ABI ${String(descriptor.abiVersion)}.`);
   }
   if (

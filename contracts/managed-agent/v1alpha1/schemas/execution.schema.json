@@ -107,6 +107,36 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "errorCode": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" }
+        ,"mcpServerRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["serverId", "version", "digest"],
+            "properties": {
+              "serverId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "version": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+            }
+          }
+        },
+        "skillBundleRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bundleId", "version", "digest"],
+            "properties": {
+              "bundleId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "version": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+              "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+            }
+          }
+        }
       }
     },
     "messages": {

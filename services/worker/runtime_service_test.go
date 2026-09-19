@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -349,5 +350,84 @@ func TestRuntimeProviderCredentialFileBindsTenantAndProvider(t *testing.T) {
 	}
 	if _, err := runtimeProviderCredentialFile(directory, "tenant-alpha", "claudeAgent"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "provider_credential_invalid") {
 		t.Fatalf("oversize Provider credential error = %v", err)
+	}
+}
+
+func TestRuntimeCapabilityBindingsAreBoundedAndDigestPinned(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0).UTC()
+	open := &workerruntimev1alpha1.RuntimeSessionOpen{CapabilityBindings: []*workerruntimev1alpha1.RuntimeCapabilityBinding{{ResourceKind: "mcp-server", ResourceId: "server-1", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64), Transport: "sse", ConnectionRef: "connection-1", CredentialRef: "credential-1", GrantId: "grant-1", NetworkPolicyRef: "network-1", ExpiresAtUnixSeconds: uint64(now.Add(5 * time.Minute).Unix()), Permissions: []string{"mcp.call"}}}}
+	manifest := runtimeCapabilityManifest{Version: 1, Bindings: []runtimeCapabilityManifestEntry{{ResourceKind: "mcp-server", ResourceID: "server-1", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64), Transport: "sse", ConnectionRef: "connection-1", CredentialRef: "credential-1", GrantID: "grant-1", NetworkPolicyRef: "network-1", ExpiresAtUnixSecond: uint64(now.Add(5 * time.Minute).Unix()), Permissions: []string{"mcp.call"}}}}
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(encoded)
+	open.CapabilityManifestDigest = fmt.Sprintf("sha256:%x", sum[:])
+	if got, err := validateRuntimeCapabilityBindings(open, now); err != nil || string(got) != string(encoded) {
+		t.Fatalf("valid capability manifest = %q, %v", got, err)
+	}
+	open.CapabilityManifestDigest = "sha256:" + strings.Repeat("b", 64)
+	if _, err := validateRuntimeCapabilityBindings(open, now); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "capability_manifest_digest_mismatch") {
+		t.Fatalf("digest mismatch = %v", err)
+	}
+	open.CapabilityManifestDigest = fmt.Sprintf("sha256:%x", sum[:])
+	open.CapabilityBindings[0].ExpiresAtUnixSeconds = uint64(now.Add(-time.Second).Unix())
+	if _, err := validateRuntimeCapabilityBindings(open, now); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "capability_grant_expired") {
+		t.Fatalf("expired capability = %v", err)
+	}
+}
+
+func TestRuntimeCapabilityMaterializationIsTenantScopedAndDigestBound(t *testing.T) {
+	directory := t.TempDir()
+	digest := "sha256:" + strings.Repeat("a", 64)
+	binding := &workerruntimev1alpha1.RuntimeCapabilityBinding{
+		ResourceKind: "mcp-server", ResourceId: "server-1", Version: "v1", Digest: digest,
+		Transport: "streamable-http", ConnectionRef: "connection-1", CredentialRef: "credential-1",
+		GrantId: "grant-1", NetworkPolicyRef: "network-1", ExpiresAtUnixSeconds: 1_900_000_000,
+		Permissions: []string{"mcp.call"},
+	}
+	path := filepath.Join(directory, "tenant-alpha.capabilities.json")
+	data := []byte(`{"version":1,"mcp":[{"resourceId":"server-1","version":"v1","digest":"` + digest + `","transport":"streamable-http","endpoint":"http://127.0.0.1:8765/mcp","token":"short-lived","allowedHosts":["127.0.0.1"]}]}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := runtimeCapabilityMaterializationFile(directory, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); err != nil || string(got) != string(data) {
+		t.Fatalf("materialization = %q, %v", got, err)
+	}
+	if err := os.WriteFile(path, append(data, []byte(`{}`)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtimeCapabilityMaterializationFile(directory, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "capability_materialization_invalid") {
+		t.Fatalf("trailing materialization error = %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtimeCapabilityMaterializationFile(directory, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "capability_materialization_unavailable") {
+		t.Fatalf("world-readable materialization error = %v", err)
+	}
+}
+
+func TestRuntimeCapabilityMaterializationRequiresTrustedSkillKey(t *testing.T) {
+	directory := t.TempDir()
+	digest := "sha256:" + strings.Repeat("a", 64)
+	binding := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "skill-bundle", ResourceId: "skill-1", Version: "v1", Digest: digest, GrantId: "grant-1", ExpiresAtUnixSeconds: 1_900_000_000, ReadOnly: true}
+	bundle := base64.RawURLEncoding.EncodeToString([]byte(`{"version":1,"files":[{"path":"SKILL.md","content":"c2tpbGw="}]}`))
+	key := []byte("trusted-public-key")
+	if err := os.WriteFile(filepath.Join(directory, "key-1.pub"), key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"version":1,"mcp":[],"skills":[{"resourceId":"skill-1","version":"v1","digest":"` + digest + `","bundle":"` + bundle + `","signature":"c2lnbmF0dXJl","publicKey":"` + base64.RawURLEncoding.EncodeToString(key) + `","signingKeyId":"key-1"}]}`)
+	if err := os.WriteFile(filepath.Join(directory, "tenant-alpha.capabilities.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := runtimeCapabilityMaterializationFile(directory, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); err != nil || string(got) != string(data) {
+		t.Fatalf("trusted skill materialization = %q, %v", got, err)
+	}
+	if err := os.Remove(filepath.Join(directory, "key-1.pub")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtimeCapabilityMaterializationFile(directory, "tenant-alpha", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("missing trusted key error = %v", err)
 	}
 }

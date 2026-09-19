@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -144,7 +145,7 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind", "environmentLeaseId", "workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion"}, []string{"sessionId", "providerKind"})
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind", "environmentLeaseId", "workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion", "mcpServerRefs", "skillBundleRefs"}, []string{"sessionId", "providerKind"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
@@ -189,6 +190,11 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	mcpServerRefs, skillBundleRefs, _, err := managedAgentCapabilityRefs(fields)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
 	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
@@ -199,7 +205,8 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		EnvironmentLeaseID: environmentLeaseID, WorkspaceID: workspaceID, SandboxID: sandboxID,
 		SandboxGeneration: sandboxGeneration, EnvironmentProfileID: environmentProfileID,
 		EnvironmentProfileVersion: environmentProfileVersion,
-		Mutation:                  internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
+		McpServerRefs:             mcpServerRefs, SkillBundleRefs: skillBundleRefs,
+		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
 		status, code := managedAgentSessionErrorStatus(err)
@@ -248,14 +255,16 @@ func (server *ManagedAgentSessionHTTPServer) get(writer http.ResponseWriter, req
 }
 
 type managedAgentSessionCreateBody struct {
-	SessionID                 string `json:"sessionId"`
-	ProviderKind              string `json:"providerKind"`
-	EnvironmentLeaseID        string `json:"environmentLeaseId"`
-	WorkspaceID               string `json:"workspaceId"`
-	SandboxID                 string `json:"sandboxId"`
-	SandboxGeneration         uint64 `json:"sandboxGeneration"`
-	EnvironmentProfileID      string `json:"environmentProfileId"`
-	EnvironmentProfileVersion uint64 `json:"environmentProfileVersion"`
+	SessionID                 string                                 `json:"sessionId"`
+	ProviderKind              string                                 `json:"providerKind"`
+	EnvironmentLeaseID        string                                 `json:"environmentLeaseId"`
+	WorkspaceID               string                                 `json:"workspaceId"`
+	SandboxID                 string                                 `json:"sandboxId"`
+	SandboxGeneration         uint64                                 `json:"sandboxGeneration"`
+	EnvironmentProfileID      string                                 `json:"environmentProfileId"`
+	EnvironmentProfileVersion uint64                                 `json:"environmentProfileVersion"`
+	McpServerRefs             []openapiv1.ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs           []openapiv1.ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
 }
 
 type managedAgentSessionResource struct {
@@ -274,15 +283,17 @@ type managedAgentSessionResourceMetadata struct {
 }
 
 type managedAgentSessionResourceSpec struct {
-	ProviderKind              string `json:"providerKind"`
-	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
-	EnvironmentGeneration     uint64 `json:"environmentGeneration,omitempty"`
-	WorkspaceID               string `json:"workspaceId,omitempty"`
-	SandboxID                 string `json:"sandboxId,omitempty"`
-	SandboxGeneration         uint64 `json:"sandboxGeneration,omitempty"`
-	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
-	EnvironmentProfileVersion uint64 `json:"environmentProfileVersion,omitempty"`
-	State                     string `json:"state"`
+	ProviderKind              string                                 `json:"providerKind"`
+	EnvironmentLeaseID        string                                 `json:"environmentLeaseId,omitempty"`
+	EnvironmentGeneration     uint64                                 `json:"environmentGeneration,omitempty"`
+	WorkspaceID               string                                 `json:"workspaceId,omitempty"`
+	SandboxID                 string                                 `json:"sandboxId,omitempty"`
+	SandboxGeneration         uint64                                 `json:"sandboxGeneration,omitempty"`
+	EnvironmentProfileID      string                                 `json:"environmentProfileId,omitempty"`
+	EnvironmentProfileVersion uint64                                 `json:"environmentProfileVersion,omitempty"`
+	McpServerRefs             []openapiv1.ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs           []openapiv1.ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
+	State                     string                                 `json:"state"`
 }
 
 type managedAgentSessionPageResource struct {
@@ -304,7 +315,8 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 			EnvironmentGeneration: snapshot.EnvironmentGeneration, WorkspaceID: snapshot.WorkspaceID,
 			SandboxID: snapshot.SandboxID, SandboxGeneration: snapshot.SandboxGeneration,
 			EnvironmentProfileID:      snapshot.EnvironmentProfileID,
-			EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion, State: string(snapshot.State)},
+			EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion,
+			McpServerRefs:             managedAgentMcpServerRefs(snapshot.McpServerRefs), SkillBundleRefs: managedAgentSkillBundleRefs(snapshot.SkillBundleRefs), State: string(snapshot.State)},
 	})
 }
 
@@ -315,8 +327,10 @@ func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantI
 			APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 			Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
 			Spec: managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, EnvironmentLeaseID: snapshot.EnvironmentLeaseID,
-				EnvironmentGeneration: snapshot.EnvironmentGeneration, EnvironmentProfileID: snapshot.EnvironmentProfileID,
-				EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion, State: string(snapshot.State)},
+				EnvironmentGeneration: snapshot.EnvironmentGeneration, WorkspaceID: snapshot.WorkspaceID,
+				SandboxID: snapshot.SandboxID, SandboxGeneration: snapshot.SandboxGeneration,
+				EnvironmentProfileID: snapshot.EnvironmentProfileID, EnvironmentProfileVersion: snapshot.EnvironmentProfileVersion,
+				McpServerRefs: managedAgentMcpServerRefs(snapshot.McpServerRefs), SkillBundleRefs: managedAgentSkillBundleRefs(snapshot.SkillBundleRefs), State: string(snapshot.State)},
 		})
 	}
 	nextPageToken := ""
@@ -431,6 +445,94 @@ func optionalManagedAgentIntegerField(fields map[string]json.RawMessage, key, pa
 		return 0, true, commonv1alpha1.ContractError("INVALID_FIELD_TYPE", path)
 	}
 	return *value, true, nil
+}
+
+func managedAgentCapabilityRefs(fields map[string]json.RawMessage) ([]internalmanagedagent.McpServerRef, []internalmanagedagent.SkillBundleRef, bool, error) {
+	var mcp []openapiv1.ManagedAgentMcpServerRef
+	var skills []openapiv1.ManagedAgentSkillBundleRef
+	for _, item := range []struct {
+		key  string
+		path string
+	}{
+		{key: "mcpServerRefs", path: "/mcpServerRefs"},
+		{key: "skillBundleRefs", path: "/skillBundleRefs"},
+	} {
+		raw, present := fields[item.key]
+		if !present {
+			continue
+		}
+		var pointer *[]openapiv1.ManagedAgentMcpServerRef
+		if item.key == "skillBundleRefs" {
+			var skillPointer *[]openapiv1.ManagedAgentSkillBundleRef
+			if json.Unmarshal(raw, &skillPointer) != nil || skillPointer == nil || len(*skillPointer) > 32 {
+				return nil, nil, false, commonv1alpha1.ContractError("INVALID_CAPABILITY_REFS", item.path)
+			}
+			skills = *skillPointer
+			continue
+		}
+		if json.Unmarshal(raw, &pointer) != nil || pointer == nil || len(*pointer) > 32 {
+			return nil, nil, false, commonv1alpha1.ContractError("INVALID_CAPABILITY_REFS", item.path)
+		}
+		mcp = *pointer
+	}
+	seen := make(map[string]struct{}, len(mcp)+len(skills))
+	for index, ref := range mcp {
+		if commonv1alpha1.ValidateIdentifier(ref.ServerID, fmt.Sprintf("/mcpServerRefs/%d/serverId", index)) != nil || commonv1alpha1.ValidateIdentifier(ref.Version, fmt.Sprintf("/mcpServerRefs/%d/version", index)) != nil || !validManagedAgentCapabilityDigest(ref.Digest) {
+			return nil, nil, false, commonv1alpha1.ContractError("INVALID_CAPABILITY_REFS", "/mcpServerRefs")
+		}
+		key := "mcp\x00" + ref.ServerID + "\x00" + ref.Version + "\x00" + ref.Digest
+		if _, exists := seen[key]; exists {
+			return nil, nil, false, commonv1alpha1.ContractError("INVALID_CAPABILITY_REFS", "/mcpServerRefs")
+		}
+		seen[key] = struct{}{}
+	}
+	for index, ref := range skills {
+		if commonv1alpha1.ValidateIdentifier(ref.BundleID, fmt.Sprintf("/skillBundleRefs/%d/bundleId", index)) != nil || commonv1alpha1.ValidateIdentifier(ref.Version, fmt.Sprintf("/skillBundleRefs/%d/version", index)) != nil || !validManagedAgentCapabilityDigest(ref.Digest) {
+			return nil, nil, false, commonv1alpha1.ContractError("INVALID_CAPABILITY_REFS", "/skillBundleRefs")
+		}
+		key := "skill\x00" + ref.BundleID + "\x00" + ref.Version + "\x00" + ref.Digest
+		if _, exists := seen[key]; exists {
+			return nil, nil, false, commonv1alpha1.ContractError("INVALID_CAPABILITY_REFS", "/skillBundleRefs")
+		}
+		seen[key] = struct{}{}
+	}
+	convertedMCP := make([]internalmanagedagent.McpServerRef, len(mcp))
+	for index, ref := range mcp {
+		convertedMCP[index] = internalmanagedagent.McpServerRef{ServerID: ref.ServerID, Version: ref.Version, Digest: ref.Digest}
+	}
+	convertedSkills := make([]internalmanagedagent.SkillBundleRef, len(skills))
+	for index, ref := range skills {
+		convertedSkills[index] = internalmanagedagent.SkillBundleRef{BundleID: ref.BundleID, Version: ref.Version, Digest: ref.Digest}
+	}
+	return convertedMCP, convertedSkills, len(mcp) > 0 || len(skills) > 0, nil
+}
+
+func managedAgentMcpServerRefs(refs []internalmanagedagent.McpServerRef) []openapiv1.ManagedAgentMcpServerRef {
+	result := make([]openapiv1.ManagedAgentMcpServerRef, len(refs))
+	for index, ref := range refs {
+		result[index] = openapiv1.ManagedAgentMcpServerRef{ServerID: ref.ServerID, Version: ref.Version, Digest: ref.Digest}
+	}
+	return result
+}
+
+func managedAgentSkillBundleRefs(refs []internalmanagedagent.SkillBundleRef) []openapiv1.ManagedAgentSkillBundleRef {
+	result := make([]openapiv1.ManagedAgentSkillBundleRef, len(refs))
+	for index, ref := range refs {
+		result[index] = openapiv1.ManagedAgentSkillBundleRef{BundleID: ref.BundleID, Version: ref.Version, Digest: ref.Digest}
+	}
+	return result
+}
+
+func validManagedAgentCapabilityDigest(value string) bool {
+	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[len("sha256:"):] {
+		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func managedAgentSessionPath(path string) (tenantID, projectID, sessionID, action string, ok bool) {

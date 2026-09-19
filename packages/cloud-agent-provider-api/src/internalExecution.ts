@@ -147,11 +147,10 @@ export type CloudAgentHostIdentity = {
   readonly namespace: string;
 };
 
-export const CLOUD_AGENT_GENERIC_HOST_IDENTITY: CloudAgentHostIdentity =
-  Object.freeze({
-    displayName: "Cloud Agents",
-    namespace: "cloud_agent",
-  });
+export const CLOUD_AGENT_GENERIC_HOST_IDENTITY: CloudAgentHostIdentity = Object.freeze({
+  displayName: "Cloud Agents",
+  namespace: "cloud_agent",
+});
 
 export type ProviderRunExecutor = (
   input: RunnerInput,
@@ -161,7 +160,8 @@ export type ProviderRunExecutor = (
 ) => ProviderRunController;
 
 export type ProviderReviewTarget =
-  { type: "uncommittedChanges" } | { type: "baseBranch"; branch: string };
+  | { type: "uncommittedChanges" }
+  | { type: "baseBranch"; branch: string };
 
 export type ProviderPrimaryOperation =
   | { commandType: "CompactSession"; payload: Record<string, unknown> }
@@ -256,9 +256,7 @@ const CONTROLLED_PROVIDER_PACKAGE_ENVIRONMENT = [
   },
 ] as const;
 
-export function readRunnerCredential(
-  environment: NodeJS.ProcessEnv,
-): RunnerCredential | null {
+export function readRunnerCredential(environment: NodeJS.ProcessEnv): RunnerCredential | null {
   const value = readCloudAgentEnvironment(
     environment,
     CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
@@ -282,17 +280,22 @@ export function readRunnerCredential(
 export function providerEnvironment(
   source: NodeJS.ProcessEnv,
   credential: RunnerCredential | null,
-  applyCredential?: (
-    environment: NodeJS.ProcessEnv,
-    payload: Record<string, unknown>,
-  ) => void,
+  applyCredential?: (environment: NodeJS.ProcessEnv, payload: Record<string, unknown>) => void,
 ): { environment: NodeJS.ProcessEnv; redact: TerminalRedactor } {
   const environment = selectProviderProcessEnvironment(source);
 
-  const secrets = credential ? collectSecretStrings(credential.payload) : [];
+  const secrets = [
+    ...(credential ? collectSecretStrings(credential.payload) : []),
+    ...Object.entries(source)
+      .filter(
+        ([name, value]) =>
+          /^CLOUD_AGENT_MCP_TOKEN_[A-Z0-9_]+$/u.test(name.trim().toUpperCase()) &&
+          value !== undefined,
+      )
+      .map(([, value]) => value as string),
+  ];
   if (credential) {
-    if (!applyCredential)
-      throw new Error("Provider Credential injection is not configured.");
+    if (!applyCredential) throw new Error("Provider Credential injection is not configured.");
     applyCredential(environment, credential.payload);
     if (providerCredentialUsesLoopbackBroker(credential.payload)) {
       environment.NO_PROXY = mergeNoProxyLoopback(environment.NO_PROXY);
@@ -301,17 +304,11 @@ export function providerEnvironment(
   return { environment, redact: createRedactor(secrets) };
 }
 
-function providerCredentialUsesLoopbackBroker(
-  payload: Record<string, unknown>,
-): boolean {
+function providerCredentialUsesLoopbackBroker(payload: Record<string, unknown>): boolean {
   if (typeof payload.baseUrl !== "string") return false;
   try {
     const hostname = new URL(payload.baseUrl).hostname.toLowerCase();
-    return (
-      hostname === "127.0.0.1" ||
-      hostname === "localhost" ||
-      hostname === "[::1]"
-    );
+    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
   } catch {
     return false;
   }
@@ -323,27 +320,19 @@ function mergeNoProxyLoopback(value: string | undefined): string {
     .map((entry) => entry.trim())
     .filter(Boolean);
   const normalized = new Set(entries.map((entry) => entry.toLowerCase()));
-  const missing = ["127.0.0.1", "localhost", "::1"].filter(
-    (loopback) => !normalized.has(loopback),
-  );
+  const missing = ["127.0.0.1", "localhost", "::1"].filter((loopback) => !normalized.has(loopback));
   if (entries.length + missing.length > 64) {
-    throw new Error(
-      "CLOUD_AGENT_PROVIDER_NO_PROXY exceeds 64 entries after loopback exclusion",
-    );
+    throw new Error("CLOUD_AGENT_PROVIDER_NO_PROXY exceeds 64 entries after loopback exclusion");
   }
   entries.push(...missing);
   return entries.join(",");
 }
 
-export function providerProcessEnvironment(
-  source: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
+export function providerProcessEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return selectProviderProcessEnvironment(source);
 }
 
-function selectProviderProcessEnvironment(
-  source: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
+function selectProviderProcessEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const values = new Map<string, string>();
   for (const [name, value] of Object.entries(source)) {
     if (value !== undefined) values.set(name.trim().toUpperCase(), value);
@@ -357,24 +346,16 @@ function selectProviderProcessEnvironment(
   for (const proxy of CONTROLLED_PROVIDER_PROXY_ENVIRONMENT) {
     const value = configuredValue(values, proxy.source);
     if (value === undefined) continue;
-    const normalized = normalizeProviderProxy(
-      value,
-      proxy.source,
-      proxy.allowedProtocols,
-    );
+    const normalized = normalizeProviderProxy(value, proxy.source, proxy.allowedProtocols);
     if (normalized) environment[proxy.target] = normalized;
   }
-  const noProxyValue = configuredValue(
-    values,
-    CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source,
-  );
+  const noProxyValue = configuredValue(values, CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source);
   if (noProxyValue !== undefined) {
     const normalized = normalizeProviderNoProxy(
       noProxyValue,
       CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source,
     );
-    if (normalized)
-      environment[CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.target] = normalized;
+    if (normalized) environment[CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.target] = normalized;
   }
   for (const config of CONTROLLED_PROVIDER_PACKAGE_ENVIRONMENT) {
     const value = configuredValue(values, config.source);
@@ -415,8 +396,7 @@ function normalizeProviderProxy(
   } catch {
     throw new Error(`${name} must be a credential-free proxy authority`);
   }
-  const authority =
-    normalized.slice(normalized.indexOf("://") + 3).split(/[/?#]/u, 1)[0] ?? "";
+  const authority = normalized.slice(normalized.indexOf("://") + 3).split(/[/?#]/u, 1)[0] ?? "";
   const hostname = parsed.hostname.replace(/^\[|\]$/gu, "").replace(/\.$/u, "");
   if (
     !allowedProtocols.includes(parsed.protocol) ||
@@ -454,8 +434,7 @@ function validProviderProxyHostname(value: string): boolean {
     !value ||
     value.length > 253 ||
     Array.from(value).some(
-      (character) =>
-        /[\s\p{Cc}]/u.test(character) || "/\\@?#[]".includes(character),
+      (character) => /[\s\p{Cc}]/u.test(character) || "/\\@?#[]".includes(character),
     )
   ) {
     return false;
@@ -474,11 +453,7 @@ function normalizeProviderNoProxy(value: string, name: string): string {
   if (
     entries.length > 64 ||
     entries.some(
-      (entry) =>
-        !entry ||
-        entry === "*" ||
-        entry.length > 253 ||
-        containsLineControl(entry, true),
+      (entry) => !entry || entry === "*" || entry.length > 253 || containsLineControl(entry, true),
     )
   ) {
     throw new Error(`${name} contains an invalid entry`);
@@ -486,16 +461,13 @@ function normalizeProviderNoProxy(value: string, name: string): string {
   return entries.join(",");
 }
 
-export function createRedactor(
-  secrets: ReadonlyArray<string>,
-): TerminalRedactor {
-  const values = [
-    ...new Set(secrets.filter((value) => value.length >= 4)),
-  ].toSorted((left, right) => right.length - left.length);
+export function createRedactor(secrets: ReadonlyArray<string>): TerminalRedactor {
+  const values = [...new Set(secrets.filter((value) => value.length >= 4))].toSorted(
+    (left, right) => right.length - left.length,
+  );
   const redact: TerminalRedactor = (value) => {
     let result = value;
-    for (const secret of values)
-      result = result.replaceAll(secret, "[REDACTED]");
+    for (const secret of values) result = result.replaceAll(secret, "[REDACTED]");
     return result;
   };
   Object.defineProperty(redact, "secretValues", { value: values });
@@ -515,21 +487,11 @@ export function hasAuthoritativeResumeData(
   if ((snapshot.artifactReferences?.length ?? 0) > 0) return true;
   if ((snapshot.pendingInteractions?.length ?? 0) > 0) return true;
   if ((snapshot.resumeRecordedInteractions?.length ?? 0) > 0) return true;
-  if (
-    snapshot.activeTurnCheckpoint !== undefined &&
-    snapshot.activeTurnCheckpoint !== null
-  ) {
+  if (snapshot.activeTurnCheckpoint !== undefined && snapshot.activeTurnCheckpoint !== null) {
     return true;
   }
-  if (
-    snapshot.compactBoundary !== undefined &&
-    snapshot.compactBoundary !== null
-  )
-    return true;
-  if (
-    snapshot.workspace?.checkpoint !== undefined &&
-    snapshot.workspace.checkpoint !== null
-  ) {
+  if (snapshot.compactBoundary !== undefined && snapshot.compactBoundary !== null) return true;
+  if (snapshot.workspace?.checkpoint !== undefined && snapshot.workspace.checkpoint !== null) {
     return true;
   }
   if (snapshot.mode?.review === true) return true;
@@ -545,28 +507,18 @@ export function hasResumeSupplementalMetadata(
   const snapshot = workload.resumeSnapshot;
   if (!snapshot) return false;
   if ((snapshot.resumeRecordedInteractions?.length ?? 0) > 0) return true;
-  if (
-    snapshot.activeTurnCheckpoint !== undefined &&
-    snapshot.activeTurnCheckpoint !== null
-  ) {
+  if (snapshot.activeTurnCheckpoint !== undefined && snapshot.activeTurnCheckpoint !== null) {
     return true;
   }
   if ((snapshot.pendingInteractions?.length ?? 0) > 0) return true;
   if ((snapshot.toolResults?.length ?? 0) > 0) return true;
   if ((snapshot.artifactReferences?.length ?? 0) > 0) return true;
-  if (
-    snapshot.compactBoundary !== undefined &&
-    snapshot.compactBoundary !== null
-  )
-    return true;
-  if (snapshot.workspace !== undefined && snapshot.workspace !== null)
-    return true;
-  if (snapshot.truncation !== undefined && snapshot.truncation !== null)
-    return true;
+  if (snapshot.compactBoundary !== undefined && snapshot.compactBoundary !== null) return true;
+  if (snapshot.workspace !== undefined && snapshot.workspace !== null) return true;
+  if (snapshot.truncation !== undefined && snapshot.truncation !== null) return true;
   if (snapshot.mode?.review === true) return true;
   return (
-    recoveryPromptMessages(inputForSupplementalDetection(workload))
-      .currentTurnProgress.length > 0
+    recoveryPromptMessages(inputForSupplementalDetection(workload)).currentTurnProgress.length > 0
   );
 }
 
@@ -590,8 +542,7 @@ export function nativeResumeContinuationPrompt(
   input: RunnerInput,
   identity: CloudAgentHostIdentity = CLOUD_AGENT_GENERIC_HOST_IDENTITY,
 ): string | undefined {
-  if (!hasResumeSupplementalMetadata(input.workload, input.memoryDocuments))
-    return undefined;
+  if (!hasResumeSupplementalMetadata(input.workload, input.memoryDocuments)) return undefined;
   const host = normalizedHostIdentity(identity);
   const promptMessages = recoveryPromptMessages(input);
   return buildRecoveryPrompt(input, host, {
@@ -661,9 +612,7 @@ function buildRecoveryPrompt(
   return lines.join("\n");
 }
 
-function normalizedHostIdentity(
-  identity: CloudAgentHostIdentity,
-): CloudAgentHostIdentity {
+function normalizedHostIdentity(identity: CloudAgentHostIdentity): CloudAgentHostIdentity {
   const displayName = identity.displayName.trim();
   const namespace = identity.namespace.trim().toLowerCase();
   if (!displayName || /[\r\n\0<>]/u.test(displayName)) {
@@ -693,8 +642,7 @@ function recoveryPromptMessages(input: RunnerInput): {
       currentTurnProgress: [],
     };
   }
-  const currentTurnSequence =
-    input.workload.resumeSnapshot?.currentTurnSequence;
+  const currentTurnSequence = input.workload.resumeSnapshot?.currentTurnSequence;
   if (
     typeof currentTurnSequence !== "number" ||
     !Number.isFinite(currentTurnSequence) ||
@@ -714,8 +662,7 @@ function recoveryPromptMessages(input: RunnerInput): {
     if (isCurrentTurnResumeMessage(message, currentTurnSequence)) {
       if (
         message.role !== "user" ||
-        normalizePromptText(message.text) !==
-          normalizePromptText(input.workload.inputText)
+        normalizePromptText(message.text) !== normalizePromptText(input.workload.inputText)
       ) {
         currentTurnProgress.push(message);
       }
@@ -731,15 +678,12 @@ function isCurrentTurnResumeMessage(
   currentTurnSequence: number,
 ): boolean {
   const sequenceThrough =
-    typeof message.sequenceThrough === "number" &&
-    Number.isFinite(message.sequenceThrough)
+    typeof message.sequenceThrough === "number" && Number.isFinite(message.sequenceThrough)
       ? message.sequenceThrough
       : undefined;
-  if (sequenceThrough !== undefined)
-    return sequenceThrough >= currentTurnSequence;
+  if (sequenceThrough !== undefined) return sequenceThrough >= currentTurnSequence;
   const sequenceFrom =
-    typeof message.sequenceFrom === "number" &&
-    Number.isFinite(message.sequenceFrom)
+    typeof message.sequenceFrom === "number" && Number.isFinite(message.sequenceFrom)
       ? message.sequenceFrom
       : undefined;
   return sequenceFrom !== undefined && sequenceFrom >= currentTurnSequence;
@@ -749,9 +693,7 @@ function normalizePromptText(value: string): string {
   return value.trim().replace(/\s+/gu, " ");
 }
 
-function inputForSupplementalDetection(
-  workload: RunnerInput["workload"],
-): RunnerInput {
+function inputForSupplementalDetection(workload: RunnerInput["workload"]): RunnerInput {
   return {
     execution: { id: "supplemental-detection" },
     workload,
@@ -763,11 +705,7 @@ export function validateRunnerInput(
   input: RunnerInput,
   options: { readonly allowEmptyInputText?: boolean } = {},
 ): void {
-  if (
-    !isRecord(input) ||
-    !isRecord(input.execution) ||
-    !isRecord(input.workload)
-  ) {
+  if (!isRecord(input) || !isRecord(input.execution) || !isRecord(input.workload)) {
     throw new Error("Runner input is invalid");
   }
   for (const [label, value] of [
@@ -775,16 +713,13 @@ export function validateRunnerInput(
     ["workload.provider", input.workload.provider],
     ["workspaceDirectory", input.workspaceDirectory],
   ] as const) {
-    if (typeof value !== "string" || value.trim() === "")
-      throw new Error(`${label} is required`);
+    if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   }
   validateMemoryDocuments(input.memoryDocuments);
   const hasPrimaryOperation = isRecord(input.workload.primaryOperation);
   if (
     typeof input.workload.inputText !== "string" ||
-    (!input.workload.inputText.trim() &&
-      !hasPrimaryOperation &&
-      !options.allowEmptyInputText)
+    (!input.workload.inputText.trim() && !hasPrimaryOperation && !options.allowEmptyInputText)
   ) {
     throw new Error("workload.inputText is required");
   }
@@ -795,9 +730,7 @@ export function validateRunnerInput(
       containsLineControl(input.runtimeOutputDirectory) ||
       !isAbsolute(input.runtimeOutputDirectory))
   ) {
-    throw new Error(
-      "runtimeOutputDirectory must be an absolute path without control characters",
-    );
+    throw new Error("runtimeOutputDirectory must be an absolute path without control characters");
   }
   if (
     input.providerStateDirectory !== undefined &&
@@ -806,14 +739,11 @@ export function validateRunnerInput(
       containsLineControl(input.providerStateDirectory) ||
       !isAbsolute(input.providerStateDirectory))
   ) {
-    throw new Error(
-      "providerStateDirectory must be an absolute path without control characters",
-    );
+    throw new Error("providerStateDirectory must be an absolute path without control characters");
   }
   if (
     input.execution.generation !== undefined &&
-    (!Number.isSafeInteger(input.execution.generation) ||
-      input.execution.generation < 1)
+    (!Number.isSafeInteger(input.execution.generation) || input.execution.generation < 1)
   ) {
     throw new Error("execution.generation must be a positive integer");
   }
@@ -845,13 +775,8 @@ export function validateRunnerInput(
         throw new Error(`${label} is required`);
       }
     }
-    if (
-      snapshot.provider.trim().toLowerCase() !==
-      input.workload.provider.trim().toLowerCase()
-    ) {
-      throw new Error(
-        "workload.resumeSnapshot provider does not match workload.provider",
-      );
+    if (snapshot.provider.trim().toLowerCase() !== input.workload.provider.trim().toLowerCase()) {
+      throw new Error("workload.resumeSnapshot provider does not match workload.provider");
     }
     if (
       snapshot.messages !== undefined &&
@@ -874,22 +799,17 @@ export function validateRunnerInput(
         !isRecord(reconciliation) ||
         typeof reconciliation.checkpointDigest !== "string" ||
         !/^sha256:[0-9a-f]{64}$/u.test(reconciliation.checkpointDigest) ||
-        (reconciliation.outcome !== "confirmed" &&
-          reconciliation.outcome !== "not-applied") ||
+        (reconciliation.outcome !== "confirmed" && reconciliation.outcome !== "not-applied") ||
         typeof reconciliation.reconciledAt !== "string" ||
         !Number.isFinite(Date.parse(reconciliation.reconciledAt))
       ) {
-        throw new Error(
-          "workload.resumeSnapshot sideEffectReconciliation is invalid",
-        );
+        throw new Error("workload.resumeSnapshot sideEffectReconciliation is invalid");
       }
     }
   }
 }
 
-function validateMemoryDocuments(
-  documents: RunnerInput["memoryDocuments"],
-): void {
+function validateMemoryDocuments(documents: RunnerInput["memoryDocuments"]): void {
   if (documents === undefined) return;
   if (!Array.isArray(documents) || documents.length > 64) {
     throw new Error("memoryDocuments must contain at most 64 items");
@@ -902,13 +822,7 @@ function validateMemoryDocuments(
     if (scope !== "user" && scope !== "project" && scope !== "session") {
       throw new Error("memoryDocuments scope is invalid");
     }
-    for (const field of [
-      "scopeId",
-      "memoryKey",
-      "revisionId",
-      "artifactId",
-      "sha256",
-    ] as const) {
+    for (const field of ["scopeId", "memoryKey", "revisionId", "artifactId", "sha256"] as const) {
       const value = document[field];
       if (typeof value !== "string" || value.trim() === "") {
         throw new Error(`memoryDocuments ${field} is required`);
@@ -935,19 +849,16 @@ function validateMemoryDocuments(
     if (typeof document.content !== "string")
       throw new Error("memoryDocuments content is required");
     const bytes = Buffer.byteLength(document.content, "utf8");
-    if (bytes > 256 * 1024)
-      throw new Error("memoryDocuments item exceeds the size limit");
+    if (bytes > 256 * 1024) throw new Error("memoryDocuments item exceeds the size limit");
     totalBytes += bytes;
-    if (totalBytes > 1024 * 1024)
-      throw new Error("memoryDocuments exceed the total size limit");
+    if (totalBytes > 1024 * 1024) throw new Error("memoryDocuments exceed the total size limit");
   }
 }
 
 function collectSecretStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.flatMap(collectSecretStrings);
-  if (isRecord(value))
-    return Object.values(value).flatMap(collectSecretStrings);
+  if (isRecord(value)) return Object.values(value).flatMap(collectSecretStrings);
   return [];
 }
 

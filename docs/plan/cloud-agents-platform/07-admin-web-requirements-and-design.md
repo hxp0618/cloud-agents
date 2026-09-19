@@ -465,6 +465,46 @@ Prompt、消息正文、代码或 Artifact 内容。
 - 副作用结果未知时显示脱敏原因并指向有权用户的处理流程，不能由 Admin 读取内容或代替用户批准工具动作。
   恢复结果、拒绝原因及旧 attempt 回执处置须可在 Operation/Audit 追溯，沿用 zh-CN/en-US、主题与可访问性要求。
 
+### 8.14 MCP 与 Skill 运维（MCP-SKILL-RUNTIME-V1）
+
+- Admin Web 通过生成 SDK 读取当前租户/项目的 MCP Server 与 Skill Bundle；列表和详情只展示 opaque ID、版本、digest、MCP transport/权限、Skill 兼容 Provider、只读挂载、绑定关系、状态以及 Operation/Audit 元数据。
+- Admin 不展示或搜索 Prompt、Skill 源码、工具输入输出、MCP 返回内容、连接端点、主机路径、Token 或其他 Secret；分页、错误和跨租户响应仍由 Control Plane 权威返回。
+- 撤销、版本变更和绑定调整必须携带幂等键及 expected resource version，并在 capability durable event 与现有 Operation/Audit 中可追溯；Runtime 重新解析失败时页面显示 fail-closed 原因，不提供盲目重试外部副作用的按钮。
+- Runtime broker、Skill materializer 与 Provider 共享入口在实际注入或 Provider 启动前拒绝 opaque ID 归一化后的 MCP Token/Skill mount 环境变量名碰撞；Admin 只显示对应 opaque binding 与脱敏失败码，不显示环境变量名或 Token。
+- Control Plane 与 Worker 都要求 operator-owned capability descriptor 在首个 JSON 值后立即 EOF；尾随第二个值按无效物料 fail closed，Admin 只显示脱敏失败状态，不回显 descriptor、凭据或签名材料。
+- 当前页面已接入只读 opaque 元数据列表、项目级 Session/Execution 绑定关系，以及由现有 Managed Agent event stream 驱动的 capability Operation/Audit 表；表内只显示脱敏 admission、显式 opaque MCP outcome、解析拒绝及其 result。Runtime 已具备签名/digest 校验的只读 Skill Bundle materializer，operator-only 生成器已能生成受保护租户物料；候选 `0.3.0-dev.251` 的真实 Compose Admin Web smoke 已验证 MCP/Skill 列表最小 scope、重启和备份恢复，但没有 Provider 凭据，因此只证明管理链，不证明 Provider 格。该历史候选的 Codex Host-owned dynamic bridge 与 `mcp_servers={}` 结果已由后续 `.353/.354` 的原生 Host-managed MCP/结构化 Skill 实现取代；真实 Docker 模型调用仍以 discovery-only/exit 1 记录为准并 fail closed。Pi Skill 子路径虽已真实通过，但未进入 Control Plane/Worker event stream，因此 Admin 的真实 Provider 结果链和十二格验收仍未完成，不得以静态能力目录或页面存在标记支持。
+- Candidate `0.3.0-dev.253` 已补充 Claude Docker 的真实 MCP Provider 子路径：Host-managed MCP 的不可预知结果经过 fresh approval、真实 `tools/call` 和 completed event 后由 Agent 原样返回；Runtime digest 为 `sha256:1f9a0b81606141d31e436cf32239b5e364ceebae7a2a93a8da85db0ef8f22516`。这次直连 Runtime 探针不经过 Control Plane/Worker，所以 Admin 仍不得展示该工具输入、返回内容或 Secret，也不得把它冒充持久 Operation/Audit 或整格验收；只有后续经真实 event stream 写入的 opaque succeeded/failed/revoked 结果才能进入本页。
+- Candidate `0.3.0-dev.257` 已把同一 operator-owned capability descriptor 只读接到 Compose Control Plane 与 Worker，并给 Worker 增加显式 materialization 参数和 Skill `tmpfs`。真实 capability smoke 的 User/Admin 浏览器与 MCP/Skill catalog 创建通过，但 Claude execution 仍返回 `runtime_start_failed`，没有可供 Admin 展示的 `skill.load`、`mcp.call` 或 Provider outcome；fixture 又未启动其引用的 MCP upstream，因此页面不得把 catalog 存在或该失败冒充运行支持。脚本清理后测试资源为零。
+- Candidate `0.3.0-dev.281` 已产生首条真实 Control Plane/Worker Claude capability 结果链：同一 execution 完成 fresh approval、一次 MCP 外部副作用、一次签名 Skill 加载、文件 Artifact、`mcp.call`/`skill.load`/`execution.complete` 持久事件和断线续读；Admin 仍只显示 opaque identity、状态和计数，不显示 Token、Header、请求体、MCP 返回内容、marker 或 Skill 源码。其后 follow-up 暴露共享 Skill 路径的进程清理竞态，现已改为每个 Runtime 进程独立只读 Skill 根并通过重叠进程回归；candidate `0.3.0-dev.282` 的真实重跑被 Worker image 外部 `npm install` 构建失败阻断，所以页面不得把该修复、单次正向链或 Claude×Docker 整格标为 supported，failed/revoked、重启恢复和其余十一格继续开放。
+- deepseek-harness `0.1.2-rc.1` 的 adapter 已核实使用真实 `dsh-mcp-client`/`dsh-skill-filesystem` Cordis patch，并把 dsh custom root 精确指向受管 bundle 的 `skills/` 子目录；Admin 仍只应展示 opaque binding、版本/digest、权限、兼容性、状态与 Operation/Audit，不展示 dsh patch、Token 环境变量、连接端点、Skill 路径或工具结果。当前又有一条固定 `deepseek-v4-pro` 的独立 Docker Runtime 预检真实完成 `mcp.call`/`skill.load`、原生写文件和 ArtifactCandidate，使用本机 distribution artifact `sha256:c26a5a5c49b4fcd6b71be29d8c21acd3025e4b2f2034a78ad5bb9f49f022bb1e`（12,774,391 bytes）；fixture 仅记录 8 条脱敏 HTTP/RPC method，EOF 后 Skill 根为空，测试容器/临时凭据目录/live pointer 为 `0`。provider 已按真实 `skill({name})` 通知为 MCP 与单一 Skill Bundle 产生 opaque ID，Control Plane 可据此写入脱敏 succeeded/failed outcome；多 Bundle 无公开名称映射时不猜。该事件补丁仅有 TS/Go 定向测试，预检未经过 Control Plane/Worker，Admin 不得把它显示成真实持久 Operation/Audit 或十二格支持；原 `gpt-5.6-luna` 路由在无 capability baseline 即 malformed tool-call fail closed，故只登记机制和兼容性边界。
+- 同候选的任务自有 kind v1.37.0 Helm smoke 已补充验证 Kubernetes Admin/User Web 与部署运维链（Admin 18 请求、User 6 请求、普通用户 Admin 403、重启、CA/服务身份轮换、无 Agent/Provider Secret），随后精确删除 kind/context/测试资源；没有 Provider 凭据，所以这不改变 Admin 的 Provider 结果链和十二格验收边界。
+- 未发布 candidate `0.3.0-dev.283` 的真实 Compose smoke 在补齐固定 `node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5` 后 exit 0，完成迁移、Capability/Admin 列表、User/Admin 浏览器隔离、过期 grant 负向、Control Plane/Access Gateway 重启、备份恢复和精确清理；Admin 继续只显示 opaque 元数据与脱敏状态。本轮无 Provider 凭据，不产生 Provider outcome，也不把部署/管理链显示为 MCP/Skill 支持。
+- 同一 `.283` 候选随后以现有受保护凭据的临时副本和签名 Skill/MCP fixture 完成真实 Claude×Docker Control Plane/Worker 结果链；命令 exit 0，`capability_acceptance=passed`（`mcp_requests=8`、`side_effects=1`、`skill=1`）及 `event_stream_resume=passed`（`resumed_events=6`、`post_terminal_events=1`）。日志 `.tmp/mcp-skill-runtime-v1-20260915-r284-claude-docker.log`（`sha256:dc542461e9fe99daaa2812cd5c46eca98b7ae3cdc728067884b2ab554022b2b9`）和 secret scan 均通过，fixture/镜像/Compose/OpenSandbox 资源为零，原凭据源未修改；Admin 只显示 opaque outcome/计数，不显示 Token、输入输出、MCP 返回内容或 Skill 源码。该结果不关闭 Claude×Docker 整格，负向 capability 矩阵与其他十一格继续开放。
+- Candidate `.284` 的真实 Admin/Runtime 负向链又验证 MCP 与 Skill 撤销：两个 revoke Operation/Audit 只带 opaque resource identity、`capability_revoked` 和 `CAPABILITY_UNAVAILABLE`，后续 Runtime 请求/外部副作用均为零；日志 `.tmp/mcp-skill-runtime-v1-20260915-r288-claude-docker-revoke.log`（`sha256:b31627069e0023fea2d3d44ff29af545d4a4a8fa3e71ed86999c80f322b079d0`）pattern scan、Compose/OpenSandbox 清理和脚本 exit 0 通过。页面继续不显示 Token、输入输出、MCP 返回内容或 Skill 源码；版本不兼容、跨租户、旧 generation、重启恢复和其余 Provider/环境格保持开放。
+- Candidate `.285` 的无 Provider 凭据 Compose 负向又真实产生 MCP/Skill 的 opaque `*.fail`、`capability_version_mismatch` 事件，错误版本返回 `CAPABILITY_UNAVAILABLE` 且不打开 Runtime；跨租户元数据读取为 `401`。日志 `.tmp/mcp-skill-runtime-v1-20260915-r290-contract-negative.log`（`sha256:68f7e7a06b43f7ada97a96e03ed07000fdbb80696c55b8182af3e349902c83f2`）和零残留清理通过；Admin 投影仍不增加 Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
+- Candidate `.286` 的真实 Compose 共享 fencing 负向在 Sandbox generation 从 `1` 推进到 `2` 后，以带 MCP/Skill refs 的旧 generation 创建 Session，返回 `409 SESSION_CONFLICT` 且不打开 Runtime。日志 `.tmp/mcp-skill-runtime-v1-20260915-r292-stale-generation.log`（`sha256:6655117051c6742505d7e610ed05702d8cbb880b6c3f2277be271c1ef5a10d82`）、secret pattern scan 与零残留清理通过；Admin 仅呈现 opaque conflict/status，不展示 Sandbox 内部路径、物料或 Secret，也不把共享负向冒充逐格通过。
+- Candidate `.287` 将相同 opaque contract-negative/stale-generation 检查真实扩展到 outbound RemoteWorker 与 Kubernetes：两者都返回 MCP/Skill `CAPABILITY_UNAVAILABLE`、跨租户 `401`，旧 generation `1` 在当前 `2` 下返回 `409` 且不打开 Runtime。RemoteWorker 日志 `.tmp/mcp-skill-runtime-v1-20260916-r297-remote-contract-negative.log`（`sha256:8a1eca15f6f4268789a3f870b07e578a0c6a5141a62f0e6993298bd98dc30cf4`），Kubernetes 日志 `.tmp/mcp-skill-runtime-v1-20260916-r300-kubernetes-contract-negative.log`（`sha256:89ab5ac743557b04331c249d2f4a89956fccf6e439d632796b09897cc4c055b7`）；secret scan 无命中，Compose 资源为零，任务自有 kind/OpenSandbox 前置资源已精确删除。Admin 仍只展示 opaque 状态、版本/digest、绑定及 Operation/Audit，不增加 Prompt、源码、输入输出、MCP 返回内容或 Secret；该共享证据不关闭任何 Provider×环境格。
+- 同一 `.287` 制品的 r304 真实 Claude×RemoteWorker 运行进一步产生正向、断连续读和撤销结果：Docker/RemoteWorker 各为 `mcp_requests=8`、`side_effects=1`、`skill=1`、`resumed_events=6`、`post_terminal_events=1`；RemoteWorker 撤销后 Runtime 新增请求/副作用为 `0`、opaque capability events 为 `2`。日志 `.tmp/mcp-skill-runtime-v1-20260916-r304-claude-remote-worker-revoke.log`（`sha256:a690eb82d4754bf9b5bf8d0c822e757889e27765cd1c88ba60630289453165cd`）、secret scan 与零资源清理通过。Admin 只消费这些 opaque 计数/状态；同轮 restart/takeover Turn 未引用 MCP/Skill，所以不显示为 capability recovery，Claude×RemoteWorker 整格仍开放。
+- `.288` 的 r305 在相同 opaque capability 结果通过后暴露 RemoteWorker Sandbox Exec/heartbeat 的 PostgreSQL `40P01`，最终以 `INTERNAL_ERROR` 失败；实现只把已回滚 deadlock 映射为 `RESOURCE_CONFLICT`，让调用端以新一次性授权有界重试。修复后的 `.289` 22 项 checksum 与 r306 完整 Compose smoke 通过，日志 `.tmp/mcp-skill-runtime-v1-20260916-r306-claude-remote-worker-revoke.log`（`sha256:b23b01ddcc15add7a9d93bf7783ed12ace3065374f7ee162cb92feabc2983915`），secret scan/资源清理为零。Admin 不展示数据库诊断或凭据；能力绑定恢复仍未覆盖，整格不关闭。
+
+Candidate `0.3.0-dev.290` 的 Kubernetes fixture 仅展示 opaque 测试状态：按 `opensandbox.io/id` 绑定 Runtime Pod、固定 SDK bundle、descriptor stdin 注入和清理结果；Admin 不增加 Pod 名称、容器名、进程号、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。无 Provider 凭据的真实命令 exit 0 只得到 `capability_contract_negative=passed` 与 `capability_stale_generation=passed`，日志 `.tmp/mcp-skill-runtime-v1-20260916-r290-kubernetes-contract-negative.log` SHA-256 `sha256:15a7dbbc57ddcca19a7ebcfbcd8ab559150ea9e0c56b9d2dac41eb832c99e1a5`，资源清理为零；Claude Kubernetes 正向仍未运行，不改变 Admin 或十二格验收边界。
+
+本轮恢复脚本只新增内部 capability-bound 验收断言，不改变 Admin 投影：恢复时仍只记录 opaque MCP/Skill ID、版本、digest、状态、绑定和 Operation/Audit，绝不展示 Prompt、Skill 源码、工具输入输出、MCP 返回值、Pod/主机路径或 Secret。由于没有新的真实 Provider recovery evidence，Admin 不得把该路径显示为 supported 或关闭任何格。
+
+Candidate `0.3.0-dev.291` 只完成 22 项制品 checksum 与定向 capability/Control Plane 测试；Admin 继续不展示恢复 Turn 内容或 Secret，也不把 `capability_bound_recovery` 静态断言显示成 supported 状态。
+
+Codex `@openai/codex@0.150.1` 的 Skill adapter 已按真实 app-server schema 接入 `skills/extraRoots/set`/`skills/list`：Admin 侧仍只展示 opaque Bundle ID、版本、digest、权限、状态、兼容性、绑定关系与 Operation/Audit；Runtime discovery 的本地 path、Skill 源码、Prompt、工具输入输出、MCP 返回内容和 Secret 均不进入 Admin 投影。受控 `HOME`/`CODEX_HOME` 证据、58 个 Codex tests 和 `.292` 22 项 checksum 只更新实现边界，不新增 supported cell 或解除“无 Provider 凭据不得宣称正向”的验收限制。
+
+Candidate `0.3.0-dev.293` 进一步确认 system Skill 也只能来自受控 `CODEX_HOME`；Admin 投影仍不显示本地 path、源码、Prompt、工具输入输出、MCP 返回内容或 Secret。该候选 manifest `sha256:6d2e62174420da4083575cd6215009942d5c28ea79d054e6c9d320788d786385`、checksums `sha256:f7427791180c818b9c66a87ce10c0c60453dbc831324b0ceb7a32e46de7dc3f3` 已通过，且没有 Provider 正向凭据或 supported cell 更新。
+
+Candidate `0.3.0-dev.294` 的 Admin 可消费 Codex MCP `mcp_tool_call` 与 opaque Server ID、单一 Bundle Skill `sourceItemType=skill` 与 opaque Bundle ID；页面仍只展示 ID、版本、digest、权限、兼容性、状态、绑定关系和 Operation/Audit，不展示本地路径、源码、Prompt、输入输出、MCP 返回内容或 Secret。其 manifest `sha256:6565fd94667d960e7c1399e0116340f81ba82a2153ac37abbde66ab07b8e2966`、checksums `sha256:105d299b1d57c3e13ea8dd753fa0279f594e89db475fec643ec690b0053e9ba1` 已通过；没有 Provider 正向凭据，仍不显示 supported。
+
+Candidate `0.3.0-dev.295` 继续保持 Admin opaque 投影：MCP transport/JSON-RPC failure 只呈现脱敏状态/Operation/Audit，未知副作用不展示响应内容，也不提供自动重试按钮；manifest `sha256:fb7fde91f966d01279e6325f360a8709962f0340370ac5dd40656fc3d16a730`、checksums `sha256:f1b5d517f7b26f2a903897d604888195ae86d2cc167d23a539aeabfba86e52e6` 已通过。没有 Provider 正向凭据，Admin 不显示 supported。
+
+`.291` 的无凭据 Compose 回归只新增共享 opaque 负向结果：不兼容版本、跨租户拒绝、旧 generation 拒绝、Operation/Audit、重启和备份恢复均可见，未展示 Prompt、源码、工具输入输出、MCP 返回内容或 Secret；它不改变 Admin 的 Provider supported 状态。
+
+Kubernetes contract-only 重跑同样只向 Admin 贡献 opaque 负向状态、绑定和 Operation/Audit：Pod 名称、容器名、进程号、主机路径、Prompt、源码、工具输入输出、MCP 返回内容和 Secret 均不进入 Admin 投影；该结果不显示为 Provider supported。
+
 ## 9. 关键流程
 
 ### 9.0 底座独立使用（当前主线）
@@ -750,6 +790,44 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 也不授予其他任务新权限；已有效的同范围授权无需重复确认。
 
 后续任务引用固定验收标识和所用文档版本，不再单独引用可变章节号。改变固定标识的资源范围或完成条件时须新增版本并显式迁移适用任务，不能原地把 ADMIN-WEB-V1 扩成 BASE，也不能把旧任务改称完成来掩盖未做的旧验收。
+
+本轮 `.296` candidate 没有扩大 Admin 展示面：Codex MCP/Skill 事件只归因到 opaque capability ID，namespace collision、transport/JSON-RPC failure 和未知副作用仍只表现为 Operation/Audit 状态，不向 Admin 暴露工具输入输出、MCP 返回内容、Prompt、源码或 Secret。候选 manifest `sha256:8433198e69af58211549b1da694f58a367426b3383d39d7a50ad385876280c09`、checksums `sha256:4569d088a836ad7643190055fd1fdef29b047093926e11f23ee37bc94955fdf6`；无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.297` 失败审计仍只扩大 Admin 可见的 opaque Operation/Audit 状态：已完成 capability item 的 outcome 与 started-but-not-completed 的 `mcp.fail`/`skill.fail`、`capability_call_unknown` 可查询，但不返回工具输入输出、MCP 返回内容、Prompt、源码、started-event 原文或 Secret。无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.298` 仅修正失败审计的 opaque item identity 归属，Admin 仍只显示 Capability ID、Operation/Audit 状态和脱敏 digest，不显示工具输入输出、MCP 返回内容、Prompt、源码或 Secret；无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.299` 只记录 deepseek tool-result fail-closed 的 opaque Operation/Audit 结果；Admin 不显示 provider error 原文、工具输入输出、MCP 返回内容、Prompt、源码或 Secret。无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.300` 只记录 deepseek Harness 中止和后续通知丢弃的 opaque Operation/Audit 状态；Admin 不显示 provider error 原文、工具输入输出、MCP 返回内容、Prompt、源码或 Secret。无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.301` 只记录 Pi 恢复路径继续携带受管 Skill Bundle root 的 opaque Operation/Audit 边界；Admin 不显示本地 Skill 路径、源码、Prompt、工具输入输出、MCP 返回内容或 Secret。Runtime broker/materializer/stdio 与 Provider API 91 tests、定向 Provider/SDK 54 tests、TS/Go 生成检查、Go test/vet 和 Admin 边界检查通过；无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+同一 `.301` 候选的无凭据 Compose 负向回归只向 Admin 提供 `capability_contract_negative`、`capability_stale_generation`、重启/备份恢复及 browser smoke 的 opaque 状态；命令 exit 0 且容器/网络/卷为零，不展示本地 Skill 路径、源码、Prompt、输入输出、MCP 返回内容或 Secret，也不显示 Provider supported。
+
+`.302` 仅收紧 capability Operation/Audit 的 opaque identity：Admin 可区分同名 MCP/Skill 的状态、结果和 `capability_call_unknown`，但不展示 Prompt、源码、工具输入输出、MCP 返回内容、路径或 Secret；Go/TS 接缝和 Compose 负向回归通过，无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.303` 延续 opaque Admin 边界：pending capability 审计按资源类型、opaque capability ID 和 provider item ID 独立归因，Admin 只显示对应 Operation/Audit 状态、版本和 digest；不展示 Prompt、源码、工具输入输出、MCP 返回内容、路径或 Secret。Go/TS 接缝、Managed Agent 回归与 Compose 负向回归通过，无受保护 Provider 运行，Admin/十二格/Gate 结论不变。
+
+`.305` 的恢复回归只重用已持久化的 opaque MCP/Skill refs、版本、digest 和 manifest digest；Runtime open 与 Admin/Audit 均不新增 endpoint、host path、Token、Prompt、源码、工具输入输出或 MCP 返回内容。该协议级检查不改变 Admin 展示面，也不构成 Provider/环境真实恢复验收。
+
+`.306` 的 digest 回归只验证 opaque MCP/Skill refs 参与 Execution 幂等材料；Admin 继续只展示 opaque ID、版本、digest、权限、状态、兼容性、绑定关系和 Operation/Audit，不展示内部路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
+
+`.307` 的 Pi Skill 事件接缝仍只扩大 opaque Operation/Audit 状态：`dynamic_tool_call`/`sourceItemType=skill` 及 `skill.load` outcome 只带 capability ID、provider item ID 和状态，不返回受管 Skill 路径、Bundle 源码、Prompt、工具输入输出、MCP 返回内容或 Secret；Pi MCP 继续 fail closed。Provider API/Pi 100 Vitest、typecheck、格式、diff check 和 22 项 checksum 通过，但无受保护 Provider 或 Admin/环境正向验收，Admin/十二格/Gate 结论不变。candidate manifest/checksums/Runtime/Control Plane arm64 digest 分别为 `sha256:c0316def7d041c699ebd98652b9ffbb540910ade264e7d8e34bb068bead599e7`、`sha256:ea523d0d6bd8233277bf4f67c6f3a669efa4edcfb9044daaaa5191c13ff1d969`、`sha256:080cb8ecfc42d7b8e7319e7655e4050f391e0049fb971306a1765e4a67a28789`、`sha256:32fcc7f1c48900aa735ea6ae91a72cda199a7698a56602c371cac0437e4dcfac`。
+
+`.309` 的真实 Claude×Docker 恢复验收继续保持 Admin 最小投影：start/settle/cancel/interrupt 即时响应只补回已持久化的 opaque MCP/Skill refs，Admin/Operation/Audit 仅显示 capability ID、版本、digest、状态、attempt、恢复模式和脱敏 outcome；不展示 endpoint、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、credential 或 Token。真实日志已证明 MCP/Skill 正向、事件续读、Control Plane SIGKILL 后 attempt 2/confirmed/RPO 0、撤销零请求/零副作用；日志 SHA-256 `sha256:ba9b32fc4d4e34530ca099441056c52fe0cb6910381add73573f9574510938a8`，credential/token/MCP return secret scan 为 0，原凭据未变，Compose/fixture/诊断资源清理为 0。candidate manifest/checksums/Runtime/Control Plane arm64 digest 分别为 `sha256:6d407d0b0403d3c6e1ea87ecaff6fbf549af1d5308d3accab630c2d555e209d5`、`sha256:24d071037cef1969f42195d5b27828dbed4e77b544e37b55c10be887d6e60164`、`sha256:080cb8ecfc42d7b8e7319e7655e4050f391e0049fb971306a1765e4a67a28789`、`sha256:d71dbb983a7f967a8e2cf86c8afe8996275aafc4876c11fe23b1ec9e6bce023d`。该结果不扩大 Admin 数据面，也不关闭十二格或正式 Gate。
+
+同一 `.309` candidate 的 Claude×RemoteWorker r328 实测继续复用相同 Admin 投影：真实 MCP/Skill 正向、事件续读、capability-bound Control Plane process-restart 和撤销负向只增加 opaque capability ID、版本、digest、attempt、恢复模式、状态与脱敏 outcome，不展示节点地址、endpoint、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、credential 或 Token。日志 SHA-256 `sha256:261aad9ee72bdf04bca61bc94e06ca31a62ec5ff5eae968ad27d4c56e4dc8dc9`，credential/token/marker/tool-name scan 为 0，原凭据未变，Compose/RemoteWorker/fixture 临时资源为 0。同轮跨节点恢复是 `capabilityBound=false`，Admin 不把它显示成 MCP/Skill 恢复成功；十二格和正式 Gate 状态不变。
+
+同一 `.309` candidate 的 Claude×Kubernetes r329 实测也保持相同 Admin 最小投影：Kubernetes MCP/Skill 正向、事件续读、capability-bound Control Plane process-restart 和撤销负向只显示 opaque capability ID、版本、digest、attempt、恢复模式、状态与脱敏 outcome，不展示 namespace/Pod/node、endpoint、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、credential 或 Token。日志 SHA-256 `sha256:d6c65ef24d4289a27f4f878227e6732580564720c50c21a259aafb4fd902c539`，credential/token/marker/tool-name scan 为 0，原凭据未变，Compose/Kubernetes/fixture 临时资源为 0。本轮未执行 Kubernetes cross-node，Admin 不推断未发生的接管；十二格和正式 Gate 状态不变。
+
+Candidate `0.3.0-dev.353` 没有扩大 Admin 数据面。Codex 原生 MCP discovery 成功但模型未发起 MCP/Skill 调用时，Admin 只显示 opaque capability ID、版本、digest、绑定、Operation/Audit 状态和稳定失败码；不显示 `mcp_servers` 配置、loopback 地址、Skill 路径、Prompt、工具输入输出、MCP 返回内容、credential 或 Token。真实 Docker 日志 SHA-256 为 `sha256:dc43706b5576c43b75cbdfe9fb5e577d649701ae4325c976dffc936281105c72`，exit 1、资源清理为零；界面不得把 discovery 显示为 supported 或 successful invocation，十二格和正式 Gate 继续开放。
+
+Candidate `0.3.0-dev.354` 只修复 Provider Host 内部的即时 `turnId` 竞态并重新打包当前源码，不扩大 Admin 投影。Admin 继续只显示 opaque ID、版本、digest、权限、状态、兼容性、绑定、Operation/Audit 和稳定错误码；不显示 app-server 参数、endpoint、路径、Prompt、源码、工具输入输出、MCP 返回内容、credential 或 Token。该候选没有新的真实模型调用证据，页面不得把 `.353` 的 discovery-only 结果提升为 supported；十二格和正式 Gate 保持开放。
+
+`.354` 的 Codex Docker 复跑只在 Worker image build 阶段因 `deb.debian.org` 外部连接失败而停止，日志 SHA-256 为 `sha256:53227ff4f88835d2f370c7402a918b89f60202dc358f331ffc8c110f63fdcb65`；Admin 不得展示为 Provider 运行结果；日志只保留稳定失败码和候选/Operation 关联，不展示 apt 细节、路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。验收脚本的 Skill 动作改为 Host-owned `workspace.write_text_file` 一次，Admin 数据面与十二格/Gate 状态不变。
+
+`.356` 在代理预热后真实启动了 Codex Docker 链，但由于没有 `tools/call`、Skill、Artifact 或副作用，Admin 只能显示 opaque capability 绑定与稳定的 discovery-only/失败状态；日志 SHA-256 为 `sha256:37f1301415812a6a3716ae559c6ad8bf38df20e5d2a8e272573f429fea4fb5e2`。Admin 不展示模型内容、MCP 返回内容、Prompt、路径、代理变量或 Secret，不能把该次运行标为 supported；十二格/Gate 状态不变。
 
 ## 17. 参考
 

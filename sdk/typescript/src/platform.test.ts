@@ -40,6 +40,7 @@ import {
   decodeManagedAgentTurnPage,
   decodeManagedAgentExecution,
   decodeManagedAgentExecutionPage,
+  decodeManagedAgentEventPage,
   decodeRole,
   decodeRolePage,
   decodeRoleBinding,
@@ -2960,6 +2961,47 @@ describe("generated platform JSON models", () => {
     expect(seen[7]?.body).toBe(
       '{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"__proto__":["one","two"]}}',
     );
+  });
+  it("replays redacted capability event results and rejects mismatched terminal states", () => {
+    const event = {
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "Event",
+      metadata: {
+        uid: "event-capability",
+        projectId: "project-alpha",
+        sessionId: "session-alpha",
+        sequence: "1",
+        occurredAt: "2026-08-29T08:00:00Z",
+      },
+      spec: {
+        operation: "mcp.call",
+        resource: "McpServer",
+        generation: 1,
+        mutationDigest: `sha256:${"a".repeat(64)}`,
+        result: "succeeded",
+        serverId: "server-alpha",
+        version: "v1",
+        digest: `sha256:${"b".repeat(64)}`,
+        changes: [{ resource: "McpServer", from: "", to: "succeeded", version: 1 }],
+      },
+    };
+    const page = decodeManagedAgentEventPage({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "EventPage",
+      events: [event],
+      nextCursor: "",
+      hasMore: false,
+    });
+    expect(page.events[0]?.spec.result).toBe("succeeded");
+    expect(() =>
+      decodeManagedAgentEventPage({
+        apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+        kind: "EventPage",
+        events: [{ ...event, spec: { ...event.spec, operation: "mcp.fail", result: "succeeded" } }],
+        nextCursor: "",
+        hasMore: false,
+      }),
+    ).toThrow("INVALID_EVENT");
   });
   it("replays common and platform golden fixtures", () => {
     expect(parseProblem(readFixture(commonFixtureRoot, "golden/problem.json")).status).toBe(404);

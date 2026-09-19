@@ -127,6 +127,31 @@ func TestScanManagedAgentExecutionTransitionPreservesNullableTerminalFields(t *t
 	}
 }
 
+func TestHydrateManagedAgentExecutionTransitionCapabilities(t *testing.T) {
+	now := time.Date(2026, time.September, 16, 14, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	scope := internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}
+	var result internalmanagedagent.ExecutionTransitionResult
+	if err := scanManagedAgentExecutionTransition(rowValues("turn-alpha", "completed", int64(4), now, now,
+		"execution-alpha", int64(7), "succeeded", &digest, nil, int64(2), now, now), scope, "session-alpha", &result); err != nil {
+		t.Fatal(err)
+	}
+	mcp := []internalmanagedagent.McpServerRef{{ServerID: "mcp-alpha", Version: "v1", Digest: digest}}
+	skill := []internalmanagedagent.SkillBundleRef{{BundleID: "skill-alpha", Version: "v1", Digest: digest}}
+	mcpJSON, skillJSON, err := managedAgentCapabilityRefsJSON(mcp, skill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := managedExecutionRowValues("execution-alpha", 7, "succeeded", &digest, nil, 2, now, nil, nil).(*fakeRow)
+	if err := hydrateManagedAgentExecutionTransitionCapabilities(rowValues(append(base.values, mcpJSON, skillJSON)...), scope, "session-alpha", &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Execution.McpServerRefs) != 1 || result.Execution.McpServerRefs[0].ServerID != "mcp-alpha" ||
+		len(result.Execution.SkillBundleRefs) != 1 || result.Execution.SkillBundleRefs[0].BundleID != "skill-alpha" {
+		t.Fatalf("capability refs = %#v / %#v", result.Execution.McpServerRefs, result.Execution.SkillBundleRefs)
+	}
+}
+
 func TestScanManagedAgentExecutionTransitionAcceptsLifecycleOutcomes(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
 	digest := "sha256:" + strings.Repeat("a", 64)
@@ -210,6 +235,14 @@ func TestManagedAgentExecutionDigestsMatchLifecycleKernel(t *testing.T) {
 	created, err := internalmanagedagent.ExecutionCreateMutationDigest(internalmanagedagent.CreateExecutionInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, Mutation: mutation})
 	if err != nil || !strings.HasPrefix(created, "sha256:") {
 		t.Fatalf("create digest/error = %q/%v", created, err)
+	}
+	withCapabilities, err := internalmanagedagent.ExecutionCreateMutationDigest(internalmanagedagent.CreateExecutionInput{
+		Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, Mutation: mutation,
+		McpServerRefs:   []internalmanagedagent.McpServerRef{{ServerID: "mcp-server", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64)}},
+		SkillBundleRefs: []internalmanagedagent.SkillBundleRef{{BundleID: "skill-bundle", Version: "v1", Digest: "sha256:" + strings.Repeat("b", 64)}},
+	})
+	if err != nil || withCapabilities == created {
+		t.Fatalf("capability refs did not participate in create digest: noRefs=%q withRefs=%q err=%v", created, withCapabilities, err)
 	}
 	completed, err := internalmanagedagent.ExecutionCompleteMutationDigest(internalmanagedagent.CompleteExecutionInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, ResultDigest: "sha256:" + strings.Repeat("b", 64), Mutation: mutation})
 	if err != nil || !strings.HasPrefix(completed, "sha256:") || completed == created {

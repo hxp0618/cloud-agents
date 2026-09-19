@@ -82,6 +82,9 @@ type Config struct {
 	// RuntimeCredentialDirectory contains one <tenantID>.<providerKind>.json
 	// anonymous-FD credential envelope per production Provider.
 	RuntimeCredentialDirectory string
+	// RuntimeCapabilityMaterializationDirectory contains one operator-owned
+	// <tenantID>.capabilities.json descriptor with short-lived MCP materializations.
+	RuntimeCapabilityMaterializationDirectory string
 	// AdmissionLeaseID, AdmissionGeneration, and AdmissionToken bind the local,
 	// in-memory operation-admission seam to one externally supplied fencing authority.
 	// They do not authorize dispatch, durable receipts, or any external write.
@@ -101,31 +104,32 @@ type Config struct {
 // Negotiation state is ephemeral and bound to client/server identities.
 type Service struct {
 	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
-	workerIdentity             *workerv1alpha1.WorkloadIdentity
-	capabilities               map[workerv1alpha1.Capability]struct{}
-	ttl                        time.Duration
-	identity                   IdentityProvider
-	newID                      IDGenerator
-	now                        Clock
-	mu                         sync.RWMutex
-	executionMu                sync.Mutex
-	bindings                   map[string]binding
-	admissionLeaseID           string
-	admissionGeneration        uint64
-	admissionToken             []byte
-	runtimeCommand             []string
-	runtimeEnvironment         []string
-	runtimeDirectory           string
-	runtimeCredentialDirectory string
-	runtimeSlots               chan struct{}
-	runtimeMu                  sync.Mutex
-	runtimeFenceMu             sync.Mutex
-	runtimeSessions            map[string]*runtimeLease
-	admissions                 map[string]admissionRecord
-	executor                   OperationExecutor
-	receipts                   map[string]receiptRecord
-	receiptsByAttempt          map[string]string
-	receiptSequence            uint64
+	workerIdentity                            *workerv1alpha1.WorkloadIdentity
+	capabilities                              map[workerv1alpha1.Capability]struct{}
+	ttl                                       time.Duration
+	identity                                  IdentityProvider
+	newID                                     IDGenerator
+	now                                       Clock
+	mu                                        sync.RWMutex
+	executionMu                               sync.Mutex
+	bindings                                  map[string]binding
+	admissionLeaseID                          string
+	admissionGeneration                       uint64
+	admissionToken                            []byte
+	runtimeCommand                            []string
+	runtimeEnvironment                        []string
+	runtimeDirectory                          string
+	runtimeCredentialDirectory                string
+	runtimeCapabilityMaterializationDirectory string
+	runtimeSlots                              chan struct{}
+	runtimeMu                                 sync.Mutex
+	runtimeFenceMu                            sync.Mutex
+	runtimeSessions                           map[string]*runtimeLease
+	admissions                                map[string]admissionRecord
+	executor                                  OperationExecutor
+	receipts                                  map[string]receiptRecord
+	receiptsByAttempt                         map[string]string
+	receiptSequence                           uint64
 }
 
 type runtimeLease struct {
@@ -175,6 +179,12 @@ func NewService(cfg Config) (*Service, error) {
 				return nil, fmt.Errorf("worker/invalid_config: Runtime credential directory is unavailable")
 			}
 		}
+		if cfg.RuntimeCapabilityMaterializationDirectory != "" {
+			info, err := os.Stat(cfg.RuntimeCapabilityMaterializationDirectory)
+			if err != nil || !info.IsDir() {
+				return nil, fmt.Errorf("worker/invalid_config: Runtime capability materialization directory is unavailable")
+			}
+		}
 		if len(cfg.AdmissionToken) == 0 {
 			return nil, fmt.Errorf("worker/invalid_config: Runtime admission token is required")
 		}
@@ -185,7 +195,7 @@ func NewService(cfg Config) (*Service, error) {
 			return nil, fmt.Errorf("worker/invalid_config: Runtime max sessions must be between 1 and %d", MaxRuntimeSessions)
 		}
 		runtimeSlots = make(chan struct{}, cfg.RuntimeMaxSessions)
-	} else if cfg.RuntimeMaxSessions != 0 || cfg.RuntimeDirectory != "" || cfg.RuntimeCredentialDirectory != "" {
+	} else if cfg.RuntimeMaxSessions != 0 || cfg.RuntimeDirectory != "" || cfg.RuntimeCredentialDirectory != "" || cfg.RuntimeCapabilityMaterializationDirectory != "" {
 		return nil, fmt.Errorf("worker/invalid_config: Runtime configuration requires a Runtime command")
 	}
 	caps := cfg.Capabilities
@@ -212,7 +222,7 @@ func NewService(cfg Config) (*Service, error) {
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
 		admissionToken: append([]byte(nil), cfg.AdmissionToken...),
-		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory, runtimeSlots: runtimeSlots, runtimeSessions: make(map[string]*runtimeLease),
+		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory, runtimeCapabilityMaterializationDirectory: cfg.RuntimeCapabilityMaterializationDirectory, runtimeSlots: runtimeSlots, runtimeSessions: make(map[string]*runtimeLease),
 		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
 		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil
 }

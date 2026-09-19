@@ -308,7 +308,9 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"target", "register", "--help"}, expected: "-credential-ref string"},
 		{args: []string{"project", "create", "--help"}, expected: "-organization-id string"},
 		{args: []string{"membership", "create", "-h"}, expected: "-subject-issuer string"},
+		{args: []string{"session", "create", "help"}, expected: "-mcp-server-refs-json string"},
 		{args: []string{"execution", "execute", "help"}, expected: "-runtime-mode string"},
+		{args: []string{"execution", "execute", "help"}, expected: "-skill-bundle-refs-json string"},
 		{args: []string{"execution", "download-artifact", "help"}, expected: "-message-index int"},
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
 		{args: []string{"execution", "reconcile", "help"}, expected: "-checkpoint-digest string"},
@@ -409,6 +411,47 @@ func TestRunSessionList(t *testing.T) {
 	}
 }
 
+func TestParseCapabilityRefsRequiresJSONArrays(t *testing.T) {
+	for _, raw := range []string{"null", `{"serverId":"mcp-alpha"}`, "not-json"} {
+		if _, _, err := parseCapabilityRefs(raw, ""); err == nil {
+			t.Fatalf("parseCapabilityRefs(%q) unexpectedly succeeded", raw)
+		}
+	}
+}
+
+func TestRunSessionCreateCarriesCapabilityReferences(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions" ||
+			request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" ||
+			request.Header.Get("Idempotency-Key") != "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4" ||
+			!strings.Contains(string(body), `"mcpServerRefs":[{"serverId":"mcp-alpha","version":"1.2.3","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]`) ||
+			!strings.Contains(string(body), `"skillBundleRefs":[{"bundleId":"skill-alpha","version":"4.5.6","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]`) {
+			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.Path, request.Header, body)
+		}
+		writer.Header().Set("X-Resource-Version", "1")
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"1","createdAt":"2026-09-06T00:00:00Z","updatedAt":"2026-09-06T00:00:00Z"},"spec":{"providerKind":"pi","state":"active","mcpServerRefs":[{"serverId":"mcp-alpha","version":"1.2.3","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"skillBundleRefs":[{"bundleId":"skill-alpha","version":"4.5.6","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
+		"--session", "session-alpha", "--lease", "lease-alpha", "--request-id", "request-alpha", "--idempotency-key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4",
+		"session", "create", "--provider", "pi",
+		"--mcp-server-refs-json", `[{"serverId":"mcp-alpha","version":"1.2.3","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]`,
+		"--skill-bundle-refs-json", `[{"bundleId":"skill-alpha","version":"4.5.6","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]`,
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"kind":"Session"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunTurnList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns" || request.URL.Query().Get("pageSize") != "1" || request.URL.Query().Get("pageToken") != "turn-page-token-1" {
@@ -441,6 +484,38 @@ func TestRunExecutionListDoesNotRequireTurnOrExecutionID(t *testing.T) {
 		"execution", "list", "--page-size", "1", "--page-token", "execution-page-token-1",
 	}, &stdout)
 	if err != nil || !strings.Contains(stdout.String(), `"kind":"ExecutionPage"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
+func TestRunExecutionCarriesCapabilityReferences(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" ||
+			request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" ||
+			request.Header.Get("Idempotency-Key") != "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2" ||
+			!strings.Contains(string(body), `"mcpServerRefs":[{"serverId":"mcp-alpha","version":"1.2.3","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]`) ||
+			!strings.Contains(string(body), `"skillBundleRefs":[{"bundleId":"skill-alpha","version":"4.5.6","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]`) {
+			t.Fatalf("request = %s %s headers=%v body=%s", request.Method, request.URL.Path, request.Header, body)
+		}
+		writer.Header().Set("X-Resource-Version", "1")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"1","createdAt":"2026-09-06T00:00:00Z","updatedAt":"2026-09-06T00:00:00Z"},"spec":{"generation":1,"state":"queued","attemptNumber":1,"recoveryState":"none","mcpServerRefs":[{"serverId":"mcp-alpha","version":"1.2.3","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"skillBundleRefs":[{"bundleId":"skill-alpha","version":"4.5.6","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
+		"--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "--idempotency-key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
+		"execution", "execute", "--input", "use capabilities",
+		"--mcp-server-refs-json", `[{"serverId":"mcp-alpha","version":"1.2.3","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]`,
+		"--skill-bundle-refs-json", `[{"bundleId":"skill-alpha","version":"4.5.6","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]`,
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"kind":"Execution"`) {
 		t.Fatalf("output/error = %q / %v", stdout.String(), err)
 	}
 }

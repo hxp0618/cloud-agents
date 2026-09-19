@@ -667,6 +667,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_restore_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000099",
+          [
+            "function:unquoted:cloud_agents/unquoted:append_managed_agent_capability_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -787,6 +793,14 @@ export function classifyMigrationStatement(
         targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "MANAGED_AGENT_EVENTS_OPERATION"].join("\0");
+      const dropManagedAgentCapabilityEventConstraint =
+        migrationId === "000099" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
+        ["MANAGED_AGENT_EVENTS_OPERATION", "MANAGED_AGENT_EVENTS_RESOURCE"].includes(
+          subcommand[2] ?? "",
+        ) &&
+        subcommand[0] === "DROP" &&
+        subcommand[1] === "CONSTRAINT";
       const dropRemoteWorkerPTYShapeConstraint =
         migrationId === "000093" &&
         targetIdentity ===
@@ -846,6 +860,7 @@ export function classifyMigrationStatement(
         !dropEnvironmentProfileProviderKindsConstraint &&
         !dropManagedAgentRuntimeMessagesConstraint &&
         !dropManagedAgentEventOperationConstraint &&
+        !dropManagedAgentCapabilityEventConstraint &&
         !dropRemoteWorkerPTYShapeConstraint &&
         !dropRemoteWorkerEnrollmentActivityConstraint &&
         !dropAdminDeniedWriteConstraint &&

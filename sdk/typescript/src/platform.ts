@@ -456,6 +456,79 @@ export type NetworkPolicyPage = Readonly<{
   networkPolicies: readonly NetworkPolicy[];
   nextPageToken?: string;
 }>;
+export type McpServerCreateRequest = Readonly<{
+  serverId: string;
+  version: string;
+  digest: `sha256:${string}`;
+  transport: "stdio" | "sse" | "streamable-http";
+  connectionRef: string;
+  credentialRef: string;
+  networkPolicyRef: string;
+  permissions: readonly string[];
+}>;
+export type McpServerRevokeRequest = Readonly<{
+  expectedResourceVersion: string;
+  reasonCode: string;
+}>;
+export type McpServer = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "McpServer";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    version: string;
+    digest: `sha256:${string}`;
+    transport: "stdio" | "sse" | "streamable-http";
+    connectionRef: string;
+    credentialRef: string;
+    networkPolicyRef: string;
+    permissions: readonly string[];
+    status: "active" | "revoked";
+    revokedAt?: string;
+  }>;
+}>;
+export type McpServerPage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "McpServerPage";
+  mcpServers: readonly McpServer[];
+  nextPageToken?: string;
+}>;
+export type SkillBundleCreateRequest = Readonly<{
+  bundleId: string;
+  version: string;
+  digest: `sha256:${string}`;
+  sourceRef: string;
+  signatureRef: string;
+  signingKeyId: string;
+  compatibleProviders: readonly ("codex" | "claude-code" | "pi" | "deepseek-harness")[];
+}>;
+export type SkillBundleRevokeRequest = Readonly<{
+  expectedResourceVersion: string;
+  reasonCode: string;
+}>;
+export type SkillBundle = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SkillBundle";
+  metadata: ResourceMetadata;
+  spec: Readonly<{
+    projectRef: NamespaceRef;
+    version: string;
+    digest: `sha256:${string}`;
+    sourceRef: string;
+    signatureRef: string;
+    signingKeyId: string;
+    compatibleProviders: readonly ("codex" | "claude-code" | "pi" | "deepseek-harness")[];
+    mountReadOnly: true;
+    status: "active" | "revoked";
+    revokedAt?: string;
+  }>;
+}>;
+export type SkillBundlePage = Readonly<{
+  apiVersion: typeof platformApiVersion;
+  kind: "SkillBundlePage";
+  skillBundles: readonly SkillBundle[];
+  nextPageToken?: string;
+}>;
 export type RemoteWorkerEnrollmentCreateRequest = Readonly<{
   enrollmentId: string;
   workerId: string;
@@ -1674,8 +1747,24 @@ export type DeploymentTargetSchedulingPreview = Readonly<{
     activeLeases: readonly DeploymentTargetSchedulingLease[];
   }>;
 }>;
+export type ManagedAgentCapabilityRef =
+  | Readonly<{ serverId: string; version: string; digest: `sha256:${string}` }>
+  | Readonly<{ bundleId: string; version: string; digest: `sha256:${string}` }>;
 export type ManagedAgentSessionCreateRequest = Readonly<
-  { sessionId: string; providerKind: string } & (
+  {
+    sessionId: string;
+    providerKind: string;
+    mcpServerRefs?: readonly Readonly<{
+      serverId: string;
+      version: string;
+      digest: `sha256:${string}`;
+    }>[];
+    skillBundleRefs?: readonly Readonly<{
+      bundleId: string;
+      version: string;
+      digest: `sha256:${string}`;
+    }>[];
+  } & (
     | {
         environmentLeaseId: string;
         workspaceId?: never;
@@ -1713,6 +1802,16 @@ export type ManagedAgentSession = Readonly<{
     sandboxGeneration?: number;
     environmentProfileId?: string;
     environmentProfileVersion?: number;
+    mcpServerRefs?: readonly Readonly<{
+      serverId: string;
+      version: string;
+      digest: `sha256:${string}`;
+    }>[];
+    skillBundleRefs?: readonly Readonly<{
+      bundleId: string;
+      version: string;
+      digest: `sha256:${string}`;
+    }>[];
     state: "active" | "closed";
   }>;
 }>;
@@ -1753,6 +1852,16 @@ export type ManagedAgentExecutionCreateRequest = Readonly<{
   runtimeMode?: "approval-required" | "full-access";
   interactionMode?: "default" | "plan";
   inputText: string;
+  mcpServerRefs?: readonly Readonly<{
+    serverId: string;
+    version: string;
+    digest: `sha256:${string}`;
+  }>[];
+  skillBundleRefs?: readonly Readonly<{
+    bundleId: string;
+    version: string;
+    digest: `sha256:${string}`;
+  }>[];
 }>;
 export type ManagedAgentExecutionCancelRequest = Readonly<{ generation: number }>;
 export type ManagedAgentExecutionInterruptRequest = Readonly<{ generation: number }>;
@@ -1831,6 +1940,16 @@ export type ManagedAgentExecution = Readonly<{
     checkpoint?: ManagedAgentExecutionCheckpoint;
     resultDigest?: `sha256:${string}`;
     errorCode?: string;
+    mcpServerRefs?: readonly Readonly<{
+      serverId: string;
+      version: string;
+      digest: `sha256:${string}`;
+    }>[];
+    skillBundleRefs?: readonly Readonly<{
+      bundleId: string;
+      version: string;
+      digest: `sha256:${string}`;
+    }>[];
   }>;
   messages?: readonly ManagedAgentExecutionMessage[];
 }>;
@@ -1847,7 +1966,7 @@ export type ManagedAgentArtifactResult = Readonly<{
   etag?: string;
 }>;
 export type ManagedAgentEventChange = Readonly<{
-  resource: "Session" | "Turn" | "Execution";
+  resource: "Session" | "Turn" | "Execution" | "McpServer" | "SkillBundle";
   from: string;
   to: string;
   version: number;
@@ -1863,15 +1982,35 @@ export type ManagedAgentEvent = Readonly<{
     occurredAt: string;
   }>;
   spec: Readonly<{
-    operation: string;
-    resource: "Session" | "Turn" | "Execution";
+    operation:
+      | "session.create"
+      | "session.close"
+      | "turn.create"
+      | "execution.create"
+      | "execution.start"
+      | "execution.complete"
+      | "execution.fail"
+      | "turn.interrupt"
+      | "turn.cancel"
+      | "mcp.call"
+      | "mcp.fail"
+      | "mcp.revoke"
+      | "skill.load"
+      | "skill.fail"
+      | "skill.revoke";
+    resource: "Session" | "Turn" | "Execution" | "McpServer" | "SkillBundle";
     generation: number;
     mutationDigest: `sha256:${string}`;
+    result?: "accepted" | "succeeded" | "failed" | "revoked";
     inputDigest?: `sha256:${string}`;
     resultDigest?: `sha256:${string}`;
     errorCode?: string;
     turnId?: string;
     executionId?: string;
+    serverId?: string;
+    bundleId?: string;
+    version?: string;
+    digest?: `sha256:${string}`;
     changes: readonly ManagedAgentEventChange[];
   }>;
 }>;
@@ -2184,6 +2323,46 @@ const networkPolicyPageResponseShape: ResponseShape = {
     apiVersion: scalarResponseShape,
     kind: scalarResponseShape,
     networkPolicies: { item: networkPolicyResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const mcpServerResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  version: scalarResponseShape,
+  digest: scalarResponseShape,
+  transport: scalarResponseShape,
+  connectionRef: scalarResponseShape,
+  credentialRef: scalarResponseShape,
+  networkPolicyRef: scalarResponseShape,
+  permissions: { item: scalarResponseShape },
+  status: scalarResponseShape,
+  revokedAt: scalarResponseShape,
+});
+const mcpServerPageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    mcpServers: { item: mcpServerResponseShape },
+    nextPageToken: scalarResponseShape,
+  },
+};
+const skillBundleResponseShape = resourceResponseShape({
+  projectRef: referenceResponseShape,
+  version: scalarResponseShape,
+  digest: scalarResponseShape,
+  sourceRef: scalarResponseShape,
+  signatureRef: scalarResponseShape,
+  signingKeyId: scalarResponseShape,
+  compatibleProviders: { item: scalarResponseShape },
+  mountReadOnly: scalarResponseShape,
+  status: scalarResponseShape,
+  revokedAt: scalarResponseShape,
+});
+const skillBundlePageResponseShape: ResponseShape = {
+  fields: {
+    apiVersion: scalarResponseShape,
+    kind: scalarResponseShape,
+    skillBundles: { item: skillBundleResponseShape },
     nextPageToken: scalarResponseShape,
   },
 };
@@ -2927,6 +3106,20 @@ const rbacMutationResultResponseShape: ResponseShape = {
     state: scalarResponseShape,
   },
 };
+const managedAgentMcpRefResponseShape: ResponseShape = {
+  fields: {
+    serverId: scalarResponseShape,
+    version: scalarResponseShape,
+    digest: scalarResponseShape,
+  },
+};
+const managedAgentSkillRefResponseShape: ResponseShape = {
+  fields: {
+    bundleId: scalarResponseShape,
+    version: scalarResponseShape,
+    digest: scalarResponseShape,
+  },
+};
 const managedAgentSessionResponseShape: ResponseShape = {
   fields: {
     apiVersion: scalarResponseShape,
@@ -2950,6 +3143,8 @@ const managedAgentSessionResponseShape: ResponseShape = {
         sandboxGeneration: scalarResponseShape,
         environmentProfileId: scalarResponseShape,
         environmentProfileVersion: scalarResponseShape,
+        mcpServerRefs: { item: managedAgentMcpRefResponseShape },
+        skillBundleRefs: { item: managedAgentSkillRefResponseShape },
         state: scalarResponseShape,
       },
     },
@@ -3032,6 +3227,8 @@ const managedAgentExecutionResponseShape: ResponseShape = {
         },
         resultDigest: scalarResponseShape,
         errorCode: scalarResponseShape,
+        mcpServerRefs: { item: managedAgentMcpRefResponseShape },
+        skillBundleRefs: { item: managedAgentSkillRefResponseShape },
       },
     },
     messages: {
@@ -3093,11 +3290,16 @@ const managedAgentEventPageResponseShape: ResponseShape = {
               resource: scalarResponseShape,
               generation: scalarResponseShape,
               mutationDigest: scalarResponseShape,
+              result: scalarResponseShape,
               inputDigest: scalarResponseShape,
               resultDigest: scalarResponseShape,
               errorCode: scalarResponseShape,
               turnId: scalarResponseShape,
               executionId: scalarResponseShape,
+              serverId: scalarResponseShape,
+              bundleId: scalarResponseShape,
+              version: scalarResponseShape,
+              digest: scalarResponseShape,
               changes: {
                 item: {
                   fields: {
@@ -3230,6 +3432,9 @@ function record(value: unknown, path = ""): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     error("INVALID_JSON_OBJECT", path);
   return value as Record<string, unknown>;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function strictRecord(
   value: unknown,
@@ -6508,6 +6713,322 @@ export function decodeNetworkPolicyPage(value: unknown): NetworkPolicyPage {
     apiVersion: platformApiVersion,
     kind: "NetworkPolicyPage" as const,
     networkPolicies: Object.freeze((source.networkPolicies as unknown[]).map(decodeNetworkPolicy)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+function capabilityPermissions(value: unknown, path: string): readonly string[] {
+  const entries = Array.isArray(value) ? value : error("INVALID_CAPABILITY_PERMISSIONS", path);
+  if (entries.length < 1 || entries.length > 64) error("INVALID_CAPABILITY_PERMISSIONS", path);
+  const permissions = entries.map((entry, index) => {
+    const permission = boundedString(entry, 1, 128, `${path}/${index}`);
+    if (!/^[a-z][a-z0-9._:-]{0,127}$/u.test(permission) || permission.includes("*"))
+      error("INVALID_CAPABILITY_PERMISSION", `${path}/${index}`);
+    return permission;
+  });
+  if (new Set(permissions).size !== permissions.length)
+    error("INVALID_CAPABILITY_PERMISSIONS", path);
+  return Object.freeze(permissions);
+}
+export function decodeMcpServerCreateRequest(value: unknown): McpServerCreateRequest {
+  const source = strictRecord(
+    value,
+    [
+      "serverId",
+      "version",
+      "digest",
+      "transport",
+      "connectionRef",
+      "credentialRef",
+      "networkPolicyRef",
+      "permissions",
+    ],
+    [
+      "serverId",
+      "version",
+      "digest",
+      "transport",
+      "connectionRef",
+      "credentialRef",
+      "networkPolicyRef",
+      "permissions",
+    ],
+  );
+  return Object.freeze({
+    serverId: identifier(source.serverId, "/serverId"),
+    version: identifier(source.version, "/version"),
+    digest: digest(source.digest, "/digest") as `sha256:${string}`,
+    transport: enumValue(
+      source.transport,
+      ["stdio", "sse", "streamable-http"] as const,
+      "/transport",
+    ),
+    connectionRef: identifier(source.connectionRef, "/connectionRef"),
+    credentialRef: identifier(source.credentialRef, "/credentialRef"),
+    networkPolicyRef: identifier(source.networkPolicyRef, "/networkPolicyRef"),
+    permissions: capabilityPermissions(source.permissions, "/permissions"),
+  });
+}
+export function encodeMcpServerCreateRequest(value: McpServerCreateRequest): string {
+  return JSON.stringify(decodeMcpServerCreateRequest(value));
+}
+export function decodeMcpServerRevokeRequest(value: unknown): McpServerRevokeRequest {
+  const source = strictRecord(
+    value,
+    ["expectedResourceVersion", "reasonCode"],
+    ["expectedResourceVersion", "reasonCode"],
+  );
+  const expectedResourceVersion = boundedString(
+    source.expectedResourceVersion,
+    1,
+    20,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion,
+    reasonCode: identifier(source.reasonCode, "/reasonCode"),
+  });
+}
+export function encodeMcpServerRevokeRequest(value: McpServerRevokeRequest): string {
+  return JSON.stringify(decodeMcpServerRevokeRequest(value));
+}
+export function decodeMcpServer(value: unknown): McpServer {
+  const source = record(value);
+  const root = base(source, "McpServer");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "version",
+      "digest",
+      "transport",
+      "connectionRef",
+      "credentialRef",
+      "networkPolicyRef",
+      "permissions",
+      "status",
+      "revokedAt",
+    ],
+    [
+      "projectRef",
+      "version",
+      "digest",
+      "transport",
+      "connectionRef",
+      "credentialRef",
+      "networkPolicyRef",
+      "permissions",
+      "status",
+    ],
+    "/spec",
+  );
+  const status = enumValue(spec.status, ["active", "revoked"] as const, "/spec/status");
+  if (
+    (status === "active" && spec.revokedAt !== undefined) ||
+    (status === "revoked" && spec.revokedAt === undefined)
+  )
+    error("INVALID_MCP_SERVER_STATUS", "/spec/revokedAt");
+  return Object.freeze({
+    ...root,
+    kind: "McpServer" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      version: identifier(spec.version, "/spec/version"),
+      digest: digest(spec.digest, "/spec/digest") as `sha256:${string}`,
+      transport: enumValue(
+        spec.transport,
+        ["stdio", "sse", "streamable-http"] as const,
+        "/spec/transport",
+      ),
+      connectionRef: identifier(spec.connectionRef, "/spec/connectionRef"),
+      credentialRef: identifier(spec.credentialRef, "/spec/credentialRef"),
+      networkPolicyRef: identifier(spec.networkPolicyRef, "/spec/networkPolicyRef"),
+      permissions: capabilityPermissions(spec.permissions, "/spec/permissions"),
+      status,
+      ...(spec.revokedAt === undefined
+        ? {}
+        : { revokedAt: dateTime(spec.revokedAt, "/spec/revokedAt") }),
+    }),
+  });
+}
+export function decodeMcpServerPage(value: unknown): McpServerPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "mcpServers", "nextPageToken"],
+    ["apiVersion", "kind", "mcpServers"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "McpServerPage" ||
+    !Array.isArray(source.mcpServers) ||
+    source.mcpServers.length > 200
+  )
+    error("INVALID_MCP_SERVER_PAGE", "/mcpServers");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "McpServerPage" as const,
+    mcpServers: Object.freeze((source.mcpServers as unknown[]).map(decodeMcpServer)),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeSkillBundleCreateRequest(value: unknown): SkillBundleCreateRequest {
+  const source = strictRecord(
+    value,
+    [
+      "bundleId",
+      "version",
+      "digest",
+      "sourceRef",
+      "signatureRef",
+      "signingKeyId",
+      "compatibleProviders",
+    ],
+    [
+      "bundleId",
+      "version",
+      "digest",
+      "sourceRef",
+      "signatureRef",
+      "signingKeyId",
+      "compatibleProviders",
+    ],
+  );
+  return Object.freeze({
+    bundleId: identifier(source.bundleId, "/bundleId"),
+    version: identifier(source.version, "/version"),
+    digest: digest(source.digest, "/digest") as `sha256:${string}`,
+    sourceRef: identifier(source.sourceRef, "/sourceRef"),
+    signatureRef: identifier(source.signatureRef, "/signatureRef"),
+    signingKeyId: identifier(source.signingKeyId, "/signingKeyId"),
+    compatibleProviders: capabilityProviders(source.compatibleProviders, "/compatibleProviders"),
+  });
+}
+export function encodeSkillBundleCreateRequest(value: SkillBundleCreateRequest): string {
+  return JSON.stringify(decodeSkillBundleCreateRequest(value));
+}
+export function decodeSkillBundleRevokeRequest(value: unknown): SkillBundleRevokeRequest {
+  const source = strictRecord(
+    value,
+    ["expectedResourceVersion", "reasonCode"],
+    ["expectedResourceVersion", "reasonCode"],
+  );
+  const expectedResourceVersion = boundedString(
+    source.expectedResourceVersion,
+    1,
+    20,
+    "/expectedResourceVersion",
+  );
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(expectedResourceVersion))
+    error("INVALID_RESOURCE_VERSION", "/expectedResourceVersion");
+  return Object.freeze({
+    expectedResourceVersion,
+    reasonCode: identifier(source.reasonCode, "/reasonCode"),
+  });
+}
+export function encodeSkillBundleRevokeRequest(value: SkillBundleRevokeRequest): string {
+  return JSON.stringify(decodeSkillBundleRevokeRequest(value));
+}
+function capabilityProviders(
+  value: unknown,
+  path: string,
+): readonly ("codex" | "claude-code" | "pi" | "deepseek-harness")[] {
+  const entries = Array.isArray(value) ? value : error("INVALID_CAPABILITY_PROVIDERS", path);
+  if (entries.length < 1 || entries.length > 4) error("INVALID_CAPABILITY_PROVIDERS", path);
+  const providers = entries.map((entry, index) =>
+    enumValue(
+      entry,
+      ["codex", "claude-code", "pi", "deepseek-harness"] as const,
+      `${path}/${index}`,
+    ),
+  );
+  if (new Set(providers).size !== providers.length) error("INVALID_CAPABILITY_PROVIDERS", path);
+  return Object.freeze(providers);
+}
+export function decodeSkillBundle(value: unknown): SkillBundle {
+  const source = record(value);
+  const root = base(source, "SkillBundle");
+  const spec = strictRecord(
+    source.spec,
+    [
+      "projectRef",
+      "version",
+      "digest",
+      "sourceRef",
+      "signatureRef",
+      "signingKeyId",
+      "compatibleProviders",
+      "mountReadOnly",
+      "status",
+      "revokedAt",
+    ],
+    [
+      "projectRef",
+      "version",
+      "digest",
+      "sourceRef",
+      "signatureRef",
+      "signingKeyId",
+      "compatibleProviders",
+      "mountReadOnly",
+      "status",
+    ],
+    "/spec",
+  );
+  const status = enumValue(spec.status, ["active", "revoked"] as const, "/spec/status");
+  if (
+    spec.mountReadOnly !== true ||
+    (status === "active" && spec.revokedAt !== undefined) ||
+    (status === "revoked" && spec.revokedAt === undefined)
+  )
+    error("INVALID_SKILL_BUNDLE_STATUS", "/spec");
+  return Object.freeze({
+    ...root,
+    kind: "SkillBundle" as const,
+    spec: Object.freeze({
+      projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
+      version: identifier(spec.version, "/spec/version"),
+      digest: digest(spec.digest, "/spec/digest") as `sha256:${string}`,
+      sourceRef: identifier(spec.sourceRef, "/spec/sourceRef"),
+      signatureRef: identifier(spec.signatureRef, "/spec/signatureRef"),
+      signingKeyId: identifier(spec.signingKeyId, "/spec/signingKeyId"),
+      compatibleProviders: capabilityProviders(
+        spec.compatibleProviders,
+        "/spec/compatibleProviders",
+      ),
+      mountReadOnly: true as const,
+      status,
+      ...(spec.revokedAt === undefined
+        ? {}
+        : { revokedAt: dateTime(spec.revokedAt, "/spec/revokedAt") }),
+    }),
+  });
+}
+export function decodeSkillBundlePage(value: unknown): SkillBundlePage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "skillBundles", "nextPageToken"],
+    ["apiVersion", "kind", "skillBundles"],
+  );
+  if (
+    source.apiVersion !== platformApiVersion ||
+    source.kind !== "SkillBundlePage" ||
+    !Array.isArray(source.skillBundles) ||
+    source.skillBundles.length > 200
+  )
+    error("INVALID_SKILL_BUNDLE_PAGE", "/skillBundles");
+  const page = {
+    apiVersion: platformApiVersion,
+    kind: "SkillBundlePage" as const,
+    skillBundles: Object.freeze((source.skillBundles as unknown[]).map(decodeSkillBundle)),
   };
   return Object.freeze(
     source.nextPageToken === undefined
@@ -10319,20 +10840,123 @@ export function decodeManagedAgentSessionPage(value: unknown): ManagedAgentSessi
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+function decodeManagedAgentSessionWithCapabilities(value: unknown): ManagedAgentSession {
+  const source = record(value),
+    spec = record(source.spec),
+    mcpServerRefs =
+      spec.mcpServerRefs === undefined
+        ? undefined
+        : managedAgentCapabilityRefs(spec.mcpServerRefs, "/spec/mcpServerRefs", false),
+    skillBundleRefs =
+      spec.skillBundleRefs === undefined
+        ? undefined
+        : managedAgentCapabilityRefs(spec.skillBundleRefs, "/spec/skillBundleRefs", true);
+  const stripped = {
+    ...source,
+    spec: Object.fromEntries(
+      Object.entries(spec).filter(([key]) => key !== "mcpServerRefs" && key !== "skillBundleRefs"),
+    ),
+  };
+  const result = decodeManagedAgentSession(stripped);
+  return Object.freeze({
+    ...result,
+    spec: Object.freeze({
+      ...result.spec,
+      ...(mcpServerRefs === undefined ? {} : { mcpServerRefs }),
+      ...(skillBundleRefs === undefined ? {} : { skillBundleRefs }),
+    }),
+  });
+}
+function decodeManagedAgentSessionPageWithCapabilities(value: unknown): ManagedAgentSessionPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "sessions", "nextPageToken"],
+    ["apiVersion", "kind", "sessions"],
+  );
+  const sessions = Array.isArray(source.sessions)
+    ? source.sessions.map(decodeManagedAgentSessionWithCapabilities)
+    : error("INVALID_SESSION_PAGE", "/sessions");
+  const page = {
+    apiVersion: "managed-agent.cloud-agents.dev/v1alpha1" as const,
+    kind: "SessionPage" as const,
+    sessions: Object.freeze(sessions),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+function managedAgentCapabilityRefs(
+  value: unknown,
+  path: string,
+  bundle: false,
+): readonly Readonly<{ serverId: string; version: string; digest: `sha256:${string}` }>[];
+function managedAgentCapabilityRefs(
+  value: unknown,
+  path: string,
+  bundle: true,
+): readonly Readonly<{ bundleId: string; version: string; digest: `sha256:${string}` }>[];
+function managedAgentCapabilityRefs(
+  value: unknown,
+  path: string,
+  bundle: boolean,
+): readonly Readonly<Record<string, string>>[] {
+  const entries = Array.isArray(value) ? value : error("INVALID_CAPABILITY_REFS", path);
+  if (entries.length > 32) error("INVALID_CAPABILITY_REFS", path);
+  const idName = bundle ? "bundleId" : "serverId";
+  const refs: Readonly<Record<string, string>>[] = entries.map((entry: unknown, index: number) => {
+    const itemPath = `${path}/${index}`,
+      source = strictRecord(
+        entry,
+        [idName, "version", "digest"],
+        [idName, "version", "digest"],
+        itemPath,
+      );
+    return Object.freeze({
+      [idName]: identifier(source[idName], `${itemPath}/${idName}`),
+      version: identifier(source.version, `${itemPath}/version`),
+      digest: digest(source.digest, `${itemPath}/digest`),
+    });
+  });
+  if (
+    new Set(
+      refs.map(
+        (ref: Readonly<Record<string, string>>) => `${ref[idName]}@${ref.version}@${ref.digest}`,
+      ),
+    ).size !== refs.length
+  )
+    error("INVALID_CAPABILITY_REFS", path);
+  return Object.freeze(refs);
+}
 export function encodeManagedAgentSessionCreateRequest(
   value: ManagedAgentSessionCreateRequest,
 ): string {
-  const sessionId = identifier(value.sessionId, "/sessionId");
-  const providerKind = boundedString(value.providerKind, 1, 64, "/providerKind");
+  const common = {
+    sessionId: identifier(value.sessionId, "/sessionId"),
+    providerKind: boundedString(value.providerKind, 1, 64, "/providerKind"),
+    ...(value.mcpServerRefs === undefined
+      ? {}
+      : {
+          mcpServerRefs: managedAgentCapabilityRefs(value.mcpServerRefs, "/mcpServerRefs", false),
+        }),
+    ...(value.skillBundleRefs === undefined
+      ? {}
+      : {
+          skillBundleRefs: managedAgentCapabilityRefs(
+            value.skillBundleRefs,
+            "/skillBundleRefs",
+            true,
+          ),
+        }),
+  };
   if (value.environmentLeaseId !== undefined)
     return JSON.stringify({
-      sessionId,
-      providerKind,
+      ...common,
       environmentLeaseId: identifier(value.environmentLeaseId, "/environmentLeaseId"),
     });
   return JSON.stringify({
-    sessionId,
-    providerKind,
+    ...common,
     workspaceId: identifier(value.workspaceId, "/workspaceId"),
     sandboxId: identifier(value.sandboxId, "/sandboxId"),
     sandboxGeneration: integer(
@@ -10629,6 +11253,55 @@ export function decodeManagedAgentExecutionPage(value: unknown): ManagedAgentExe
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
 }
+function decodeManagedAgentExecutionWithCapabilities(value: unknown): ManagedAgentExecution {
+  const source = record(value),
+    spec = record(source.spec),
+    mcpServerRefs =
+      spec.mcpServerRefs === undefined
+        ? undefined
+        : managedAgentCapabilityRefs(spec.mcpServerRefs, "/spec/mcpServerRefs", false),
+    skillBundleRefs =
+      spec.skillBundleRefs === undefined
+        ? undefined
+        : managedAgentCapabilityRefs(spec.skillBundleRefs, "/spec/skillBundleRefs", true);
+  const stripped = {
+    ...source,
+    spec: Object.fromEntries(
+      Object.entries(spec).filter(([key]) => key !== "mcpServerRefs" && key !== "skillBundleRefs"),
+    ),
+  };
+  const result = decodeManagedAgentExecution(stripped);
+  return Object.freeze({
+    ...result,
+    spec: Object.freeze({
+      ...result.spec,
+      ...(mcpServerRefs === undefined ? {} : { mcpServerRefs }),
+      ...(skillBundleRefs === undefined ? {} : { skillBundleRefs }),
+    }),
+  });
+}
+function decodeManagedAgentExecutionPageWithCapabilities(
+  value: unknown,
+): ManagedAgentExecutionPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "executions", "nextPageToken"],
+    ["apiVersion", "kind", "executions"],
+  );
+  const executions = Array.isArray(source.executions)
+    ? source.executions.map(decodeManagedAgentExecutionWithCapabilities)
+    : error("INVALID_EXECUTION_PAGE", "/executions");
+  const page = {
+    apiVersion: "managed-agent.cloud-agents.dev/v1alpha1" as const,
+    kind: "ExecutionPage" as const,
+    executions: Object.freeze(executions),
+  };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
 function decodeManagedAgentExecutionMessage(
   value: unknown,
   path: string,
@@ -10761,6 +11434,14 @@ export function encodeManagedAgentExecutionCreateRequest(
       ["default", "plan"] as const,
       "/interactionMode",
     );
+  if (value.mcpServerRefs !== undefined)
+    result.mcpServerRefs = managedAgentCapabilityRefs(value.mcpServerRefs, "/mcpServerRefs", false);
+  if (value.skillBundleRefs !== undefined)
+    result.skillBundleRefs = managedAgentCapabilityRefs(
+      value.skillBundleRefs,
+      "/skillBundleRefs",
+      true,
+    );
   return JSON.stringify(result);
 }
 export function encodeManagedAgentExecutionCancelRequest(
@@ -10819,6 +11500,54 @@ export function encodeManagedAgentUserInputResolutionRequest(
   });
 }
 export function decodeManagedAgentEventPage(value: unknown): ManagedAgentEventPage {
+  return decodeManagedAgentEventPageWithCapabilitiesAndResult(value);
+}
+function decodeManagedAgentEventPageWithCapabilitiesAndResult(
+  value: unknown,
+): ManagedAgentEventPage {
+  const source = strictRecord(
+    value,
+    ["apiVersion", "kind", "events", "nextCursor", "hasMore"],
+    ["apiVersion", "kind", "events", "nextCursor", "hasMore"],
+  );
+  if (!Array.isArray(source.events)) return decodeManagedAgentEventPageWithCapabilities(value);
+  const rawResults = source.events.map((raw: unknown) => {
+    if (!isRecord(raw) || !isRecord(raw.spec)) return undefined;
+    return raw.spec.result;
+  });
+  const withoutResults = {
+    ...source,
+    events: source.events.map((raw: unknown) => {
+      if (!isRecord(raw) || !isRecord(raw.spec)) return raw;
+      const { result: _result, ...spec } = raw.spec;
+      return { ...raw, spec };
+    }),
+  };
+  const page = decodeManagedAgentEventPageWithCapabilities(withoutResults);
+  const events = page.events.map((event, index) => {
+    const rawResult = rawResults[index];
+    const capability =
+      event.spec.operation.startsWith("mcp.") || event.spec.operation.startsWith("skill.");
+    if (rawResult === undefined) {
+      if (capability) error("MISSING_FIELD", `/events/${index}/spec/result`);
+      return event;
+    }
+    const result = enumValue(
+      rawResult,
+      ["accepted", "succeeded", "failed", "revoked"] as const,
+      `/events/${index}/spec/result`,
+    );
+    if (
+      !capability ||
+      (event.spec.operation.endsWith(".fail") && result !== "failed") ||
+      (event.spec.operation.endsWith(".revoke") && result !== "revoked")
+    )
+      error("INVALID_EVENT", `/events/${index}/spec/result`);
+    return Object.freeze({ ...event, spec: Object.freeze({ ...event.spec, result }) });
+  });
+  return Object.freeze({ ...page, events: Object.freeze(events) });
+}
+function decodeManagedAgentEventPageWithCapabilities(value: unknown): ManagedAgentEventPage {
   const source = strictRecord(
     value,
     ["apiVersion", "kind", "events", "nextCursor", "hasMore"],
@@ -10826,142 +11555,141 @@ export function decodeManagedAgentEventPage(value: unknown): ManagedAgentEventPa
   );
   if (
     source.apiVersion !== "managed-agent.cloud-agents.dev/v1alpha1" ||
-    source.kind !== "EventPage"
+    source.kind !== "EventPage" ||
+    !Array.isArray(source.events) ||
+    source.events.length > 64
   )
-    error("RESOURCE_KIND_MISMATCH", "/kind");
-  if (!Array.isArray(source.events) || source.events.length > 64)
-    error("INVALID_EVENTS", "/events");
-  const events = (source.events as unknown[]).map((entry: unknown, index: number) => {
-    const event = strictRecord(
-      entry,
-      ["apiVersion", "kind", "metadata", "spec"],
-      ["apiVersion", "kind", "metadata", "spec"],
-      `/events/${index}`,
-    );
-    if (event.apiVersion !== "managed-agent.cloud-agents.dev/v1alpha1" || event.kind !== "Event")
-      error("RESOURCE_KIND_MISMATCH", `/events/${index}/kind`);
-    const metadata = strictRecord(
-      event.metadata,
-      ["uid", "projectId", "sessionId", "sequence", "occurredAt"],
-      ["uid", "projectId", "sessionId", "sequence", "occurredAt"],
-      `/events/${index}/metadata`,
-    );
-    const spec = strictRecord(
-      event.spec,
-      [
-        "operation",
-        "resource",
-        "generation",
-        "mutationDigest",
-        "inputDigest",
-        "resultDigest",
-        "errorCode",
-        "turnId",
-        "executionId",
-        "changes",
-      ],
-      ["operation", "resource", "generation", "mutationDigest", "changes"],
-      `/events/${index}/spec`,
-    );
-    const sequence = boundedString(metadata.sequence, 1, 20, `/events/${index}/metadata/sequence`);
-    if (!/^(?:0|[1-9][0-9]*)$/u.test(sequence))
-      error("INVALID_SEQUENCE", `/events/${index}/metadata/sequence`);
-    const changes = Array.isArray(spec.changes)
-      ? spec.changes.map((change, changeIndex) => {
-          const item = strictRecord(
-            change,
-            ["resource", "from", "to", "version"],
-            ["resource", "from", "to", "version"],
-            `/events/${index}/spec/changes/${changeIndex}`,
-          );
-          return Object.freeze({
-            resource: enumValue(
-              item.resource,
-              ["Session", "Turn", "Execution"] as const,
-              `/events/${index}/spec/changes/${changeIndex}/resource`,
-            ),
-            from: boundedString(
-              item.from,
-              0,
-              32,
-              `/events/${index}/spec/changes/${changeIndex}/from`,
-            ),
-            to: boundedString(item.to, 0, 32, `/events/${index}/spec/changes/${changeIndex}/to`),
-            version: integer(
-              item.version,
-              1,
-              Number.MAX_SAFE_INTEGER,
-              `/events/${index}/spec/changes/${changeIndex}/version`,
-            ),
-          });
-        })
-      : error("INVALID_EVENTS", `/events/${index}/spec/changes`);
-    if (changes.length < 1 || changes.length > 4)
-      error("INVALID_EVENTS", `/events/${index}/spec/changes`);
-    const result: {
-      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1";
-      kind: "Event";
-      metadata: ManagedAgentEvent["metadata"];
-      spec: ManagedAgentEvent["spec"];
-    } = {
+    error("INVALID_EVENT_PAGE", "");
+  const events = (source.events as unknown[]).map((raw: unknown, index: number) => {
+    const path = `/events/${index}`,
+      event = strictRecord(
+        raw,
+        ["apiVersion", "kind", "metadata", "spec"],
+        ["apiVersion", "kind", "metadata", "spec"],
+        path,
+      ),
+      metadata = strictRecord(
+        event.metadata,
+        ["uid", "projectId", "sessionId", "sequence", "occurredAt"],
+        ["uid", "projectId", "sessionId", "sequence", "occurredAt"],
+        `${path}/metadata`,
+      ),
+      spec = strictRecord(
+        event.spec,
+        [
+          "operation",
+          "resource",
+          "generation",
+          "mutationDigest",
+          "inputDigest",
+          "resultDigest",
+          "errorCode",
+          "turnId",
+          "executionId",
+          "serverId",
+          "bundleId",
+          "version",
+          "digest",
+          "changes",
+        ],
+        ["operation", "resource", "generation", "mutationDigest", "changes"],
+        `${path}/spec`,
+      );
+    const operation = enumValue(
+        spec.operation,
+        [
+          "session.create",
+          "session.close",
+          "turn.create",
+          "execution.create",
+          "execution.start",
+          "execution.complete",
+          "execution.fail",
+          "turn.interrupt",
+          "turn.cancel",
+          "mcp.call",
+          "mcp.fail",
+          "mcp.revoke",
+          "skill.load",
+          "skill.fail",
+          "skill.revoke",
+        ] as const,
+        `${path}/spec/operation`,
+      ),
+      resource = enumValue(
+        spec.resource,
+        ["Session", "Turn", "Execution", "McpServer", "SkillBundle"] as const,
+        `${path}/spec/resource`,
+      );
+    if (
+      (operation.startsWith("mcp.") && resource !== "McpServer") ||
+      (operation.startsWith("skill.") && resource !== "SkillBundle")
+    )
+      error("CAPABILITY_EVENT_RESOURCE_MISMATCH", `${path}/spec/resource`);
+    const rawChanges = Array.isArray(spec.changes)
+      ? spec.changes
+      : error("INVALID_EVENTS", `${path}/spec/changes`);
+    const changes = rawChanges.map((entry: unknown, changeIndex: number) => {
+      const item = strictRecord(
+        entry,
+        ["resource", "from", "to", "version"],
+        ["resource", "from", "to", "version"],
+        `${path}/spec/changes/${changeIndex}`,
+      );
+      return Object.freeze({
+        resource: enumValue(
+          item.resource,
+          ["Session", "Turn", "Execution", "McpServer", "SkillBundle"] as const,
+          `${path}/spec/changes/${changeIndex}/resource`,
+        ),
+        from: boundedString(item.from, 0, 32, `${path}/spec/changes/${changeIndex}/from`),
+        to: boundedString(item.to, 0, 32, `${path}/spec/changes/${changeIndex}/to`),
+        version: integer(
+          item.version,
+          1,
+          Number.MAX_SAFE_INTEGER,
+          `${path}/spec/changes/${changeIndex}/version`,
+        ),
+      });
+    });
+    if (changes.length < 1 || changes.length > 4) error("INVALID_EVENTS", `${path}/spec/changes`);
+    const result: ManagedAgentEvent = {
       apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
       kind: "Event",
       metadata: Object.freeze({
-        uid: identifier(metadata.uid, `/events/${index}/metadata/uid`),
-        projectId: identifier(metadata.projectId, `/events/${index}/metadata/projectId`),
-        sessionId: identifier(metadata.sessionId, `/events/${index}/metadata/sessionId`),
-        sequence,
-        occurredAt: dateTime(metadata.occurredAt, `/events/${index}/metadata/occurredAt`),
+        uid: identifier(metadata.uid, `${path}/metadata/uid`),
+        projectId: identifier(metadata.projectId, `${path}/metadata/projectId`),
+        sessionId: identifier(metadata.sessionId, `${path}/metadata/sessionId`),
+        sequence: boundedString(metadata.sequence, 1, 20, `${path}/metadata/sequence`),
+        occurredAt: dateTime(metadata.occurredAt, `${path}/metadata/occurredAt`),
       }),
       spec: {
-        operation: enumValue(
-          spec.operation,
-          [
-            "session.create",
-            "session.close",
-            "turn.create",
-            "execution.create",
-            "execution.start",
-            "execution.complete",
-            "execution.fail",
-            "turn.interrupt",
-            "turn.cancel",
-          ] as const,
-          `/events/${index}/spec/operation`,
-        ),
-        resource: enumValue(
-          spec.resource,
-          ["Session", "Turn", "Execution"] as const,
-          `/events/${index}/spec/resource`,
-        ),
-        generation: integer(
-          spec.generation,
-          0,
-          Number.MAX_SAFE_INTEGER,
-          `/events/${index}/spec/generation`,
-        ),
+        operation,
+        resource,
+        generation: integer(spec.generation, 0, Number.MAX_SAFE_INTEGER, `${path}/spec/generation`),
         mutationDigest: digest(
           spec.mutationDigest,
-          `/events/${index}/spec/mutationDigest`,
+          `${path}/spec/mutationDigest`,
         ) as `sha256:${string}`,
         changes: Object.freeze(changes),
       },
     };
+    for (const name of ["inputDigest", "resultDigest", "digest"] as const)
+      if (spec[name] !== undefined)
+        (result.spec as Record<string, unknown>)[name] = digest(spec[name], `${path}/spec/${name}`);
     for (const name of [
-      "inputDigest",
-      "resultDigest",
       "errorCode",
       "turnId",
       "executionId",
-    ] as const) {
-      const raw = spec[name];
-      if (raw !== undefined)
-        (result.spec as Record<string, unknown>)[name] = name.endsWith("Digest")
-          ? digest(raw, `/events/${index}/spec/${name}`)
-          : name.endsWith("Id")
-            ? identifier(raw, `/events/${index}/spec/${name}`)
-            : boundedString(raw, 1, 64, `/events/${index}/spec/${name}`);
-    }
+      "serverId",
+      "bundleId",
+      "version",
+    ] as const)
+      if (spec[name] !== undefined)
+        (result.spec as Record<string, unknown>)[name] =
+          name === "version" || name.endsWith("Id")
+            ? identifier(spec[name], `${path}/spec/${name}`)
+            : boundedString(spec[name], 1, 64, `${path}/spec/${name}`);
     return Object.freeze({ ...result, spec: Object.freeze(result.spec) });
   });
   return Object.freeze({
@@ -11080,6 +11808,18 @@ export function parseNetworkPolicy(text: string): ResponseEnvelope<NetworkPolicy
 }
 export function parseNetworkPolicyPage(text: string): ResponseEnvelope<NetworkPolicyPage> {
   return parseResponse(text, networkPolicyPageResponseShape, decodeNetworkPolicyPage);
+}
+export function parseMcpServer(text: string): ResponseEnvelope<McpServer> {
+  return parseResponse(text, mcpServerResponseShape, decodeMcpServer);
+}
+export function parseMcpServerPage(text: string): ResponseEnvelope<McpServerPage> {
+  return parseResponse(text, mcpServerPageResponseShape, decodeMcpServerPage);
+}
+export function parseSkillBundle(text: string): ResponseEnvelope<SkillBundle> {
+  return parseResponse(text, skillBundleResponseShape, decodeSkillBundle);
+}
+export function parseSkillBundlePage(text: string): ResponseEnvelope<SkillBundlePage> {
+  return parseResponse(text, skillBundlePageResponseShape, decodeSkillBundlePage);
 }
 export function parseRemoteWorkerEnrollment(
   text: string,
@@ -11373,12 +12113,20 @@ export function parseDeploymentTargetSchedulingPreview(
   );
 }
 export function parseManagedAgentSession(text: string): ResponseEnvelope<ManagedAgentSession> {
-  return parseResponse(text, managedAgentSessionResponseShape, decodeManagedAgentSession);
+  return parseResponse(
+    text,
+    managedAgentSessionResponseShape,
+    decodeManagedAgentSessionWithCapabilities,
+  );
 }
 export function parseManagedAgentSessionPage(
   text: string,
 ): ResponseEnvelope<ManagedAgentSessionPage> {
-  return parseResponse(text, managedAgentSessionPageResponseShape, decodeManagedAgentSessionPage);
+  return parseResponse(
+    text,
+    managedAgentSessionPageResponseShape,
+    decodeManagedAgentSessionPageWithCapabilities,
+  );
 }
 export function parseManagedAgentTurn(text: string): ResponseEnvelope<ManagedAgentTurn> {
   return parseResponse(text, managedAgentTurnResponseShape, decodeManagedAgentTurn);
@@ -11387,7 +12135,11 @@ export function parseManagedAgentTurnPage(text: string): ResponseEnvelope<Manage
   return parseResponse(text, managedAgentTurnPageResponseShape, decodeManagedAgentTurnPage);
 }
 export function parseManagedAgentExecution(text: string): ResponseEnvelope<ManagedAgentExecution> {
-  return parseResponse(text, managedAgentExecutionResponseShape, decodeManagedAgentExecution);
+  return parseResponse(
+    text,
+    managedAgentExecutionResponseShape,
+    decodeManagedAgentExecutionWithCapabilities,
+  );
 }
 export function parseManagedAgentExecutionPage(
   text: string,
@@ -11395,11 +12147,15 @@ export function parseManagedAgentExecutionPage(
   return parseResponse(
     text,
     managedAgentExecutionPageResponseShape,
-    decodeManagedAgentExecutionPage,
+    decodeManagedAgentExecutionPageWithCapabilities,
   );
 }
 export function parseManagedAgentEventPage(text: string): ResponseEnvelope<ManagedAgentEventPage> {
-  return parseResponse(text, managedAgentEventPageResponseShape, decodeManagedAgentEventPage);
+  return parseResponse(
+    text,
+    managedAgentEventPageResponseShape,
+    decodeManagedAgentEventPageWithCapabilitiesAndResult,
+  );
 }
 function parseResponse<T>(
   text: string,
@@ -12877,6 +13633,218 @@ export class Client {
       )
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/workers");
+    return result;
+  }
+  async listAdminMcpServers(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<McpServerPage>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    const query = adminPageQuery(pageSize, pageToken);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/mcp-servers${query}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListMcpServers", response);
+    const result = parseMcpServerPage(response.body);
+    if (
+      result.value.mcpServers.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/mcpServers");
+    return result;
+  }
+  async createAdminMcpServer(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: McpServerCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<McpServer>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    validateIdempotencyKey(idempotencyKey);
+    const checked = decodeMcpServerCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/mcp-servers`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeMcpServerCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem("adminCreateMcpServer", response);
+    const result = parseMcpServer(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    return validateMcpServerAuthority(result, tenantId, projectId, checked.serverId);
+  }
+  async getAdminMcpServer(
+    tenantId: string,
+    projectId: string,
+    mcpServerId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<McpServer>> {
+    validateLeasePath(tenantId, projectId, mcpServerId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/mcp-servers/${mcpServerId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetMcpServer", response);
+    const result = parseMcpServer(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    return validateMcpServerAuthority(result, tenantId, projectId, mcpServerId);
+  }
+  async revokeAdminMcpServer(
+    tenantId: string,
+    projectId: string,
+    mcpServerId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: McpServerRevokeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<McpServer>> {
+    validateLeasePath(tenantId, projectId, mcpServerId, requestId);
+    validateIdempotencyKey(idempotencyKey);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/mcp-servers/${mcpServerId}:revoke`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeMcpServerRevokeRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminRevokeMcpServer", response);
+    const result = validateMcpServerAuthority(
+      parseMcpServer(response.body),
+      tenantId,
+      projectId,
+      mcpServerId,
+    );
+    if (result.value.spec.status !== "revoked")
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/spec/status");
+    return result;
+  }
+  async listAdminSkillBundles(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SkillBundlePage>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    const query = adminPageQuery(pageSize, pageToken);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/skill-bundles${query}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListSkillBundles", response);
+    const result = parseSkillBundlePage(response.body);
+    if (
+      result.value.skillBundles.some(
+        ({ metadata, spec }) =>
+          metadata.tenantRef.id !== tenantId || spec.projectRef.id !== projectId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/skillBundles");
+    return result;
+  }
+  async createAdminSkillBundle(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SkillBundleCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SkillBundle>> {
+    validateLeasePath(tenantId, projectId, undefined, requestId);
+    validateIdempotencyKey(idempotencyKey);
+    const checked = decodeSkillBundleCreateRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/skill-bundles`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSkillBundleCreateRequest(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem("adminCreateSkillBundle", response);
+    const result = parseSkillBundle(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    return validateSkillBundleAuthority(result, tenantId, projectId, checked.bundleId);
+  }
+  async getAdminSkillBundle(
+    tenantId: string,
+    projectId: string,
+    skillBundleId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SkillBundle>> {
+    validateLeasePath(tenantId, projectId, skillBundleId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/skill-bundles/${skillBundleId}`,
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminGetSkillBundle", response);
+    const result = parseSkillBundle(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    return validateSkillBundleAuthority(result, tenantId, projectId, skillBundleId);
+  }
+  async revokeAdminSkillBundle(
+    tenantId: string,
+    projectId: string,
+    skillBundleId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: SkillBundleRevokeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<SkillBundle>> {
+    validateLeasePath(tenantId, projectId, skillBundleId, requestId);
+    validateIdempotencyKey(idempotencyKey);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/projects/${projectId}/skill-bundles/${skillBundleId}:revoke`,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeSkillBundleRevokeRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminRevokeSkillBundle", response);
+    const result = validateSkillBundleAuthority(
+      parseSkillBundle(response.body),
+      tenantId,
+      projectId,
+      skillBundleId,
+    );
+    if (result.value.spec.status !== "revoked")
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/spec/status");
     return result;
   }
   async listAdminWorkerReleases(
@@ -15669,6 +16637,45 @@ function validateLeasePath(
   validatePath(tenantId, requestId);
   identifier(projectId, "/projectId");
   if (leaseId !== undefined) identifier(leaseId, "/leaseId");
+}
+function validateIdempotencyKey(key: string): void {
+  if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(key)) error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+}
+function adminPageQuery(pageSize: number | undefined, pageToken: string | undefined): string {
+  if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+  if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+  const query = new URLSearchParams();
+  if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+  if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+  return query.toString() ? `?${query}` : "";
+}
+function validateMcpServerAuthority(
+  result: ResponseEnvelope<McpServer>,
+  tenantId: string,
+  projectId: string,
+  id: string,
+): ResponseEnvelope<McpServer> {
+  if (
+    result.value.metadata.tenantRef.id !== tenantId ||
+    result.value.metadata.uid !== id ||
+    result.value.spec.projectRef.id !== projectId
+  )
+    error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+  return result;
+}
+function validateSkillBundleAuthority(
+  result: ResponseEnvelope<SkillBundle>,
+  tenantId: string,
+  projectId: string,
+  id: string,
+): ResponseEnvelope<SkillBundle> {
+  if (
+    result.value.metadata.tenantRef.id !== tenantId ||
+    result.value.metadata.uid !== id ||
+    result.value.spec.projectRef.id !== projectId
+  )
+    error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+  return result;
 }
 function validateStoragePolicyPath(
   tenantId: string,

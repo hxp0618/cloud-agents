@@ -28,6 +28,7 @@ import {
   type RunnerMessage,
 } from "./internalExecution";
 import { ProviderInterruptedError } from "./providerRunErrors";
+import { ManagedCapabilityUnavailableError } from "./capabilityManifest";
 
 type ProviderHostProviderKind = string;
 const PROVIDER_HOST_PROVIDER_KINDS = PROVIDER_CAPABILITY_CATALOG.providers.map(
@@ -449,6 +450,29 @@ describe("Provider Host Protocol v2", () => {
       expect(errorCode(result)).toBe("provider_version_incompatible");
     },
   );
+
+  it("reports missing Host capability materialization as capability_unsupported", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => {
+        throw new ManagedCapabilityUnavailableError("Host-managed MCP broker is unavailable.");
+      },
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-capability"),
+    );
+
+    const result = await handle(
+      command("SendTurn", { inputText: "use managed capability" }, "send-capability"),
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "capability_unsupported", retryable: false, requiresUserAction: true },
+    });
+  });
 
   it("enforces the Codex Runtime availability and exact compatible range", async () => {
     const cases = [
@@ -1554,7 +1578,7 @@ function errorCode(messages: ReadonlyArray<ProviderHostMessageEnvelope>): string
   return terminal?.messageType === "Error" ? terminal.error.code : terminal?.messageType;
 }
 
-function remoteRunnerInput(resume = false) {
+function remoteRunnerInput(resume = false): RunnerInput {
   return {
     execution: { id: "execution-1" },
     workload: { provider: "codex", inputText: "initial" },

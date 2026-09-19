@@ -17,6 +17,8 @@ set -eu
 : "${CLOUD_AGENTS_TENANT:?set the tenant id used by the Provider credential files}"
 : "${CLOUD_AGENTS_WORKER_SPIFFE_ID:?set the Worker SPIFFE ID}"
 : "${CLOUD_AGENTS_WORKER_SERVER_NAME:?set the Worker TLS server name}"
+CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF=${CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF-}
+CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR=${CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR-}
 
 kubectl=${KUBECTL-kubectl}
 command -v "$kubectl" >/dev/null
@@ -40,10 +42,28 @@ for directory in "$CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR" "$CLOUD_AGENTS_WORKE
     *) echo "credential directories must be absolute" >&2; exit 1 ;;
   esac
 done
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ] || [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+	if [ -z "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ] || [ -z "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+		echo "capability materialization Secret and directory must be provided together" >&2
+		exit 1
+	fi
+	if [ ! -d "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ] || [ -L "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ] || [ "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" = / ]; then
+		echo "capability materialization directory must be a non-symlink directory other than root" >&2
+		exit 1
+	fi
+	case "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" in
+		/*) ;;
+		*) echo "capability materialization directory must be absolute" >&2; exit 1 ;;
+	esac
+fi
 output_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR" && pwd -P)
 worker_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_WORKER_CREDENTIAL_DIR" && pwd -P)
 provider_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR" && pwd -P)
-if [ "$output_dir" = "$worker_dir" ] || [ "$output_dir" = "$provider_dir" ] || [ "$worker_dir" = "$provider_dir" ]; then
+capability_dir=
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+	capability_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" && pwd -P)
+fi
+if [ "$output_dir" = "$worker_dir" ] || [ "$output_dir" = "$provider_dir" ] || [ "$worker_dir" = "$provider_dir" ] || [ "$output_dir" = "$capability_dir" ] || [ "$worker_dir" = "$capability_dir" ] || [ "$provider_dir" = "$capability_dir" ]; then
   echo "output, Worker, and Provider credential directories must be distinct" >&2
   exit 1
 fi
@@ -62,6 +82,15 @@ for name in "$CLOUD_AGENTS_KUBERNETES_NAMESPACE" "$CLOUD_AGENTS_KUBERNETES_SERVI
     *[!a-z0-9.-]*|''|[.-]*|*[.-]) echo "Kubernetes names must be lowercase DNS names" >&2; exit 1 ;;
   esac
 done
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ]; then
+	case "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" in
+		*[!a-z0-9.-]*|[.-]*|*[.-]) echo "Kubernetes names must be lowercase DNS names" >&2; exit 1 ;;
+	esac
+	if [ "${#CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF}" -gt 253 ]; then
+		echo "Kubernetes name is too long" >&2
+		exit 1
+	fi
+fi
 if [ "${#CLOUD_AGENTS_KUBERNETES_NAMESPACE}" -gt 63 ] || [ "${#CLOUD_AGENTS_KUBERNETES_SERVICE_ACCOUNT}" -gt 40 ] ||
   [ "${#CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF}" -gt 253 ] || [ "${#CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF}" -gt 253 ]; then
   echo "Kubernetes name is too long" >&2
@@ -70,6 +99,10 @@ fi
 if [ "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" = "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF" ]; then
   echo "Worker and Provider credential Secrets must be distinct" >&2
   exit 1
+fi
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ] && { [ "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" = "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" ] || [ "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" = "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF" ]; }; then
+	echo "Worker, Provider, and capability materialization Secrets must be distinct" >&2
+	exit 1
 fi
 if ! printf '%s\n' "$CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY" | grep -Eq '^[a-z0-9]+([.-][a-z0-9]+)*(:[0-9]{1,5})?(/[a-z0-9]+([._-][a-z0-9]+)*)+$'; then
   echo "Worker image repository must not contain a tag or digest" >&2
@@ -110,6 +143,23 @@ for file in "$@"; do
     exit 1
   fi
 done
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+	if [ ! -s "$capability_dir/$CLOUD_AGENTS_TENANT.capabilities.json" ] || [ -L "$capability_dir/$CLOUD_AGENTS_TENANT.capabilities.json" ]; then
+		echo "capability materialization directory has no tenant descriptor" >&2
+		exit 1
+	fi
+	set -- "$capability_dir"/*.pub
+	if [ ! -s "$1" ]; then
+		echo "capability materialization directory has no public key" >&2
+		exit 1
+	fi
+	for file in "$@"; do
+		if [ ! -s "$file" ] || [ -L "$file" ]; then
+			echo "capability materialization directory contains an invalid public key" >&2
+			exit 1
+		fi
+	done
+fi
 for suffix in ca.crt token deployment.json; do
   if [ -e "$output_dir/$CLOUD_AGENTS_TARGET_CREDENTIAL_REF.$suffix" ] || [ -L "$output_dir/$CLOUD_AGENTS_TARGET_CREDENTIAL_REF.$suffix" ]; then
     echo "Kubernetes target credential output already exists; refusing to overwrite it" >&2
@@ -123,6 +173,11 @@ run_cluster() {
 run_target() {
   run_cluster --namespace "$CLOUD_AGENTS_KUBERNETES_NAMESPACE" "$@"
 }
+
+secret_resource_names="\"$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF\", \"$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF\""
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ]; then
+	secret_resource_names="$secret_resource_names, \"$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF\""
+fi
 
 target_endpoint=$(run_cluster config view --raw --minify --flatten -o 'jsonpath={.clusters[0].cluster.server}')
 target_endpoint=${target_endpoint%/}
@@ -151,7 +206,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF", "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF"]
+    resourceNames: [$secret_resource_names]
     verbs: ["get"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -191,6 +246,9 @@ can_i() {
 can_i get /version
 can_i get "secret/$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF"
 can_i get "secret/$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF"
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ]; then
+	can_i get "secret/$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF"
+fi
 for resource in deployments.apps services persistentvolumeclaims; do
   for verb in get list create patch delete; do
     can_i "$verb" "$resource"
@@ -200,7 +258,8 @@ for permission in "get pods" "create pods" "delete pods" "get pods/exec" "create
   can_i $permission
 done
 
-for secret in "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF"; do
+for secret in "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_SECRET_REF" "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF"; do
+	[ -n "$secret" ] || continue
   if [ -n "$(run_target get secret "$secret" --ignore-not-found -o name)" ]; then
     echo "Kubernetes credential Secret $secret already exists; refusing to overwrite it" >&2
     exit 1
@@ -224,9 +283,13 @@ if [ ! -s "$temporary_dir/token" ] || ! openssl x509 -in "$temporary_dir/ca.crt"
   echo "Kubernetes target token or CA is invalid" >&2
   exit 1
 fi
-printf '{"namespace":"%s","workerImageRepository":"%s","workerCredentialSecretRef":"%s","workerSpiffeId":"%s","workerServerName":"%s"}\n' \
-  "$CLOUD_AGENTS_KUBERNETES_NAMESPACE" "$CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY" "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" \
-  "$CLOUD_AGENTS_WORKER_SPIFFE_ID" "$CLOUD_AGENTS_WORKER_SERVER_NAME" >"$temporary_dir/deployment.json"
+deployment_capability_field=
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ]; then
+	deployment_capability_field=",\"capabilityMaterializationSecretRef\":\"$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF\""
+fi
+printf '{"namespace":"%s","workerImageRepository":"%s","workerCredentialSecretRef":"%s"%s,"workerSpiffeId":"%s","workerServerName":"%s"}\n' \
+	"$CLOUD_AGENTS_KUBERNETES_NAMESPACE" "$CLOUD_AGENTS_WORKER_IMAGE_REPOSITORY" "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" "$deployment_capability_field" \
+	"$CLOUD_AGENTS_WORKER_SPIFFE_ID" "$CLOUD_AGENTS_WORKER_SERVER_NAME" >"$temporary_dir/deployment.json"
 chmod 0400 "$temporary_dir/ca.crt" "$temporary_dir/token" "$temporary_dir/deployment.json"
 
 run_target create secret generic "$CLOUD_AGENTS_WORKER_CREDENTIAL_SECRET_REF" \
@@ -237,6 +300,13 @@ for file in "$provider_dir/$CLOUD_AGENTS_TENANT".*.json; do
   set -- "$@" "--from-file=${file##*/}=$file"
 done
 run_target "$@" >/dev/null
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" ]; then
+	set -- create secret generic "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_SECRET_REF" --from-file="$CLOUD_AGENTS_TENANT.capabilities.json=$capability_dir/$CLOUD_AGENTS_TENANT.capabilities.json"
+	for file in "$capability_dir"/*.pub; do
+		set -- "$@" "--from-file=${file##*/}=$file"
+	done
+	run_target "$@" >/dev/null
+fi
 
 ln "$temporary_dir/ca.crt" "$output_dir/$CLOUD_AGENTS_TARGET_CREDENTIAL_REF.ca.crt"
 ln "$temporary_dir/token" "$output_dir/$CLOUD_AGENTS_TARGET_CREDENTIAL_REF.token"

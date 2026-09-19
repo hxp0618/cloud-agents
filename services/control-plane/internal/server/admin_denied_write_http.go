@@ -108,6 +108,9 @@ func adminDeniedWriteRoute(r *http.Request) (postgres.AdminDeniedWrite, bool) {
 		event.Action = map[string]string{"collection": "adminCreateRemoteWorkerEnrollment", "revoke": "adminRevokeRemoteWorkerEnrollment", "scheduling": "adminTransitionRemoteWorkerScheduling"}[action]
 	} else if tenant, project, admin, action, ok := projectLeaseQuotaPath(r.URL.Path); ok && admin && action == "get-set" && r.Method == http.MethodPut {
 		event.TenantID, event.ProjectID, event.Action = tenant, project, "adminSetProjectLeaseQuota"
+	} else if tenant, project, id, action, ok := capabilityAdminPath(r.URL.Path); ok && r.Method == http.MethodPost {
+		event.TenantID, event.ProjectID, event.ResourceID = tenant, project, id
+		event.Action = action
 	}
 	event.RequestID, _ = exactSingleHeader(r.Header, "X-Request-ID")
 	// Invalid caller correlation data must not bypass denial evidence or enter storage.

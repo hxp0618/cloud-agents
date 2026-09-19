@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
@@ -32,6 +33,14 @@ type managedAgentExecutionStoreFake struct {
 
 func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.RuntimeSessionSnapshot, error) {
 	return internalmanagedagent.RuntimeSessionSnapshot{}, nil
+}
+
+func (fake *managedAgentExecutionStoreFake) ResolveManagedAgentCapabilityBindings(context.Context, string, *authn.VerifiedPrincipal, string, string, string, []internalmanagedagent.McpServerRef, []internalmanagedagent.SkillBundleRef) ([]*workerruntimev1alpha1.RuntimeCapabilityBinding, string, error) {
+	return nil, "", nil
+}
+
+func (fake *managedAgentExecutionStoreFake) RecordManagedAgentCapabilityEvent(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CapabilityEventInput) error {
+	return nil
 }
 
 func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForArtifact(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.RuntimeSessionSnapshot, error) {
@@ -292,6 +301,13 @@ func TestManagedAgentExecutionCapacityErrorIsRetryable(t *testing.T) {
 func TestManagedAgentExecutionUnavailableEnvironmentIsAConflict(t *testing.T) {
 	status, code := managedAgentExecutionErrorStatus(internalmanagedagent.ErrRuntimeEnvironmentUnavailable)
 	if status != http.StatusConflict || code != "environment_unavailable" {
+		t.Fatalf("status=%d code=%q", status, code)
+	}
+}
+
+func TestManagedAgentExecutionUnavailableCapabilityIsAConflict(t *testing.T) {
+	status, code := managedAgentExecutionErrorStatus(postgres.ErrManagedAgentCapabilityUnavailable)
+	if status != http.StatusConflict || code != "capability_unavailable" {
 		t.Fatalf("status=%d code=%q", status, code)
 	}
 }

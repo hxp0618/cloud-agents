@@ -24,7 +24,8 @@
       "computer_use": false,
       "standalone_web_search": false,
       "web_search_cached": false,
-      "web_search_request": false
+      "web_search_request": false,
+      "mcp_2026_07_28": false
     },
     "mcp_servers": {},
     "shell_environment_policy": {

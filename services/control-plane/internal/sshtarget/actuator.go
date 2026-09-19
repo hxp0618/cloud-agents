@@ -99,7 +99,11 @@ func (directory *CredentialDirectory) deployWorker(ctx context.Context, endpoint
 		return DeployResult{}, err
 	}
 	defer client.Close()
-	for _, volume := range []string{config.WorkerCredentialRef, request.ProviderCredentialRef} {
+	volumes := []string{config.WorkerCredentialRef, request.ProviderCredentialRef}
+	if config.CapabilityMaterializationRef != "" {
+		volumes = append(volumes, config.CapabilityMaterializationRef)
+	}
+	for _, volume := range volumes {
 		if err := requireRemoteVolume(client, volume); err != nil {
 			return DeployResult{}, err
 		}
@@ -435,7 +439,7 @@ func managedWorker(name string, inspect remoteContainerInspect, expectedTargetGe
 		return ManagedWorker{}, ErrDeploymentConflict
 	}
 	workspace, err := remoteWorkspaceVolume(inspect)
-	if err != nil || workspace == request.ProviderCredentialRef || workspace == inspect.Config.Labels["cloud-agents.dev/worker-credential-ref"] {
+	if err != nil || workspace == request.ProviderCredentialRef || workspace == inspect.Config.Labels["cloud-agents.dev/worker-credential-ref"] || workspace == inspect.Config.Labels["cloud-agents.dev/capability-materialization-ref"] {
 		return ManagedWorker{}, ErrDeploymentConflict
 	}
 	return ManagedWorker{Request: request, name: name, image: inspect.Config.Image, labels: inspect.Config.Labels, workspace: workspace}, nil
@@ -573,6 +577,15 @@ func remoteWorkerRunCommandWithWorkspace(name, image string, request dockertarge
 		"--admission-generation", strconv.FormatInt(request.LeaseGeneration, 10),
 		"--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token",
 	)
+	if config.CapabilityMaterializationRef != "" {
+		mount := "type=volume,src=" + config.CapabilityMaterializationRef + ",dst=/run/cloud-agents/capabilities,readonly"
+		insertAt := slices.Index(arguments, "--tmpfs")
+		if insertAt < 0 {
+			return ""
+		}
+		arguments = append(arguments[:insertAt], append([]string{"--mount", mount}, arguments[insertAt:]...)...)
+		arguments = append(arguments, "--tmpfs", "/run/cloud-agents/skills:rw,noexec,nosuid,size=67108864,uid=1000,gid=1000,mode=0700", "--capability-materialization-directory", "/run/cloud-agents/capabilities")
+	}
 	return dockerCommand(arguments...)
 }
 

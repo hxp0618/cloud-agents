@@ -27,6 +27,11 @@ type RuntimeSession struct {
 	sendMu     sync.Mutex
 }
 
+type RuntimeSessionOptions struct {
+	CapabilityBindings       []*workerruntimev1alpha1.RuntimeCapabilityBinding
+	CapabilityManifestDigest string
+}
+
 // BindRuntime negotiates the protocol and health binding used by the Runtime route.
 func (s *Supervisor) BindRuntime(ctx context.Context) (BindingSnapshot, error) {
 	if s == nil || !runtimeClientAvailable(s.runtimeClient) {
@@ -48,7 +53,7 @@ func (s *Supervisor) CheckRuntimeHealth(ctx context.Context) error {
 
 // OpenRuntimeSession starts a Worker-side Runtime process after binding the
 // current negotiation, expected Worker identity, and fencing proof.
-func (s *Supervisor) OpenRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
+func (s *Supervisor) OpenRuntimeSession(ctx context.Context, tenantID, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, options ...RuntimeSessionOptions) (*RuntimeSession, error) {
 	if s == nil || !runtimeClientAvailable(s.runtimeClient) || !validIdentity(s.workerIdentity) || tenantID == "" || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
 		return nil, errInvalidConfig
 	}
@@ -72,8 +77,18 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, tenantID, execution
 		return nil, fail(connect.CodeInvalidArgument, "runtime_fencing_invalid")
 	}
 	stream := s.runtimeClient.OpenSession(ctx)
+	var capabilityOptions RuntimeSessionOptions
+	if len(options) > 0 {
+		capabilityOptions = options[0]
+	}
+	bindings := make([]*workerruntimev1alpha1.RuntimeCapabilityBinding, 0, len(capabilityOptions.CapabilityBindings))
+	for _, binding := range capabilityOptions.CapabilityBindings {
+		if binding != nil {
+			bindings = append(bindings, proto.Clone(binding).(*workerruntimev1alpha1.RuntimeCapabilityBinding))
+		}
+	}
 	open := &workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
-		Negotiation: state.negotiationBinding(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(s.workerIdentity), ProviderKind: providerKind, TenantId: tenantID,
+		Negotiation: state.negotiationBinding(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(s.workerIdentity), ProviderKind: providerKind, TenantId: tenantID, CapabilityBindings: bindings, CapabilityManifestDigest: capabilityOptions.CapabilityManifestDigest,
 	}}}
 	if err := stream.Send(open); err != nil {
 		return nil, rpcFailure("runtime_open", err)

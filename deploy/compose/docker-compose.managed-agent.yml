@@ -11,6 +11,7 @@ services:
       CLOUD_AGENTS_PLATFORM_WORKER_CA: /run/cloud-agents/worker-ca.crt
       CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY: ${CLOUD_AGENTS_WORKER_WORKSPACE_DIRECTORY:-/workspace}
       CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY: /run/cloud-agents/provider-credentials
+      CLOUD_AGENTS_PLATFORM_CAPABILITY_MATERIALIZATION_DIRECTORY: /run/cloud-agents/capabilities
       CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY: /var/lib/cloud-agents/snapshots
       CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID: ${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}
       CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION: ${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}
@@ -20,6 +21,7 @@ services:
       - ${CLOUD_AGENTS_WORKER_CLIENT_KEY:?set the Worker client key path}:/run/cloud-agents/worker-client.key:ro
       - ${CLOUD_AGENTS_WORKER_CA:?set the Worker CA certificate path}:/run/cloud-agents/worker-ca.crt:ro
       - ${CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR:?set the Provider credential directory}:/run/cloud-agents/provider-credentials:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_CAPABILITY_MATERIALIZATION_DIR:?set the Control Plane capability materialization directory}:/run/cloud-agents/capabilities:ro
       - ${CLOUD_AGENTS_SNAPSHOT_DIR:?set the portable snapshot directory}:/var/lib/cloud-agents/snapshots
 
   worker:
@@ -46,6 +48,8 @@ services:
       - "${CLOUD_AGENTS_RUNTIME_MAX_SESSIONS:-4}"
       - "--provider-credential-directory"
       - "/run/cloud-agents/provider-credentials"
+      - "--capability-materialization-directory"
+      - "/run/cloud-agents/capabilities"
       - "--admission-lease-id"
       - "${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}"
       - "--admission-generation"
@@ -58,6 +62,10 @@ services:
     volumes:
       - ${CLOUD_AGENTS_WORKER_TLS_DIR:?set the Worker TLS directory}:/run/cloud-agents/tls:ro
       - ${CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR:?set the Provider credential directory}:/run/cloud-agents/provider-credentials:ro
+      - ${CLOUD_AGENTS_WORKER_CAPABILITY_MATERIALIZATION_DIR:?set the Worker capability materialization directory}:/run/cloud-agents/capabilities:ro
       - ${CLOUD_AGENTS_WORKSPACE_DIR:?set the Runtime workspace directory}:/workspace
+    # Runtime materializes verified Skill Bundles here, then makes each tree read-only.
+    tmpfs:
+      - /run/cloud-agents/skills:uid=1000,gid=1000,mode=0700
     ports:
       - "${CLOUD_AGENTS_WORKER_BIND:-127.0.0.1:8091}:8091"

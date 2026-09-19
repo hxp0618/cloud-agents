@@ -119,6 +119,10 @@ spec:
               value: /snapshots
             - name: CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY
               value: /run/cloud-agents/provider-credentials
+            {{- if .Values.runtime.capabilityMaterializationSecretName }}
+            - name: CLOUD_AGENTS_PLATFORM_CAPABILITY_MATERIALIZATION_DIRECTORY
+              value: /run/cloud-agents/capabilities
+            {{- end }}
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
               valueFrom:
                 secretKeyRef:
@@ -172,6 +176,11 @@ spec:
             - name: provider-credentials
               mountPath: /run/cloud-agents/provider-credentials
               readOnly: true
+            {{- if .Values.runtime.capabilityMaterializationSecretName }}
+            - name: capability-materialization
+              mountPath: /run/cloud-agents/capabilities
+              readOnly: true
+            {{- end }}
             - name: snapshots
               mountPath: /snapshots
             {{- end }}
@@ -216,6 +225,12 @@ spec:
         - name: provider-credentials
           secret:
             secretName: {{ .Values.runtime.credentialSecretName }}
+        {{- if .Values.runtime.capabilityMaterializationSecretName }}
+        - name: capability-materialization
+          secret:
+            secretName: {{ .Values.runtime.capabilityMaterializationSecretName }}
+            defaultMode: 0600
+        {{- end }}
         - name: snapshots
           persistentVolumeClaim:
             claimName: {{ default (printf "%s-snapshots" (include "cloud-agents.fullname" .)) .Values.runtime.snapshot.existingClaim }}

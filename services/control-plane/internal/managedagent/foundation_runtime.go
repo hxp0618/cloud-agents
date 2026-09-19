@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,12 +34,17 @@ const (
 )
 
 type FoundationRuntime struct {
-	sandboxes   *opensandbox.CredentialDirectory
-	credentials string
-	remote      FoundationRemoteRuntimeStore
+	sandboxes                 *opensandbox.CredentialDirectory
+	credentials               string
+	capabilityMaterialization string
+	remote                    FoundationRemoteRuntimeStore
 }
 
 func NewFoundationRuntime(sandboxes *opensandbox.CredentialDirectory, providerCredentialDirectory string, remote ...FoundationRemoteRuntimeStore) (*FoundationRuntime, error) {
+	return NewFoundationRuntimeWithCapabilities(sandboxes, providerCredentialDirectory, "", remote...)
+}
+
+func NewFoundationRuntimeWithCapabilities(sandboxes *opensandbox.CredentialDirectory, providerCredentialDirectory, capabilityMaterializationDirectory string, remote ...FoundationRemoteRuntimeStore) (*FoundationRuntime, error) {
 	if sandboxes == nil && (len(remote) == 0 || remote[0] == nil) {
 		return nil, ErrDurableRuntimeExecutionUnavailable
 	}
@@ -45,7 +52,13 @@ func NewFoundationRuntime(sandboxes *opensandbox.CredentialDirectory, providerCr
 	if err != nil || !filepath.IsAbs(providerCredentialDirectory) || filepath.Clean(providerCredentialDirectory) != providerCredentialDirectory || providerCredentialDirectory == string(filepath.Separator) || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, ErrDurableRuntimeExecutionUnavailable
 	}
-	result := &FoundationRuntime{sandboxes: sandboxes, credentials: providerCredentialDirectory}
+	if capabilityMaterializationDirectory != "" {
+		capabilityInfo, capabilityErr := os.Lstat(capabilityMaterializationDirectory)
+		if capabilityErr != nil || !filepath.IsAbs(capabilityMaterializationDirectory) || filepath.Clean(capabilityMaterializationDirectory) != capabilityMaterializationDirectory || capabilityMaterializationDirectory == string(filepath.Separator) || !capabilityInfo.IsDir() || capabilityInfo.Mode()&os.ModeSymlink != 0 {
+			return nil, ErrDurableRuntimeExecutionUnavailable
+		}
+	}
+	result := &FoundationRuntime{sandboxes: sandboxes, credentials: providerCredentialDirectory, capabilityMaterialization: capabilityMaterializationDirectory}
 	if len(remote) > 0 {
 		result.remote = remote[0]
 	}
@@ -61,7 +74,15 @@ func (runtime *FoundationRuntime) open(ctx context.Context, principalSource Veri
 	if err != nil {
 		return nil, err
 	}
-	command := foundationRuntimeCommand(len(credential), session.ProviderKind, session.FoundationTargetKind, executionID)
+	capabilityManifest, manifestErr := foundationRuntimeCapabilityManifest(session)
+	if manifestErr != nil {
+		return nil, ErrRuntimeEnvironmentUnavailable
+	}
+	capabilityMaterialization, capabilityErr := foundationCapabilityMaterializationFile(runtime.capabilityMaterialization, session.Scope.TenantID, session.CapabilityBindings)
+	if capabilityErr != nil {
+		return nil, ErrRuntimeEnvironmentUnavailable
+	}
+	command := foundationRuntimeCommandWithMaterialization(len(credential), len(capabilityMaterialization), session.ProviderKind, session.FoundationTargetKind, capabilityManifest, executionID)
 	if session.FoundationTargetKind == "remote-worker" {
 		if runtime.remote == nil || principalSource == nil {
 			return nil, ErrRuntimeEnvironmentUnavailable
@@ -76,6 +97,10 @@ func (runtime *FoundationRuntime) open(ctx context.Context, principalSource Veri
 			return nil, ErrRuntimeEnvironmentUnavailable
 		}
 		if result.write(ctx, credential) != nil {
+			_ = result.CloseResponse()
+			return nil, ErrRuntimeEnvironmentUnavailable
+		}
+		if len(capabilityMaterialization) > 0 && result.write(ctx, capabilityMaterialization) != nil {
 			_ = result.CloseResponse()
 			return nil, ErrRuntimeEnvironmentUnavailable
 		}
@@ -143,6 +168,12 @@ func (runtime *FoundationRuntime) open(ctx context.Context, principalSource Veri
 		_ = result.CloseResponse()
 		return nil, ErrRuntimeEnvironmentUnavailable
 	}
+	if len(capabilityMaterialization) > 0 {
+		if err := result.write(capabilityMaterialization); err != nil {
+			_ = result.CloseResponse()
+			return nil, ErrRuntimeEnvironmentUnavailable
+		}
+	}
 	return result, nil
 }
 
@@ -209,11 +240,25 @@ func foundationPTYInput(session RuntimeSessionSnapshot, command string) opensand
 }
 
 func foundationRuntimeCommand(credentialBytes int, providerKind, targetKind string, executionIDs ...string) string {
+	return foundationRuntimeCommandWithManifest(credentialBytes, providerKind, targetKind, nil, executionIDs...)
+}
+
+func foundationRuntimeCommandWithManifest(credentialBytes int, providerKind, targetKind string, capabilityManifest []byte, executionIDs ...string) string {
+	return foundationRuntimeCommandWithMaterialization(credentialBytes, 0, providerKind, targetKind, capabilityManifest, executionIDs...)
+}
+
+func foundationRuntimeCommandWithMaterialization(credentialBytes, capabilityMaterializationBytes int, providerKind, targetKind string, capabilityManifest []byte, executionIDs ...string) string {
 	outerSandbox := "single-tenant-trusted-v1"
 	if targetKind == "kubernetes" {
 		outerSandbox = "kubernetes-restricted-v1"
 	}
-	runtimeEnvironment := "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=3 CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=" + providerKind + " CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=" + outerSandbox
+	runtimeEnvironment := "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=3 CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=" + providerKind + " CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=" + outerSandbox + " CLOUD_AGENT_SKILL_ROOT=/tmp/cloud-agents-skills"
+	if len(capabilityManifest) > 0 {
+		runtimeEnvironment += " CLOUD_AGENT_CAPABILITY_MANIFEST_B64=" + base64.RawURLEncoding.EncodeToString(capabilityManifest)
+	}
+	if capabilityMaterializationBytes > 0 {
+		runtimeEnvironment += " CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD=4"
+	}
 	if delay := foundationManagedWriteDelay(); delay != "" {
 		runtimeEnvironment += " " + foundationManagedWriteDelayEnv + "=" + delay
 	}
@@ -223,7 +268,58 @@ func foundationRuntimeCommand(credentialBytes int, providerKind, targetKind stri
 		pidFile := "/tmp/cloud-agents-runtime/" + hex.EncodeToString(digest[:]) + ".pid"
 		fence = "mkdir -p /tmp/cloud-agents-runtime || exit 68; pid_file=" + pidFile + "; if test -s \"$pid_file\"; then old_pid=$(cat \"$pid_file\" 2>/dev/null || true); case \"$old_pid\" in ''|*[!0-9]*) old_pid=;; esac; if test -n \"$old_pid\" && test \"$old_pid\" != \"$$\" && test -r \"/proc/$old_pid/cmdline\"; then old_cmd=$(tr '\\000' ' ' <\"/proc/$old_pid/cmdline\" 2>/dev/null || true); case \"$old_cmd\" in *cloud-agent-runtime*) kill -KILL \"$old_pid\" 2>/dev/null || true;; esac; fi; fi; printf '%s\\n' \"$$\" >\"$pid_file\" || exit 68; "
 	}
-	return "if test -t 0; then stty -echo 2>/dev/null || exit 69; fi; printf '\\036cloud-agent-runtime-input-ready\\037\\n' || exit 69; umask 077; " + fence + "credential=$(mktemp /tmp/cloud-agent-credential.XXXXXX) || exit 70; trap 'if test -f \"$pid_file\" && test \"$(cat \"$pid_file\" 2>/dev/null)\" = \"$$\"; then rm -f \"$pid_file\"; fi; rm -f \"$credential\"' EXIT HUP INT TERM; dd if=/dev/stdin of=\"$credential\" bs=1 count=" + strconv.Itoa(credentialBytes) + " status=none || exit 71; exec 3<\"$credential\"; rm -f \"$credential\"; trap - EXIT; export " + runtimeEnvironment + "; exec /usr/local/bin/cloud-agent-runtime"
+	capability := ""
+	capabilityRead := ""
+	if capabilityMaterializationBytes > 0 {
+		capability = "capability=$(mktemp /tmp/cloud-agent-capability.XXXXXX) || exit 72; "
+		capabilityRead = "dd if=/dev/stdin of=\"$capability\" bs=1 count=" + strconv.Itoa(capabilityMaterializationBytes) + " status=none || exit 73; exec 4<\"$capability\"; "
+	}
+	return "if test -t 0; then stty -echo 2>/dev/null || exit 69; fi; printf '\\036cloud-agent-runtime-input-ready\\037\\n' || exit 69; umask 077; mkdir -p /tmp/cloud-agents-skills || exit 74; chmod 0700 /tmp/cloud-agents-skills || exit 74; " + fence + "credential=$(mktemp /tmp/cloud-agent-credential.XXXXXX) || exit 70; " + capability + "trap 'if test -f \"$pid_file\" && test \"$(cat \"$pid_file\" 2>/dev/null)\" = \"$$\"; then rm -f \"$pid_file\"; fi; rm -f \"$credential\" \"$capability\"' EXIT HUP INT TERM; dd if=/dev/stdin of=\"$credential\" bs=1 count=" + strconv.Itoa(credentialBytes) + " status=none || exit 71; exec 3<\"$credential\"; " + capabilityRead + "rm -f \"$credential\" \"$capability\"; trap - EXIT; export " + runtimeEnvironment + "; exec /usr/local/bin/cloud-agent-runtime"
+}
+
+type foundationCapabilityManifest struct {
+	Version  uint32                            `json:"version"`
+	Bindings []foundationCapabilityManifestRef `json:"bindings"`
+}
+
+type foundationCapabilityManifestRef struct {
+	ResourceKind        string   `json:"resourceKind"`
+	ResourceID          string   `json:"resourceId"`
+	Version             string   `json:"version"`
+	Digest              string   `json:"digest"`
+	Transport           string   `json:"transport,omitempty"`
+	ConnectionRef       string   `json:"connectionRef,omitempty"`
+	CredentialRef       string   `json:"credentialRef,omitempty"`
+	GrantID             string   `json:"grantId"`
+	NetworkPolicyRef    string   `json:"networkPolicyRef,omitempty"`
+	ExpiresAtUnixSecond uint64   `json:"expiresAtUnixSeconds"`
+	Permissions         []string `json:"permissions,omitempty"`
+	ReadOnly            bool     `json:"readOnly"`
+}
+
+func foundationRuntimeCapabilityManifest(session RuntimeSessionSnapshot) ([]byte, error) {
+	if len(session.CapabilityBindings) == 0 {
+		if session.CapabilityManifestDigest != "" {
+			return nil, ErrRuntimeEnvironmentUnavailable
+		}
+		return nil, nil
+	}
+	manifest := foundationCapabilityManifest{Version: 1, Bindings: make([]foundationCapabilityManifestRef, 0, len(session.CapabilityBindings))}
+	for _, binding := range session.CapabilityBindings {
+		if binding == nil {
+			return nil, ErrRuntimeEnvironmentUnavailable
+		}
+		manifest.Bindings = append(manifest.Bindings, foundationCapabilityManifestRef{ResourceKind: binding.GetResourceKind(), ResourceID: binding.GetResourceId(), Version: binding.GetVersion(), Digest: binding.GetDigest(), Transport: binding.GetTransport(), ConnectionRef: binding.GetConnectionRef(), CredentialRef: binding.GetCredentialRef(), GrantID: binding.GetGrantId(), NetworkPolicyRef: binding.GetNetworkPolicyRef(), ExpiresAtUnixSecond: binding.GetExpiresAtUnixSeconds(), Permissions: append([]string(nil), binding.GetPermissions()...), ReadOnly: binding.GetReadOnly()})
+	}
+	encoded, err := json.Marshal(manifest)
+	if err != nil || len(encoded) > 64<<10 {
+		return nil, ErrRuntimeEnvironmentUnavailable
+	}
+	sum := sha256.Sum256(encoded)
+	if session.CapabilityManifestDigest != fmt.Sprintf("sha256:%x", sum[:]) {
+		return nil, ErrRuntimeEnvironmentUnavailable
+	}
+	return encoded, nil
 }
 
 func foundationManagedWriteDelay() string {

@@ -28,6 +28,7 @@
     "typecheck": "bun run --filter '@cloud-agents/*' typecheck",
     "test": "bun run --filter '@cloud-agents/*' test && vitest run scripts",
     "release:smoke": "node scripts/cloud-agent-release-smoke.ts",
+    "runtime:capabilities:generate": "bun scripts/generate-runtime-capability-materialization.ts",
     "platform:release": "bun scripts/cloud-agents-platform-release.ts",
     "release:sbom": "node scripts/generate-sbom.ts",
     "secret:scan": "bun scripts/secret-scan.ts",

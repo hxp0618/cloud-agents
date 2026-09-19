@@ -8,6 +8,8 @@ set -eu
 : "${CLOUD_AGENTS_PROVIDER_CREDENTIAL_REF:?set the target Provider credential volume name}"
 : "${CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR:?set the source tenant Provider credential directory}"
 : "${CLOUD_AGENTS_TENANT:?set the tenant id used by the Provider credential files}"
+CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF=${CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF-}
+CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR=${CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR-}
 
 docker_cli=${DOCKER-docker}
 
@@ -22,9 +24,27 @@ for directory in "$CLOUD_AGENTS_WORKER_CREDENTIAL_DIR" "$CLOUD_AGENTS_PROVIDER_C
     *) echo "credential source directories must be absolute" >&2; exit 1 ;;
   esac
 done
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+	if [ ! -d "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ] || [ -L "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ] || [ "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" = / ]; then
+		echo "credential source directories must exist" >&2
+		exit 1
+	fi
+	case "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" in
+		/*) ;;
+		*) echo "credential source directories must be absolute" >&2; exit 1 ;;
+	esac
+fi
 worker_credential_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_WORKER_CREDENTIAL_DIR" && pwd -P)
 provider_credential_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_DIR" && pwd -P)
-if [ "$worker_credential_dir" = "$provider_credential_dir" ] || [ "$CLOUD_AGENTS_WORKER_CREDENTIAL_REF" = "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_REF" ]; then
+capability_materialization_dir=
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" ] || [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+	if [ -z "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" ] || [ -z "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" ]; then
+		echo "capability materialization ref and directory must be provided together" >&2
+		exit 1
+	fi
+	capability_materialization_dir=$(CDPATH= cd -- "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_DIR" && pwd -P)
+fi
+if [ "$worker_credential_dir" = "$provider_credential_dir" ] || [ "$worker_credential_dir" = "$capability_materialization_dir" ] || [ "$provider_credential_dir" = "$capability_materialization_dir" ] || [ "$CLOUD_AGENTS_WORKER_CREDENTIAL_REF" = "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_REF" ] || [ "$CLOUD_AGENTS_WORKER_CREDENTIAL_REF" = "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" ] || [ "$CLOUD_AGENTS_PROVIDER_CREDENTIAL_REF" = "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" ]; then
   echo "Worker and Provider credential sources and volumes must be distinct" >&2
   exit 1
 fi
@@ -37,6 +57,32 @@ for name in "$CLOUD_AGENTS_WORKER_CREDENTIAL_REF" "$CLOUD_AGENTS_PROVIDER_CREDEN
     exit 1
   fi
 done
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" ]; then
+	case "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" in
+		*[!A-Za-z0-9._-]*|'') echo "tenant and volume names contain unsupported characters" >&2; exit 1 ;;
+	esac
+	if [ "${#CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF}" -gt 128 ]; then
+		echo "tenant and volume names are too long" >&2
+		exit 1
+	fi
+fi
+if [ -n "$capability_materialization_dir" ]; then
+	if [ ! -f "$capability_materialization_dir/$CLOUD_AGENTS_TENANT.capabilities.json" ] || [ -L "$capability_materialization_dir/$CLOUD_AGENTS_TENANT.capabilities.json" ]; then
+		echo "capability materialization directory has no tenant descriptor" >&2
+		exit 1
+	fi
+	set -- "$capability_materialization_dir"/*.pub
+	if [ ! -f "$1" ]; then
+		echo "capability materialization directory has no public key" >&2
+		exit 1
+	fi
+	for file in "$@"; do
+		if [ ! -f "$file" ] || [ -L "$file" ]; then
+			echo "capability materialization directory contains an invalid public key" >&2
+			exit 1
+		fi
+	done
+fi
 case "$CLOUD_AGENTS_WORKER_IMAGE" in
   *@sha256:*)
     image_repository=${CLOUD_AGENTS_WORKER_IMAGE%@sha256:*}
@@ -84,6 +130,16 @@ for volume in "$CLOUD_AGENTS_WORKER_CREDENTIAL_REF" "$CLOUD_AGENTS_PROVIDER_CRED
     exit 1
   fi
 done
+if [ -n "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF" ]; then
+	volume=$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF
+	"$docker_cli" volume create "$volume" >/dev/null
+	if ! "$docker_cli" run --rm --pull never --user 0 --entrypoint /bin/sh \
+		-v "$volume:/target" "$CLOUD_AGENTS_WORKER_IMAGE" -ec \
+		'test -z "$(find /target -mindepth 1 -maxdepth 1 -print -quit)"'; then
+		echo "credential volume $volume is not empty; refusing to overwrite it" >&2
+		exit 1
+	fi
+fi
 
 "$docker_cli" run --rm --pull never --user 0 --entrypoint /bin/sh \
   -v "$CLOUD_AGENTS_WORKER_CREDENTIAL_REF:/target" \
@@ -96,5 +152,14 @@ done
   -v "$provider_credential_dir:/source:ro" \
   "$CLOUD_AGENTS_WORKER_IMAGE" -ec \
   'cp /source/"$TENANT_ID".*.json /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+
+if [ -n "$capability_materialization_dir" ]; then
+	"$docker_cli" run --rm --pull never --user 0 --entrypoint /bin/sh \
+		-e "TENANT_ID=$CLOUD_AGENTS_TENANT" \
+		-v "$CLOUD_AGENTS_CAPABILITY_MATERIALIZATION_REF:/target" \
+		-v "$capability_materialization_dir:/source:ro" \
+		"$CLOUD_AGENTS_WORKER_IMAGE" -ec \
+		'cp /source/"$TENANT_ID".capabilities.json /source/*.pub /target/ && chown 1000:1000 /target/* && chmod 0400 /target/*'
+fi
 
 printf '%s\n' "Docker target credential volumes prepared"

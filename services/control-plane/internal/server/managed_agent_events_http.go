@@ -156,6 +156,11 @@ type managedAgentEventSpec struct {
 	ErrorCode      string                    `json:"errorCode,omitempty"`
 	TurnID         string                    `json:"turnId,omitempty"`
 	ExecutionID    string                    `json:"executionId,omitempty"`
+	ServerID       string                    `json:"serverId,omitempty"`
+	BundleID       string                    `json:"bundleId,omitempty"`
+	Version        string                    `json:"version,omitempty"`
+	Digest         string                    `json:"digest,omitempty"`
+	Result         string                    `json:"result,omitempty"`
 	Changes        []managedAgentEventChange `json:"changes"`
 }
 
@@ -182,7 +187,7 @@ func writeManagedAgentEvents(writer http.ResponseWriter, requestID, sessionID st
 		for _, change := range event.Changes {
 			changes = append(changes, managedAgentEventChange{Resource: managedAgentEventResourceName(change.Resource), From: change.From, To: change.To, Version: change.Version})
 		}
-		events = append(events, managedAgentEventResponse{APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Event", Metadata: managedAgentEventMetadata{UID: event.EventID, ProjectID: event.Scope.ProjectID, SessionID: sessionID, Sequence: strconv.FormatUint(event.Sequence, 10), OccurredAt: event.OccurredAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")}, Spec: managedAgentEventSpec{Operation: event.Operation, Resource: managedAgentEventResourceName(event.Resource), Generation: event.Generation, MutationDigest: event.MutationDigest, InputDigest: event.InputDigest, ResultDigest: event.ResultDigest, ErrorCode: event.ErrorCode, TurnID: event.TurnID, ExecutionID: event.ExecutionID, Changes: changes}})
+		events = append(events, managedAgentEventResponse{APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Event", Metadata: managedAgentEventMetadata{UID: event.EventID, ProjectID: event.Scope.ProjectID, SessionID: sessionID, Sequence: strconv.FormatUint(event.Sequence, 10), OccurredAt: event.OccurredAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")}, Spec: managedAgentEventSpec{Operation: event.Operation, Resource: managedAgentEventResourceName(event.Resource), Generation: event.Generation, MutationDigest: event.MutationDigest, InputDigest: event.InputDigest, ResultDigest: event.ResultDigest, ErrorCode: event.ErrorCode, TurnID: event.TurnID, ExecutionID: event.ExecutionID, ServerID: event.ServerID, BundleID: event.BundleID, Version: event.Version, Digest: event.Digest, Result: event.Result, Changes: changes}})
 	}
 	writer.Header().Set("X-Request-ID", requestID)
 	writer.Header().Set("Content-Type", "application/json")
@@ -198,6 +203,10 @@ func managedAgentEventResourceName(resource internalmanagedagent.ResourceKind) s
 		return "Turn"
 	case internalmanagedagent.ResourceExecution:
 		return "Execution"
+	case internalmanagedagent.ResourceMcpServer:
+		return "McpServer"
+	case internalmanagedagent.ResourceSkillBundle:
+		return "SkillBundle"
 	default:
 		return ""
 	}

@@ -43,6 +43,7 @@ import {
 } from "./internalExecution";
 import { normalizeRuntimeEventV2 } from "./runtimeEventV2";
 import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./environment";
+import { ManagedCapabilityUnavailableError } from "./capabilityManifest";
 
 const HOST_BUILD_VERSION = "0.1.0-rc.1";
 const SUSPEND_TURN_CHECKPOINT_PROTOCOL = "provider-host-suspend-terminal-v1";
@@ -1490,6 +1491,9 @@ function safeWireString(value: unknown, fallback: string): string {
 }
 
 function classifyProviderHostError(error: unknown): ProviderHostError {
+  if (error instanceof ManagedCapabilityUnavailableError) {
+    return errorDetail("capability_unsupported", error.message, false, false, true, true, true);
+  }
   if (error instanceof ProtocolFailure) return error.detail;
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();

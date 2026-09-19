@@ -76,7 +76,7 @@ func TestAdminWorkerHealthRealMTLSKernel(t *testing.T) {
 	}
 	response := request("expectedGeneration=2")
 	observation, err := platform.DecodeWorkerHealthObservationResponseJSON(response.Body.Bytes())
-	if response.Code != 200 || err != nil || observation.Value.State != "serving" || observation.Value.Generation != 2 || response.Header().Get("Cache-Control") != "no-store" || store.get != 2 {
+	if response.Code != 200 || err != nil || observation.Value.State != "serving" || observation.Value.Generation != 2 || response.Header().Get("Cache-Control") != "no-store" || store.get != 2 || len(verifier.requests) != 4 {
 		t.Fatalf("health status=%d err=%v body=%s", response.Code, err, response.Body.String())
 	}
 	for _, query := range []string{"", "expectedGeneration=02", "expectedGeneration=0", "expectedGeneration=2&expectedGeneration=2", "expectedGeneration=2&endpoint=https://elsewhere.test"} {

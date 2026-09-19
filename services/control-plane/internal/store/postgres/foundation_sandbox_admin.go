@@ -581,6 +581,9 @@ func scanFoundationSandboxExec(row rowScanner, result *FoundationSandboxExec, in
 }
 
 func mapFoundationSandboxExecError(err error) error {
+	if isRemoteWorkerCommandDeadlock(err) {
+		return internalcoordination.ErrFoundationSandboxConflict
+	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {
 		switch postgresError.Message {

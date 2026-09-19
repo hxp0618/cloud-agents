@@ -47,12 +47,13 @@ const (
 )
 
 type localWorkerConfig struct {
-	listen                     string
-	tokenFile                  string
-	runtimeCommand             string
-	runtimeDirectory           string
-	runtimeMaxSessions         int
-	runtimeCredentialDirectory string
+	listen                                    string
+	tokenFile                                 string
+	runtimeCommand                            string
+	runtimeDirectory                          string
+	runtimeMaxSessions                        int
+	runtimeCredentialDirectory                string
+	runtimeCapabilityMaterializationDirectory string
 	// token and tokenGenerator are test seams. The command never accepts a
 	// token on the command line and therefore cannot leak it via argv.
 	token          string
@@ -110,10 +111,11 @@ func parseLocalWorkerConfig(args []string) (localWorkerConfig, error) {
 	runtimeDirectory := set.String("runtime-directory", "", "absolute Runtime working directory")
 	runtimeMaxSessions := set.Int("runtime-max-sessions", workerkernel.DefaultRuntimeMaxSessions, "maximum concurrent Runtime sessions")
 	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "optional absolute directory containing <tenantID>.<providerKind>.json credentials")
+	runtimeCapabilityMaterializationDirectory := set.String("capability-materialization-directory", "", "optional absolute directory containing <tenantID>.capabilities.json descriptors")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return localWorkerConfig{}, errInvalidWorkerConfig
 	}
-	cfg := localWorkerConfig{listen: *listen, tokenFile: *tokenFile, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory}
+	cfg := localWorkerConfig{listen: *listen, tokenFile: *tokenFile, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory, runtimeCapabilityMaterializationDirectory: *runtimeCapabilityMaterializationDirectory}
 	if err := validateLoopbackListen(cfg.listen); err != nil {
 		return localWorkerConfig{}, err
 	}
@@ -143,16 +145,16 @@ func validateLocalWorkerConfig(cfg localWorkerConfig) error {
 			return err
 		}
 	}
-	if strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.ContainsRune(cfg.runtimeCommand, '\x00') || strings.TrimSpace(cfg.runtimeDirectory) != cfg.runtimeDirectory || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || cfg.runtimeMaxSessions < 0 || cfg.runtimeMaxSessions > workerkernel.MaxRuntimeSessions || (cfg.runtimeCommand != "" && cfg.runtimeMaxSessions == 0) {
+	if strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.ContainsRune(cfg.runtimeCommand, '\x00') || strings.TrimSpace(cfg.runtimeDirectory) != cfg.runtimeDirectory || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || strings.TrimSpace(cfg.runtimeCapabilityMaterializationDirectory) != cfg.runtimeCapabilityMaterializationDirectory || cfg.runtimeMaxSessions < 0 || cfg.runtimeMaxSessions > workerkernel.MaxRuntimeSessions || (cfg.runtimeCommand != "" && cfg.runtimeMaxSessions == 0) {
 		return errInvalidWorkerConfig
 	}
 	if cfg.runtimeCommand == "" {
-		if cfg.runtimeDirectory != "" || cfg.runtimeCredentialDirectory != "" {
+		if cfg.runtimeDirectory != "" || cfg.runtimeCredentialDirectory != "" || cfg.runtimeCapabilityMaterializationDirectory != "" {
 			return errInvalidWorkerConfig
 		}
 		return nil
 	}
-	if !filepath.IsAbs(cfg.runtimeDirectory) || (cfg.runtimeCredentialDirectory != "" && !filepath.IsAbs(cfg.runtimeCredentialDirectory)) {
+	if !filepath.IsAbs(cfg.runtimeDirectory) || (cfg.runtimeCredentialDirectory != "" && !filepath.IsAbs(cfg.runtimeCredentialDirectory)) || (cfg.runtimeCapabilityMaterializationDirectory != "" && !filepath.IsAbs(cfg.runtimeCapabilityMaterializationDirectory)) {
 		return errInvalidWorkerConfig
 	}
 	return nil
@@ -254,6 +256,11 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 				return nil, errInvalidWorkerConfig
 			}
 		}
+		if cfg.runtimeCapabilityMaterializationDirectory != "" {
+			if info, err := os.Stat(cfg.runtimeCapabilityMaterializationDirectory); err != nil || !info.IsDir() {
+				return nil, errInvalidWorkerConfig
+			}
+		}
 	}
 	token := cfg.token
 	if token == "" {
@@ -291,6 +298,7 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 		RuntimeEnvironment:         localRuntimeEnvironment(os.Environ()),
 		RuntimeDirectory:           cfg.runtimeDirectory,
 		RuntimeCredentialDirectory: cfg.runtimeCredentialDirectory,
+		RuntimeCapabilityMaterializationDirectory: cfg.runtimeCapabilityMaterializationDirectory,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: worker service: %v", errInvalidWorkerConfig, err)

@@ -79,10 +79,35 @@ export function createCloudAgentRuntime(input: {
         host,
         signal,
       );
-      return validatedProviderSession(session);
+      try {
+        return validatedProviderSession(session);
+      } catch (cause) {
+        await disposeInvalidProviderSession(session);
+        throw cause;
+      }
     },
   };
   return Object.freeze(runtime);
+}
+
+async function disposeInvalidProviderSession(value: unknown): Promise<void> {
+  if (!isRecord(value)) return;
+  const candidate = value as Record<PropertyKey, unknown>;
+  if (typeof candidate[Symbol.asyncDispose] === "function") {
+    try {
+      await (candidate[Symbol.asyncDispose] as () => Promise<void>).call(value);
+      return;
+    } catch {
+      // Fall back to close when async disposal cannot release the session.
+    }
+  }
+  if (typeof candidate.close === "function") {
+    try {
+      await (candidate.close as (reason?: string) => Promise<void>).call(value, "invalid-session");
+    } catch {
+      // Preserve the boundary validation error when cleanup itself fails.
+    }
+  }
 }
 
 function validatedProviderSession(value: unknown): CloudAgentProviderSession {

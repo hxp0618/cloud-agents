@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   ClientError,
   encodeDeploymentTargetRegisterRequest,
+  type ManagedAgentExecution,
+  type ManagedAgentSession,
+  type McpServer,
+  type SkillBundle,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import {
   adminFailure,
+  capabilityBindingRelations,
   availableSandboxLifecycleAction,
   pageAdminTargets,
   targetIdentifierPattern,
@@ -28,6 +33,7 @@ import {
   listAdminStoragePolicyAuditEvents,
   listAdminReleases,
   listAdminMaintenanceOperations,
+  listAdminManagedAgentBindings,
   loadAdminManagedAgentRuntime,
   listAdminRemoteWorkerOperations,
   listAdminTargetAuditEvents,
@@ -44,6 +50,62 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("derives opaque capability binding relations without provider content", () => {
+    const mcp = [
+      {
+        metadata: { uid: "server-alpha" },
+        spec: { version: "v1", digest: "sha256:" + "a".repeat(64) },
+      },
+    ] as McpServer[];
+    const skills = [
+      {
+        metadata: { uid: "bundle-alpha" },
+        spec: { version: "v1", digest: "sha256:" + "b".repeat(64) },
+      },
+    ] as SkillBundle[];
+    const sessions = [
+      {
+        metadata: { uid: "session-alpha" },
+        spec: {
+          mcpServerRefs: [
+            { serverId: "server-alpha", version: "v1", digest: "sha256:" + "a".repeat(64) },
+          ],
+          skillBundleRefs: [
+            { bundleId: "bundle-alpha", version: "v1", digest: "sha256:" + "b".repeat(64) },
+          ],
+        },
+      },
+    ] as unknown as ManagedAgentSession[];
+    const executions = [
+      {
+        metadata: { uid: "execution-alpha" },
+        spec: {
+          mcpServerRefs: [
+            { serverId: "server-alpha", version: "v1", digest: "sha256:" + "a".repeat(64) },
+          ],
+        },
+      },
+    ] as unknown as ManagedAgentExecution[];
+    expect(capabilityBindingRelations(mcp, skills, sessions, executions)).toEqual([
+      {
+        kind: "mcp",
+        resourceId: "server-alpha",
+        version: "v1",
+        digest: "sha256:" + "a".repeat(64),
+        sessionIds: ["session-alpha"],
+        executionIds: ["execution-alpha"],
+      },
+      {
+        kind: "skill",
+        resourceId: "bundle-alpha",
+        version: "v1",
+        digest: "sha256:" + "b".repeat(64),
+        sessionIds: ["session-alpha"],
+        executionIds: [],
+      },
+    ]);
+  });
+
   it("shows the same RemoteWorker Foundation baseline enforced by Control Plane", () => {
     const node = {
       architecture: "arm64",
@@ -614,10 +676,7 @@ describe("Admin Web boundary", () => {
         calls.push(`events:${sessionId}`);
         return {
           value: {
-            events: [
-              { metadata: { uid: "event-1" } },
-              { metadata: { uid: "event-2" } },
-            ],
+            events: [{ metadata: { uid: "event-1" } }, { metadata: { uid: "event-2" } }],
             nextCursor: "cursor-2",
             hasMore: false,
           },
@@ -637,6 +696,46 @@ describe("Admin Web boundary", () => {
     expect(result.executions.map(({ metadata }) => metadata.uid)).toEqual(["execution-alpha"]);
     expect(result.events.map(({ metadata }) => metadata.uid)).toEqual(["event-2", "event-1"]);
     expect(calls).toEqual(["executions:session-bound", "events:session-bound"]);
+  });
+
+  it("loads project-wide capability bindings without fetching event streams", async () => {
+    const calls: string[] = [];
+    const client = {
+      listAdminManagedAgentSessions: async () => ({
+        value: {
+          sessions: [
+            { metadata: { uid: "session-alpha" }, spec: { sandboxId: "sandbox-alpha" } },
+            { metadata: { uid: "session-beta" }, spec: { sandboxId: "sandbox-beta" } },
+          ],
+        },
+      }),
+      listAdminManagedAgentExecutions: async (
+        _tenantId: string,
+        _projectId: string,
+        sessionId: string,
+      ) => {
+        calls.push(`executions:${sessionId}`);
+        return { value: { executions: [] } };
+      },
+      listAdminManagedAgentEvents: async () => {
+        calls.push("events");
+        return { value: { events: [], hasMore: false } };
+      },
+    } as unknown as AdminClient;
+
+    const result = await listAdminManagedAgentBindings(
+      client,
+      "tenant-alpha",
+      "project-alpha",
+      new AbortController().signal,
+    );
+
+    expect(result.sessions.map(({ metadata }) => metadata.uid)).toEqual([
+      "session-alpha",
+      "session-beta",
+    ]);
+    expect(result.events).toEqual([]);
+    expect(calls).toEqual(["executions:session-alpha", "executions:session-beta"]);
   });
 
   it("pages and newest-first sorts workspace snapshot metadata from Admin API", async () => {

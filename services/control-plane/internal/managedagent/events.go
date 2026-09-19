@@ -13,9 +13,9 @@ const (
 	// LifecycleEventProfileID identifies the local, transport-neutral event
 	// projection. It is not a public HTTP or durable-storage version.
 	LifecycleEventProfileID     = "cloud-agents/managed-agent-events/v1alpha1"
-	lifecycleEventProfileDigest = "sha256:1236e7544235c1c76ca9a76114bce928708b553e904691c34813202f64457c05"
+	lifecycleEventProfileDigest = "sha256:b39c04d3e9dd09b46dc720239c156bf5fea1bb2237c78add5a1f351edb7c0740"
 	lifecycleEventAlgorithm     = "global-sequence-scope-filter-v1"
-	lifecycleEventFields        = "event_id|sequence|scope|operation|resource|session_id|turn_id|execution_id|generation|occurred_at|mutation_digest|input_digest|result_digest|error_code|changes(resource,from,to,version)"
+	lifecycleEventFields        = "event_id|sequence|scope|operation|resource|session_id|turn_id|execution_id|generation|occurred_at|mutation_digest|input_digest|result_digest|error_code|result|changes(resource,from,to,version)"
 	maxEventPageSize            = 64
 )
 
@@ -35,6 +35,12 @@ var lifecycleEventOperations = [...]string{
 	"execution.fail",
 	"turn.interrupt",
 	"turn.cancel",
+	"mcp.call",
+	"mcp.fail",
+	"mcp.revoke",
+	"skill.load",
+	"skill.fail",
+	"skill.revoke",
 }
 
 // LifecycleEventProfile is the immutable local authority for event ordering
@@ -119,7 +125,15 @@ type LifecycleEvent struct {
 	InputDigest    string
 	ResultDigest   string
 	ErrorCode      string
-	Changes        []LifecycleStateChange
+	Result         string
+	// Capability identity is populated only for MCP/Skill events. It contains
+	// opaque IDs and digests; payloads, source bytes, and credentials never
+	// enter the durable event projection.
+	ServerID string
+	BundleID string
+	Version  string
+	Digest   string
+	Changes  []LifecycleStateChange
 }
 
 // EventCursor is bound to one scope, event profile, and exact event ID. The

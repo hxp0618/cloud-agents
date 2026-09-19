@@ -43,63 +43,65 @@ import (
 )
 
 const (
-	productionDatabaseEnvironment                = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
-	productionAuthConfigEnvironment              = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
-	productionWorkerEndpointEnvironment          = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
-	productionWorkerSPIFFEEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
-	productionWorkerClientCertEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
-	productionWorkerClientKeyEnvironment         = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
-	productionWorkerCAEnvironment                = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
-	productionWorkspaceEnvironment               = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
-	productionProviderCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY"
-	productionDockerCredentialsEnvironment       = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
-	productionSnapshotDirectoryEnvironment       = "CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY"
-	productionKubernetesCredentialsEnvironment   = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
-	productionSSHCredentialsEnvironment          = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
-	productionAccessGrantKeyEnvironment          = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
-	productionRemoteWorkerCACertEnvironment      = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT"
-	productionRemoteWorkerCAKeyEnvironment       = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY"
-	productionRemoteWorkerTrustDomainEnvironment = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN"
-	productionAdmissionLeaseEnvironment          = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
-	productionAdmissionGenerationEnvironment     = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
-	productionAdmissionTokenEnvironment          = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
-	maxAuthConfigBytes                           = 1 << 20
-	maxProductionCABytes                         = 1 << 20
-	productionRuntimeMaxDuration                 = 30 * time.Minute
-	productionHTTPWriteGrace                     = 15 * time.Second
-	productionJWKSFetchTimeout                   = 5 * time.Second
-	maxJWKSResponseBytes                         = 1 << 20
-	defaultProductionMaxConcurrentRequests       = 128
-	maximumProductionMaxConcurrentRequests       = 10_000
+	productionDatabaseEnvironment                  = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+	productionAuthConfigEnvironment                = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
+	productionWorkerEndpointEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
+	productionWorkerSPIFFEEnvironment              = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
+	productionWorkerClientCertEnvironment          = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
+	productionWorkerClientKeyEnvironment           = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
+	productionWorkerCAEnvironment                  = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
+	productionWorkspaceEnvironment                 = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	productionProviderCredentialsEnvironment       = "CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY"
+	productionCapabilityMaterializationEnvironment = "CLOUD_AGENTS_PLATFORM_CAPABILITY_MATERIALIZATION_DIRECTORY"
+	productionDockerCredentialsEnvironment         = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
+	productionSnapshotDirectoryEnvironment         = "CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY"
+	productionKubernetesCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
+	productionSSHCredentialsEnvironment            = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
+	productionAccessGrantKeyEnvironment            = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
+	productionRemoteWorkerCACertEnvironment        = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT"
+	productionRemoteWorkerCAKeyEnvironment         = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY"
+	productionRemoteWorkerTrustDomainEnvironment   = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN"
+	productionAdmissionLeaseEnvironment            = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
+	productionAdmissionGenerationEnvironment       = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
+	productionAdmissionTokenEnvironment            = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
+	maxAuthConfigBytes                             = 1 << 20
+	maxProductionCABytes                           = 1 << 20
+	productionRuntimeMaxDuration                   = 30 * time.Minute
+	productionHTTPWriteGrace                       = 15 * time.Second
+	productionJWKSFetchTimeout                     = 5 * time.Second
+	maxJWKSResponseBytes                           = 1 << 20
+	defaultProductionMaxConcurrentRequests         = 128
+	maximumProductionMaxConcurrentRequests         = 10_000
 )
 
 var version = "dev"
 
 type productionConfig struct {
-	listen                  string
-	database                string
-	authPath                string
-	tlsCert                 string
-	tlsKey                  string
-	workerEndpoint          string
-	workerSPIFFE            string
-	workerClientCert        string
-	workerClientKey         string
-	workerCA                string
-	workspaceDirectory      string
-	providerCredentials     string
-	dockerCredentials       string
-	snapshotDirectory       string
-	kubernetesCredentials   string
-	sshCredentials          string
-	accessGrantKey          string
-	remoteWorkerCACert      string
-	remoteWorkerCAKey       string
-	remoteWorkerTrustDomain string
-	admissionLeaseID        string
-	admissionGeneration     uint64
-	admissionToken          []byte
-	maxConcurrentRequests   int
+	listen                    string
+	database                  string
+	authPath                  string
+	tlsCert                   string
+	tlsKey                    string
+	workerEndpoint            string
+	workerSPIFFE              string
+	workerClientCert          string
+	workerClientKey           string
+	workerCA                  string
+	workspaceDirectory        string
+	providerCredentials       string
+	capabilityMaterialization string
+	dockerCredentials         string
+	snapshotDirectory         string
+	kubernetesCredentials     string
+	sshCredentials            string
+	accessGrantKey            string
+	remoteWorkerCACert        string
+	remoteWorkerCAKey         string
+	remoteWorkerTrustDomain   string
+	admissionLeaseID          string
+	admissionGeneration       uint64
+	admissionToken            []byte
+	maxConcurrentRequests     int
 }
 
 type authConfigFile struct {
@@ -301,7 +303,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		defer func() { cancelFoundation(); <-foundationDone }()
 	}
 	if config.providerCredentials != "" {
-		foundationRuntime, err = internalmanagedagent.NewFoundationRuntime(sandboxCredentials, config.providerCredentials, coordinationService)
+		foundationRuntime, err = internalmanagedagent.NewFoundationRuntimeWithCapabilities(sandboxCredentials, config.providerCredentials, config.capabilityMaterialization, coordinationService)
 		if err != nil {
 			return errors.New("Foundation Runtime configuration is invalid")
 		}
@@ -350,6 +352,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	networkPolicyServer, err := server.NewNetworkPolicyHTTPServer(adminVerifier, coordinationService)
 	if err != nil {
 		return errors.New("network policy HTTP server is unavailable")
+	}
+	capabilityServer, err := server.NewCapabilityHTTPServer(adminVerifier, coordinationService)
+	if err != nil {
+		return errors.New("capability HTTP server is unavailable")
 	}
 	var remoteWorkerCertificateAuthority *internalremoteworker.CertificateAuthority
 	var remoteWorkerClientCAs *x509.CertPool
@@ -453,6 +459,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(adminVerifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesCapabilityAdminPath(request.URL.Path) {
+			capabilityServer.ServeHTTP(writer, request)
+			return
+		}
 		if runtimeRequest, ok := server.AdminManagedAgentRuntimeRequest(request); ok {
 			if server.HandlesManagedAgentExecutionPath(runtimeRequest.URL.Path) {
 				if adminExecutionServer == nil {
@@ -656,6 +666,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	workerCA := set.String("worker-ca", "", "Worker CA certificate path")
 	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
 	providerCredentials := set.String("provider-credentials-directory", "", "tenant Provider credential directory for Foundation Runtime")
+	capabilityMaterialization := set.String("capability-materialization-directory", "", "operator-owned MCP capability materialization directory")
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	snapshotDirectory := set.String("snapshot-directory", "", "persistent portable Workspace snapshot directory")
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
@@ -691,6 +702,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(workerCA, productionWorkerCAEnvironment)
 	fill(workspaceDirectory, productionWorkspaceEnvironment)
 	fill(providerCredentials, productionProviderCredentialsEnvironment)
+	fill(capabilityMaterialization, productionCapabilityMaterializationEnvironment)
 	fill(dockerCredentials, productionDockerCredentialsEnvironment)
 	fill(snapshotDirectory, productionSnapshotDirectoryEnvironment)
 	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
@@ -700,7 +712,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(remoteWorkerCAKey, productionRemoteWorkerCAKeyEnvironment)
 	fill(remoteWorkerTrustDomain, productionRemoteWorkerTrustDomainEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*providerCredentials) != *providerCredentials || strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*snapshotDirectory) != *snapshotDirectory || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
+	if strings.TrimSpace(*providerCredentials) != *providerCredentials || strings.TrimSpace(*capabilityMaterialization) != *capabilityMaterialization || strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*snapshotDirectory) != *snapshotDirectory || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -726,7 +738,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	legacyRuntime := staticWorker || *workerClientCert != "" || *workerClientKey != "" || *workerCA != "" || admissionToken != ""
 	managedAgentRuntime := legacyRuntime || *providerCredentials != "" || *workspaceDirectory != ""
 	if legacyRuntime && (*workerClientCert == "" || *workerClientKey == "" || *workerCA == "" || *workspaceDirectory == "" || admissionToken == "") ||
-		managedAgentRuntime && (*workspaceDirectory == "" || !legacyRuntime && *providerCredentials == "") || *providerCredentials != "" && *dockerCredentials == "" && *kubernetesCredentials == "" || *snapshotDirectory != "" && *dockerCredentials == "" && *kubernetesCredentials == "" ||
+		managedAgentRuntime && (*workspaceDirectory == "" || !legacyRuntime && *providerCredentials == "") || *providerCredentials != "" && *dockerCredentials == "" && *kubernetesCredentials == "" || *capabilityMaterialization != "" && *providerCredentials == "" || *snapshotDirectory != "" && *dockerCredentials == "" && *kubernetesCredentials == "" ||
 		managedAgentRuntime && *kubernetesCredentials != "" && *snapshotDirectory == "" ||
 		staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0) || len(admissionToken) > 1<<20 {
 		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
@@ -738,7 +750,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, providerCredentials: *providerCredentials, dockerCredentials: *dockerCredentials, snapshotDirectory: *snapshotDirectory, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, providerCredentials: *providerCredentials, capabilityMaterialization: *capabilityMaterialization, dockerCredentials: *dockerCredentials, snapshotDirectory: *snapshotDirectory, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

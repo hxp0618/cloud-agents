@@ -21,11 +21,15 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 	}
 	config := DeploymentConfig{
 		WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha",
-		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
+		CapabilityMaterializationRef: "capabilities-alpha",
+		WorkerSPIFFEID:               "spiffe://cloud-agents.test/workers/docker-alpha", WorkerServerName: "worker.example.test",
 	}
 	labels := DeploymentLabels(request, config)
 	if labels["cloud-agents.dev/worker-credential-ref"] != config.WorkerCredentialRef {
 		t.Fatal("deployment labels do not bind the Worker credential reference")
+	}
+	if labels["cloud-agents.dev/capability-materialization-ref"] != config.CapabilityMaterializationRef {
+		t.Fatal("deployment labels do not bind the capability materialization reference")
 	}
 	var create map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
@@ -51,7 +55,7 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	for _, volume := range []string{config.WorkerCredentialRef, request.ProviderCredentialRef} {
+	for _, volume := range []string{config.WorkerCredentialRef, request.ProviderCredentialRef, config.CapabilityMaterializationRef} {
 		if err := requireVolume(context.Background(), server.Client(), server.URL, volume); err != nil {
 			t.Fatal(err)
 		}
@@ -72,24 +76,37 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 		t.Fatalf("image/env = %#v/%#v", create["Image"], create["Env"])
 	}
 	command, _ := create["Cmd"].([]any)
-	if !containsJSONStrings(command, "--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token") {
+	if !containsJSONStrings(command, "--admission-token-file", "/run/cloud-agents/worker-credentials/admission-token", "--capability-materialization-directory", "/run/cloud-agents/capabilities") {
 		t.Fatalf("command = %#v", command)
 	}
 	host, _ := create["HostConfig"].(map[string]any)
 	if host["Memory"] != float64(request.MemoryLimitBytes) || host["NanoCpus"] != float64(request.CPULimitMillis*1_000_000) || host["ReadonlyRootfs"] != true {
 		t.Fatalf("host config = %#v", host)
 	}
-	var workspace map[string]any
+	bindings := host["PortBindings"].(map[string]any)[workerPort].([]any)
+	if bindings[0].(map[string]any)["HostPort"] != workerHostPort(request) {
+		t.Fatalf("worker port binding = %#v", host["PortBindings"])
+	}
+	var workspace, capabilities map[string]any
 	for _, value := range host["Mounts"].([]any) {
 		mount, _ := value.(map[string]any)
 		if mount["Target"] == "/workspace" {
 			workspace = mount
+		}
+		if mount["Target"] == "/run/cloud-agents/capabilities" {
+			capabilities = mount
 		}
 	}
 	volumeOptions, _ := workspace["VolumeOptions"].(map[string]any)
 	volumeLabels, _ := volumeOptions["Labels"].(map[string]any)
 	if workspace["Source"] != workspaceVolumeName(request) || volumeLabels["cloud-agents.dev/lease"] != request.LeaseID {
 		t.Fatalf("workspace mount = %#v", workspace)
+	}
+	if capabilities["Source"] != config.CapabilityMaterializationRef || capabilities["ReadOnly"] != true {
+		t.Fatalf("capability materialization mount = %#v", capabilities)
+	}
+	if host["Tmpfs"].(map[string]any)["/run/cloud-agents/skills"] != "rw,noexec,nosuid,size=67108864,uid=1000,gid=1000,mode=0700" {
+		t.Fatalf("skill runtime tmpfs = %#v", host["Tmpfs"])
 	}
 	if err := startWorkerContainer(context.Background(), server.Client(), server.URL, containerID); err != nil {
 		t.Fatal(err)

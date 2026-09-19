@@ -4,7 +4,9 @@ package runtime
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,9 +21,10 @@ import (
 )
 
 const (
-	maxEventQueueItems  = 128
-	maxCommandTombstone = 4096
-	runtimeStopTimeout  = 5 * time.Second
+	maxEventQueueItems    = 128
+	maxCommandTombstone   = 4096
+	maxRuntimeStderrBytes = 4096
+	runtimeStopTimeout    = 5 * time.Second
 )
 
 var (
@@ -30,10 +33,12 @@ var (
 )
 
 type Config struct {
-	Command        []string
-	Environment    []string
-	Directory      string
-	CredentialFile string
+	Command                   []string
+	Environment               []string
+	Directory                 string
+	CredentialFile            string
+	CapabilityManifest        []byte
+	CapabilityMaterialization []byte
 }
 
 type Client struct {
@@ -42,12 +47,14 @@ type Client struct {
 	done    chan struct{}
 	events  chan runtimeprotocol.Message
 
-	mu          sync.Mutex
-	writes      sync.Mutex
-	pending     map[string]pendingRequest
-	tombstones  map[string]struct{}
-	closed      bool
-	terminalErr error
+	mu            sync.Mutex
+	writes        sync.Mutex
+	pending       map[string]pendingRequest
+	tombstones    map[string]struct{}
+	closed        bool
+	terminalErr   error
+	stderrCapture *runtimeStderrCapture
+	stderrDone    <-chan struct{}
 }
 
 type result struct {
@@ -87,6 +94,32 @@ func New(ctx context.Context, config Config) (*Client, error) {
 		process.ExtraFiles = []*os.File{credential}
 		process.Env = credentialEnvironment(process.Env)
 	}
+	var materialization *os.File
+	if len(config.CapabilityMaterialization) != 0 {
+		file, err := os.CreateTemp("", ".cloud-agent-capability-*")
+		if err != nil {
+			return nil, fmt.Errorf("runtime capability materialization: %w", err)
+		}
+		materialization = file
+		defer func() {
+			_ = materialization.Close()
+			_ = os.Remove(materialization.Name())
+		}()
+		if err := materialization.Chmod(0o600); err != nil {
+			return nil, fmt.Errorf("runtime capability materialization permissions: %w", err)
+		}
+		if _, err := materialization.Write(config.CapabilityMaterialization); err != nil {
+			return nil, fmt.Errorf("runtime capability materialization write: %w", err)
+		}
+		if _, err := materialization.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("runtime capability materialization seek: %w", err)
+		}
+		process.ExtraFiles = append(process.ExtraFiles, materialization)
+		process.Env = capabilityMaterializationEnvironment(process.Env, len(process.ExtraFiles)+2)
+	}
+	if len(config.CapabilityManifest) != 0 {
+		process.Env = capabilityEnvironment(process.Env, config.CapabilityManifest)
+	}
 	stdin, err := process.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("runtime stdin: %w", err)
@@ -116,9 +149,42 @@ func New(ctx context.Context, config Config) (*Client, error) {
 		events:  make(chan runtimeprotocol.Message, maxEventQueueItems),
 		pending: make(map[string]pendingRequest), tombstones: make(map[string]struct{}),
 	}
-	go func() { _, _ = io.Copy(io.Discard, stderr) }()
+	stderrCapture := &runtimeStderrCapture{}
+	stderrDone := make(chan struct{})
+	client.stderrCapture = stderrCapture
+	client.stderrDone = stderrDone
+	go func() {
+		_, _ = io.Copy(stderrCapture, io.LimitReader(stderr, maxRuntimeStderrBytes))
+		close(stderrDone)
+	}()
 	go client.run(stdout)
 	return client, nil
+}
+
+func capabilityMaterializationEnvironment(environment []string, fd int) []string {
+	if environment == nil {
+		environment = os.Environ()
+	}
+	filtered := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, "CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD=") {
+			filtered = append(filtered, entry)
+		}
+	}
+	return append(filtered, fmt.Sprintf("CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD=%d", fd))
+}
+
+func capabilityEnvironment(environment []string, manifest []byte) []string {
+	if environment == nil {
+		environment = os.Environ()
+	}
+	filtered := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, "CLOUD_AGENT_CAPABILITY_MANIFEST_B64=") {
+			filtered = append(filtered, entry)
+		}
+	}
+	return append(filtered, "CLOUD_AGENT_CAPABILITY_MANIFEST_B64="+base64.RawURLEncoding.EncodeToString(manifest))
 }
 
 func credentialEnvironment(environment []string) []string {
@@ -284,6 +350,9 @@ func (client *Client) run(stdout io.ReadCloser) {
 		_ = client.process.Process.Kill()
 	}
 	waitErr := client.process.Wait()
+	if client.stderrDone != nil {
+		<-client.stderrDone
+	}
 	if runErr == nil {
 		if waitErr != nil {
 			runErr = fmt.Errorf("runtime exited: %w", waitErr)
@@ -291,7 +360,64 @@ func (client *Client) run(stdout io.ReadCloser) {
 			runErr = fmt.Errorf("%w: runtime exited before a terminal response", runtimeprotocol.ErrProtocolViolation)
 		}
 	}
+	if diagnostic := client.stderrCapture.code(); diagnostic != "" {
+		runErr = fmt.Errorf("%w (%s)", runErr, diagnostic)
+	}
 	client.finish(runErr)
+}
+
+type runtimeStderrCapture struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (capture *runtimeStderrCapture) Write(data []byte) (int, error) {
+	originalLength := len(data)
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	remaining := maxRuntimeStderrBytes - capture.buf.Len()
+	if remaining > 0 {
+		if len(data) > remaining {
+			data = data[:remaining]
+		}
+		_, _ = capture.buf.Write(data)
+	}
+	return originalLength, nil
+}
+
+func (capture *runtimeStderrCapture) code() string {
+	if capture == nil {
+		return ""
+	}
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	for _, line := range strings.Split(capture.buf.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		switch {
+		case strings.Contains(line, "Capability materialization"):
+			return "runtime_stderr_capability_materialization"
+		case strings.Contains(line, "Skill Bundle materialization is unavailable"):
+			return "runtime_stderr_skill_materialization_unavailable"
+		case strings.Contains(line, "Skill Bundle materialization root is invalid"):
+			return "runtime_stderr_skill_materialization_root_invalid"
+		case strings.Contains(line, "Skill Bundle materialization identity"):
+			return "runtime_stderr_skill_materialization_identity"
+		case strings.Contains(line, "Skill Bundle signature") || strings.Contains(line, "Skill Bundle digest"):
+			return "runtime_stderr_skill_materialization_integrity"
+		case strings.Contains(line, "Skill Bundle") || strings.Contains(line, "Skill materialization"):
+			return "runtime_stderr_skill_materialization"
+		case strings.Contains(line, "MCP"):
+			return "runtime_stderr_mcp"
+		case strings.Contains(line, "credential") || strings.Contains(line, "Credential"):
+			return "runtime_stderr_credential"
+		default:
+			return "runtime_stderr_present"
+		}
+	}
+	return ""
 }
 
 func (client *Client) finish(err error) {

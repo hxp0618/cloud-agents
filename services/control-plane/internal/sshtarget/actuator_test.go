@@ -22,7 +22,8 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 	}
 	config := dockertarget.DeploymentConfig{
 		WorkerImageRepository: "registry.example.test/cloud-agents/worker", WorkerCredentialRef: "worker-alpha",
-		WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/ssh-alpha", WorkerServerName: "worker.example.test",
+		CapabilityMaterializationRef: "capabilities-alpha",
+		WorkerSPIFFEID:               "spiffe://cloud-agents.test/workers/ssh-alpha", WorkerServerName: "worker.example.test",
 	}
 	name, image := dockertarget.WorkerContainerName(request), config.WorkerImageRepository+"@"+request.ReleaseDigest
 	labels := dockertarget.DeploymentLabels(request, config)
@@ -37,6 +38,9 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 			}
 			if strings.Contains(command, "'provider-alpha'") {
 				return "provider-alpha\n", 0
+			}
+			if strings.Contains(command, "'capabilities-alpha'") {
+				return "capabilities-alpha\n", 0
 			}
 		case strings.HasPrefix(command, "docker 'ps'"):
 			if present {
@@ -77,7 +81,7 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	for _, volume := range []string{config.WorkerCredentialRef, request.ProviderCredentialRef} {
+	for _, volume := range []string{config.WorkerCredentialRef, request.ProviderCredentialRef, config.CapabilityMaterializationRef} {
 		if err := requireRemoteVolume(client, volume); err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +133,7 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 		t.Fatalf("future generation list error=%v", err)
 	}
 	present = false
-	for _, expected := range []string{"'--pull' 'never'", "'--read-only'", "'--cap-drop' 'ALL'", "'--memory' '536870912'", "src=worker-alpha", "src=provider-alpha", image} {
+	for _, expected := range []string{"'--pull' 'never'", "'--read-only'", "'--cap-drop' 'ALL'", "'--memory' '536870912'", "src=worker-alpha", "src=provider-alpha", "src=capabilities-alpha", "'/run/cloud-agents/skills:rw,noexec,nosuid,size=67108864,uid=1000,gid=1000,mode=0700'", "'--capability-materialization-directory' '/run/cloud-agents/capabilities'", image} {
 		if !strings.Contains(runCommand, expected) {
 			t.Fatalf("run command lacks %q: %s", expected, runCommand)
 		}

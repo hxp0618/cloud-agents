@@ -69,6 +69,10 @@ type ClaudeRunOptions = {
   interactive: boolean;
   operation?: ProviderPrimaryOperation;
   queryFactory?: ClaudeQueryFactory;
+  mcpServers?: Readonly<
+    Record<string, { type: "http"; url: string; headers: Record<string, string>; alwaysLoad: true }>
+  >;
+  skillDirectories?: ReadonlyArray<string>;
 };
 
 type AttemptState = {
@@ -93,6 +97,7 @@ type PendingClaudeBashToolResult = {
 
 type AttemptTool = {
   toolName: string;
+  capabilityResourceId?: string;
   input: Record<string, unknown>;
   terminalId?: string;
   commandSummary?: string;
@@ -135,6 +140,16 @@ type PromptStream = {
   push: (text: string) => void;
   close: () => void;
 };
+
+function skillOptions(
+  directories: ReadonlyArray<string> | undefined,
+): Pick<ClaudeQueryOptions, "plugins" | "skills"> {
+  if (!directories?.length) return {};
+  return {
+    plugins: directories.map((path) => ({ type: "local" as const, path, skipMcpDiscovery: true })),
+    skills: "all",
+  };
+}
 
 const INTERRUPT_GRACE_MS = 2_000;
 const BASH_POST_TOOL_USE_DRAIN_MS = 500;
@@ -415,6 +430,8 @@ class ClaudeAgentSdkRuntime {
       // permissions, or MCP servers. All authority comes from host options.
       settingSources: [],
       strictMcpConfig: true,
+      ...(this.options.mcpServers ? { mcpServers: this.options.mcpServers } : {}),
+      ...skillOptions(this.options.skillDirectories),
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -442,6 +459,7 @@ class ClaudeAgentSdkRuntime {
       pathToClaudeCodeExecutable: "claude",
       settingSources: [],
       strictMcpConfig: true,
+      ...skillOptions(this.options.skillDirectories),
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -507,6 +525,7 @@ class ClaudeAgentSdkRuntime {
       pathToClaudeCodeExecutable: "claude",
       settingSources: [],
       strictMcpConfig: true,
+      ...skillOptions(this.options.skillDirectories),
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -601,6 +620,12 @@ class ClaudeAgentSdkRuntime {
           },
         });
       }
+      // Claude Code expects MCP tool results to retain the native content[]
+      // shape. Wrapping that array in the generic provenance envelope makes
+      // its result normalizer call .reduce on an object and fail the tool.
+      // MCP content remains untrusted by the fixed system policy and is still
+      // fenced by the Host approval path and audited lifecycle events.
+      if (/^mcp__/iu.test(input.tool_name)) return { continue: true };
       if (toolUseId && isClaudeBashTool(input.tool_name)) {
         this.completePendingBashToolResult(state, toolUseId, "success");
       }
@@ -747,8 +772,9 @@ class ClaudeAgentSdkRuntime {
   private takeRecordedUserInput(toolInput: Record<string, unknown>): PermissionResult | undefined {
     if (this.resumeOutcome() === "confirmed") return;
     const questions = this.userInputQuestions(toolInput);
-    const entry = this.takeRecordedInteraction("user-input", (request) =>
-      JSON.stringify(request?.questions ?? null) === JSON.stringify(questions),
+    const entry = this.takeRecordedInteraction(
+      "user-input",
+      (request) => JSON.stringify(request?.questions ?? null) === JSON.stringify(questions),
     );
     if (!entry) return;
     const answers = asRecord(asRecord(entry.resolution)?.answers);
@@ -1413,9 +1439,11 @@ class ClaudeAgentSdkRuntime {
     input: Record<string, unknown>,
     toolUseId?: string,
   ): AttemptTool {
+    const capabilityResourceId = managedMcpCapabilityResourceId(toolName, this.options.mcpServers);
     if (classifyRequestKind(toolName) !== "command") {
       return {
         toolName,
+        ...(capabilityResourceId ? { capabilityResourceId } : {}),
         input,
         outputBytes: 0,
         outputTruncated: false,
@@ -1432,6 +1460,7 @@ class ClaudeAgentSdkRuntime {
     );
     return {
       toolName,
+      ...(capabilityResourceId ? { capabilityResourceId } : {}),
       input,
       terminalId: toolUseId ?? this.uniqueRequestId("terminal"),
       ...(commandSummary ? { commandSummary } : {}),
@@ -1470,6 +1499,7 @@ class ClaudeAgentSdkRuntime {
         provider: "claudeAgent",
         itemType: this.safeString(tool.toolName, 200) ?? "tool",
         status,
+        ...(tool.capabilityResourceId ? { capabilityResourceId: tool.capabilityResourceId } : {}),
         ...(toolUseId ? { itemId: this.safeString(toolUseId, 200) } : {}),
         ...(terminalLifecycle
           ? {
@@ -2101,6 +2131,27 @@ function numericFields(value: Record<string, unknown>): Record<string, number> {
       (entry): entry is [string, number] => typeof entry[1] === "number",
     ),
   );
+}
+
+function managedMcpCapabilityResourceId(
+  toolName: string,
+  servers:
+    | Readonly<
+        Record<
+          string,
+          { type: "http"; url: string; headers: Record<string, string>; alwaysLoad: true }
+        >
+      >
+    | undefined,
+): string | undefined {
+  if (!servers || !toolName.startsWith("mcp__")) return undefined;
+  for (const serverName of Object.keys(servers)) {
+    if (!serverName.startsWith("cloud_agents_") || !toolName.startsWith(`mcp__${serverName}__`))
+      continue;
+    const resourceId = serverName.slice("cloud_agents_".length);
+    if (/^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$/u.test(resourceId)) return resourceId;
+  }
+  return undefined;
 }
 
 function boundedString(value: unknown, maximumLength: number): string | undefined {

@@ -64,7 +64,12 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) getWorkerHealth(writer http
 		state = "unavailable" // Never serialize transport errors, endpoints, or remote payloads.
 	}
 	checkedAt := time.Now().UTC()
-	after, err := server.store.GetManagedHostEnvironmentLease(request.Context(), tenantID, principal, projectID, leaseID)
+	afterPrincipal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	after, err := server.store.GetManagedHostEnvironmentLease(request.Context(), tenantID, afterPrincipal, projectID, leaseID)
 	if err != nil {
 		status, code := managedHostEnvironmentLeaseErrorStatus(err)
 		writePublicProblem(writer, status, code)

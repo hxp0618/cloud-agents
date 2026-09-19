@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { isCodexRuntimeIsolationConfigAttested } from "./codexRuntimeIsolation";
+import {
+  isCodexManagedMcpInventoryAttested,
+  isCodexRuntimeIsolationConfigAttested,
+} from "./codexRuntimeIsolation";
 
 const officialCodex0145ConfigRead = JSON.parse(
   readFileSync(new URL("../test-fixtures/codex-0.145.0-config-read.json", import.meta.url), "utf8"),
@@ -48,5 +51,77 @@ describe("Codex runtime-isolation configuration attestation", () => {
     expect(isCodexRuntimeIsolationConfigAttested(response, [], ["CLOUD_AGENT_GATEWAY_TOKEN"])).toBe(
       true,
     );
+  });
+
+  it("attests the exact loopback Host-managed MCP server and credential exclusion", () => {
+    const response = structuredClone(officialCodex0145ConfigRead) as {
+      config: {
+        mcp_servers: Record<string, unknown>;
+        shell_environment_policy: { exclude: unknown };
+      };
+    };
+    response.config.mcp_servers = {
+      "cloud_agents_mcp-1": {
+        url: "http://127.0.0.1:43123/mcp",
+        bearer_token_env_var: "CLOUD_AGENT_MCP_TOKEN_MCP_1",
+        environment_id: "local",
+        enabled: true,
+        tool_timeout_sec: null,
+        required: true,
+        omit_tools_from: ["deferred"],
+      },
+    };
+    response.config.shell_environment_policy.exclude = ["CLOUD_AGENT_MCP_TOKEN_MCP_1"];
+    expect(
+      isCodexRuntimeIsolationConfigAttested(response, [
+        {
+          name: "cloud_agents_mcp-1",
+          url: "http://127.0.0.1:43123/mcp",
+          bearerTokenEnvVar: "CLOUD_AGENT_MCP_TOKEN_MCP_1",
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  it("attests the exact connected MCP inventory exposed by app-server", () => {
+    expect(
+      isCodexManagedMcpInventoryAttested(
+        {
+          data: [
+            {
+              name: "cloud_agents_mcp-1",
+              authStatus: "bearerToken",
+              runtimeStatus: "connected",
+              tools: { acceptance_side_effect: { name: "acceptance_side_effect" } },
+              resources: [],
+              resourceTemplates: [],
+            },
+          ],
+          nextCursor: null,
+        },
+        ["cloud_agents_mcp-1"],
+      ),
+    ).toBe(true);
+  });
+
+  it("fails closed for incomplete, paginated, or unexpected MCP inventory", () => {
+    const response = {
+      data: [
+        {
+          name: "cloud_agents_mcp-1",
+          authStatus: "bearerToken",
+          runtimeStatus: "starting",
+          tools: {},
+        },
+      ],
+      nextCursor: "more",
+    };
+    expect(isCodexManagedMcpInventoryAttested(response, ["cloud_agents_mcp-1"])).toBe(false);
+    expect(
+      isCodexManagedMcpInventoryAttested({ ...response, nextCursor: null }, [
+        "cloud_agents_mcp-1",
+        "unexpected",
+      ]),
+    ).toBe(false);
   });
 });

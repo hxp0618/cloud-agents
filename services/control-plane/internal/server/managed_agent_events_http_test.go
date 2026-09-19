@@ -55,6 +55,30 @@ func TestManagedAgentEventsHTTPServerReturnsBoundPage(t *testing.T) {
 	}
 }
 
+func TestManagedAgentEventsHTTPServerRedactsCapabilityPayloads(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	store := &managedAgentEventsStoreFake{page: internalmanagedagent.EventPage{Events: []internalmanagedagent.LifecycleEvent{{
+		EventID: "managed-agent-event-capability", Sequence: 1, Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"},
+		Operation: "mcp.call", Resource: internalmanagedagent.ResourceMcpServer, Generation: 3,
+		MutationDigest: "sha256:" + strings.Repeat("a", 64), ServerID: "server-alpha", Version: "v1", Digest: "sha256:" + strings.Repeat("b", 64),
+		Result: "succeeded",
+		Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceMcpServer, To: "succeeded", Version: 1}}, OccurredAt: time.Now().UTC(),
+	}}}}
+	handler, err := NewManagedAgentEventsHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/events", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-capability-events")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || !strings.Contains(body, `"operation":"mcp.call"`) || !strings.Contains(body, `"serverId":"server-alpha"`) || !strings.Contains(body, `"digest":"sha256:`) || !strings.Contains(body, `"result":"succeeded"`) || strings.Contains(body, "toolInput") || strings.Contains(body, "secret") {
+		t.Fatalf("status=%d body=%s", response.Code, body)
+	}
+}
+
 func TestManagedAgentEventsHTTPServerRejectsInvalidPublicInputs(t *testing.T) {
 	tests := []struct {
 		name      string

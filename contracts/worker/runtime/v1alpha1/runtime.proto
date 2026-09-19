@@ -22,6 +22,31 @@ message RuntimeSessionOpen {
   string provider_kind = 6;
   // Selects the authenticated tenant's deployment-owned Provider credential.
   string tenant_id = 7;
+  // Host-managed, short-lived capability bindings. These values are opaque
+  // references and digests only; the Worker never receives a user token or
+  // host path through this protocol.
+  repeated RuntimeCapabilityBinding capability_bindings = 8;
+  // Digest of the canonical capability manifest sent to the Runtime process.
+  string capability_manifest_digest = 9;
+}
+
+message RuntimeCapabilityBinding {
+  // "mcp-server" or "skill-bundle"; the Worker rejects all other kinds.
+  string resource_kind = 1;
+  string resource_id = 2;
+  string version = 3;
+  string digest = 4;
+  // MCP-only transport and connection reference. connection_ref is opaque.
+  string transport = 5;
+  string connection_ref = 6;
+  // Short-lived authorization references; no credential bytes are carried.
+  string credential_ref = 7;
+  string grant_id = 8;
+  string network_policy_ref = 9;
+  uint64 expires_at_unix_seconds = 10;
+  repeated string permissions = 11;
+  // Skill bundles must set this true; MCP bindings must set it false.
+  bool read_only = 12;
 }
 
 message RuntimeCommandFrame {

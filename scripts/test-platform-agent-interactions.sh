@@ -28,6 +28,7 @@ fi
 cloud_agentsctl=${CLOUD_AGENTSCTL-cloud-agentsctl}
 ca_file=${CLOUD_AGENTS_CA_FILE-}
 admin_token_file=${CLOUD_AGENTS_E2E_ADMIN_TOKEN_FILE-}
+admin_curl_config=${CLOUD_AGENTS_E2E_ADMIN_CURL_CONFIG-}
 approval_session="$CLOUD_AGENTS_E2E_RUN_ID-approval"
 input_session="$CLOUD_AGENTS_E2E_RUN_ID-user-input"
 active_sessions=
@@ -35,6 +36,26 @@ execute_pid=
 takeover_generation=
 takeover_checkpoint_digest=
 takeover_needs_reconcile=0
+recovery_provider=${CLOUD_AGENTS_E2E_RECOVERY_PROVIDER-codex}
+recovery_fault=${CLOUD_AGENTS_E2E_RECOVERY_FAULT-both}
+recovery_mcp_refs_json=${CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON-}
+recovery_skill_refs_json=${CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON-}
+recovery_capability_bound=0
+case "$recovery_provider" in
+  codex | claudeAgent | pi | deepseek-harness) ;;
+  *) echo "CLOUD_AGENTS_E2E_RECOVERY_PROVIDER is invalid" >&2; exit 1 ;;
+esac
+case "$recovery_fault" in
+  worker | agent | both) ;;
+  *) echo "CLOUD_AGENTS_E2E_RECOVERY_FAULT is invalid" >&2; exit 1 ;;
+esac
+if [ -n "$recovery_mcp_refs_json" ] || [ -n "$recovery_skill_refs_json" ]; then
+  [ -n "$recovery_mcp_refs_json" ] && [ -n "$recovery_skill_refs_json" ] || {
+    echo "capability-bound recovery requires both MCP Server and Skill Bundle refs" >&2
+    exit 1
+  }
+  recovery_capability_bound=1
+fi
 
 if [ ! -f "$CLOUD_AGENTS_TOKEN_FILE" ] || [ ! -d "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ]; then
   echo "token file and E2E output directory must exist" >&2
@@ -42,6 +63,20 @@ if [ ! -f "$CLOUD_AGENTS_TOKEN_FILE" ] || [ ! -d "$CLOUD_AGENTS_E2E_OUTPUT_DIR" 
 fi
 command -v "$cloud_agentsctl" >/dev/null
 command -v node >/dev/null
+if [ "$recovery_capability_bound" -eq 1 ]; then
+  CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON="$recovery_mcp_refs_json" \
+  CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON="$recovery_skill_refs_json" node <<'NODE'
+for (const [name, kind, id] of [
+  ["CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON", "serverId", "mcp"],
+  ["CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON", "bundleId", "skill"],
+]) {
+  const value = JSON.parse(process.env[name]);
+  if (!Array.isArray(value) || value.length !== 1 || typeof value[0]?.[kind] !== "string") {
+    throw new Error(`${id} recovery refs must contain exactly one resource`);
+  }
+}
+NODE
+fi
 if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
   command -v docker >/dev/null
   command -v cmp >/dev/null
@@ -141,9 +176,14 @@ start_execution() {
   interaction_mode=$5
   prompt=$6
   final_file=$7
+  capability_bound=${8-0}
+  set --
+  if [ "$capability_bound" -eq 1 ]; then
+    set -- --mcp-server-refs-json "$recovery_mcp_refs_json" --skill-bundle-refs-json "$recovery_skill_refs_json"
+  fi
   run_ctl --timeout 5m --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-run" --idempotency-key "$execution_id-run" execution execute \
-    --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" --input "$prompt" >"$final_file" 2>"$final_file.stderr" &
+    --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" "$@" --input "$prompt" >"$final_file" 2>"$final_file.stderr" &
   execute_pid=$!
 }
 
@@ -527,11 +567,16 @@ prepare_interaction_takeover() {
   interaction_mode=$5
   prompt=$6
   output_prefix=$7
+  capability_bound=${8-0}
+  set --
+  if [ "$capability_bound" -eq 1 ]; then
+    set -- --mcp-server-refs-json "$recovery_mcp_refs_json" --skill-bundle-refs-json "$recovery_skill_refs_json"
+  fi
   wait_for_claim_expiry "$session_id" "$turn_id" "$execution_id" "$output_prefix.claim-expired"
   set +e
   run_ctl --timeout 60s --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-run" --idempotency-key "$execution_id-run" execution execute \
-    --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" --input "$prompt" \
+    --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" "$@" --input "$prompt" \
     >"$output_prefix.blocked" 2>"$output_prefix.blocked.stderr"
   blocked_status=$?
   set -e
@@ -688,29 +733,203 @@ restart_worker_during_execution() {
     running=$(docker inspect --format '{{.State.Running}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 2>/dev/null || printf 'false')
     started_at=$(docker inspect --format '{{.State.StartedAt}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 2>/dev/null || true)
     if [ "$running" = true ] && [ "$started_at" != "$previous_started_at" ]; then
-      return 0
+      worker_port=$(docker port "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 8091/tcp 2>/dev/null | sed -n '1s/.*://p')
+      if [ -n "$worker_port" ] && CLOUD_AGENTS_E2E_WORKER_PORT="$worker_port" node <<'NODE'
+const net = require("node:net");
+const socket = net.createConnection({host: "127.0.0.1", port: Number(process.env.CLOUD_AGENTS_E2E_WORKER_PORT)});
+const fail = () => { socket.destroy(); process.exit(1); };
+socket.setTimeout(1000, fail);
+socket.once("connect", () => { socket.destroy(); process.exit(0); });
+socket.once("error", fail);
+NODE
+      then
+        if [ -n "$admin_token_file" ] && [ -n "$admin_curl_config" ]; then
+          lease_file=$(mktemp)
+          health_file=$(mktemp)
+          health_status_file=$(mktemp)
+          if run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+            --request-id "$CLOUD_AGENTS_E2E_RUN_ID-worker-restart-lease" \
+            environment-lease get >"$lease_file" 2>/dev/null; then
+            lease_generation=$(CLOUD_AGENTS_E2E_LEASE_FILE="$lease_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_LEASE_FILE, "utf8"));
+if (!Number.isSafeInteger(value.spec?.generation) || value.spec.generation < 1) process.exit(1);
+process.stdout.write(String(value.spec.generation));
+NODE
+            )
+            if [ -n "$lease_generation" ] && curl --silent --show-error --cacert "$ca_file" \
+              --config "$admin_curl_config" \
+              --header "X-Request-ID: $CLOUD_AGENTS_E2E_RUN_ID-worker-restart-health-$attempt" \
+              --output "$health_file" \
+              --write-out '%{http_code}' >"$health_status_file" \
+              "$CLOUD_AGENTS_ENDPOINT/v1/admin/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/workers/$lease_id/health?expectedGeneration=$lease_generation"; then
+              if CLOUD_AGENTS_E2E_HEALTH_FILE="$health_file" CLOUD_AGENTS_E2E_HEALTH_STATUS_FILE="$health_status_file" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_HEALTH_FILE, "utf8"));
+const status = readFileSync(process.env.CLOUD_AGENTS_E2E_HEALTH_STATUS_FILE, "utf8");
+if (status !== "200") {
+  console.error(`worker restart health status=${status} code=${value.error?.code ?? "unknown"}`);
+  process.exit(1);
+}
+if (value.state !== "serving") {
+  console.error(`worker restart health state=${value.state ?? "unknown"}`);
+  process.exit(1);
+}
+process.exit(value.state === "serving" ? 0 : 1);
+NODE
+              then
+                rm -f "$lease_file" "$health_file" "$health_status_file"
+                return 0
+              fi
+            fi
+          fi
+          rm -f "$lease_file" "$health_file" "$health_status_file"
+        else
+          return 0
+        fi
+      fi
     fi
     if [ "$running" != true ]; then
       docker start "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >/dev/null 2>&1 || true
     fi
     sleep 1
   done
-  echo "Worker did not restart after the injected process exit" >&2
+  docker inspect --format '{{json .State}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >&2 || true
+  docker logs --tail 40 "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >&2 || true
+  if [ -n "${health_file-}" ] && [ -s "$health_file" ]; then
+    cat "$health_file" >&2 || true
+  fi
+  echo "Worker did not restart and accept TCP connections after the injected process exit" >&2
   return 1
 }
 
+recovery_prompt() {
+  marker=$1
+  if [ "$recovery_capability_bound" -eq 1 ]; then
+    printf '%s' "Use the managed-capability-acceptance Skill for this managed capability interactive recovery request and follow it exactly. You must call its managed MCP tool, then call AskUserQuestion exactly once with one non-secret environment question that offers Staging, and wait for the answer. Only after the answer, reply with '$marker'."
+  else
+    printf '%s' "Before replying, call request_user_input exactly once with one non-secret question asking which environment to use and offer Staging as an option. After the answer, reply with '$marker'."
+  fi
+}
+
+wait_for_recovery_interaction() {
+  session_id=$1
+  turn_id=$2
+  execution_id=$3
+  interaction_file=$4
+  if [ "$recovery_capability_bound" -ne 1 ]; then
+    wait_for_interaction "$session_id" "$turn_id" "$execution_id" user-input "$interaction_file"
+    return
+  fi
+  current_file="$interaction_file.current"
+  handled_approvals=
+  attempt=0
+  while [ "$attempt" -lt 180 ]; do
+    attempt=$((attempt + 1))
+    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+      --request-id "$execution_id-recovery-interaction-$attempt" execution get >"$current_file" 2>/dev/null; then
+      pending=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$current_file" \
+        CLOUD_AGENTS_E2E_HANDLED_APPROVALS="$handled_approvals" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const handled = new Set((process.env.CLOUD_AGENTS_E2E_HANDLED_APPROVALS ?? "").split(" ").filter(Boolean));
+for (const message of value.messages ?? []) {
+  if (message.messageType !== "InteractionRequest") continue;
+  const requestId = message.payload?.requestId;
+  if (typeof requestId !== "string" || !Number.isSafeInteger(value.spec?.generation)) continue;
+  if (message.payload?.interactionType === "user-input" && value.spec?.checkpoint?.pendingInteractionCount >= 1) {
+    const questionId = message.payload?.questions?.[0]?.id;
+    if (typeof questionId === "string" && questionId) {
+      process.stdout.write(`user|${JSON.stringify({generation: value.spec.generation, requestId, questionId})}`);
+      process.exit(0);
+    }
+  }
+  if (message.payload?.interactionType === "approval" && !handled.has(requestId)) {
+    process.stdout.write(`approval|${value.spec.generation}|${requestId}`);
+    process.exit(0);
+  }
+}
+if (!["queued", "running"].includes(value.spec?.state)) {
+  console.error(JSON.stringify({
+    state: value.spec?.state,
+    errorCode: value.spec?.errorCode,
+    attemptNumber: value.spec?.attemptNumber,
+    recoveryState: value.spec?.recoveryState,
+    recoveryMode: value.spec?.recoveryMode,
+    checkpoint: value.spec?.checkpoint ? {
+      sequence: value.spec.checkpoint.sequence,
+      pendingInteractionCount: value.spec.checkpoint.pendingInteractionCount,
+      pendingSideEffect: value.spec.checkpoint.pendingSideEffect,
+    } : undefined,
+    messages: (value.messages ?? []).map((message) => ({
+      messageType: message.messageType,
+      eventType: message.payload?.eventType,
+      errorCode: message.error?.code ?? message.payload?.errorCode,
+    })),
+  }));
+  process.exit(1);
+}
+NODE
+      )
+      case "$pending" in
+        user\|*) printf '%s' "${pending#user|}" >"$interaction_file"; rm -f "$current_file"; return 0 ;;
+        approval\|*)
+          approval_rest=${pending#approval|}
+          approval_generation=${approval_rest%%|*}
+          approval_request=${approval_rest#*|}
+          run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+            --request-id "$execution_id-recovery-approve-$attempt" --idempotency-key "$execution_id-recovery-approve-$attempt" \
+            execution resolve-approval --generation "$approval_generation" \
+            --interaction-request "$approval_request" --decision accept >/dev/null
+          handled_approvals="$handled_approvals $approval_request"
+          ;;
+      esac
+    fi
+    sleep 1
+  done
+  echo "timed out waiting for capability-bound recovery user input" >&2
+  return 1
+}
+
+assert_recovery_capabilities() {
+  final_file=$1
+  [ "$recovery_capability_bound" -eq 1 ] || return 0
+  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" \
+  CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON="$recovery_mcp_refs_json" \
+  CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON="$recovery_skill_refs_json" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const expectedMcp = JSON.parse(process.env.CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON)[0];
+const expectedSkill = JSON.parse(process.env.CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON)[0];
+const mcpRefs = value.spec?.mcpServerRefs ?? [];
+const skillRefs = value.spec?.skillBundleRefs ?? [];
+const calledMcp = (value.messages ?? []).some((message) =>
+  message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
+  message.payload?.payload?.status === "completed" &&
+  message.payload?.payload?.data?.capabilityResourceId === expectedMcp.serverId);
+const usedSkill = (value.messages ?? []).some((message) =>
+  message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
+  message.payload?.payload?.status === "completed" && message.payload?.payload?.data?.sourceItemType === "Skill");
+if (!calledMcp || !usedSkill || mcpRefs.length !== 1 || mcpRefs[0]?.serverId !== expectedMcp.serverId ||
+    skillRefs.length !== 1 || skillRefs[0]?.bundleId !== expectedSkill.bundleId) {
+  throw new Error("recovery did not retain and use the bound MCP Server and Skill Bundle");
+}
+NODE
+}
+
 run_worker_exit_recovery() {
+  case "$recovery_fault" in worker | both) ;; *) return 0 ;; esac
   [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ] || return 0
   session_id="$CLOUD_AGENTS_E2E_RUN_ID-worker-exit"
   turn_id="$session_id-turn"
   execution_id="$session_id-execution"
   marker="worker-exit-recovered-$CLOUD_AGENTS_E2E_RUN_ID"
-  prompt="Before replying, call request_user_input exactly once with one non-secret question asking which environment to use and offer Staging as an option. After the answer, reply with '$marker'."
-  create_turn codex "$session_id" "$turn_id" "$prompt"
+  prompt=$(recovery_prompt "$marker")
+  create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
   final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
   interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
-  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file"
-  wait_for_interaction "$session_id" "$turn_id" "$execution_id" user-input "$interaction_file"
+  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+  wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
   restart_worker_during_execution
   if [ -n "$execute_pid" ] && kill -0 "$execute_pid" 2>/dev/null; then
     kill "$execute_pid" >/dev/null 2>&1 || true
@@ -721,95 +940,80 @@ run_worker_exit_recovery() {
     set -e
     execute_pid=
   fi
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-    --request-id "$execution_id-after-worker-exit" execution get >"$final_file.after-worker-exit"
-  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" node <<'NODE'
+  checkpoint_ready=0
+  attempt=0
+  while [ "$attempt" -lt 30 ]; do
+    attempt=$((attempt + 1))
+    run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+      --request-id "$execution_id-after-worker-exit-$attempt" execution get >"$final_file.after-worker-exit"
+    if CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-if (value.spec?.state !== "running" || value.spec?.checkpoint?.sequence < 1 || value.spec?.checkpoint?.pendingInteractionCount < 1) throw new Error("Worker exit settled or lost the checkpointed interaction");
+process.exit(value.spec?.state === "running" && value.spec?.checkpoint?.sequence >= 1 && value.spec?.checkpoint?.pendingInteractionCount >= 1 ? 0 : 1);
 NODE
+    then
+      checkpoint_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$checkpoint_ready" -ne 1 ]; then
+    CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+process.stderr.write(`${JSON.stringify({state: value.spec?.state, errorCode: value.spec?.errorCode, attemptNumber: value.spec?.attemptNumber, recoveryState: value.spec?.recoveryState, checkpoint: value.spec?.checkpoint})}\n`);
+throw new Error("Worker exit settled or lost the checkpointed interaction");
+NODE
+  fi
+  wait_for_claim_expiry "$session_id" "$turn_id" "$execution_id" "$final_file.claim-expired"
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-resolve" execution resolve-user-input \
     --generation "$(interaction_field "$interaction_file" generation)" \
     --interaction-request "$(interaction_field "$interaction_file" requestId)" \
     --answers-json "$(question_id=$(interaction_field "$interaction_file" questionId); node -e 'process.stdout.write(JSON.stringify({[process.argv[1]]:["Staging"]}))' "$question_id")" >/dev/null
-  resolved_file="$final_file.after-worker-exit-resolved"
-  execution_completed=0
-  attempt=0
-  while [ "$attempt" -lt 90 ]; do
-    attempt=$((attempt + 1))
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-after-worker-exit-resolved-$attempt" execution get >"$resolved_file" 2>/dev/null; then
-      resolved_state=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$resolved_file" node <<'NODE'
-const { readFileSync } = require("node:fs");
-const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-process.stdout.write(`${value.spec?.state ?? ""}|${Date.parse(value.spec?.claimExpiresAt ?? "") + 1000 < Date.now() ? 1 : 0}`);
-NODE
-      )
-      resolved_execution_state=${resolved_state%%|*}
-      resolved_claim_expired=${resolved_state#*|}
-      if [ "$resolved_execution_state" = succeeded ]; then
-        cp "$resolved_file" "$final_file"
-        execution_completed=1
-        break
-      fi
-      case "$resolved_execution_state" in
-        failed | cancelled) echo "Worker exit execution became $resolved_execution_state after interaction resolution" >&2; return 1 ;;
-        running) [ "$resolved_claim_expired" -eq 1 ] && break ;;
-      esac
-    fi
-    sleep 1
-  done
-  if [ "$execution_completed" -ne 1 ]; then
-    start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file"
-    wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
-  fi
+  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+  wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
+  assert_interaction_takeover "$final_file" same-node-reconnect
   CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_MARKER="$marker" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-const attemptNumber = value.spec?.attemptNumber;
-if (![1, 2].includes(attemptNumber)) throw new Error("Worker exit lost the durable Agent execution claim");
-if (attemptNumber === 2 && value.spec?.recoveryState !== "recovered") throw new Error("Worker exit takeover did not reconcile the durable execution");
 if (!JSON.stringify(value.messages ?? []).includes(process.env.CLOUD_AGENTS_E2E_MARKER)) throw new Error("recovered Worker execution result changed");
 NODE
-  printf 'worker_exit_survival=passed session=%s\n' "$session_id"
+  assert_recovery_capabilities "$final_file"
+  printf 'worker_exit_survival=passed session=%s provider=%s capability_bound=%s\n' "$session_id" "$recovery_provider" "$recovery_capability_bound"
 }
 
 run_agent_exit_recovery() {
+  case "$recovery_fault" in agent | both) ;; *) return 0 ;; esac
   [ -n "${CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID-}" ] || return 0
-  [ -n "$lease_id" ] || return 0
+  [ -z "$lease_id" ] || { echo "Agent Runtime recovery requires direct Sandbox binding" >&2; return 1; }
   [ -n "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" ] || { echo "Agent Runtime target id is required" >&2; return 1; }
   session_id="$CLOUD_AGENTS_E2E_RUN_ID-agent-exit"
   turn_id="$session_id-turn"
   execution_id="$session_id-execution"
   marker="agent-exit-recovered-$CLOUD_AGENTS_E2E_RUN_ID"
-  prompt="Before replying, call request_user_input exactly once with one non-secret question asking which environment to use and offer Staging as an option. After the answer, reply with '$marker'."
-  create_turn codex "$session_id" "$turn_id" "$prompt"
+  prompt=$(recovery_prompt "$marker")
+  create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
   final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
   interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
-  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file"
-  wait_for_interaction "$session_id" "$turn_id" "$execution_id" user-input "$interaction_file"
+  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+  wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
   agent_runtime_container=$(docker ps -q \
-    --filter "label=cloud-agents.dev/tenant=$CLOUD_AGENTS_TENANT" \
-    --filter "label=cloud-agents.dev/project=$CLOUD_AGENTS_PROJECT" \
-    --filter "label=cloud-agents.dev/lease=$lease_id" \
-    --filter "label=cloud-agents.dev/target=$CLOUD_AGENTS_E2E_AGENT_TARGET_ID")
-  case "$agent_runtime_container" in
-    '' | *' '*) echo "Agent Runtime container inventory is not exact" >&2; return 1 ;;
-  esac
-  docker exec -e CLOUD_AGENT_PROCESS=cloud-agent-runtime "$agent_runtime_container" sh -c '
-    found=
-    for command_line in /proc/[0-9]*/cmdline; do
-      [ -r "$command_line" ] || continue
-      runtime_arg=$(tr "\000" "\n" <"$command_line" 2>/dev/null | sed -n '2p' || true)
-      if [ "$runtime_arg" = "/usr/local/bin/$CLOUD_AGENT_PROCESS" ]; then
-          pid=${command_line#/proc/}
-          pid=${pid%/cmdline}
-          kill -KILL "$pid"
-          found=1
-      fi
-    done
-    [ -n "$found" ]
+    --filter "label=opensandbox.io/id=$CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID")
+  if ! printf '%s\n' "$agent_runtime_container" | grep -Eq '^[0-9a-f]{12}$' ||
+    [ "$(printf '%s\n' "$agent_runtime_container" | wc -l)" -ne 1 ]; then
+    echo "Agent Runtime container inventory is not exact" >&2
+    docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Label "opensandbox.io/id"}} {{.Label "opensandbox.io/egress-sidecar-for"}} {{.Label "cloud-agents.dev/target"}}' \
+      --filter "label=opensandbox.io/id=$CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID" >&2 || true
+    return 1
+  fi
+  runtime_pid_digest=$(node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex"))' "$execution_id")
+  docker exec -e CLOUD_AGENT_PID_DIGEST="$runtime_pid_digest" "$agent_runtime_container" sh -c '
+    pid=$(cat "/tmp/cloud-agents-runtime/$CLOUD_AGENT_PID_DIGEST.pid") || exit 1
+    case "$pid" in ""|*[!0-9]*) exit 1;; esac
+    runtime_arg=$(tr "\000" "\n" <"/proc/$pid/cmdline" | sed -n "2p")
+    [ "$runtime_arg" = /usr/local/bin/cloud-agent-runtime ] || exit 1
+    kill -KILL "$pid"
   '
   if wait "$execute_pid"; then
     echo "Agent execution completed after its Runtime process was killed" >&2
@@ -826,7 +1030,7 @@ if (value.spec?.state !== "running" || value.spec?.attemptNumber !== 1 || value.
   throw new Error("Agent Runtime exit settled or lost the checkpointed interaction");
 }
 NODE
-  prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file"
+  prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-resolve" execution resolve-user-input \
     --generation "$(interaction_field "$interaction_file" generation)" \
@@ -835,7 +1039,7 @@ NODE
   if [ "$takeover_needs_reconcile" -eq 1 ]; then
     reconcile_interaction_takeover "$session_id" "$turn_id" "$execution_id"
   fi
-  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file"
+  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
   wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
   assert_interaction_takeover "$final_file" same-node-reconnect
   CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_MARKER="$marker" node <<'NODE'
@@ -843,7 +1047,8 @@ const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
 if (!JSON.stringify(value.messages ?? []).includes(process.env.CLOUD_AGENTS_E2E_MARKER)) throw new Error("recovered Agent execution result changed");
 NODE
-  printf 'agent_process_exit_recovery=passed session=%s\n' "$session_id"
+  assert_recovery_capabilities "$final_file"
+  printf 'agent_process_exit_recovery=passed session=%s provider=%s capability_bound=%s\n' "$session_id" "$recovery_provider" "$recovery_capability_bound"
 }
 
 run_long_task() {
@@ -889,6 +1094,21 @@ const expectedError = process.env.CLOUD_AGENTS_E2E_CONTROL_ACTION === "interrupt
 if (value.spec?.state !== "cancelled" || value.spec?.errorCode !== expectedError) throw new Error(`${process.env.CLOUD_AGENTS_E2E_CONTROL_ACTION} terminal state changed`);
 NODE
 }
+
+if [ "${CLOUD_AGENTS_E2E_RECOVERY_ONLY:-0}" = 1 ]; then
+  case "$recovery_fault" in
+    worker) [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ] && [ -n "$lease_id" ] || { echo "worker recovery requires Worker fault target and lease binding" >&2; exit 1; } ;;
+    agent) [ -n "${CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID-}" ] && [ -n "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" ] && [ -z "$lease_id" ] || { echo "agent recovery requires Agent Runtime fault target and direct Sandbox binding" >&2; exit 1; } ;;
+    both) echo "recovery-only requires one fault target per invocation" >&2; exit 1 ;;
+  esac
+  run_worker_exit_recovery
+  run_agent_exit_recovery
+  cleanup
+  active_sessions=
+  trap - EXIT HUP INT TERM
+  printf '%s\n' "Agent Worker and Runtime recovery real E2E passed"
+  exit 0
+fi
 
 approval_turn="$approval_session-turn"
 approval_execution="$approval_session-execution"

@@ -513,6 +513,77 @@ type NetworkPolicyPage struct {
 	NetworkPolicies []NetworkPolicy `json:"networkPolicies"`
 	NextPageToken   string          `json:"nextPageToken,omitempty"`
 }
+type McpServerCreateRequest struct {
+	ServerID         string   `json:"serverId"`
+	Version          string   `json:"version"`
+	Digest           string   `json:"digest"`
+	Transport        string   `json:"transport"`
+	ConnectionRef    string   `json:"connectionRef"`
+	CredentialRef    string   `json:"credentialRef"`
+	NetworkPolicyRef string   `json:"networkPolicyRef"`
+	Permissions      []string `json:"permissions"`
+}
+type McpServerRevokeRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ReasonCode              string `json:"reasonCode"`
+}
+type McpServerSpec struct {
+	ProjectRef       common.ProjectRef `json:"projectRef"`
+	Version          string            `json:"version"`
+	Digest           string            `json:"digest"`
+	Transport        string            `json:"transport"`
+	ConnectionRef    string            `json:"connectionRef"`
+	CredentialRef    string            `json:"credentialRef"`
+	NetworkPolicyRef string            `json:"networkPolicyRef"`
+	Permissions      []string          `json:"permissions"`
+	Status           string            `json:"status"`
+	RevokedAt        string            `json:"revokedAt,omitempty"`
+}
+type McpServer struct {
+	ResourceBase
+	Spec McpServerSpec `json:"spec"`
+}
+type McpServerPage struct {
+	APIVersion    string      `json:"apiVersion"`
+	Kind          string      `json:"kind"`
+	McpServers    []McpServer `json:"mcpServers"`
+	NextPageToken string      `json:"nextPageToken,omitempty"`
+}
+type SkillBundleCreateRequest struct {
+	BundleID            string   `json:"bundleId"`
+	Version             string   `json:"version"`
+	Digest              string   `json:"digest"`
+	SourceRef           string   `json:"sourceRef"`
+	SignatureRef        string   `json:"signatureRef"`
+	SigningKeyID        string   `json:"signingKeyId"`
+	CompatibleProviders []string `json:"compatibleProviders"`
+}
+type SkillBundleRevokeRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	ReasonCode              string `json:"reasonCode"`
+}
+type SkillBundleSpec struct {
+	ProjectRef          common.ProjectRef `json:"projectRef"`
+	Version             string            `json:"version"`
+	Digest              string            `json:"digest"`
+	SourceRef           string            `json:"sourceRef"`
+	SignatureRef        string            `json:"signatureRef"`
+	SigningKeyID        string            `json:"signingKeyId"`
+	CompatibleProviders []string          `json:"compatibleProviders"`
+	MountReadOnly       bool              `json:"mountReadOnly"`
+	Status              string            `json:"status"`
+	RevokedAt           string            `json:"revokedAt,omitempty"`
+}
+type SkillBundle struct {
+	ResourceBase
+	Spec SkillBundleSpec `json:"spec"`
+}
+type SkillBundlePage struct {
+	APIVersion    string        `json:"apiVersion"`
+	Kind          string        `json:"kind"`
+	SkillBundles  []SkillBundle `json:"skillBundles"`
+	NextPageToken string        `json:"nextPageToken,omitempty"`
+}
 type RemoteWorkerEnrollmentCreateRequest struct {
 	EnrollmentID string `json:"enrollmentId"`
 	WorkerID     string `json:"workerId"`
@@ -1677,6 +1748,10 @@ func resourceResponseShape(kind string) common.ResponseShape {
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "workspaceType": common.ScalarResponseShape(), "workspaceCapacityBytes": common.ScalarResponseShape(), "retentionSeconds": common.ScalarResponseShape(), "cleanupOnLeaseTermination": common.ScalarResponseShape(), "snapshotBackendRef": common.ScalarResponseShape(), "artifactBackendRef": common.ScalarResponseShape(), "allowWorkspaceReuse": common.ScalarResponseShape()}
 	case "NetworkPolicy":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "userSummary": common.ScalarResponseShape(), "defaultEgress": common.ScalarResponseShape(), "allowedEgress": common.ArrayResponseShape(common.ScalarResponseShape()), "allowlistPolicyRef": common.ScalarResponseShape(), "ingressEnabled": common.ScalarResponseShape(), "previewEnabled": common.ScalarResponseShape(), "dnsPolicyRef": common.ScalarResponseShape(), "proxyPolicyRef": common.ScalarResponseShape()}
+	case "McpServer":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape(), "transport": common.ScalarResponseShape(), "connectionRef": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "networkPolicyRef": common.ScalarResponseShape(), "permissions": common.ArrayResponseShape(common.ScalarResponseShape()), "status": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape()}
+	case "SkillBundle":
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape(), "sourceRef": common.ScalarResponseShape(), "signatureRef": common.ScalarResponseShape(), "signingKeyId": common.ScalarResponseShape(), "compatibleProviders": common.ArrayResponseShape(common.ScalarResponseShape()), "mountReadOnly": common.ScalarResponseShape(), "status": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape()}
 	case "RemoteWorkerEnrollment":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "targetId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape(), "secretClaimedAt": common.ScalarResponseShape(), "enrolledAt": common.ScalarResponseShape(), "revokedAt": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "certificateExpiresAt": common.ScalarResponseShape(), "certificateState": common.ScalarResponseShape(), "certificateRevokedAt": common.ScalarResponseShape(), "node": common.ObjectResponseShape(map[string]common.ResponseShape{"resourceVersion": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "observedGeneration": common.ScalarResponseShape(), "desiredState": common.ScalarResponseShape(), "observedState": common.ScalarResponseShape(), "healthState": common.ScalarResponseShape(), "workerVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "kernelVersion": common.ScalarResponseShape(), "capabilities": common.ArrayResponseShape(common.ScalarResponseShape()), "capacity": common.ObjectResponseShape(map[string]common.ResponseShape{"cpuMillis": common.ScalarResponseShape(), "memoryBytes": common.ScalarResponseShape(), "diskBytes": common.ScalarResponseShape()}), "placement": common.ObjectResponseShape(map[string]common.ResponseShape{"regionId": common.ScalarResponseShape(), "resourcePoolId": common.ScalarResponseShape(), "nodeId": common.ScalarResponseShape()}), "reservation": common.ObjectResponseShape(map[string]common.ResponseShape{"state": common.ScalarResponseShape(), "reservedCpuMillis": common.ScalarResponseShape(), "reservedMemoryBytes": common.ScalarResponseShape(), "reservedDiskBytes": common.ScalarResponseShape(), "availableCpuMillis": common.ScalarResponseShape(), "availableMemoryBytes": common.ScalarResponseShape(), "availableDiskBytes": common.ScalarResponseShape()}), "firstConnectedAt": common.ScalarResponseShape(), "lastHeartbeatAt": common.ScalarResponseShape(), "heartbeatExpiresAt": common.ScalarResponseShape()})}
 	case "RemoteWorkerNodeSchedulingPreview":
@@ -1736,6 +1811,8 @@ var projectLeaseQuotaResponseShape = common.ObjectResponseShape(map[string]commo
 var projectLeaseQuotaSummaryResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "maxConcurrentLeases": common.ScalarResponseShape(), "activeLeases": common.ScalarResponseShape(), "maxCpuMillis": common.ScalarResponseShape(), "usedCpuMillis": common.ScalarResponseShape(), "maxMemoryBytes": common.ScalarResponseShape(), "usedMemoryBytes": common.ScalarResponseShape(), "maxLeaseTtlSeconds": common.ScalarResponseShape()})
 var storagePolicyPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "storagePolicies": common.ArrayResponseShape(resourceResponseShape("StoragePolicy")), "nextPageToken": common.ScalarResponseShape()})
 var networkPolicyPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "networkPolicies": common.ArrayResponseShape(resourceResponseShape("NetworkPolicy")), "nextPageToken": common.ScalarResponseShape()})
+var mcpServerPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "mcpServers": common.ArrayResponseShape(resourceResponseShape("McpServer")), "nextPageToken": common.ScalarResponseShape()})
+var skillBundlePageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "skillBundles": common.ArrayResponseShape(resourceResponseShape("SkillBundle")), "nextPageToken": common.ScalarResponseShape()})
 var remoteWorkerEnrollmentPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "remoteWorkerEnrollments": common.ArrayResponseShape(resourceResponseShape("RemoteWorkerEnrollment")), "nextPageToken": common.ScalarResponseShape()})
 var remoteWorkerEnrollmentSecretResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "enrollmentSecret": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
 var remoteWorkerCertificateResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "projectRef": resourceTenantRefResponseShape, "enrollmentId": common.ScalarResponseShape(), "workerId": common.ScalarResponseShape(), "incarnationId": common.ScalarResponseShape(), "spiffeId": common.ScalarResponseShape(), "certificateChainPem": common.ScalarResponseShape(), "certificateSha256": common.ScalarResponseShape(), "issuedAt": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()})
@@ -3564,6 +3641,405 @@ func DecodeNetworkPolicyPageResponseJSON(data []byte) (common.ResponseEnvelope[N
 	return common.ResponseEnvelope[NetworkPolicyPage]{Value: value, Unknown: sidecar}, nil
 }
 func EncodeNetworkPolicyPageResponseJSON(value common.ResponseEnvelope[NetworkPolicyPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+
+func decodeCapabilityPermissions(raw json.RawMessage, path string) ([]string, error) {
+	permissions, err := fieldStringArray(raw, path)
+	if err != nil || len(permissions) < 1 || len(permissions) > 64 {
+		return nil, common.ContractError("INVALID_CAPABILITY_PERMISSIONS", path)
+	}
+	seen := map[string]struct{}{}
+	for index, permission := range permissions {
+		if !regexp.MustCompile(`^[a-z][a-z0-9._:-]{0,127}$`).MatchString(permission) || strings.Contains(permission, "*") || len(permission) < 1 || len(permission) > 128 {
+			return nil, common.ContractError("INVALID_CAPABILITY_PERMISSION", path+"/"+itoa(index))
+		}
+		if _, ok := seen[permission]; ok {
+			return nil, common.ContractError("INVALID_CAPABILITY_PERMISSIONS", path)
+		}
+		seen[permission] = struct{}{}
+	}
+	return permissions, nil
+}
+func decodeCapabilityProviders(raw json.RawMessage, path string) ([]string, error) {
+	providers, err := fieldStringArray(raw, path)
+	if err != nil || len(providers) < 1 || len(providers) > 4 {
+		return nil, common.ContractError("INVALID_CAPABILITY_PROVIDERS", path)
+	}
+	seen := map[string]struct{}{}
+	for index, provider := range providers {
+		if provider != "codex" && provider != "claude-code" && provider != "pi" && provider != "deepseek-harness" {
+			return nil, common.ContractError("INVALID_CAPABILITY_PROVIDER", path+"/"+itoa(index))
+		}
+		if _, ok := seen[provider]; ok {
+			return nil, common.ContractError("INVALID_CAPABILITY_PROVIDERS", path)
+		}
+		seen[provider] = struct{}{}
+	}
+	return providers, nil
+}
+func DecodeMcpServerCreateRequestJSON(data []byte) (McpServerCreateRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"serverId", "version", "digest", "transport", "connectionRef", "credentialRef", "networkPolicyRef", "permissions"}, []string{"serverId", "version", "digest", "transport", "connectionRef", "credentialRef", "networkPolicyRef", "permissions"})
+	if err != nil {
+		return McpServerCreateRequest{}, err
+	}
+	result := McpServerCreateRequest{}
+	result.ServerID, err = fieldString(fields, "serverId", "/serverId")
+	if err != nil {
+		return result, err
+	}
+	result.Version, err = fieldString(fields, "version", "/version")
+	if err != nil {
+		return result, err
+	}
+	result.Digest, err = fieldString(fields, "digest", "/digest")
+	if err != nil || !digestPattern.MatchString(result.Digest) {
+		return result, common.ContractError("INVALID_DIGEST", "/digest")
+	}
+	result.Transport, err = fieldString(fields, "transport", "/transport")
+	if err != nil || result.Transport != "stdio" && result.Transport != "sse" && result.Transport != "streamable-http" {
+		return result, common.ContractError("INVALID_TRANSPORT", "/transport")
+	}
+	for name, target := range map[string]*string{"connectionRef": &result.ConnectionRef, "credentialRef": &result.CredentialRef, "networkPolicyRef": &result.NetworkPolicyRef} {
+		*target, err = fieldString(fields, name, "/"+name)
+		if err != nil || common.ValidateIdentifier(*target, "/"+name) != nil {
+			return result, common.ContractError("INVALID_IDENTIFIER", "/"+name)
+		}
+	}
+	result.Permissions, err = decodeCapabilityPermissions(fields["permissions"], "/permissions")
+	return result, err
+}
+func EncodeMcpServerCreateRequestJSON(value McpServerCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeMcpServerCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeMcpServerRevokeRequestJSON(data []byte) (McpServerRevokeRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedResourceVersion", "reasonCode"}, []string{"expectedResourceVersion", "reasonCode"})
+	if err != nil {
+		return McpServerRevokeRequest{}, err
+	}
+	value := McpServerRevokeRequest{}
+	value.ExpectedResourceVersion, err = fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(value.ExpectedResourceVersion, "/expectedResourceVersion") != nil {
+		return value, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	value.ReasonCode, err = fieldString(fields, "reasonCode", "/reasonCode")
+	if err != nil || common.ValidateIdentifier(value.ReasonCode, "/reasonCode") != nil {
+		return value, common.ContractError("INVALID_IDENTIFIER", "/reasonCode")
+	}
+	return value, nil
+}
+func EncodeMcpServerRevokeRequestJSON(value McpServerRevokeRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeMcpServerRevokeRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeMcpServerJSON(data []byte) (McpServer, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return McpServer{}, err
+	}
+	base, err := checkResourceBase(fields, "McpServer")
+	if err != nil {
+		return McpServer{}, err
+	}
+	spec, err := strictSpec(fields["spec"], []string{"projectRef", "version", "digest", "transport", "connectionRef", "credentialRef", "networkPolicyRef", "permissions", "status", "revokedAt"}, []string{"projectRef", "version", "digest", "transport", "connectionRef", "credentialRef", "networkPolicyRef", "permissions", "status"})
+	if err != nil {
+		return McpServer{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return McpServer{}, err
+	}
+	version, err := fieldString(spec, "version", "/spec/version")
+	if err != nil || common.ValidateIdentifier(version, "/spec/version") != nil {
+		return McpServer{}, common.ContractError("INVALID_IDENTIFIER", "/spec/version")
+	}
+	digest, err := fieldString(spec, "digest", "/spec/digest")
+	if err != nil || !digestPattern.MatchString(digest) {
+		return McpServer{}, common.ContractError("INVALID_DIGEST", "/spec/digest")
+	}
+	transport, err := fieldString(spec, "transport", "/spec/transport")
+	if err != nil || transport != "stdio" && transport != "sse" && transport != "streamable-http" {
+		return McpServer{}, common.ContractError("INVALID_TRANSPORT", "/spec/transport")
+	}
+	connectionRef, err := fieldString(spec, "connectionRef", "/spec/connectionRef")
+	if err != nil || common.ValidateIdentifier(connectionRef, "/spec/connectionRef") != nil {
+		return McpServer{}, common.ContractError("INVALID_IDENTIFIER", "/spec/connectionRef")
+	}
+	credentialRef, err := fieldString(spec, "credentialRef", "/spec/credentialRef")
+	if err != nil || common.ValidateIdentifier(credentialRef, "/spec/credentialRef") != nil {
+		return McpServer{}, common.ContractError("INVALID_IDENTIFIER", "/spec/credentialRef")
+	}
+	networkPolicyRef, err := fieldString(spec, "networkPolicyRef", "/spec/networkPolicyRef")
+	if err != nil || common.ValidateIdentifier(networkPolicyRef, "/spec/networkPolicyRef") != nil {
+		return McpServer{}, common.ContractError("INVALID_IDENTIFIER", "/spec/networkPolicyRef")
+	}
+	permissions, err := decodeCapabilityPermissions(spec["permissions"], "/spec/permissions")
+	if err != nil {
+		return McpServer{}, err
+	}
+	status, err := fieldString(spec, "status", "/spec/status")
+	if err != nil || status != "active" && status != "revoked" {
+		return McpServer{}, common.ContractError("INVALID_MCP_SERVER_STATUS", "/spec/status")
+	}
+	revokedAt, err := optionalDate(spec, "revokedAt", "/spec/revokedAt")
+	if err != nil || status == "revoked" && revokedAt == "" || status == "active" && revokedAt != "" {
+		return McpServer{}, common.ContractError("INVALID_MCP_SERVER_STATUS", "/spec/revokedAt")
+	}
+	return McpServer{ResourceBase: base, Spec: McpServerSpec{ProjectRef: project, Version: version, Digest: digest, Transport: transport, ConnectionRef: connectionRef, CredentialRef: credentialRef, NetworkPolicyRef: networkPolicyRef, Permissions: permissions, Status: status, RevokedAt: revokedAt}}, nil
+}
+func DecodeMcpServerResponseJSON(data []byte) (common.ResponseEnvelope[McpServer], error) {
+	fields, sidecar, err := strictResource(data, "McpServer")
+	if err != nil {
+		return common.ResponseEnvelope[McpServer]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeMcpServerJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[McpServer]{}, err
+	}
+	return common.ResponseEnvelope[McpServer]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeMcpServerResponseJSON(value common.ResponseEnvelope[McpServer]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeMcpServerPageJSON(data []byte) (McpServerPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "mcpServers", "nextPageToken"}, []string{"apiVersion", "kind", "mcpServers"})
+	if err != nil {
+		return McpServerPage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return McpServerPage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "McpServerPage" {
+		return McpServerPage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(fields["mcpServers"], &raw); err != nil || len(raw) > 200 {
+		return McpServerPage{}, common.ContractError("INVALID_MCP_SERVER_PAGE", "/mcpServers")
+	}
+	page := McpServerPage{APIVersion: apiVersion, Kind: kind}
+	for _, entry := range raw {
+		value, err := DecodeMcpServerJSON(entry)
+		if err != nil {
+			return McpServerPage{}, err
+		}
+		page.McpServers = append(page.McpServers, value)
+	}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return McpServerPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeMcpServerPageResponseJSON(data []byte) (common.ResponseEnvelope[McpServerPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, mcpServerPageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[McpServerPage]{}, err
+	}
+	value, err := DecodeMcpServerPageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[McpServerPage]{}, err
+	}
+	return common.ResponseEnvelope[McpServerPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeMcpServerPageResponseJSON(value common.ResponseEnvelope[McpServerPage]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSkillBundleCreateRequestJSON(data []byte) (SkillBundleCreateRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"bundleId", "version", "digest", "sourceRef", "signatureRef", "signingKeyId", "compatibleProviders"}, []string{"bundleId", "version", "digest", "sourceRef", "signatureRef", "signingKeyId", "compatibleProviders"})
+	if err != nil {
+		return SkillBundleCreateRequest{}, err
+	}
+	value := SkillBundleCreateRequest{}
+	value.BundleID, err = fieldString(fields, "bundleId", "/bundleId")
+	if err != nil {
+		return value, err
+	}
+	value.Version, err = fieldString(fields, "version", "/version")
+	if err != nil {
+		return value, err
+	}
+	value.Digest, err = fieldString(fields, "digest", "/digest")
+	if err != nil || !digestPattern.MatchString(value.Digest) {
+		return value, common.ContractError("INVALID_DIGEST", "/digest")
+	}
+	for name, target := range map[string]*string{"sourceRef": &value.SourceRef, "signatureRef": &value.SignatureRef, "signingKeyId": &value.SigningKeyID} {
+		*target, err = fieldString(fields, name, "/"+name)
+		if err != nil || common.ValidateIdentifier(*target, "/"+name) != nil {
+			return value, common.ContractError("INVALID_IDENTIFIER", "/"+name)
+		}
+	}
+	value.CompatibleProviders, err = decodeCapabilityProviders(fields["compatibleProviders"], "/compatibleProviders")
+	return value, err
+}
+func EncodeSkillBundleCreateRequestJSON(value SkillBundleCreateRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSkillBundleCreateRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeSkillBundleRevokeRequestJSON(data []byte) (SkillBundleRevokeRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"expectedResourceVersion", "reasonCode"}, []string{"expectedResourceVersion", "reasonCode"})
+	if err != nil {
+		return SkillBundleRevokeRequest{}, err
+	}
+	value := SkillBundleRevokeRequest{}
+	value.ExpectedResourceVersion, err = fieldString(fields, "expectedResourceVersion", "/expectedResourceVersion")
+	if err != nil || common.ValidateResourceVersion(value.ExpectedResourceVersion, "/expectedResourceVersion") != nil {
+		return value, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	value.ReasonCode, err = fieldString(fields, "reasonCode", "/reasonCode")
+	if err != nil || common.ValidateIdentifier(value.ReasonCode, "/reasonCode") != nil {
+		return value, common.ContractError("INVALID_IDENTIFIER", "/reasonCode")
+	}
+	return value, nil
+}
+func EncodeSkillBundleRevokeRequestJSON(value SkillBundleRevokeRequest) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeSkillBundleRevokeRequestJSON(raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+func DecodeSkillBundleJSON(data []byte) (SkillBundle, error) {
+	fields, err := strictResourceExact(data)
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	base, err := checkResourceBase(fields, "SkillBundle")
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	spec, err := strictSpec(fields["spec"], []string{"projectRef", "version", "digest", "sourceRef", "signatureRef", "signingKeyId", "compatibleProviders", "mountReadOnly", "status", "revokedAt"}, []string{"projectRef", "version", "digest", "sourceRef", "signatureRef", "signingKeyId", "compatibleProviders", "mountReadOnly", "status"})
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	project, err := common.DecodeProjectRefJSON(spec["projectRef"])
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	version, err := fieldString(spec, "version", "/spec/version")
+	if err != nil || common.ValidateIdentifier(version, "/spec/version") != nil {
+		return SkillBundle{}, common.ContractError("INVALID_IDENTIFIER", "/spec/version")
+	}
+	digest, err := fieldString(spec, "digest", "/spec/digest")
+	if err != nil || !digestPattern.MatchString(digest) {
+		return SkillBundle{}, common.ContractError("INVALID_DIGEST", "/spec/digest")
+	}
+	sourceRef, err := fieldString(spec, "sourceRef", "/spec/sourceRef")
+	if err != nil || common.ValidateIdentifier(sourceRef, "/spec/sourceRef") != nil {
+		return SkillBundle{}, common.ContractError("INVALID_IDENTIFIER", "/spec/sourceRef")
+	}
+	signatureRef, err := fieldString(spec, "signatureRef", "/spec/signatureRef")
+	if err != nil || common.ValidateIdentifier(signatureRef, "/spec/signatureRef") != nil {
+		return SkillBundle{}, common.ContractError("INVALID_IDENTIFIER", "/spec/signatureRef")
+	}
+	signingKeyID, err := fieldString(spec, "signingKeyId", "/spec/signingKeyId")
+	if err != nil || common.ValidateIdentifier(signingKeyID, "/spec/signingKeyId") != nil {
+		return SkillBundle{}, common.ContractError("INVALID_IDENTIFIER", "/spec/signingKeyId")
+	}
+	var mount bool
+	if err := json.Unmarshal(spec["mountReadOnly"], &mount); err != nil || !mount {
+		return SkillBundle{}, common.ContractError("INVALID_SKILL_BUNDLE_STATUS", "/spec/mountReadOnly")
+	}
+	providers, err := decodeCapabilityProviders(spec["compatibleProviders"], "/spec/compatibleProviders")
+	if err != nil {
+		return SkillBundle{}, err
+	}
+	status, err := fieldString(spec, "status", "/spec/status")
+	if err != nil || status != "active" && status != "revoked" {
+		return SkillBundle{}, common.ContractError("INVALID_SKILL_BUNDLE_STATUS", "/spec/status")
+	}
+	revokedAt, err := optionalDate(spec, "revokedAt", "/spec/revokedAt")
+	if err != nil || status == "revoked" && revokedAt == "" || status == "active" && revokedAt != "" {
+		return SkillBundle{}, common.ContractError("INVALID_SKILL_BUNDLE_STATUS", "/spec/revokedAt")
+	}
+	return SkillBundle{ResourceBase: base, Spec: SkillBundleSpec{ProjectRef: project, Version: version, Digest: digest, SourceRef: sourceRef, SignatureRef: signatureRef, SigningKeyID: signingKeyID, CompatibleProviders: providers, MountReadOnly: true, Status: status, RevokedAt: revokedAt}}, nil
+}
+func DecodeSkillBundleResponseJSON(data []byte) (common.ResponseEnvelope[SkillBundle], error) {
+	fields, sidecar, err := strictResource(data, "SkillBundle")
+	if err != nil {
+		return common.ResponseEnvelope[SkillBundle]{}, err
+	}
+	raw, _ := json.Marshal(fields)
+	value, err := DecodeSkillBundleJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[SkillBundle]{}, err
+	}
+	return common.ResponseEnvelope[SkillBundle]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeSkillBundleResponseJSON(value common.ResponseEnvelope[SkillBundle]) ([]byte, error) {
+	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
+}
+func DecodeSkillBundlePageJSON(data []byte) (SkillBundlePage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "skillBundles", "nextPageToken"}, []string{"apiVersion", "kind", "skillBundles"})
+	if err != nil {
+		return SkillBundlePage{}, err
+	}
+	apiVersion, err := fieldString(fields, "apiVersion", "/apiVersion")
+	if err != nil {
+		return SkillBundlePage{}, err
+	}
+	kind, err := fieldString(fields, "kind", "/kind")
+	if err != nil || apiVersion != APIVersion || kind != "SkillBundlePage" {
+		return SkillBundlePage{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind")
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(fields["skillBundles"], &raw); err != nil || len(raw) > 200 {
+		return SkillBundlePage{}, common.ContractError("INVALID_SKILL_BUNDLE_PAGE", "/skillBundles")
+	}
+	page := SkillBundlePage{APIVersion: apiVersion, Kind: kind}
+	for _, entry := range raw {
+		value, err := DecodeSkillBundleJSON(entry)
+		if err != nil {
+			return SkillBundlePage{}, err
+		}
+		page.SkillBundles = append(page.SkillBundles, value)
+	}
+	if _, ok := fields["nextPageToken"]; ok {
+		page.NextPageToken, err = fieldString(fields, "nextPageToken", "/nextPageToken")
+		if err != nil || common.ValidatePageToken(page.NextPageToken, "/nextPageToken") != nil {
+			return SkillBundlePage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+	}
+	return page, nil
+}
+func DecodeSkillBundlePageResponseJSON(data []byte) (common.ResponseEnvelope[SkillBundlePage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, skillBundlePageResponseShape)
+	if err != nil {
+		return common.ResponseEnvelope[SkillBundlePage]{}, err
+	}
+	value, err := DecodeSkillBundlePageJSON(raw)
+	if err != nil {
+		return common.ResponseEnvelope[SkillBundlePage]{}, err
+	}
+	return common.ResponseEnvelope[SkillBundlePage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeSkillBundlePageResponseJSON(value common.ResponseEnvelope[SkillBundlePage]) ([]byte, error) {
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 

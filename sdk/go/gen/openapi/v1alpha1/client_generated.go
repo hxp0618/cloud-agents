@@ -163,6 +163,10 @@ func (client *Client) GetAdminWorkerHealth(ctx context.Context, tenantID, projec
 
 type WorkerReleaseResult = common.ResponseEnvelope[platform.WorkerRelease]
 type WorkerReleasePageResult = common.ResponseEnvelope[platform.WorkerReleasePage]
+type McpServerResult = common.ResponseEnvelope[platform.McpServer]
+type McpServerPageResult = common.ResponseEnvelope[platform.McpServerPage]
+type SkillBundleResult = common.ResponseEnvelope[platform.SkillBundle]
+type SkillBundlePageResult = common.ResponseEnvelope[platform.SkillBundlePage]
 type ProjectLeaseQuotaResult = common.ResponseEnvelope[platform.ProjectLeaseQuota]
 type ProjectLeaseQuotaSummaryResult = common.ResponseEnvelope[platform.ProjectLeaseQuotaSummary]
 type StoragePolicyResult = common.ResponseEnvelope[platform.StoragePolicy]
@@ -240,25 +244,39 @@ type ManagedAgentSessionMetadata struct {
 	UpdatedAt       string `json:"updatedAt"`
 }
 type ManagedAgentSessionSpec struct {
-	ProviderKind              string `json:"providerKind"`
-	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
-	EnvironmentGeneration     int64  `json:"environmentGeneration,omitempty"`
-	WorkspaceID               string `json:"workspaceId,omitempty"`
-	SandboxID                 string `json:"sandboxId,omitempty"`
-	SandboxGeneration         int64  `json:"sandboxGeneration,omitempty"`
-	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
-	EnvironmentProfileVersion int64  `json:"environmentProfileVersion,omitempty"`
-	State                     string `json:"state"`
+	ProviderKind              string                       `json:"providerKind"`
+	EnvironmentLeaseID        string                       `json:"environmentLeaseId,omitempty"`
+	EnvironmentGeneration     int64                        `json:"environmentGeneration,omitempty"`
+	WorkspaceID               string                       `json:"workspaceId,omitempty"`
+	SandboxID                 string                       `json:"sandboxId,omitempty"`
+	SandboxGeneration         int64                        `json:"sandboxGeneration,omitempty"`
+	EnvironmentProfileID      string                       `json:"environmentProfileId,omitempty"`
+	EnvironmentProfileVersion int64                        `json:"environmentProfileVersion,omitempty"`
+	McpServerRefs             []ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs           []ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
+	State                     string                       `json:"state"`
+}
+type ManagedAgentMcpServerRef struct {
+	ServerID string `json:"serverId"`
+	Version  string `json:"version"`
+	Digest   string `json:"digest"`
+}
+type ManagedAgentSkillBundleRef struct {
+	BundleID string `json:"bundleId"`
+	Version  string `json:"version"`
+	Digest   string `json:"digest"`
 }
 type ManagedAgentSessionCreateRequest struct {
-	SessionID                 string `json:"sessionId"`
-	ProviderKind              string `json:"providerKind"`
-	EnvironmentLeaseID        string `json:"environmentLeaseId,omitempty"`
-	WorkspaceID               string `json:"workspaceId,omitempty"`
-	SandboxID                 string `json:"sandboxId,omitempty"`
-	SandboxGeneration         int64  `json:"sandboxGeneration,omitempty"`
-	EnvironmentProfileID      string `json:"environmentProfileId,omitempty"`
-	EnvironmentProfileVersion int64  `json:"environmentProfileVersion,omitempty"`
+	SessionID                 string                       `json:"sessionId"`
+	ProviderKind              string                       `json:"providerKind"`
+	EnvironmentLeaseID        string                       `json:"environmentLeaseId,omitempty"`
+	WorkspaceID               string                       `json:"workspaceId,omitempty"`
+	SandboxID                 string                       `json:"sandboxId,omitempty"`
+	SandboxGeneration         int64                        `json:"sandboxGeneration,omitempty"`
+	EnvironmentProfileID      string                       `json:"environmentProfileId,omitempty"`
+	EnvironmentProfileVersion int64                        `json:"environmentProfileVersion,omitempty"`
+	McpServerRefs             []ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs           []ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
 }
 type ManagedAgentTurn struct {
 	APIVersion string                   `json:"apiVersion"`
@@ -290,12 +308,14 @@ type ManagedAgentTurnCreateRequest struct {
 	InputText string `json:"inputText"`
 }
 type ManagedAgentExecutionCreateRequest struct {
-	TurnID          string `json:"turnId"`
-	ExecutionID     string `json:"executionId"`
-	Model           string `json:"model,omitempty"`
-	RuntimeMode     string `json:"runtimeMode,omitempty"`
-	InteractionMode string `json:"interactionMode,omitempty"`
-	InputText       string `json:"inputText"`
+	TurnID          string                       `json:"turnId"`
+	ExecutionID     string                       `json:"executionId"`
+	Model           string                       `json:"model,omitempty"`
+	RuntimeMode     string                       `json:"runtimeMode,omitempty"`
+	InteractionMode string                       `json:"interactionMode,omitempty"`
+	InputText       string                       `json:"inputText"`
+	McpServerRefs   []ManagedAgentMcpServerRef   `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs []ManagedAgentSkillBundleRef `json:"skillBundleRefs,omitempty"`
 }
 type ManagedAgentExecutionCancelRequest struct {
 	Generation uint64 `json:"generation"`
@@ -353,6 +373,8 @@ type ManagedAgentExecutionSpec struct {
 	Checkpoint             *ManagedAgentExecutionCheckpoint `json:"checkpoint,omitempty"`
 	ResultDigest           string                           `json:"resultDigest,omitempty"`
 	ErrorCode              string                           `json:"errorCode,omitempty"`
+	McpServerRefs          []ManagedAgentMcpServerRef       `json:"mcpServerRefs,omitempty"`
+	SkillBundleRefs        []ManagedAgentSkillBundleRef     `json:"skillBundleRefs,omitempty"`
 }
 type ManagedAgentExecutionCheckpoint struct {
 	Sequence                uint64 `json:"sequence"`
@@ -410,11 +432,16 @@ type ManagedAgentEventSpec struct {
 	Resource       string                    `json:"resource"`
 	Generation     uint64                    `json:"generation"`
 	MutationDigest string                    `json:"mutationDigest"`
+	Result         string                    `json:"result,omitempty"`
 	InputDigest    string                    `json:"inputDigest,omitempty"`
 	ResultDigest   string                    `json:"resultDigest,omitempty"`
 	ErrorCode      string                    `json:"errorCode,omitempty"`
 	TurnID         string                    `json:"turnId,omitempty"`
 	ExecutionID    string                    `json:"executionId,omitempty"`
+	ServerID       string                    `json:"serverId,omitempty"`
+	BundleID       string                    `json:"bundleId,omitempty"`
+	Version        string                    `json:"version,omitempty"`
+	Digest         string                    `json:"digest,omitempty"`
 	Changes        []ManagedAgentEventChange `json:"changes"`
 }
 type ManagedAgentEventPage struct {
@@ -1701,6 +1728,218 @@ func (client *Client) ListAdminNetworkPolicyAuditEvents(ctx context.Context, ten
 		if event.ResourceKind != "NetworkPolicy" || event.ResourceID != networkPolicyID {
 			return AdminAuditEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
 		}
+	}
+	return value, nil
+}
+func (client *Client) ListAdminMcpServers(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (McpServerPageResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, "", requestID); err != nil {
+		return McpServerPageResult{}, err
+	}
+	path := capabilityPagePath("/v1/admin/tenants/"+tenantID+"/projects/"+projectID+"/mcp-servers", pageSize, pageToken)
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return McpServerPageResult{}, err
+	}
+	if response.Status != 200 {
+		return McpServerPageResult{}, client.problemError("adminListMcpServers", response)
+	}
+	value, err := platform.DecodeMcpServerPageResponseJSON(response.Body)
+	if err != nil {
+		return McpServerPageResult{}, &ClientError{Operation: "adminListMcpServers", Status: response.Status, Cause: err}
+	}
+	for _, item := range value.Value.McpServers {
+		if item.Metadata.TenantRef.ID != tenantID || item.Spec.ProjectRef.ID != projectID {
+			return McpServerPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/mcpServers")
+		}
+	}
+	return value, nil
+}
+func (client *Client) CreateAdminMcpServer(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.McpServerCreateRequest) (McpServerResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, "", requestID); err != nil {
+		return McpServerResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return McpServerResult{}, err
+	}
+	bodyBytes, err := platform.EncodeMcpServerCreateRequestJSON(body)
+	if err != nil {
+		return McpServerResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/mcp-servers", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return McpServerResult{}, err
+	}
+	if response.Status != 201 {
+		return McpServerResult{}, client.problemError("adminCreateMcpServer", response)
+	}
+	value, err := platform.DecodeMcpServerResponseJSON(response.Body)
+	if err != nil {
+		return McpServerResult{}, &ClientError{Operation: "adminCreateMcpServer", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return McpServerResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.ServerID || value.Value.Spec.ProjectRef.ID != projectID {
+		return McpServerResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetAdminMcpServer(ctx context.Context, tenantID, projectID, mcpServerID, requestID string) (McpServerResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, mcpServerID, requestID); err != nil {
+		return McpServerResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/mcp-servers/" + mcpServerID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return McpServerResult{}, err
+	}
+	if response.Status != 200 {
+		return McpServerResult{}, client.problemError("adminGetMcpServer", response)
+	}
+	value, err := platform.DecodeMcpServerResponseJSON(response.Body)
+	if err != nil {
+		return McpServerResult{}, &ClientError{Operation: "adminGetMcpServer", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return McpServerResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != mcpServerID || value.Value.Spec.ProjectRef.ID != projectID {
+		return McpServerResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) RevokeAdminMcpServer(ctx context.Context, tenantID, projectID, mcpServerID, requestID, idempotencyKey string, body platform.McpServerRevokeRequest) (McpServerResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, mcpServerID, requestID); err != nil {
+		return McpServerResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return McpServerResult{}, err
+	}
+	bodyBytes, err := platform.EncodeMcpServerRevokeRequestJSON(body)
+	if err != nil {
+		return McpServerResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/mcp-servers/" + mcpServerID + ":revoke", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return McpServerResult{}, err
+	}
+	if response.Status != 200 {
+		return McpServerResult{}, client.problemError("adminRevokeMcpServer", response)
+	}
+	value, err := platform.DecodeMcpServerResponseJSON(response.Body)
+	if err != nil {
+		return McpServerResult{}, &ClientError{Operation: "adminRevokeMcpServer", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return McpServerResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != mcpServerID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.Status != "revoked" {
+		return McpServerResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/spec/status")
+	}
+	return value, nil
+}
+func (client *Client) ListAdminSkillBundles(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (SkillBundlePageResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, "", requestID); err != nil {
+		return SkillBundlePageResult{}, err
+	}
+	requestPath := capabilityPagePath("/v1/admin/tenants/"+tenantID+"/projects/"+projectID+"/skill-bundles", pageSize, pageToken)
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: requestPath, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SkillBundlePageResult{}, err
+	}
+	if response.Status != 200 {
+		return SkillBundlePageResult{}, client.problemError("adminListSkillBundles", response)
+	}
+	value, err := platform.DecodeSkillBundlePageResponseJSON(response.Body)
+	if err != nil {
+		return SkillBundlePageResult{}, &ClientError{Operation: "adminListSkillBundles", Status: response.Status, Cause: err}
+	}
+	for _, item := range value.Value.SkillBundles {
+		if item.Metadata.TenantRef.ID != tenantID || item.Spec.ProjectRef.ID != projectID {
+			return SkillBundlePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/skillBundles")
+		}
+	}
+	return value, nil
+}
+func (client *Client) CreateAdminSkillBundle(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body platform.SkillBundleCreateRequest) (SkillBundleResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, "", requestID); err != nil {
+		return SkillBundleResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return SkillBundleResult{}, err
+	}
+	bodyBytes, err := platform.EncodeSkillBundleCreateRequestJSON(body)
+	if err != nil {
+		return SkillBundleResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/skill-bundles", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return SkillBundleResult{}, err
+	}
+	if response.Status != 201 {
+		return SkillBundleResult{}, client.problemError("adminCreateSkillBundle", response)
+	}
+	value, err := platform.DecodeSkillBundleResponseJSON(response.Body)
+	if err != nil {
+		return SkillBundleResult{}, &ClientError{Operation: "adminCreateSkillBundle", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return SkillBundleResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.BundleID || value.Value.Spec.ProjectRef.ID != projectID {
+		return SkillBundleResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) GetAdminSkillBundle(ctx context.Context, tenantID, projectID, skillBundleID, requestID string) (SkillBundleResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, skillBundleID, requestID); err != nil {
+		return SkillBundleResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/skill-bundles/" + skillBundleID, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return SkillBundleResult{}, err
+	}
+	if response.Status != 200 {
+		return SkillBundleResult{}, client.problemError("adminGetSkillBundle", response)
+	}
+	value, err := platform.DecodeSkillBundleResponseJSON(response.Body)
+	if err != nil {
+		return SkillBundleResult{}, &ClientError{Operation: "adminGetSkillBundle", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return SkillBundleResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != skillBundleID || value.Value.Spec.ProjectRef.ID != projectID {
+		return SkillBundleResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func (client *Client) RevokeAdminSkillBundle(ctx context.Context, tenantID, projectID, skillBundleID, requestID, idempotencyKey string, body platform.SkillBundleRevokeRequest) (SkillBundleResult, error) {
+	if err := validateCapabilityPath(tenantID, projectID, skillBundleID, requestID); err != nil {
+		return SkillBundleResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return SkillBundleResult{}, err
+	}
+	bodyBytes, err := platform.EncodeSkillBundleRevokeRequestJSON(body)
+	if err != nil {
+		return SkillBundleResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/projects/" + projectID + "/skill-bundles/" + skillBundleID + ":revoke", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return SkillBundleResult{}, err
+	}
+	if response.Status != 200 {
+		return SkillBundleResult{}, client.problemError("adminRevokeSkillBundle", response)
+	}
+	value, err := platform.DecodeSkillBundleResponseJSON(response.Body)
+	if err != nil {
+		return SkillBundleResult{}, &ClientError{Operation: "adminRevokeSkillBundle", Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return SkillBundleResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != skillBundleID || value.Value.Spec.ProjectRef.ID != projectID || value.Value.Spec.Status != "revoked" {
+		return SkillBundleResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/spec/status")
 	}
 	return value, nil
 }
@@ -3648,7 +3887,7 @@ func (client *Client) ResolveManagedAgentUserInput(ctx context.Context, tenantID
 var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
-	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "environmentProfileId": common.ScalarResponseShape(), "environmentProfileVersion": common.ScalarResponseShape(), "state": common.ScalarResponseShape()}),
+	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"providerKind": common.ScalarResponseShape(), "environmentLeaseId": common.ScalarResponseShape(), "environmentGeneration": common.ScalarResponseShape(), "workspaceId": common.ScalarResponseShape(), "sandboxId": common.ScalarResponseShape(), "sandboxGeneration": common.ScalarResponseShape(), "environmentProfileId": common.ScalarResponseShape(), "environmentProfileVersion": common.ScalarResponseShape(), "mcpServerRefs": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"serverId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape()})), "skillBundleRefs": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"bundleId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape()})), "state": common.ScalarResponseShape()}),
 })
 
 func DecodeManagedAgentSessionResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentSession], error) {
@@ -3770,7 +4009,7 @@ func EncodeManagedAgentTurnPageResponseJSON(value common.ResponseEnvelope[Manage
 var managedAgentExecutionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "turnId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
-	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"generation": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "attemptNumber": common.ScalarResponseShape(), "recoveryState": common.ScalarResponseShape(), "recoveryReason": common.ScalarResponseShape(), "recoveryMode": common.ScalarResponseShape(), "recoverySourceTargetId": common.ScalarResponseShape(), "recoveryTargetId": common.ScalarResponseShape(), "claimExpiresAt": common.ScalarResponseShape(), "checkpoint": common.ObjectResponseShape(map[string]common.ResponseShape{"sequence": common.ScalarResponseShape(), "digest": common.ScalarResponseShape(), "protocol": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "pendingSideEffect": common.ScalarResponseShape(), "pendingInteractionCount": common.ScalarResponseShape()}), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape()}),
+	"spec":     common.ObjectResponseShape(map[string]common.ResponseShape{"generation": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "attemptNumber": common.ScalarResponseShape(), "recoveryState": common.ScalarResponseShape(), "recoveryReason": common.ScalarResponseShape(), "recoveryMode": common.ScalarResponseShape(), "recoverySourceTargetId": common.ScalarResponseShape(), "recoveryTargetId": common.ScalarResponseShape(), "claimExpiresAt": common.ScalarResponseShape(), "checkpoint": common.ObjectResponseShape(map[string]common.ResponseShape{"sequence": common.ScalarResponseShape(), "digest": common.ScalarResponseShape(), "protocol": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "pendingSideEffect": common.ScalarResponseShape(), "pendingInteractionCount": common.ScalarResponseShape()}), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape(), "mcpServerRefs": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"serverId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape()})), "skillBundleRefs": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"bundleId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape()}))}),
 	"messages": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"requestId": common.ScalarResponseShape(), "protocolVersion": common.ObjectResponseShape(map[string]common.ResponseShape{"major": common.ScalarResponseShape(), "minor": common.ScalarResponseShape()}), "executionId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "commandId": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape(), "messageType": common.ScalarResponseShape(), "payload": common.ScalarResponseShape(), "error": common.ObjectResponseShape(map[string]common.ResponseShape{"code": common.ScalarResponseShape(), "message": common.ScalarResponseShape(), "retryable": common.ScalarResponseShape(), "requiresNewExecution": common.ScalarResponseShape(), "requiresUserAction": common.ScalarResponseShape(), "canReconstructFromHistory": common.ScalarResponseShape(), "canMoveWorker": common.ScalarResponseShape()})})),
 })
 
@@ -3829,7 +4068,7 @@ func EncodeManagedAgentExecutionPageResponseJSON(value common.ResponseEnvelope[M
 	return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown)
 }
 
-var managedAgentEventPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "events": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "sequence": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"operation": common.ScalarResponseShape(), "resource": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "mutationDigest": common.ScalarResponseShape(), "inputDigest": common.ScalarResponseShape(), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape(), "turnId": common.ScalarResponseShape(), "executionId": common.ScalarResponseShape(), "changes": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"resource": common.ScalarResponseShape(), "from": common.ScalarResponseShape(), "to": common.ScalarResponseShape(), "version": common.ScalarResponseShape()}))})})), "nextCursor": common.ScalarResponseShape(), "hasMore": common.ScalarResponseShape()})
+var managedAgentEventPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "events": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "sequence": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape()}), "spec": common.ObjectResponseShape(map[string]common.ResponseShape{"operation": common.ScalarResponseShape(), "resource": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "mutationDigest": common.ScalarResponseShape(), "result": common.ScalarResponseShape(), "inputDigest": common.ScalarResponseShape(), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape(), "turnId": common.ScalarResponseShape(), "executionId": common.ScalarResponseShape(), "serverId": common.ScalarResponseShape(), "bundleId": common.ScalarResponseShape(), "version": common.ScalarResponseShape(), "digest": common.ScalarResponseShape(), "changes": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"resource": common.ScalarResponseShape(), "from": common.ScalarResponseShape(), "to": common.ScalarResponseShape(), "version": common.ScalarResponseShape()}))})})), "nextCursor": common.ScalarResponseShape(), "hasMore": common.ScalarResponseShape()})
 
 func DecodeManagedAgentEventPageResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentEventPage], error) {
 	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentEventPageResponseShape)
@@ -3844,8 +4083,16 @@ func DecodeManagedAgentEventPageResponseJSON(data []byte) (common.ResponseEnvelo
 		return common.ResponseEnvelope[ManagedAgentEventPage]{}, common.ContractError("INVALID_EVENT_PAGE", "/events")
 	}
 	for index, event := range value.Events {
-		if event.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || event.Kind != "Event" || event.Metadata.UID == "" || event.Metadata.ProjectID == "" || event.Metadata.SessionID == "" || event.Metadata.Sequence == "" || event.Spec.Operation == "" || event.Spec.Resource == "" || event.Spec.MutationDigest == "" || len(event.Spec.Changes) == 0 {
+		if event.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || event.Kind != "Event" || common.ValidateIdentifier(event.Metadata.UID, fmt.Sprintf("/events/%d/metadata/uid", index)) != nil || common.ValidateIdentifier(event.Metadata.ProjectID, fmt.Sprintf("/events/%d/metadata/projectId", index)) != nil || common.ValidateIdentifier(event.Metadata.SessionID, fmt.Sprintf("/events/%d/metadata/sessionId", index)) != nil || common.ValidateString(event.Metadata.Sequence, 1, 20, fmt.Sprintf("/events/%d/metadata/sequence", index)) != nil || common.ValidateDateTime(event.Metadata.OccurredAt, fmt.Sprintf("/events/%d/metadata/occurredAt", index)) != nil || !managedAgentEventOperation(event.Spec.Operation) || !managedAgentEventResource(event.Spec.Resource) || event.Spec.Generation > 9007199254740991 || !validCapabilityDigest(event.Spec.MutationDigest) || len(event.Spec.Changes) < 1 || len(event.Spec.Changes) > 4 || !managedAgentEventPair(event.Spec.Operation, event.Spec.Resource) || !validManagedAgentEventResult(event.Spec.Operation, event.Spec.Result) {
 			return common.ResponseEnvelope[ManagedAgentEventPage]{}, common.ContractError("INVALID_EVENT", fmt.Sprintf("/events/%d", index))
+		}
+		for changeIndex, change := range event.Spec.Changes {
+			if !managedAgentEventResource(change.Resource) || common.ValidateString(change.From, 0, 32, fmt.Sprintf("/events/%d/spec/changes/%d/from", index, changeIndex)) != nil || common.ValidateString(change.To, 0, 32, fmt.Sprintf("/events/%d/spec/changes/%d/to", index, changeIndex)) != nil || change.Version < 1 || change.Version > 9007199254740991 {
+				return common.ResponseEnvelope[ManagedAgentEventPage]{}, common.ContractError("INVALID_EVENT", fmt.Sprintf("/events/%d/spec/changes/%d", index, changeIndex))
+			}
+		}
+		if event.Spec.InputDigest != "" && !validCapabilityDigest(event.Spec.InputDigest) || event.Spec.ResultDigest != "" && !validCapabilityDigest(event.Spec.ResultDigest) || event.Spec.Digest != "" && !validCapabilityDigest(event.Spec.Digest) || event.Spec.ErrorCode != "" && !validEventErrorCode(event.Spec.ErrorCode) || event.Spec.TurnID != "" && common.ValidateIdentifier(event.Spec.TurnID, fmt.Sprintf("/events/%d/spec/turnId", index)) != nil || event.Spec.ExecutionID != "" && common.ValidateIdentifier(event.Spec.ExecutionID, fmt.Sprintf("/events/%d/spec/executionId", index)) != nil || event.Spec.ServerID != "" && common.ValidateIdentifier(event.Spec.ServerID, fmt.Sprintf("/events/%d/spec/serverId", index)) != nil || event.Spec.BundleID != "" && common.ValidateIdentifier(event.Spec.BundleID, fmt.Sprintf("/events/%d/spec/bundleId", index)) != nil || event.Spec.Version != "" && common.ValidateIdentifier(event.Spec.Version, fmt.Sprintf("/events/%d/spec/version", index)) != nil {
+			return common.ResponseEnvelope[ManagedAgentEventPage]{}, common.ContractError("INVALID_EVENT", fmt.Sprintf("/events/%d/spec", index))
 		}
 	}
 	return common.ResponseEnvelope[ManagedAgentEventPage]{Value: value, Unknown: sidecar}, nil
@@ -3900,7 +4147,7 @@ func decodeManagedAgentExecution(data []byte) (ManagedAgentExecution, error) {
 	if err != nil {
 		return ManagedAgentExecution{}, err
 	}
-	spec, err := common.DecodeStrictObject(fields["spec"], []string{"generation", "state", "attemptNumber", "recoveryState", "recoveryReason", "recoveryMode", "recoverySourceTargetId", "recoveryTargetId", "claimExpiresAt", "checkpoint", "resultDigest", "errorCode"}, []string{"generation", "state", "attemptNumber", "recoveryState"})
+	spec, err := common.DecodeStrictObject(fields["spec"], []string{"generation", "state", "attemptNumber", "recoveryState", "recoveryReason", "recoveryMode", "recoverySourceTargetId", "recoveryTargetId", "claimExpiresAt", "checkpoint", "resultDigest", "errorCode", "mcpServerRefs", "skillBundleRefs"}, []string{"generation", "state", "attemptNumber", "recoveryState"})
 	if err != nil {
 		return ManagedAgentExecution{}, err
 	}
@@ -3989,6 +4236,22 @@ func decodeManagedAgentExecution(data []byte) (ManagedAgentExecution, error) {
 			return ManagedAgentExecution{}, err
 		}
 	}
+	if len(value.Spec.McpServerRefs) > 32 || len(value.Spec.SkillBundleRefs) > 32 {
+		return ManagedAgentExecution{}, common.ContractError("INVALID_CAPABILITY_REFS", "/spec")
+	}
+	for index, ref := range value.Spec.McpServerRefs {
+		if common.ValidateIdentifier(ref.ServerID, "/spec/mcpServerRefs/"+strconv.Itoa(index)+"/serverId") != nil || common.ValidateIdentifier(ref.Version, "/spec/mcpServerRefs/"+strconv.Itoa(index)+"/version") != nil || !validCapabilityDigest(ref.Digest) {
+			return ManagedAgentExecution{}, common.ContractError("INVALID_CAPABILITY_REFS", "/spec/mcpServerRefs")
+		}
+	}
+	for index, ref := range value.Spec.SkillBundleRefs {
+		if common.ValidateIdentifier(ref.BundleID, "/spec/skillBundleRefs/"+strconv.Itoa(index)+"/bundleId") != nil || common.ValidateIdentifier(ref.Version, "/spec/skillBundleRefs/"+strconv.Itoa(index)+"/version") != nil || !validCapabilityDigest(ref.Digest) {
+			return ManagedAgentExecution{}, common.ContractError("INVALID_CAPABILITY_REFS", "/spec/skillBundleRefs")
+		}
+	}
+	if err := validateManagedAgentCapabilityRefs(value.Spec.McpServerRefs, value.Spec.SkillBundleRefs, "/spec"); err != nil {
+		return ManagedAgentExecution{}, err
+	}
 	for index, message := range value.Messages {
 		path := fmt.Sprintf("/messages/%d", index)
 		if err := validateManagedAgentExecutionMessage(message, path); err != nil {
@@ -4049,6 +4312,9 @@ func encodeManagedAgentExecutionCreateRequest(value ManagedAgentExecutionCreateR
 		return nil, common.ContractError("INVALID_INTERACTION_MODE", "/interactionMode")
 	}
 	if err := common.ValidateString(value.InputText, 1, 1<<20, "/inputText"); err != nil {
+		return nil, err
+	}
+	if err := validateManagedAgentCapabilityRefs(value.McpServerRefs, value.SkillBundleRefs, ""); err != nil {
 		return nil, err
 	}
 	return json.Marshal(value)
@@ -4224,7 +4490,7 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
-	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion", "state"}, []string{"providerKind", "state"})
+	spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "environmentLeaseId", "environmentGeneration", "workspaceId", "sandboxId", "sandboxGeneration", "environmentProfileId", "environmentProfileVersion", "mcpServerRefs", "skillBundleRefs", "state"}, []string{"providerKind", "state"})
 	if err != nil {
 		return ManagedAgentSession{}, err
 	}
@@ -4254,6 +4520,9 @@ func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) {
 	}
 	if value.Spec.State != "active" && value.Spec.State != "closed" {
 		return ManagedAgentSession{}, common.ContractError("INVALID_STATE", "/spec/state")
+	}
+	if err := validateManagedAgentCapabilityRefs(value.Spec.McpServerRefs, value.Spec.SkillBundleRefs, "/spec"); err != nil {
+		return ManagedAgentSession{}, err
 	}
 	_, hasEnvironmentLeaseID := spec["environmentLeaseId"]
 	_, hasEnvironmentGeneration := spec["environmentGeneration"]
@@ -4296,6 +4565,9 @@ func encodeManagedAgentSessionCreateRequest(value ManagedAgentSessionCreateReque
 		return nil, err
 	}
 	if err := common.ValidateString(value.ProviderKind, 1, 64, "/providerKind"); err != nil {
+		return nil, err
+	}
+	if err := validateManagedAgentCapabilityRefs(value.McpServerRefs, value.SkillBundleRefs, ""); err != nil {
 		return nil, err
 	}
 	legacy := value.EnvironmentLeaseID != "" && value.WorkspaceID == "" && value.SandboxID == "" && value.SandboxGeneration == 0 && value.EnvironmentProfileID == "" && value.EnvironmentProfileVersion == 0
@@ -6554,4 +6826,114 @@ func validateDeploymentTargetPath(tenantID, projectID, targetID, requestID strin
 		return common.ValidateIdentifier(targetID, "/targetId")
 	}
 	return nil
+}
+func validCapabilityDigest(value string) bool {
+	if len(value) != 71 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[7:] {
+		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
+}
+func managedAgentEventOperation(value string) bool {
+	switch value {
+	case "session.create", "session.close", "turn.create", "execution.create", "execution.start", "execution.complete", "execution.fail", "turn.interrupt", "turn.cancel", "mcp.call", "mcp.fail", "mcp.revoke", "skill.load", "skill.fail", "skill.revoke":
+		return true
+	}
+	return false
+}
+func managedAgentEventResource(value string) bool {
+	switch value {
+	case "Session", "Turn", "Execution", "McpServer", "SkillBundle":
+		return true
+	}
+	return false
+}
+func managedAgentEventPair(operation, resource string) bool {
+	return !(strings.HasPrefix(operation, "mcp.") && resource != "McpServer") && !(strings.HasPrefix(operation, "skill.") && resource != "SkillBundle")
+}
+func validManagedAgentEventResult(operation, result string) bool {
+	capability := strings.HasPrefix(operation, "mcp.") || strings.HasPrefix(operation, "skill.")
+	if !capability {
+		return result == ""
+	}
+	switch result {
+	case "accepted", "succeeded", "failed", "revoked":
+	default:
+		return false
+	}
+	if strings.HasSuffix(operation, ".fail") {
+		return result == "failed"
+	}
+	if strings.HasSuffix(operation, ".revoke") {
+		return result == "revoked"
+	}
+	return true
+}
+func validEventErrorCode(value string) bool {
+	if len(value) < 1 || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+func validateManagedAgentCapabilityRefs(mcp []ManagedAgentMcpServerRef, skills []ManagedAgentSkillBundleRef, path string) error {
+	if len(mcp) > 32 || len(skills) > 32 {
+		return common.ContractError("INVALID_CAPABILITY_REFS", path)
+	}
+	seen := map[string]struct{}{}
+	for index, ref := range mcp {
+		key := "mcp\x00" + ref.ServerID + "\x00" + ref.Version + "\x00" + ref.Digest
+		if common.ValidateIdentifier(ref.ServerID, path+"/mcpServerRefs/"+strconv.Itoa(index)+"/serverId") != nil || common.ValidateIdentifier(ref.Version, path+"/mcpServerRefs/"+strconv.Itoa(index)+"/version") != nil || !validCapabilityDigest(ref.Digest) {
+			return common.ContractError("INVALID_CAPABILITY_REFS", path+"/mcpServerRefs")
+		}
+		if _, exists := seen[key]; exists {
+			return common.ContractError("INVALID_CAPABILITY_REFS", path+"/mcpServerRefs")
+		}
+		seen[key] = struct{}{}
+	}
+	for index, ref := range skills {
+		key := "skill\x00" + ref.BundleID + "\x00" + ref.Version + "\x00" + ref.Digest
+		if common.ValidateIdentifier(ref.BundleID, path+"/skillBundleRefs/"+strconv.Itoa(index)+"/bundleId") != nil || common.ValidateIdentifier(ref.Version, path+"/skillBundleRefs/"+strconv.Itoa(index)+"/version") != nil || !validCapabilityDigest(ref.Digest) {
+			return common.ContractError("INVALID_CAPABILITY_REFS", path+"/skillBundleRefs")
+		}
+		if _, exists := seen[key]; exists {
+			return common.ContractError("INVALID_CAPABILITY_REFS", path+"/skillBundleRefs")
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+func validateCapabilityPath(tenantID, projectID, resourceID, requestID string) error {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return err
+	}
+	if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil {
+		return err
+	}
+	if resourceID != "" {
+		return common.ValidateIdentifier(resourceID, "/resourceId")
+	}
+	return nil
+}
+func capabilityPagePath(base string, pageSize int, pageToken string) string {
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		return base + "?" + encoded
+	}
+	return base
 }

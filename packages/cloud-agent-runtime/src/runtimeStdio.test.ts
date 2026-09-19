@@ -1,4 +1,13 @@
-import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -98,6 +107,84 @@ describe("runCloudAgentRuntimeStdio", () => {
     expect(JSON.parse(output.text())).toMatchObject({
       messageType: "Error",
       error: { code: "provider_not_installed", message: "Provider codex is disabled." },
+    });
+  });
+
+  it.each<
+    [
+      string,
+      {
+        readonly allowedProviders?: ReadonlyArray<string>;
+        readonly environment?: Readonly<Record<string, string>>;
+      },
+      RegExp,
+    ]
+  >([
+    ["the Provider allowlist", { allowedProviders: ["missing"] }, /Allowed Provider missing/u],
+    [
+      "the credential descriptor",
+      { environment: { CLOUD_AGENT_PROVIDER_CREDENTIAL_FD: "invalid" } },
+      /CLOUD_AGENT_PROVIDER_CREDENTIAL_FD is invalid/u,
+    ],
+  ])("validates %s before starting capability resources", async (_name, options, message) => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-runtime-stdio-setup-"));
+    const materializationPath = join(root, "materialization.json");
+    const materializationFd = openSync(materializationPath, "w+");
+    const previousBrokerUrl = process.env.CLOUD_AGENT_MCP_BROKER_URL;
+    process.env.CLOUD_AGENT_MCP_BROKER_URL = "sentinel";
+    try {
+      writeFileSync(materializationPath, JSON.stringify(capabilityMaterialization()));
+      const environment = {
+        ...capabilityEnvironment(),
+        CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD: String(materializationFd),
+        ...options.environment,
+      };
+      await expect(
+        runCloudAgentRuntimeStdio(fakeRuntime(), {
+          source: Readable.from([]),
+          output: captureOutput().stream,
+          ...(options.allowedProviders === undefined
+            ? {}
+            : { allowedProviders: options.allowedProviders }),
+          environment,
+        }),
+      ).rejects.toThrow(message);
+      expect(process.env.CLOUD_AGENT_MCP_BROKER_URL).toBe("sentinel");
+    } finally {
+      closeSync(materializationFd);
+      rmSync(root, { recursive: true, force: true });
+      if (previousBrokerUrl === undefined) delete process.env.CLOUD_AGENT_MCP_BROKER_URL;
+      else process.env.CLOUD_AGENT_MCP_BROKER_URL = previousBrokerUrl;
+    }
+  });
+
+  it("closes and removes a session when StartSession rejects", async () => {
+    const source = Readable.from([`${JSON.stringify(startCommand)}\n`]);
+    const output = captureOutput();
+    let closes = 0;
+    let executed: readonly string[] = [];
+    const runtime = runtimeWithProvider(async () => {
+      const commands: string[] = [];
+      executed = commands;
+      return testSession(
+        "session-command-failure",
+        commands,
+        () => {
+          closes += 1;
+        },
+        (commandType) => {
+          if (commandType === "StartSession") throw new Error("Provider command failed.");
+        },
+      );
+    });
+
+    await runCloudAgentRuntimeStdio(runtime, { source, output: output.stream });
+
+    expect(executed).toEqual(["StartSession"]);
+    expect(closes).toBe(1);
+    expect(JSON.parse(output.text())).toMatchObject({
+      commandId: startCommand.commandId,
+      messageType: "Error",
     });
   });
 
@@ -769,6 +856,51 @@ function captureOutput(): { stream: Writable; text: () => string } {
       },
     }),
     text: () => value.trim(),
+  };
+}
+
+function capabilityEnvironment(): Record<string, string> {
+  const manifest = {
+    version: 1,
+    bindings: [
+      {
+        resourceKind: "mcp-server" as const,
+        resourceId: "server-1",
+        version: "v1",
+        digest: `sha256:${"a".repeat(64)}` as const,
+        transport: "streamable-http" as const,
+        connectionRef: "connection-1",
+        credentialRef: "credential-1",
+        grantId: "grant-1",
+        networkPolicyRef: "network-1",
+        expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+        permissions: ["mcp.call"],
+        readOnly: false,
+      },
+    ],
+  };
+  return {
+    CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(JSON.stringify(manifest)).toString(
+      "base64url",
+    ),
+  };
+}
+
+function capabilityMaterialization() {
+  return {
+    version: 1,
+    mcp: [
+      {
+        resourceId: "server-1",
+        version: "v1",
+        digest: `sha256:${"a".repeat(64)}`,
+        transport: "streamable-http",
+        endpoint: "http://127.0.0.1:1/mcp",
+        token: "test-token",
+        allowedHosts: ["127.0.0.1"],
+      },
+    ],
+    skills: [],
   };
 }
 

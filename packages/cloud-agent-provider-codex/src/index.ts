@@ -15,6 +15,10 @@ import {
   reconstructedPrompt,
   requireProviderOuterSandboxProfile,
   validateRunnerInput,
+  managedMcpConfiguration,
+  managedSkillBundleDirectories,
+  ManagedCapabilityUnavailableError,
+  readCapabilityManifest,
   type ProviderRunExecutor,
   type ProviderRunOptions,
   type ProviderRunController,
@@ -58,6 +62,20 @@ export function startCodexProviderRun(
   if (input.workload.provider.trim().toLowerCase() !== "codex")
     throw new Error(`Codex Provider cannot execute provider ${input.workload.provider}.`);
   const sourceEnvironment = options.environment ?? process.env;
+  const capabilityManifest = readCapabilityManifest(sourceEnvironment);
+  if (options.operation?.commandType === "GenerateText" && capabilityManifest?.bindings.length) {
+    throw new ManagedCapabilityUnavailableError(
+      "Codex Provider GenerateText does not permit MCP or Skill capabilities.",
+    );
+  }
+  const skillDirectories = managedSkillBundleDirectories(capabilityManifest, sourceEnvironment);
+  const skillBindings =
+    capabilityManifest?.bindings.filter((binding) => binding.resourceKind === "skill-bundle") ?? [];
+  if (skillDirectories.length > 0 && !credential) {
+    throw new ManagedCapabilityUnavailableError(
+      "Codex Skill Bundle injection requires a controlled Provider Credential.",
+    );
+  }
   requireProviderOuterSandboxProfile(sourceEnvironment);
   const managedWriteReceiptDelayMs = readManagedWriteReceiptDelay(sourceEnvironment);
   const { environment, redact } = providerEnvironment(
@@ -65,6 +83,8 @@ export function startCodexProviderRun(
     credential,
     applyCodexCredentialEnvironment,
   );
+  const mcpConfiguration = managedMcpConfiguration(capabilityManifest, sourceEnvironment);
+  Object.assign(environment, mcpConfiguration.environment);
   const effectiveInput = withCredentialModel(input, credential);
   if (credential) {
     const stateRoot =
@@ -74,7 +94,14 @@ export function startCodexProviderRun(
       throw new Error(
         "Codex Credential requires an agentd-owned providerStateDirectory or runtimeOutputDirectory for isolated CODEX_HOME.",
       );
-    environment.CODEX_HOME = writeControlledCodexConfig(stateRoot, environment);
+    environment.CODEX_HOME = writeControlledCodexConfig(
+      stateRoot,
+      environment,
+      Object.keys(mcpConfiguration.environment).filter((name) =>
+        /^CLOUD_AGENT_MCP_TOKEN_[A-Z0-9_]+$/u.test(name),
+      ),
+    );
+    if (skillDirectories.length > 0) environment.HOME = environment.CODEX_HOME;
     if (!options.codexToolPolicyHookCommand)
       throw new Error(
         "Codex Credential requires the immutable Provider Host tool-policy hook command.",
@@ -99,6 +126,13 @@ export function startCodexProviderRun(
       ? { toolPolicyHookCommand: options.codexToolPolicyHookCommand }
       : {}),
     ...(options.operation ? { operation: options.operation } : {}),
+    ...(Object.keys(mcpConfiguration.codexServers).length
+      ? { mcpServers: mcpConfiguration.codexServers }
+      : {}),
+    ...(skillDirectories.length
+      ? { skillRoots: skillDirectories.map((directory) => join(directory, "skills")) }
+      : {}),
+    ...(skillBindings.length === 1 ? { skillResourceId: skillBindings[0]!.resourceId } : {}),
   });
 }
 
@@ -202,7 +236,11 @@ function credentialBaseUrl(payload: Record<string, unknown>, label: string): unk
   }
   return payload.baseUrl ?? payload.baseURL;
 }
-function writeControlledCodexConfig(root: string, environment: NodeJS.ProcessEnv): string {
+function writeControlledCodexConfig(
+  root: string,
+  environment: NodeJS.ProcessEnv,
+  excludedEnvironmentNames: ReadonlyArray<string> = [],
+): string {
   const apiKey = requiredString(environment.OPENAI_API_KEY, "Codex Credential apiKey");
   const baseUrl = controlledBaseUrl(environment.OPENAI_BASE_URL);
   const codexHome = join(root, "codex-home");
@@ -221,6 +259,16 @@ function writeControlledCodexConfig(root: string, environment: NodeJS.ProcessEnv
       'env_key = "OPENAI_API_KEY"',
       'wire_api = "responses"',
       "requires_openai_auth = false",
+      ...(excludedEnvironmentNames.length > 0
+        ? [
+            "",
+            "[shell_environment_policy]",
+            `exclude = [${[...excludedEnvironmentNames]
+              .sort()
+              .map((name) => JSON.stringify(name))
+              .join(", ")}]`,
+          ]
+        : []),
       "",
     ].join("\n"),
     { encoding: "utf8", mode: 0o600 },

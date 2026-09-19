@@ -19,9 +19,19 @@ import {
   CLOUD_AGENT_ENVIRONMENT,
   readCloudAgentEnvironment,
 } from "@cloud-agents/cloud-agent-provider-api";
+import {
+  managedSkillRootDirectory,
+  readCapabilityManifest,
+} from "@cloud-agents/cloud-agent-provider-api/internal";
 
 import { createBoundedNdjsonWriter } from "./ndjsonWriter";
 import type { CloudAgentRuntimeV1 } from "./runtime";
+import {
+  readCapabilityMaterialization,
+  startManagedMcpBroker,
+  type ManagedMcpBroker,
+} from "./capabilityBroker";
+import { materializeManagedSkills } from "./skillMaterializer";
 
 export interface CloudAgentRuntimeStdioOptions {
   readonly source?: Readable;
@@ -48,15 +58,48 @@ export async function runCloudAgentRuntimeStdio(
   const source = options.source ?? process.stdin;
   const output = options.output ?? process.stdout;
   const diagnostics = options.diagnostics ?? process.stderr;
+  const runtimeEnvironment = options.environment ?? process.env;
   const allowed = allowedProviderSet(runtime, options.allowedProviders);
   const writer = createBoundedNdjsonWriter({
     target: output,
     maximumMessageBytes: CLOUD_AGENT_MAX_MESSAGE_BYTES,
   });
+  const credentialFd = readCredentialFd(runtimeEnvironment);
+  const capabilityManifest = readCapabilityManifest(runtimeEnvironment);
+  const capabilityMaterialization = readCapabilityMaterialization(
+    runtimeEnvironment,
+    capabilityManifest,
+  );
+  const skillMounts = materializeManagedSkills(
+    capabilityManifest,
+    capabilityMaterialization,
+    managedSkillRootDirectory(runtimeEnvironment),
+  );
+  let broker: ManagedMcpBroker | null;
+  try {
+    broker = await startManagedMcpBroker(capabilityManifest, capabilityMaterialization);
+  } catch (error) {
+    skillMounts?.close();
+    throw error;
+  }
+  const previousBrokerEnvironment = new Map<string, string | undefined>();
+  for (const name of capabilityEnvironmentNames(capabilityManifest)) {
+    previousBrokerEnvironment.set(name, process.env[name]);
+    delete process.env[name];
+  }
+  if (broker) {
+    for (const [name, value] of Object.entries(broker.environment)) {
+      process.env[name] = value;
+    }
+  }
+  if (skillMounts) {
+    for (const [name, value] of Object.entries(skillMounts.environment)) {
+      process.env[name] = value;
+    }
+  }
   const sessions = new Map<string, ActiveSession>();
   const commandTasks = new Set<Promise<void>>();
   const lifecycleBarriers = new Map<string, Promise<void>>();
-  const credentialFd = readCredentialFd(options.environment ?? process.env);
   const shutdown = new AbortController();
   let credentialConsumed = false;
   let fatalLatched = false;
@@ -109,6 +152,12 @@ export async function runCloudAgentRuntimeStdio(
     } catch (cause) {
       latchFatal(cause);
     } finally {
+      await closeCapabilityBroker(broker);
+      skillMounts?.close();
+      for (const [name, value] of previousBrokerEnvironment) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
       output.off("error", onOutputError);
       output.off("close", onOutputClose);
     }
@@ -145,6 +194,7 @@ export async function runCloudAgentRuntimeStdio(
   }
 
   async function dispatch(command: CloudAgentCommandEnvelope): Promise<void> {
+    let active: ActiveSession | undefined;
     try {
       if (command.commandType === "Describe") {
         const providerKind = requiredProvider(command.payload.provider);
@@ -155,14 +205,13 @@ export async function runCloudAgentRuntimeStdio(
         return;
       }
 
-      let active = sessions.get(command.executionId);
+      active = sessions.get(command.executionId);
       if (command.commandType === "StartSession" || command.commandType === "ResumeSession") {
         const binding = runnerBinding(command);
         assertAllowedProvider(allowed, binding.providerKind);
         if (active) {
-          await active.session.close("replaced");
-          await active.eventPump;
-          sessions.delete(command.executionId);
+          await closeRegisteredSession(command.executionId, active, "replaced");
+          active = undefined;
         }
         const creation = runtime.createSession(
           binding.providerKind,
@@ -222,14 +271,43 @@ export async function runCloudAgentRuntimeStdio(
         throw runtimeFailure("protocol_violation", "Provider returned a non-terminal receipt.");
       }
       if (command.commandType === "StopSession") {
-        await active.session.close("stopped");
-        await active.eventPump;
-        sessions.delete(command.executionId);
+        await closeRegisteredSession(command.executionId, active, "stopped");
       }
     } catch (cause) {
+      if (active !== undefined) {
+        await closeRegisteredSession(command.executionId, active, "command failed");
+      }
       writer.enqueue(errorMessage(command, cause));
     }
   }
+
+  async function closeRegisteredSession(
+    executionId: string,
+    active: ActiveSession,
+    reason: string,
+  ): Promise<void> {
+    if (sessions.get(executionId) !== active) return;
+    sessions.delete(executionId);
+    await Promise.allSettled([active.session.close(reason)]);
+    await Promise.allSettled([active.eventPump]);
+  }
+}
+
+async function closeCapabilityBroker(broker: ManagedMcpBroker | null): Promise<void> {
+  if (!broker) return;
+  await broker.close().catch(() => undefined);
+}
+
+function capabilityEnvironmentNames(
+  manifest: ReturnType<typeof readCapabilityManifest>,
+): ReadonlyArray<string> {
+  const names = new Set<string>(["CLOUD_AGENT_MCP_BROKER_URL"]);
+  for (const binding of manifest?.bindings ?? []) {
+    const suffix = binding.resourceId.replaceAll(/[^A-Za-z0-9]/gu, "_").toUpperCase();
+    if (binding.resourceKind === "mcp-server") names.add(`CLOUD_AGENT_MCP_TOKEN_${suffix}`);
+    else names.add(`CLOUD_AGENT_SKILL_BUNDLE_${suffix}_ROOT`);
+  }
+  return [...names];
 }
 
 async function* boundedNdjsonLines(

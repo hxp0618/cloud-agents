@@ -1,0 +1,1 @@
+export const CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION = 1 as const;

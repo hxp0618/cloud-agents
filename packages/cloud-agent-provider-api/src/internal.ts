@@ -4,6 +4,7 @@ export * from "./internalExecution";
 export * from "./providerOuterSandbox";
 export * from "./providerPlugin";
 export * from "./providerProtocol";
+export * from "./capabilityManifest";
 export * from "./providerResumeFallback";
 export * from "./providerRunErrors";
 export * from "./terminalEvents";

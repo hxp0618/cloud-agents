@@ -43,6 +43,15 @@ fi
 
 helm template cloud-agents "$chart" \
   --set worker.enabled=true \
+  --set-string runtime.capabilityMaterializationSecretName=cloud-agents-capabilities >"$rendered"
+test "$(grep -Fc "mountPath: /run/cloud-agents/capabilities" "$rendered")" -eq 2
+test "$(grep -Fc "mountPath: /run/cloud-agents/skills" "$rendered")" -eq 1
+grep -A1 -F -- "- --capability-materialization-directory" "$rendered" | grep -Fq -- '- /run/cloud-agents/capabilities'
+grep -A1 -F -- "name: CLOUD_AGENTS_PLATFORM_CAPABILITY_MATERIALIZATION_DIRECTORY" "$rendered" | grep -Fq -- 'value: /run/cloud-agents/capabilities'
+test "$(grep -Fc "secretName: cloud-agents-capabilities" "$rendered")" -eq 2
+
+helm template cloud-agents "$chart" \
+  --set worker.enabled=true \
   --set-string images.controlPlane.digest="$digest" \
   --set-string images.worker.digest="$digest" \
   --set-string images.migrate.digest="$digest" \

@@ -102,7 +102,7 @@ func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 	}
 	config := deploymentConfig{
 		Namespace: "agents", WorkerImageRepository: "registry.example.test/cloud-agents/worker",
-		WorkerCredentialSecretRef: "worker-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/kubernetes-alpha", WorkerServerName: "worker.example.test",
+		WorkerCredentialSecretRef: "worker-alpha", CapabilityMaterializationSecretRef: "capabilities-alpha", WorkerSPIFFEID: "spiffe://cloud-agents.test/workers/kubernetes-alpha", WorkerServerName: "worker.example.test",
 	}
 	name := workerResourceName(request)
 	annotations := deploymentAnnotations(request, config)
@@ -116,7 +116,7 @@ func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(encoded)
-	for _, expected := range []string{"PersistentVolumeClaim", "LoadBalancer", "Deployment", config.WorkerCredentialSecretRef, request.ProviderCredentialRef, config.WorkerImageRepository + "@" + request.ReleaseDigest, "readOnlyRootFilesystem", "1500m", workspaceStorage} {
+	for _, expected := range []string{"PersistentVolumeClaim", "LoadBalancer", "Deployment", config.WorkerCredentialSecretRef, request.ProviderCredentialRef, config.CapabilityMaterializationSecretRef, "--capability-materialization-directory", "/run/cloud-agents/capabilities", "skill-runtime", "/run/cloud-agents/skills", config.WorkerImageRepository + "@" + request.ReleaseDigest, "readOnlyRootFilesystem", "1500m", workspaceStorage} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("desired resources do not contain %q", expected)
 		}
@@ -126,8 +126,8 @@ func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 			t.Fatalf("desired resources contain credential field %q", forbidden)
 		}
 	}
-	if strings.Count(text, `"defaultMode":256`) != 2 {
-		t.Fatal("Worker and Provider Secret volumes must use mode 0400")
+	if strings.Count(text, `"defaultMode":256`) != 3 {
+		t.Fatal("Worker, Provider, and capability materialization Secret volumes must use mode 0400")
 	}
 
 	present := map[string]bool{}

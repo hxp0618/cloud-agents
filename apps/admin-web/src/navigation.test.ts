@@ -7,10 +7,14 @@ describe("admin navigation commands", () => {
   const chinese: Translate = (key, values) => translate("zh-CN", key, values);
 
   it("uses unique real resource routes and excludes the current page", () => {
-    expect(new Set(navigationPages.map(({ id }) => id)).size).toBe(13);
+    expect(new Set(navigationPages.map(({ id }) => id)).size).toBe(14);
     expect(matchingNavigation("targets", "", english).map(({ id }) => id)).toEqual(
       navigationPages.filter(({ id }) => id !== "targets").map(({ id }) => id),
     );
+  });
+
+  it("keeps page heading copy attached to every route", () => {
+    expect(navigationPages.every(({ title, description }) => title && description)).toBe(true);
   });
 
   it("matches localized labels and all query words without storing or interpreting input", () => {

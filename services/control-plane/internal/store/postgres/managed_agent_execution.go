@@ -32,36 +32,38 @@ type ManagedAgentExecutionPage struct {
 }
 
 type managedAgentExecutionPageRow struct {
-	TenantID                string     `json:"tenant_id"`
-	ProjectID               string     `json:"project_uid"`
-	SessionID               string     `json:"session_uid"`
-	TurnID                  string     `json:"turn_uid"`
-	ExecutionID             string     `json:"execution_uid"`
-	Generation              int64      `json:"generation"`
-	State                   string     `json:"state"`
-	ResultDigest            *string    `json:"result_digest"`
-	ErrorCode               *string    `json:"error_code"`
-	AttemptNumber           int64      `json:"attempt_number"`
-	ClaimExpiresAt          *time.Time `json:"claim_expires_at"`
-	CheckpointSequence      int64      `json:"checkpoint_sequence"`
-	CheckpointDigest        *string    `json:"checkpoint_digest"`
-	CheckpointedAt          *time.Time `json:"checkpointed_at"`
-	CheckpointProtocol      *string    `json:"checkpoint_protocol"`
-	PendingSideEffect       bool       `json:"pending_side_effect"`
-	PendingInteractionCount int32      `json:"pending_interaction_count"`
-	RecoveryState           string     `json:"recovery_state"`
-	RecoveryReason          *string    `json:"recovery_reason"`
-	RecoveryMode            *string    `json:"recovery_mode"`
-	RecoverySourceTargetID  *string    `json:"recovery_source_target_uid"`
-	RecoveryTargetID        *string    `json:"recovery_target_uid"`
-	ResourceVersion         int64      `json:"resource_version"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	TenantID                string                                `json:"tenant_id"`
+	ProjectID               string                                `json:"project_uid"`
+	SessionID               string                                `json:"session_uid"`
+	TurnID                  string                                `json:"turn_uid"`
+	ExecutionID             string                                `json:"execution_uid"`
+	Generation              int64                                 `json:"generation"`
+	State                   string                                `json:"state"`
+	ResultDigest            *string                               `json:"result_digest"`
+	ErrorCode               *string                               `json:"error_code"`
+	AttemptNumber           int64                                 `json:"attempt_number"`
+	ClaimExpiresAt          *time.Time                            `json:"claim_expires_at"`
+	CheckpointSequence      int64                                 `json:"checkpoint_sequence"`
+	CheckpointDigest        *string                               `json:"checkpoint_digest"`
+	CheckpointedAt          *time.Time                            `json:"checkpointed_at"`
+	CheckpointProtocol      *string                               `json:"checkpoint_protocol"`
+	PendingSideEffect       bool                                  `json:"pending_side_effect"`
+	PendingInteractionCount int32                                 `json:"pending_interaction_count"`
+	RecoveryState           string                                `json:"recovery_state"`
+	RecoveryReason          *string                               `json:"recovery_reason"`
+	RecoveryMode            *string                               `json:"recovery_mode"`
+	RecoverySourceTargetID  *string                               `json:"recovery_source_target_uid"`
+	RecoveryTargetID        *string                               `json:"recovery_target_uid"`
+	ResourceVersion         int64                                 `json:"resource_version"`
+	CreatedAt               time.Time                             `json:"created_at"`
+	UpdatedAt               time.Time                             `json:"updated_at"`
+	McpServerRefs           []internalmanagedagent.McpServerRef   `json:"mcp_server_refs"`
+	SkillBundleRefs         []internalmanagedagent.SkillBundleRef `json:"skill_bundle_refs"`
 }
 
 const (
-	createManagedAgentExecutionSQL = `SELECT execution_uid
-FROM cloud_agents.create_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
+	createManagedAgentExecutionSQL = `SELECT execution_uid, mcp_server_refs, skill_bundle_refs
+FROM cloud_agents.create_managed_agent_execution_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	startManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.start_claimed_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
@@ -102,7 +104,8 @@ COALESCE((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
 FROM cloud_agents.managed_agent_execution_interaction_resolutions AS resolution
 WHERE resolution.tenant_id = cloud_agents.require_tenant_id()
     AND resolution.project_uid = $1 AND resolution.session_uid = $2 AND resolution.turn_uid = $3
-    AND resolution.execution_uid = $4), '[]'::pg_catalog.jsonb)
+    AND resolution.execution_uid = $4), '[]'::pg_catalog.jsonb),
+mcp_server_refs, skill_bundle_refs
 FROM cloud_agents.managed_agent_executions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3 AND execution_uid = $4`
@@ -118,7 +121,7 @@ FROM (
 	        checkpoint_sequence, checkpoint_digest, checkpointed_at, checkpoint_protocol,
 	        pending_side_effect, pending_interaction_count, recovery_state, recovery_reason,
 	        recovery_mode, recovery_source_target_uid, recovery_target_uid,
-	        resource_version, created_at, updated_at
+	        resource_version, created_at, updated_at, mcp_server_refs, skill_bundle_refs
     FROM cloud_agents.managed_agent_executions
     WHERE tenant_id = cloud_agents.require_tenant_id()
         AND project_uid = $1
@@ -148,9 +151,14 @@ func (service *DurableCoordinationService) CreateManagedAgentExecution(
 	var result internalmanagedagent.ExecutionSnapshot
 	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
 		var executionID string
+		mcpRefs, skillRefs, err := managedAgentCapabilityRefsJSON(input.McpServerRefs, input.SkillBundleRefs)
+		if err != nil {
+			return ErrCoordinationInvalidInput
+		}
+		var storedMcpRefs, storedSkillRefs []byte
 		if err := handle.transaction.queryRow(ctx, createManagedAgentExecutionSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
-			int64(input.Generation), input.Mutation.IdempotencyKey, digest).Scan(&executionID); err != nil {
+			int64(input.Generation), input.Mutation.IdempotencyKey, digest, mcpRefs, skillRefs).Scan(&executionID, &storedMcpRefs, &storedSkillRefs); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrCoordinationResultDrift
 			}
@@ -159,7 +167,10 @@ func (service *DurableCoordinationService) CreateManagedAgentExecution(
 		if !validMutationIdentifier(executionID) {
 			return ErrCoordinationResultDrift
 		}
-		if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
+		if _, _, err := decodeManagedAgentCapabilityRefs(storedMcpRefs, storedSkillRefs); err != nil {
+			return ErrCoordinationResultDrift
+		}
+		if err := scanManagedAgentExecutionWithCapabilities(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
 			input.Scope.ProjectID, input.SessionID, input.TurnID, executionID), input.Scope, input.SessionID, input.TurnID, &result); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrCoordinationResultDrift
@@ -230,7 +241,7 @@ func (service *DurableCoordinationService) ClaimManagedAgentExecution(
 		}
 		if claim.RecoveryState == "recovering" || claim.RecoveryState == "awaiting_reconciliation" {
 			var snapshot internalmanagedagent.ExecutionSnapshot
-			if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
+			if err := scanManagedAgentExecutionWithCapabilities(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
 				input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID), input.Scope,
 				input.SessionID, input.TurnID, &snapshot); err != nil {
 				return err
@@ -388,7 +399,7 @@ func (service *DurableCoordinationService) ReconcileManagedAgentExecutionSideEff
 			return ErrCoordinationResultDrift
 		}
 		var snapshot internalmanagedagent.ExecutionSnapshot
-		if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
+		if err := scanManagedAgentExecutionWithCapabilities(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
 			input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID), input.Scope,
 			input.SessionID, input.TurnID, &snapshot); err != nil {
 			return err
@@ -425,6 +436,11 @@ func (service *DurableCoordinationService) StartManagedAgentExecution(
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
 			int64(input.Generation), input.Mutation.IdempotencyKey, digest, int64(input.Claim.AttemptNumber),
 			input.Claim.HolderID, input.Claim.Incarnation, input.Claim.Token), input.Scope, input.SessionID, &result); err != nil {
+			return err
+		}
+		if err := hydrateManagedAgentExecutionTransitionCapabilities(handle.transaction.queryRow(ctx,
+			getManagedAgentExecutionSQL, input.Scope.ProjectID, input.SessionID, result.Turn.TurnID,
+			result.Execution.ExecutionID), input.Scope, input.SessionID, &result); err != nil {
 			return err
 		}
 		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
@@ -501,6 +517,11 @@ func (service *DurableCoordinationService) CancelManagedAgentExecution(
 			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result); err != nil {
 			return err
 		}
+		if err := hydrateManagedAgentExecutionTransitionCapabilities(handle.transaction.queryRow(ctx,
+			getManagedAgentExecutionSQL, input.Scope.ProjectID, input.SessionID, result.Turn.TurnID,
+			result.Execution.ExecutionID), input.Scope, input.SessionID, &result); err != nil {
+			return err
+		}
 		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
 			Scope: input.Scope, SessionID: result.Execution.SessionID, Operation: "turn.cancel", Resource: internalmanagedagent.ResourceExecution,
 			TurnID: result.Turn.TurnID, ExecutionID: result.Execution.ExecutionID, Generation: result.Execution.Generation,
@@ -532,6 +553,11 @@ func (service *DurableCoordinationService) InterruptManagedAgentExecution(
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, interruptManagedAgentExecutionSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.TargetExecutionID,
 			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result); err != nil {
+			return err
+		}
+		if err := hydrateManagedAgentExecutionTransitionCapabilities(handle.transaction.queryRow(ctx,
+			getManagedAgentExecutionSQL, input.Scope.ProjectID, input.SessionID, result.Turn.TurnID,
+			result.Execution.ExecutionID), input.Scope, input.SessionID, &result); err != nil {
 			return err
 		}
 		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
@@ -571,6 +597,11 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
 			nullableString(resultDigest), nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage), nullableString(runtimeMessages),
 			int64(claim.AttemptNumber), claim.HolderID, claim.Incarnation, claim.Token), scope, sessionID, &result); err != nil {
+			return err
+		}
+		if err := hydrateManagedAgentExecutionTransitionCapabilities(handle.transaction.queryRow(ctx,
+			getManagedAgentExecutionSQL, scope.ProjectID, sessionID, result.Turn.TurnID,
+			result.Execution.ExecutionID), scope, sessionID, &result); err != nil {
 			return err
 		}
 		operation := "execution.complete"
@@ -671,7 +702,7 @@ func (service *DurableCoordinationService) GetManagedAgentExecution(
 				return ErrTenantCapabilityClosed
 			}
 			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}, func() error {
-				err := scanManagedAgentExecution(handle.transaction.queryRow(readContext, getManagedAgentExecutionSQL, projectID, sessionID, turnID, executionID), scope, sessionID, turnID, &result)
+				err := scanManagedAgentExecutionWithCapabilities(handle.transaction.queryRow(readContext, getManagedAgentExecutionSQL, projectID, sessionID, turnID, executionID), scope, sessionID, turnID, &result)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentExecutionNotFound
 				}
@@ -763,6 +794,9 @@ func decodeManagedAgentExecutionPageRows(raw []byte, tenantID, projectID, sessio
 	}
 	executions := make([]internalmanagedagent.ExecutionSnapshot, 0, len(rows))
 	for _, row := range rows {
+		if err := internalmanagedagent.ValidateCapabilityRefs(row.McpServerRefs, row.SkillBundleRefs); err != nil {
+			return ManagedAgentExecutionPage{}, ErrCoordinationResultDrift
+		}
 		state := internalmanagedagent.ExecutionState(row.State)
 		if row.TenantID != tenantID || row.ProjectID != projectID || row.SessionID != sessionID ||
 			!validMutationIdentifier(row.TurnID) || !validMutationIdentifier(row.ExecutionID) ||
@@ -780,7 +814,9 @@ func decodeManagedAgentExecutionPageRows(raw []byte, tenantID, projectID, sessio
 			TurnID: row.TurnID, ExecutionID: row.ExecutionID, Generation: uint64(row.Generation), State: state,
 			AttemptNumber: uint64(row.AttemptNumber), CheckpointSequence: uint64(row.CheckpointSequence),
 			PendingSideEffect: row.PendingSideEffect, PendingInteractionCount: uint32(row.PendingInteractionCount), RecoveryState: row.RecoveryState,
-			Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+			McpServerRefs:   append([]internalmanagedagent.McpServerRef(nil), row.McpServerRefs...),
+			SkillBundleRefs: append([]internalmanagedagent.SkillBundleRef(nil), row.SkillBundleRefs...),
+			Version:         uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		}
 		if row.ClaimExpiresAt != nil {
 			execution.ClaimExpiresAt = *row.ClaimExpiresAt
@@ -832,6 +868,31 @@ func validManagedAgentExecutionState(state internalmanagedagent.ExecutionState) 
 }
 
 func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope, sessionID, turnID string, result *internalmanagedagent.ExecutionSnapshot) error {
+	return scanManagedAgentExecutionRow(row, scope, sessionID, turnID, result, false)
+}
+
+func scanManagedAgentExecutionWithCapabilities(row rowScanner, scope internalmanagedagent.Scope, sessionID, turnID string, result *internalmanagedagent.ExecutionSnapshot) error {
+	return scanManagedAgentExecutionRow(row, scope, sessionID, turnID, result, true)
+}
+
+func hydrateManagedAgentExecutionTransitionCapabilities(row rowScanner, scope internalmanagedagent.Scope, sessionID string, result *internalmanagedagent.ExecutionTransitionResult) error {
+	if result == nil {
+		return ErrCoordinationResultDrift
+	}
+	var snapshot internalmanagedagent.ExecutionSnapshot
+	if err := scanManagedAgentExecutionWithCapabilities(row, scope, sessionID, result.Turn.TurnID, &snapshot); err != nil {
+		return err
+	}
+	if snapshot.ExecutionID != result.Execution.ExecutionID || snapshot.Generation != result.Execution.Generation ||
+		snapshot.State != result.Execution.State || snapshot.Version != result.Execution.Version {
+		return ErrCoordinationResultDrift
+	}
+	result.Execution.McpServerRefs = append([]internalmanagedagent.McpServerRef(nil), snapshot.McpServerRefs...)
+	result.Execution.SkillBundleRefs = append([]internalmanagedagent.SkillBundleRef(nil), snapshot.SkillBundleRefs...)
+	return nil
+}
+
+func scanManagedAgentExecutionRow(row rowScanner, scope internalmanagedagent.Scope, sessionID, turnID string, result *internalmanagedagent.ExecutionSnapshot, includeCapabilities bool) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
@@ -842,13 +903,18 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	var recoveryMode, recoverySourceTargetID, recoveryTargetID *string
 	var reconciliationCheckpointDigest, reconciliationOutcome, reconciliationDigest *string
 	var claimExpiresAt, checkpointedAt, reconciledAt *time.Time
-	var resolutionsJSON []byte
-	if err := row.Scan(&result.ExecutionID, &generation, &attempt, &state, &resultDigest, &errorCode,
+	var resolutionsJSON, mcpRefsJSON, skillRefsJSON []byte
+	destinations := []any{&result.ExecutionID, &generation, &attempt, &state, &resultDigest, &errorCode,
 		&version, &result.CreatedAt, &result.UpdatedAt, &terminalMessage, &runtimeMessages, &claimExpiresAt,
 		&checkpointSequence, &checkpointDigest, &checkpointedAt, &checkpointProtocol, &checkpointCursor,
 		&result.PendingSideEffect, &pendingInteractions, &result.RecoveryState, &recoveryReason,
 		&recoveryMode, &recoverySourceTargetID, &recoveryTargetID,
-		&reconciliationCheckpointDigest, &reconciliationOutcome, &reconciliationDigest, &reconciledAt, &resolutionsJSON); err != nil {
+		&reconciliationCheckpointDigest, &reconciliationOutcome, &reconciliationDigest, &reconciledAt,
+		&resolutionsJSON}
+	if includeCapabilities {
+		destinations = append(destinations, &mcpRefsJSON, &skillRefsJSON)
+	}
+	if err := row.Scan(destinations...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -862,6 +928,13 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	result.CheckpointSequence = uint64(checkpointSequence)
 	result.PendingInteractionCount = uint32(pendingInteractions)
 	result.State = internalmanagedagent.ExecutionState(state)
+	if includeCapabilities {
+		var err error
+		result.McpServerRefs, result.SkillBundleRefs, err = decodeManagedAgentCapabilityRefs(mcpRefsJSON, skillRefsJSON)
+		if err != nil {
+			return fmt.Errorf("%w: managed agent capability refs", ErrCoordinationResultDrift)
+		}
+	}
 	if resultDigest != nil {
 		result.ResultDigest = *resultDigest
 	}

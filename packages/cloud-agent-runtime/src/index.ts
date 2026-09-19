@@ -5,3 +5,9 @@ export {
   type CloudAgentStdioClientOptions,
 } from "./stdioClient";
 export { runCloudAgentRuntimeStdio, type CloudAgentRuntimeStdioOptions } from "./runtimeStdio";
+export {
+  readCapabilityMaterialization,
+  startManagedMcpBroker,
+  type ManagedMcpBroker,
+} from "./capabilityBroker";
+export { materializeManagedSkills, type ManagedSkillMounts } from "./skillMaterializer";

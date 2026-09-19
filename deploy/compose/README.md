@@ -91,6 +91,17 @@ and an optional credential `model` is used only when the execution request has
 no explicit model. Claude credentials may use the same `/v1` endpoint form as
 Codex; the Claude provider removes that suffix before the SDK adds its API path.
 
+Set `CLOUD_AGENTS_CONTROL_PLANE_CAPABILITY_MATERIALIZATION_DIR` and
+`CLOUD_AGENTS_WORKER_CAPABILITY_MATERIALIZATION_DIR` to separate operator-owned
+directories containing only generator-produced `<tenantId>.capabilities.json`
+descriptors and `<signingKeyId>.pub` trust keys. Generate the source material
+outside the release and Workspace with
+`bun run runtime:capabilities:generate -- --config ABSOLUTE_JSON --output-directory ABSOLUTE_DIR`,
+then copy it into the two deployment directories without exposing MCP tokens to
+arguments. Keep Control Plane files mode `0400` owned by UID `65532` and Worker
+files mode `0400` owned by UID `1000`; both mounts are read-only. User Web and
+Admin Web never receive the materialization.
+
 Create `CLOUD_AGENTS_ACCESS_GRANT_KEY_FILE` as 32–64 random bytes with mode
 `0600`. The no-network `access-grant-key` one-shot copies it into a dedicated
 Compose volume as uid `65532` with mode `0400`; the Control Plane mounts only

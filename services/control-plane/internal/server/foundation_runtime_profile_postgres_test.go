@@ -25,6 +25,7 @@ import (
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/jackc/pgx/v5"
@@ -83,7 +84,15 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	capabilityHandler, err := NewCapabilityHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if HandlesCapabilityAdminPath(request.URL.Path) {
+			capabilityHandler.ServeHTTP(writer, request)
+			return
+		}
 		if HandlesNetworkPolicyPath(request.URL.Path) {
 			networkPolicyHandler.ServeHTTP(writer, request)
 			return
@@ -99,6 +108,128 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	user, err := api.NewHTTPClientWithClient(httpServer.URL, userToken, httpServer.Client())
 	if err != nil {
 		t.Fatal(err)
+	}
+	mcpCreate := platform.McpServerCreateRequest{ServerID: "mcp-test", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64), Transport: "sse", ConnectionRef: "connection-test", CredentialRef: "credential-test", NetworkPolicyRef: "network-test", Permissions: []string{"tools.read"}}
+	mcp, err := admin.CreateAdminMcpServer(ctx, "tenant", "project", "request-mcp-create", "mcp-create-key-0001", mcpCreate)
+	if err != nil || mcp.Value.Spec.Status != "active" || mcp.Value.Metadata.ResourceVersion != "1" {
+		t.Fatalf("create MCP Server: value=%+v err=%v", mcp.Value, err)
+	}
+	if replay, replayErr := admin.CreateAdminMcpServer(ctx, "tenant", "project", "request-mcp-replay", "mcp-create-key-0001", mcpCreate); replayErr != nil || replay.Value.Metadata.UID != "mcp-test" {
+		t.Fatalf("replay MCP Server: value=%+v err=%v", replay.Value, replayErr)
+	}
+	conflict := mcpCreate
+	conflict.Digest = "sha256:" + strings.Repeat("c", 64)
+	if _, conflictErr := admin.CreateAdminMcpServer(ctx, "tenant", "project", "request-mcp-conflict", "mcp-create-key-0001", conflict); clientStatus(conflictErr) != http.StatusConflict {
+		t.Fatalf("MCP idempotency conflict status=%d err=%v", clientStatus(conflictErr), conflictErr)
+	}
+	if _, userErr := user.CreateAdminMcpServer(ctx, "tenant", "project", "request-mcp-user", "mcp-user-key-00001", mcpCreate); clientStatus(userErr) != http.StatusForbidden {
+		t.Fatalf("ordinary user MCP status=%d err=%v", clientStatus(userErr), userErr)
+	}
+	if _, crossErr := admin.GetAdminMcpServer(ctx, "other-tenant", "project", "mcp-test", "request-mcp-cross"); clientStatus(crossErr) != http.StatusUnauthorized {
+		t.Fatalf("cross-tenant MCP status=%d err=%v", clientStatus(crossErr), crossErr)
+	}
+	if listed, listErr := admin.ListAdminMcpServers(ctx, "tenant", "project", "request-mcp-list", 50, ""); listErr != nil || len(listed.Value.McpServers) != 1 {
+		t.Fatalf("list MCP Servers: value=%+v err=%v", listed.Value, listErr)
+	}
+	revokedMCP, err := admin.RevokeAdminMcpServer(ctx, "tenant", "project", "mcp-test", "request-mcp-revoke", "mcp-revoke-key-001", platform.McpServerRevokeRequest{ExpectedResourceVersion: "1", ReasonCode: "security"})
+	if err != nil || revokedMCP.Value.Spec.Status != "revoked" || revokedMCP.Value.Metadata.ResourceVersion != "2" {
+		t.Fatalf("revoke MCP Server: value=%+v err=%v", revokedMCP.Value, err)
+	}
+	skillCreate := platform.SkillBundleCreateRequest{BundleID: "skill-test", Version: "v1", Digest: "sha256:" + strings.Repeat("b", 64), SourceRef: "source-test", SignatureRef: "signature-test", SigningKeyID: "key-test", CompatibleProviders: []string{"codex", "pi"}}
+	skill, err := admin.CreateAdminSkillBundle(ctx, "tenant", "project", "request-skill-create", "skill-create-key-01", skillCreate)
+	if err != nil || skill.Value.Spec.Status != "active" || !skill.Value.Spec.MountReadOnly {
+		t.Fatalf("create Skill Bundle: value=%+v err=%v", skill.Value, err)
+	}
+	if listed, listErr := admin.ListAdminSkillBundles(ctx, "tenant", "project", "request-skill-list", 50, ""); listErr != nil || len(listed.Value.SkillBundles) != 1 {
+		t.Fatalf("list Skill Bundles: value=%+v err=%v", listed.Value, listErr)
+	}
+	revokedSkill, err := admin.RevokeAdminSkillBundle(ctx, "tenant", "project", "skill-test", "request-skill-revoke", "skill-revoke-key-01", platform.SkillBundleRevokeRequest{ExpectedResourceVersion: "1", ReasonCode: "security"})
+	if err != nil || revokedSkill.Value.Spec.Status != "revoked" || revokedSkill.Value.Metadata.ResourceVersion != "2" {
+		t.Fatalf("revoke Skill Bundle: value=%+v err=%v", revokedSkill.Value, err)
+	}
+	runtimeMCP := platform.McpServerCreateRequest{ServerID: "mcp-runtime", Version: "v1", Digest: "sha256:" + strings.Repeat("d", 64), Transport: "streamable-http", ConnectionRef: "connection-runtime", CredentialRef: "credential-runtime", NetworkPolicyRef: "network-restricted", Permissions: []string{"tools.read", "tools.write"}}
+	if _, err := admin.CreateAdminMcpServer(ctx, "tenant", "project", "request-mcp-runtime", "mcp-runtime-key-01", runtimeMCP); err != nil {
+		t.Fatalf("create runtime MCP Server: %v", err)
+	}
+	runtimeSkill := platform.SkillBundleCreateRequest{BundleID: "skill-runtime", Version: "v1", Digest: "sha256:" + strings.Repeat("e", 64), SourceRef: "source-runtime", SignatureRef: "signature-runtime", SigningKeyID: "key-runtime", CompatibleProviders: []string{"codex"}}
+	if _, err := admin.CreateAdminSkillBundle(ctx, "tenant", "project", "request-skill-runtime", "skill-runtime-key-01", runtimeSkill); err != nil {
+		t.Fatalf("create runtime Skill Bundle: %v", err)
+	}
+	principal, err := verifier.Verify(adminToken, authn.VerificationRequest{TenantID: "tenant", ResourceLevel: "project", ResourceID: "project", RequiredPermission: "projects.act"})
+	if err != nil {
+		t.Fatalf("verify runtime principal: %v", err)
+	}
+	if _, err := owner.Exec(ctx, `INSERT INTO cloud_agents.managed_host_environment_leases (
+ tenant_id,tenant_ref_id,project_uid,lease_uid,lease_name,release_digest,generation,desired_phase,observed_phase,cleanup_phase,environment_id,expires_at,resource_version,create_idempotency_key,create_request_digest,created_at,updated_at,
+ deployment_target_uid,deployment_target_generation,provider_credential_ref,cpu_limit_millis,memory_limit_bytes,worker_endpoint,worker_spiffe_id,worker_server_name)
+ VALUES ('tenant','tenant','project','lease-capability','lease-capability','sha256:'||repeat('f',64),1,'active','ready','none','lease-capability',clock_timestamp()+interval '1 hour',1,'lease-capability-key','sha256:'||repeat('f',64),clock_timestamp(),clock_timestamp(),
+ 'target',1,'fixture-only',500,536870912,'https://worker.invalid','spiffe://cloud-agents.test/worker/lease-capability','worker.invalid')`); err != nil {
+		t.Fatalf("insert capability environment fixture: %v", err)
+	}
+	if _, err := store.CreateManagedAgentSession(ctx, "tenant", principal, internalmanagedagent.CreateSessionInput{Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session-capability", ProviderKind: "codex", EnvironmentLeaseID: "lease-capability", McpServerRefs: []internalmanagedagent.McpServerRef{{ServerID: runtimeMCP.ServerID, Version: runtimeMCP.Version, Digest: runtimeMCP.Digest}}, SkillBundleRefs: []internalmanagedagent.SkillBundleRef{{BundleID: runtimeSkill.BundleID, Version: runtimeSkill.Version, Digest: runtimeSkill.Digest}}, Mutation: internalmanagedagent.Mutation{RequestID: "request-session-capability", IdempotencyKey: "session-capability-key-01"}}); err != nil {
+		t.Fatalf("create capability session: %v", err)
+	}
+	principal, err = verifier.Verify(adminToken, authn.VerificationRequest{TenantID: "tenant", ResourceLevel: "project", ResourceID: "project", RequiredPermission: "projects.act"})
+	if err != nil {
+		t.Fatalf("verify runtime read principal: %v", err)
+	}
+	runtimeSession, err := store.GetManagedAgentSessionForExecution(ctx, "tenant", principal, "project", "session-capability")
+	if err != nil || len(runtimeSession.CapabilityBindings) != 2 || runtimeSession.CapabilityManifestDigest == "" {
+		t.Fatalf("resolve runtime capabilities: bindings=%d digest=%q err=%v", len(runtimeSession.CapabilityBindings), runtimeSession.CapabilityManifestDigest, err)
+	}
+	if runtimeSession.CapabilityBindings[0].GetCredentialRef() != "credential-runtime" || !runtimeSession.CapabilityBindings[1].GetReadOnly() {
+		t.Fatalf("runtime capability binding leaked or malformed: %+v", runtimeSession.CapabilityBindings)
+	}
+	principal, err = verifier.Verify(adminToken, authn.VerificationRequest{TenantID: "tenant", ResourceLevel: "project", ResourceID: "project", RequiredPermission: "projects.act"})
+	if err != nil {
+		t.Fatalf("verify capability event principal: %v", err)
+	}
+	if err := store.RecordManagedAgentCapabilityEvent(ctx, "tenant", principal, internalmanagedagent.CapabilityEventInput{
+		Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session-capability", TurnID: "turn-capability", ExecutionID: "execution-capability", Generation: 1,
+		Operation: "mcp.call", Resource: internalmanagedagent.ResourceMcpServer, ResourceID: runtimeMCP.ServerID, Version: runtimeMCP.Version, Digest: runtimeMCP.Digest, Result: "accepted",
+		MutationDigest: "sha256:" + strings.Repeat("1", 64), InputDigest: "sha256:" + strings.Repeat("2", 64),
+	}); err != nil {
+		t.Fatalf("append capability event: %v", err)
+	}
+	principal, err = verifier.Verify(adminToken, authn.VerificationRequest{TenantID: "tenant", ResourceLevel: "project", ResourceID: "project", RequiredPermission: "projects.act"})
+	if err != nil {
+		t.Fatalf("verify capability event replay principal: %v", err)
+	}
+	if err := store.RecordManagedAgentCapabilityEvent(ctx, "tenant", principal, internalmanagedagent.CapabilityEventInput{
+		Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session-capability", TurnID: "turn-capability", ExecutionID: "execution-capability", Generation: 1,
+		Operation: "mcp.call", Resource: internalmanagedagent.ResourceMcpServer, ResourceID: runtimeMCP.ServerID, Version: runtimeMCP.Version, Digest: runtimeMCP.Digest, Result: "accepted",
+		MutationDigest: "sha256:" + strings.Repeat("1", 64), InputDigest: "sha256:" + strings.Repeat("2", 64),
+	}); err != nil {
+		t.Fatalf("replay capability event: %v", err)
+	}
+	eventsPrincipal, err := verifier.Verify(adminToken, authn.VerificationRequest{TenantID: "tenant", ResourceLevel: "project", ResourceID: "project", RequiredPermission: "projects.get"})
+	if err != nil {
+		t.Fatalf("verify capability event read principal: %v", err)
+	}
+	events, err := store.GetManagedAgentEvents(ctx, "tenant", eventsPrincipal, "project", "session-capability", internalmanagedagent.EventCursor{}, 64)
+	if err != nil {
+		t.Fatalf("read capability event: %v", err)
+	}
+	foundCapabilityEvent := false
+	capabilityEventCount := 0
+	for _, event := range events.Events {
+		if event.Operation == "mcp.call" && event.Resource == internalmanagedagent.ResourceMcpServer && event.ServerID == runtimeMCP.ServerID && event.Version == runtimeMCP.Version && event.Digest == runtimeMCP.Digest {
+			foundCapabilityEvent = true
+			capabilityEventCount++
+		}
+	}
+	if !foundCapabilityEvent || capabilityEventCount != 1 {
+		t.Fatalf("capability event was not durable: %+v", events.Events)
+	}
+	if _, err := admin.RevokeAdminMcpServer(ctx, "tenant", "project", runtimeMCP.ServerID, "request-mcp-runtime-revoke", "mcp-runtime-revoke-01", platform.McpServerRevokeRequest{ExpectedResourceVersion: "1", ReasonCode: "security"}); err != nil {
+		t.Fatalf("revoke runtime MCP Server: %v", err)
+	}
+	principal, err = verifier.Verify(adminToken, authn.VerificationRequest{TenantID: "tenant", ResourceLevel: "project", ResourceID: "project", RequiredPermission: "projects.act"})
+	if err != nil {
+		t.Fatalf("verify revoked runtime read principal: %v", err)
+	}
+	if _, err := store.GetManagedAgentSessionForExecution(ctx, "tenant", principal, "project", "session-capability"); !errors.Is(err, postgres.ErrManagedAgentCapabilityUnavailable) {
+		t.Fatalf("revoked runtime capability status err=%v", err)
 	}
 	allowedEgress := []string{"api.openai.com"}
 	if target := os.Getenv("CLOUD_AGENTS_FOUNDATION_ALLOWED_EGRESS"); target != "" {
@@ -1106,7 +1237,7 @@ func pgErrorCode(err error) string {
 
 func foundationVerifierAndTokens(t *testing.T) (*authn.ConfiguredVerifier, string, string) {
 	verifier, tokens := foundationVerifierAndScopedTokens(t,
-		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.act snapshots.create snapshots.delete snapshots.get snapshots.list network-policies.update",
+		"projects.act projects.get profiles.act profiles.create profiles.get profiles.list sandboxes.act sandboxes.get sandboxes.list snapshots.act snapshots.create snapshots.delete snapshots.get snapshots.list network-policies.update mcp-servers.create mcp-servers.get mcp-servers.list mcp-servers.delete skill-bundles.create skill-bundles.get skill-bundles.list skill-bundles.delete",
 		"environment-profiles.list environments.create projects.act projects.get sandboxes.update",
 	)
 	return verifier, tokens[0], tokens[1]

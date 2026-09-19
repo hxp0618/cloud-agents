@@ -1,5 +1,5 @@
 import { tmpdir } from "node:os";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -127,6 +127,120 @@ describe("createCodexProvider", () => {
       expect(call?.environment.CODEX_HOME).toBe(join(root, "provider-state", "codex-home"));
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes managed MCP credentials from Codex shell inheritance", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-provider-codex-mcp-config-"));
+    const manifest = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        bindings: [
+          {
+            resourceKind: "mcp-server",
+            resourceId: "mcp-1",
+            version: "1.0.0",
+            digest: `sha256:${"a".repeat(64)}`,
+            transport: "streamable-http",
+            connectionRef: "connection-1",
+            credentialRef: "credential-1",
+            grantId: "grant-1",
+            networkPolicyRef: "network-1",
+            expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+            permissions: ["mcp.call"],
+            readOnly: false,
+          },
+        ],
+      }),
+    ).toString("base64url");
+    try {
+      const run = startCodexProviderRun(
+        {
+          execution: { id: "execution-mcp-config" },
+          workload: { provider: "codex", inputText: "hello" },
+          workspaceDirectory: root,
+          providerStateDirectory: join(root, "provider-state"),
+        },
+        { payload: { apiKey: "provider-key" } },
+        () => undefined,
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex",
+            CLOUD_AGENT_CAPABILITY_MANIFEST_B64: manifest,
+            CLOUD_AGENT_MCP_BROKER_URL: "http://127.0.0.1:4000/mcp",
+            CLOUD_AGENT_MCP_TOKEN_MCP_1: "managed-token",
+          },
+          codexToolPolicyHookCommand: "node /opt/cloud-agents/provider-host/index.mjs",
+        },
+      );
+      await run.result;
+      const call = vi.mocked(startCodexAppServerRun).mock.calls.at(-1)?.[0];
+      expect(call?.mcpServers).toEqual({
+        "cloud_agents_mcp-1": {
+          url: "http://127.0.0.1:4000/mcp",
+          bearer_token_env_var: "CLOUD_AGENT_MCP_TOKEN_MCP_1",
+        },
+      });
+      const config = readFileSync(
+        join(root, "provider-state", "codex-home", "config.toml"),
+        "utf8",
+      );
+      expect(config).toContain("[shell_environment_policy]");
+      expect(config).toContain('exclude = ["CLOUD_AGENT_MCP_TOKEN_MCP_1"]');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes only Runtime-mounted Skill roots to the pinned app-server", async () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), "cloud-agent-provider-codex-skill-"));
+    const skillParent = "/tmp/cloud-agents-skills";
+    mkdirSync(skillParent, { recursive: true });
+    const skillRoot = mkdtempSync(join(skillParent, "runtime-"));
+    const manifest = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        bindings: [
+          {
+            resourceKind: "skill-bundle",
+            resourceId: "skill-1",
+            version: "1.0.0",
+            digest: `sha256:${"b".repeat(64)}`,
+            grantId: "grant-1",
+            expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+            readOnly: true,
+          },
+        ],
+      }),
+    ).toString("base64url");
+    try {
+      const run = startCodexProviderRun(
+        {
+          execution: { id: "execution-skill" },
+          workload: { provider: "codex", inputText: "Use the managed skill." },
+          workspaceDirectory: stateRoot,
+          providerStateDirectory: join(stateRoot, "provider-state"),
+        },
+        { payload: { apiKey: "provider-key" } },
+        () => undefined,
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex",
+            CLOUD_AGENT_CAPABILITY_MANIFEST_B64: manifest,
+            CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT: skillRoot,
+          },
+          codexToolPolicyHookCommand: "node /opt/cloud-agents/provider-host/index.mjs",
+        },
+      );
+      await run.result;
+      const call = vi.mocked(startCodexAppServerRun).mock.calls.at(-1)?.[0];
+      expect(call?.skillRoots).toEqual([join(skillRoot, "skills")]);
+      expect(call?.environment.HOME).toBe(call?.environment.CODEX_HOME);
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+      rmSync(skillRoot, { recursive: true, force: true });
     }
   });
 });

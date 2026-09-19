@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
@@ -77,9 +78,11 @@ const (
 type ResourceKind string
 
 const (
-	ResourceSession   ResourceKind = "session"
-	ResourceTurn      ResourceKind = "turn"
-	ResourceExecution ResourceKind = "execution"
+	ResourceSession     ResourceKind = "session"
+	ResourceTurn        ResourceKind = "turn"
+	ResourceExecution   ResourceKind = "execution"
+	ResourceMcpServer   ResourceKind = "McpServer"
+	ResourceSkillBundle ResourceKind = "SkillBundle"
 )
 
 // Transition is an immutable state-machine edge. Initial resource creation is
@@ -148,6 +151,21 @@ type Scope struct {
 	ProjectID string
 }
 
+// McpServerRef and SkillBundleRef are the transport-neutral capability pins.
+// They contain only Control Plane identifiers; connection material and
+// credentials are resolved inside the fenced Runtime boundary.
+type McpServerRef struct {
+	ServerID string `json:"serverId"`
+	Version  string `json:"version"`
+	Digest   string `json:"digest"`
+}
+
+type SkillBundleRef struct {
+	BundleID string `json:"bundleId"`
+	Version  string `json:"version"`
+	Digest   string `json:"digest"`
+}
+
 // Mutation identifies a caller retry. The request digest is derived from the
 // typed input inside the kernel; callers cannot supply or override it.
 type Mutation struct {
@@ -169,6 +187,8 @@ type CreateSessionInput struct {
 	SandboxGeneration         uint64
 	EnvironmentProfileID      string
 	EnvironmentProfileVersion uint64
+	McpServerRefs             []McpServerRef
+	SkillBundleRefs           []SkillBundleRef
 	Mutation                  Mutation
 }
 
@@ -187,12 +207,14 @@ type CreateTurnInput struct {
 }
 
 type CreateExecutionInput struct {
-	Scope       Scope
-	SessionID   string
-	TurnID      string
-	ExecutionID string
-	Generation  uint64
-	Mutation    Mutation
+	Scope           Scope
+	SessionID       string
+	TurnID          string
+	ExecutionID     string
+	Generation      uint64
+	McpServerRefs   []McpServerRef
+	SkillBundleRefs []SkillBundleRef
+	Mutation        Mutation
 }
 
 type StartExecutionInput struct {
@@ -269,6 +291,8 @@ type SessionSnapshot struct {
 	SandboxGeneration         uint64
 	EnvironmentProfileID      string
 	EnvironmentProfileVersion uint64
+	McpServerRefs             []McpServerRef
+	SkillBundleRefs           []SkillBundleRef
 	State                     SessionState
 	Version                   uint64
 	CreatedAt                 time.Time
@@ -290,6 +314,8 @@ type RuntimeSessionSnapshot struct {
 	FoundationRuntimeOperation  string
 	FoundationRuntimeSpecDigest string
 	FoundationSandboxReady      bool
+	CapabilityBindings          []*workerruntimev1alpha1.RuntimeCapabilityBinding
+	CapabilityManifestDigest    string
 }
 
 type TurnSnapshot struct {
@@ -310,6 +336,8 @@ type ExecutionSnapshot struct {
 	TurnID                         string
 	ExecutionID                    string
 	Generation                     uint64
+	McpServerRefs                  []McpServerRef
+	SkillBundleRefs                []SkillBundleRef
 	AttemptNumber                  uint64
 	State                          ExecutionState
 	ResultDigest                   string
@@ -415,6 +443,9 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 	if err := validateSessionBinding(input); err != nil {
 		return SessionSnapshot{}, err
 	}
+	if err := validateCapabilityRefs(input.McpServerRefs, input.SkillBundleRefs); err != nil {
+		return SessionSnapshot{}, err
+	}
 	if err := input.Mutation.validate(); err != nil {
 		return SessionSnapshot{}, err
 	}
@@ -423,6 +454,7 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 		SessionID: input.SessionID, ProviderKind: input.ProviderKind, EnvironmentLeaseID: input.EnvironmentLeaseID,
 		WorkspaceID: input.WorkspaceID, SandboxID: input.SandboxID, SandboxGeneration: input.SandboxGeneration,
 		EnvironmentProfileID: input.EnvironmentProfileID, EnvironmentProfileVersion: input.EnvironmentProfileVersion,
+		McpServerRefs: input.McpServerRefs, SkillBundleRefs: input.SkillBundleRefs,
 	})
 	record, err := store.mutate(ctx, input.Scope, "session.create", input.Mutation, digest, func(now time.Time) (mutationRecord, error) {
 		key := sessionKey{scope: input.Scope, id: input.SessionID}
@@ -438,6 +470,7 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 			EnvironmentLeaseID: input.EnvironmentLeaseID, EnvironmentGeneration: environmentGeneration,
 			WorkspaceID: input.WorkspaceID, SandboxID: input.SandboxID, SandboxGeneration: input.SandboxGeneration,
 			EnvironmentProfileID: input.EnvironmentProfileID, EnvironmentProfileVersion: input.EnvironmentProfileVersion,
+			McpServerRefs: append([]McpServerRef(nil), input.McpServerRefs...), SkillBundleRefs: append([]SkillBundleRef(nil), input.SkillBundleRefs...),
 			State: SessionActive, Version: 1, CreatedAt: now, UpdatedAt: now,
 		}
 		store.sessions[key] = sessionRecord{snapshot: snapshot}
@@ -554,12 +587,16 @@ func (store *Store) CreateExecution(ctx context.Context, input CreateExecutionIn
 	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation); err != nil {
 		return ExecutionSnapshot{}, err
 	}
+	if err := validateCapabilityRefs(input.McpServerRefs, input.SkillBundleRefs); err != nil {
+		return ExecutionSnapshot{}, err
+	}
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionSnapshot{}, err
 	}
 	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
+		McpServerRefs: input.McpServerRefs, SkillBundleRefs: input.SkillBundleRefs,
 	})
 	record, err := store.mutate(ctx, input.Scope, "execution.create", input.Mutation, digest, func(now time.Time) (mutationRecord, error) {
 		sessionKey := sessionKey{scope: input.Scope, id: input.SessionID}
@@ -588,6 +625,7 @@ func (store *Store) CreateExecution(ctx context.Context, input CreateExecutionIn
 		snapshot := ExecutionSnapshot{
 			Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 			ExecutionID: input.ExecutionID, Generation: input.Generation, State: ExecutionQueued,
+			McpServerRefs: append([]McpServerRef(nil), input.McpServerRefs...), SkillBundleRefs: append([]SkillBundleRef(nil), input.SkillBundleRefs...),
 			Version: 1, CreatedAt: now, UpdatedAt: now,
 		}
 		store.executions[key] = executionRecord{snapshot: snapshot}
@@ -1017,6 +1055,9 @@ func SessionCreateMutationDigest(input CreateSessionInput) (string, error) {
 	if err := validateSessionBinding(input); err != nil {
 		return "", err
 	}
+	if err := validateCapabilityRefs(input.McpServerRefs, input.SkillBundleRefs); err != nil {
+		return "", err
+	}
 	if err := input.Mutation.validate(); err != nil {
 		return "", err
 	}
@@ -1025,6 +1066,7 @@ func SessionCreateMutationDigest(input CreateSessionInput) (string, error) {
 		SessionID: input.SessionID, ProviderKind: input.ProviderKind, EnvironmentLeaseID: input.EnvironmentLeaseID,
 		WorkspaceID: input.WorkspaceID, SandboxID: input.SandboxID, SandboxGeneration: input.SandboxGeneration,
 		EnvironmentProfileID: input.EnvironmentProfileID, EnvironmentProfileVersion: input.EnvironmentProfileVersion,
+		McpServerRefs: input.McpServerRefs, SkillBundleRefs: input.SkillBundleRefs,
 	}), nil
 }
 
@@ -1106,9 +1148,13 @@ func ExecutionCreateMutationDigest(input CreateExecutionInput) (string, error) {
 	if err := input.Mutation.validate(); err != nil {
 		return "", err
 	}
+	if err := validateCapabilityRefs(input.McpServerRefs, input.SkillBundleRefs); err != nil {
+		return "", err
+	}
 	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
+		McpServerRefs: input.McpServerRefs, SkillBundleRefs: input.SkillBundleRefs,
 	}), nil
 }
 
@@ -1309,6 +1355,51 @@ func validateDigest(value, field string) error {
 	return nil
 }
 
+func validateCapabilityRefs(mcp []McpServerRef, skills []SkillBundleRef) error {
+	if len(mcp) > 32 || len(skills) > 32 {
+		return fmt.Errorf("%w: capability refs", ErrInvalidInput)
+	}
+	seen := make(map[string]struct{}, len(mcp)+len(skills))
+	for index, ref := range mcp {
+		if err := validateIdentifier(ref.ServerID, maxIdentifierBytes, fmt.Sprintf("mcp server ref %d id", index)); err != nil {
+			return err
+		}
+		if err := validateIdentifier(ref.Version, maxIdentifierBytes, fmt.Sprintf("mcp server ref %d version", index)); err != nil {
+			return err
+		}
+		if err := validateDigest(ref.Digest, fmt.Sprintf("mcp server ref %d digest", index)); err != nil {
+			return err
+		}
+		key := "mcp\x00" + ref.ServerID + "\x00" + ref.Version + "\x00" + ref.Digest
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("%w: duplicate capability ref", ErrInvalidInput)
+		}
+		seen[key] = struct{}{}
+	}
+	for index, ref := range skills {
+		if err := validateIdentifier(ref.BundleID, maxIdentifierBytes, fmt.Sprintf("skill bundle ref %d id", index)); err != nil {
+			return err
+		}
+		if err := validateIdentifier(ref.Version, maxIdentifierBytes, fmt.Sprintf("skill bundle ref %d version", index)); err != nil {
+			return err
+		}
+		if err := validateDigest(ref.Digest, fmt.Sprintf("skill bundle ref %d digest", index)); err != nil {
+			return err
+		}
+		key := "skill\x00" + ref.BundleID + "\x00" + ref.Version + "\x00" + ref.Digest
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("%w: duplicate capability ref", ErrInvalidInput)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+// ValidateCapabilityRefs is the shared Control Plane/Runtime boundary check.
+func ValidateCapabilityRefs(mcp []McpServerRef, skills []SkillBundleRef) error {
+	return validateCapabilityRefs(mcp, skills)
+}
+
 func validateErrorCode(value string) error {
 	if len(value) == 0 || len(value) > 64 {
 		return fmt.Errorf("%w: error code", ErrInvalidInput)
@@ -1384,26 +1475,28 @@ type mutationRecord struct {
 }
 
 type mutationDigestInput struct {
-	Operation                 string `json:"operation"`
-	TenantID                  string `json:"tenant_id"`
-	ProjectID                 string `json:"project_id"`
-	SessionID                 string `json:"session_id,omitempty"`
-	TurnID                    string `json:"turn_id,omitempty"`
-	ExecutionID               string `json:"execution_id,omitempty"`
-	TargetExecutionID         string `json:"target_execution_id,omitempty"`
-	ProviderKind              string `json:"provider_kind,omitempty"`
-	EnvironmentLeaseID        string `json:"environment_lease_id,omitempty"`
-	WorkspaceID               string `json:"workspace_id,omitempty"`
-	SandboxID                 string `json:"sandbox_id,omitempty"`
-	SandboxGeneration         uint64 `json:"sandbox_generation,omitempty"`
-	EnvironmentProfileID      string `json:"environment_profile_id,omitempty"`
-	EnvironmentProfileVersion uint64 `json:"environment_profile_version,omitempty"`
-	Generation                uint64 `json:"generation,omitempty"`
-	InputDigest               string `json:"input_digest,omitempty"`
-	ResultDigest              string `json:"result_digest,omitempty"`
-	ProviderResumeCursor      string `json:"provider_resume_cursor,omitempty"`
-	ErrorCode                 string `json:"error_code,omitempty"`
-	ExecutionBindingDigest    string `json:"execution_binding_digest,omitempty"`
+	Operation                 string           `json:"operation"`
+	TenantID                  string           `json:"tenant_id"`
+	ProjectID                 string           `json:"project_id"`
+	SessionID                 string           `json:"session_id,omitempty"`
+	TurnID                    string           `json:"turn_id,omitempty"`
+	ExecutionID               string           `json:"execution_id,omitempty"`
+	TargetExecutionID         string           `json:"target_execution_id,omitempty"`
+	ProviderKind              string           `json:"provider_kind,omitempty"`
+	EnvironmentLeaseID        string           `json:"environment_lease_id,omitempty"`
+	WorkspaceID               string           `json:"workspace_id,omitempty"`
+	SandboxID                 string           `json:"sandbox_id,omitempty"`
+	SandboxGeneration         uint64           `json:"sandbox_generation,omitempty"`
+	EnvironmentProfileID      string           `json:"environment_profile_id,omitempty"`
+	EnvironmentProfileVersion uint64           `json:"environment_profile_version,omitempty"`
+	Generation                uint64           `json:"generation,omitempty"`
+	InputDigest               string           `json:"input_digest,omitempty"`
+	ResultDigest              string           `json:"result_digest,omitempty"`
+	ProviderResumeCursor      string           `json:"provider_resume_cursor,omitempty"`
+	ErrorCode                 string           `json:"error_code,omitempty"`
+	McpServerRefs             []McpServerRef   `json:"mcp_server_refs,omitempty"`
+	SkillBundleRefs           []SkillBundleRef `json:"skill_bundle_refs,omitempty"`
+	ExecutionBindingDigest    string           `json:"execution_binding_digest,omitempty"`
 }
 
 func digestMutation(input mutationDigestInput) string {

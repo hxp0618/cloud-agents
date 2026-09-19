@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/skill-bundle.schema.json",
+  "title": "SkillBundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SkillBundle" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "version", "digest", "sourceRef", "signatureRef", "signingKeyId", "compatibleProviders", "mountReadOnly", "status"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "version": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "sourceRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "signatureRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "signingKeyId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "compatibleProviders": { "type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": { "enum": ["codex", "claude-code", "pi", "deepseek-harness"] } },
+        "mountReadOnly": { "const": true },
+        "status": { "enum": ["active", "revoked"] },
+        "revokedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "sourceRef and signatureRef are opaque references; source bytes and signatures are never returned by Admin or persisted in a Session",
+    "the Runtime verifies signature and digest before mounting an immutable read-only bundle",
+    "a revoked Skill Bundle is rejected before load and cannot be rebound"
+  ]
+}

@@ -38,6 +38,7 @@ type workerWireFake struct {
 	blockReady       bool
 	blockNegotiate   bool
 	runtimeErrorCode string
+	runtimeStreamErr connect.Code
 }
 
 func (fake *workerWireFake) Negotiate(ctx context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
@@ -109,7 +110,11 @@ func (fake *workerWireFake) OpenSession(ctx context.Context, stream *connect.Bid
 	}
 	fake.mu.Lock()
 	runtimeErrorCode := fake.runtimeErrorCode
+	runtimeStreamErr := fake.runtimeStreamErr
 	fake.mu.Unlock()
+	if runtimeStreamErr != connect.Code(0) {
+		return connect.NewError(runtimeStreamErr, errors.New("runtime stream interrupted"))
+	}
 	if runtimeErrorCode != "" {
 		return stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Error{Error: &workerruntimev1alpha1.RuntimeSessionError{Code: runtimeErrorCode, Message: "Runtime command failed"}}})
 	}
@@ -231,6 +236,25 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	_ = failingSession.CloseRequest()
 	_ = failingSession.CloseResponse()
 	fake.mu.Lock()
+	fake.runtimeErrorCode = ""
+	fake.runtimeStreamErr = connect.CodeInternal
+	fake.mu.Unlock()
+	interruptedSession, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-interrupted", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	interruptedCommand := command
+	interruptedCommand.ExecutionID = "execution-interrupted"
+	if err := interruptedSession.Send(context.Background(), interruptedCommand); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := interruptedSession.Receive(); !errors.Is(err, ErrRuntimeProcessUnavailable) {
+		t.Fatalf("runtime stream interruption = %v", err)
+	}
+	_ = interruptedSession.CloseRequest()
+	_ = interruptedSession.CloseResponse()
+	fake.mu.Lock()
+	fake.runtimeStreamErr = connect.Code(0)
 	fake.blockReady = true
 	fake.mu.Unlock()
 	supervisor.readyTimeout = 20 * time.Millisecond

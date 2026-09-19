@@ -7,7 +7,9 @@ import {
   SessionManager,
   SettingsManager,
   createAgentSession,
+  loadSkillsFromDir,
   type AgentSession,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
@@ -20,6 +22,11 @@ import {
   reconstructedPrompt,
   requireProviderOuterSandboxProfile,
   validateRunnerInput,
+  managedSkillBundleDirectories,
+  isManagedSkillBundlePath,
+  ManagedCapabilityUnavailableError,
+  readCapabilityManifest,
+  type RuntimeCapabilityBinding,
   type ProviderRunController,
   type ProviderRunExecutor,
   type ProviderRunOptions,
@@ -27,6 +34,11 @@ import {
   type RunnerInput,
   type RunnerMessage,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
+import {
+  createManagedPiMcpTools,
+  type ManagedPiMcpToolMetadata,
+  type ManagedPiMcpTools,
+} from "./managedMcpTools";
 
 export const PI_PROVIDER_KIND = "pi" as const;
 const PI_VERSION = "0.85.1";
@@ -51,6 +63,8 @@ type PiSessionFactoryOptions = Readonly<{
   sessionManager: SessionManager;
   model: string;
   apiKey: string;
+  skillDirectories?: ReadonlyArray<string>;
+  customTools?: ReadonlyArray<ToolDefinition>;
 }>;
 
 type PiRunOptions = ProviderRunOptions & {
@@ -63,7 +77,9 @@ export function startPiProviderRun(
   emit: (message: RunnerMessage) => void,
   options: PiRunOptions = {},
 ): ProviderRunController {
-  validateRunnerInput(input, { allowEmptyInputText: options.operation !== undefined });
+  validateRunnerInput(input, {
+    allowEmptyInputText: options.operation !== undefined,
+  });
   if (input.workload.provider.trim().toLowerCase() !== PI_PROVIDER_KIND)
     throw new Error(`Pi Provider cannot execute provider ${input.workload.provider}.`);
   requireProviderOuterSandboxProfile(options.environment ?? process.env);
@@ -74,6 +90,13 @@ export function startPiProviderRun(
     credential,
     applyPiCredentialEnvironment,
   );
+  const capabilityManifest = readCapabilityManifest(options.environment ?? process.env);
+  const skillDirectories = managedSkillBundleDirectories(
+    capabilityManifest,
+    options.environment ?? process.env,
+  );
+  const skillBindings =
+    capabilityManifest?.bindings.filter((binding) => binding.resourceKind === "skill-bundle") ?? [];
   const stateRoot = effectiveInput.providerStateDirectory?.trim();
   if (!stateRoot) throw new Error("Pi Provider requires providerStateDirectory.");
   const model = effectiveInput.workload.model?.trim();
@@ -92,11 +115,16 @@ export function startPiProviderRun(
     emit,
   });
   let session: PiSession | undefined;
+  let managedMcpTools: ManagedPiMcpTools | undefined;
   let cursor: string | undefined;
   let interrupted = false;
 
   const result = (async (): Promise<Extract<RunnerMessage, { type: "result" }>> => {
     try {
+      managedMcpTools = await createManagedPiMcpTools(
+        capabilityManifest,
+        options.environment ?? process.env,
+      );
       const requestedCursor = stringValue(effectiveInput.providerResumeCursor);
       let resumed = requestedCursor !== undefined;
       try {
@@ -113,6 +141,8 @@ export function startPiProviderRun(
             : SessionManager.create(effectiveInput.workspaceDirectory, sessionDirectory),
           model,
           apiKey,
+          ...(skillDirectories.length ? { skillDirectories } : {}),
+          ...(managedMcpTools.tools.length ? { customTools: managedMcpTools.tools } : {}),
         });
       } catch (error) {
         if (
@@ -144,10 +174,18 @@ export function startPiProviderRun(
           ),
           model,
           apiKey,
+          ...(skillDirectories.length ? { skillDirectories } : {}),
+          ...(managedMcpTools.tools.length ? { customTools: managedMcpTools.tools } : {}),
         });
       }
+      emitPiSkillLoadEvents(skillBindings, emit);
       session.subscribe((event) =>
-        handlePiEvent(event as unknown as Record<string, unknown>, generatedFiles, emit),
+        handlePiEvent(
+          event as unknown as Record<string, unknown>,
+          generatedFiles,
+          managedMcpTools?.metadataByToolName,
+          emit,
+        ),
       );
       if (interrupted) {
         await session.abort();
@@ -183,6 +221,7 @@ export function startPiProviderRun(
       throw new Error(redact(error instanceof Error ? error.message : String(error)));
     } finally {
       session?.dispose();
+      managedMcpTools?.close();
     }
   })();
 
@@ -195,6 +234,7 @@ export function startPiProviderRun(
     forceStop() {
       interrupted = true;
       session?.dispose();
+      managedMcpTools?.close();
     },
     getResumeCursor: () => cursor,
     steer(payload) {
@@ -204,6 +244,29 @@ export function startPiProviderRun(
       return session.steer(text);
     },
   };
+}
+
+function emitPiSkillLoadEvents(
+  bindings: ReadonlyArray<RuntimeCapabilityBinding>,
+  emit: (message: RunnerMessage) => void,
+): void {
+  bindings.forEach((binding, index) => {
+    const itemId = `skill-load-${index + 1}`;
+    for (const status of ["inProgress", "completed"] as const) {
+      emit({
+        type: "event",
+        eventType: "runtime.provider.activity",
+        payload: {
+          provider: PI_PROVIDER_KIND,
+          itemType: "skill",
+          itemId,
+          status,
+          capabilityResourceId: binding.resourceId,
+          supportMode: "native",
+        },
+      });
+    }
+  });
 }
 
 export function createPiProvider(): CloudAgentProviderPluginV1 {
@@ -244,12 +307,28 @@ async function createPiSession(options: PiSessionFactoryOptions): Promise<PiSess
     },
     { projectTrusted: false },
   );
+  const skills = (options.skillDirectories ?? []).flatMap((directory) => {
+    const resolved = realpathSync(directory);
+    if (!isManagedSkillBundlePath(resolved) || (statSync(resolved).mode & 0o222) !== 0) {
+      throw new ManagedCapabilityUnavailableError(
+        "Pi Skill Bundle mount must be an immutable Runtime path.",
+      );
+    }
+    const loaded = loadSkillsFromDir({
+      dir: resolved,
+      source: "cloud-agents-managed",
+    });
+    if (loaded.diagnostics.length)
+      throw new ManagedCapabilityUnavailableError("Pi Skill Bundle failed validation.");
+    return loaded.skills;
+  });
   const resourceLoader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.agentDirectory,
     settingsManager,
     noExtensions: true,
     noSkills: true,
+    skillsOverride: () => ({ skills, diagnostics: [] }),
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: true,
@@ -264,7 +343,14 @@ async function createPiSession(options: PiSessionFactoryOptions): Promise<PiSess
       sessionManager: options.sessionManager,
       settingsManager,
       resourceLoader,
-      tools: ["read", "bash", "edit", "write"],
+      ...(options.customTools?.length ? { customTools: [...options.customTools] } : {}),
+      tools: [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        ...(options.customTools?.map((tool) => tool.name) ?? []),
+      ],
     })
   ).session;
 }
@@ -334,6 +420,7 @@ function withCredentialModel(input: RunnerInput, credential: RunnerCredential | 
 function handlePiEvent(
   event: Record<string, unknown>,
   generatedFiles: WorkspaceGeneratedFileCollector,
+  managedMcpTools: ReadonlyMap<string, ManagedPiMcpToolMetadata> | undefined,
   emit: (message: RunnerMessage) => void,
 ): void {
   const type = stringValue(event.type);
@@ -351,6 +438,7 @@ function handlePiEvent(
   }
   if (type !== "tool_execution_start" && type !== "tool_execution_end") return;
   const toolName = stringValue(event.toolName) ?? "tool";
+  const managedMcpTool = managedMcpTools?.get(toolName);
   const itemId = stringValue(event.toolCallId) ?? toolName;
   const args = recordValue(event.args);
   if (type === "tool_execution_start" && /^(?:edit|write)$/iu.test(toolName))
@@ -360,7 +448,7 @@ function handlePiEvent(
     eventType: "runtime.provider.activity",
     payload: {
       provider: PI_PROVIDER_KIND,
-      itemType: toolName,
+      itemType: managedMcpTool ? "mcp" : toolName,
       itemId,
       status:
         type === "tool_execution_start"
@@ -368,6 +456,12 @@ function handlePiEvent(
           : event.isError === true
             ? "failed"
             : "completed",
+      ...(managedMcpTool
+        ? {
+            capabilityResourceId: managedMcpTool.capabilityResourceId,
+            supportMode: "emulated" as const,
+          }
+        : {}),
     },
   });
 }

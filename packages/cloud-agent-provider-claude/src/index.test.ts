@@ -27,7 +27,9 @@ describe("createClaudeProvider", () => {
   });
 
   it("accepts deployment credential aliases and uses its model as a default", async () => {
-    const root = mkdtempSync(join(tmpdir(), "cloud-agent-provider-claude-credential-"));
+    const root = mkdtempSync(
+      join(tmpdir(), "cloud-agent-provider-claude-credential-"),
+    );
     try {
       const run = startClaudeProviderRun(
         {
@@ -45,7 +47,8 @@ describe("createClaudeProvider", () => {
         () => undefined,
         {
           environment: {
-            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE:
+              "single-tenant-trusted-v1",
             CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent",
           },
         },
@@ -53,8 +56,61 @@ describe("createClaudeProvider", () => {
       await run.result;
       const call = vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0];
       expect(call?.input.workload.model).toBe("claude-test");
-      expect(call?.environment.ANTHROPIC_BASE_URL).toBe("https://provider.example");
+      expect(call?.environment.ANTHROPIC_BASE_URL).toBe(
+        "https://provider.example",
+      );
       expect(call?.environment.CLAUDE_CODE_EFFORT_LEVEL).toBe("unset");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes only Host-mounted Skill Bundles to the pinned Claude SDK", async () => {
+    const root = mkdtempSync(
+      join(tmpdir(), "cloud-agent-provider-claude-skill-"),
+    );
+    const digest = `sha256:${"a".repeat(64)}`;
+    const manifest = {
+      version: 1,
+      bindings: [
+        {
+          resourceKind: "skill-bundle",
+          resourceId: "skill-1",
+          version: "v1",
+          digest,
+          grantId: "grant-1",
+          expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+          readOnly: true,
+        },
+      ],
+    };
+    try {
+      const run = startClaudeProviderRun(
+        {
+          execution: { id: "execution-skill" },
+          workload: { provider: "claudeAgent", inputText: "hello" },
+          workspaceDirectory: root,
+        },
+        { payload: { apiKey: "provider-key" } },
+        () => undefined,
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE:
+              "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent",
+            CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(
+              JSON.stringify({ ...manifest, digest }),
+            ).toString("base64url"),
+            CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT:
+              "/run/cloud-agents/skills/skill-1",
+          },
+        },
+      );
+      await run.result;
+      expect(
+        vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0]
+          .skillDirectories,
+      ).toEqual(["/run/cloud-agents/skills/skill-1"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -536,6 +536,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-reco
         "database-time RemoteWorker online, degraded and offline Admin projection without secret or certificate bytes",
         "server-owned RemoteWorker DeploymentTarget unprobed, ready, offline, reconnect and revoked projection",
         "managed Agent checkpoint recovery with expired-claim takeover, stale-writer fencing and side-effect reconciliation",
+        "redacted MCP capability admission event append/read and exact idempotent replay",
       ],
       boundary:
         "Disposable PostgreSQL, in-process Control Plane HTTPS/mTLS and short-lived outbound RemoteWorker processes; Drain/Resume changes node scheduling state only, and no customer-node Sandbox workload or external Controller is started",

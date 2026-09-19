@@ -74,7 +74,7 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxFile(ctx context.Cont
 				access.RuntimeSpecDigest, input.Action, input.Path, readOffset, readLimit, readVersion,
 				writeContent, input.RequestID), &result)
 		})
-		if !isRemoteWorkerSandboxFileDeadlock(err) || attempt >= 2 {
+		if !isRemoteWorkerCommandDeadlock(err) || attempt >= 2 {
 			break
 		}
 		timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
@@ -113,7 +113,7 @@ func (store *AccessGatewayStore) ExecuteRemoteWorkerSandboxFile(ctx context.Cont
 	return result.Receipt, nil
 }
 
-func isRemoteWorkerSandboxFileDeadlock(err error) bool {
+func isRemoteWorkerCommandDeadlock(err error) bool {
 	var postgresError *pgconn.PgError
 	return errors.As(err, &postgresError) && postgresError.Code == "40P01"
 }

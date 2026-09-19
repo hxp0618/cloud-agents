@@ -214,6 +214,13 @@ function safeProviderDetail(
 ): Record<string, unknown> {
   const provider = stringValue(payload.provider);
   const detail: Record<string, unknown> = provider ? { provider: boundedString(provider, 80) } : {};
+  const capabilityResourceId = stringValue(payload.capabilityResourceId);
+  if (
+    capabilityResourceId &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$/u.test(capabilityResourceId)
+  ) {
+    detail.capabilityResourceId = capabilityResourceId;
+  }
   if (payload.supportMode === "native" || payload.supportMode === "emulated") {
     detail.supportMode = payload.supportMode;
   }

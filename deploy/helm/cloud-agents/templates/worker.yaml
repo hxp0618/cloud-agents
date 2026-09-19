@@ -67,6 +67,10 @@ spec:
             - {{ .Values.runtime.maxSessions | quote }}
             - --provider-credential-directory
             - /run/cloud-agents/provider-credentials
+            {{- if .Values.runtime.capabilityMaterializationSecretName }}
+            - --capability-materialization-directory
+            - /run/cloud-agents/capabilities
+            {{- end }}
           env:
             - name: CLOUD_AGENTS_ADMISSION_LEASE_ID
               valueFrom:
@@ -113,6 +117,13 @@ spec:
             - name: provider-credentials
               mountPath: /run/cloud-agents/provider-credentials
               readOnly: true
+            {{- if .Values.runtime.capabilityMaterializationSecretName }}
+            - name: capability-materialization
+              mountPath: /run/cloud-agents/capabilities
+              readOnly: true
+            - name: skill-runtime
+              mountPath: /run/cloud-agents/skills
+            {{- end }}
       volumes:
         - name: tls
           secret:
@@ -125,4 +136,13 @@ spec:
         - name: provider-credentials
           secret:
             secretName: {{ .Values.runtime.credentialSecretName }}
+        {{- if .Values.runtime.capabilityMaterializationSecretName }}
+        - name: capability-materialization
+          secret:
+            secretName: {{ .Values.runtime.capabilityMaterializationSecretName }}
+            defaultMode: 0600
+        - name: skill-runtime
+          emptyDir:
+            medium: Memory
+        {{- end }}
 {{- end }}

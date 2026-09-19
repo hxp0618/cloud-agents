@@ -73,7 +73,7 @@ func TestLifecycleHappyPathAndIdempotentReplay(t *testing.T) {
 		t.Fatalf("session = %#v", session)
 	}
 	replayedSession, err := store.CreateSession(ctx, sessionInput)
-	if err != nil || replayedSession != session {
+	if err != nil || !reflect.DeepEqual(replayedSession, session) {
 		t.Fatalf("session replay = %#v / %v", replayedSession, err)
 	}
 
@@ -475,7 +475,7 @@ func TestLifecycleConcurrentIdempotentCreateIsSingleResult(t *testing.T) {
 		if first.SessionID == "" {
 			first = result
 		}
-		if result != first {
+		if !reflect.DeepEqual(result, first) {
 			t.Fatalf("concurrent result drift: %#v vs %#v", result, first)
 		}
 	}

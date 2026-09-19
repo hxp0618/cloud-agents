@@ -2,11 +2,15 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
@@ -14,6 +18,7 @@ import (
 )
 
 var ErrManagedAgentSessionNotFound = errors.New("managed agent session was not found")
+var ErrManagedAgentCapabilityUnavailable = errors.New("managed agent capability is unavailable")
 
 type ManagedAgentSessionPage struct {
 	Sessions      []internalmanagedagent.SessionSnapshot
@@ -21,34 +26,37 @@ type ManagedAgentSessionPage struct {
 }
 
 type managedAgentSessionPageRow struct {
-	TenantID                  string    `json:"tenant_id"`
-	ProjectID                 string    `json:"project_uid"`
-	SessionID                 string    `json:"session_uid"`
-	ProviderKind              string    `json:"provider_kind"`
-	EnvironmentLeaseID        *string   `json:"environment_lease_uid"`
-	EnvironmentGeneration     *int64    `json:"environment_generation"`
-	WorkspaceID               *string   `json:"workspace_uid"`
-	SandboxID                 *string   `json:"sandbox_uid"`
-	SandboxGeneration         *int64    `json:"sandbox_generation"`
-	EnvironmentProfileID      *string   `json:"environment_profile_uid"`
-	EnvironmentProfileVersion *int64    `json:"environment_profile_version"`
-	State                     string    `json:"state"`
-	ResourceVersion           int64     `json:"resource_version"`
-	CreatedAt                 time.Time `json:"created_at"`
-	UpdatedAt                 time.Time `json:"updated_at"`
+	TenantID                  string                                `json:"tenant_id"`
+	ProjectID                 string                                `json:"project_uid"`
+	SessionID                 string                                `json:"session_uid"`
+	ProviderKind              string                                `json:"provider_kind"`
+	EnvironmentLeaseID        *string                               `json:"environment_lease_uid"`
+	EnvironmentGeneration     *int64                                `json:"environment_generation"`
+	WorkspaceID               *string                               `json:"workspace_uid"`
+	SandboxID                 *string                               `json:"sandbox_uid"`
+	SandboxGeneration         *int64                                `json:"sandbox_generation"`
+	EnvironmentProfileID      *string                               `json:"environment_profile_uid"`
+	EnvironmentProfileVersion *int64                                `json:"environment_profile_version"`
+	State                     string                                `json:"state"`
+	ResourceVersion           int64                                 `json:"resource_version"`
+	CreatedAt                 time.Time                             `json:"created_at"`
+	UpdatedAt                 time.Time                             `json:"updated_at"`
+	McpServerRefs             []internalmanagedagent.McpServerRef   `json:"mcp_server_refs"`
+	SkillBundleRefs           []internalmanagedagent.SkillBundleRef `json:"skill_bundle_refs"`
 }
 
 const (
 	createManagedAgentSessionSQL = `SELECT session_uid, provider_kind, environment_lease_uid, environment_generation,
     workspace_uid, sandbox_uid, sandbox_generation, environment_profile_uid,
-    environment_profile_version, state, resource_version, created_at, updated_at
-FROM cloud_agents.create_managed_agent_session_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+    environment_profile_version, state, resource_version, created_at, updated_at, mcp_server_refs, skill_bundle_refs
+FROM cloud_agents.create_managed_agent_session_v5($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 	closeManagedAgentSessionSQL = `SELECT transition.session_uid, transition.provider_kind,
     session.environment_lease_uid, session.environment_generation,
     session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
     COALESCE(session.environment_profile_uid, environment.environment_profile_uid),
     COALESCE(session.environment_profile_version, environment.environment_profile_version),
-    transition.state, transition.resource_version, transition.created_at, transition.updated_at
+    transition.state, transition.resource_version, transition.created_at, transition.updated_at,
+    session.mcp_server_refs, session.skill_bundle_refs
 FROM cloud_agents.close_managed_agent_session_v1($1, $2, $3, $4, $5) AS transition
 JOIN cloud_agents.managed_agent_sessions AS session
     ON session.tenant_id = cloud_agents.require_tenant_id()
@@ -61,7 +69,8 @@ LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
     session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
     COALESCE(session.environment_profile_uid, environment.environment_profile_uid),
     COALESCE(session.environment_profile_version, environment.environment_profile_version),
-    session.state, session.resource_version, session.created_at, session.updated_at
+    session.state, session.resource_version, session.created_at, session.updated_at,
+    session.mcp_server_refs, session.skill_bundle_refs
 FROM cloud_agents.managed_agent_sessions AS session
 LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
     ON environment.tenant_id = session.tenant_id AND environment.project_uid = session.project_uid
@@ -73,7 +82,8 @@ WHERE session.tenant_id = cloud_agents.require_tenant_id()
     session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
     COALESCE(session.environment_profile_uid, environment.environment_profile_uid),
     COALESCE(session.environment_profile_version, environment.environment_profile_version),
-    session.state, session.resource_version, session.created_at, session.updated_at, session.provider_resume_cursor,
+    session.state, session.resource_version, session.created_at, session.updated_at,
+    session.mcp_server_refs, session.skill_bundle_refs, session.provider_resume_cursor,
     COALESCE(environment.worker_endpoint, ''), COALESCE(environment.worker_spiffe_id, ''),
     COALESCE(environment.worker_server_name, ''),
     COALESCE(environment.generation = session.environment_generation
@@ -123,7 +133,8 @@ FROM (
         session.workspace_uid, session.sandbox_uid, session.sandbox_generation,
         COALESCE(session.environment_profile_uid, environment.environment_profile_uid) AS environment_profile_uid,
         COALESCE(session.environment_profile_version, environment.environment_profile_version) AS environment_profile_version,
-        session.state, session.resource_version, session.created_at, session.updated_at
+        session.state, session.resource_version, session.created_at, session.updated_at,
+        session.mcp_server_refs, session.skill_bundle_refs
     FROM cloud_agents.managed_agent_sessions AS session
     LEFT JOIN cloud_agents.managed_host_environment_leases AS environment
         ON environment.tenant_id = session.tenant_id AND environment.project_uid = session.project_uid
@@ -134,6 +145,8 @@ FROM (
     ORDER BY session.session_uid
     LIMIT $3
 ) AS managed_session`
+	resolveMcpServerCapabilitySQL   = `SELECT version, digest, transport, connection_ref, credential_ref, network_policy_ref, permissions, status, pg_catalog.floor(EXTRACT(EPOCH FROM (pg_catalog.transaction_timestamp() + INTERVAL '15 minutes')))::bigint FROM cloud_agents.mcp_servers WHERE tenant_id=cloud_agents.require_tenant_id() AND project_uid=$1 AND server_uid=$2`
+	resolveSkillBundleCapabilitySQL = `SELECT version, digest, compatible_providers, status, pg_catalog.floor(EXTRACT(EPOCH FROM (pg_catalog.transaction_timestamp() + INTERVAL '15 minutes')))::bigint FROM cloud_agents.skill_bundles WHERE tenant_id=cloud_agents.require_tenant_id() AND project_uid=$1 AND bundle_uid=$2`
 )
 
 // CreateManagedAgentSession persists one active Session. The database derives
@@ -165,12 +178,16 @@ func (service *DurableCoordinationService) CreateManagedAgentSession(
 		}
 		transactionErr := service.runner.withTenantReadCommittedMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
-				if err := scanManagedAgentSession(handle.transaction.queryRow(ctx, createManagedAgentSessionSQL,
+				mcpRefs, skillRefs, err := managedAgentCapabilityRefsJSON(input.McpServerRefs, input.SkillBundleRefs)
+				if err != nil {
+					return ErrCoordinationInvalidInput
+				}
+				if err := scanManagedAgentSessionWithCapabilities(handle.transaction.queryRow(ctx, createManagedAgentSessionSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.ProviderKind,
 					nullableManagedAgentString(input.EnvironmentLeaseID), nullableManagedAgentString(input.WorkspaceID),
 					nullableManagedAgentString(input.SandboxID), nullableManagedAgentGeneration(input.SandboxGeneration),
 					nullableManagedAgentString(input.EnvironmentProfileID), nullableManagedAgentGeneration(input.EnvironmentProfileVersion),
-					input.Mutation.IdempotencyKey, digest), input.Scope, &result); err != nil {
+					input.Mutation.IdempotencyKey, digest, mcpRefs, skillRefs), input.Scope, &result); err != nil {
 					return err
 				}
 				return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{Scope: input.Scope, SessionID: result.SessionID, Operation: "session.create", Resource: internalmanagedagent.ResourceSession, MutationDigest: digest, Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceSession, To: string(result.State), Version: result.Version}}})
@@ -211,7 +228,7 @@ func (service *DurableCoordinationService) CloseManagedAgentSession(
 		}
 		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
-				err := scanManagedAgentSession(handle.transaction.queryRow(ctx, closeManagedAgentSessionSQL,
+				err := scanManagedAgentSessionWithCapabilities(handle.transaction.queryRow(ctx, closeManagedAgentSessionSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID,
 					input.Mutation.IdempotencyKey, digest), input.Scope, &result)
 				if errors.Is(err, pgx.ErrNoRows) {
@@ -256,7 +273,7 @@ func (service *DurableCoordinationService) GetManagedAgentSession(
 				return ErrTenantCapabilityClosed
 			}
 			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, func() error {
-				err := scanManagedAgentSession(handle.transaction.queryRow(readContext, getManagedAgentSessionSQL, scope.ProjectID, sessionID), scope, &result)
+				err := scanManagedAgentSessionWithCapabilities(handle.transaction.queryRow(readContext, getManagedAgentSessionSQL, scope.ProjectID, sessionID), scope, &result)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentSessionNotFound
 				}
@@ -326,6 +343,9 @@ func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, l
 	}
 	sessions := make([]internalmanagedagent.SessionSnapshot, 0, len(rows))
 	for _, row := range rows {
+		if err := internalmanagedagent.ValidateCapabilityRefs(row.McpServerRefs, row.SkillBundleRefs); err != nil {
+			return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
+		}
 		state := internalmanagedagent.SessionState(row.State)
 		environmentLeaseID, environmentGeneration, validEnvironment := managedAgentSessionEnvironment(row.EnvironmentLeaseID, row.EnvironmentGeneration)
 		workspaceID, sandboxID, sandboxGeneration, validFoundation := managedAgentSessionFoundation(row.WorkspaceID, row.SandboxID, row.SandboxGeneration)
@@ -340,7 +360,9 @@ func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, l
 			ProviderKind: row.ProviderKind, EnvironmentLeaseID: environmentLeaseID, EnvironmentGeneration: environmentGeneration,
 			WorkspaceID: workspaceID, SandboxID: sandboxID, SandboxGeneration: sandboxGeneration,
 			EnvironmentProfileID: environmentProfileID, EnvironmentProfileVersion: environmentProfileVersion,
-			State: state, Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+			McpServerRefs:   append([]internalmanagedagent.McpServerRef(nil), row.McpServerRefs...),
+			SkillBundleRefs: append([]internalmanagedagent.SkillBundleRef(nil), row.SkillBundleRefs...),
+			State:           state, Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
 	}
 	result := ManagedAgentSessionPage{Sessions: sessions}
@@ -362,6 +384,50 @@ func (service *DurableCoordinationService) GetManagedAgentSessionForExecution(
 	sessionID string,
 ) (internalmanagedagent.RuntimeSessionSnapshot, error) {
 	return service.getManagedAgentSessionForRuntime(ctx, tenantID, principal, projectID, sessionID, "projects.act")
+}
+
+// ResolveManagedAgentCapabilityBindings resolves the persisted Execution
+// binding set under the same project action authority used to open Runtime.
+// It deliberately accepts refs rather than reading Session refs: an Execution
+// may pin a different, explicitly requested capability set.
+func (service *DurableCoordinationService) ResolveManagedAgentCapabilityBindings(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	sessionID string,
+	provider string,
+	mcpRefs []internalmanagedagent.McpServerRef,
+	skillRefs []internalmanagedagent.SkillBundleRef,
+) ([]*workerruntimev1alpha1.RuntimeCapabilityBinding, string, error) {
+	if service == nil || service.runner == nil || ctx == nil || tenantID == "" || projectID == "" || sessionID == "" || provider == "" {
+		return nil, "", ErrCoordinationInvalidInput
+	}
+	if err := internalmanagedagent.ValidateCapabilityRefs(mcpRefs, skillRefs); err != nil {
+		return nil, "", ErrCoordinationInvalidInput
+	}
+	scope := internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}
+	var bindings []*workerruntimev1alpha1.RuntimeCapabilityBinding
+	var manifestDigest string
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(scope.TenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, scope.TenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, func() error {
+				var err error
+				bindings, manifestDigest, err = resolveRuntimeCapabilityBindings(readContext, handle, scope, sessionID, provider, mcpRefs, skillRefs)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return bindings, manifestDigest, err
 }
 
 // GetManagedAgentSessionForArtifact resolves the same Worker route under
@@ -413,10 +479,11 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 				var sandboxGeneration *int64
 				var state string
 				var version int64
+				var mcpRefsJSON, skillRefsJSON []byte
 				err := handle.transaction.queryRow(readContext, getManagedAgentSessionForExecutionSQL, scope.ProjectID, sessionID).Scan(
 					&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration,
 					&workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion,
-					&state, &version, &result.CreatedAt, &result.UpdatedAt, &cursor,
+					&state, &version, &result.CreatedAt, &result.UpdatedAt, &mcpRefsJSON, &skillRefsJSON, &cursor,
 					&result.WorkerEndpoint, &result.WorkerSPIFFEID, &result.WorkerServerName, &result.EnvironmentReady,
 					&result.FoundationTargetKind, &result.FoundationTargetCredential,
 					&result.FoundationRuntimeID, &result.FoundationRuntimeOperation,
@@ -436,6 +503,14 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 				var validFoundation bool
 				result.WorkspaceID, result.SandboxID, result.SandboxGeneration, validFoundation = managedAgentSessionFoundation(workspaceID, sandboxID, sandboxGeneration)
 				result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
+				result.McpServerRefs, result.SkillBundleRefs, err = decodeManagedAgentCapabilityRefs(mcpRefsJSON, skillRefsJSON)
+				if err != nil {
+					return fmt.Errorf("%w: managed agent capability refs", ErrCoordinationResultDrift)
+				}
+				result.CapabilityBindings, result.CapabilityManifestDigest, err = resolveRuntimeCapabilityBindings(readContext, handle, scope, result.SessionID, result.ProviderKind, result.McpServerRefs, result.SkillBundleRefs)
+				if err != nil {
+					return err
+				}
 				if !validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(result.EnvironmentLeaseID, result.WorkspaceID, result.SandboxID, result.EnvironmentProfileID) || !validManagedAgentSessionSnapshot(result.SessionSnapshot, version) || result.EnvironmentReady && (result.WorkerEndpoint == "" || result.WorkerSPIFFEID == "" || result.WorkerServerName == "") || result.FoundationSandboxReady && (result.FoundationTargetKind == "" || result.FoundationTargetCredential == "" || result.FoundationRuntimeID == "" || result.FoundationRuntimeOperation == "" || result.FoundationRuntimeSpecDigest == "") {
 					return fmt.Errorf("%w: managed agent execution Session projection", ErrCoordinationResultDrift)
 				}
@@ -487,6 +562,81 @@ func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, r
 	}
 	result.Version = uint64(version)
 	return nil
+}
+
+func scanManagedAgentSessionWithCapabilities(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot) error {
+	if row == nil || result == nil {
+		return ErrCoordinationResultDrift
+	}
+	var environmentLeaseID, environmentProfileID, workspaceID, sandboxID *string
+	var environmentGeneration, environmentProfileVersion, sandboxGeneration *int64
+	var state string
+	var version int64
+	var mcpRefsJSON, skillRefsJSON []byte
+	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt, &mcpRefsJSON, &skillRefsJSON); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		return mapMutationDatabaseError("managed agent session", err)
+	}
+	result.Scope = scope
+	result.State = internalmanagedagent.SessionState(state)
+	var validEnvironment, validProfile, validFoundation bool
+	result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
+	result.WorkspaceID, result.SandboxID, result.SandboxGeneration, validFoundation = managedAgentSessionFoundation(workspaceID, sandboxID, sandboxGeneration)
+	result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
+	var err error
+	result.McpServerRefs, result.SkillBundleRefs, err = decodeManagedAgentCapabilityRefs(mcpRefsJSON, skillRefsJSON)
+	if err != nil {
+		return fmt.Errorf("%w: managed agent capability refs", ErrCoordinationResultDrift)
+	}
+	if !validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(result.EnvironmentLeaseID, result.WorkspaceID, result.SandboxID, result.EnvironmentProfileID) || !validManagedAgentSessionSnapshot(*result, version) {
+		return fmt.Errorf("%w: managed agent session projection", ErrCoordinationResultDrift)
+	}
+	result.Version = uint64(version)
+	return nil
+}
+
+func managedAgentCapabilityRefsJSON(mcp []internalmanagedagent.McpServerRef, skills []internalmanagedagent.SkillBundleRef) ([]byte, []byte, error) {
+	if err := internalmanagedagent.ValidateCapabilityRefs(mcp, skills); err != nil {
+		return nil, nil, err
+	}
+	if mcp == nil {
+		mcp = []internalmanagedagent.McpServerRef{}
+	}
+	if skills == nil {
+		skills = []internalmanagedagent.SkillBundleRef{}
+	}
+	mcpJSON, err := json.Marshal(mcp)
+	if err != nil {
+		return nil, nil, err
+	}
+	skillJSON, err := json.Marshal(skills)
+	if err != nil {
+		return nil, nil, err
+	}
+	return mcpJSON, skillJSON, nil
+}
+
+func decodeManagedAgentCapabilityRefs(mcpJSON, skillJSON []byte) ([]internalmanagedagent.McpServerRef, []internalmanagedagent.SkillBundleRef, error) {
+	if len(mcpJSON) == 0 {
+		mcpJSON = []byte("[]")
+	}
+	if len(skillJSON) == 0 {
+		skillJSON = []byte("[]")
+	}
+	var mcp []internalmanagedagent.McpServerRef
+	var skills []internalmanagedagent.SkillBundleRef
+	if err := json.Unmarshal(mcpJSON, &mcp); err != nil {
+		return nil, nil, err
+	}
+	if err := json.Unmarshal(skillJSON, &skills); err != nil {
+		return nil, nil, err
+	}
+	if err := internalmanagedagent.ValidateCapabilityRefs(mcp, skills); err != nil {
+		return nil, nil, err
+	}
+	return mcp, skills, nil
 }
 
 func managedAgentSessionEnvironment(leaseID *string, generation *int64) (string, uint64, bool) {
@@ -541,4 +691,119 @@ func nullableManagedAgentGeneration(value uint64) any {
 
 func validManagedAgentSessionSnapshot(result internalmanagedagent.SessionSnapshot, version int64) bool {
 	return version > 0 && result.SessionID != "" && (result.State == internalmanagedagent.SessionActive || result.State == internalmanagedagent.SessionClosed) && !result.CreatedAt.IsZero() && !result.UpdatedAt.IsZero()
+}
+
+type runtimeCapabilityManifest struct {
+	Version  uint32                           `json:"version"`
+	Bindings []runtimeCapabilityManifestEntry `json:"bindings"`
+}
+
+type runtimeCapabilityManifestEntry struct {
+	ResourceKind        string   `json:"resourceKind"`
+	ResourceID          string   `json:"resourceId"`
+	Version             string   `json:"version"`
+	Digest              string   `json:"digest"`
+	Transport           string   `json:"transport,omitempty"`
+	ConnectionRef       string   `json:"connectionRef,omitempty"`
+	CredentialRef       string   `json:"credentialRef,omitempty"`
+	GrantID             string   `json:"grantId"`
+	NetworkPolicyRef    string   `json:"networkPolicyRef,omitempty"`
+	ExpiresAtUnixSecond uint64   `json:"expiresAtUnixSeconds"`
+	Permissions         []string `json:"permissions,omitempty"`
+	ReadOnly            bool     `json:"readOnly"`
+}
+
+func resolveRuntimeCapabilityBindings(ctx context.Context, handle *tenantReadHandle, scope internalmanagedagent.Scope, sessionID, provider string, mcpRefs []internalmanagedagent.McpServerRef, skillRefs []internalmanagedagent.SkillBundleRef) ([]*workerruntimev1alpha1.RuntimeCapabilityBinding, string, error) {
+	if handle == nil || ctx == nil || !validMutationIdentifier(sessionID) || !validMutationIdentifier(provider) {
+		return nil, "", ErrCoordinationResultDrift
+	}
+	bindings := make([]*workerruntimev1alpha1.RuntimeCapabilityBinding, 0, len(mcpRefs)+len(skillRefs))
+	manifest := runtimeCapabilityManifest{Version: 1, Bindings: make([]runtimeCapabilityManifestEntry, 0, len(mcpRefs)+len(skillRefs))}
+	for _, ref := range mcpRefs {
+		var version, digest, transport, connectionRef, credentialRef, networkPolicyRef, status string
+		var permissions []string
+		var expires int64
+		if err := handle.transaction.queryRow(ctx, resolveMcpServerCapabilitySQL, scope.ProjectID, ref.ServerID).Scan(&version, &digest, &transport, &connectionRef, &credentialRef, &networkPolicyRef, &permissions, &status, &expires); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "unavailable")
+			}
+			return nil, "", mapMutationDatabaseError("managed agent MCP capability", err)
+		}
+		if status != "active" {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "revoked")
+		}
+		if version != ref.Version {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "version_mismatch")
+		}
+		if digest != ref.Digest {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "digest_mismatch")
+		}
+		if expires <= time.Now().UTC().Unix() || expires > time.Now().UTC().Add(15*time.Minute).Unix() {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "grant_invalid")
+		}
+		grantID := runtimeCapabilityGrantID(scope, sessionID, "mcp-server", ref.ServerID, version, digest, expires)
+		binding := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "mcp-server", ResourceId: ref.ServerID, Version: version, Digest: digest, Transport: transport, ConnectionRef: connectionRef, CredentialRef: credentialRef, GrantId: grantID, NetworkPolicyRef: networkPolicyRef, ExpiresAtUnixSeconds: uint64(expires), Permissions: append([]string(nil), permissions...)}
+		bindings = append(bindings, binding)
+		manifest.Bindings = append(manifest.Bindings, runtimeCapabilityManifestEntry{ResourceKind: binding.ResourceKind, ResourceID: binding.ResourceId, Version: binding.Version, Digest: binding.Digest, Transport: binding.Transport, ConnectionRef: binding.ConnectionRef, CredentialRef: binding.CredentialRef, GrantID: binding.GrantId, NetworkPolicyRef: binding.NetworkPolicyRef, ExpiresAtUnixSecond: binding.ExpiresAtUnixSeconds, Permissions: binding.Permissions, ReadOnly: binding.ReadOnly})
+	}
+	for _, ref := range skillRefs {
+		var version, digest, status string
+		var providers []string
+		var expires int64
+		if err := handle.transaction.queryRow(ctx, resolveSkillBundleCapabilitySQL, scope.ProjectID, ref.BundleID).Scan(&version, &digest, &providers, &status, &expires); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceSkillBundle, ref.BundleID, ref.Version, ref.Digest, "unavailable")
+			}
+			return nil, "", mapMutationDatabaseError("managed agent Skill capability", err)
+		}
+		if status != "active" {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceSkillBundle, ref.BundleID, ref.Version, ref.Digest, "revoked")
+		}
+		if version != ref.Version {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceSkillBundle, ref.BundleID, ref.Version, ref.Digest, "version_mismatch")
+		}
+		if digest != ref.Digest {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceSkillBundle, ref.BundleID, ref.Version, ref.Digest, "digest_mismatch")
+		}
+		if expires <= time.Now().UTC().Unix() || expires > time.Now().UTC().Add(15*time.Minute).Unix() {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceSkillBundle, ref.BundleID, ref.Version, ref.Digest, "grant_invalid")
+		}
+		if !runtimeSkillProviderCompatible(provider, providers) {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceSkillBundle, ref.BundleID, ref.Version, ref.Digest, "provider_incompatible")
+		}
+		grantID := runtimeCapabilityGrantID(scope, sessionID, "skill-bundle", ref.BundleID, version, digest, expires)
+		binding := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "skill-bundle", ResourceId: ref.BundleID, Version: version, Digest: digest, GrantId: grantID, ExpiresAtUnixSeconds: uint64(expires), ReadOnly: true}
+		bindings = append(bindings, binding)
+		manifest.Bindings = append(manifest.Bindings, runtimeCapabilityManifestEntry{ResourceKind: binding.ResourceKind, ResourceID: binding.ResourceId, Version: binding.Version, Digest: binding.Digest, GrantID: binding.GrantId, ExpiresAtUnixSecond: binding.ExpiresAtUnixSeconds, ReadOnly: true})
+	}
+	if len(bindings) == 0 {
+		return nil, "", nil
+	}
+	encoded, err := json.Marshal(manifest)
+	if err != nil || len(encoded) > 64<<10 {
+		return nil, "", ErrCoordinationResultDrift
+	}
+	sum := sha256.Sum256(encoded)
+	return bindings, "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func runtimeCapabilityResolutionFailure(resource internalmanagedagent.ResourceKind, resourceID, version, digest, reason string) error {
+	return fmt.Errorf("%w: %w", ErrManagedAgentCapabilityUnavailable, &internalmanagedagent.CapabilityResolutionFailure{
+		Resource: resource, ResourceID: resourceID, Version: version, Digest: digest, Reason: reason,
+	})
+}
+
+func runtimeSkillProviderCompatible(provider string, providers []string) bool {
+	for _, candidate := range providers {
+		if candidate == provider || provider == "claudeAgent" && candidate == "claude-code" || provider == "claude-code" && candidate == "claudeAgent" {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeCapabilityGrantID(scope internalmanagedagent.Scope, sessionID, kind, resourceID, version, digest string, expires int64) string {
+	value := scope.TenantID + "\x00" + scope.ProjectID + "\x00" + sessionID + "\x00" + kind + "\x00" + resourceID + "\x00" + version + "\x00" + digest + "\x00" + strconv.FormatInt(expires, 10)
+	sum := sha256.Sum256([]byte(value))
+	return "grant-" + hex.EncodeToString(sum[:])
 }

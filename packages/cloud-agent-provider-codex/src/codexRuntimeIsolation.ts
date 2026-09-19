@@ -55,6 +55,16 @@ export function codexExecutableConfigIsolationArguments(
     ]),
   ];
 }
+
+export function codexMcpServersOverride(
+  servers: Readonly<Record<string, { url: string; bearer_token_env_var: string }>>,
+): string {
+  const entries = Object.entries(servers).map(
+    ([name, server]) =>
+      `${JSON.stringify(name)}={url=${JSON.stringify(server.url)},bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)},required=true,omit_tools_from=["deferred"]}`,
+  );
+  return `mcp_servers={${entries.join(",")}}`;
+}
 export function codexAppServerArgumentsWithToolPolicyHook(
   baseArguments: ReadonlyArray<string>,
   hookCommand: string,
@@ -140,12 +150,47 @@ export function isCodexRuntimeIsolationConfigAttested(
       actual.environment_id !== "local" ||
       actual.enabled !== true ||
       actual.tool_timeout_sec !== null ||
+      actual.required !== true ||
+      JSON.stringify(actual.omit_tools_from) !== '["deferred"]' ||
       !isLoopbackMcpUrl(expected.url)
     )
       return false;
   }
   const policy = asRecord(config?.shell_environment_policy);
   return isShellEnvironmentPolicyAttested(policy, expectedExcluded);
+}
+
+export function isCodexManagedMcpInventoryAttested(
+  response: unknown,
+  expectedServerNames: ReadonlyArray<string>,
+): boolean {
+  const result = asRecord(response);
+  if (!Array.isArray(result?.data)) return false;
+  const statuses = result.data.map(asRecord);
+  if (statuses.some((status) => status === undefined)) return false;
+  const records = statuses as Record<string, unknown>[];
+  const expected = [...expectedServerNames].sort();
+  const actual = records
+    .map((status) => readString(status, "name"))
+    .filter((name): name is string => name !== undefined)
+    .sort();
+  if (
+    result?.nextCursor !== null ||
+    expected.length === 0 ||
+    new Set(expected).size !== expected.length ||
+    actual.length !== expected.length ||
+    actual.some((name, index) => name !== expected[index])
+  )
+    return false;
+  return records.every((status) => {
+    const tools = asRecord(status.tools);
+    return (
+      status.authStatus === "bearerToken" &&
+      status.runtimeStatus === "connected" &&
+      tools !== undefined &&
+      Object.keys(tools).length > 0
+    );
+  });
 }
 function isShellEnvironmentPolicyAttested(
   policy: Record<string, unknown> | undefined,
@@ -196,4 +241,8 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function readString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  return typeof record?.[key] === "string" ? record[key] : undefined;
 }

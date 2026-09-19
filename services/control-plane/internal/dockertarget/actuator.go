@@ -33,6 +33,8 @@ const (
 	MinMemoryLimitBytes = int64(128 << 20)
 	MaxMemoryLimitBytes = int64(1 << 40)
 	workerPort          = "8091/tcp"
+	workerHostPortBase  = uint64(20_000)
+	workerHostPortSpan  = uint64(40_000)
 	maxDockerBodyBytes  = 1 << 20
 )
 
@@ -79,10 +81,11 @@ func (worker ManagedWorker) CleanupResourceNames() (container, workspace string)
 }
 
 type DeploymentConfig struct {
-	WorkerImageRepository string `json:"workerImageRepository"`
-	WorkerCredentialRef   string `json:"workerCredentialRef"`
-	WorkerSPIFFEID        string `json:"workerSpiffeId"`
-	WorkerServerName      string `json:"workerServerName"`
+	WorkerImageRepository        string `json:"workerImageRepository"`
+	WorkerCredentialRef          string `json:"workerCredentialRef"`
+	CapabilityMaterializationRef string `json:"capabilityMaterializationRef,omitempty"`
+	WorkerSPIFFEID               string `json:"workerSpiffeId"`
+	WorkerServerName             string `json:"workerServerName"`
 }
 
 type containerInspect struct {
@@ -141,6 +144,11 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 	if err := requireVolume(ctx, client, base, request.ProviderCredentialRef); err != nil {
 		return DeployResult{}, err
 	}
+	if config.CapabilityMaterializationRef != "" {
+		if err := requireVolume(ctx, client, base, config.CapabilityMaterializationRef); err != nil {
+			return DeployResult{}, err
+		}
+	}
 	labels := DeploymentLabels(request, config)
 	image := config.WorkerImageRepository + "@" + request.ReleaseDigest
 	containerID, err := ensureWorkerContainer(ctx, client, base, request, config, image, labels)
@@ -152,7 +160,7 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 	inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
 	if err == nil && inspect.Config.Image == image && exactLabels(inspect.Config.Labels, labels) {
 		workspace, err = workspaceVolume(inspect)
-		if err == nil && !managedWorkspaceVolumeName(request, workspace, config.WorkerCredentialRef) {
+		if err == nil && !managedWorkspaceVolumeName(request, workspace, config.WorkerCredentialRef, config.CapabilityMaterializationRef) {
 			err = ErrDeploymentConflict
 		} else if err == nil && workspace == workspaceVolumeName(request) {
 			err = requireOwnedWorkspaceVolume(ctx, client, base, workspace, request)
@@ -169,7 +177,7 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 			cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			defer cancel()
 			_ = removeWorkerContainer(cleanupContext, client, base, containerID)
-			_ = removeWorkspaceVolumeIfUnused(cleanupContext, client, base, workspace, request, config.WorkerCredentialRef)
+			_ = removeWorkspaceVolumeIfUnused(cleanupContext, client, base, workspace, request, config.WorkerCredentialRef, config.CapabilityMaterializationRef)
 		}
 	}
 	if err := startWorkerContainer(ctx, client, base, containerID); err != nil {
@@ -241,6 +249,11 @@ func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, e
 	if err := requireVolume(ctx, client, base, request.ProviderCredentialRef); err != nil {
 		return DeployResult{}, err
 	}
+	if config.CapabilityMaterializationRef != "" {
+		if err := requireVolume(ctx, client, base, config.CapabilityMaterializationRef); err != nil {
+			return DeployResult{}, err
+		}
+	}
 	workers, err := listManagedWorkers(ctx, client, base, request.TenantID, request.ProjectID, request.TargetID, request.TargetGeneration)
 	if err != nil {
 		return DeployResult{}, err
@@ -310,7 +323,7 @@ func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, e
 		defer cancel()
 		_ = removeWorkerContainer(cleanupContext, client, base, containerID)
 		if workspace != "" {
-			_ = removeWorkspaceVolumeIfUnused(cleanupContext, client, base, workspace, request, config.WorkerCredentialRef)
+			_ = removeWorkspaceVolumeIfUnused(cleanupContext, client, base, workspace, request, config.WorkerCredentialRef, config.CapabilityMaterializationRef)
 		}
 	}
 	inspect, err := inspectWorkerContainer(ctx, client, base, containerID)
@@ -319,7 +332,7 @@ func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, e
 		return DeployResult{}, err
 	}
 	workspace, err = workspaceVolume(inspect)
-	if err != nil || workspaceSource != "" && workspace != workspaceSource || !managedWorkspaceVolumeName(request, workspace, config.WorkerCredentialRef) {
+	if err != nil || workspaceSource != "" && workspace != workspaceSource || !managedWorkspaceVolumeName(request, workspace, config.WorkerCredentialRef, config.CapabilityMaterializationRef) {
 		cleanup()
 		return DeployResult{}, ErrDeploymentConflict
 	}
@@ -465,7 +478,7 @@ func (directory *CredentialDirectory) readDeploymentConfig(credentialRef string)
 
 func (config DeploymentConfig) Valid() bool {
 	parsed, err := url.Parse(config.WorkerSPIFFEID)
-	return imageRepositoryPattern.MatchString(config.WorkerImageRepository) && volumeNamePattern.MatchString(config.WorkerCredentialRef) &&
+	return imageRepositoryPattern.MatchString(config.WorkerImageRepository) && volumeNamePattern.MatchString(config.WorkerCredentialRef) && (config.CapabilityMaterializationRef == "" || volumeNamePattern.MatchString(config.CapabilityMaterializationRef)) &&
 		err == nil && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
 		config.WorkerServerName != "" && len(config.WorkerServerName) <= 253 && strings.TrimSpace(config.WorkerServerName) == config.WorkerServerName && !strings.ContainsAny(config.WorkerServerName, "/@") && strings.IndexFunc(config.WorkerServerName, unicode.IsControl) < 0
 }
@@ -476,7 +489,7 @@ func spiffeTrustDomain(identity string) string {
 }
 
 func DeploymentLabels(request DeployRequest, config DeploymentConfig) map[string]string {
-	return map[string]string{
+	labels := map[string]string{
 		"cloud-agents.dev/managed":                 "true",
 		"cloud-agents.dev/tenant":                  request.TenantID,
 		"cloud-agents.dev/project":                 request.ProjectID,
@@ -492,6 +505,10 @@ func DeploymentLabels(request DeployRequest, config DeploymentConfig) map[string
 		"cloud-agents.dev/worker-spiffe-id":        config.WorkerSPIFFEID,
 		"cloud-agents.dev/worker-server-name":      config.WorkerServerName,
 	}
+	if config.CapabilityMaterializationRef != "" {
+		labels["cloud-agents.dev/capability-materialization-ref"] = config.CapabilityMaterializationRef
+	}
+	return labels
 }
 
 func ManagedWorkerRequest(name, image string, labels map[string]string, expectedTargetGeneration int64) (DeployRequest, error) {
@@ -505,10 +522,11 @@ func ManagedWorkerRequest(name, image string, labels map[string]string, expected
 		ProviderCredentialRef: labels["cloud-agents.dev/provider-credential-ref"], CPULimitMillis: cpuLimit, MemoryLimitBytes: memoryLimit,
 	}
 	config := DeploymentConfig{
-		WorkerImageRepository: strings.TrimSuffix(image, "@"+request.ReleaseDigest),
-		WorkerCredentialRef:   labels["cloud-agents.dev/worker-credential-ref"],
-		WorkerSPIFFEID:        labels["cloud-agents.dev/worker-spiffe-id"],
-		WorkerServerName:      labels["cloud-agents.dev/worker-server-name"],
+		WorkerImageRepository:        strings.TrimSuffix(image, "@"+request.ReleaseDigest),
+		WorkerCredentialRef:          labels["cloud-agents.dev/worker-credential-ref"],
+		CapabilityMaterializationRef: labels["cloud-agents.dev/capability-materialization-ref"],
+		WorkerSPIFFEID:               labels["cloud-agents.dev/worker-spiffe-id"],
+		WorkerServerName:             labels["cloud-agents.dev/worker-server-name"],
 	}
 	if targetErr != nil || leaseErr != nil || cpuErr != nil || memoryErr != nil || expectedTargetGeneration < 1 || targetGeneration > expectedTargetGeneration || request.Validate() != nil || !config.Valid() || image != config.WorkerImageRepository+"@"+request.ReleaseDigest || name != WorkerContainerName(request) || !exactLabels(labels, DeploymentLabels(request, config)) {
 		return DeployRequest{}, ErrDeploymentConflict
@@ -604,7 +622,7 @@ func listManagedWorkers(ctx context.Context, client *http.Client, base, tenantID
 			return nil, ErrDeploymentConflict
 		}
 		workspace, workspaceErr := workspaceVolume(inspect)
-		if workspaceErr != nil || !managedWorkspaceVolumeName(request, workspace, inspect.Config.Labels["cloud-agents.dev/worker-credential-ref"]) {
+		if workspaceErr != nil || !managedWorkspaceVolumeName(request, workspace, inspect.Config.Labels["cloud-agents.dev/worker-credential-ref"], inspect.Config.Labels["cloud-agents.dev/capability-materialization-ref"]) {
 			return nil, ErrDeploymentConflict
 		}
 		workers = append(workers, ManagedWorker{Request: request, id: container.ID, image: inspect.Config.Image, labels: maps.Clone(inspect.Config.Labels), workspace: workspace})
@@ -618,7 +636,7 @@ func cleanupManagedWorker(ctx context.Context, client *http.Client, base string,
 		return err
 	}
 	if containerID == "" {
-		return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(worker.Request), worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"])
+		return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(worker.Request), worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"], worker.labels["cloud-agents.dev/capability-materialization-ref"])
 	}
 	if containerID != worker.id {
 		return ErrDeploymentConflict
@@ -629,7 +647,7 @@ func cleanupManagedWorker(ctx context.Context, client *http.Client, base string,
 		if findErr != nil || remaining != "" {
 			return ErrDeploymentFailed
 		}
-		return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(worker.Request), worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"])
+		return removeWorkspaceVolumeIfUnused(ctx, client, base, workspaceVolumeName(worker.Request), worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"], worker.labels["cloud-agents.dev/capability-materialization-ref"])
 	}
 	if inspect.Name != "/"+WorkerContainerName(worker.Request) || inspect.Config.Image != worker.image || !exactLabels(inspect.Config.Labels, worker.labels) {
 		return ErrDeploymentConflict
@@ -641,7 +659,7 @@ func cleanupManagedWorker(ctx context.Context, client *http.Client, base string,
 	if err := removeWorkerContainer(ctx, client, base, worker.id); err != nil {
 		return err
 	}
-	return removeWorkspaceVolumeIfUnused(ctx, client, base, workspace, worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"])
+	return removeWorkspaceVolumeIfUnused(ctx, client, base, workspace, worker.Request, worker.labels["cloud-agents.dev/worker-credential-ref"], worker.labels["cloud-agents.dev/capability-materialization-ref"])
 }
 
 func ensureWorkerContainer(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string) (string, error) {
@@ -695,7 +713,7 @@ func createWorkerContainerNamed(ctx context.Context, client *http.Client, base s
 				{"Type": "volume", "Source": request.ProviderCredentialRef, "Target": "/run/cloud-agents/provider-credentials", "ReadOnly": true},
 			},
 			"Tmpfs":          map[string]string{"/tmp": "rw,noexec,nosuid,size=67108864,mode=1777"},
-			"PortBindings":   map[string]any{workerPort: []map[string]string{{"HostPort": ""}}},
+			"PortBindings":   map[string]any{workerPort: []map[string]string{{"HostPort": workerHostPort(request)}}},
 			"Memory":         request.MemoryLimitBytes,
 			"NanoCpus":       request.CPULimitMillis * 1_000_000,
 			"ReadonlyRootfs": true,
@@ -712,6 +730,11 @@ func createWorkerContainerNamed(ctx context.Context, client *http.Client, base s
 		workspaceMount["VolumeOptions"] = map[string]any{"Labels": workspaceVolumeLabels(request)}
 	}
 	hostConfig := body["HostConfig"].(map[string]any)
+	if config.CapabilityMaterializationRef != "" {
+		hostConfig["Mounts"] = append(hostConfig["Mounts"].([]map[string]any), map[string]any{"Type": "volume", "Source": config.CapabilityMaterializationRef, "Target": "/run/cloud-agents/capabilities", "ReadOnly": true})
+		hostConfig["Tmpfs"].(map[string]string)["/run/cloud-agents/skills"] = "rw,noexec,nosuid,size=67108864,uid=1000,gid=1000,mode=0700"
+		body["Cmd"] = append(body["Cmd"].([]string), "--capability-materialization-directory", "/run/cloud-agents/capabilities")
+	}
 	hostConfig["Mounts"] = append(hostConfig["Mounts"].([]map[string]any), workspaceMount)
 	var response struct {
 		ID string `json:"Id"`
@@ -732,6 +755,16 @@ func WorkerContainerName(request DeployRequest) string {
 		return base
 	}
 	return base + "-g" + strconv.FormatInt(request.LeaseGeneration, 10)
+}
+
+func workerHostPort(request DeployRequest) string {
+	digest := fnv.New64a()
+	for _, value := range []string{request.TenantID, request.ProjectID, request.TargetID, request.LeaseID, strconv.FormatInt(request.LeaseGeneration, 10)} {
+		_, _ = digest.Write([]byte(value))
+		_, _ = digest.Write([]byte{0})
+	}
+	// ponytail: deterministic ports keep restart routes stable; add a persisted target-scoped allocator only if collision rates justify it.
+	return strconv.FormatUint(workerHostPortBase+digest.Sum64()%workerHostPortSpan, 10)
 }
 
 func workerContainerBaseName(request DeployRequest) string {

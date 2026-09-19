@@ -64,6 +64,8 @@ runtime:
   maxSessions: 4
   environmentSecretName: cloud-agents-runtime-env
   credentialSecretName: cloud-agents-provider-credentials
+  # Optional operator-owned files: <tenant-id>.capabilities.json (mode 0600).
+  capabilityMaterializationSecretName: ""
   workspace:
     existingClaim: ""
     storageClassName: ""

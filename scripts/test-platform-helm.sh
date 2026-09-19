@@ -356,6 +356,7 @@ const issue = (jti, tokenAudience, scopes) => {
 const adminScopes = [
   "audit.list", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
   "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
+  "mcp-servers.create", "mcp-servers.get", "mcp-servers.list", "mcp-servers.delete", "skill-bundles.create", "skill-bundles.get", "skill-bundles.list", "skill-bundles.delete",
   "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
   "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update",
   "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list",

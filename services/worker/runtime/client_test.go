@@ -3,6 +3,7 @@ package runtime
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,19 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		credential, err := io.ReadAll(os.NewFile(uintptr(fd), "credential"))
 		if err != nil || string(credential) != `{"payload":{"apiKey":"test-key"}}` {
 			os.Exit(91)
+		}
+	}
+	if expected := os.Getenv("CLOUD_AGENTS_RUNTIME_EXPECT_CAPABILITIES"); expected != "" && os.Getenv("CLOUD_AGENT_CAPABILITY_MANIFEST_B64") != expected {
+		os.Exit(92)
+	}
+	if expected := os.Getenv("CLOUD_AGENTS_RUNTIME_EXPECT_MATERIALIZATION"); expected != "" {
+		fd, err := strconv.Atoi(os.Getenv("CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD"))
+		if err != nil {
+			os.Exit(93)
+		}
+		materialization, err := io.ReadAll(os.NewFile(uintptr(fd), "materialization"))
+		if err != nil || string(materialization) != expected {
+			os.Exit(94)
 		}
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -83,6 +97,32 @@ func TestClientPassesProviderCredentialOnAnonymousFD(t *testing.T) {
 	}
 	defer closeClient(t, client)
 	if _, err := client.Execute(context.Background(), testCommand("StartSession", "credential-1")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientPassesOpaqueCapabilityManifest(t *testing.T) {
+	manifest := []byte(`[{"resourceKind":"skill-bundle","resourceId":"skill-1"}]`)
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1", "CLOUD_AGENTS_RUNTIME_EXPECT_CAPABILITIES="+base64.RawURLEncoding.EncodeToString(manifest), "CLOUD_AGENT_CAPABILITY_MANIFEST_B64=stale")
+	client, err := New(context.Background(), Config{Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment, CapabilityManifest: manifest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeClient(t, client)
+	if _, err := client.Execute(context.Background(), testCommand("StartSession", "capabilities-1")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientPassesCapabilityMaterializationOnSeparateAnonymousFD(t *testing.T) {
+	materialization := `{"version":1,"mcp":[]}`
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1", "CLOUD_AGENTS_RUNTIME_EXPECT_MATERIALIZATION="+materialization, "CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD=99")
+	client, err := New(context.Background(), Config{Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment, CapabilityMaterialization: []byte(materialization)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeClient(t, client)
+	if _, err := client.Execute(context.Background(), testCommand("StartSession", "materialization-1")); err != nil {
 		t.Fatal(err)
 	}
 }

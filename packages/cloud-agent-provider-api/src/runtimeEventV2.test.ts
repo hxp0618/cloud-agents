@@ -47,6 +47,61 @@ describe("Runtime Event v2 normalization", () => {
     });
   });
 
+  it("keeps only an opaque managed capability identity on MCP activity", () => {
+    expect(
+      normalizeRuntimeEventV2({
+        type: "event",
+        eventType: "runtime.provider.activity",
+        payload: {
+          provider: "claudeAgent",
+          itemType: "mcp_tool_call",
+          itemId: "tool-1",
+          capabilityResourceId: "mcp-1",
+          status: "completed",
+          input: { token: "must-not-cross-the-wire" },
+        },
+      }),
+    ).toMatchObject({
+      eventType: "item.completed",
+      payload: {
+        itemType: "mcp_tool_call",
+        data: { capabilityResourceId: "mcp-1", providerItemId: "tool-1" },
+      },
+    });
+  });
+
+  it("maps a native Pi Skill load onto the canonical Skill capability shape", () => {
+    expect(
+      normalizeRuntimeEventV2({
+        type: "event",
+        eventType: "runtime.provider.activity",
+        payload: {
+          provider: "pi",
+          itemType: "skill",
+          itemId: "skill-load-1",
+          capabilityResourceId: "skill-1",
+          supportMode: "native",
+          status: "completed",
+        },
+      }),
+    ).toEqual({
+      eventVersion: CLOUD_AGENT_RUNTIME_EVENT_VERSION,
+      eventType: "item.completed",
+      payload: {
+        itemType: "dynamic_tool_call",
+        status: "completed",
+        title: "skill",
+        data: {
+          provider: "pi",
+          supportMode: "native",
+          capabilityResourceId: "skill-1",
+          sourceItemType: "skill",
+          providerItemId: "skill-load-1",
+        },
+      },
+    });
+  });
+
   it("projects safe terminal lifecycle metadata and command output correlation", () => {
     expect(
       normalizeRuntimeEventV2({

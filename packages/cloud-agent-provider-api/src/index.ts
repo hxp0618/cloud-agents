@@ -4,11 +4,11 @@ import type {
   CloudAgentMessageEnvelope,
   CloudAgentTextGenerationTask,
 } from "@cloud-agents/cloud-agent-protocol";
+import { CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION } from "./abi";
 
 export * from "./environment";
 export * from "./descriptorValidator";
-
-export const CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION = 1 as const;
+export { CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION } from "./abi";
 
 export interface CloudAgentProviderRuntimeDescriptor {
   readonly kind: "cli" | "sdk" | "local";

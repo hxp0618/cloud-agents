@@ -2798,6 +2798,89 @@
           "503": { "$ref": "#/components/responses/Problem" }
         }
       }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/mcp-servers": {
+      "get": {
+        "operationId": "adminListMcpServers",
+        "x-cloud-agents-required-scope": "mcp-servers.list",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": { "description": "Project MCP Servers", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/mcp-server-page.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateMcpServer",
+        "x-cloud-agents-required-scope": "mcp-servers.create",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" }, { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/mcp-server-create-request.schema.json" } } } },
+        "responses": {
+          "201": { "description": "MCP Server created", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/mcp-server.schema.json" } } } },
+          "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }, "409": { "$ref": "#/components/responses/Problem" }, "415": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/mcp-servers/{mcpServerId}": {
+      "get": {
+        "operationId": "adminGetMcpServer",
+        "x-cloud-agents-required-scope": "mcp-servers.get",
+        "parameters": [ { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/McpServerId" }, { "$ref": "#/components/parameters/RequestId" } ],
+        "responses": { "200": { "description": "MCP Server", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/mcp-server.schema.json" } } } }, "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/mcp-servers/{mcpServerId}:revoke": {
+      "post": {
+        "operationId": "adminRevokeMcpServer",
+        "x-cloud-agents-required-scope": "mcp-servers.delete",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [ { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/McpServerId" }, { "$ref": "#/components/parameters/RequestId" }, { "$ref": "#/components/parameters/IdempotencyKey" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/mcp-server-revoke-request.schema.json" } } } },
+        "responses": { "200": { "description": "MCP Server revoked", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/mcp-server.schema.json" } } } }, "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" }, "409": { "$ref": "#/components/responses/Problem" }, "415": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/skill-bundles": {
+      "get": {
+        "operationId": "adminListSkillBundles",
+        "x-cloud-agents-required-scope": "skill-bundles.list",
+        "parameters": [ { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/RequestId" }, { "$ref": "#/components/parameters/PageSize" }, { "$ref": "#/components/parameters/PageToken" } ],
+        "responses": { "200": { "description": "Project Skill Bundles", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/skill-bundle-page.schema.json" } } } }, "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" } }
+      },
+      "post": {
+        "operationId": "adminCreateSkillBundle",
+        "x-cloud-agents-required-scope": "skill-bundles.create",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [ { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/RequestId" }, { "$ref": "#/components/parameters/IdempotencyKey" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/skill-bundle-create-request.schema.json" } } } },
+        "responses": { "201": { "description": "Skill Bundle created", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/skill-bundle.schema.json" } } } }, "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }, "409": { "$ref": "#/components/responses/Problem" }, "415": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/skill-bundles/{skillBundleId}": {
+      "get": {
+        "operationId": "adminGetSkillBundle",
+        "x-cloud-agents-required-scope": "skill-bundles.get",
+        "parameters": [ { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/SkillBundleId" }, { "$ref": "#/components/parameters/RequestId" } ],
+        "responses": { "200": { "description": "Skill Bundle", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/skill-bundle.schema.json" } } } }, "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}/skill-bundles/{skillBundleId}:revoke": {
+      "post": {
+        "operationId": "adminRevokeSkillBundle",
+        "x-cloud-agents-required-scope": "skill-bundles.delete",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [ { "$ref": "#/components/parameters/TenantId" }, { "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/SkillBundleId" }, { "$ref": "#/components/parameters/RequestId" }, { "$ref": "#/components/parameters/IdempotencyKey" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/skill-bundle-revoke-request.schema.json" } } } },
+        "responses": { "200": { "description": "Skill Bundle revoked", "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/skill-bundle.schema.json" } } } }, "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" }, "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" }, "409": { "$ref": "#/components/responses/Problem" }, "415": { "$ref": "#/components/responses/Problem" } }
+      }
     }
   },
   "components": {
@@ -2833,6 +2916,18 @@
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
         }
+      },
+      "McpServerId": {
+        "name": "mcpServerId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
+      "SkillBundleId": {
+        "name": "skillBundleId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
       },
       "RoleBindingId": {
         "name": "roleBindingId",

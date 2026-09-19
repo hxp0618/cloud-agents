@@ -7,6 +7,10 @@ import {
   reconstructedPrompt,
   requireProviderOuterSandboxProfile,
   validateRunnerInput,
+  managedMcpConfiguration,
+  ManagedCapabilityUnavailableError,
+  managedSkillBundleDirectories,
+  readCapabilityManifest,
   type ProviderRunExecutor,
   type ProviderRunOptions,
   type RunnerCredential,
@@ -44,6 +48,21 @@ export function startClaudeProviderRun(
     credential,
     applyClaudeCredentialEnvironment,
   );
+  const capabilityManifest = readCapabilityManifest(options.environment ?? process.env);
+  const skillDirectories = managedSkillBundleDirectories(
+    capabilityManifest,
+    options.environment ?? process.env,
+  );
+  if (options.operation?.commandType === "GenerateText" && capabilityManifest?.bindings.length) {
+    throw new ManagedCapabilityUnavailableError(
+      "Claude Provider GenerateText does not permit MCP or Skill capabilities.",
+    );
+  }
+  const mcpConfiguration = managedMcpConfiguration(
+    capabilityManifest,
+    options.environment ?? process.env,
+  );
+  Object.assign(environment, mcpConfiguration.environment);
   const effectiveInput = withCredentialModel(input, credential);
   const hasDurableHistory = hasAuthoritativeResumeData(input.workload, input.memoryDocuments);
   return startClaudeAgentSdkRun({
@@ -60,6 +79,10 @@ export function startClaudeProviderRun(
       effectiveInput.workload.inputText,
     interactive: options.interactive ?? true,
     ...(options.operation ? { operation: options.operation } : {}),
+    ...(Object.keys(mcpConfiguration.claudeServers).length
+      ? { mcpServers: mcpConfiguration.claudeServers }
+      : {}),
+    ...(skillDirectories.length ? { skillDirectories } : {}),
     ...(options.claudeQueryFactory ? { queryFactory: options.claudeQueryFactory } : {}),
   });
 }

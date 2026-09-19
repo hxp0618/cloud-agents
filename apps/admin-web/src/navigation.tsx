@@ -2,20 +2,111 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey, type Translate } from "./i18n";
 
 export const navigationPages = [
-  { id: "overview", label: "nav.overview", group: "nav.group.resources" },
-  { id: "targets", label: "nav.targets", group: "nav.group.resources" },
-  { id: "remoteWorkers", label: "nav.remoteWorkers", group: "nav.group.resources" },
-  { id: "sandboxes", label: "nav.sandboxes", group: "nav.group.resources" },
-  { id: "leases", label: "nav.leases", group: "nav.group.resources" },
-  { id: "workers", label: "nav.workers", group: "nav.group.resources" },
-  { id: "releases", label: "nav.releases", group: "nav.group.resources" },
-  { id: "runtimeProfiles", label: "nav.runtimeProfiles", group: "nav.group.configuration" },
-  { id: "profiles", label: "nav.profiles", group: "nav.group.configuration" },
-  { id: "storage", label: "nav.storagePolicies", group: "nav.group.configuration" },
-  { id: "network", label: "nav.networkPolicies", group: "nav.group.configuration" },
-  { id: "quotas", label: "nav.quotas", group: "nav.group.configuration" },
-  { id: "maintenance", label: "nav.maintenance", group: "nav.group.operations" },
-] as const satisfies readonly { id: string; label: MessageKey; group: MessageKey }[];
+  {
+    id: "overview",
+    label: "nav.overview",
+    title: "page.overview.title",
+    description: "page.overview.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "targets",
+    label: "nav.targets",
+    title: "page.targets.title",
+    description: "page.targets.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "remoteWorkers",
+    label: "nav.remoteWorkers",
+    title: "page.remoteWorkers.title",
+    description: "page.remoteWorkers.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "sandboxes",
+    label: "nav.sandboxes",
+    title: "page.sandboxes.title",
+    description: "page.sandboxes.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "leases",
+    label: "nav.leases",
+    title: "page.leases.title",
+    description: "page.leases.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "workers",
+    label: "nav.workers",
+    title: "page.workers.title",
+    description: "page.workers.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "releases",
+    label: "nav.releases",
+    title: "page.releases.title",
+    description: "page.releases.description",
+    group: "nav.group.resources",
+  },
+  {
+    id: "runtimeProfiles",
+    label: "nav.runtimeProfiles",
+    title: "page.runtimeProfiles.title",
+    description: "page.runtimeProfiles.description",
+    group: "nav.group.configuration",
+  },
+  {
+    id: "profiles",
+    label: "nav.profiles",
+    title: "page.profiles.title",
+    description: "page.profiles.description",
+    group: "nav.group.configuration",
+  },
+  {
+    id: "storage",
+    label: "nav.storagePolicies",
+    title: "page.storagePolicies.title",
+    description: "page.storagePolicies.description",
+    group: "nav.group.configuration",
+  },
+  {
+    id: "network",
+    label: "nav.networkPolicies",
+    title: "page.networkPolicies.title",
+    description: "page.networkPolicies.description",
+    group: "nav.group.configuration",
+  },
+  {
+    id: "capabilities",
+    label: "nav.capabilities",
+    title: "page.capabilities.title",
+    description: "page.capabilities.description",
+    group: "nav.group.configuration",
+  },
+  {
+    id: "quotas",
+    label: "nav.quotas",
+    title: "page.quotas.title",
+    description: "page.quotas.description",
+    group: "nav.group.configuration",
+  },
+  {
+    id: "maintenance",
+    label: "nav.maintenance",
+    title: "page.maintenance.title",
+    description: "page.maintenance.description",
+    group: "nav.group.operations",
+  },
+] as const satisfies readonly {
+  id: string;
+  label: MessageKey;
+  title: MessageKey;
+  description: MessageKey;
+  group: MessageKey;
+}[];
 export type Page = (typeof navigationPages)[number]["id"];
 
 const navigationIconPaths: Record<Page | "sidebar" | "search" | "arrow", string> = {
@@ -30,6 +121,8 @@ const navigationIconPaths: Record<Page | "sidebar" | "search" | "arrow", string>
   profiles: "M4 3h16v18H4zM8 7h8M8 12h8M8 17h4",
   storage: "M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01",
   network: "M9 3h6v6H9zM2 15h6v6H2zM16 15h6v6h-6zM12 9v3M5 15v-3h14v3",
+  capabilities:
+    "M12 3a4 4 0 0 0-4 4v2H6a3 3 0 0 0 0 6h2v2a4 4 0 0 0 8 0v-2h2a3 3 0 0 0 0-6h-2V7a4 4 0 0 0-4-4z",
   quotas: "M3 20V4M3 20h18M7 16v-4M12 16V8M17 16V5",
   maintenance: "M20 11a8 8 0 1 0-2 7M20 4v7h-7",
   search: "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14M15 15l6 6",

@@ -6,6 +6,7 @@ export const CLOUD_AGENT_ENVIRONMENT = Object.freeze({
   providerHttpsProxy: "CLOUD_AGENT_PROVIDER_HTTPS_PROXY",
   providerAllProxy: "CLOUD_AGENT_PROVIDER_ALL_PROXY",
   providerNoProxy: "CLOUD_AGENT_PROVIDER_NO_PROXY",
+  capabilityMaterializationFd: "CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD",
   providerNpmConfigUserconfig: "CLOUD_AGENT_PROVIDER_NPM_CONFIG_USERCONFIG",
   providerPipConfigFile: "CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE",
   deepSeekHarnessBin: "CLOUD_AGENT_DEEPSEEK_HARNESS_BIN",

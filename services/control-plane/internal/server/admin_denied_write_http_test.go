@@ -61,7 +61,7 @@ func TestAdminDeniedWriteRoutesCoverEveryContractWriteWithoutReadingBody(t *test
 			count++
 		}
 	}
-	if count != 26 {
+	if count != 30 {
 		t.Fatalf("review changed Admin write surface: %d", count)
 	}
 	for _, path := range []string{

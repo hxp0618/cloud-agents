@@ -251,4 +251,10 @@ var productFoundationRunnerBindings = [...]generatedRunnerBindingSelector{
 	{selectorID: "product-000097", schemaHead: "000097", migrationCount: 97,
 		manifestPath: "services/control-plane/migrations/product/000097/manifest.json", manifestSizeBytes: 225207, manifestRawDigest: "sha256:17a2d4bf3fd56c732c66592897b9889b105bedac9290484587a9baa46eaf6d73", manifestDigest: "sha256:6210f7528db9f93bbab51d2ad400391f5d1ea9a0e3d99295d9a581993a64031d",
 		schemaBundlePath: "services/control-plane/migrations/product/000097/schema-bundle.json", schemaBundleSizeBytes: 152287, schemaBundleRawDigest: "sha256:17ee21f544b565866297a49170a3ffcbad974645f13b82eedcf8ec55e0a32c5d", schemaBundleDigest: "sha256:6b860d0fc7d33fef12fba51b65b0caac943b75f372ea2a77ed575cf1b093fd01"},
+	{selectorID: "product-000098", schemaHead: "000098", migrationCount: 98,
+		manifestPath: "services/control-plane/migrations/product/000098/manifest.json", manifestSizeBytes: 227501, manifestRawDigest: "sha256:30814a412ea401d2c84f1d4b11d98195abec6d4efd376ed7a6a6c282adb37701", manifestDigest: "sha256:4d0246bf1c40f4867e87e7e37849ffb5098940c4a96b13045670ffdd97339158",
+		schemaBundlePath: "services/control-plane/migrations/product/000098/schema-bundle.json", schemaBundleSizeBytes: 153838, schemaBundleRawDigest: "sha256:2fe301730009a6834b869310e16820d5aee38b97f3c6009e0e0fdf8675ae6c4a", schemaBundleDigest: "sha256:3e50612cabeff0b4d825c66adc0c3e5cd73fbcc8c24c7eaa3ade51ff0573c172"},
+	{selectorID: "product-000099", schemaHead: "000099", migrationCount: 99,
+		manifestPath: "services/control-plane/migrations/product/000099/manifest.json", manifestSizeBytes: 229799, manifestRawDigest: "sha256:606a8201f3e3529b72187001bfce8bb83bd22c8a4858191b8e69d59633a22836", manifestDigest: "sha256:4cddb22c49a653424ee1a69f94f5a26f1d4b3dbccf31699812aeb7b331b3af46",
+		schemaBundlePath: "services/control-plane/migrations/product/000099/schema-bundle.json", schemaBundleSizeBytes: 155392, schemaBundleRawDigest: "sha256:2960044279eca764edaa841a1d6c92f790c27edf5aeea983b95160209a80a7c4", schemaBundleDigest: "sha256:7f30d8e7963746c57d3dfa1fbe1d3f28a4a0af5aefefcb0bd2e15c5d8f6fcb73"},
 }
