@@ -8,9 +8,12 @@ import {
 } from "@cloud-agents/cloud-agent-runtime";
 
 import manifest from "../manifest.json";
+import { assertCloudAgentDistributionManifest } from "./helpers";
 
 export { createCloudAgentStdioClient };
 export * from "./helpers";
+
+assertCloudAgentDistributionManifest(manifest);
 export const CLOUD_AGENT_DISTRIBUTION_MANIFEST = deepFreeze(manifest);
 
 export function createDefaultCloudAgentRuntime(

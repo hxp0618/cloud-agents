@@ -32,6 +32,11 @@ import {
   type ManagedMcpBroker,
 } from "./capabilityBroker";
 import { materializeManagedSkills } from "./skillMaterializer";
+import {
+  assertManagedSkillRuntimeDirectories,
+  closeManagedSkillSandboxMonitor,
+  verifyManagedSkillSandbox,
+} from "./skillSandbox";
 
 export interface CloudAgentRuntimeStdioOptions {
   readonly source?: Readable;
@@ -39,6 +44,8 @@ export interface CloudAgentRuntimeStdioOptions {
   readonly diagnostics?: Writable;
   readonly allowedProviders?: ReadonlyArray<string>;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  /** @internal Bounded shutdown tuning used by conformance tests. */
+  readonly shutdownCleanupTimeoutMs?: number;
 }
 
 type ActiveSession = {
@@ -49,6 +56,7 @@ type ActiveSession = {
 };
 
 const FATAL_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
+const DEFAULT_SHUTDOWN_CLEANUP_TIMEOUT_MS = 5_000;
 
 /** Runs the public Plugin ABI registry over bounded Protocol v2 NDJSON. */
 export async function runCloudAgentRuntimeStdio(
@@ -70,16 +78,34 @@ export async function runCloudAgentRuntimeStdio(
     runtimeEnvironment,
     capabilityManifest,
   );
-  const skillMounts = materializeManagedSkills(
-    capabilityManifest,
-    capabilityMaterialization,
-    managedSkillRootDirectory(runtimeEnvironment),
-  );
+  const skillSandbox = verifyManagedSkillSandbox(runtimeEnvironment, capabilityManifest);
+  const sandboxSkillEnvironment = new Map<string, string>();
+  if (skillSandbox) {
+    for (const binding of capabilityManifest?.bindings ?? []) {
+      if (binding.resourceKind !== "skill-bundle") continue;
+      const suffix = binding.resourceId.replaceAll(/[^A-Za-z0-9]/gu, "_").toUpperCase();
+      const name = `CLOUD_AGENT_SKILL_BUNDLE_${suffix}_ROOT`;
+      const value = runtimeEnvironment[name];
+      if (!value) {
+        closeManagedSkillSandboxMonitor();
+        throw new Error("Managed Skill sandbox environment is incomplete.");
+      }
+      sandboxSkillEnvironment.set(name, value);
+    }
+  }
+  const skillMounts = skillSandbox
+    ? null
+    : materializeManagedSkills(
+        capabilityManifest,
+        capabilityMaterialization,
+        managedSkillRootDirectory(runtimeEnvironment),
+      );
   let broker: ManagedMcpBroker | null;
   try {
     broker = await startManagedMcpBroker(capabilityManifest, capabilityMaterialization);
   } catch (error) {
     skillMounts?.close();
+    closeManagedSkillSandboxMonitor();
     throw error;
   }
   const previousBrokerEnvironment = new Map<string, string | undefined>();
@@ -96,9 +122,14 @@ export async function runCloudAgentRuntimeStdio(
     for (const [name, value] of Object.entries(skillMounts.environment)) {
       process.env[name] = value;
     }
+  } else if (skillSandbox) {
+    for (const [name, value] of sandboxSkillEnvironment) {
+      process.env[name] = value;
+    }
   }
   const sessions = new Map<string, ActiveSession>();
   const commandTasks = new Set<Promise<void>>();
+  const shutdownCleanupTasks = new Set<Promise<void>>();
   const lifecycleBarriers = new Map<string, Promise<void>>();
   const shutdown = new AbortController();
   let credentialConsumed = false;
@@ -147,6 +178,15 @@ export async function runCloudAgentRuntimeStdio(
     );
     await Promise.allSettled(commandTasks);
     await drainRegisteredSessions(sessions);
+    const cleanupSettled = await settleTasksWithin(
+      shutdownCleanupTasks,
+      options.shutdownCleanupTimeoutMs ?? DEFAULT_SHUTDOWN_CLEANUP_TIMEOUT_MS,
+    );
+    if (!cleanupSettled) {
+      diagnostics.write(
+        `cloud-agent-runtime: Provider Session cleanup timed out with ${shutdownCleanupTasks.size} task(s) still pending.\n`,
+      );
+    }
     try {
       await writer.flush();
     } catch (cause) {
@@ -158,6 +198,7 @@ export async function runCloudAgentRuntimeStdio(
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
       }
+      closeManagedSkillSandboxMonitor();
       output.off("error", onOutputError);
       output.off("close", onOutputClose);
     }
@@ -208,6 +249,11 @@ export async function runCloudAgentRuntimeStdio(
       active = sessions.get(command.executionId);
       if (command.commandType === "StartSession" || command.commandType === "ResumeSession") {
         const binding = runnerBinding(command);
+        assertManagedSkillRuntimeDirectories(skillSandbox, [
+          binding.workspaceRoot,
+          binding.runtimeOutputRoot,
+          binding.providerStateRoot,
+        ]);
         assertAllowedProvider(allowed, binding.providerKind);
         if (active) {
           await closeRegisteredSession(command.executionId, active, "replaced");
@@ -249,7 +295,11 @@ export async function runCloudAgentRuntimeStdio(
           }),
           shutdown.signal,
         );
-        const session = await sessionCreationBeforeShutdown(creation, shutdown.signal);
+        const session = await sessionCreationBeforeShutdown(
+          creation,
+          shutdown.signal,
+          trackShutdownCleanup,
+        );
         const eventPump = pumpSessionEvents(session, writer.enqueue);
         eventPump.then(undefined, latchFatal);
         active = {
@@ -290,6 +340,14 @@ export async function runCloudAgentRuntimeStdio(
     sessions.delete(executionId);
     await Promise.allSettled([active.session.close(reason)]);
     await Promise.allSettled([active.eventPump]);
+  }
+
+  function trackShutdownCleanup(task: Promise<void>): void {
+    shutdownCleanupTasks.add(task);
+    task.then(
+      () => shutdownCleanupTasks.delete(task),
+      () => shutdownCleanupTasks.delete(task),
+    );
   }
 }
 
@@ -502,6 +560,7 @@ async function drainRegisteredSessions(sessions: Map<string, ActiveSession>): Pr
 function sessionCreationBeforeShutdown(
   creation: Promise<CloudAgentProviderSession>,
   signal: AbortSignal,
+  trackShutdownCleanup: (task: Promise<void>) => void,
 ): Promise<CloudAgentProviderSession> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -509,7 +568,7 @@ function sessionCreationBeforeShutdown(
       if (settled) return;
       settled = true;
       signal.removeEventListener("abort", onAbort);
-      void creation.then(closeLateSession, () => undefined);
+      trackShutdownCleanup(creation.then(closeLateSession, () => undefined).catch(() => undefined));
       reject(runtimeFailure("cancelled", "Runtime closed while creating the Provider Session."));
     };
     signal.addEventListener("abort", onAbort, { once: true });
@@ -519,17 +578,9 @@ function sessionCreationBeforeShutdown(
     }
     creation.then(
       (session) => {
-        if (settled) {
-          closeLateSession(session);
-          return;
-        }
+        if (settled) return;
         if (signal.aborted) {
-          settled = true;
-          signal.removeEventListener("abort", onAbort);
-          closeLateSession(session);
-          reject(
-            runtimeFailure("cancelled", "Runtime closed while creating the Provider Session."),
-          );
+          onAbort();
           return;
         }
         settled = true;
@@ -546,8 +597,26 @@ function sessionCreationBeforeShutdown(
   });
 }
 
-function closeLateSession(session: CloudAgentProviderSession): void {
-  void session.close("stdio closing").catch(() => undefined);
+async function closeLateSession(session: CloudAgentProviderSession): Promise<void> {
+  await session.close("stdio closing");
+}
+
+async function settleTasksWithin(
+  tasks: ReadonlySet<Promise<unknown>>,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (tasks.size === 0) return true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.allSettled(tasks).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function pumpSessionEvents(

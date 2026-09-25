@@ -75,7 +75,7 @@ expect_startup_failure control-plane 2 "database, authentication, TLS, and acces
 expect_startup_failure worker 2 "startup or shutdown failed"
 expect_startup_failure migrate 1 "database URL, repository root, and product-$migration_head selector are required"
 
-test "$(docker run --rm --entrypoint /usr/local/bin/codex "$image_prefix:worker" --version)" = "codex-cli 0.150.1"
+test "$(docker run --rm --entrypoint /usr/local/bin/codex "$image_prefix:worker" --version)" = "codex-cli 0.154.0"
 test "$(docker run --rm --entrypoint /usr/local/bin/claude "$image_prefix:worker" --version)" = "2.1.207 (Claude Code)"
 test "$(docker run --rm --entrypoint /usr/local/bin/dsh "$image_prefix:worker" --version)" = "0.1.2-rc.1"
 docker run --rm --entrypoint /usr/bin/test "$image_prefix:migrate" \
@@ -94,7 +94,7 @@ runtime_output=$(
       --protocol-v2
 )
 case "$runtime_output" in
-  *'"providerKind":"codex"'*'"name":"codex","version":"0.150.1","available":true,"compatible":true'*) ;;
+  *'"providerKind":"codex"'*'"name":"codex","version":"0.154.0","available":true,"compatible":true'*) ;;
   *) echo "Worker image Codex Runtime descriptor is unavailable or incompatible" >&2; exit 1 ;;
 esac
 case "$runtime_output" in

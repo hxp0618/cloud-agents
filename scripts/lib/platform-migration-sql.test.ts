@@ -1428,6 +1428,80 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(() => classifyMigrationStatement(checkpointStatements[0]!, "000091")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/,
     );
+    const expandedTranscriptStatements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000100_expand_managed_agent_runtime_transcript.sql",
+        ),
+      ),
+    );
+    expect(classifyMigrationStatement(expandedTranscriptStatements[0]!, "000100").command).toBe(
+      "ALTER",
+    );
+    expect(classifyMigrationStatement(expandedTranscriptStatements[2]!, "000100").command).toBe(
+      "CREATE",
+    );
+    expect(classifyMigrationStatement(expandedTranscriptStatements[3]!, "000100").command).toBe(
+      "CREATE",
+    );
+    expect(() => classifyMigrationStatement(expandedTranscriptStatements[0]!, "000099")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+    const sideEffectSettlementStatements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000101_require_side_effect_reconciliation_before_settlement.sql",
+        ),
+      ),
+    );
+    const predecessorCatalog = JSON.parse(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/product/000100/catalog/schema-000099.json",
+        ),
+        "utf8",
+      ),
+    );
+    const existingFunctionTargets = new Set<string>(
+      predecessorCatalog.source_descriptors
+        .flatMap((source: any) => source.statements)
+        .map((statement: any) => statement.classification)
+        .filter((classification: any) => classification.object_kind === "FUNCTION")
+        .map((classification: any) => classification.target_identity),
+    );
+    expect(sideEffectSettlementStatements).toHaveLength(9);
+    for (const statement of sideEffectSettlementStatements.slice(0, 3)) {
+      expect(
+        classifyMigrationStatement(statement, "000101", existingFunctionTargets).command,
+      ).toBe("CREATE");
+      expect(new TextDecoder().decode(statement.bytes)).toContain(
+        "managed agent side effect requires reconciliation",
+      );
+    }
+    const revokedTargets = sideEffectSettlementStatements.slice(3).map((statement) => {
+      const classification = classifyMigrationStatement(
+        statement,
+        "000101",
+        existingFunctionTargets,
+      );
+      expect(classification.command).toBe("REVOKE");
+      expect(classification.grantee).toBe("CLOUD_AGENTS_RUNTIME");
+      return classification.target_identity;
+    });
+    expect(revokedTargets).toEqual([
+      "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+      "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+      "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v3(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+      "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+      "function:unquoted:cloud_agents/unquoted:cancel_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+      "function:unquoted:cloud_agents/unquoted:interrupt_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+    ]);
+    expect(() => classifyMigrationStatement(sideEffectSettlementStatements[0]!, "000100")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
     const restoreRebindTrigger = checkpointStatements.find((statement) =>
       new TextDecoder()
         .decode(statement.bytes)

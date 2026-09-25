@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
+  ManagedCapabilityCallResultUnknownError,
   ManagedCapabilityUnavailableError,
   capabilityTokenEnvironmentName,
+  isManagedMcpCallResultUnknown,
   managedMcpConfiguration,
   type RuntimeCapabilityBinding,
   type RuntimeCapabilityManifest,
@@ -24,6 +26,8 @@ export type ManagedPiMcpToolMetadata = Readonly<{
 export type ManagedPiMcpTools = Readonly<{
   tools: ReadonlyArray<ToolDefinition>;
   metadataByToolName: ReadonlyMap<string, ManagedPiMcpToolMetadata>;
+  unknownToolCallIds: ReadonlySet<string>;
+  resultUnknown: Promise<ManagedCapabilityCallResultUnknownError>;
   close(): void;
 }>;
 
@@ -69,9 +73,7 @@ class ManagedMcpClient {
     const tools: DiscoveredMcpTool[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_MCP_PAGES; page += 1) {
-      const result = recordValue(
-        await this.request("tools/list", cursor ? { cursor } : {}),
-      );
+      const result = recordValue(await this.request("tools/list", cursor ? { cursor } : {}));
       if (!result || !Array.isArray(result.tools))
         throw unavailable("MCP tools/list response is invalid.");
       for (const value of result.tools) {
@@ -88,11 +90,7 @@ class ManagedMcpClient {
     throw unavailable("MCP tools/list exceeded the managed page limit.");
   }
 
-  async callTool(
-    name: string,
-    params: unknown,
-    signal: AbortSignal | undefined,
-  ): Promise<unknown> {
+  async callTool(name: string, params: unknown, signal: AbortSignal | undefined): Promise<unknown> {
     return this.request("tools/call", { name, arguments: params }, signal);
   }
 
@@ -103,8 +101,12 @@ class ManagedMcpClient {
       combineSignals(this.lifetimeSignal, signal),
     );
     const message = readJsonRpcResponse(response);
-    if (message.id !== id || message.error !== undefined)
+    if (message.id !== id) throw unavailable("MCP request failed.");
+    if (message.error !== undefined) {
+      if (method === "tools/call" && isManagedMcpCallResultUnknown(message.error))
+        throw new ManagedCapabilityCallResultUnknownError();
       throw unavailable("MCP request failed.");
+    }
     return message.result;
   }
 
@@ -172,6 +174,11 @@ export async function createManagedPiMcpTools(
   const lifetime = new AbortController();
   const tools: ToolDefinition[] = [];
   const metadata = new Map<string, ManagedPiMcpToolMetadata>();
+  const unknownToolCallIds = new Set<string>();
+  let reportResultUnknown!: (error: ManagedCapabilityCallResultUnknownError) => void;
+  const resultUnknown = new Promise<ManagedCapabilityCallResultUnknownError>((resolve) => {
+    reportResultUnknown = resolve;
+  });
   try {
     for (const binding of bindings) {
       const token = configuration.environment[capabilityTokenEnvironmentName(binding.resourceId)];
@@ -188,11 +195,19 @@ export async function createManagedPiMcpTools(
           description: discovered.description || "Host-managed MCP tool.",
           parameters: discovered.inputSchema as ToolDefinition["parameters"],
           executionMode: "sequential",
-          async execute(_toolCallId, params, signal) {
-            const result = recordValue(await client.callTool(discovered.name, params, signal));
-            if (!result || result.isError === true || !Array.isArray(result.content))
-              throw unavailable("Managed MCP tool execution failed.");
-            return { content: mcpResultContent(result.content), details: {} };
+          async execute(toolCallId, params, signal) {
+            try {
+              const result = recordValue(await client.callTool(discovered.name, params, signal));
+              if (!result || result.isError === true || !Array.isArray(result.content))
+                throw unavailable("Managed MCP tool execution failed.");
+              return { content: mcpResultContent(result.content), details: {} };
+            } catch (error) {
+              if (error instanceof ManagedCapabilityCallResultUnknownError) {
+                unknownToolCallIds.add(toolCallId);
+                reportResultUnknown(error);
+              }
+              throw error;
+            }
           },
         };
         tools.push(tool);
@@ -205,6 +220,8 @@ export async function createManagedPiMcpTools(
     return Object.freeze({
       tools: Object.freeze(tools),
       metadataByToolName: metadata,
+      unknownToolCallIds,
+      resultUnknown,
       close: () => lifetime.abort(),
     });
   } catch (error) {
@@ -218,6 +235,8 @@ function emptyManagedTools(): ManagedPiMcpTools {
   return Object.freeze({
     tools: Object.freeze([]),
     metadataByToolName: new Map(),
+    unknownToolCallIds: new Set<string>(),
+    resultUnknown: new Promise<ManagedCapabilityCallResultUnknownError>(() => {}),
     close: () => {},
   });
 }

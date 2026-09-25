@@ -2993,6 +2993,42 @@ describe("generated platform JSON models", () => {
       hasMore: false,
     });
     expect(page.events[0]?.spec.result).toBe("succeeded");
+    const recoverySpec = {
+      operation: "execution.reconcile",
+      resource: "Execution",
+      generation: 2,
+      mutationDigest: `sha256:${"c".repeat(64)}`,
+      executionId: "execution-alpha",
+      changes: [
+        {
+          resource: "Execution",
+          from: "recovery:awaiting_reconciliation",
+          to: "recovery:none",
+          version: 2,
+        },
+      ],
+    };
+    const recoveryPage = decodeManagedAgentEventPage({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "EventPage",
+      events: [{ ...event, spec: recoverySpec }],
+      nextCursor: "",
+      hasMore: false,
+    });
+    expect(recoveryPage.events[0]?.spec.operation).toBe("execution.reconcile");
+    const missingExecutionId = { ...recoverySpec };
+    delete (missingExecutionId as { executionId?: string }).executionId;
+    for (const spec of [{ ...recoverySpec, resource: "Session" }, missingExecutionId]) {
+      expect(() =>
+        decodeManagedAgentEventPage({
+          apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+          kind: "EventPage",
+          events: [{ ...event, spec }],
+          nextCursor: "",
+          hasMore: false,
+        }),
+      ).toThrow("INVALID_EVENT");
+    }
     expect(() =>
       decodeManagedAgentEventPage({
         apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",

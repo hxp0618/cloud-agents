@@ -1,5 +1,8 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
@@ -12,11 +15,13 @@ import {
   buildPlatformMigrationPackage,
   buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
+  platformReleaseArtifactFilename,
   platformReleaseArtifact,
   PLATFORM_RELEASE_CLI_TARGETS,
   PLATFORM_RELEASE_GO_COMMANDS,
   PLATFORM_RELEASE_MIGRATION_HEAD,
   PLATFORM_RELEASE_TARGETS,
+  validatePlatformReleaseDirectory,
   validatePlatformReleaseManifest,
 } from "./platform-release";
 
@@ -51,7 +56,7 @@ describe("platform release", () => {
     const artifacts = expectedArtifactIdentities().map(({ name, target }) => ({
       name,
       target,
-      filename: `${name}-${target}${target.startsWith("windows-") ? ".exe" : ""}`,
+      filename: platformReleaseArtifactFilename(name, target, PLATFORM_RELEASE_MIGRATION_HEAD),
       sizeBytes: 1,
       sha256: `sha256:${"a".repeat(64)}`,
     }));
@@ -72,6 +77,82 @@ describe("platform release", () => {
     ).toThrow(/artifacts/);
   });
 
+  it("verifies manifest, checksums, sizes and bytes before release use", () => {
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-platform-release-"));
+    try {
+      const artifacts = expectedArtifactIdentities().map(({ name, target }, index) => {
+        const bytes = Buffer.from(`artifact-${String(index)}`);
+        const artifact = platformReleaseArtifact(
+          name,
+          target,
+          platformReleaseArtifactFilename(name, target, PLATFORM_RELEASE_MIGRATION_HEAD),
+          bytes,
+        );
+        writeFileSync(join(directory, artifact.filename), bytes);
+        return artifact;
+      });
+      const manifest = {
+        schemaVersion: 1 as const,
+        kind: "cloud-agents-platform-release" as const,
+        version: "0.1.0",
+        sourceCommit: "a".repeat(40),
+        sourceDirty: false,
+        artifacts,
+      };
+      writeFileSync(
+        join(directory, "platform-release-manifest.json"),
+        `${JSON.stringify(manifest)}\n`,
+      );
+      const checksums = `${artifacts.map(({ filename, sha256 }) => `${sha256.slice("sha256:".length)}  ${filename}`).join("\n")}\n`;
+      writeFileSync(join(directory, "checksums.sha256"), checksums);
+
+      expect(validatePlatformReleaseDirectory(directory)).toEqual(manifest);
+      expect(
+        spawnSync("node", ["scripts/lib/platform-release-verifier.ts", directory], {
+          encoding: "utf8",
+        }).status,
+      ).toBe(0);
+
+      const cliIndex = artifacts.findIndex(({ name }) => name === "cloud-agentsctl");
+      const renamedCli = { ...artifacts[cliIndex]!, filename: "renamed-cloud-agentsctl" };
+      const renamedArtifacts = artifacts.with(cliIndex, renamedCli);
+      writeFileSync(
+        join(directory, renamedCli.filename),
+        readFileSync(join(directory, artifacts[cliIndex]!.filename)),
+      );
+      writeFileSync(
+        join(directory, "platform-release-manifest.json"),
+        `${JSON.stringify({ ...manifest, artifacts: renamedArtifacts })}\n`,
+      );
+      writeFileSync(
+        join(directory, "checksums.sha256"),
+        `${renamedArtifacts.map(({ filename, sha256 }) => `${sha256.slice("sha256:".length)}  ${filename}`).join("\n")}\n`,
+      );
+      expect(() => validatePlatformReleaseDirectory(directory)).toThrow(/filename/);
+      writeFileSync(
+        join(directory, "platform-release-manifest.json"),
+        `${JSON.stringify(manifest)}\n`,
+      );
+      writeFileSync(join(directory, "checksums.sha256"), checksums);
+
+      writeFileSync(
+        join(directory, "checksums.sha256"),
+        `${checksums[0] === "0" ? "1" : "0"}${checksums.slice(1)}`,
+      );
+      expect(() => validatePlatformReleaseDirectory(directory)).toThrow(/checksum does not match/);
+      writeFileSync(join(directory, "checksums.sha256"), checksums);
+      writeFileSync(join(directory, artifacts[0]!.filename), "tampered");
+      expect(() => validatePlatformReleaseDirectory(directory)).toThrow(/integrity validation/);
+      expect(
+        spawnSync("node", ["scripts/lib/platform-release-verifier.ts", directory], {
+          encoding: "utf8",
+        }).status,
+      ).not.toBe(0);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("publishes the CLI for every supported desktop target while keeping services Linux-only", () => {
     expect(PLATFORM_RELEASE_CLI_TARGETS).toEqual([
       "linux-amd64",
@@ -82,6 +163,16 @@ describe("platform release", () => {
       "windows-arm64",
     ]);
     expect(PLATFORM_RELEASE_TARGETS).toEqual(["linux-amd64", "linux-arm64"]);
+    for (const target of PLATFORM_RELEASE_TARGETS) {
+      expect(expectedArtifactIdentities()).toContainEqual({
+        name: "cloud-agents-landlock-run",
+        target,
+      });
+    }
+    expect(expectedArtifactIdentities()).toContainEqual({
+      name: "cloud-agents-landlock-notices",
+      target: "portable",
+    });
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-access-gateway");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-remote-worker");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agentsctl");
@@ -174,6 +265,7 @@ describe("platform release", () => {
       `deploy/user-web/dist/index-${indexDigest("user-web")}.html`,
       "deploy/web/server.mjs",
       "scripts/bootstrap-platform-remote-worker.sh",
+      "scripts/lib/platform-release-verifier.ts",
       "scripts/prepare-platform-docker-target.sh",
       "scripts/prepare-platform-kubernetes-target.sh",
       "scripts/test-platform-agent-interactions.sh",
@@ -405,12 +497,19 @@ describe("platform release", () => {
     expect(migrateDockerfile).toContain(`product/${PLATFORM_RELEASE_MIGRATION_HEAD}/manifest.json`);
     expect(migrateDockerfile).not.toContain("@PLATFORM_MIGRATION_");
     const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
-    expect(workerDockerfile).toContain("@openai/codex@0.150.1");
+    expect(workerDockerfile).toContain(
+      "COPY cloud-agents-landlock-run-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-landlock-run",
+    );
+    expect(workerDockerfile).toContain(
+      "COPY cloud-agents-landlock-notices.txt /usr/share/doc/cloud-agents/landlock-notices.txt",
+    );
+    expect(workerDockerfile).toContain("@openai/codex@0.154.0");
     expect(workerDockerfile).toContain(
       '"@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@0.3.207"',
     );
     expect(workerDockerfile).toContain('test "$(claude --version)" = "2.1.207 (Claude Code)"');
     expect(workerDockerfile).toContain("@deepseek-ai/dsh@0.1.2-rc.1");
+    expect(workerDockerfile).toContain("@deepseek-ai/dsh-llm-pi-ai@0.1.2-rc.1");
     expect(workerDockerfile).toContain('test "$(dsh --version)" = "0.1.2-rc.1"');
     expect(workerDockerfile).toContain("CLOUD_AGENT_DEEPSEEK_HARNESS_BIN=/usr/local/bin/dsh");
     expect(workerDockerfile).toContain("chown 1000:1000 /workspace");
@@ -449,6 +548,468 @@ describe("platform release", () => {
     expect(paths.some((path) => path.includes("platform-adapter") || path.endsWith(".md"))).toBe(
       false,
     );
+  });
+
+  it("keeps interrupted Compose acceptance non-successful after cleanup", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const traps = composeSmoke.match(/^trap .+$/gmu)?.join("\n");
+    expect(traps).toBeDefined();
+    for (const [signal, expectedStatus] of [
+      ["HUP", 129],
+      ["INT", 130],
+      ["TERM", 143],
+    ] as const) {
+      const result = spawnSync(
+        "sh",
+        [
+          "-c",
+          `cleanup() { rc=$?; trap - 0 HUP INT TERM; printf 'cleanup=%s\\n' "$rc"; exit "$rc"; }\n${traps}\nkill -${signal} $$`,
+        ],
+        { encoding: "utf8" },
+      );
+      expect(result.status).toBe(expectedStatus);
+      expect(result.stdout).toBe(`cleanup=${expectedStatus}\n`);
+    }
+  });
+
+  it("verifies candidate bytes before Compose extraction or CLI use", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const verifier =
+      'node "$script_directory/lib/platform-release-verifier.ts" "$candidate_directory"';
+    expect(composeSmoke).toContain(verifier);
+    expect(composeSmoke.indexOf(verifier)).toBeLessThan(
+      composeSmoke.indexOf('cli="$candidate_directory'),
+    );
+    expect(composeSmoke.indexOf(verifier)).toBeLessThan(composeSmoke.indexOf('tar -xf "$1"'));
+    expect(composeSmoke).toContain(
+      'docker cp "$worker_attestation_container:/usr/share/doc/cloud-agents/landlock-notices.txt" "$smoke_directory/landlock-notices-attested"',
+    );
+    expect(composeSmoke).toContain(
+      'cmp -s "$candidate_directory/cloud-agents-landlock-notices.txt" "$smoke_directory/landlock-notices-attested"',
+    );
+  });
+
+  it("cleans only OpenSandbox resources recorded by this Compose run", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    expect(composeSmoke).toContain(
+      'opensandbox_runtime_ids_file="$smoke_directory/opensandbox-runtime-ids"',
+    );
+    expect(composeSmoke).toContain('if [ ! -e "$opensandbox_runtime_ids_file" ]; then');
+    expect(composeSmoke).toContain(
+      "No OpenSandbox runtime IDs were recorded; no runtime cleanup required",
+    );
+    expect(composeSmoke).toContain("label=opensandbox.io/id=$runtime_id");
+    expect(composeSmoke).toContain("label=opensandbox.io/egress-sidecar-for=$runtime_id");
+    expect(composeSmoke).toContain('index .Labels "opensandbox.io/volume-managed-by"');
+    expect(composeSmoke).toContain('if [ "$volume_owner_label" = server ]; then');
+    expect(composeSmoke).not.toContain(
+      "for container in $(docker ps -aq --filter label=opensandbox.io/id); do",
+    );
+    expect(composeSmoke).not.toContain(
+      "for volume in $(docker volume ls -q --filter label=opensandbox.io/volume-managed-by=server); do",
+    );
+  });
+
+  it("checks all Kubernetes prerequisites before creating Compose resources", () => {
+    const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const definition = source.match(
+      /verify_kubernetes_runtime_prerequisites\(\) \{\n[\s\S]*?\n\}/u,
+    )?.[0];
+    expect(definition).toBeDefined();
+    expect(source.indexOf("  verify_kubernetes_runtime_prerequisites\n")).toBeLessThan(
+      source.indexOf("docker_host=$("),
+    );
+    for (const missing of [
+      "",
+      "crd/batchsandboxes.sandbox.opensandbox.io",
+      "crd/pools.sandbox.opensandbox.io",
+      "crd/sandboxsnapshots.sandbox.opensandbox.io",
+      "clusterrole/opensandbox-manager-role",
+    ]) {
+      for (const version of ["0.2.0", "0.1.0", ""]) {
+        const result = spawnSync(
+          "sh",
+          [
+            "-c",
+            `set -eu
+kubernetes_ctl() {
+  [ "$2" != "$MISSING" ] || return 1
+  printf '%s' "$VERSION"
+}
+${definition}
+verify_kubernetes_runtime_prerequisites
+printf 'ready\\n'
+`,
+          ],
+          { encoding: "utf8", env: { ...process.env, MISSING: missing, VERSION: version } },
+        );
+        const ready = !missing && version === "0.2.0";
+        expect(result.status).toBe(ready ? 0 : 2);
+        expect(result.stdout).toBe(ready ? "ready\n" : "");
+        if (!ready) expect(result.stderr).toContain("OpenSandbox 0.2.0 prerequisite:");
+      }
+    }
+  });
+
+  it.each(["approval", "recovery"])(
+    "keeps %s failure diagnostics free of error text and tool content",
+    (kind) => {
+      const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+      const start = source.indexOf(
+        kind === "approval"
+          ? '  if [ "$approval_status" -ne 0 ]; then'
+          : '    if [ -f "$recovery_execute_status" ]; then',
+      );
+      if (kind === "recovery") {
+        expect(source.slice(start, source.indexOf("node <<'NODE'", start))).toContain(
+          '--request-id "$recovery_prefix-failure" execution get',
+        );
+        expect(source.slice(start, source.indexOf("node <<'NODE'", start))).toContain(
+          'CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file"',
+        );
+      }
+      const script = source.slice(start).match(/node <<'NODE'\n([\s\S]*?)\nNODE/u)?.[1];
+      expect(script).toBeDefined();
+      const directory = mkdtempSync(join(tmpdir(), "cloud-agents-capability-diagnostics-"));
+      try {
+        const file = join(directory, "execution.json");
+        const secret = "PRIVATE-CONTENT-MUST-NOT-BE-PRINTED";
+        writeFileSync(
+          file,
+          JSON.stringify({
+            spec: {
+              state: "failed",
+              errorCode: "runtime_open_failed",
+              errorMessage: `EACCES: ${secret}`,
+            },
+            messages: [
+              {
+                messageType: "Error",
+                error: { code: "internal_error", message: secret },
+                payload: { content: secret },
+              },
+            ],
+          }),
+        );
+        const result = spawnSync(process.execPath, ["-e", script!], {
+          encoding: "utf8",
+          env: { ...process.env, CLOUD_AGENTS_COMPOSE_EXECUTION_FILE: file },
+        });
+        expect(result.status).toBe(0);
+        expect(result.stderr).not.toContain(secret);
+        const summary = JSON.parse(result.stderr)[
+          kind === "approval" ? "capabilityExecutionFailure" : "capabilityRecoveryFailure"
+        ];
+        expect(summary.errorCode).toBe("runtime_open_failed");
+        if (kind === "approval") expect(summary.errorHints.permissionDenied).toBe(true);
+        expect(summary.errorDigests).toHaveLength(kind === "approval" ? 2 : 1);
+        expect(summary.messages).toEqual([{ type: "error", errorCode: "internal_error" }]);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("reports capability acceptance only after artifact and event checks", () => {
+    const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const artifactCheck = source.indexOf(
+      "  artifact_index=$(",
+      source.indexOf("run_real_provider_turn()"),
+    );
+    const eventCheck = source.indexOf("  assert_real_event_stream_resume", artifactCheck);
+    const verdict = source.indexOf("capability_acceptance=passed", eventCheck);
+    expect(artifactCheck).toBeGreaterThan(0);
+    expect(eventCheck).toBeGreaterThan(artifactCheck);
+    expect(verdict).toBeGreaterThan(eventCheck);
+  });
+
+  it("runs capability-bound recovery for supported Providers and parameterized negative checks", () => {
+    const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const interactions = readFileSync("scripts/test-platform-agent-interactions.sh", "utf8");
+    expect(source).toContain("recovery_provider=$1");
+    expect(source).toContain('CLOUD_AGENTS_E2E_RECOVERY_PROVIDER="$recovery_provider"');
+    expect(source).toContain("for recovery_provider in $real_provider_kinds; do");
+    expect(source).toContain('  [ "$capability_bound_recovery" -eq 1 ] || return 0');
+    expect(source).toContain(
+      'CLOUD_AGENTS_E2E_RECOVERY_CHECKPOINT_MODE="$recovery_checkpoint_mode"',
+    );
+    expect(source).toContain('run_capability_process_recovery "$recovery_provider"');
+    expect(source).toContain(
+      'if [ "$capability_acceptance" -eq 1 ] && [ "$capability_bound_recovery" -eq 1 ] && capability_provider_enabled "$provider_kind" &&',
+    );
+    expect(source).toContain("for negative_provider in $real_provider_kinds; do");
+    expect(source).toContain('session create --provider "$negative_provider"');
+    expect(source).toContain('"providerKind":"%s"');
+    expect(source).toContain(
+      'if [ "$cross_node_recovery" -eq 1 ] && [ -n "$real_provider_credentials_directory" ]; then',
+    );
+    expect(source).toContain(
+      'elif [ "$capability_bound_recovery" -eq 1 ] && [ -n "$real_provider_credentials_directory" ] &&\n    ! capability_bound_recovery_completed docker "$cross_node_provider_to_run"; then',
+    );
+    expect(source).toContain(
+      "CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY_FAULTS must be worker, agent or both",
+    );
+    expect(source).not.toContain("CLOUD_AGENTS_E2E_RECOVERY_PROVIDER=claudeAgent");
+    const workerRecovery = interactions.slice(
+      interactions.indexOf("run_worker_exit_recovery()"),
+      interactions.indexOf("run_agent_exit_recovery()"),
+    );
+    const agentRecovery = interactions.slice(interactions.indexOf("run_agent_exit_recovery()"));
+    const checkpointWaiter = interactions.slice(
+      interactions.indexOf("wait_for_recovery_side_effect_checkpoint()"),
+      interactions.indexOf("recovery_artifact_digest()"),
+    );
+    expect(workerRecovery).toContain("prepare_interaction_takeover");
+    expect(workerRecovery).toContain("reconcile_interaction_takeover");
+    expect(workerRecovery).toContain("restart_mcp_fixture_after_worker");
+    expect(workerRecovery).toContain(
+      'assert_interaction_takeover "$final_file" same-node-reconnect',
+    );
+    expect(source).toContain('CLOUD_AGENTS_E2E_MCP_FIXTURE_CONTAINER="$mcp_fixture_container"');
+    expect(source).toContain('start_capability_mcp_fixture "$foundation_agent_runtime_id"');
+    expect(agentRecovery).toContain(
+      "assert_interaction_takeover \"$final_file\" 'process-restart|same-node-reconnect'",
+    );
+    expect(interactions).toContain(
+      '["skill", "Skill"].includes(message.payload?.payload?.data?.sourceItemType)',
+    );
+    expect(interactions).toContain(
+      "message.payload?.payload?.data?.capabilityResourceId === expectedSkill.bundleId",
+    );
+    expect(interactions).toContain('payload?.itemType === "command_execution"');
+    expect(interactions).toContain(
+      '["succeeded", "failed", "cancelled"].includes(value.spec?.state)',
+    );
+    expect(interactions).toContain('if [ "$checkpoint_status" -eq 2 ]; then');
+    expect(checkpointWaiter).toContain("completedMcp: completedCapability(expectedMcp)");
+    expect(checkpointWaiter).toContain('observedSkill: observedCapability(expectedSkill, "skill")');
+    expect(checkpointWaiter).toContain(
+      "pendingSideEffect: value.spec?.checkpoint?.pendingSideEffect === true",
+    );
+    expect(checkpointWaiter).toContain('payload?.itemType === "command_execution"');
+    expect(checkpointWaiter).toContain(
+      'String(payload?.data?.sourceItemType ?? "").toLowerCase() === "bash"',
+    );
+    expect(checkpointWaiter).toContain("JSON.stringify({gates, outline})");
+    expect(checkpointWaiter).not.toContain("JSON.stringify(value)");
+  });
+
+  it("retains capability-bound refs across cross-node recovery and recreates the fixture on the destination", () => {
+    const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const recovery = source.slice(source.indexOf("run_real_provider_recovery()"));
+    expect(recovery).not.toContain('"$recovery_cross_node" -eq 0');
+    expect(recovery).toContain('start_capability_mcp_fixture "$kubernetes_agent_runtime_id"');
+    expect(recovery).toContain('start_capability_mcp_fixture "$remote_agent_runtime_id"');
+    expect(recovery).toContain('start_capability_mcp_fixture "$foundation_agent_runtime_id"');
+    expect(source).toContain('value.spec?.runtimeId??""');
+    expect(source).toContain('kubernetes_ctl -n "$kubernetes_active_namespace" get pods');
+  });
+
+  it("gates one real MCP transport disconnect and reconnect cell without replay", () => {
+    const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const fixture = readFileSync("scripts/fixtures/managed-capability-mcp-server.mjs", "utf8");
+    expect(source).toContain(
+      "capability_transport_recovery=${CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY:-0}",
+    );
+    expect(source).toContain(
+      "capability_transport_recovery_environment=${CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY_ENVIRONMENT-}",
+    );
+    expect(source).toContain(
+      "CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY_ENVIRONMENT must be docker, remote-worker or kubernetes",
+    );
+    expect(source).toContain(
+      "capability transport recovery selector did not match an enabled real Provider environment",
+    );
+    expect(source).toContain(
+      "MCP_ACCEPTANCE_DISCONNECT_ARM=/tmp/cloud-agents-mcp-side-effect/disconnect-arm",
+    );
+    expect(source).toContain("-e MCP_ACCEPTANCE_DISCONNECT_ARM=/side-effect/disconnect-arm");
+    expect(source).toContain("mcp_fixture_docker exec \"$mcp_fixture_container\" sh -c");
+    expect(source).toContain(": > /side-effect/disconnect-arm; test -f /side-effect/disconnect-arm");
+    expect(source).toContain("wait_capability_mcp_disconnect_commit()");
+    expect(fixture).toContain("process.exit(137)");
+    expect(source).toContain("assert_capability_mcp_listener_from_runtime_netns()");
+    expect(source).toContain(
+      'start_capability_mcp_fixture "$mcp_fixture_runtime_id" "$mcp_fixture_docker_host" 1',
+    );
+
+    const transport = source.slice(
+      source.indexOf("run_capability_transport_recovery()"),
+      source.indexOf("\nrun_real_provider_turn()"),
+    );
+    expect(transport).toContain('session create --provider "$transport_provider_kind"');
+    expect(transport).toContain(
+      '--session "$transport_session_id" --turn "$transport_fault_turn_id"',
+    );
+    expect(transport).toContain(
+      '--session "$transport_session_id" --turn "$transport_reconnect_turn_id"',
+    );
+    expect(transport).toContain("execute_real_provider_with_mcp_approvals");
+    expect(transport).not.toContain("execute_real_provider_with_safe_retry");
+    expect(transport).toContain('event.spec?.errorCode === "capability_call_unknown"');
+    expect(transport).toContain('fault.spec?.state !== "running"');
+    expect(transport).toContain('fault.spec?.recoveryState !== "awaiting_reconciliation"');
+    expect(transport).toContain('fault.spec?.recoveryReason !== "side_effect_outcome_unknown"');
+    expect(transport).toContain("fault.spec?.checkpoint?.pendingSideEffect !== true");
+    expect(transport).toContain('Date.parse(value.spec?.claimExpiresAt??"")+1000<Date.now()');
+    expect(transport).toContain("capability transport recovery replay bypassed side-effect reconciliation");
+    expect(transport).toContain("grep -Fq 'RECOVERY_REQUIRES_RECONCILIATION' \"$transport_blocked_file\"");
+    expect(transport).toContain(
+      '--idempotency-key "$transport_prefix-disconnect-execution" execution execute',
+    );
+    expect(transport).toContain('--generation "$transport_reconcile_generation"');
+    expect(transport).toContain('--checkpoint-digest "$transport_reconcile_checkpoint_digest"');
+    expect(transport).toContain("--outcome confirmed");
+    expect(transport).toContain('execution cancel \\\n    --generation "$transport_reconcile_generation"');
+    expect(transport).toContain('--request-id "$transport_prefix-disconnect-cancelled"');
+    expect(transport).toContain('execution get >"$transport_fault_cancelled"');
+    expect(transport).toContain(
+      'CLOUD_AGENTS_COMPOSE_CANCELLED_EXECUTION_FILE="$transport_fault_cancelled"',
+    );
+    expect(transport).toContain('CLOUD_AGENTS_COMPOSE_FAULT_EVENTS_FILE="$transport_fault_events"');
+    expect(transport).toContain('cancelled.spec?.state !== "cancelled"');
+    expect(transport).toContain('cancelled.spec?.recoveryState !== "none"');
+    expect(transport).toContain("cancelled.spec?.recoveryReason !== undefined");
+    expect(transport).toContain("cancelled.spec?.checkpoint?.pendingSideEffect !== false");
+    expect(transport).toContain('event.spec?.operation === "execution.reconcile"');
+    expect(transport).toContain('event.spec?.operation === "turn.cancel"');
+    expect(transport).toContain('faultPage.hasMore !== false || page.hasMore !== false');
+    expect(transport).toContain('event.spec?.executionId === fault.metadata?.uid');
+    expect(transport).toContain('event.spec?.turnId === fault.metadata?.turnId');
+    expect(transport).toContain('event.spec?.generation === fault.spec?.generation');
+    expect(transport).toContain('event.spec?.executionId === reconnect.metadata?.uid');
+    expect(transport).toContain('event.spec?.turnId === reconnect.metadata?.turnId');
+    expect(transport).toContain('event.spec?.generation === reconnect.spec?.generation');
+    expect(transport.match(/event\.spec\?\.serverId === mcpId/gu)).toHaveLength(2);
+    expect(
+      transport.match(
+        /event\.spec\?\.version === process\.env\.CLOUD_AGENTS_COMPOSE_MCP_VERSION/gu,
+      ),
+    ).toHaveLength(2);
+    expect(
+      transport.match(
+        /event\.spec\?\.digest === process\.env\.CLOUD_AGENTS_COMPOSE_MCP_DIGEST/gu,
+      ),
+    ).toHaveLength(2);
+    expect(transport).toContain('event.spec?.result === "failed"');
+    expect(transport).toContain('event.spec?.errorCode === undefined');
+    expect(transport.match(/event\.spec\?\.resource === "McpServer"/gu)).toHaveLength(2);
+    expect(transport).toContain('event.spec.changes[0]?.to === "failed"');
+    expect(transport).toContain('event.spec.changes[0]?.to === "succeeded"');
+    expect(transport).toContain("event.spec?.executionId === cancelled.metadata?.uid");
+    expect(transport).toContain("event.spec?.turnId === cancelled.metadata?.turnId");
+    expect(transport).toContain("event.spec?.generation === cancelled.spec?.generation");
+    expect(transport).toContain('event.spec?.resource === "Execution"');
+    expect(transport).toContain(
+      'hasChange(event, "Execution", "recovery:awaiting_reconciliation", "recovery:none")',
+    );
+    expect(transport).toContain('hasChange(event, "Turn", "running", "cancelled")');
+    expect(transport).toContain('hasChange(event, "Execution", "running", "cancelled")');
+    expect(transport).toContain(
+      "BigInt(reconciled.metadata.sequence) >= BigInt(cancelledEvent.metadata.sequence)",
+    );
+    expect(transport).toContain(
+      "BigInt(faultMcp.metadata.sequence) >= BigInt(reconciled.metadata.sequence)",
+    );
+    expect(transport).toContain(
+      "BigInt(cancelledEvent.metadata.sequence) >= BigInt(reconnectMcp.metadata.sequence)",
+    );
+    expect(transport).toContain("inspectKeys(faultPage)");
+    expect(transport).toContain(
+      'test "$(capability_mcp_tool_call_count)" -eq "$transport_requests_after_fault"',
+    );
+    expect(transport).toContain(
+      'test "$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf \'0\')" -eq "$transport_side_effects_after_fault"',
+    );
+    expect(transport).toContain('event.spec?.result === "succeeded"');
+    expect(transport).toContain("transport_side_effects_before + 1");
+    expect(transport).toContain("transport_requests_before + 1");
+    expect(transport).toContain("transport_requests_after_fault + 1");
+    expect(transport).toContain("capability audit exposed sensitive transport data");
+    expect(transport).not.toMatch(/codex.*kubernetes|kubernetes.*codex/u);
+
+    const providerTurn = source.slice(
+      source.indexOf("run_real_provider_turn()"),
+      source.indexOf("\nassert_real_event_stream_resume()"),
+    );
+    expect(
+      providerTurn.indexOf('run_capability_transport_recovery "$provider_kind" "$provider_slug"'),
+    ).toBeGreaterThan(0);
+    expect(providerTurn.indexOf("capability_revoke_here=0")).toBeGreaterThan(
+      providerTurn.indexOf('run_capability_transport_recovery "$provider_kind" "$provider_slug"'),
+    );
+  });
+
+  it("keeps Codex and Claude capability prompts bound to the complete artifact instruction", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    const agentInteractions = readFileSync("scripts/test-platform-agent-interactions.sh", "utf8");
+
+    expect(composeSmoke).toContain(
+      'artifact_path=".cloud-agents-stage3-acceptance-$real_provider_environment_slug-target-real-$provider_slug.txt"',
+    );
+    expect(composeSmoke).toContain(
+      'artifact_prompt_path="/workspace/.cloud-agents/managed-agent/tenants/tenant-compose-smoke/projects/$project_id/sessions/$session_id/workspace/$artifact_path"',
+    );
+    expect(composeSmoke).toContain(
+      "artifact_requirement=\"exactly one file at $artifact_prompt_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline\"",
+    );
+    expect(composeSmoke).toContain(
+      'followup_prompt="Read $artifact_prompt_path and reply with its exact single line. Do not modify any file."',
+    );
+    expect(
+      composeSmoke.match(/artifact_instruction="\$file_tool \$artifact_requirement"/gu),
+    ).toHaveLength(2);
+    expect(composeSmoke).toContain(
+      'codex) file_tool="You must use the workspace.write_text_file tool, never a shell command or another tool, to create"',
+    );
+    expect(composeSmoke).toContain(
+      'claudeAgent)\n      file_tool="You must use the Write tool, never a shell command or another tool, to create"',
+    );
+    expect(composeSmoke).toContain(
+      'mcp_instruction="Call the managed MCP tool named acceptance_side_effect exactly once and wait for it to succeed."',
+    );
+    expect(composeSmoke).toContain(
+      'claudeAgent) skill_instruction="use the managed-capability-acceptance:managed-capability-acceptance Skill"',
+    );
+    expect(composeSmoke).toContain(
+      'prompt="Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill',
+    );
+    expect(agentInteractions).toContain("codex) recovery_skill_name=managed-capability-acceptance");
+    expect(agentInteractions).toContain(
+      "claudeAgent) recovery_skill_name=managed-capability-acceptance:managed-capability-acceptance",
+    );
+    expect(composeSmoke).toContain(
+      'const isSkillApproval = message.payload?.toolName === "Skill" && message.payload?.requestKind === "tool";',
+    );
+    expect(composeSmoke).toContain(
+      'const isArtifactWriteApproval = message.payload?.toolName === "Write";',
+    );
+    expect(composeSmoke).toContain(
+      "(isMcpApproval || isSkillApproval || isArtifactWriteApproval || isExpectedCodexCommand)",
+    );
+    expect(composeSmoke).toContain(
+      'message.payload?.requestKind === "command" && message.payload?.command === expectedCommand',
+    );
+    expect(composeSmoke).toContain(
+      'prompt="$mcp_instruction Then $skill_instruction. Follow it to $artifact_instruction.',
+    );
+    expect(composeSmoke).toContain(
+      "capability_bound_recovery_provider=${CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER:-claudeAgent}",
+    );
+    expect(composeSmoke).toContain("codex | claudeAgent | pi | deepseek-harness) ;;");
+    expect(composeSmoke).toContain('if [ "$recovery_provider_kind" = "claudeAgent" ]; then');
+    expect(composeSmoke).toContain(
+      "recovery_skill_name=managed-capability-acceptance:managed-capability-acceptance",
+    );
+    expect(composeSmoke).toContain("recovery_runtime_mode=approval-required");
+    expect(composeSmoke).toContain(
+      "The Codex Host-managed workspace.write_text_file tool is the only available file tool",
+    );
+    expect(composeSmoke).toContain(
+      'process.env.CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER === "codex" ? "30000" : "12000"',
+    );
+    expect(composeSmoke).toContain("mcp__mcp-compose-acce__acceptance_marker__a63aebad");
+    expect(composeSmoke).not.toContain("Follow it to $file_tool.");
   });
 
   it("packages the independent Go SDK module", () => {

@@ -420,7 +420,7 @@ func TestManagedAgentExecutionHTTPServerExposesActiveTranscriptAndResolvesIntera
 	reconcile.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ")
 	reconciled := httptest.NewRecorder()
 	handler.ServeHTTP(reconciled, reconcile)
-	if reconciled.Code != http.StatusNoContent || verifier.seen.RequiredPermission != "projects.act" || store.reconciliation.Generation != 7 || store.reconciliation.CheckpointDigest != checkpointDigest || store.reconciliation.Outcome != "confirmed" {
+	if reconciled.Code != http.StatusNoContent || verifier.seen.RequiredPermission != "projects.act" || store.reconciliation.Generation != 7 || store.reconciliation.CheckpointDigest != checkpointDigest || store.reconciliation.Outcome != "confirmed" || store.reconciliation.IdempotencyKey != "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EZ" {
 		t.Fatalf("reconcile status=%d verification=%#v input=%#v body=%s", reconciled.Code, verifier.seen, store.reconciliation, reconciled.Body.String())
 	}
 }

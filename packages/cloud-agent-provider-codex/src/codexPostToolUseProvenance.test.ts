@@ -371,4 +371,55 @@ describe("Codex tool-policy hook", () => {
     expect(electronResult.status).toBe(0);
     expect(JSON.parse(electronResult.stdout)).toEqual(codexToolPolicyHookResponse(input));
   });
+
+  it("keeps runnable inline and full MCP policy decisions identical across permission modes", async () => {
+    const command = buildInlineCodexToolPolicyHookCommand({
+      nodeExecutable: process.execPath,
+      platform: process.platform,
+    });
+
+    for (const permissionMode of ["bypassPermissions", "default"]) {
+      const input = {
+        hook_event_name: "PreToolUse",
+        permission_mode: permissionMode,
+        tool_name: "mcp__cloud_agents_mcp_1__acceptance_side_effect",
+        tool_input: {},
+      };
+      const result = spawnSync(command, {
+        shell: true,
+        input: JSON.stringify(input),
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+
+      expect(result.status).toBe(0);
+      let fullOutput = "";
+      await runCodexToolPolicyHook({
+        source: Readable.from([JSON.stringify(input)]),
+        output: new Writable({
+          write(chunk, _encoding, callback) {
+            fullOutput += chunk.toString();
+            callback();
+          },
+        }),
+      });
+      expect(JSON.parse(result.stdout)).toEqual(JSON.parse(fullOutput));
+      if (permissionMode === "bypassPermissions") {
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: expect.stringContaining("external-mcp-action"),
+          },
+        });
+      } else {
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            additionalContext: expect.stringContaining('"source":"external-mcp-result"'),
+          },
+        });
+      }
+    }
+  });
 });

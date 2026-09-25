@@ -124,8 +124,48 @@ case "$capability_process_recovery" in
   0 | 1) ;;
   *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY must be 0 or 1" >&2; exit 2 ;;
 esac
+capability_process_recovery_environment=${CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY_ENVIRONMENT-}
+case "$capability_process_recovery_environment" in
+  '' | docker | remote-worker | kubernetes) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY_ENVIRONMENT must be docker, remote-worker or kubernetes" >&2; exit 2 ;;
+esac
+capability_process_recovery_ran=0
+capability_transport_recovery=${CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY:-0}
+case "$capability_transport_recovery" in
+  0 | 1) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY must be 0 or 1" >&2; exit 2 ;;
+esac
+capability_transport_recovery_environment=${CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY_ENVIRONMENT-}
+case "$capability_transport_recovery_environment" in
+  '' | docker | remote-worker | kubernetes) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_TRANSPORT_RECOVERY_ENVIRONMENT must be docker, remote-worker or kubernetes" >&2; exit 2 ;;
+esac
+capability_process_recovery_faults=${CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY_FAULTS:-both}
+case "$capability_process_recovery_faults" in
+  worker | agent | both) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY_FAULTS must be worker, agent or both" >&2; exit 2 ;;
+esac
+capability_bound_recovery=${CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY:-1}
+case "$capability_bound_recovery" in
+  0 | 1) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY must be 0 or 1" >&2; exit 2 ;;
+esac
+capability_bound_recovery_environment=${CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_ENVIRONMENT-}
+case "$capability_bound_recovery_environment" in
+  '' | docker | remote-worker | kubernetes) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_ENVIRONMENT must be docker, remote-worker or kubernetes" >&2; exit 2 ;;
+esac
+capability_bound_recovery_provider=${CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER:-claudeAgent}
+case "$capability_bound_recovery_provider" in
+  codex | claudeAgent | pi | deepseek-harness) ;;
+  *) echo "CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER must be codex, claudeAgent, pi or deepseek-harness" >&2; exit 2 ;;
+esac
 if [ "$capability_process_recovery" -eq 1 ] && [ "$capability_acceptance" -ne 1 ]; then
   echo "capability process recovery requires CLOUD_AGENTS_COMPOSE_CAPABILITY_ACCEPTANCE=1" >&2
+  exit 2
+fi
+if [ "$capability_transport_recovery" -eq 1 ] && [ "$capability_acceptance" -ne 1 ]; then
+  echo "capability transport recovery requires CLOUD_AGENTS_COMPOSE_CAPABILITY_ACCEPTANCE=1" >&2
   exit 2
 fi
 capability_negative_test=${CLOUD_AGENTS_COMPOSE_CAPABILITY_NEGATIVES:-0}
@@ -161,9 +201,22 @@ if [ "$sdk_live" -eq 1 ]; then
     command -v "$command" >/dev/null 2>&1 || { echo "live SDK consumer smoke requires $command" >&2; exit 2; }
   done
 fi
+kubernetes_ctl() {
+  kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" "$@"
+}
+verify_kubernetes_runtime_prerequisites() {
+  for resource in crd/batchsandboxes.sandbox.opensandbox.io crd/pools.sandbox.opensandbox.io crd/sandboxsnapshots.sandbox.opensandbox.io clusterrole/opensandbox-manager-role; do
+    if ! resource_version=$(kubernetes_ctl get "$resource" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/version}' 2>/dev/null) ||
+      [ "$resource_version" != 0.2.0 ]; then
+      echo "Kubernetes Runtime smoke requires OpenSandbox 0.2.0 prerequisite: $resource" >&2
+      return 2
+    fi
+  done
+}
 if [ "$kubernetes_runtime" -eq 1 ]; then
   command -v kubectl >/dev/null 2>&1 || { echo "Kubernetes Runtime smoke requires kubectl" >&2; exit 2; }
-  kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" cluster-info >/dev/null
+  kubernetes_ctl cluster-info >/dev/null
+  verify_kubernetes_runtime_prerequisites
 fi
 docker_host=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
 case "$docker_host" in
@@ -174,6 +227,7 @@ docker_gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0
 
 candidate_directory=$(CDPATH= cd -- "$1" && pwd)
 script_directory=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+node "$script_directory/lib/platform-release-verifier.ts" "$candidate_directory"
 case "$(uname -s)/$(uname -m)" in
   Darwin/arm64) cli_target=darwin-arm64; image_platform=linux/arm64 ;;
   Darwin/x86_64) cli_target=darwin-amd64; image_platform=linux/amd64 ;;
@@ -194,6 +248,8 @@ fi
 
 smoke_directory=$(mktemp -d "$candidate_directory/.compose-smoke.XXXXXX")
 project="cloud-agents-compose-smoke-$$"
+cross_node_evidence_file=${CLOUD_AGENTS_COMPOSE_CROSS_NODE_EVIDENCE_FILE-}
+snapshot_archive_output=${CLOUD_AGENTS_COMPOSE_SNAPSHOT_ARCHIVE_OUTPUT-}
 environment_file="$smoke_directory/compose.env"
 base_environment_file="$smoke_directory/compose.no-agent.env"
 compose_file="$smoke_directory/deployment/deploy/compose/docker-compose.yml"
@@ -218,6 +274,7 @@ kubernetes_opensandbox_container="${project}-kubernetes-opensandbox"
 kubernetes_destination_opensandbox_container="${project}-kubernetes-opensandbox-restore"
 opensandbox_server_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb"
 mcp_fixture_container=
+mcp_fixture_docker_host=
 mcp_fixture_pod=
 mcp_fixture_pod_container=
 mcp_fixture_pid=
@@ -225,8 +282,16 @@ mcp_fixture_kubernetes=0
 mcp_fixture_bundle=
 mcp_fixture_marker=
 mcp_fixture_side_effect_file=
+capability_transport_recovery_ran=0
 approval_execute_pid=
-kubernetes_controller_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller:v0.2.0"
+mcp_fixture_docker() {
+  if [ -n "$mcp_fixture_docker_host" ]; then
+    docker -H "$mcp_fixture_docker_host" "$@"
+  else
+    docker "$@"
+  fi
+}
+kubernetes_controller_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/controller@sha256:a9a5f73c1785ebd955336ffa313973a35c1a1b662cb7afc4ea82d92021b3532a"
 kubernetes_execd_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd"
 kubernetes_egress_image="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/egress@sha256:973130e01bf76e8e686e2853ebf47b21741bc8781919bb4a7cf60af09a3c6e8a"
 kubernetes_runtime_target_id=compose-kubernetes-runtime-target
@@ -246,9 +311,11 @@ foundation_workspace_id=compose-gateway-workspace
 foundation_agent_workspace_id=compose-agent-workspace
 foundation_agent_sandbox_id=compose-agent-sandbox
 foundation_agent_runtime_id=
+foundation_sandbox_runtime_id=
 kubernetes_agent_workspace_id=compose-kubernetes-agent-workspace
 kubernetes_agent_sandbox_id=compose-kubernetes-agent-sandbox
 kubernetes_agent_generation=
+kubernetes_recovery_bound_pod=
 kubernetes_agent_resource_version=
 kubernetes_agent_runtime_id=
 kubernetes_agent_environment_profile_id=compose-kubernetes-agent-environment-profile
@@ -265,6 +332,7 @@ capability_mcp_id=
 capability_skill_id=
 capability_mcp_refs_json=
 capability_skill_refs_json=
+opensandbox_runtime_ids_file=
 compose() {
   if [ "$remote_runtime" -eq 1 ]; then
     docker compose --env-file "$environment_file" -f "$compose_file" -f "$managed_agent_compose_file" -f "$remote_worker_compose_file" -f "$compose_override_file" "$@"
@@ -275,9 +343,6 @@ compose() {
 compose_base() {
   docker compose --env-file "$base_environment_file" -f "$compose_file" -f "$base_compose_override_file" "$@"
 }
-kubernetes_ctl() {
-  kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" "$@"
-}
 cleanup() {
   status=$?
   trap - 0 HUP INT TERM
@@ -287,17 +352,17 @@ cleanup() {
   fi
   if [ -n "$mcp_fixture_container" ] && [ "$mcp_fixture_kubernetes" -ne 1 ]; then
     if [ "$status" -ne 0 ]; then
-      docker logs "$mcp_fixture_container" >&2 || true
+      mcp_fixture_docker logs "$mcp_fixture_container" >&2 || true
     fi
-    docker rm -f "$mcp_fixture_container" >/dev/null 2>&1 || true
+    mcp_fixture_docker rm -f "$mcp_fixture_container" >/dev/null 2>&1 || true
   fi
   if [ -n "$mcp_fixture_pod" ] && [ -n "$mcp_fixture_pod_container" ]; then
     if [ -n "$mcp_fixture_pid" ]; then
-      kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+      kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
         sh -c "kill $mcp_fixture_pid" >/dev/null 2>&1 || true
     fi
-    kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
-      sh -c 'rm -f /tmp/cloud-agents-mcp-fixture.mjs /tmp/cloud-agents-mcp-capabilities.json /tmp/cloud-agents-mcp-fixture.log /tmp/cloud-agents-mcp-side-effect/result.txt /tmp/cloud-agents-mcp-side-effect/requests.log; rmdir /tmp/cloud-agents-mcp-side-effect 2>/dev/null || true' \
+    kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+      sh -c 'rm -f /tmp/cloud-agents-mcp-fixture.mjs /tmp/cloud-agents-mcp-capabilities.json /tmp/cloud-agents-mcp-fixture.log /tmp/cloud-agents-mcp-side-effect/result.txt /tmp/cloud-agents-mcp-side-effect/requests.log /tmp/cloud-agents-mcp-side-effect/disconnect-arm /tmp/cloud-agents-mcp-side-effect/disconnect-arm.committed; rmdir /tmp/cloud-agents-mcp-side-effect 2>/dev/null || true' \
       >/dev/null 2>&1 || true
   fi
   docker rm -f "$kubernetes_opensandbox_container" >/dev/null 2>&1 || true
@@ -352,38 +417,81 @@ cleanup() {
     docker logs "$opensandbox_container" >&2 || true
   fi
   docker rm -f "$opensandbox_container" >/dev/null 2>&1 || true
-  if [ -f "$smoke_directory/opensandbox-egress-baseline" ]; then
-    for container in $(docker ps -aq --filter label=opensandbox.io/egress-sidecar-for); do
-      if ! grep -Fqx "$container" "$smoke_directory/opensandbox-egress-baseline"; then
-        if [ "$status" -ne 0 ]; then
-          docker logs "$container" >&2 || true
+  if [ ! -e "$opensandbox_runtime_ids_file" ]; then
+    echo "OpenSandbox runtime ID inventory file was missing; refusing broad cleanup" >&2
+    status=1
+  elif [ -s "$opensandbox_runtime_ids_file" ]; then
+    owned_opensandbox_volumes_file="$smoke_directory/opensandbox-owned-volumes"
+    : >"$owned_opensandbox_volumes_file" 2>/dev/null || true
+    while IFS= read -r runtime_id; do
+      case "$runtime_id" in
+        '' | *[!A-Za-z0-9._:-]*)
+          echo "refusing to clean OpenSandbox runtime with an invalid owned ID" >&2
+          status=1
+          continue
+          ;;
+      esac
+      runtime_container_found=0
+      managed_volumes=
+      runtime_containers=$(docker ps -aq --filter "label=opensandbox.io/id=$runtime_id" || true)
+      for container in $runtime_containers; do
+        [ -n "$container" ] || continue
+        runtime_container_found=1
+        if [ "$status" -ne 0 ]; then docker logs "$container" >&2 || true; fi
+        container_managed_volumes=$(docker inspect --format '{{index .Config.Labels "opensandbox.io/volume-managed-by"}}' "$container" 2>/dev/null || true)
+        if [ -n "$container_managed_volumes" ]; then
+          container_managed_volumes=$(CLOUD_AGENTS_COMPOSE_MANAGED_VOLUMES_JSON="$container_managed_volumes" node -e \
+            'const raw=process.env.CLOUD_AGENTS_COMPOSE_MANAGED_VOLUMES_JSON??"";let value;try{value=JSON.parse(raw)}catch{process.exit(0)}if(!Array.isArray(value))process.exit(0);for(const name of value)if(typeof name==="string"&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$/.test(name))process.stdout.write(`${name}\n`)' || true)
+          managed_volumes="$managed_volumes$container_managed_volumes"
         fi
         docker rm -f "$container" >/dev/null 2>&1 || true
-      fi
-    done
-  fi
-  if [ -f "$smoke_directory/opensandbox-runtime-baseline" ]; then
-    for container in $(docker ps -aq --filter label=opensandbox.io/id); do
-      if ! grep -Fqx "$container" "$smoke_directory/opensandbox-runtime-baseline"; then
-        if [ "$status" -ne 0 ]; then
-          docker logs "$container" >&2 || true
+      done
+      if [ -z "$managed_volumes" ]; then
+        # OpenSandbox's Docker backend deterministically names its managed
+        # runtime volume. This remains an exact owned-ID lookup, never a list.
+        if [ "$runtime_container_found" -eq 0 ]; then
+          echo "OpenSandbox owned runtime container was already absent; checking only its deterministic volume" >&2
+        else
+          echo "OpenSandbox runtime container exposed no valid managed-volume list; checking only its deterministic volume" >&2
         fi
-        docker rm -f "$container" >/dev/null 2>&1 || true
+        managed_volumes="opensandbox-runtime-$runtime_id"
       fi
-    done
+      for volume in $managed_volumes; do
+        case "$volume" in
+          '' | *[!A-Za-z0-9_.-]*)
+            echo "refusing to inspect an invalid OpenSandbox volume name" >&2
+            status=1
+            continue
+            ;;
+        esac
+        if [ -f "$owned_opensandbox_volumes_file" ] && grep -Fqx "$volume" "$owned_opensandbox_volumes_file"; then
+          continue
+        fi
+        printf '%s\n' "$volume" >>"$owned_opensandbox_volumes_file"
+        volume_owner_label=$(docker volume inspect "$volume" --format '{{index .Labels "opensandbox.io/volume-managed-by"}}' 2>/dev/null || true)
+        if [ -z "$volume_owner_label" ]; then
+          continue
+        fi
+        if [ "$volume_owner_label" = server ]; then
+          docker volume rm "$volume" >/dev/null 2>&1 || true
+        else
+          echo "refusing to delete OpenSandbox volume without the server ownership label" >&2
+          status=1
+        fi
+      done
+      for container in $(docker ps -aq --filter "label=opensandbox.io/egress-sidecar-for=$runtime_id"); do
+        if [ "$status" -ne 0 ]; then docker logs "$container" >&2 || true; fi
+        docker rm -f "$container" >/dev/null 2>&1 || true
+      done
+    done <"$opensandbox_runtime_ids_file"
+  else
+    echo "No OpenSandbox runtime IDs were recorded; no runtime cleanup required" >&2
   fi
   if [ -n "$project_id" ]; then
     for volume in $(docker volume ls -q \
       --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
       --filter label=cloud-agents.dev/project="$project_id"); do
       docker volume rm "$volume" >/dev/null 2>&1 || true
-    done
-  fi
-  if [ -f "$smoke_directory/opensandbox-volume-baseline" ]; then
-    for volume in $(docker volume ls -q --filter label=opensandbox.io/volume-managed-by=server); do
-      if ! grep -Fqx "$volume" "$smoke_directory/opensandbox-volume-baseline"; then
-        docker volume rm "$volume" >/dev/null 2>&1 || true
-      fi
     done
   fi
   docker rm -f "$remote_worker_container" >/dev/null 2>&1 || true
@@ -441,7 +549,10 @@ cleanup() {
   rm -rf -- "$smoke_directory"
   exit "$status"
 }
-trap cleanup 0 HUP INT TERM
+trap cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$smoke_directory/deployment" "$smoke_directory/access-gateway-tls" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/capability-materialization-control-plane" "$smoke_directory/capability-materialization-worker" "$smoke_directory/workspace" "$smoke_directory/snapshots" \
@@ -454,6 +565,20 @@ mkdir -p "$smoke_directory/deployment" "$smoke_directory/access-gateway-tls" "$s
   "$smoke_directory/remote-worker-ca" "$smoke_directory/remote-worker-node" "$smoke_directory/remote-worker-node-restore" \
   "$smoke_directory/fake-kubectl-state" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
+opensandbox_runtime_ids_file="$smoke_directory/opensandbox-runtime-ids"
+: >"$opensandbox_runtime_ids_file"
+remember_opensandbox_runtime_id() {
+  remember_runtime_id=$1
+  case "$remember_runtime_id" in
+    '') return 0 ;;
+    *[!A-Za-z0-9._:-]*)
+      echo "refusing to record an invalid OpenSandbox runtime ID" >&2
+      return 0
+      ;;
+  esac
+  grep -Fqx "$remember_runtime_id" "$opensandbox_runtime_ids_file" 2>/dev/null ||
+    printf '%s\n' "$remember_runtime_id" >>"$opensandbox_runtime_ids_file"
+}
 mcp_fixture_bundle="$smoke_directory/managed-capability-mcp-server.mjs"
 docker ps -aq --filter label=opensandbox.io/id | sort >"$smoke_directory/opensandbox-runtime-baseline"
 docker ps -aq --filter label=opensandbox.io/egress-sidecar-for | sort >"$smoke_directory/opensandbox-egress-baseline"
@@ -576,6 +701,7 @@ CLOUD_AGENTS_COMPOSE_SMOKE_PROJECT="$project" \
 CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM="$image_platform" \
 CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY="$docker_gateway" \
 CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST="$real_provider_test" \
+CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER="$capability_bound_recovery_provider" \
   node <<'NODE'
 const { createSign, generateKeyPairSync, randomBytes } = require("node:crypto");
 const { chmodSync, writeFileSync } = require("node:fs");
@@ -586,6 +712,8 @@ const release = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_RELEASE;
 const project = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PROJECT;
 const platform = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM;
 const dockerGateway = process.env.CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY;
+const codexWriteReceiptDelay = process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" &&
+  process.env.CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER === "codex" ? "30000" : "12000";
 if (![state, release, project, platform, dockerGateway].every((value) => value && !value.includes("\n"))) {
   throw new Error("invalid Compose smoke environment");
 }
@@ -678,7 +806,7 @@ writeFileSync(`${state}/runtime.env`, [
   "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
   "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
   ...(process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1"
-    ? ["CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS=12000"]
+    ? [`CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS=${codexWriteReceiptDelay}`]
     : []),
   "",
 ].join("\n"));
@@ -691,7 +819,7 @@ if (workerImageOverride && /[\r\n]/u.test(workerImageOverride)) throw new Error(
 const workerOverride = workerImageOverride
   ? `\n  worker:\n    image: ${JSON.stringify(workerImageOverride)}\n    build: !reset null\n`
   : "";
-const baseComposeOverride = `services:\n  access-gateway:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n  control-plane:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n      CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS: "${process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" ? "12000" : ""}"\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n`;
+const baseComposeOverride = `services:\n  access-gateway:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n  control-plane:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n      CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS: "${process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" ? codexWriteReceiptDelay : ""}"\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n`;
 writeFileSync(`${state}/compose-base-override.yml`, baseComposeOverride);
 writeFileSync(`${state}/compose-target-override.yml`, `${baseComposeOverride}${workerOverride}`);
 writeFileSync(`${state}/docker-proxy.mjs`, [
@@ -1073,11 +1201,22 @@ wait_user_web() {
 wait_ready
 start_capability_mcp_fixture() {
   mcp_fixture_runtime_id=$1
+  previous_mcp_fixture_docker_host=$mcp_fixture_docker_host
+  mcp_fixture_preserve_state=${3:-0}
+  if [ -n "$mcp_fixture_container" ] && [ "$mcp_fixture_kubernetes" -ne 1 ]; then
+    if [ -n "$previous_mcp_fixture_docker_host" ]; then
+      docker -H "$previous_mcp_fixture_docker_host" rm -f "$mcp_fixture_container" >/dev/null 2>&1 || true
+    else
+      docker rm -f "$mcp_fixture_container" >/dev/null 2>&1 || true
+    fi
+  fi
+  mcp_fixture_docker_host=${2-}
+  mcp_fixture_kubernetes=0
   if [ "$capability_acceptance" -ne 1 ]; then
     return 0
   fi
   case " $real_provider_kinds " in
-    *" codex "* | *" claudeAgent "*) ;;
+    *" codex "* | *" claudeAgent "* | *" pi "* | *" deepseek-harness "*) ;;
     *) return 0 ;;
   esac
   fixture_script="$script_directory/fixtures/managed-capability-mcp-server.mjs"
@@ -1086,19 +1225,40 @@ start_capability_mcp_fixture() {
     echo "capability acceptance requires the pinned @modelcontextprotocol/sdk fixture" >&2
     return 1
   fi
-  mcp_fixture_marker=$(openssl rand -hex 16)
+  if [ "$mcp_fixture_preserve_state" -eq 0 ]; then
+    mcp_fixture_marker=$(openssl rand -hex 16)
+  elif [ -z "$mcp_fixture_marker" ]; then
+    echo "capability MCP fixture cannot preserve state without an existing marker" >&2
+    return 1
+  fi
   mcp_fixture_container="${project}-mcp-fixture"
-  docker rm -f "$mcp_fixture_container" >/dev/null 2>&1 || true
-  rm -f "$smoke_directory/mcp-side-effect/result.txt" "$smoke_directory/mcp-side-effect/requests.log"
+  if [ "$mcp_fixture_preserve_state" -eq 0 ]; then
+    rm -f "$smoke_directory/mcp-side-effect/result.txt" "$smoke_directory/mcp-side-effect/requests.log" \
+      "$smoke_directory/mcp-side-effect/disconnect-arm" "$smoke_directory/mcp-side-effect/disconnect-arm.committed"
+  fi
   mcp_fixture_side_effect_file="$smoke_directory/mcp-side-effect/result.txt"
   if [ "$real_provider_environment_slug" = kubernetes ]; then
     command -v bun >/dev/null 2>&1 || { echo "Kubernetes capability acceptance requires bun to bundle the MCP fixture" >&2; return 1; }
     if [ ! -f "$mcp_fixture_bundle" ]; then
       bun build "$fixture_script" --target=node --outfile="$mcp_fixture_bundle" >/dev/null
     fi
-    mcp_fixture_pod=$(kubernetes_ctl -n "$kubernetes_runtime_namespace" get pods \
-      -l "opensandbox.io/id=$mcp_fixture_runtime_id" -o jsonpath='{.items[0].metadata.name}')
-    mcp_fixture_pod_container=$(kubernetes_ctl -n "$kubernetes_runtime_namespace" get pod "$mcp_fixture_pod" \
+    attempt=0
+    while :; do
+      mcp_fixture_pod=$(kubernetes_ctl -n "$kubernetes_active_namespace" get pods \
+        -l "opensandbox.io/id=$mcp_fixture_runtime_id" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+      case "$mcp_fixture_pod" in
+        '' | *' '*)
+          attempt=$((attempt + 1))
+          if [ "$attempt" -ge 120 ]; then
+            echo "capability acceptance could not resolve the Kubernetes Runtime Pod" >&2
+            return 1
+          fi
+          sleep 0.5
+          ;;
+        *) break ;;
+      esac
+    done
+    mcp_fixture_pod_container=$(kubernetes_ctl -n "$kubernetes_active_namespace" get pod "$mcp_fixture_pod" \
       -o jsonpath='{.spec.containers[0].name}')
     case "$mcp_fixture_pod" in
       '' | *' '*) echo "capability acceptance could not resolve the Kubernetes Runtime Pod" >&2; return 1 ;;
@@ -1106,21 +1266,28 @@ start_capability_mcp_fixture() {
     case "$mcp_fixture_pod_container" in
       '' | *' '*) echo "capability acceptance could not resolve the Kubernetes Runtime container" >&2; return 1 ;;
     esac
-    kubernetes_ctl -n "$kubernetes_runtime_namespace" exec -i "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+    kubernetes_ctl -n "$kubernetes_active_namespace" exec -i "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
       sh -c 'umask 077; cat > /tmp/cloud-agents-mcp-fixture.mjs' <"$mcp_fixture_bundle"
-    kubernetes_ctl -n "$kubernetes_runtime_namespace" exec -i "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+    kubernetes_ctl -n "$kubernetes_active_namespace" exec -i "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
       sh -c 'umask 077; cat > /tmp/cloud-agents-mcp-capabilities.json' \
       <"$smoke_directory/capability-materialization-worker/tenant-compose-smoke.capabilities.json"
-    mcp_fixture_pid=$(kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
-      sh -c 'rm -rf /tmp/cloud-agents-mcp-side-effect; mkdir /tmp/cloud-agents-mcp-side-effect; rm -f /tmp/cloud-agents-mcp-fixture.log; nohup env MCP_ACCEPTANCE_DESCRIPTOR=/tmp/cloud-agents-mcp-capabilities.json MCP_ACCEPTANCE_SIDE_EFFECT=/tmp/cloud-agents-mcp-side-effect/result.txt MCP_ACCEPTANCE_LOG=/tmp/cloud-agents-mcp-side-effect/requests.log MCP_ACCEPTANCE_MARKER='"$mcp_fixture_marker"' node /tmp/cloud-agents-mcp-fixture.mjs >/tmp/cloud-agents-mcp-fixture.log 2>&1 </dev/null & echo $!')
+    if [ "$mcp_fixture_preserve_state" -eq 0 ]; then
+      kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+        sh -c 'rm -rf /tmp/cloud-agents-mcp-side-effect; mkdir /tmp/cloud-agents-mcp-side-effect' >/dev/null
+    else
+      kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+        sh -c 'mkdir -p /tmp/cloud-agents-mcp-side-effect' >/dev/null
+    fi
+    mcp_fixture_pid=$(kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+      sh -c 'rm -f /tmp/cloud-agents-mcp-fixture.log; nohup env MCP_ACCEPTANCE_DESCRIPTOR=/tmp/cloud-agents-mcp-capabilities.json MCP_ACCEPTANCE_SIDE_EFFECT=/tmp/cloud-agents-mcp-side-effect/result.txt MCP_ACCEPTANCE_LOG=/tmp/cloud-agents-mcp-side-effect/requests.log MCP_ACCEPTANCE_MARKER='"$mcp_fixture_marker"' MCP_ACCEPTANCE_DISCONNECT_ARM=/tmp/cloud-agents-mcp-side-effect/disconnect-arm node /tmp/cloud-agents-mcp-fixture.mjs >/tmp/cloud-agents-mcp-fixture.log 2>&1 </dev/null & echo $!')
     mcp_fixture_kubernetes=1
     attempt=0
-    until kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+    until kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
       sh -c 'grep -Fqx mcp-acceptance-ready /tmp/cloud-agents-mcp-fixture.log' >/dev/null 2>&1; do
-      if ! kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+      if ! kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
         sh -c "kill -0 $mcp_fixture_pid" >/dev/null 2>&1; then
-        kubernetes_ctl -n "$kubernetes_runtime_namespace" logs "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" --tail=20 >&2 || true
-        kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+        kubernetes_ctl -n "$kubernetes_active_namespace" logs "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" --tail=20 >&2 || true
+        kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
           sh -c 'cat /tmp/cloud-agents-mcp-fixture.log' >&2 || true
         echo "capability acceptance Kubernetes MCP fixture did not start" >&2
         return 1
@@ -1135,27 +1302,52 @@ start_capability_mcp_fixture() {
     echo "capability MCP fixture ready pod=$mcp_fixture_pod runtime=$mcp_fixture_runtime_id" >&2
     return 0
   fi
-  if docker container inspect "$mcp_fixture_runtime_id" >/dev/null 2>&1; then
+  if [ -n "$mcp_fixture_docker_host" ]; then
+    command -v bun >/dev/null 2>&1 || { echo "RemoteWorker capability acceptance requires bun to bundle the MCP fixture" >&2; return 1; }
+    if [ ! -f "$mcp_fixture_bundle" ]; then
+      bun build "$fixture_script" --target=node --outfile="$mcp_fixture_bundle" >/dev/null
+    fi
+    if ! mcp_fixture_docker image inspect node:24.18.1-bookworm-slim >/dev/null 2>&1; then
+      if ! docker image inspect node:24.18.1-bookworm-slim >/dev/null 2>&1; then
+        echo "RemoteWorker capability acceptance requires node:24.18.1-bookworm-slim on the source Docker daemon" >&2
+        return 1
+      fi
+      docker image save node:24.18.1-bookworm-slim | mcp_fixture_docker image load >/dev/null
+    fi
+    mcp_fixture_source_mount=/dind-config/managed-capability-mcp-server.mjs
+    mcp_fixture_source_destination=/fixture.mjs
+    mcp_fixture_descriptor_mount=/dind-config/capability-materialization-worker
+    mcp_fixture_side_effect_mount=/dind-config/mcp-side-effect
+    mcp_fixture_command_path=/fixture.mjs
+  else
+    mcp_fixture_source_mount=$script_directory/..
+    mcp_fixture_source_destination=/source
+    mcp_fixture_descriptor_mount=$smoke_directory/capability-materialization-worker
+    mcp_fixture_side_effect_mount=$smoke_directory/mcp-side-effect
+    mcp_fixture_command_path=/source/scripts/fixtures/managed-capability-mcp-server.mjs
+  fi
+  if mcp_fixture_docker container inspect "$mcp_fixture_runtime_id" >/dev/null 2>&1; then
     mcp_fixture_runtime_container=$mcp_fixture_runtime_id
   else
-    mcp_fixture_runtime_container=$(docker ps -q --filter "label=opensandbox.io/id=$mcp_fixture_runtime_id")
+    mcp_fixture_runtime_container=$(mcp_fixture_docker ps -q --filter "label=opensandbox.io/id=$mcp_fixture_runtime_id")
   fi
   case "$mcp_fixture_runtime_container" in
     '' | *' '*) echo "capability acceptance could not resolve the Agent Runtime container" >&2; return 1 ;;
   esac
-  docker run -d --name "$mcp_fixture_container" --network "container:$mcp_fixture_runtime_container" \
-    --mount "type=bind,src=$script_directory/..,dst=/source,readonly" \
-    --mount "type=bind,src=$smoke_directory/capability-materialization-worker,dst=/capabilities,readonly" \
-    --mount "type=bind,src=$smoke_directory/mcp-side-effect,dst=/side-effect" \
+  mcp_fixture_docker run -d --name "$mcp_fixture_container" --network "container:$mcp_fixture_runtime_container" \
+    --mount "type=bind,src=$mcp_fixture_source_mount,dst=$mcp_fixture_source_destination,readonly" \
+    --mount "type=bind,src=$mcp_fixture_descriptor_mount,dst=/capabilities,readonly" \
+    --mount "type=bind,src=$mcp_fixture_side_effect_mount,dst=/side-effect" \
     --user 1000:1000 \
     -e MCP_ACCEPTANCE_DESCRIPTOR=/capabilities/tenant-compose-smoke.capabilities.json \
     -e MCP_ACCEPTANCE_SIDE_EFFECT=/side-effect/result.txt \
     -e MCP_ACCEPTANCE_LOG=/side-effect/requests.log \
     -e MCP_ACCEPTANCE_MARKER="$mcp_fixture_marker" \
-    node:24.18.1-bookworm-slim node /source/scripts/fixtures/managed-capability-mcp-server.mjs >/dev/null
+    -e MCP_ACCEPTANCE_DISCONNECT_ARM=/side-effect/disconnect-arm \
+    node:24.18.1-bookworm-slim node "$mcp_fixture_command_path" >/dev/null
   attempt=0
-  until docker logs "$mcp_fixture_container" 2>&1 | grep -Fqx "mcp-acceptance-ready"; do
-    if ! docker inspect --format '{{.State.Running}}' "$mcp_fixture_container" 2>/dev/null | grep -Fxq true; then
+  until mcp_fixture_docker logs "$mcp_fixture_container" 2>&1 | grep -Fqx "mcp-acceptance-ready"; do
+    if ! mcp_fixture_docker inspect --format '{{.State.Running}}' "$mcp_fixture_container" 2>/dev/null | grep -Fxq true; then
       echo "capability acceptance MCP fixture did not start" >&2
       return 1
     fi
@@ -1168,15 +1360,101 @@ start_capability_mcp_fixture() {
   done
   echo "capability MCP fixture ready container=$mcp_fixture_container runtime=$mcp_fixture_runtime_container" >&2
 }
+
 sync_capability_mcp_fixture() {
   if [ "$mcp_fixture_kubernetes" -ne 1 ]; then
     return 0
   fi
-  kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
-    sh -c 'cat /tmp/cloud-agents-mcp-side-effect/result.txt 2>/dev/null || true' >"$smoke_directory/mcp-side-effect/result.txt"
-  kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
-    sh -c 'cat /tmp/cloud-agents-mcp-side-effect/requests.log 2>/dev/null || true' >"$smoke_directory/mcp-side-effect/requests.log"
+  sync_attempt=1
+  sync_error="$smoke_directory/mcp-side-effect/kubernetes-exec-sync.stderr"
+  while [ "$sync_attempt" -le 3 ]; do
+    sync_pods=$(kubernetes_ctl -n "$kubernetes_active_namespace" get pods \
+      -l "opensandbox.io/id=$mcp_fixture_runtime_id" \
+      -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{"\n"}{end}' \
+      2>"$sync_error" || true)
+    sync_pod=$(printf '%s\n' "$sync_pods" | sed -n '1p')
+    sync_pod_container=
+    if [ -n "$sync_pod" ]; then
+      sync_pod_container=$(kubernetes_ctl -n "$kubernetes_active_namespace" get pod "$sync_pod" \
+        -o jsonpath='{.spec.containers[0].name}' 2>>"$sync_error" || true)
+    fi
+    sync_result_tmp="$smoke_directory/mcp-side-effect/result.txt.sync.$sync_attempt"
+    sync_requests_tmp="$smoke_directory/mcp-side-effect/requests.log.sync.$sync_attempt"
+    rm -f "$sync_result_tmp" "$sync_requests_tmp"
+    if [ -n "$sync_pod" ] && [ -n "$sync_pod_container" ] && \
+      kubernetes_ctl -n "$kubernetes_active_namespace" exec -i "$sync_pod" -c "$sync_pod_container" -- \
+        sh -c 'cat /tmp/cloud-agents-mcp-side-effect/result.txt 2>/dev/null || true' \
+        >"$sync_result_tmp" 2>>"$sync_error" && \
+      kubernetes_ctl -n "$kubernetes_active_namespace" exec -i "$sync_pod" -c "$sync_pod_container" -- \
+        sh -c 'cat /tmp/cloud-agents-mcp-side-effect/requests.log 2>/dev/null || true' \
+        >"$sync_requests_tmp" 2>>"$sync_error"; then
+      mv "$sync_result_tmp" "$smoke_directory/mcp-side-effect/result.txt"
+      mv "$sync_requests_tmp" "$smoke_directory/mcp-side-effect/requests.log"
+      mcp_fixture_pod="$sync_pod"
+      mcp_fixture_pod_container="$sync_pod_container"
+      return 0
+    fi
+    rm -f "$sync_result_tmp" "$sync_requests_tmp"
+    if [ "$sync_attempt" -lt 3 ]; then
+      sleep 0.5
+    fi
+    sync_attempt=$((sync_attempt + 1))
+  done
+  echo "Kubernetes MCP fixture synchronization failed after 3 exec attempts" >&2
+  tail -n 20 "$sync_error" >&2 2>/dev/null || true
+  return 1
 }
+
+capability_mcp_tool_call_count() {
+  sync_capability_mcp_fixture
+  awk '$0 == "rpc tools/call" { count += 1 } END { print count + 0 }' \
+    "$smoke_directory/mcp-side-effect/requests.log" 2>/dev/null
+}
+
+arm_capability_mcp_disconnect() {
+  if [ "$mcp_fixture_kubernetes" -eq 1 ]; then
+    kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+      sh -c 'umask 077; rm -f /tmp/cloud-agents-mcp-side-effect/disconnect-arm.committed; : > /tmp/cloud-agents-mcp-side-effect/disconnect-arm'
+  else
+    mcp_fixture_docker exec "$mcp_fixture_container" sh -c \
+      'umask 077; rm -f /side-effect/disconnect-arm.committed; : > /side-effect/disconnect-arm; test -f /side-effect/disconnect-arm'
+  fi
+}
+
+wait_capability_mcp_disconnect_commit() {
+  attempt=0
+  while :; do
+    if [ "$mcp_fixture_kubernetes" -eq 1 ]; then
+      if kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+        sh -c 'test -f /tmp/cloud-agents-mcp-side-effect/disconnect-arm.committed && ! kill -0 '"$mcp_fixture_pid"' 2>/dev/null'; then
+        break
+      fi
+    elif [ -f "$smoke_directory/mcp-side-effect/disconnect-arm.committed" ]; then
+      mcp_fixture_running=$(mcp_fixture_docker inspect --format '{{.State.Running}}' "$mcp_fixture_container" 2>/dev/null || true)
+      if [ "$mcp_fixture_running" = false ]; then
+        break
+      fi
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 120 ]; then
+      echo "capability MCP fixture did not commit the transport fault and stop" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+  sync_capability_mcp_fixture
+}
+
+assert_capability_mcp_listener_from_runtime_netns() {
+  listener_probe='fetch("http://127.0.0.1:48765/mcp").then((response)=>process.exit(response.status===401?0:1),()=>process.exit(1))'
+  if [ "$mcp_fixture_kubernetes" -eq 1 ]; then
+    kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+      node -e "$listener_probe"
+  else
+    mcp_fixture_docker exec "$mcp_fixture_container" node -e "$listener_probe"
+  fi
+}
+
 wait_gateway
 wait_user_web
 wait_admin_web
@@ -1264,6 +1542,12 @@ expect_snapshot_backend_rejected() {
     return 1
   fi
   printf 'snapshot_version_negative=passed backend=docker-volume-v1\n'
+}
+read_recovery_snapshot_digest() {
+  recovery_snapshot_postgres_container=$(compose ps -q postgres)
+  printf '%s\n' "SELECT content_digest FROM cloud_agents.workspace_snapshots WHERE tenant_id = :'tenant' AND project_uid = :'project' AND snapshot_uid = :'snapshot';" |
+    docker exec -i "$recovery_snapshot_postgres_container" psql -qAt -U cloud_agents_install_admin -d cloud_agents \
+      -v tenant=tenant-compose-smoke -v project="$project_id" -v snapshot="$recovery_snapshot_id"
 }
 submit_foundation_operation_api() {
   auth_config=$1
@@ -1390,10 +1674,14 @@ docker rm -f "$worker_attestation_container" >/dev/null 2>&1 || true
 docker create --name "$worker_attestation_container" "$worker_image" >/dev/null
 docker cp "$worker_attestation_container:/usr/local/bin/cloud-agents-worker" "$smoke_directory/worker-attested" >/dev/null
 docker cp "$worker_attestation_container:/usr/local/bin/cloud-agent-runtime" "$smoke_directory/runtime-attested" >/dev/null
+docker cp "$worker_attestation_container:/usr/local/bin/cloud-agents-landlock-run" "$smoke_directory/landlock-attested" >/dev/null
+docker cp "$worker_attestation_container:/usr/share/doc/cloud-agents/landlock-notices.txt" "$smoke_directory/landlock-notices-attested" >/dev/null
 candidate_worker="$candidate_directory/cloud-agents-worker-${image_platform%/*}-${image_platform#*/}"
 if ! cmp -s "$candidate_worker" "$smoke_directory/worker-attested" ||
-  ! cmp -s "$candidate_directory/cloud-agent-runtime-standalone.mjs" "$smoke_directory/runtime-attested"; then
-  echo "Compose Worker image does not contain the candidate Worker and Runtime artifacts" >&2
+  ! cmp -s "$candidate_directory/cloud-agent-runtime-standalone.mjs" "$smoke_directory/runtime-attested" ||
+  ! cmp -s "$candidate_directory/cloud-agents-landlock-run-${image_platform%/*}-${image_platform#*/}" "$smoke_directory/landlock-attested" ||
+  ! cmp -s "$candidate_directory/cloud-agents-landlock-notices.txt" "$smoke_directory/landlock-notices-attested"; then
+  echo "Compose Worker image does not contain the candidate Worker, Runtime and Landlock artifacts and notices" >&2
   exit 1
 fi
 docker rm "$worker_attestation_container" >/dev/null
@@ -1446,10 +1734,6 @@ if [ "$cross_node_recovery" -eq 1 ] && [ "$cross_node_environment" = kubernetes 
 fi
 
 if [ "$kubernetes_runtime" -eq 1 ]; then
-  for opensandbox_crd in batchsandboxes.sandbox.opensandbox.io pools.sandbox.opensandbox.io sandboxsnapshots.sandbox.opensandbox.io; do
-    test "$(kubernetes_ctl get crd "$opensandbox_crd" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/version}')" = 0.2.0
-  done
-  test "$(kubernetes_ctl get clusterrole opensandbox-manager-role -o jsonpath='{.metadata.labels.app\.kubernetes\.io/version}')" = 0.2.0
   kubernetes_ctl apply -f - >/dev/null <<EOF
 apiVersion: v1
 kind: List
@@ -2728,7 +3012,7 @@ NODE
   capability_skill_digest=$(CAPABILITY_VALUES="$capability_values" node -e 'process.stdout.write(JSON.parse(process.env.CAPABILITY_VALUES).skill.digest)')
   capability_mcp_body=$(printf '{"serverId":"%s","version":"%s","digest":"%s","transport":"%s","connectionRef":"connection-compose-acceptance","credentialRef":"credential-compose-acceptance","networkPolicyRef":"network-compose","permissions":["tools.call"]}' \
     "$capability_mcp_id" "$capability_mcp_version" "$capability_mcp_digest" "$capability_mcp_transport")
-  capability_skill_body=$(printf '{"bundleId":"%s","version":"%s","digest":"%s","sourceRef":"source-compose-acceptance","signatureRef":"signature-compose-acceptance","signingKeyId":"key-1","compatibleProviders":["codex","claude-code"]}' \
+  capability_skill_body=$(printf '{"bundleId":"%s","version":"%s","digest":"%s","sourceRef":"source-compose-acceptance","signatureRef":"signature-compose-acceptance","signingKeyId":"key-1","compatibleProviders":["codex","claude-code","pi","deepseek-harness"]}' \
     "$capability_skill_id" "$capability_skill_version" "$capability_skill_digest")
   control_plane_api "$smoke_directory/admin-curl.conf" POST \
     "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/mcp-servers" \
@@ -2766,8 +3050,14 @@ fi
 
 profile_id=compose-docker-profile
 profile_create_file="$smoke_directory/profile-create.json"
-profile_create_body=$(printf '{"profileId":"%s","profileName":"%s","version":1,"description":"Packaged Docker worker profile","providerKinds":["codex","claudeAgent"],"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"%s","targetRefs":["%s"],"providerCredentialRef":"%s"}' \
-  "$profile_id" "$profile_id" "$worker_release_digest" docker-compose-target "$target_provider_credentials_volume")
+worker_profile_provider_kinds=$(CLOUD_AGENTS_PROVIDER_KINDS="$real_provider_kinds" node <<'NODE'
+const providers = new Set(["codex", "claudeAgent"]);
+for (const provider of process.env.CLOUD_AGENTS_PROVIDER_KINDS.split(/\s+/u).filter(Boolean)) providers.add(provider);
+process.stdout.write(JSON.stringify([...providers]));
+NODE
+)
+profile_create_body=$(printf '{"profileId":"%s","profileName":"%s","version":1,"description":"Packaged Docker worker profile","providerKinds":%s,"cpuLimitMillis":1000,"memoryLimitBytes":536870912,"storagePolicyRef":"storage-compose","networkPolicyRef":"network-compose","releaseDigest":"%s","targetRefs":["%s"],"providerCredentialRef":"%s"}' \
+  "$profile_id" "$profile_id" "$worker_profile_provider_kinds" "$worker_release_digest" docker-compose-target "$target_provider_credentials_volume")
 control_plane_api "$smoke_directory/admin-curl.conf" POST \
   "/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles" \
   compose-smoke-profile-create --header "Idempotency-Key: compose-smoke-profile-create" \
@@ -3660,12 +3950,15 @@ while :; do
   control_plane_api "$smoke_directory/admin-curl.conf" GET "$foundation_admin_sandbox_path" \
     compose-smoke-foundation-sandbox-get >"$smoke_directory/foundation-sandbox.json"
   foundation_sandbox_values=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/foundation-sandbox.json" node -e \
-    'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.stableErrorCode??""].join("|"))')
+    'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.runtimeId??"",value.spec?.stableErrorCode??""].join("|"))')
   foundation_sandbox_state=${foundation_sandbox_values%%|*}
   foundation_sandbox_rest=${foundation_sandbox_values#*|}
   foundation_sandbox_generation=${foundation_sandbox_rest%%|*}
   foundation_sandbox_rest=${foundation_sandbox_rest#*|}
   foundation_sandbox_resource_version=${foundation_sandbox_rest%%|*}
+  foundation_sandbox_rest=${foundation_sandbox_rest#*|}
+  foundation_sandbox_runtime_id=${foundation_sandbox_rest%%|*}
+  remember_opensandbox_runtime_id "$foundation_sandbox_runtime_id"
   foundation_sandbox_error=${foundation_sandbox_rest#*|}
   if [ "$foundation_sandbox_state" = running ]; then
     break
@@ -3957,6 +4250,7 @@ while :; do
   foundation_agent_resource_version=${foundation_agent_rest%%|*}
   foundation_agent_rest=${foundation_agent_rest#*|}
   foundation_agent_runtime_id=${foundation_agent_rest%%|*}
+  remember_opensandbox_runtime_id "$foundation_agent_runtime_id"
   foundation_agent_error=${foundation_agent_rest#*|}
   if [ "$foundation_agent_state" = running ]; then
     [ -n "$foundation_agent_runtime_id" ] || { echo "Compose Agent Sandbox is running without a Runtime id" >&2; exit 1; }
@@ -3979,7 +4273,8 @@ run_capability_contract_negative() {
   negative_sandbox_id=$3
   negative_sandbox_generation=$4
   negative_environment_profile_id=$5
-  negative_prefix="compose-capability-$negative_environment"
+  negative_provider=$6
+  negative_prefix="compose-capability-$negative_environment-$negative_provider"
   for capability_mismatch_kind in mcp skill; do
     mismatch_session_id="session-$negative_prefix-mismatch-$capability_mismatch_kind"
     mismatch_output_file="$smoke_directory/$mismatch_session_id.json"
@@ -3995,7 +4290,7 @@ run_capability_contract_negative() {
     if ! cloud_agentsctl_user --project "$project_id" --session "$mismatch_session_id" \
       --request-id "$negative_prefix-mismatch-$capability_mismatch_kind" \
       --idempotency-key "$negative_prefix-mismatch-$capability_mismatch_kind" \
-      session create --provider claudeAgent --workspace "$negative_workspace_id" \
+      session create --provider "$negative_provider" --workspace "$negative_workspace_id" \
       --sandbox "$negative_sandbox_id" --sandbox-generation "$negative_sandbox_generation" \
       --environment-profile "$negative_environment_profile_id" --environment-profile-version 1 \
       >"$mismatch_output_file" 2>"$mismatch_error_file"; then
@@ -4059,7 +4354,21 @@ NODE
       exit 1
       ;;
   esac
-  echo "capability_contract_negative=passed environment=$negative_environment incompatible=mcp,skill cross_tenant_status=$cross_tenant_capability_status" >&2
+  cross_tenant_skill_file="$smoke_directory/$negative_prefix-cross-tenant-skill.json"
+  cross_tenant_skill_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+    --config "$smoke_directory/admin-curl.conf" --request GET \
+    --header "X-Request-ID: $negative_prefix-cross-tenant-skill" \
+    --output "$cross_tenant_skill_file" --write-out '%{http_code}' \
+    "https://$endpoint/v1/admin/tenants/tenant-other/projects/$project_id/skill-bundles/$capability_skill_id")
+  case "$cross_tenant_skill_status" in
+    401 | 403) ;;
+    *)
+      cat "$cross_tenant_skill_file" >&2
+      echo "Compose cross-tenant Skill Bundle read was accepted: status=$cross_tenant_skill_status" >&2
+      exit 1
+      ;;
+  esac
+  echo "capability_contract_negative=passed provider=$negative_provider environment=$negative_environment incompatible=mcp,skill cross_tenant_mcp_status=$cross_tenant_capability_status cross_tenant_skill_status=$cross_tenant_skill_status" >&2
 }
 assert_stale_capability_session() {
   stale_environment=$1
@@ -4068,15 +4377,16 @@ assert_stale_capability_session() {
   stale_generation=$4
   current_generation=$5
   stale_environment_profile_id=$6
-  stale_capability_session_file="$smoke_directory/capability-$stale_environment-stale-generation.json"
-  stale_capability_session_body=$(printf '{"sessionId":"session-compose-capability-%s-stale-generation","providerKind":"claudeAgent","workspaceId":"%s","sandboxId":"%s","sandboxGeneration":%s,"environmentProfileId":"%s","environmentProfileVersion":1,"mcpServerRefs":%s,"skillBundleRefs":%s}' \
-    "$stale_environment" "$stale_workspace_id" "$stale_sandbox_id" "$stale_generation" \
+  stale_provider=$7
+  stale_capability_session_file="$smoke_directory/capability-$stale_environment-$stale_provider-stale-generation.json"
+  stale_capability_session_body=$(printf '{"sessionId":"session-compose-capability-%s-%s-stale-generation","providerKind":"%s","workspaceId":"%s","sandboxId":"%s","sandboxGeneration":%s,"environmentProfileId":"%s","environmentProfileVersion":1,"mcpServerRefs":%s,"skillBundleRefs":%s}' \
+    "$stale_environment" "$stale_provider" "$stale_provider" "$stale_workspace_id" "$stale_sandbox_id" "$stale_generation" \
     "$stale_environment_profile_id" "$capability_mcp_refs_json" "$capability_skill_refs_json")
   stale_capability_session_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
     --config "$smoke_directory/user-curl.conf" --request POST \
     --header 'Content-Type: application/json' \
-    --header "X-Request-ID: compose-capability-$stale_environment-stale-generation" \
-    --header "Idempotency-Key: compose-capability-$stale_environment-stale-generation" \
+    --header "X-Request-ID: compose-capability-$stale_environment-$stale_provider-stale-generation" \
+    --header "Idempotency-Key: compose-capability-$stale_environment-$stale_provider-stale-generation" \
     --data "$stale_capability_session_body" --output "$stale_capability_session_file" --write-out '%{http_code}' \
     "https://$endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/sessions")
   if [ "$stale_capability_session_status" != 409 ] || ! CLOUD_AGENTS_COMPOSE_RESPONSE_FILE="$stale_capability_session_file" node -e \
@@ -4085,11 +4395,13 @@ assert_stale_capability_session() {
     echo "Compose accepted a capability Session bound to stale $stale_environment Sandbox generation $stale_generation" >&2
     exit 1
   fi
-  echo "capability_stale_generation=passed environment=$stale_environment old_generation=$stale_generation current_generation=$current_generation status=$stale_capability_session_status" >&2
+  echo "capability_stale_generation=passed provider=$stale_provider environment=$stale_environment old_generation=$stale_generation current_generation=$current_generation status=$stale_capability_session_status" >&2
 }
 if [ "$capability_negative_test" -eq 1 ]; then
-  run_capability_contract_negative docker "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" \
-    "$foundation_agent_generation" "$foundation_agent_environment_profile_id"
+  for negative_provider in $real_provider_kinds; do
+    run_capability_contract_negative docker "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" \
+      "$foundation_agent_generation" "$foundation_agent_environment_profile_id" "$negative_provider"
+  done
 fi
 remote_agent_workspace_id=
 remote_agent_sandbox_id=
@@ -4156,6 +4468,7 @@ if [ "$remote_runtime" -eq 1 ]; then
     remote_agent_resource_version=${remote_agent_rest%%|*}
     remote_agent_rest=${remote_agent_rest#*|}
     remote_agent_runtime_id=${remote_agent_rest%%|*}
+    remember_opensandbox_runtime_id "$remote_agent_runtime_id"
     remote_agent_error=${remote_agent_rest#*|}
     if [ "$remote_agent_state" = running ]; then
       [ -n "$remote_agent_runtime_id" ] || { echo "Compose outbound RemoteWorker Agent Sandbox is running without a Runtime id" >&2; exit 1; }
@@ -4174,8 +4487,10 @@ if [ "$remote_runtime" -eq 1 ]; then
     sleep 1
   done
   if [ "$capability_negative_test" -eq 1 ]; then
-    run_capability_contract_negative remote-worker "$remote_agent_workspace_id" "$remote_agent_sandbox_id" \
-      "$remote_agent_generation" "$remote_agent_environment_profile_id"
+    for negative_provider in $real_provider_kinds; do
+      run_capability_contract_negative remote-worker "$remote_agent_workspace_id" "$remote_agent_sandbox_id" \
+        "$remote_agent_generation" "$remote_agent_environment_profile_id" "$negative_provider"
+    done
   fi
 fi
 
@@ -4233,6 +4548,7 @@ EOF
     kubernetes_agent_resource_version=${kubernetes_agent_rest%%|*}
     kubernetes_agent_rest=${kubernetes_agent_rest#*|}
     kubernetes_agent_runtime_id=${kubernetes_agent_rest%%|*}
+    remember_opensandbox_runtime_id "$kubernetes_agent_runtime_id"
     kubernetes_agent_error=${kubernetes_agent_rest#*|}
     if [ "$cross_node_recovery" -eq 1 ] && [ "$cross_node_environment" = kubernetes ] && [ "$kubernetes_source_volume_bound" -eq 0 ]; then
       kubernetes_agent_volume=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/kubernetes-agent-sandbox.json" node -e \
@@ -4259,8 +4575,10 @@ EOF
     sleep 1
   done
   if [ "$capability_negative_test" -eq 1 ]; then
-    run_capability_contract_negative kubernetes "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" \
-      "$kubernetes_agent_generation" "$kubernetes_agent_environment_profile_id"
+    for negative_provider in $real_provider_kinds; do
+      run_capability_contract_negative kubernetes "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" \
+        "$kubernetes_agent_generation" "$kubernetes_agent_environment_profile_id" "$negative_provider"
+    done
   fi
 fi
 
@@ -4364,6 +4682,7 @@ execute_real_provider_with_mcp_approvals() {
   approval_request_prefix=$4
   approval_prompt=$5
   approval_execution_file=$6
+  approval_expected_command=${7-}
   approval_status_file="$approval_execution_file.status"
   approval_error_file="$approval_execution_file.stderr"
   approval_current_file="$approval_execution_file.current"
@@ -4372,7 +4691,7 @@ execute_real_provider_with_mcp_approvals() {
     cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
       --execution "$approval_execution_id" --request-id "$approval_request_prefix" \
       --idempotency-key "$approval_request_prefix" execution execute \
-      --runtime-mode full-access --interaction-mode default $capability_execution_flags --input "$approval_prompt" \
+      --runtime-mode approval-required --interaction-mode default $capability_execution_flags --input "$approval_prompt" \
       >"$approval_execution_file" 2>"$approval_error_file"
     printf '%s\n' "$?" >"$approval_status_file"
   ) &
@@ -4385,15 +4704,33 @@ execute_real_provider_with_mcp_approvals() {
       --execution "$approval_execution_id" --request-id "$approval_request_prefix-poll-$attempt" execution get \
       >"$approval_current_file" 2>/dev/null; then
       approval_request=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$approval_current_file" \
-        CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS="$handled_approval_requests" node <<'NODE'
+        CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS="$handled_approval_requests" \
+        CLOUD_AGENTS_COMPOSE_EXPECTED_COMMAND="$approval_expected_command" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
 const handled = new Set((process.env.CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS ?? "").split(" ").filter(Boolean));
+const expectedCommand = process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_COMMAND;
 for (const message of value.messages ?? []) {
   if (message.messageType !== "InteractionRequest" || message.payload?.interactionType !== "approval") continue;
   const requestId = message.payload?.requestId;
   const categories = message.payload?.sensitiveAction?.categories;
-  if (typeof requestId === "string" && !handled.has(requestId) && Array.isArray(categories) && categories.includes("external-mcp-action") && Number.isSafeInteger(value.spec?.generation)) {
+  const isMcpApproval = Array.isArray(categories) && categories.includes("external-mcp-action");
+  const isSkillApproval = message.payload?.toolName === "Skill" && message.payload?.requestKind === "tool";
+  const isArtifactWriteApproval = message.payload?.toolName === "Write";
+  const isExpectedCodexCommand = expectedCommand && message.payload?.provider === "codex" &&
+    message.payload?.requestKind === "command" && message.payload?.command === expectedCommand;
+  const isCapabilityApproval = (isMcpApproval || isSkillApproval || isArtifactWriteApproval || isExpectedCodexCommand);
+  const managedSkillQuote = String.fromCharCode(39);
+  const managedSkillCommand = message.payload?.command ?? "";
+  const isManagedSkillRead = message.payload?.provider === "codex" &&
+    message.payload?.requestKind === "command" &&
+    managedSkillCommand.startsWith("/bin/bash -lc ") &&
+    managedSkillCommand.includes("/tmp/cloud-agents-skills/") &&
+    managedSkillCommand.includes("/skills/managed-capability-acceptance/SKILL.md") &&
+    managedSkillCommand.endsWith("SKILL.md" + managedSkillQuote);
+  if (typeof requestId === "string" && !handled.has(requestId) &&
+      (isCapabilityApproval || isManagedSkillRead) &&
+      Number.isSafeInteger(value.spec?.generation)) {
     process.stdout.write(`${value.spec.generation}|${requestId}`);
     break;
   }
@@ -4422,6 +4759,44 @@ NODE
   wait "$approval_execute_pid" 2>/dev/null || true
   approval_status=$(cat "$approval_status_file")
   approval_execute_pid=
+  if [ "$approval_status" -ne 0 ]; then
+    cloud_agentsctl_user --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
+      --execution "$approval_execution_id" --request-id "$approval_request_prefix-failure" execution get \
+      >"$approval_current_file" 2>/dev/null || true
+    failure_fixture_directory=
+    if sync_capability_mcp_fixture; then failure_fixture_directory="$smoke_directory/mcp-side-effect"; fi
+    CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$approval_current_file" \
+      CLOUD_AGENTS_COMPOSE_FAILURE_FIXTURE_DIRECTORY="$failure_fixture_directory" node <<'NODE'
+const { existsSync, readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const { createHash } = require("node:crypto");
+let value;
+try { value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8")); }
+catch { console.error("capability_execution_failure=unavailable"); process.exit(0); }
+const code = (value) => typeof value === "string" && /^[a-z][a-z0-9_.-]{0,79}$/.test(value) ? value : undefined;
+const errors = [value.spec?.errorMessage, ...(value.messages ?? []).flatMap((message) =>
+  [message.error?.message, message.payload?.error?.message])].filter((text) => typeof text === "string");
+const fixtureDirectory = process.env.CLOUD_AGENTS_COMPOSE_FAILURE_FIXTURE_DIRECTORY;
+const count = (name) => !fixtureDirectory ? undefined : existsSync(join(fixtureDirectory, name))
+  ? readFileSync(join(fixtureDirectory, name), "utf8").split("\n").filter(Boolean).length : 0;
+console.error(JSON.stringify({ capabilityExecutionFailure: {
+  state: code(value.spec?.state), errorCode: code(value.spec?.errorCode),
+  fixtureRequests: count("requests.log"), fixtureSideEffects: count("result.txt"),
+  errorDigests: errors.map((text) => createHash("sha256").update(text).digest("hex")),
+  errorHints: {
+    skillSandbox: errors.some((text) => /Managed Skill|Skill Bundle/.test(text)),
+    permissionDenied: errors.some((text) => /EACCES|EPERM|permission denied/i.test(text)),
+    skillSetMismatch: errors.some((text) => /unexpected managed Skill set/.test(text)),
+    pluginSetMismatch: errors.some((text) => /unexpected managed Skill plugin/.test(text)),
+  },
+  messages: (value.messages ?? []).map((message) => ({
+    type: code(message.messageType?.toLowerCase()), event: code(message.payload?.eventType),
+    errorCode: code(message.error?.code), status: code(message.payload?.payload?.status),
+  })),
+} }));
+NODE
+    return 1
+  fi
   [ "$approval_status" -eq 0 ]
 }
 
@@ -4433,6 +4808,7 @@ execute_real_provider_with_safe_retry() {
   request_prefix=$5
   retry_prompt=$6
   execution_file=$7
+  approval_expected_command=${8-}
   attempt=1
   while [ "$attempt" -le 3 ]; do
     attempt_turn_id=$retry_turn_id
@@ -4449,7 +4825,7 @@ execute_real_provider_with_safe_retry() {
     fi
     if [ "$capability_acceptance" -eq 1 ] && capability_provider_enabled "$provider_kind"; then
       if execute_real_provider_with_mcp_approvals "$retry_session_id" "$attempt_turn_id" "$attempt_execution_id" \
-        "$request_prefix$attempt_request_suffix" "$retry_prompt" "$execution_file"; then
+        "$request_prefix$attempt_request_suffix" "$retry_prompt" "$execution_file" "$approval_expected_command"; then
         completed_real_provider_turn_id=$attempt_turn_id
         completed_real_provider_execution_id=$attempt_execution_id
         return 0
@@ -4491,37 +4867,110 @@ NODE
 }
 
 run_capability_process_recovery() {
+  recovery_provider=$1
   [ "$capability_process_recovery" -eq 1 ] || return 0
-  [ "$real_provider_environment_slug" = docker ] || return 0
+  if [ -n "$capability_process_recovery_environment" ] &&
+    [ "$capability_process_recovery_environment" != "$real_provider_environment_slug" ]; then
+    return 0
+  fi
+  capability_process_recovery_ran=1
   run_capability_process_recovery_fault() {
     recovery_fault=$1
-    interaction_output_directory="$smoke_directory/agent-interactions-docker-capability-recovery-$recovery_fault"
+    interaction_output_directory="$smoke_directory/agent-interactions-$real_provider_environment_slug-capability-recovery-$recovery_fault"
     mkdir -m 0700 "$interaction_output_directory"
+    recovery_checkpoint_mode=interaction
+    recovery_artifact_path=
+    recovery_expected_content=
+    recovery_bash_command=
+    recovery_mcp_tool_name=
+    recovery_skill_name=managed-capability-acceptance
+    case "$recovery_provider" in
+      pi | deepseek-harness)
+        recovery_checkpoint_mode=side-effect
+        recovery_artifact_path=".cloud-agents-stage3-acceptance/$real_provider_environment_slug-process-$recovery_provider-$recovery_fault.txt"
+        recovery_expected_content="cloud-agents $real_provider_environment_label $recovery_provider $recovery_fault process recovery"
+        recovery_bash_command="mkdir -p '${recovery_artifact_path%/*}' && printf '%s\\n' '$recovery_expected_content' > '$recovery_artifact_path' && sleep 60"
+        if [ "$recovery_provider" = pi ]; then
+          recovery_mcp_tool_name=$(CAPABILITY_MCP_RESOURCE_ID="$capability_mcp_id" node <<'NODE'
+const { createHash } = require("node:crypto");
+const resourceId = process.env.CAPABILITY_MCP_RESOURCE_ID;
+const toolName = "acceptance_marker";
+const safe = (value) => value.replaceAll(/[^A-Za-z0-9_-]/gu, "_");
+const suffix = createHash("sha256").update(`${resourceId}\u0000${toolName}`).digest("hex").slice(0, 8);
+process.stdout.write(`mcp__${safe(resourceId).slice(0, 16)}__${safe(toolName).slice(0, 24)}__${suffix}`);
+NODE
+)
+        else
+          recovery_bash_command="sleep 60 && mkdir -p '${recovery_artifact_path%/*}' && printf '%s\\n' '$recovery_expected_content' > '$recovery_artifact_path'"
+          recovery_mcp_tool_name=$(CAPABILITY_MCP_RESOURCE_ID="$capability_mcp_id" node <<'NODE'
+const { createHash } = require("node:crypto");
+const resourceId = process.env.CAPABILITY_MCP_RESOURCE_ID;
+const normalized = resourceId.replace(/[^A-Za-z0-9_-]/gu, "_").slice(0, 19) || "server";
+const suffix = createHash("sha256").update(resourceId).digest("hex").slice(0, 8);
+process.stdout.write(`mcp__ca_${normalized}_${suffix}__acceptance_marker`);
+NODE
+)
+        fi
+        ;;
+    esac
     if [ "$recovery_fault" = worker ]; then
-      recovery_worker_container=$(docker ps -q \
-        --filter label=cloud-agents.dev/managed=true \
-        --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
-        --filter label=cloud-agents.dev/project="$project_id" \
-        --filter label=cloud-agents.dev/target=docker-compose-target \
-        --filter label=cloud-agents.dev/lease="$profile_environment_id")
+      recovery_lease_id=
+      recovery_workspace_id=
+      recovery_sandbox_id=
+      recovery_generation=
+      recovery_environment_profile_id=
+      recovery_target_id=
+      case "$real_provider_environment_slug" in
+        docker)
+          recovery_lease_id=$profile_environment_id
+          recovery_worker_container=$(docker ps -q \
+            --filter label=cloud-agents.dev/managed=true \
+            --filter label=cloud-agents.dev/tenant=tenant-compose-smoke \
+            --filter label=cloud-agents.dev/project="$project_id" \
+            --filter label=cloud-agents.dev/target=docker-compose-target \
+            --filter label=cloud-agents.dev/lease="$profile_environment_id")
+          ;;
+        remote-worker)
+          recovery_workspace_id=$real_provider_workspace_id
+          recovery_sandbox_id=$real_provider_sandbox_id
+          recovery_generation=$real_provider_sandbox_generation
+          recovery_environment_profile_id=$real_provider_environment_profile_id
+          recovery_target_id=$remote_target_id
+          recovery_worker_container=$remote_worker_container
+          ;;
+        *) echo "Kubernetes direct Sandbox has no bound Worker fault target" >&2; return 1 ;;
+      esac
       if printf '%s\n' "$recovery_worker_container" | grep -Eq '^[0-9a-f]{12}$'; then
+        recovery_worker_container=$(docker inspect --format '{{.Id}}' "$recovery_worker_container")
+      elif [ "$real_provider_environment_slug" = remote-worker ]; then
         recovery_worker_container=$(docker inspect --format '{{.Id}}' "$recovery_worker_container")
       fi
       if ! printf '%s\n' "$recovery_worker_container" | grep -Eq '^[0-9a-f]{64}$'; then
         echo "capability recovery could not resolve the lease Worker" >&2
         return 1
       fi
-      start_capability_mcp_fixture "$recovery_worker_container"
+      if [ "$real_provider_environment_slug" = docker ]; then
+        start_capability_mcp_fixture "$recovery_worker_container"
+      else
+        start_capability_mcp_fixture "$remote_agent_runtime_id"
+      fi
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
-      CLOUD_AGENTS_E2E_LEASE_ID="$profile_environment_id" \
-      CLOUD_AGENTS_E2E_RUN_ID=compose-capability-process-recovery-docker-worker \
+      CLOUD_AGENTS_E2E_LEASE_ID="$recovery_lease_id" \
+      CLOUD_AGENTS_E2E_WORKSPACE_ID="$recovery_workspace_id" \
+      CLOUD_AGENTS_E2E_SANDBOX_ID="$recovery_sandbox_id" \
+      CLOUD_AGENTS_E2E_SANDBOX_GENERATION="$recovery_generation" \
+      CLOUD_AGENTS_E2E_ENVIRONMENT_PROFILE_ID="$recovery_environment_profile_id" \
+      CLOUD_AGENTS_E2E_ENVIRONMENT="$real_provider_environment_slug" \
+      CLOUD_AGENTS_E2E_RUN_ID="compose-capability-process-recovery-$real_provider_environment_slug-worker-$project" \
       CLOUD_AGENTS_E2E_OUTPUT_DIR="$interaction_output_directory" \
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
       CLOUD_AGENTS_E2E_WORKER_CONTAINER="$recovery_worker_container" \
+      CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$recovery_target_id" \
+      CLOUD_AGENTS_E2E_MCP_FIXTURE_CONTAINER="$mcp_fixture_container" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
       CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
       CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
@@ -4529,42 +4978,326 @@ run_capability_process_recovery() {
       CLOUD_AGENTS_E2E_ADMIN_CURL_CONFIG="$smoke_directory/admin-curl.conf" \
       CLOUD_AGENTS_E2E_RECOVERY_ONLY=1 \
       CLOUD_AGENTS_E2E_RECOVERY_FAULT=worker \
-      CLOUD_AGENTS_E2E_RECOVERY_PROVIDER=claudeAgent \
+      CLOUD_AGENTS_E2E_RECOVERY_PROVIDER="$recovery_provider" \
+      CLOUD_AGENTS_E2E_RECOVERY_CHECKPOINT_MODE="$recovery_checkpoint_mode" \
+      CLOUD_AGENTS_E2E_RECOVERY_ARTIFACT_PATH="$recovery_artifact_path" \
+      CLOUD_AGENTS_E2E_RECOVERY_EXPECTED_CONTENT="$recovery_expected_content" \
+      CLOUD_AGENTS_E2E_RECOVERY_BASH_COMMAND="$recovery_bash_command" \
+      CLOUD_AGENTS_E2E_RECOVERY_MCP_TOOL_NAME="$recovery_mcp_tool_name" \
+      CLOUD_AGENTS_E2E_RECOVERY_SKILL_NAME="$recovery_skill_name" \
       CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON="$capability_mcp_refs_json" \
       CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON="$capability_skill_refs_json" \
       CLOUD_AGENTSCTL="$cli" \
-        sh "$script_directory/test-platform-agent-interactions.sh"
+        sh "$script_directory/test-platform-agent-interactions.sh" || return 1
     else
-      start_capability_mcp_fixture "$foundation_agent_runtime_id"
+      case "$real_provider_environment_slug" in
+        docker) recovery_runtime_id=$foundation_agent_runtime_id; recovery_target_id=docker-compose-target ;;
+        remote-worker) recovery_runtime_id=$remote_agent_runtime_id; recovery_target_id=$remote_target_id ;;
+        kubernetes) recovery_runtime_id=$kubernetes_agent_runtime_id; recovery_target_id=$kubernetes_runtime_target_id ;;
+      esac
+      start_capability_mcp_fixture "$recovery_runtime_id"
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
-      CLOUD_AGENTS_E2E_WORKSPACE_ID="$foundation_agent_workspace_id" \
-      CLOUD_AGENTS_E2E_SANDBOX_ID="$foundation_agent_sandbox_id" \
-      CLOUD_AGENTS_E2E_SANDBOX_GENERATION="$foundation_agent_generation" \
-      CLOUD_AGENTS_E2E_ENVIRONMENT_PROFILE_ID="$foundation_agent_environment_profile_id" \
-      CLOUD_AGENTS_E2E_RUN_ID=compose-capability-process-recovery-docker-agent \
+      CLOUD_AGENTS_E2E_WORKSPACE_ID="$real_provider_workspace_id" \
+      CLOUD_AGENTS_E2E_SANDBOX_ID="$real_provider_sandbox_id" \
+      CLOUD_AGENTS_E2E_SANDBOX_GENERATION="$real_provider_sandbox_generation" \
+      CLOUD_AGENTS_E2E_ENVIRONMENT_PROFILE_ID="$real_provider_environment_profile_id" \
+      CLOUD_AGENTS_E2E_ENVIRONMENT="$real_provider_environment_slug" \
+      CLOUD_AGENTS_E2E_RUN_ID="compose-capability-process-recovery-$real_provider_environment_slug-agent-$project" \
       CLOUD_AGENTS_E2E_OUTPUT_DIR="$interaction_output_directory" \
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
       CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
       CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
-      CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$foundation_agent_runtime_id" \
-      CLOUD_AGENTS_E2E_AGENT_TARGET_ID=docker-compose-target \
+      CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$recovery_runtime_id" \
+      CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$recovery_target_id" \
       CLOUD_AGENTS_E2E_RECOVERY_ONLY=1 \
       CLOUD_AGENTS_E2E_RECOVERY_FAULT=agent \
-      CLOUD_AGENTS_E2E_RECOVERY_PROVIDER=claudeAgent \
+      CLOUD_AGENTS_E2E_RECOVERY_PROVIDER="$recovery_provider" \
+      CLOUD_AGENTS_E2E_RECOVERY_CHECKPOINT_MODE="$recovery_checkpoint_mode" \
+      CLOUD_AGENTS_E2E_RECOVERY_ARTIFACT_PATH="$recovery_artifact_path" \
+      CLOUD_AGENTS_E2E_RECOVERY_EXPECTED_CONTENT="$recovery_expected_content" \
+      CLOUD_AGENTS_E2E_RECOVERY_BASH_COMMAND="$recovery_bash_command" \
+      CLOUD_AGENTS_E2E_RECOVERY_MCP_TOOL_NAME="$recovery_mcp_tool_name" \
+      CLOUD_AGENTS_E2E_RECOVERY_SKILL_NAME="$recovery_skill_name" \
       CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON="$capability_mcp_refs_json" \
       CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON="$capability_skill_refs_json" \
       CLOUD_AGENTSCTL="$cli" \
-        sh "$script_directory/test-platform-agent-interactions.sh"
+        sh "$script_directory/test-platform-agent-interactions.sh" || return 1
     fi
   }
-  run_capability_process_recovery_fault worker
-  run_capability_process_recovery_fault agent
-  echo "capability_process_recovery=passed provider=claudeAgent environment=docker faults=worker,agent" >&2
+  case "$capability_process_recovery_faults" in
+    worker) run_capability_process_recovery_fault worker || return 1 ;;
+    agent) run_capability_process_recovery_fault agent || return 1 ;;
+    both)
+      run_capability_process_recovery_fault worker || return 1
+      run_capability_process_recovery_fault agent || return 1
+      ;;
+  esac
+  echo "capability_process_recovery=passed provider=$recovery_provider environment=$real_provider_environment_slug faults=$capability_process_recovery_faults" >&2
+}
+
+run_capability_transport_recovery() {
+  transport_provider_kind=$1
+  transport_provider_slug=$2
+  [ "$capability_transport_recovery" -eq 1 ] || return 0
+  [ "$capability_transport_recovery_ran" -eq 0 ] || return 0
+  if [ -n "$capability_transport_recovery_environment" ] &&
+    [ "$capability_transport_recovery_environment" != "$real_provider_environment_slug" ]; then
+    return 0
+  fi
+  capability_transport_recovery_ran=1
+  transport_prefix="compose-capability-transport-$real_provider_environment_slug-$transport_provider_slug"
+  transport_session_id="session-$transport_prefix"
+  transport_fault_turn_id="turn-$transport_prefix-disconnect"
+  transport_fault_execution_id="execution-$transport_prefix-disconnect"
+  transport_reconnect_turn_id="turn-$transport_prefix-reconnect"
+  transport_reconnect_execution_id="execution-$transport_prefix-reconnect"
+  transport_side_effect_tool=acceptance_side_effect
+  transport_marker_tool=acceptance_marker
+  if [ "$transport_provider_kind" = pi ]; then
+    transport_side_effect_tool=$(CLOUD_AGENTS_COMPOSE_RESOURCE_ID="$capability_mcp_id" \
+      CLOUD_AGENTS_COMPOSE_TOOL_NAME=acceptance_side_effect node -e \
+      'const {createHash}=require("node:crypto");const resource=process.env.CLOUD_AGENTS_COMPOSE_RESOURCE_ID;const tool=process.env.CLOUD_AGENTS_COMPOSE_TOOL_NAME;const safe=(value)=>value.toLowerCase().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"");const suffix=createHash("sha256").update(`${resource}\u0000${tool}`).digest("hex").slice(0,8);process.stdout.write(`mcp__${safe(resource).slice(0,16)||"server"}__${safe(tool).slice(0,24)||"tool"}__${suffix}`)')
+    transport_marker_tool=$(CLOUD_AGENTS_COMPOSE_RESOURCE_ID="$capability_mcp_id" \
+      CLOUD_AGENTS_COMPOSE_TOOL_NAME=acceptance_marker node -e \
+      'const {createHash}=require("node:crypto");const resource=process.env.CLOUD_AGENTS_COMPOSE_RESOURCE_ID;const tool=process.env.CLOUD_AGENTS_COMPOSE_TOOL_NAME;const safe=(value)=>value.toLowerCase().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"");const suffix=createHash("sha256").update(`${resource}\u0000${tool}`).digest("hex").slice(0,8);process.stdout.write(`mcp__${safe(resource).slice(0,16)||"server"}__${safe(tool).slice(0,24)||"tool"}__${suffix}`)')
+  fi
+  transport_fault_prompt="Call the managed MCP tool named $transport_side_effect_tool exactly once. Do not call any other tool and do not retry it. Wait for its result; if the transport disconnects, fail closed without claiming success."
+  transport_reconnect_prompt="Call the managed MCP tool named $transport_marker_tool exactly once. Do not call any other tool. Reply done only after it succeeds."
+
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" \
+    --request-id "$transport_prefix-session" --idempotency-key "$transport_prefix-session" \
+    session create --provider "$transport_provider_kind" $capability_session_flags --workspace "$real_provider_workspace_id" \
+    --sandbox "$real_provider_sandbox_id" --sandbox-generation "$real_provider_sandbox_generation" \
+    --environment-profile "$real_provider_environment_profile_id" --environment-profile-version 1 >/dev/null
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --request-id "$transport_prefix-disconnect-turn" --idempotency-key "$transport_prefix-disconnect-turn" \
+    turn create --input "$transport_fault_prompt" >/dev/null
+
+  sync_capability_mcp_fixture
+  transport_side_effects_before=$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')
+  transport_requests_before=$(capability_mcp_tool_call_count)
+  arm_capability_mcp_disconnect
+  transport_fault_file="$smoke_directory/$transport_fault_execution_id.json"
+  if execute_real_provider_with_mcp_approvals "$transport_session_id" "$transport_fault_turn_id" \
+    "$transport_fault_execution_id" "$transport_prefix-disconnect-execution" "$transport_fault_prompt" "$transport_fault_file"; then
+    echo "capability transport fault returned success instead of failing closed" >&2
+    return 1
+  fi
+  wait_capability_mcp_disconnect_commit
+  transport_fault_terminal="$smoke_directory/$transport_fault_execution_id-terminal.json"
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-terminal" \
+    execution get >"$transport_fault_terminal"
+  transport_fault_events="$smoke_directory/$transport_fault_execution_id-events.json"
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" \
+    --request-id "$transport_prefix-disconnect-events" events list --limit 64 >"$transport_fault_events"
+  transport_side_effects_after_fault=$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')
+  transport_requests_after_fault=$(capability_mcp_tool_call_count)
+  test "$transport_side_effects_after_fault" -eq $((transport_side_effects_before + 1))
+  test "$transport_requests_after_fault" -eq $((transport_requests_before + 1))
+  sleep 2
+  test "$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')" -eq "$transport_side_effects_after_fault"
+  test "$(capability_mcp_tool_call_count)" -eq "$transport_requests_after_fault"
+
+  start_capability_mcp_fixture "$mcp_fixture_runtime_id" "$mcp_fixture_docker_host" 1
+  assert_capability_mcp_listener_from_runtime_netns
+  attempt=0
+  while :; do
+    cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+      --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-expiry" \
+      execution get >"$transport_fault_terminal"
+    if CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$transport_fault_terminal" node -e \
+      'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE,"utf8"));process.exit(Date.parse(value.spec?.claimExpiresAt??"")+1000<Date.now()?0:1)'; then
+      break
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+      echo "capability transport recovery claim did not expire" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  transport_blocked_file="$smoke_directory/$transport_fault_execution_id-blocked.log"
+  set +e
+  cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-execution" \
+    --idempotency-key "$transport_prefix-disconnect-execution" execution execute \
+    --runtime-mode approval-required --interaction-mode default $capability_execution_flags --input "$transport_fault_prompt" \
+    >"$transport_blocked_file" 2>&1
+  transport_blocked_status=$?
+  set -e
+  if [ "$transport_blocked_status" -eq 0 ]; then
+    echo "capability transport recovery replay bypassed side-effect reconciliation" >&2
+    return 1
+  fi
+  if ! grep -Fq 'RECOVERY_REQUIRES_RECONCILIATION' "$transport_blocked_file"; then
+    echo "capability transport recovery replay returned the wrong stable error code" >&2
+    return 1
+  fi
+  transport_fault_reconcile="$smoke_directory/$transport_fault_execution_id-awaiting-reconciliation.json"
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-reconcile-state" \
+    execution get >"$transport_fault_reconcile"
+  transport_reconcile_values=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$transport_fault_reconcile" node -e \
+    'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE,"utf8"));const checkpoint=value.spec?.checkpoint;if(value.spec?.state!=="running"||value.spec?.recoveryState!=="awaiting_reconciliation"||value.spec?.recoveryReason!=="side_effect_outcome_unknown"||checkpoint?.pendingSideEffect!==true||!checkpoint?.digest)process.exit(1);process.stdout.write(`${value.spec.generation}|${checkpoint.digest}`)')
+  transport_reconcile_generation=${transport_reconcile_values%%|*}
+  transport_reconcile_checkpoint_digest=${transport_reconcile_values#*|}
+  sync_capability_mcp_fixture
+  test "$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')" -eq "$transport_side_effects_after_fault"
+  test "$(capability_mcp_tool_call_count)" -eq "$transport_requests_after_fault"
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-reconcile" \
+    --idempotency-key "$transport_prefix-disconnect-reconcile" execution reconcile \
+    --generation "$transport_reconcile_generation" --checkpoint-digest "$transport_reconcile_checkpoint_digest" \
+    --outcome confirmed >/dev/null
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-cancel" \
+    --idempotency-key "$transport_prefix-disconnect-cancel" execution cancel \
+    --generation "$transport_reconcile_generation" >/dev/null
+  transport_fault_cancelled="$smoke_directory/$transport_fault_execution_id-cancelled.json"
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-cancelled" \
+    execution get >"$transport_fault_cancelled"
+
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_reconnect_turn_id" \
+    --request-id "$transport_prefix-reconnect-turn" --idempotency-key "$transport_prefix-reconnect-turn" \
+    turn create --input "$transport_reconnect_prompt" >/dev/null
+  transport_reconnect_file="$smoke_directory/$transport_reconnect_execution_id.json"
+  if ! execute_real_provider_with_mcp_approvals "$transport_session_id" "$transport_reconnect_turn_id" \
+    "$transport_reconnect_execution_id" "$transport_prefix-reconnect-execution" "$transport_reconnect_prompt" "$transport_reconnect_file"; then
+    return 1
+  fi
+  sync_capability_mcp_fixture
+  test "$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')" -eq "$transport_side_effects_after_fault"
+  test "$(capability_mcp_tool_call_count)" -eq $((transport_requests_after_fault + 1))
+  transport_events="$smoke_directory/$transport_reconnect_execution_id-events.json"
+  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" \
+    --request-id "$transport_prefix-reconnect-events" events list --limit 64 >"$transport_events"
+
+  CLOUD_AGENTS_COMPOSE_FAULT_EXECUTION_FILE="$transport_fault_reconcile" \
+  CLOUD_AGENTS_COMPOSE_CANCELLED_EXECUTION_FILE="$transport_fault_cancelled" \
+  CLOUD_AGENTS_COMPOSE_RECONNECT_EXECUTION_FILE="$transport_reconnect_file" \
+  CLOUD_AGENTS_COMPOSE_FAULT_EVENTS_FILE="$transport_fault_events" \
+  CLOUD_AGENTS_COMPOSE_EVENTS_FILE="$transport_events" \
+  CLOUD_AGENTS_COMPOSE_CAPABILITY_DESCRIPTOR="$capability_descriptor" \
+  CLOUD_AGENTS_COMPOSE_MCP_ID="$capability_mcp_id" \
+  CLOUD_AGENTS_COMPOSE_MCP_VERSION="$capability_mcp_version" \
+  CLOUD_AGENTS_COMPOSE_MCP_DIGEST="$capability_mcp_digest" \
+  CLOUD_AGENTS_COMPOSE_SKILL_ID="$capability_skill_id" \
+  CLOUD_AGENTS_COMPOSE_SKILL_VERSION="$capability_skill_version" \
+  CLOUD_AGENTS_COMPOSE_SKILL_DIGEST="$capability_skill_digest" \
+  CLOUD_AGENTS_COMPOSE_MARKER="$mcp_fixture_marker" \
+  CLOUD_AGENTS_COMPOSE_FAULT_PROMPT="$transport_fault_prompt" \
+  CLOUD_AGENTS_COMPOSE_RECONNECT_PROMPT="$transport_reconnect_prompt" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const fault = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_FAULT_EXECUTION_FILE, "utf8"));
+const cancelled = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_CANCELLED_EXECUTION_FILE, "utf8"));
+const reconnect = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_RECONNECT_EXECUTION_FILE, "utf8"));
+const faultPage = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_FAULT_EVENTS_FILE, "utf8"));
+const page = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EVENTS_FILE, "utf8"));
+const descriptor = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_CAPABILITY_DESCRIPTOR, "utf8"));
+const mcpId = process.env.CLOUD_AGENTS_COMPOSE_MCP_ID;
+const skillId = process.env.CLOUD_AGENTS_COMPOSE_SKILL_ID;
+const refsMatch = (value) => value.spec?.mcpServerRefs?.length === 1 &&
+  value.spec.mcpServerRefs[0]?.serverId === mcpId &&
+  value.spec.mcpServerRefs[0]?.version === process.env.CLOUD_AGENTS_COMPOSE_MCP_VERSION &&
+  value.spec.mcpServerRefs[0]?.digest === process.env.CLOUD_AGENTS_COMPOSE_MCP_DIGEST &&
+  value.spec?.skillBundleRefs?.length === 1 && value.spec.skillBundleRefs[0]?.bundleId === skillId &&
+  value.spec.skillBundleRefs[0]?.version === process.env.CLOUD_AGENTS_COMPOSE_SKILL_VERSION &&
+  value.spec.skillBundleRefs[0]?.digest === process.env.CLOUD_AGENTS_COMPOSE_SKILL_DIGEST;
+if (fault.spec?.state !== "running" || fault.spec?.recoveryState !== "awaiting_reconciliation" ||
+    fault.spec?.recoveryReason !== "side_effect_outcome_unknown" ||
+    fault.spec?.checkpoint?.pendingSideEffect !== true || !refsMatch(fault)) {
+  throw new Error("transport-disconnected capability execution did not fail closed with the original refs");
+}
+if (cancelled.spec?.state !== "cancelled" || cancelled.spec?.recoveryState !== "none" ||
+    cancelled.spec?.recoveryReason !== undefined ||
+    cancelled.spec?.checkpoint?.pendingSideEffect !== false || !refsMatch(cancelled)) {
+  throw new Error("reconciled capability execution did not reach a cleared cancelled terminal state");
+}
+const completedMcp = (reconnect.messages ?? []).some((message) =>
+  message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
+  message.payload?.payload?.itemType === "mcp_tool_call" &&
+  message.payload?.payload?.status === "completed" &&
+  message.payload?.payload?.data?.capabilityResourceId === mcpId);
+if (reconnect.spec?.state !== "succeeded" || !refsMatch(reconnect) || !completedMcp) {
+  throw new Error("reconnected capability execution did not succeed with the original refs");
+}
+if (faultPage.hasMore !== false || page.hasMore !== false) {
+  throw new Error("transport recovery audit facts exceeded the verified event pages");
+}
+const faultMcp = (faultPage.events ?? []).find((event) => event.spec?.operation === "mcp.fail" &&
+  event.spec?.resource === "McpServer" && event.spec?.changes?.length === 1 &&
+  event.spec.changes[0]?.resource === "McpServer" && event.spec.changes[0]?.from === "" &&
+  event.spec.changes[0]?.to === "failed" &&
+  event.spec?.executionId === fault.metadata?.uid && event.spec?.turnId === fault.metadata?.turnId &&
+  event.spec?.generation === fault.spec?.generation && event.spec?.serverId === mcpId &&
+  event.spec?.version === process.env.CLOUD_AGENTS_COMPOSE_MCP_VERSION &&
+  event.spec?.digest === process.env.CLOUD_AGENTS_COMPOSE_MCP_DIGEST &&
+  event.spec?.result === "failed" && event.spec?.errorCode === "capability_call_unknown");
+const reconnectMcp = (page.events ?? []).find((event) => event.spec?.operation === "mcp.call" &&
+  event.spec?.resource === "McpServer" && event.spec?.changes?.length === 1 &&
+  event.spec.changes[0]?.resource === "McpServer" && event.spec.changes[0]?.from === "" &&
+  event.spec.changes[0]?.to === "succeeded" &&
+  event.spec?.executionId === reconnect.metadata?.uid && event.spec?.turnId === reconnect.metadata?.turnId &&
+  event.spec?.generation === reconnect.spec?.generation && event.spec?.serverId === mcpId &&
+  event.spec?.version === process.env.CLOUD_AGENTS_COMPOSE_MCP_VERSION &&
+  event.spec?.digest === process.env.CLOUD_AGENTS_COMPOSE_MCP_DIGEST &&
+  event.spec?.result === "succeeded" && event.spec?.errorCode === undefined &&
+  typeof event.spec?.resultDigest === "string");
+if (!faultMcp || !reconnectMcp) throw new Error("transport recovery capability audit facts are incomplete");
+const hasChange = (event, resource, from, to) => (event.spec?.changes ?? []).some((change) =>
+  change.resource === resource && change.from === from && change.to === to);
+const reconciled = (page.events ?? []).find((event) => event.spec?.operation === "execution.reconcile" &&
+  event.spec?.resource === "Execution" && event.spec?.changes?.length === 1 &&
+  event.spec?.executionId === cancelled.metadata?.uid && event.spec?.turnId === cancelled.metadata?.turnId &&
+  event.spec?.generation === cancelled.spec?.generation &&
+  hasChange(event, "Execution", "recovery:awaiting_reconciliation", "recovery:none"));
+const cancelledEvent = (page.events ?? []).find((event) => event.spec?.operation === "turn.cancel" &&
+  event.spec?.resource === "Execution" && event.spec?.changes?.length === 2 &&
+  event.spec?.executionId === cancelled.metadata?.uid && event.spec?.turnId === cancelled.metadata?.turnId &&
+  event.spec?.generation === cancelled.spec?.generation &&
+  hasChange(event, "Turn", "running", "cancelled") &&
+  hasChange(event, "Execution", "running", "cancelled"));
+if (!reconciled || !cancelledEvent ||
+    BigInt(faultMcp.metadata.sequence) >= BigInt(reconciled.metadata.sequence) ||
+    BigInt(reconciled.metadata.sequence) >= BigInt(cancelledEvent.metadata.sequence) ||
+    BigInt(cancelledEvent.metadata.sequence) >= BigInt(reconnectMcp.metadata.sequence)) {
+  throw new Error("transport recovery lifecycle audit facts are incomplete");
+}
+const serialized = JSON.stringify([faultPage, page]);
+const materialized = descriptor.mcp?.find((item) => item.resourceId === mcpId) ?? {};
+for (const value of [
+  process.env.CLOUD_AGENTS_COMPOSE_MARKER,
+  `SDK_MCP_${process.env.CLOUD_AGENTS_COMPOSE_MARKER}`,
+  materialized.endpoint,
+  materialized.token,
+  process.env.CLOUD_AGENTS_COMPOSE_FAULT_PROMPT,
+  process.env.CLOUD_AGENTS_COMPOSE_RECONNECT_PROMPT,
+].filter((value) => typeof value === "string" && value.length > 0)) {
+  if (serialized.includes(value)) throw new Error("capability audit exposed sensitive transport data");
+}
+const forbiddenKeys = new Set([
+  "prompt", "endpoint", "token", "secret", "toolinput", "tooloutput", "toolarguments", "toolresult",
+  "requestbody", "responsebody", "mcpresult",
+]);
+const inspectKeys = (value) => {
+  if (Array.isArray(value)) return value.forEach(inspectKeys);
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    if (forbiddenKeys.has(key.toLowerCase())) throw new Error(`capability audit exposed ${key}`);
+    inspectKeys(child);
+  }
+};
+inspectKeys(faultPage);
+inspectKeys(page);
+NODE
+  echo "capability_transport_recovery=passed provider=$transport_provider_kind environment=$real_provider_environment_slug side_effects=1 fault_requests=1 replayed=0 reconnect=passed" >&2
 }
 
 run_real_provider_turn() {
@@ -4573,23 +5306,33 @@ run_real_provider_turn() {
   session_id="session-$real_provider_run_prefix-$provider_slug"
   turn_id="turn-$real_provider_run_prefix-$provider_slug"
   execution_id="execution-$real_provider_run_prefix-$provider_slug"
-  artifact_path=".cloud-agents-stage3-acceptance/$real_provider_environment_slug-target-real-$provider_slug.txt"
+  artifact_path=".cloud-agents-stage3-acceptance-$real_provider_environment_slug-target-real-$provider_slug.txt"
+  artifact_prompt_path=$artifact_path
   expected_content="cloud-agents $real_provider_environment_label target $provider_kind real E2E"
   case "$provider_kind" in
     codex) file_tool="You must use the workspace.write_text_file tool, never a shell command or another tool, to create" ;;
-    claudeAgent) file_tool="You must use the Write tool, never a shell command or another tool, to create" ;;
+    claudeAgent)
+      file_tool="You must use the Write tool, never a shell command or another tool, to create"
+      artifact_prompt_path="/workspace/.cloud-agents/managed-agent/tenants/tenant-compose-smoke/projects/$project_id/sessions/$session_id/workspace/$artifact_path"
+      ;;
     pi | deepseek-harness) file_tool="You must use your file-writing tool, never a shell command, to create" ;;
   esac
-  prompt="$file_tool exactly one file at $artifact_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline. Do not modify any other file. Then reply done."
+  artifact_requirement="exactly one file at $artifact_prompt_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline"
+  artifact_instruction="$file_tool $artifact_requirement"
+  prompt="$artifact_instruction. Do not modify any other file. Then reply done."
   if [ "$capability_acceptance" -eq 1 ] && capability_provider_enabled "$provider_kind"; then
+    mcp_instruction="Call the managed MCP server cloud_agents_$capability_mcp_id tool acceptance_side_effect exactly once and wait for it to succeed."
     case "$provider_kind" in
       codex)
         skill_instruction='use the $managed-capability-acceptance Skill'
-        file_tool="use the workspace.write_text_file tool exactly once to create '$artifact_path' with the complete contents '$expected_content' followed by a newline"
+        mcp_instruction="Call the managed MCP tool named acceptance_side_effect exactly once and wait for it to succeed."
+        file_tool="use the workspace.write_text_file tool exactly once to create"
         ;;
+      claudeAgent) skill_instruction="use the managed-capability-acceptance:managed-capability-acceptance Skill" ;;
       *) skill_instruction="use the managed-capability-acceptance Skill" ;;
     esac
-    prompt="Call the managed MCP server cloud_agents_$capability_mcp_id tool acceptance_side_effect exactly once and wait for it to succeed. Then $skill_instruction. Follow it to $file_tool. Do not modify any other file or call any other tool. Only then reply done."
+    artifact_instruction="$file_tool $artifact_requirement"
+    prompt="$mcp_instruction Then $skill_instruction. Follow it to $artifact_instruction. Do not modify any other file or call any other tool. Only then reply done."
   fi
 
   cloud_agentsctl_user --project "$project_id" --session "$session_id" \
@@ -4618,32 +5361,43 @@ run_real_provider_turn() {
   if [ "$capability_acceptance" -eq 1 ] && capability_provider_enabled "$provider_kind"; then
     sync_capability_mcp_fixture
     if ! CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$execution_file" \
-      CLOUD_AGENTS_COMPOSE_MCP_ID="$capability_mcp_id" node <<'NODE'
+      CLOUD_AGENTS_COMPOSE_MCP_ID="$capability_mcp_id" \
+      CLOUD_AGENTS_COMPOSE_SKILL_ID="$capability_skill_id" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
 const completed = (value.messages ?? []).filter((message) =>
   message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
   message.payload?.payload?.status === "completed");
 const usedSkill = completed.some((message) =>
-  String(message.payload?.payload?.data?.sourceItemType ?? "").toLowerCase() === "skill");
+  message.payload?.payload?.itemType === "dynamic_tool_call" &&
+  String(message.payload?.payload?.data?.sourceItemType ?? "").toLowerCase() === "skill" &&
+  message.payload?.payload?.data?.capabilityResourceId === process.env.CLOUD_AGENTS_COMPOSE_SKILL_ID);
 const calledMcp = completed.some((message) =>
+  message.payload?.payload?.itemType === "mcp_tool_call" &&
   message.payload?.payload?.data?.capabilityResourceId === process.env.CLOUD_AGENTS_COMPOSE_MCP_ID);
-if (value.spec?.state !== "succeeded" || !usedSkill || !calledMcp) {
-  console.error(JSON.stringify((value.messages ?? []).map((message) => ({
-    messageType: message.messageType,
-    eventType: message.payload?.eventType,
-    itemType: message.payload?.payload?.itemType,
-    status: message.payload?.payload?.status,
-    sourceItemType: message.payload?.payload?.data?.sourceItemType,
-    capabilityResourceId: message.payload?.payload?.data?.capabilityResourceId,
-  }))));
+const mcpRefs = value.spec?.mcpServerRefs ?? [];
+const skillRefs = value.spec?.skillBundleRefs ?? [];
+const refsMatch = mcpRefs.length === 1 && mcpRefs[0]?.serverId === process.env.CLOUD_AGENTS_COMPOSE_MCP_ID &&
+  skillRefs.length === 1 && skillRefs[0]?.bundleId === process.env.CLOUD_AGENTS_COMPOSE_SKILL_ID;
+if (value.spec?.state !== "succeeded" || !refsMatch || !usedSkill || !calledMcp) {
+  console.error(JSON.stringify({
+    messages: (value.messages ?? []).map((message) => ({
+      messageType: message.messageType,
+      eventType: message.payload?.eventType,
+      itemType: message.payload?.payload?.itemType,
+      status: message.payload?.payload?.status,
+      sourceItemType: message.payload?.payload?.data?.sourceItemType,
+      capabilityResourceId: message.payload?.payload?.data?.capabilityResourceId,
+    })),
+    refs: { mcp: mcpRefs, skill: skillRefs },
+  }));
   process.exit(1);
 }
 NODE
     then
       echo "real $provider_kind execution did not complete the managed MCP and Skill" >&2
       if [ "$mcp_fixture_kubernetes" -eq 1 ]; then
-        kubernetes_ctl -n "$kubernetes_runtime_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
+        kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" -c "$mcp_fixture_pod_container" -- \
           sh -c 'cat /tmp/cloud-agents-mcp-fixture.log' >&2 || true
       else
         docker inspect --format 'mcp-fixture state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} network={{.HostConfig.NetworkMode}}' "$mcp_fixture_container" >&2 2>/dev/null || true
@@ -4660,7 +5414,6 @@ NODE
       return 1
     fi
     mcp_request_count=$(wc -l <"$smoke_directory/mcp-side-effect/requests.log" 2>/dev/null || printf '0')
-    echo "capability_acceptance=passed provider=$provider_kind environment=$real_provider_environment_slug mcp_requests=$mcp_request_count side_effects=1 skill=1" >&2
   fi
 
   artifact_index=$(
@@ -4679,11 +5432,21 @@ const indexes = value.messages.flatMap((message, index) => {
     typeof artifact?.kind === "string" && artifact.kind.replaceAll("_", "-") === "generated-file" ? [index] : [];
 });
 if (indexes.length !== 1) {
+  const rejectionPattern = /^Generated-file candidates rejected: (?:(?:missing_path|invalid_path|outside_workspace|missing|symlink|not_regular)=[0-9]{1,3}(?:, |$))+$/;
+  const rejections = value.messages.flatMap((message) => {
+    const text = message.payload?.payload?.message;
+    return message.payload?.eventType === "runtime.warning" && typeof text === "string" &&
+      text.length <= 256 && rejectionPattern.test(text) ? [text] : [];
+  });
+  console.error(JSON.stringify({ generatedFileRejections: rejections }));
   console.error(JSON.stringify(value.messages.map((message) => ({
     messageType: message.messageType,
     eventType: message.payload?.eventType,
     itemType: message.payload?.payload?.itemType,
     status: message.payload?.payload?.status,
+    failureKind: message.payload?.payload?.failureKind,
+    terminalEventType: message.payload?.payload?.terminalEventType,
+    errorCode: message.payload?.payload?.errorCode,
     sourceItemType: message.payload?.payload?.data?.sourceItemType,
     capabilityResourceId: message.payload?.payload?.data?.capabilityResourceId,
     artifactKind: message.payload?.artifact?.kind,
@@ -4716,15 +5479,24 @@ NODE
 
   assert_real_event_stream_resume "$provider_kind" "$provider_slug" "$session_id" "$execution_id"
 
+  if [ "$capability_acceptance" -eq 1 ] && capability_provider_enabled "$provider_kind"; then
+    echo "capability_acceptance=passed provider=$provider_kind environment=$real_provider_environment_slug mcp_requests=$mcp_request_count side_effects=1 skill=1 artifact=verified events=resumed" >&2
+  fi
+
   followup_turn_id="$turn_id-followup"
   followup_execution_id="$execution_id-followup"
-  followup_prompt="Read $artifact_path and reply with its exact single line. Do not modify any file."
+  followup_prompt="Read $artifact_prompt_path and reply with its exact single line. Do not modify any file."
   cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$followup_turn_id" \
     --request-id "$real_provider_run_prefix-$provider_slug-followup-turn" --idempotency-key "$real_provider_run_prefix-$provider_slug-followup-turn" \
     turn create --input "$followup_prompt" >/dev/null
   followup_file="$smoke_directory/$followup_execution_id.json"
+  followup_expected_command=
+  if [ "$provider_kind" = codex ]; then
+    followup_expected_command="/bin/bash -lc 'cat $artifact_path'"
+  fi
   if ! execute_real_provider_with_safe_retry "$provider_kind" "$session_id" "$followup_turn_id" "$followup_execution_id" \
-    "$real_provider_run_prefix-$provider_slug-followup-execution" "$followup_prompt" "$followup_file"; then
+    "$real_provider_run_prefix-$provider_slug-followup-execution" "$followup_prompt" "$followup_file" \
+    "$followup_expected_command"; then
     return 1
   fi
   followup_turn_id=$completed_real_provider_turn_id
@@ -4738,7 +5510,8 @@ if (value.spec?.state !== "succeeded" || !JSON.stringify(value.messages).include
 }
 NODE
 
-  if [ "$capability_acceptance" -eq 1 ] && [ "$provider_kind" = "claudeAgent" ] &&
+  if [ "$capability_acceptance" -eq 1 ] && [ "$capability_bound_recovery" -eq 1 ] && capability_provider_enabled "$provider_kind" &&
+    ! capability_bound_recovery_completed "$real_provider_environment_slug" "$provider_kind" &&
     { [ -n "$mcp_fixture_container" ] || [ -n "$mcp_fixture_pod" ]; }; then
     case "$real_provider_environment_slug" in
       docker) capability_recovery_target=docker-compose-target ;;
@@ -4751,6 +5524,10 @@ NODE
       "$real_provider_environment_profile_id" "$capability_recovery_target" 0
     capability_bound_recoveries="$capability_bound_recoveries $real_provider_environment_slug:$provider_kind"
     echo "capability_bound_recovery=passed provider=$provider_kind environment=$real_provider_environment_slug mode=process-restart" >&2
+  fi
+
+  if [ "$capability_acceptance" -eq 1 ] && capability_provider_enabled "$provider_kind"; then
+    run_capability_transport_recovery "$provider_kind" "$provider_slug"
   fi
 
   capability_revoke_here=0
@@ -5025,6 +5802,11 @@ move_codex_recovery_to_destination() {
   done
   recovery_snapshot_resource_version=${recovery_snapshot_values%%|*}
   recovery_snapshot_size=${recovery_snapshot_values#*|}
+  recovery_snapshot_digest=$(read_recovery_snapshot_digest)
+  printf '%s\n' "$recovery_snapshot_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || {
+    echo "Codex recovery snapshot content digest is missing or invalid" >&2
+    exit 1
+  }
   snapshot_version_negative_body=$(printf '{"expectedSnapshotResourceVersion":"%s","workspaceId":"snapshot-version-negative-workspace","workspaceName":"snapshot-version-negative-workspace","sandboxId":"snapshot-version-negative-sandbox","runtimeProfileId":"%s","runtimeProfileVersion":1,"ttlSeconds":1800}' \
     "$recovery_snapshot_resource_version" "$foundation_agent_restore_profile_id")
   expect_snapshot_backend_rejected "$recovery_snapshot_id" "$recovery_snapshot_resource_version" \
@@ -5071,6 +5853,7 @@ move_codex_recovery_to_destination() {
     foundation_agent_resource_version=${foundation_agent_rest%%|*}
     foundation_agent_error=${foundation_agent_rest#*|}
     foundation_agent_runtime_id=${foundation_agent_error%%|*}
+    remember_opensandbox_runtime_id "$foundation_agent_runtime_id"
     foundation_agent_error=${foundation_agent_error#*|}
     if [ "$foundation_agent_state" = running ] && [ "$foundation_agent_target" = docker-compose-target-restore ] &&
       [ "$foundation_agent_writer_released" = false ]; then
@@ -5155,6 +5938,43 @@ move_kubernetes_recovery_to_destination() {
   done
   recovery_snapshot_resource_version=${recovery_snapshot_values%%|*}
   recovery_snapshot_size=${recovery_snapshot_values#*|}
+  recovery_snapshot_digest=$(read_recovery_snapshot_digest)
+  printf '%s\n' "$recovery_snapshot_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || {
+    echo "Kubernetes recovery snapshot content digest is missing or invalid" >&2
+    exit 1
+  }
+  if [ "$recovery_cross_node" -eq 1 ] && [ "$recovery_environment_slug" = kubernetes ]; then
+    recovery_snapshot_archive_id=$(CLOUD_AGENTS_COMPOSE_PROJECT="$project_id" \
+      CLOUD_AGENTS_COMPOSE_WORKSPACE="$source_workspace_id" \
+      CLOUD_AGENTS_COMPOSE_SNAPSHOT="$recovery_snapshot_id" node <<'NODE'
+const { createHash } = require("node:crypto");
+const values = ["tenant-compose-smoke", process.env.CLOUD_AGENTS_COMPOSE_PROJECT,
+  process.env.CLOUD_AGENTS_COMPOSE_WORKSPACE, process.env.CLOUD_AGENTS_COMPOSE_SNAPSHOT,
+  "portable-archive"];
+const hash = createHash("sha256");
+for (const value of values) hash.update(value).update(Buffer.from([0]));
+process.stdout.write(`ca-portable-snapshot-${hash.digest("hex").slice(0, 64 - "ca-portable-snapshot-".length)}`);
+NODE
+    )
+    recovery_snapshot_archive_path="$smoke_directory/snapshots/$recovery_snapshot_archive_id.tar"
+    if [ ! -f "$recovery_snapshot_archive_path" ]; then
+      echo "Kubernetes recovery snapshot raw archive was not found at its deterministic archive path" >&2
+      exit 1
+    fi
+    recovery_snapshot_archive_size=$(wc -c <"$recovery_snapshot_archive_path" | tr -d ' ')
+    if [ "$recovery_snapshot_archive_size" != "$recovery_snapshot_size" ]; then
+      echo "Kubernetes recovery snapshot raw archive size did not match the API size" >&2
+      exit 1
+    fi
+    recovery_snapshot_raw_sha256=$(sha256sum "$recovery_snapshot_archive_path" | awk '{print $1}')
+    if [ -n "$snapshot_archive_output" ]; then
+      mkdir -p "$(dirname "$snapshot_archive_output")"
+      cp "$recovery_snapshot_archive_path" "$snapshot_archive_output"
+      chmod 0600 "$snapshot_archive_output"
+      printf 'MCP_SKILL_RUNTIME_V1_SNAPSHOT_ARCHIVE=%s sha256=%s size_bytes=%s\n' \
+        "$snapshot_archive_output" "$recovery_snapshot_raw_sha256" "$recovery_snapshot_size"
+    fi
+  fi
   cross_failover_started_ms=$(node -e 'process.stdout.write(String(Date.now()))')
   kubernetes_ctl delete namespace "$kubernetes_runtime_namespace" --wait=true --timeout=180s >/dev/null
   docker rm -f "$kubernetes_opensandbox_container" >/dev/null
@@ -5188,7 +6008,7 @@ move_kubernetes_recovery_to_destination() {
     control_plane_api "$smoke_directory/admin-curl.conf" GET "$kubernetes_agent_admin_path" \
       compose-kubernetes-recovery-sandbox-restored >"$smoke_directory/kubernetes-recovery-sandbox-restored.json"
     kubernetes_agent_values=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/kubernetes-recovery-sandbox-restored.json" node -e \
-      'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.targetId,value.spec?.writerReleased,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.stableErrorCode??""].join("|"))')
+      'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.targetId,value.spec?.writerReleased,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.runtimeId??"",value.spec?.stableErrorCode??""].join("|"))')
     kubernetes_agent_state=${kubernetes_agent_values%%|*}
     kubernetes_agent_rest=${kubernetes_agent_values#*|}
     kubernetes_agent_target=${kubernetes_agent_rest%%|*}
@@ -5198,12 +6018,16 @@ move_kubernetes_recovery_to_destination() {
     kubernetes_agent_generation=${kubernetes_agent_rest%%|*}
     kubernetes_agent_rest=${kubernetes_agent_rest#*|}
     kubernetes_agent_resource_version=${kubernetes_agent_rest%%|*}
+    kubernetes_agent_rest=${kubernetes_agent_rest#*|}
+    kubernetes_agent_runtime_id=${kubernetes_agent_rest%%|*}
+    remember_opensandbox_runtime_id "$kubernetes_agent_runtime_id"
     kubernetes_agent_error=${kubernetes_agent_rest#*|}
     if [ "$kubernetes_destination_volume_bound" -eq 0 ]; then
       kubernetes_agent_volume=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/kubernetes-recovery-sandbox-restored.json" node -e \
         'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write(value.spec?.physicalVolumeId??"")')
       if [ -n "$kubernetes_agent_volume" ]; then
         kubernetes_bind_workspace_volume "$kubernetes_destination_namespace" "$kubernetes_agent_volume" "$kubernetes_destination_node"
+        kubernetes_recovery_bound_pod=ca-workspace-binder
         kubernetes_destination_volume_bound=1
       fi
     fi
@@ -5376,6 +6200,11 @@ move_remote_worker_recovery_to_destination() {
   done
   recovery_snapshot_resource_version=${recovery_snapshot_values%%|*}
   recovery_snapshot_size=${recovery_snapshot_values#*|}
+  recovery_snapshot_digest=$(read_recovery_snapshot_digest)
+  printf '%s\n' "$recovery_snapshot_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || {
+    echo "RemoteWorker recovery snapshot content digest is missing or invalid" >&2
+    exit 1
+  }
   snapshot_version_negative_body=$(printf '{"expectedSnapshotResourceVersion":"%s","workspaceId":"snapshot-version-negative-workspace","workspaceName":"snapshot-version-negative-workspace","sandboxId":"snapshot-version-negative-sandbox","runtimeProfileId":"%s","runtimeProfileVersion":1,"ttlSeconds":1800}' \
     "$recovery_snapshot_resource_version" "$remote_agent_restore_profile_id")
   expect_snapshot_backend_rejected "$recovery_snapshot_id" "$recovery_snapshot_resource_version" \
@@ -5405,12 +6234,14 @@ move_remote_worker_recovery_to_destination() {
     control_plane_api "$smoke_directory/admin-curl.conf" GET "$remote_agent_admin_path" \
       compose-remote-recovery-sandbox-restored >"$smoke_directory/remote-recovery-sandbox-restored.json"
     remote_agent_values=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/remote-recovery-sandbox-restored.json" node -e \
-      'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.targetId,value.spec?.writerReleased,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.stableErrorCode??""].join("|"))')
+      'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write([value.spec?.observedState,value.spec?.targetId,value.spec?.writerReleased,value.spec?.generation,value.metadata?.resourceVersion,value.spec?.runtimeId??"",value.spec?.stableErrorCode??""].join("|"))')
     remote_agent_state=${remote_agent_values%%|*}; remote_agent_rest=${remote_agent_values#*|}
     remote_agent_target=${remote_agent_rest%%|*}; remote_agent_rest=${remote_agent_rest#*|}
     remote_agent_writer_released=${remote_agent_rest%%|*}; remote_agent_rest=${remote_agent_rest#*|}
     remote_agent_generation=${remote_agent_rest%%|*}; remote_agent_rest=${remote_agent_rest#*|}
-    remote_agent_resource_version=${remote_agent_rest%%|*}; remote_agent_error=${remote_agent_rest#*|}
+    remote_agent_resource_version=${remote_agent_rest%%|*}; remote_agent_rest=${remote_agent_rest#*|}
+    remote_agent_runtime_id=${remote_agent_rest%%|*}; remote_agent_error=${remote_agent_rest#*|}
+    remember_opensandbox_runtime_id "$remote_agent_runtime_id"
     if [ "$remote_agent_state" = running ] && [ "$remote_agent_target" = "$remote_target_restore_id" ] && [ "$remote_agent_writer_released" = false ]; then break; fi
     if [ "$remote_agent_state" = failed ]; then echo "RemoteWorker recovery destination Sandbox failed: $remote_agent_error" >&2; exit 1; fi
     attempt=$((attempt + 1)); if [ "$attempt" -ge 240 ]; then echo "RemoteWorker recovery destination Sandbox did not become ready" >&2; exit 1; fi
@@ -5446,11 +6277,18 @@ run_real_provider_recovery() {
   recovery_capability_bound=0
   recovery_session_flags=
   recovery_execution_flags=
-  if [ "$capability_acceptance" -eq 1 ] && [ "$recovery_provider_kind" = "claudeAgent" ] &&
-    [ "$recovery_cross_node" -eq 0 ] && { [ -n "$mcp_fixture_container" ] || [ -n "$mcp_fixture_pod" ]; }; then
-    recovery_capability_bound=1
-    recovery_session_flags="$capability_session_flags"
-    recovery_execution_flags="$capability_execution_flags"
+  if [ "$capability_acceptance" -eq 1 ] &&
+    { [ -n "$mcp_fixture_container" ] || [ -n "$mcp_fixture_pod" ]; }; then
+    case "$recovery_provider_kind" in
+      codex | claudeAgent | pi | deepseek-harness)
+        recovery_capability_bound=1
+        recovery_session_flags="$capability_session_flags"
+        recovery_execution_flags="$capability_execution_flags"
+        ;;
+    esac
+  fi
+  if [ "$recovery_capability_bound" -eq 1 ]; then
+    recovery_prefix="$recovery_prefix-capability"
   fi
   session_id="session-$recovery_prefix"
   turn_id="turn-$recovery_prefix"
@@ -5462,19 +6300,42 @@ run_real_provider_recovery() {
     'const {createHash}=require("node:crypto");process.stdout.write(createHash("sha256").update(`${process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_CONTENT}\n`).digest("hex"))')
   case "$recovery_provider_kind" in
     codex)
-      prompt="Use the workspace.write_text_file tool exactly once with path '$artifact_path' and content '$expected_content\n'. Do not use a shell command. Then reply done. Do not reply done unless the managed tool succeeds."
+      recovery_artifact_directory=${artifact_path%/*}
+      recovery_shell_command="mkdir -p '$recovery_artifact_directory' && printf '%s\\n' '$expected_content' > '$artifact_path' && sleep 12"
+      recovery_file_instruction="use the workspace.write_text_file tool exactly once with path '$artifact_path' and content '$expected_content\\n'"
+      prompt="${recovery_file_instruction}. Do not use a shell command. Then reply done. Do not reply done unless the managed tool succeeds."
       ;;
     claudeAgent | pi | deepseek-harness)
       recovery_artifact_directory=${artifact_path%/*}
       recovery_shell_command="mkdir -p '$recovery_artifact_directory' && printf '%s\\n' '$expected_content' > '$artifact_path' && sleep 12"
-      prompt="Use the Bash tool exactly once to run this exact command: $recovery_shell_command. Do not use another tool. Then reply done. Do not reply done unless the tool succeeds."
+      recovery_file_instruction="use the Bash tool exactly once to run this exact command: $recovery_shell_command"
+      prompt="${recovery_file_instruction}. Do not use another tool. Then reply done. Do not reply done unless the tool succeeds."
       ;;
   esac
   if [ "$recovery_capability_bound" -eq 1 ]; then
-    prompt="Use the managed-capability-acceptance Skill for this managed capability recovery request. Follow it exactly: call the managed MCP acceptance_marker tool exactly once, then use the Bash tool exactly once to run this exact command: $recovery_shell_command. Do not use another tool. Then reply done. Do not reply done unless the Bash tool succeeds."
+    recovery_mcp_tool_name=acceptance_marker
+    recovery_skill_name=managed-capability-acceptance
+    if [ "$recovery_provider_kind" = "claudeAgent" ]; then
+      recovery_skill_name=managed-capability-acceptance:managed-capability-acceptance
+    fi
+    if [ "$recovery_provider_kind" = "pi" ]; then
+      recovery_mcp_tool_name=mcp__mcp-compose-acce__acceptance_marker__a63aebad
+    fi
+    if [ "$recovery_provider_kind" = "codex" ]; then
+      prompt="Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill for this managed capability recovery request. The Codex Host-managed workspace.write_text_file tool is the only available file tool; follow the Skill's recovery intent with $recovery_file_instruction. Do not use a shell command or another tool. Then reply done. Do not reply done unless the managed tool succeeds."
+    else
+      prompt="Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill for this managed capability recovery request. Follow it exactly: $recovery_file_instruction. Do not use another tool. Then reply done. Do not reply done unless the tool succeeds."
+    fi
+  fi
+  recovery_runtime_mode=full-access
+  if [ "$recovery_capability_bound" -eq 1 ] && [ "$recovery_provider_kind" = "codex" ]; then
+    recovery_runtime_mode=approval-required
   fi
   cross_recovery_rto_ms=0
   recovery_snapshot_size=0
+  recovery_snapshot_digest=
+  recovery_snapshot_archive_path=
+  recovery_snapshot_raw_sha256=
 
   cloud_agentsctl_user --project "$project_id" --session "$session_id" \
     --request-id "$recovery_prefix-session" --idempotency-key "$recovery_prefix-session" \
@@ -5493,7 +6354,7 @@ run_real_provider_recovery() {
     cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
       --execution "$execution_id" --request-id "$recovery_prefix-execution" \
       --idempotency-key "$recovery_prefix-execution" execution execute \
-      --runtime-mode full-access --interaction-mode default $recovery_execution_flags --input "$prompt" \
+      --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" \
       >"$recovery_execute_file" 2>"$recovery_execute_error"
     printf '%s\n' "$?" >"$recovery_execute_status"
   ) &
@@ -5504,7 +6365,28 @@ run_real_provider_recovery() {
   attempt=0
   while :; do
     if [ -f "$recovery_execute_status" ]; then
-      cat "$recovery_execute_file" "$recovery_execute_error" >&2
+      cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+        --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get \
+        >"$recovery_checkpoint_file" 2>/dev/null || true
+      CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" \
+        CLOUD_AGENTS_COMPOSE_EXECUTION_ERROR_FILE="$recovery_execute_error" node <<'NODE'
+const { existsSync, readFileSync } = require("node:fs");
+const { createHash } = require("node:crypto");
+const readJSON = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return {}; } };
+const value = readJSON(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE);
+const errorText = existsSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_ERROR_FILE)
+  ? readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_ERROR_FILE, "utf8") : "";
+const safe = (value) => typeof value === "string" && /^[a-z][a-z0-9_.-]{0,79}$/.test(value) ? value : undefined;
+console.error(JSON.stringify({ capabilityRecoveryFailure: {
+  state: safe(value.spec?.state), errorCode: safe(value.spec?.errorCode),
+  errorDigests: [value.spec?.errorMessage, errorText].filter((text) => typeof text === "string" && text)
+    .map((text) => createHash("sha256").update(text).digest("hex")),
+  messages: (value.messages ?? []).map((message) => ({
+    type: safe(message.messageType?.toLowerCase()), event: safe(message.payload?.eventType),
+    errorCode: safe(message.error?.code), status: safe(message.payload?.payload?.status),
+  })),
+} }));
+NODE
       echo "$recovery_provider_kind $recovery_environment_label recovery Turn ended before a pending-side-effect checkpoint" >&2
       exit 1
     fi
@@ -5512,15 +6394,21 @@ run_real_provider_recovery() {
       --execution "$execution_id" --request-id "$recovery_prefix-checkpoint" \
       execution get >"$recovery_checkpoint_file" 2>/dev/null; then
       recovery_pending_info=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" \
-        CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS="$recovery_handled_approvals" node <<'NODE'
+        CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS="$recovery_handled_approvals" \
+        CLOUD_AGENTS_COMPOSE_EXPECTED_COMMAND="$recovery_shell_command" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
 const handled = new Set((process.env.CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS ?? "").split(" ").filter(Boolean));
+const expectedCommand = process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_COMMAND;
 for (const message of value.messages ?? []) {
   if (message.messageType !== "InteractionRequest" || message.payload?.interactionType !== "approval") continue;
   const requestId = message.payload?.requestId;
   const categories = message.payload?.sensitiveAction?.categories;
-  if (typeof requestId === "string" && !handled.has(requestId) && Array.isArray(categories) && categories.includes("external-mcp-action") && Number.isSafeInteger(value.spec?.generation)) {
+  const isMcpApproval = Array.isArray(categories) && categories.includes("external-mcp-action");
+  const isExpectedCodexCommand = expectedCommand && message.payload?.provider === "codex" &&
+    message.payload?.requestKind === "command" && message.payload?.command === expectedCommand;
+  if (typeof requestId === "string" && !handled.has(requestId) &&
+      (isMcpApproval || isExpectedCodexCommand) && Number.isSafeInteger(value.spec?.generation)) {
     process.stdout.write(`approval|${value.spec.generation}|${requestId}`);
     process.exit(0);
   }
@@ -5550,27 +6438,29 @@ NODE
     sleep 1
   done
 
-  attempt=0
-  while :; do
-    if [ -f "$recovery_execute_status" ]; then
-      cat "$recovery_execute_file" "$recovery_execute_error" >&2
-      echo "$recovery_provider_kind $recovery_environment_label recovery Turn ended before the injected fault" >&2
-      exit 1
-    fi
-    recovery_pre_fault_probe=$(run_recovery_sandbox_probe pre-fault-probe \
-      "if [ -f '$recovery_artifact_absolute' ]; then sha256sum '$recovery_artifact_absolute' | cut -d' ' -f1; else printf 'absent\\n'; fi")
-    recovery_pre_fault_stdout=$(CLOUD_AGENTS_COMPOSE_EXECUTION="$recovery_pre_fault_probe" node -e \
-      'const value=JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION);if(value.exitCode!==0)process.exit(1);process.stdout.write(value.stdout.trim())')
-    if [ "$recovery_pre_fault_stdout" = "$expected_recovery_digest" ]; then
-      break
-    fi
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 120 ]; then
-      echo "$recovery_provider_kind $recovery_environment_label recovery tool did not apply its side effect before the injected fault" >&2
-      exit 1
-    fi
-    sleep 0.5
-  done
+  if [ "$recovery_environment_slug" != remote-worker ]; then
+    attempt=0
+    while :; do
+      if [ -f "$recovery_execute_status" ]; then
+        cat "$recovery_execute_file" "$recovery_execute_error" >&2
+        echo "$recovery_provider_kind $recovery_environment_label recovery Turn ended before the injected fault" >&2
+        exit 1
+      fi
+      recovery_pre_fault_probe=$(run_recovery_sandbox_probe pre-fault-probe \
+        "if [ -f '$recovery_artifact_absolute' ]; then sha256sum '$recovery_artifact_absolute' | cut -d' ' -f1; else printf 'absent\\n'; fi")
+      recovery_pre_fault_stdout=$(CLOUD_AGENTS_COMPOSE_EXECUTION="$recovery_pre_fault_probe" node -e \
+        'const value=JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION);if(value.exitCode!==0)process.exit(1);process.stdout.write(value.stdout.trim())')
+      if [ "$recovery_pre_fault_stdout" = "$expected_recovery_digest" ]; then
+        break
+      fi
+      attempt=$((attempt + 1))
+      if [ "$attempt" -ge 120 ]; then
+        echo "$recovery_provider_kind $recovery_environment_label recovery tool did not apply its side effect before the injected fault" >&2
+        exit 1
+      fi
+      sleep 0.5
+    done
+  fi
   compose kill -s SIGKILL control-plane >/dev/null
   set +e
   wait "$recovery_execute_pid"
@@ -5599,6 +6489,19 @@ NODE
       recovery_sandbox_id=$foundation_agent_sandbox_id
       recovery_sandbox_generation=$foundation_agent_generation
     fi
+    if [ "$recovery_capability_bound" -eq 1 ]; then
+      case "$recovery_environment_slug" in
+        kubernetes) start_capability_mcp_fixture "$kubernetes_agent_runtime_id" ;;
+        remote-worker)
+          if [ "$recovery_cross_node" -eq 1 ]; then
+            start_capability_mcp_fixture "$remote_agent_runtime_id" "tcp://127.0.0.1:$destination_docker_port"
+          else
+            start_capability_mcp_fixture "$remote_agent_runtime_id"
+          fi
+          ;;
+        docker) start_capability_mcp_fixture "$foundation_agent_runtime_id" ;;
+      esac
+    fi
   fi
 
   attempt=0
@@ -5622,7 +6525,7 @@ NODE
   recovery_blocked_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_prefix-execution" \
     --idempotency-key "$recovery_prefix-execution" execution execute \
-    --runtime-mode full-access --interaction-mode default $recovery_execution_flags --input "$prompt" 2>&1)
+    --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" 2>&1)
   recovery_blocked_status=$?
   set -e
   if [ "$recovery_blocked_status" -eq 0 ]; then
@@ -5654,10 +6557,17 @@ NODE
     --data "$recovery_reconcile_body" >/dev/null
 
   recovery_result_file="$smoke_directory/$recovery_prefix-result.json"
-  if ! cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
-    --execution "$execution_id" --request-id "$recovery_prefix-execution" \
-    --idempotency-key "$recovery_prefix-execution" execution execute \
-    --runtime-mode full-access --interaction-mode default $recovery_execution_flags --input "$prompt" >"$recovery_result_file"; then
+  if [ "$recovery_provider_kind" = "codex" ] && [ "$recovery_capability_bound" -eq 1 ]; then
+    if ! execute_real_provider_with_mcp_approvals "$session_id" "$turn_id" "$execution_id" \
+      "$recovery_prefix-execution" "$prompt" "$recovery_result_file" "$recovery_shell_command"; then
+      cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+        --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get >&2 || true
+      exit 1
+    fi
+  elif ! cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
+      --execution "$execution_id" --request-id "$recovery_prefix-execution" \
+      --idempotency-key "$recovery_prefix-execution" execution execute \
+      --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" >"$recovery_result_file"; then
     cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
       --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get >&2 || true
     exit 1
@@ -5685,7 +6595,8 @@ NODE
   CLOUD_AGENTS_COMPOSE_MCP_ID="$capability_mcp_id" \
   CLOUD_AGENTS_COMPOSE_SKILL_ID="$capability_skill_id" \
   CLOUD_AGENTS_COMPOSE_CROSS_RTO_MS="$cross_recovery_rto_ms" \
-  CLOUD_AGENTS_COMPOSE_SNAPSHOT_SIZE="$recovery_snapshot_size" node <<'NODE'
+  CLOUD_AGENTS_COMPOSE_SNAPSHOT_SIZE="$recovery_snapshot_size" \
+  CLOUD_AGENTS_COMPOSE_SNAPSHOT_DIGEST="$recovery_snapshot_digest" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
 if (value.spec?.state !== "succeeded" || value.spec?.attemptNumber !== 2 ||
@@ -5702,10 +6613,14 @@ if (process.env.CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND === "1") {
     message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
     message.payload?.payload?.status === "completed");
   const calledMcp = completed.some((message) =>
+    message.payload?.payload?.itemType === "mcp_tool_call" &&
     message.payload?.payload?.data?.capabilityResourceId === process.env.CLOUD_AGENTS_COMPOSE_MCP_ID);
+  const usedSkill = completed.some((message) =>
+    ["skill", "Skill"].includes(message.payload?.payload?.data?.sourceItemType) &&
+    message.payload?.payload?.data?.capabilityResourceId === process.env.CLOUD_AGENTS_COMPOSE_SKILL_ID);
   const mcpRefs = value.spec?.mcpServerRefs ?? [];
   const skillRefs = value.spec?.skillBundleRefs ?? [];
-  if (!calledMcp || mcpRefs.length !== 1 || mcpRefs[0]?.serverId !== process.env.CLOUD_AGENTS_COMPOSE_MCP_ID ||
+  if (!calledMcp || !usedSkill || mcpRefs.length !== 1 || mcpRefs[0]?.serverId !== process.env.CLOUD_AGENTS_COMPOSE_MCP_ID ||
       skillRefs.length !== 1 || skillRefs[0]?.bundleId !== process.env.CLOUD_AGENTS_COMPOSE_SKILL_ID) {
     console.error(JSON.stringify({
       refs: {mcp: mcpRefs, skill: skillRefs},
@@ -5729,6 +6644,7 @@ process.stdout.write(`ANYWHERE_RUNTIME_R4_RECOVERY=${JSON.stringify({
   rtoMilliseconds: Number(process.env.CLOUD_AGENTS_COMPOSE_CROSS_RTO_MS),
   rpoBytes: 0,
   snapshotSizeBytes: Number(process.env.CLOUD_AGENTS_COMPOSE_SNAPSHOT_SIZE),
+  snapshotDigest: process.env.CLOUD_AGENTS_COMPOSE_SNAPSHOT_DIGEST || undefined,
 })}\n`);
 NODE
   recovery_final_probe=$(run_recovery_sandbox_probe final-probe \
@@ -5736,6 +6652,74 @@ NODE
   CLOUD_AGENTS_COMPOSE_EXECUTION="$recovery_final_probe" \
   CLOUD_AGENTS_COMPOSE_EXPECTED_DIGEST="$expected_recovery_digest" node -e \
     'const value=JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION);if(value.exitCode!==0||value.stdout.trim()!==process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_DIGEST)process.exit(1)'
+  if [ "$recovery_cross_node" -eq 1 ] && [ "$recovery_environment_slug" = kubernetes ]; then
+    recovery_restored_snapshot_probe=$(run_recovery_sandbox_probe snapshot-digest \
+      "cd /workspace && find . -mindepth 1 -print0 | tar --null --no-recursion -cf - -T - | sha256sum | cut -d' ' -f1")
+    recovery_restored_snapshot_sha256=$(CLOUD_AGENTS_COMPOSE_EXECUTION="$recovery_restored_snapshot_probe" node -e \
+      'const value=JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION);if(value.exitCode!==0)process.exit(1);process.stdout.write(value.stdout.trim())')
+    printf '%s\n' "$recovery_restored_snapshot_sha256" | grep -Eq '^[0-9a-f]{64}$' || {
+      echo "Kubernetes restored Workspace/Sandbox archive digest is missing or invalid" >&2
+      exit 1
+    }
+    recovery_restored_content_digest_sha256=${recovery_snapshot_digest#sha256:}
+    recovery_snapshot_pvc_json=$(kubernetes_ctl -n "$kubernetes_destination_namespace" get pvc "$kubernetes_agent_volume" -o json)
+    recovery_snapshot_pv=$(printf '%s' "$recovery_snapshot_pvc_json" | node -e \
+      'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.spec?.volumeName??"")')
+    recovery_snapshot_pod=$kubernetes_recovery_bound_pod
+    [ -n "$recovery_snapshot_pv" ] && [ -n "$recovery_snapshot_pod" ] || {
+      echo "Kubernetes recovery evidence is missing the destination PV or Pod" >&2
+      exit 1
+    }
+    if [ -n "$cross_node_evidence_file" ]; then
+      CLOUD_AGENTS_COMPOSE_EVIDENCE_FILE="$cross_node_evidence_file" \
+      CLOUD_AGENTS_COMPOSE_PROVIDER="$recovery_provider_kind" \
+      CLOUD_AGENTS_COMPOSE_ENVIRONMENT="$recovery_environment_slug" \
+      CLOUD_AGENTS_COMPOSE_RAW_SHA256="$recovery_snapshot_raw_sha256" \
+      CLOUD_AGENTS_COMPOSE_CONTENT_DIGEST="$recovery_snapshot_digest" \
+      CLOUD_AGENTS_COMPOSE_RESTORED_SHA256="$recovery_restored_content_digest_sha256" \
+      CLOUD_AGENTS_COMPOSE_RESTORED_ARCHIVE_SHA256="$recovery_restored_snapshot_sha256" \
+      CLOUD_AGENTS_COMPOSE_SNAPSHOT_SIZE="$recovery_snapshot_size" \
+      CLOUD_AGENTS_COMPOSE_SOURCE_NODE="$kubernetes_source_node" \
+      CLOUD_AGENTS_COMPOSE_DESTINATION_NODE="$kubernetes_destination_node" \
+      CLOUD_AGENTS_COMPOSE_PVC="$kubernetes_agent_volume" \
+      CLOUD_AGENTS_COMPOSE_PV="$recovery_snapshot_pv" \
+      CLOUD_AGENTS_COMPOSE_POD="$recovery_snapshot_pod" \
+      CLOUD_AGENTS_COMPOSE_POD_NODE="$kubernetes_destination_node" \
+      CLOUD_AGENTS_COMPOSE_WORKSPACE="$recovery_workspace_id" \
+      CLOUD_AGENTS_COMPOSE_SANDBOX="$recovery_sandbox_id" \
+      CLOUD_AGENTS_COMPOSE_GENERATION="$recovery_sandbox_generation" \
+      CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_result_file" \
+      CLOUD_AGENTS_COMPOSE_CROSS_RTO_MS="$cross_recovery_rto_ms" \
+      node <<'NODE'
+const { mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const path = process.env.CLOUD_AGENTS_COMPOSE_EVIDENCE_FILE;
+mkdirSync(require("node:path").dirname(path), { recursive: true });
+const execution = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
+const evidence = {
+  schema: "mcp-skill-runtime-v1/cross-node-snapshot-evidence-v1",
+  provider: process.env.CLOUD_AGENTS_COMPOSE_PROVIDER,
+  environment: process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT,
+  sourceNode: process.env.CLOUD_AGENTS_COMPOSE_SOURCE_NODE,
+  destinationNode: process.env.CLOUD_AGENTS_COMPOSE_DESTINATION_NODE,
+  snapshot: { rawSha256: process.env.CLOUD_AGENTS_COMPOSE_RAW_SHA256, contentDigest: process.env.CLOUD_AGENTS_COMPOSE_CONTENT_DIGEST, restoredWorkspaceSha256: process.env.CLOUD_AGENTS_COMPOSE_RESTORED_SHA256, restoredArchiveSha256: process.env.CLOUD_AGENTS_COMPOSE_RESTORED_ARCHIVE_SHA256, sizeBytes: Number(process.env.CLOUD_AGENTS_COMPOSE_SNAPSHOT_SIZE), pvc: process.env.CLOUD_AGENTS_COMPOSE_PVC, pv: process.env.CLOUD_AGENTS_COMPOSE_PV, pod: process.env.CLOUD_AGENTS_COMPOSE_POD, podNode: process.env.CLOUD_AGENTS_COMPOSE_POD_NODE },
+  workspaceId: process.env.CLOUD_AGENTS_COMPOSE_WORKSPACE,
+  sandboxId: process.env.CLOUD_AGENTS_COMPOSE_SANDBOX,
+  generation: Number(process.env.CLOUD_AGENTS_COMPOSE_GENERATION),
+  attempt: execution.spec?.attemptNumber,
+  recoveryState: execution.spec?.recoveryState,
+  recoveryMode: execution.spec?.recoveryMode,
+  recoveryTargetId: execution.spec?.recoveryTargetId,
+  recoverySourceTargetId: execution.spec?.recoverySourceTargetId,
+  rtoMilliseconds: Number(process.env.CLOUD_AGENTS_COMPOSE_CROSS_RTO_MS),
+  rpoBytes: 0,
+};
+if (`sha256:${evidence.snapshot.restoredWorkspaceSha256}` !== evidence.snapshot.contentDigest) throw new Error("restored workspace content digest mismatch");
+if (evidence.attempt !== 2 || evidence.recoveryState !== "recovered" || evidence.recoveryMode !== "cross-node-takeover") throw new Error("recovery evidence did not record attempt 2 cross-node takeover");
+writeFileSync(path, JSON.stringify(evidence, null, 2) + "\n", { mode: 0o600 });
+process.stdout.write(`MCP_SKILL_RUNTIME_V1_CROSS_NODE_SNAPSHOT_EVIDENCE=${path} raw_sha256=${evidence.snapshot.rawSha256} restored_sha256=${evidence.snapshot.restoredWorkspaceSha256} size_bytes=${evidence.snapshot.sizeBytes} pvc=${evidence.snapshot.pvc} pv=${evidence.snapshot.pv} pod=${evidence.snapshot.pod} generation=${evidence.generation} attempt=${evidence.attempt}\n`);
+NODE
+    fi
+  fi
   if [ "$recovery_cross_node" -eq 1 ]; then
     cleanup_codex_recovery_snapshot
   fi
@@ -5743,6 +6727,7 @@ NODE
 
 run_selected_real_provider_recoveries() {
   skip_provider=$1
+  [ "$capability_bound_recovery" -eq 1 ] || return 0
   for provider_kind in $real_provider_kinds; do
     if [ -n "$skip_provider" ] && [ "$provider_kind" = "$skip_provider" ]; then
       continue
@@ -5781,10 +6766,57 @@ real_provider_selected() {
 }
 capability_provider_enabled() {
   case "$1" in
-    codex | claudeAgent) return 0 ;;
+    codex | claudeAgent | pi | deepseek-harness) return 0 ;;
     *) return 1 ;;
   esac
 }
+
+run_pending_cross_node_recovery() {
+  [ "${cross_node_recovery_pending:-0}" -eq 1 ] || return 0
+  wait_ready
+  if [ "$cross_node_environment" = kubernetes ]; then
+    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" kubernetes Kubernetes \
+      "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" "$kubernetes_agent_generation" \
+      "$kubernetes_agent_environment_profile_id" "$kubernetes_runtime_target_id" 1
+  elif [ "$cross_node_environment" = remote-worker ]; then
+    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" remote-worker RemoteWorker \
+      "$remote_agent_workspace_id" "$remote_agent_sandbox_id" "$remote_agent_generation" \
+      "$remote_agent_environment_profile_id" "$remote_target_id" 1
+  else
+    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" docker Docker \
+      "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" "$foundation_agent_generation" \
+      "$foundation_agent_environment_profile_id" docker-compose-target 1
+  fi
+  if [ "${recovery_capability_bound:-0}" -eq 1 ]; then
+    capability_bound_recoveries="$capability_bound_recoveries $cross_node_environment:$cross_node_provider_to_run"
+  fi
+  cross_node_recovery_pending=0
+}
+
+cross_node_provider_to_run=codex
+if [ "$cross_node_recovery" -eq 1 ]; then
+  cross_node_provider_to_run=$cross_node_provider
+fi
+cross_node_recovery_pending=0
+if real_provider_selected "$cross_node_provider_to_run"; then
+  case "$cross_node_provider_to_run" in
+    codex) cross_node_provider_slug=codex ;;
+    claudeAgent) cross_node_provider_slug=claude ;;
+    pi) cross_node_provider_slug=pi ;;
+    deepseek-harness) cross_node_provider_slug=deepseek-harness ;;
+  esac
+  if [ "$cross_node_recovery" -eq 1 ] && [ -n "$real_provider_credentials_directory" ]; then
+    cross_node_recovery_pending=1
+  elif [ "$capability_bound_recovery" -eq 1 ] && [ "$capability_bound_recovery_environment" != kubernetes ] && [ -n "$real_provider_credentials_directory" ] &&
+    ! capability_bound_recovery_completed docker "$cross_node_provider_to_run"; then
+    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" docker Docker \
+      "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" "$foundation_agent_generation" \
+      "$foundation_agent_environment_profile_id" docker-compose-target 0
+  fi
+elif [ "$cross_node_recovery" -eq 1 ]; then
+  echo "CLOUD_AGENTS_COMPOSE_CROSS_NODE_PROVIDER must be selected by CLOUD_AGENTS_COMPOSE_REAL_PROVIDERS" >&2
+  exit 2
+fi
 if [ -n "$real_provider_credentials_directory" ]; then
   if [ "${CLOUD_AGENTS_COMPOSE_RECOVERY_ONLY:-0}" != 1 ]; then
     real_provider_run_prefix=compose-real
@@ -5795,9 +6827,23 @@ if [ -n "$real_provider_credentials_directory" ]; then
     real_provider_sandbox_generation=$foundation_agent_generation
     real_provider_environment_profile_id=$foundation_agent_environment_profile_id
     start_capability_mcp_fixture "$foundation_agent_runtime_id"
-    if real_provider_selected claudeAgent; then
-      run_capability_process_recovery
+    for recovery_provider in $real_provider_kinds; do
+      if real_provider_selected "$recovery_provider" && capability_provider_enabled "$recovery_provider"; then
+        if ! run_capability_process_recovery "$recovery_provider"; then
+          echo "capability process recovery failed provider=$recovery_provider" >&2
+          exit 1
+        fi
+      fi
+    done
+    if [ "$cross_node_environment" = docker ]; then
+      run_pending_cross_node_recovery
+      real_provider_workspace_id=$foundation_agent_workspace_id
+      real_provider_sandbox_id=$foundation_agent_sandbox_id
+      real_provider_sandbox_generation=$foundation_agent_generation
+      real_provider_environment_profile_id=$foundation_agent_environment_profile_id
+      real_provider_expected_target=docker-compose-target-restore
     fi
+    start_capability_mcp_fixture "$foundation_agent_runtime_id"
     run_selected_real_providers
     if [ "$remote_runtime" -eq 1 ]; then
       real_provider_run_prefix=compose-remote-real
@@ -5808,6 +6854,19 @@ if [ -n "$real_provider_credentials_directory" ]; then
       real_provider_sandbox_generation=$remote_agent_generation
       real_provider_environment_profile_id=$remote_agent_environment_profile_id
       start_capability_mcp_fixture "$remote_agent_runtime_id"
+      for recovery_provider in $real_provider_kinds; do
+        if real_provider_selected "$recovery_provider" && capability_provider_enabled "$recovery_provider"; then
+          run_capability_process_recovery "$recovery_provider" || exit 1
+        fi
+      done
+      if [ "$cross_node_environment" = remote-worker ]; then
+        run_pending_cross_node_recovery
+        real_provider_workspace_id=$remote_agent_workspace_id
+        real_provider_sandbox_id=$remote_agent_sandbox_id
+        real_provider_sandbox_generation=$remote_agent_generation
+        real_provider_environment_profile_id=$remote_agent_environment_profile_id
+        real_provider_expected_target=$remote_target_restore_id
+      fi
       run_selected_real_providers
     fi
     if [ "$kubernetes_runtime" -eq 1 ]; then
@@ -5819,7 +6878,28 @@ if [ -n "$real_provider_credentials_directory" ]; then
       real_provider_sandbox_generation=$kubernetes_agent_generation
       real_provider_environment_profile_id=$kubernetes_agent_environment_profile_id
       start_capability_mcp_fixture "$kubernetes_agent_runtime_id"
+      for recovery_provider in $real_provider_kinds; do
+        if real_provider_selected "$recovery_provider" && capability_provider_enabled "$recovery_provider"; then
+          run_capability_process_recovery "$recovery_provider" || exit 1
+        fi
+      done
+      if [ "$cross_node_environment" = kubernetes ]; then
+        run_pending_cross_node_recovery
+        real_provider_workspace_id=$kubernetes_agent_workspace_id
+        real_provider_sandbox_id=$kubernetes_agent_sandbox_id
+        real_provider_sandbox_generation=$kubernetes_agent_generation
+        real_provider_environment_profile_id=$kubernetes_agent_environment_profile_id
+        real_provider_expected_target=$kubernetes_destination_target_id
+      fi
       run_selected_real_providers
+    fi
+    if [ "$capability_transport_recovery" -eq 1 ] && [ "$capability_transport_recovery_ran" -ne 1 ]; then
+      echo "capability transport recovery selector did not match an enabled real Provider environment" >&2
+      exit 2
+    fi
+    if [ "$capability_process_recovery" -eq 1 ] && [ "$capability_process_recovery_ran" -ne 1 ]; then
+      echo "capability process recovery selector did not match an enabled real Provider environment" >&2
+      exit 2
     fi
   fi
   if [ "$cross_node_environment" = kubernetes ] && [ "$cross_node_recovery" -eq 1 ]; then
@@ -5846,29 +6926,6 @@ if [ -n "$real_provider_credentials_directory" ]; then
     real_provider_sandbox_generation=$foundation_agent_generation
     real_provider_environment_profile_id=$foundation_agent_environment_profile_id
     real_provider_expected_target=docker-compose-target
-  fi
-  cross_node_provider_to_run=codex
-  if [ "$cross_node_recovery" -eq 1 ]; then
-    cross_node_provider_to_run=$cross_node_provider
-  fi
-  cross_node_recovery_pending=0
-  if real_provider_selected "$cross_node_provider_to_run"; then
-    case "$cross_node_provider_to_run" in
-      codex) cross_node_provider_slug=codex ;;
-      claudeAgent) cross_node_provider_slug=claude ;;
-      pi) cross_node_provider_slug=pi ;;
-      deepseek-harness) cross_node_provider_slug=deepseek-harness ;;
-    esac
-    if [ "$cross_node_recovery" -eq 1 ]; then
-      cross_node_recovery_pending=1
-    elif ! capability_bound_recovery_completed docker "$cross_node_provider_to_run"; then
-      run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" docker Docker \
-        "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" "$foundation_agent_generation" \
-        "$foundation_agent_environment_profile_id" docker-compose-target 0
-    fi
-  elif [ "$cross_node_recovery" -eq 1 ]; then
-      echo "CLOUD_AGENTS_COMPOSE_CROSS_NODE_PROVIDER must be selected by CLOUD_AGENTS_COMPOSE_REAL_PROVIDERS" >&2
-      exit 2
   fi
   run_agent_interactions() {
     interaction_environment=$1
@@ -5906,8 +6963,10 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_E2E_OUTPUT_DIR="$interaction_output_directory" \
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
       CLOUD_AGENTS_E2E_WORKER_CONTAINER="$(docker inspect --format '{{.Id}}' "$remote_worker_container")" \
+      CLOUD_AGENTS_E2E_ENVIRONMENT=remote-worker \
       CLOUD_AGENTS_E2E_REMOTE_WORKER=1 \
       CLOUD_AGENTS_E2E_ADMIN_TOKEN_FILE="$smoke_directory/admin-token" \
+      CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$remote_agent_runtime_id" \
       CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$remote_target_id" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
       CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
@@ -5927,7 +6986,10 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_E2E_RUN_ID="compose-agent-interactions-$interaction_environment" \
       CLOUD_AGENTS_E2E_OUTPUT_DIR="$interaction_output_directory" \
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
-      CLOUD_AGENTS_E2E_WORKER_CONTAINER="$(compose ps -q worker)" \
+      CLOUD_AGENTS_E2E_ENVIRONMENT=kubernetes \
+      CLOUD_AGENTS_E2E_RECOVERY_FAULT=agent \
+      CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$kubernetes_agent_runtime_id" \
+      CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$kubernetes_runtime_target_id" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
       CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
       CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
@@ -5991,22 +7053,7 @@ if [ -n "$real_provider_credentials_directory" ]; then
   fi
 fi
 
-if [ "${cross_node_recovery_pending:-0}" -eq 1 ]; then
-  wait_ready
-  if [ "$cross_node_environment" = kubernetes ]; then
-    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" kubernetes Kubernetes \
-      "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" "$kubernetes_agent_generation" \
-      "$kubernetes_agent_environment_profile_id" "$kubernetes_runtime_target_id" 1
-  elif [ "$cross_node_environment" = remote-worker ]; then
-    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" remote-worker RemoteWorker \
-      "$remote_agent_workspace_id" "$remote_agent_sandbox_id" "$remote_agent_generation" \
-      "$remote_agent_environment_profile_id" "$remote_target_id" 1
-  else
-    run_real_provider_recovery "$cross_node_provider_to_run" "$cross_node_provider_slug" docker Docker \
-      "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" "$foundation_agent_generation" \
-      "$foundation_agent_environment_profile_id" docker-compose-target 1
-  fi
-fi
+run_pending_cross_node_recovery
 
 if [ "$kubernetes_runtime" -eq 1 ]; then
   kubernetes_agent_stale_generation=$kubernetes_agent_generation
@@ -6033,8 +7080,10 @@ if [ "$kubernetes_runtime" -eq 1 ]; then
   kubernetes_agent_current_generation=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/kubernetes-agent-sandbox-stopped.json" node -e \
     'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write(String(value.spec?.generation??""))')
   if [ "$capability_negative_test" -eq 1 ]; then
-    assert_stale_capability_session kubernetes "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" \
-      "$kubernetes_agent_stale_generation" "$kubernetes_agent_current_generation" "$kubernetes_agent_environment_profile_id"
+    for stale_provider in $real_provider_kinds; do
+      assert_stale_capability_session kubernetes "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" \
+        "$kubernetes_agent_stale_generation" "$kubernetes_agent_current_generation" "$kubernetes_agent_environment_profile_id" "$stale_provider"
+    done
   fi
   kubernetes_agent_pvc_count=$(kubernetes_ctl -n "$kubernetes_active_namespace" get pvc \
     -l cloud-agents.dev/resource=foundation-workspace -o json | \
@@ -6068,8 +7117,10 @@ if [ "$remote_runtime" -eq 1 ]; then
   remote_agent_current_generation=$(CLOUD_AGENTS_COMPOSE_SANDBOX_FILE="$smoke_directory/remote-agent-sandbox-stopped.json" node -e \
     'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_SANDBOX_FILE,"utf8"));process.stdout.write(String(value.spec?.generation??""))')
   if [ "$capability_negative_test" -eq 1 ]; then
-    assert_stale_capability_session remote-worker "$remote_agent_workspace_id" "$remote_agent_sandbox_id" \
-      "$remote_agent_stale_generation" "$remote_agent_current_generation" "$remote_agent_environment_profile_id"
+    for stale_provider in $real_provider_kinds; do
+      assert_stale_capability_session remote-worker "$remote_agent_workspace_id" "$remote_agent_sandbox_id" \
+        "$remote_agent_stale_generation" "$remote_agent_current_generation" "$remote_agent_environment_profile_id" "$stale_provider"
+    done
   fi
   if [ "$remote_agent_target" = "$remote_target_restore_id" ]; then
     remote_agent_volume=$(docker -H "tcp://127.0.0.1:$destination_docker_port" volume ls -q \
@@ -6099,24 +7150,10 @@ fi
 foundation_agent_stale_generation=$foundation_agent_generation
 stop_foundation_agent
 if [ "$capability_negative_test" -eq 1 ]; then
-  stale_capability_session_file="$smoke_directory/capability-stale-generation.json"
-  stale_capability_session_body=$(printf '{"sessionId":"session-compose-capability-stale-generation","providerKind":"claudeAgent","workspaceId":"%s","sandboxId":"%s","sandboxGeneration":%s,"environmentProfileId":"%s","environmentProfileVersion":1,"mcpServerRefs":%s,"skillBundleRefs":%s}' \
-    "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" "$foundation_agent_stale_generation" \
-    "$foundation_agent_environment_profile_id" "$capability_mcp_refs_json" "$capability_skill_refs_json")
-  stale_capability_session_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
-    --config "$smoke_directory/user-curl.conf" --request POST \
-    --header 'Content-Type: application/json' \
-    --header 'X-Request-ID: compose-capability-stale-generation' \
-    --header 'Idempotency-Key: compose-capability-stale-generation' \
-    --data "$stale_capability_session_body" --output "$stale_capability_session_file" --write-out '%{http_code}' \
-    "https://$endpoint/v1/tenants/tenant-compose-smoke/projects/$project_id/sessions")
-  if [ "$stale_capability_session_status" != 409 ] || ! CLOUD_AGENTS_COMPOSE_RESPONSE_FILE="$stale_capability_session_file" node -e \
-    'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_RESPONSE_FILE,"utf8"));process.exit(value.error?.code==="SESSION_CONFLICT"?0:1)'; then
-    cat "$stale_capability_session_file" >&2
-    echo "Compose accepted a capability Session bound to stale Sandbox generation $foundation_agent_stale_generation" >&2
-    exit 1
-  fi
-  echo "capability_stale_generation=passed environment=docker old_generation=$foundation_agent_stale_generation current_generation=$foundation_agent_generation status=$stale_capability_session_status" >&2
+  for stale_provider in $real_provider_kinds; do
+    assert_stale_capability_session docker "$foundation_agent_workspace_id" "$foundation_agent_sandbox_id" \
+      "$foundation_agent_stale_generation" "$foundation_agent_generation" "$foundation_agent_environment_profile_id" "$stale_provider"
+  done
 fi
 if [ "$docker_cross_node_recovery_completed" -eq 1 ]; then
   foundation_agent_volume=$(docker -H "tcp://127.0.0.1:$destination_docker_port" volume ls -q \

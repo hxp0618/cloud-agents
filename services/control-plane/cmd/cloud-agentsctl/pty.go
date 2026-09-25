@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	openapi "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/opensandbox"
 )
 
 func attachPTY(ctx context.Context, options globalOptions, client *openapi.Client, since int64, takeover bool, stdin io.Reader, stdout io.Writer) error {
@@ -67,6 +68,9 @@ func attachPTY(ctx context.Context, options globalOptions, client *openapi.Clien
 		return errors.New("PTY WebSocket connection failed")
 	}
 	defer connection.Close()
+	if err := opensandbox.AwaitPTYConnected(ctx, connection); err != nil {
+		return errors.New("PTY WebSocket connection failed")
+	}
 	go func() {
 		<-ctx.Done()
 		_ = connection.Close()

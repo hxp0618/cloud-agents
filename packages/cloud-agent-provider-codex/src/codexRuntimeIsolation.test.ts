@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  codexMcpServersOverride,
   isCodexManagedMcpInventoryAttested,
   isCodexRuntimeIsolationConfigAttested,
 } from "./codexRuntimeIsolation";
@@ -11,6 +12,19 @@ const officialCodex0145ConfigRead = JSON.parse(
 ) as unknown;
 
 describe("Codex runtime-isolation configuration attestation", () => {
+  it("clears deferred MCP exposure so connected Host-managed tools reach the model", () => {
+    expect(
+      codexMcpServersOverride({
+        "cloud_agents_mcp-1": {
+          url: "http://127.0.0.1:43123/mcp",
+          bearer_token_env_var: "CLOUD_AGENT_MCP_TOKEN_MCP_1",
+        },
+      }),
+    ).toBe(
+      'mcp_servers={"cloud_agents_mcp-1"={url="http://127.0.0.1:43123/mcp",bearer_token_env_var="CLOUD_AGENT_MCP_TOKEN_MCP_1",required=true,default_tools_approval_mode="approve",omit_tools_from=[]}}',
+    );
+  });
+
   it("accepts the official Codex 0.145 null shell-policy defaults when no exclusions are expected", () => {
     expect(isCodexRuntimeIsolationConfigAttested(officialCodex0145ConfigRead, [])).toBe(true);
   });
@@ -68,7 +82,8 @@ describe("Codex runtime-isolation configuration attestation", () => {
         enabled: true,
         tool_timeout_sec: null,
         required: true,
-        omit_tools_from: ["deferred"],
+        default_tools_approval_mode: "approve",
+        omit_tools_from: [],
       },
     };
     response.config.shell_environment_policy.exclude = ["CLOUD_AGENT_MCP_TOKEN_MCP_1"];
@@ -81,6 +96,19 @@ describe("Codex runtime-isolation configuration attestation", () => {
         },
       ]),
     ).toBe(true);
+
+    const deferred = structuredClone(response) as typeof response;
+    const deferredServer = deferred.config.mcp_servers["cloud_agents_mcp-1"] as Record<string, unknown>;
+    deferredServer.omit_tools_from = ["deferred"];
+    expect(
+      isCodexRuntimeIsolationConfigAttested(deferred, [
+        {
+          name: "cloud_agents_mcp-1",
+          url: "http://127.0.0.1:43123/mcp",
+          bearerTokenEnvVar: "CLOUD_AGENT_MCP_TOKEN_MCP_1",
+        },
+      ]),
+    ).toBe(false);
   });
 
   it("attests the exact connected MCP inventory exposed by app-server", () => {

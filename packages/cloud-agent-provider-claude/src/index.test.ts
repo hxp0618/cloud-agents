@@ -1,5 +1,5 @@
 import { tmpdir } from "node:os";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -69,6 +69,23 @@ describe("createClaudeProvider", () => {
     const root = mkdtempSync(
       join(tmpdir(), "cloud-agent-provider-claude-skill-"),
     );
+    const managedSkillRoot = "/tmp/cloud-agents-skills";
+    mkdirSync(managedSkillRoot, { recursive: true });
+    const bundleDirectory = mkdtempSync(
+      join(managedSkillRoot, "claude-provider-skill-"),
+    );
+    mkdirSync(join(bundleDirectory, ".claude-plugin"));
+    mkdirSync(join(bundleDirectory, "skills", "managed-capability-acceptance"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(bundleDirectory, ".claude-plugin", "plugin.json"),
+      JSON.stringify({ name: "managed-capability-acceptance" }),
+    );
+    writeFileSync(
+      join(bundleDirectory, "skills", "managed-capability-acceptance", "SKILL.md"),
+      "---\nname: managed-capability-acceptance\ndescription: acceptance\n---\n",
+    );
     const digest = `sha256:${"a".repeat(64)}`;
     const manifest = {
       version: 1,
@@ -101,8 +118,7 @@ describe("createClaudeProvider", () => {
             CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(
               JSON.stringify({ ...manifest, digest }),
             ).toString("base64url"),
-            CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT:
-              "/run/cloud-agents/skills/skill-1",
+            CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT: bundleDirectory,
           },
         },
       );
@@ -110,9 +126,16 @@ describe("createClaudeProvider", () => {
       expect(
         vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0]
           .skillDirectories,
-      ).toEqual(["/run/cloud-agents/skills/skill-1"]);
+      ).toEqual([bundleDirectory]);
+      expect(
+        vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0]
+          .skillResourceIdsByQualifiedName,
+      ).toEqual({
+        "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
+      rmSync(bundleDirectory, { recursive: true, force: true });
     }
   });
 });

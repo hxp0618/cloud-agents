@@ -139,6 +139,7 @@ func TestProductionRuntimeEnvironmentAllowsOnlyRuntimeConfiguration(t *testing.T
 		"CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS=12000",
 		"CLOUD_AGENT_PROVIDER_HTTP_PROXY=http://proxy.example:8080",
 		"CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE=/run/cloud-agents/pip.conf",
+		"CLOUD_AGENT_DEEPSEEK_HARNESS_BIN=/usr/local/bin/dsh",
 		admissionLeaseIDEnvironment + "=lease",
 		admissionGenerationEnvironment + "=7",
 		admissionTokenEnvironment + "=secret",
@@ -166,6 +167,7 @@ func TestProductionRuntimeEnvironmentAllowsOnlyRuntimeConfiguration(t *testing.T
 		"CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS=12000",
 		"CLOUD_AGENT_PROVIDER_HTTP_PROXY=http://proxy.example:8080",
 		"CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE=/run/cloud-agents/pip.conf",
+		"CLOUD_AGENT_DEEPSEEK_HARNESS_BIN=/usr/local/bin/dsh",
 	}
 	if !slices.Equal(filtered, want) {
 		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)

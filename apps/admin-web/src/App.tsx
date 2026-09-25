@@ -34,7 +34,7 @@ import {
   SandboxGrantRevokeConfirmation,
 } from "./app/sandboxes";
 import { MaintenanceOperationTable, MaintenanceOperationDetail } from "./app/operations";
-import { WorkspaceSnapshotTable, WorkspaceSnapshotCleanupConfirmation } from "./app/workspaces";
+import { WorkspaceSnapshotCleanupConfirmation, WorkspaceSnapshotPanel } from "./app/workspaces";
 import {
   ReleaseRegistrationForm,
   StoragePolicyTable,
@@ -83,12 +83,8 @@ import { AdminSheet } from "./AdminSheet";
 
 import {
   adminFailure,
-  targetIdentifierPattern,
-  filterAdminTargets,
-  filterAdminMaintenanceOperations,
   filterAdminLeases,
   filterAdminWorkers,
-  leaseNeedsAttention,
   cleanupRequestFromPreview,
   leaseReleaseRequestFromPreview,
   listAdminMaintenanceOperations,
@@ -110,7 +106,6 @@ import {
   replaceStoragePolicy,
   replaceTarget,
   schedulingRequestFromPreview,
-  summarizeClusterHosts,
   selectAdminResourceId,
   writeSavedAdminConnection,
   type AdminClient,
@@ -124,13 +119,7 @@ import { DeniedWritePanel } from "./DeniedWritePanel";
 import { RemoteWorkerEnrollmentPanel } from "./RemoteWorkerEnrollmentPanel";
 import { TargetFilters } from "./TargetFilters";
 import { AdminSidebar } from "./AdminSidebar";
-import {
-  NavigationCommands,
-  NavigationIcon,
-  navigationPages,
-  ResourceNavigation,
-  type Page,
-} from "./navigation";
+import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } from "./navigation";
 import { normalizeLocale, useI18n, type MessageKey, type MessageValues } from "./i18n";
 import {
   loadAdminWorkspaceData,
@@ -145,10 +134,10 @@ import {
   phaseTone,
   phaseLabel,
   auditLabel,
-  runtimeProfileTargetLabel,
   type ConnectionStatus,
   type TargetKind,
 } from "./app/presentation";
+import { deriveAdminView } from "./app/derived";
 
 type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -350,186 +339,86 @@ export function App() {
       feedback.querySelector<HTMLElement>('[role="alert"]')?.focus();
     }
   }, [busy]);
-  const selectedTarget = targets.find(({ metadata }) => metadata.uid === selectedTargetId);
-  const selectedCleanupPreview =
-    selectedTarget !== undefined &&
-    cleanupPreview?.metadata.uid === selectedTarget?.metadata.uid &&
-    cleanupPreview.metadata.resourceVersion === selectedTarget.metadata.resourceVersion
-      ? cleanupPreview
-      : null;
-  const selectedSchedulingPreview =
-    selectedTarget !== undefined &&
-    schedulingPreview?.metadata.uid === selectedTarget.metadata.uid &&
-    schedulingPreview.metadata.resourceVersion === selectedTarget.metadata.resourceVersion
-      ? schedulingPreview
-      : null;
-  const selectedLease = leases.find(({ metadata }) => metadata.uid === selectedLeaseId);
-  const selectedLeaseTarget = targets.find(
-    ({ metadata }) => metadata.uid === selectedLease?.spec.targetId,
-  );
-  const upgradeReleaseDigest =
-    releases.find(
-      ({ spec }) =>
-        spec.releaseDigest === selectedUpgradeReleaseDigest &&
-        spec.releaseDigest !== selectedLease?.spec.releaseDigest,
-    )?.spec.releaseDigest ??
-    releases.find(({ spec }) => spec.releaseDigest !== selectedLease?.spec.releaseDigest)?.spec
-      .releaseDigest ??
-    "";
-  const selectedLeaseReleasePreview =
-    selectedLease !== undefined &&
-    leaseReleasePreview?.metadata.uid === selectedLease.metadata.uid &&
-    leaseReleasePreview.metadata.resourceVersion === selectedLease.metadata.resourceVersion
-      ? leaseReleasePreview
-      : null;
-  const selectedWorker = workers.find(({ metadata }) => metadata.uid === selectedWorkerId);
-  const selectedProfile = profiles.find(
-    ({ metadata }) => metadata.uid === selectedProfileVersionId,
-  );
-  const selectedRuntimeProfile = runtimeProfiles.find(
-    ({ metadata }) => metadata.uid === selectedRuntimeProfileVersionId,
-  );
-  const selectedSandbox = sandboxes.find(({ metadata }) => metadata.uid === selectedSandboxId);
-  const selectedStoragePolicy = storagePolicies.find(
-    ({ metadata }) => metadata.uid === selectedStoragePolicyId,
-  );
-  const selectedRestoreSnapshot = workspaceSnapshots.find(
-    ({ metadata }) => metadata.uid === restoreForm.snapshotId,
-  );
-  const restoreSourceTargetId = selectedRestoreSnapshot?.spec.sourceTargetId;
-  const restoreRuntimeProfiles = runtimeProfiles.filter(
-    ({ spec }) =>
-      spec.status === "published" &&
-      "targetId" in spec &&
-      (selectedRestoreSnapshot?.spec.backend === "portable-tar-v1" ||
-        spec.targetId === restoreSourceTargetId),
-  );
-  const selectedStoragePolicyReferenced = profiles.some(
-    ({ spec }) => spec.storagePolicyRef === selectedStoragePolicyId,
-  );
-  const selectedMaintenanceOperation = maintenanceOperations.find(
-    ({ operationId }) => operationId === selectedMaintenanceOperationId,
-  );
-  const readyCount = targets.filter(({ spec }) => spec.observedPhase === "ready").length;
-  const probingCount = targets.filter(({ spec }) => spec.observedPhase === "probing").length;
-  const unprobedCount = targets.filter(({ spec }) => spec.observedPhase === "unprobed").length;
-  const unavailableCount = targets.filter(
-    ({ spec }) => spec.observedPhase === "unavailable",
-  ).length;
-  const attentionCount = targets.length - readyCount;
-  const readyLeaseCount = leases.filter(({ spec }) => spec.observedPhase === "ready").length;
-  const leaseAttentionCount = leases.filter(leaseNeedsAttention).length;
-  const onlineWorkerCount = filterAdminWorkers(workers, "", "online").length;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleTargets = filterAdminTargets(targets, query, targetKindFilter, targetPhaseFilter);
-  const targetsFiltered =
-    query.trim() !== "" || targetKindFilter.length > 0 || targetPhaseFilter.length > 0;
-  const visibleLeases = filterAdminLeases(
-    leases,
-    query,
-    leaseAttentionOnly,
-    leasePhaseFilter,
-    leaseCleanupBlockedOnly,
-  );
-  const visibleWorkers = filterAdminWorkers(workers, query, workerStatusFilter);
-  const visibleReleases =
-    normalizedQuery === ""
-      ? releases
-      : releases.filter(({ metadata, spec }) =>
-          [
-            metadata.uid,
-            metadata.name,
-            spec.imageRepository,
-            spec.releaseDigest,
-            spec.platformVersion,
-            spec.runtimeVersion,
-            spec.codexVersion,
-            spec.claudeCodeVersion,
-            ...spec.architectures,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
-  const clusterHosts = summarizeClusterHosts(targets, workers);
-  const visibleClusterHosts =
-    normalizedQuery === ""
-      ? clusterHosts
-      : clusterHosts.filter(
-          ({ target }) =>
-            [
-              target.metadata.uid,
-              target.metadata.name,
-              target.spec.targetKind,
-              target.spec.observedPhase,
-              target.spec.schedulingState,
-              target.spec.apiVersion,
-              target.spec.engineVersion,
-              target.spec.os,
-              target.spec.architecture,
-            ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)) ||
-            visibleWorkers.some(({ spec }) => spec.targetId === target.metadata.uid),
-        );
-  const visibleProfiles =
-    normalizedQuery === ""
-      ? profiles
-      : profiles.filter(({ metadata, spec }) =>
-          [
-            metadata.uid,
-            metadata.name,
-            spec.profileId,
-            String(spec.version),
-            spec.status,
-            ...spec.providerKinds,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
-  const visibleRuntimeProfiles =
-    normalizedQuery === ""
-      ? runtimeProfiles
-      : runtimeProfiles.filter((profile) => {
-          const { metadata, spec } = profile;
-          return [
-            metadata.uid,
-            metadata.name,
-            spec.profileId,
-            String(spec.version),
-            spec.status,
-            runtimeProfileTargetLabel(profile),
-            spec.imageUri,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
-        });
-  const visibleSandboxes =
-    normalizedQuery === ""
-      ? sandboxes
-      : sandboxes.filter(({ metadata, spec }) =>
-          [
-            metadata.uid,
-            spec.workspaceId,
-            spec.workspaceName,
-            spec.volumeId,
-            spec.physicalVolumeId ?? "",
-            spec.runtimeProfileId,
-            spec.targetId,
-            spec.operationId,
-            spec.observedState,
-          ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-        );
-  const visibleStoragePolicies =
-    normalizedQuery === ""
-      ? storagePolicies
-      : storagePolicies.filter(({ metadata, spec }) =>
-          [metadata.uid, metadata.name, spec.userSummary, spec.workspaceType].some((value) =>
-            value.toLocaleLowerCase().includes(normalizedQuery),
-          ),
-        );
-  const visibleMaintenanceOperations = filterAdminMaintenanceOperations(
-    maintenanceOperations,
-    query,
-    failedOperationsOnly,
-  );
-  const failedMaintenanceOperations = filterAdminMaintenanceOperations(
-    maintenanceOperations,
-    "",
-    true,
-  );
-  const pageEntry = navigationPages.find(({ id }) => id === page)!;
+  const {
+    selectedTarget,
+    selectedCleanupPreview,
+    selectedSchedulingPreview,
+    selectedLease,
+    selectedLeaseTarget,
+    upgradeReleaseDigest,
+    selectedLeaseReleasePreview,
+    selectedWorker,
+    selectedProfile,
+    selectedRuntimeProfile,
+    selectedSandbox,
+    selectedStoragePolicy,
+    selectedRestoreSnapshot,
+    restoreRuntimeProfiles,
+    selectedStoragePolicyReferenced,
+    selectedMaintenanceOperation,
+    readyCount,
+    probingCount,
+    unprobedCount,
+    unavailableCount,
+    attentionCount,
+    readyLeaseCount,
+    leaseAttentionCount,
+    onlineWorkerCount,
+    visibleTargets,
+    targetsFiltered,
+    visibleLeases,
+    visibleWorkers,
+    visibleReleases,
+    visibleClusterHosts,
+    visibleProfiles,
+    visibleRuntimeProfiles,
+    visibleSandboxes,
+    visibleStoragePolicies,
+    visibleMaintenanceOperations,
+    failedMaintenanceOperations,
+    pageEntry,
+  } = deriveAdminView({
+    resources: {
+      targets,
+      leases,
+      workers,
+      releases,
+      profiles,
+      runtimeProfiles,
+      sandboxes,
+      workspaceSnapshots,
+      storagePolicies,
+      maintenanceOperations,
+    },
+    selection: {
+      page,
+      targetId: selectedTargetId,
+      leaseId: selectedLeaseId,
+      upgradeReleaseDigest: selectedUpgradeReleaseDigest,
+      workerId: selectedWorkerId,
+      profileVersionId: selectedProfileVersionId,
+      runtimeProfileVersionId: selectedRuntimeProfileVersionId,
+      sandboxId: selectedSandboxId,
+      storagePolicyId: selectedStoragePolicyId,
+      restoreSnapshotId: restoreForm.snapshotId,
+      maintenanceOperationId: selectedMaintenanceOperationId,
+    },
+    previews: {
+      cleanup: cleanupPreview,
+      scheduling: schedulingPreview,
+      leaseRelease: leaseReleasePreview,
+    },
+    filters: {
+      query,
+      targetKinds: targetKindFilter,
+      targetPhases: targetPhaseFilter,
+      leaseAttentionOnly,
+      leasePhase: leasePhaseFilter,
+      leaseCleanupBlockedOnly,
+      workerStatus: workerStatusFilter,
+      failedOperationsOnly,
+    },
+  });
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -2808,206 +2697,24 @@ export function App() {
                 />
               </div>
 
-              <section className="panel overview-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>{t("workspaceSnapshot.title")}</h2>
-                    <p>{t("workspaceSnapshot.description")}</p>
-                  </div>
-                  <span className="scope-chip">
-                    snapshots.list · snapshots.create · snapshots.act · snapshots.delete
-                  </span>
-                </div>
-                <form className="resource-form" onSubmit={createWorkspaceSnapshot}>
-                  <div className="form-row">
-                    <label>
-                      <span>{t("workspaceSnapshot.id")}</span>
-                      <input
-                        required
-                        maxLength={128}
-                        spellCheck={false}
-                        value={snapshotForm.snapshotId}
-                        onChange={(event) =>
-                          setSnapshotForm((current) => ({
-                            ...current,
-                            snapshotId: event.target.value,
-                          }))
-                        }
-                        placeholder="snapshot-before-upgrade"
-                      />
-                    </label>
-                    <label>
-                      <span>{t("workspaceSnapshot.source")}</span>
-                      <select
-                        required
-                        value={snapshotForm.sourceSandboxId}
-                        onChange={(event) =>
-                          setSnapshotForm((current) => ({
-                            ...current,
-                            sourceSandboxId: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">{t("workspaceSnapshot.selectSource")}</option>
-                        {sandboxes
-                          .filter(
-                            ({ spec }) => spec.writerReleased && spec.observedState === "stopped",
-                          )
-                          .map((sandbox) => (
-                            <option key={sandbox.metadata.uid} value={sandbox.metadata.uid}>
-                              {sandbox.spec.workspaceName} · {sandbox.metadata.uid} · g
-                              {number(sandbox.spec.generation)}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>{t("workspaceSnapshot.retention")}</span>
-                      <input
-                        required
-                        type="number"
-                        min={1}
-                        max={31_536_000}
-                        value={snapshotForm.retentionSeconds}
-                        onChange={(event) =>
-                          setSnapshotForm((current) => ({
-                            ...current,
-                            retentionSeconds: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <p className="cluster-boundary">{t("workspaceSnapshot.offlineBoundary")}</p>
-                  <button
-                    className="button primary"
-                    type="submit"
-                    disabled={busy !== null || snapshotForm.sourceSandboxId === ""}
-                  >
-                    {t("workspaceSnapshot.create")}
-                  </button>
-                </form>
-                <form className="resource-form" onSubmit={restoreWorkspaceSnapshot}>
-                  <div className="form-row">
-                    <label>
-                      <span>{t("workspaceSnapshot.restoreSource")}</span>
-                      <select
-                        required
-                        value={restoreForm.snapshotId}
-                        onChange={(event) =>
-                          setRestoreForm((current) => ({
-                            ...current,
-                            snapshotId: event.target.value,
-                            runtimeProfileVersionId: "",
-                          }))
-                        }
-                      >
-                        <option value="">{t("workspaceSnapshot.selectRestoreSource")}</option>
-                        {workspaceSnapshots
-                          .filter(({ spec }) => spec.status === "available")
-                          .map((snapshot) => (
-                            <option key={snapshot.metadata.uid} value={snapshot.metadata.uid}>
-                              {snapshot.metadata.name} · {snapshot.spec.backend} ·{" "}
-                              {snapshot.spec.sourceTargetId}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>{t("workspaceSnapshot.restoreProfile")}</span>
-                      <select
-                        required
-                        value={restoreForm.runtimeProfileVersionId}
-                        onChange={(event) =>
-                          setRestoreForm((current) => ({
-                            ...current,
-                            runtimeProfileVersionId: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">{t("workspaceSnapshot.selectRestoreProfile")}</option>
-                        {restoreRuntimeProfiles.map((profile) => (
-                          <option key={profile.metadata.uid} value={profile.metadata.uid}>
-                            {profile.metadata.name} · v{number(profile.spec.version)} ·{" "}
-                            {runtimeProfileTargetLabel(profile)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="form-row">
-                    {(
-                      [
-                        [
-                          "workspaceId",
-                          "workspaceSnapshot.restoreWorkspaceId",
-                          "workspace-restored",
-                        ],
-                        [
-                          "workspaceName",
-                          "workspaceSnapshot.restoreWorkspaceName",
-                          "Restored workspace",
-                        ],
-                        ["sandboxId", "workspaceSnapshot.restoreSandboxId", "sandbox-restored"],
-                      ] as const
-                    ).map(([field, label, placeholder]) => (
-                      <label key={field}>
-                        <span>{t(label)}</span>
-                        <input
-                          required
-                          maxLength={128}
-                          pattern={targetIdentifierPattern}
-                          spellCheck={false}
-                          value={restoreForm[field]}
-                          placeholder={placeholder}
-                          onChange={(event) =>
-                            setRestoreForm((current) => ({
-                              ...current,
-                              [field]: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    ))}
-                    <label>
-                      <span>{t("workspaceSnapshot.restoreTtl")}</span>
-                      <input
-                        required
-                        type="number"
-                        min={60}
-                        max={86_400}
-                        value={restoreForm.ttlSeconds}
-                        onChange={(event) =>
-                          setRestoreForm((current) => ({
-                            ...current,
-                            ttlSeconds: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <p className="cluster-boundary">{t("workspaceSnapshot.restoreBoundary")}</p>
-                  <button
-                    className="button primary"
-                    type="submit"
-                    disabled={
-                      busy !== null ||
-                      selectedRestoreSnapshot?.spec.status !== "available" ||
-                      restoreForm.runtimeProfileVersionId === ""
-                    }
-                  >
-                    {t("workspaceSnapshot.restore")}
-                  </button>
-                </form>
-                <WorkspaceSnapshotTable
-                  snapshots={workspaceSnapshots}
-                  onCleanup={(snapshot) => {
-                    operationTriggerRef.current =
-                      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-                    setSnapshotCleanup(snapshot);
-                  }}
-                />
-              </section>
+              <WorkspaceSnapshotPanel
+                snapshots={workspaceSnapshots}
+                sandboxes={sandboxes}
+                restoreRuntimeProfiles={restoreRuntimeProfiles}
+                selectedRestoreSnapshot={selectedRestoreSnapshot}
+                snapshotForm={snapshotForm}
+                restoreForm={restoreForm}
+                busy={busy !== null}
+                onCreate={createWorkspaceSnapshot}
+                onRestore={restoreWorkspaceSnapshot}
+                onSnapshotFormChange={setSnapshotForm}
+                onRestoreFormChange={setRestoreForm}
+                onCleanup={(snapshot) => {
+                  operationTriggerRef.current =
+                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                  setSnapshotCleanup(snapshot);
+                }}
+              />
 
               <section className="panel overview-panel">
                 <div className="panel-heading">

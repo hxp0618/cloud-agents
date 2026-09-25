@@ -69,6 +69,14 @@ describe("createProviderPlugin", () => {
     await session.close();
   });
 
+  it("rejects configuration fields without a Provider-owned normalizer", async () => {
+    const plugin = testPlugin();
+
+    await expect(createSession(plugin, host, { endpoint: "https://example.test" })).rejects.toThrow(
+      "Provider configuration does not support 'endpoint'.",
+    );
+  });
+
   it("releases the credential lease when session setup fails", async () => {
     let disposals = 0;
     const invalidFd = openSync("/dev/null", "r");
@@ -483,7 +491,7 @@ function testPlugin(overrides: TestPluginOverrides = { startRun: unavailableExec
     displayName: "Codex",
     descriptor: {
       environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
-      runtimeVersionProbe: () => ({ available: true, output: "codex-cli 0.150.1" }),
+      runtimeVersionProbe: () => ({ available: true, output: "codex-cli 0.154.0" }),
     },
     ...overrides,
   });

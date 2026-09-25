@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeSync,
+} from "node:fs";
 import { createServer } from "node:http";
 
 // Fixture-only, pinned to the repository's Bun lockfile entry. This server
@@ -13,6 +22,7 @@ const token = descriptor.mcp?.[0]?.token;
 const sideEffectFile = process.env.MCP_ACCEPTANCE_SIDE_EFFECT;
 const logFile = process.env.MCP_ACCEPTANCE_LOG;
 const marker = process.env.MCP_ACCEPTANCE_MARKER;
+const disconnectArmFile = process.env.MCP_ACCEPTANCE_DISCONNECT_ARM;
 if (
   typeof token !== "string" ||
   !token ||
@@ -40,6 +50,17 @@ function createMcpServer() {
     "acceptance_side_effect",
     { description: "Records an explicit acceptance marker.", inputSchema: {} },
     async () => {
+      if (disconnectArmFile && existsSync(disconnectArmFile)) {
+        const sideEffectDescriptor = openSync(sideEffectFile, "a");
+        try {
+          writeSync(sideEffectDescriptor, `${marker}\n`);
+          fsyncSync(sideEffectDescriptor);
+        } finally {
+          closeSync(sideEffectDescriptor);
+        }
+        renameSync(disconnectArmFile, `${disconnectArmFile}.committed`);
+        process.exit(137);
+      }
       appendFileSync(sideEffectFile, `${marker}\n`, { flag: "a" });
       return { content: [{ type: "text", text: "side-effect-recorded" }] };
     },

@@ -1,5 +1,15 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -64,7 +74,7 @@ function fixture() {
 
 describe("managed Skill Bundle materializer", () => {
   it("verifies, mounts read-only files, and removes only its generated root", () => {
-    const root = mkdtempSync(join(tmpdir(), "cloud-agent-skills-"));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "cloud-agent-skills-")));
     try {
       const value = fixture();
       const mounted = materializeManagedSkills(value.manifest, value.materialization, root);
@@ -84,7 +94,7 @@ describe("managed Skill Bundle materializer", () => {
   });
 
   it("uses an isolated root for overlapping runtime processes", () => {
-    const root = mkdtempSync(join(tmpdir(), "cloud-agent-skills-overlap-"));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "cloud-agent-skills-overlap-")));
     try {
       const value = fixture();
       const first = materializeManagedSkills(value.manifest, value.materialization, root);
@@ -102,7 +112,7 @@ describe("managed Skill Bundle materializer", () => {
   });
 
   it("fails closed on a signature mismatch", () => {
-    const root = mkdtempSync(join(tmpdir(), "cloud-agent-skills-signature-"));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "cloud-agent-skills-signature-")));
     try {
       const value = fixture();
       value.materialization.skills[0]!.signature = Buffer.alloc(64).toString("base64url");
@@ -114,13 +124,34 @@ describe("managed Skill Bundle materializer", () => {
     }
   });
 
+  it("rejects a symlinked materialization root before writing a session tree", () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "cloud-agent-skills-root-link-")));
+    const target = join(root, "target");
+    const linked = join(root, "linked");
+    mkdirSync(target);
+    symlinkSync(target, linked);
+    try {
+      const value = fixture();
+      expect(() => materializeManagedSkills(value.manifest, value.materialization, linked)).toThrow(
+        "materialization root is untrusted",
+      );
+      expect(readdirSync(target)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects Skill mounts that collide after environment-name normalization", () => {
-    const root = mkdtempSync(join(tmpdir(), "cloud-agent-skills-collision-"));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "cloud-agent-skills-collision-")));
     try {
       const value = fixture();
       const binding = value.manifest.bindings[0]!;
       const skill = value.materialization.skills[0]!;
-      value.manifest.bindings.push({ ...binding, resourceId: "skill_1", grantId: "grant-2" });
+      value.manifest.bindings.push({
+        ...binding,
+        resourceId: "skill_1",
+        grantId: "grant-2",
+      });
       value.materialization.skills.push({ ...skill, resourceId: "skill_1" });
       expect(() => materializeManagedSkills(value.manifest, value.materialization, root)).toThrow(
         "environment references collide",

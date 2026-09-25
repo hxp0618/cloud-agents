@@ -18,10 +18,11 @@ import {
   type CloudAgentWorkspaceBinding,
   type CloudAgentProviderDescriptor,
 } from "@cloud-agents/cloud-agent-provider-api";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createCloudAgentRuntime } from "./runtime";
 import { runCloudAgentRuntimeStdio } from "./runtimeStdio";
+import * as skillSandboxModule from "./skillSandbox";
 
 const describeCommand = {
   requestId: "request-describe",
@@ -96,6 +97,95 @@ describe("runCloudAgentRuntimeStdio", () => {
     });
   });
 
+  it("preserves inherited Skill roots when the default environment aliases process.env", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-runtime-sandbox-env-"));
+    const materializationPath = join(root, "materialization.json");
+    const materializationFd = openSync(materializationPath, "w+");
+    const skillRoot = join(root, "skill-1");
+    const digest = `sha256:${"a".repeat(64)}` as const;
+    const manifest = {
+      version: 1,
+      bindings: [
+        {
+          resourceKind: "skill-bundle" as const,
+          resourceId: "skill-1",
+          version: "v1",
+          digest,
+          grantId: "grant-1",
+          expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+          permissions: [],
+          readOnly: true,
+        },
+      ],
+    };
+    writeFileSync(
+      materializationPath,
+      JSON.stringify({
+        version: 1,
+        mcp: [],
+        skills: [
+          {
+            resourceId: "skill-1",
+            version: "v1",
+            digest,
+            bundle: "eA",
+            signature: "eA",
+            publicKey: "eA",
+            signingKeyId: "key-1",
+          },
+        ],
+      }),
+    );
+    const names = [
+      "CLOUD_AGENT_CAPABILITY_MANIFEST_B64",
+      "CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD",
+      "CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT",
+    ] as const;
+    const previous = new Map(names.map((name) => [name, process.env[name]]));
+    process.env.CLOUD_AGENT_CAPABILITY_MANIFEST_B64 = Buffer.from(
+      JSON.stringify(manifest),
+    ).toString("base64url");
+    process.env.CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD = String(materializationFd);
+    process.env.CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT = skillRoot;
+    const verify = vi.spyOn(skillSandboxModule, "verifyManagedSkillSandbox").mockReturnValue({
+      version: 1,
+      skillRoots: [skillRoot],
+      writeRoots: [root],
+      scratchRoot: root,
+    });
+    let observedSkillRoot: string | undefined;
+    const runtime = createCloudAgentRuntime({
+      providers: [
+        {
+          ...testProviderDescriptor(),
+          async describe() {
+            observedSkillRoot = process.env.CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT;
+            return await fakeRuntime().describe("codex");
+          },
+          async createSession() {
+            throw new Error("Describe must not create a Provider Session.");
+          },
+        },
+      ],
+    });
+    try {
+      await runCloudAgentRuntimeStdio(runtime, {
+        source: Readable.from([`${JSON.stringify(describeCommand)}\n`]),
+        output: captureOutput().stream,
+      });
+      expect(observedSkillRoot).toBe(skillRoot);
+      expect(process.env.CLOUD_AGENT_SKILL_BUNDLE_SKILL_1_ROOT).toBe(skillRoot);
+    } finally {
+      verify.mockRestore();
+      closeSync(materializationFd);
+      rmSync(root, { recursive: true, force: true });
+      for (const [name, value] of previous) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it("fails closed when a registered Provider is absent from the runtime allowlist", async () => {
     const output = captureOutput();
     await runCloudAgentRuntimeStdio(fakeRuntime(), {
@@ -158,34 +248,61 @@ describe("runCloudAgentRuntimeStdio", () => {
     }
   });
 
-  it("closes and removes a session when StartSession rejects", async () => {
-    const source = Readable.from([`${JSON.stringify(startCommand)}\n`]);
+  it("continues after a StartSession rejection and closes both sessions", async () => {
     const output = captureOutput();
+    let createCount = 0;
+    let firstStartSeen: (() => void) | undefined;
+    let secondStartSeen: (() => void) | undefined;
+    const firstStart = new Promise<void>((resolve) => {
+      firstStartSeen = resolve;
+    });
+    const secondStart = new Promise<void>((resolve) => {
+      secondStartSeen = resolve;
+    });
     let closes = 0;
-    let executed: readonly string[] = [];
+    const executed: string[] = [];
+    const secondStartCommand = {
+      ...startCommand,
+      requestId: "request-start-2",
+      executionId: "execution-start-2",
+      commandId: "command-start-2",
+    };
     const runtime = runtimeWithProvider(async () => {
-      const commands: string[] = [];
-      executed = commands;
+      createCount += 1;
       return testSession(
-        "session-command-failure",
-        commands,
+        `session-command-${createCount}`,
+        executed,
         () => {
           closes += 1;
         },
         (commandType) => {
-          if (commandType === "StartSession") throw new Error("Provider command failed.");
+          if (commandType !== "StartSession") return;
+          if (createCount === 1) {
+            firstStartSeen?.();
+            throw new Error("Provider command failed.");
+          }
+          secondStartSeen?.();
         },
       );
     });
+    async function* source() {
+      yield `${JSON.stringify(startCommand)}\n`;
+      await firstStart;
+      yield `${JSON.stringify(describeCommand)}\n${JSON.stringify(secondStartCommand)}\n`;
+      await secondStart;
+    }
 
-    await runCloudAgentRuntimeStdio(runtime, { source, output: output.stream });
-
-    expect(executed).toEqual(["StartSession"]);
-    expect(closes).toBe(1);
-    expect(JSON.parse(output.text())).toMatchObject({
-      commandId: startCommand.commandId,
-      messageType: "Error",
+    await runCloudAgentRuntimeStdio(runtime, {
+      source: Readable.from(source()),
+      output: output.stream,
     });
+
+    expect(executed).toEqual(["StartSession", "StartSession"]);
+    expect(createCount).toBe(2);
+    expect(closes).toBe(2);
+    expect(output.text()).toContain('"commandId":"command-start"');
+    expect(output.text()).toContain('"commandId":"command-describe"');
+    expect(output.text()).toContain('"messageType":"Error"');
   });
 
   it("prepares isolated workspace, output, and provider state roots", async () => {
@@ -532,7 +649,12 @@ describe("runCloudAgentRuntimeStdio", () => {
     const lateClosed = new Promise<void>((resolve) => {
       signalLateClose = resolve;
     });
-    const runtime = runtimeWithProvider(async () => {
+    let signalShutdown: (() => void) | undefined;
+    const shutdownSeen = new Promise<void>((resolve) => {
+      signalShutdown = resolve;
+    });
+    const runtime = runtimeWithProvider(async (_input, _host, signal) => {
+      signal?.addEventListener("abort", () => signalShutdown?.(), { once: true });
       await createAllowed;
       return testSession("late", executed, () => {
         closes += 1;
@@ -561,11 +683,122 @@ describe("runCloudAgentRuntimeStdio", () => {
     });
 
     await fatalSeen;
-    await expect(running).rejects.toThrow();
+    await shutdownSeen;
     allowCreate?.();
+    await expect(running).rejects.toThrow();
     await lateClosed;
     expect(executed).toEqual([]);
     expect(closes).toBe(1);
+  });
+
+  it("waits for late session close before shutdown returns", async () => {
+    let signalCreateStarted: (() => void) | undefined;
+    let signalShutdown: (() => void) | undefined;
+    let signalCloseStarted: (() => void) | undefined;
+    const createStarted = new Promise<void>((resolve) => {
+      signalCreateStarted = resolve;
+    });
+    const shutdownSeen = new Promise<void>((resolve) => {
+      signalShutdown = resolve;
+    });
+    const closeStarted = new Promise<void>((resolve) => {
+      signalCloseStarted = resolve;
+    });
+    let allowCreate: (() => void) | undefined;
+    const createAllowed = new Promise<void>((resolve) => {
+      allowCreate = resolve;
+    });
+    let allowClose: (() => void) | undefined;
+    const closeAllowed = new Promise<void>((resolve) => {
+      allowClose = resolve;
+    });
+    let closes = 0;
+    const lateSession = {
+      sessionId: "late-cleanup",
+      events: {
+        async *[Symbol.asyncIterator]() {
+          yield* [];
+        },
+      },
+      async execute() {
+        throw new Error("late session must not execute");
+      },
+      async close() {
+        closes += 1;
+        signalCloseStarted?.();
+        await closeAllowed;
+      },
+      async [Symbol.asyncDispose]() {
+        await this.close();
+      },
+    };
+    const runtime = runtimeWithProvider(async (_input, _host, signal) => {
+      signalCreateStarted?.();
+      signal?.addEventListener("abort", () => signalShutdown?.(), { once: true });
+      await createAllowed;
+      return lateSession;
+    });
+    async function* source() {
+      yield `${JSON.stringify(startCommand)}\n`;
+      await createStarted;
+    }
+    const running = runCloudAgentRuntimeStdio(runtime, {
+      source: Readable.from(source()),
+      output: captureOutput().stream,
+      shutdownCleanupTimeoutMs: 1_000,
+    });
+
+    await createStarted;
+    await shutdownSeen;
+    allowCreate?.();
+    await closeStarted;
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    allowClose?.();
+    await running;
+    expect(closes).toBe(1);
+  });
+
+  it("reports a bounded timeout when late session creation never settles", async () => {
+    let signalCreateStarted: (() => void) | undefined;
+    let signalShutdown: (() => void) | undefined;
+    const createStarted = new Promise<void>((resolve) => {
+      signalCreateStarted = resolve;
+    });
+    const shutdownSeen = new Promise<void>((resolve) => {
+      signalShutdown = resolve;
+    });
+    const runtime = runtimeWithProvider(async (_input, _host, signal) => {
+      signalCreateStarted?.();
+      signal?.addEventListener("abort", () => signalShutdown?.(), { once: true });
+      await new Promise<void>(() => undefined);
+      throw new Error("unreachable");
+    });
+    async function* source() {
+      yield `${JSON.stringify(startCommand)}\n`;
+      await createStarted;
+    }
+    const output = captureOutput();
+    const diagnostics = captureOutput();
+    const running = runCloudAgentRuntimeStdio(runtime, {
+      source: Readable.from(source()),
+      output: output.stream,
+      diagnostics: diagnostics.stream,
+      shutdownCleanupTimeoutMs: 10,
+    });
+
+    await shutdownSeen;
+    await expect(running).resolves.toBeUndefined();
+    expect(diagnostics.text()).toContain("Provider Session cleanup timed out");
   });
 
   it("binds credential acquisition and consumes the inherited FD only once", async () => {

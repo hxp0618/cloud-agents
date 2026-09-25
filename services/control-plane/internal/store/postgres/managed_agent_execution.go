@@ -463,7 +463,7 @@ func (service *DurableCoordinationService) CompleteManagedAgentExecution(
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
 	digest, err := internalmanagedagent.RuntimeExecutionCompleteMutationDigest(input)
 	if err != nil {
-		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+		return internalmanagedagent.ExecutionTransitionResult{}, errors.Join(ErrCoordinationInvalidInput, err)
 	}
 	terminalMessage, err := json.Marshal(input.Messages[len(input.Messages)-1])
 	if err != nil {

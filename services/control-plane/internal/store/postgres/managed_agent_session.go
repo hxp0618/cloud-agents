@@ -531,40 +531,14 @@ func (service *DurableCoordinationService) getManagedAgentSessionForRuntime(
 }
 
 func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot) error {
-	if row == nil || result == nil {
-		return ErrCoordinationResultDrift
-	}
-	var environmentLeaseID *string
-	var environmentGeneration *int64
-	var environmentProfileID *string
-	var environmentProfileVersion *int64
-	var workspaceID *string
-	var sandboxID *string
-	var sandboxGeneration *int64
-	var state string
-	var version int64
-	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		return mapMutationDatabaseError("managed agent session", err)
-	}
-	result.Scope = scope
-	result.State = internalmanagedagent.SessionState(state)
-	var validEnvironment bool
-	var validProfile bool
-	result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
-	var validFoundation bool
-	result.WorkspaceID, result.SandboxID, result.SandboxGeneration, validFoundation = managedAgentSessionFoundation(workspaceID, sandboxID, sandboxGeneration)
-	result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
-	if !validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(result.EnvironmentLeaseID, result.WorkspaceID, result.SandboxID, result.EnvironmentProfileID) || !validManagedAgentSessionSnapshot(*result, version) {
-		return fmt.Errorf("%w: managed agent session projection", ErrCoordinationResultDrift)
-	}
-	result.Version = uint64(version)
-	return nil
+	return scanManagedAgentSessionRow(row, scope, result, false)
 }
 
 func scanManagedAgentSessionWithCapabilities(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot) error {
+	return scanManagedAgentSessionRow(row, scope, result, true)
+}
+
+func scanManagedAgentSessionRow(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot, includeCapabilities bool) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
@@ -573,7 +547,11 @@ func scanManagedAgentSessionWithCapabilities(row rowScanner, scope internalmanag
 	var state string
 	var version int64
 	var mcpRefsJSON, skillRefsJSON []byte
-	if err := row.Scan(&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt, &mcpRefsJSON, &skillRefsJSON); err != nil {
+	destinations := []any{&result.SessionID, &result.ProviderKind, &environmentLeaseID, &environmentGeneration, &workspaceID, &sandboxID, &sandboxGeneration, &environmentProfileID, &environmentProfileVersion, &state, &version, &result.CreatedAt, &result.UpdatedAt}
+	if includeCapabilities {
+		destinations = append(destinations, &mcpRefsJSON, &skillRefsJSON)
+	}
+	if err := row.Scan(destinations...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -585,10 +563,12 @@ func scanManagedAgentSessionWithCapabilities(row rowScanner, scope internalmanag
 	result.EnvironmentLeaseID, result.EnvironmentGeneration, validEnvironment = managedAgentSessionEnvironment(environmentLeaseID, environmentGeneration)
 	result.WorkspaceID, result.SandboxID, result.SandboxGeneration, validFoundation = managedAgentSessionFoundation(workspaceID, sandboxID, sandboxGeneration)
 	result.EnvironmentProfileID, result.EnvironmentProfileVersion, validProfile = managedAgentSessionProfile(environmentProfileID, environmentProfileVersion)
-	var err error
-	result.McpServerRefs, result.SkillBundleRefs, err = decodeManagedAgentCapabilityRefs(mcpRefsJSON, skillRefsJSON)
-	if err != nil {
-		return fmt.Errorf("%w: managed agent capability refs", ErrCoordinationResultDrift)
+	if includeCapabilities {
+		var err error
+		result.McpServerRefs, result.SkillBundleRefs, err = decodeManagedAgentCapabilityRefs(mcpRefsJSON, skillRefsJSON)
+		if err != nil {
+			return fmt.Errorf("%w: managed agent capability refs", ErrCoordinationResultDrift)
+		}
 	}
 	if !validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(result.EnvironmentLeaseID, result.WorkspaceID, result.SandboxID, result.EnvironmentProfileID) || !validManagedAgentSessionSnapshot(*result, version) {
 		return fmt.Errorf("%w: managed agent session projection", ErrCoordinationResultDrift)

@@ -3,7 +3,6 @@ import {
   ClientError,
   type EnvironmentProfileSummary,
   type ManagedAgentEvent,
-  type ManagedAgentExecution,
   type ManagedAgentSession,
   type UserEnvironment,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -20,6 +19,8 @@ import {
   mergeAgentEvents,
   readAgentEventBatch,
   readAgentSelection,
+  replaceAgentExecution,
+  replaceAgentSession,
   writeAgentSelection,
   type AgentClient,
   type AgentArtifact,
@@ -28,6 +29,7 @@ import {
 } from "./agent";
 import { newIdempotencyKey, newRequestId } from "./environment";
 import { InteractionCard } from "./InteractionCard";
+import { providerKind, providerLabel, type ProviderKind } from "./provider";
 
 type AgentWorkspaceProps = Readonly<{
   client: AgentClient;
@@ -38,7 +40,6 @@ type AgentWorkspaceProps = Readonly<{
   environment?: UserEnvironment | undefined;
 }>;
 
-type ProviderKind = EnvironmentProfileSummary["providerKinds"][number];
 type BusyOperation = Readonly<{ key: string; label: string }>;
 type PendingSubmission = Readonly<{
   sessionId: string;
@@ -59,35 +60,6 @@ const emptyResources: AgentResources = Object.freeze({
 
 function newResourceId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
-}
-
-function providerKind(value: string | undefined): ProviderKind {
-  return value === "claudeAgent" || value === "pi" || value === "deepseek-harness"
-    ? value
-    : "codex";
-}
-
-function providerLabel(value: ProviderKind): string {
-  return {
-    codex: "Codex",
-    claudeAgent: "Claude Code",
-    pi: "Pi",
-    "deepseek-harness": "deepseek-harness",
-  }[value];
-}
-
-function replaceSession(
-  sessions: readonly ManagedAgentSession[],
-  value: ManagedAgentSession,
-): readonly ManagedAgentSession[] {
-  return [value, ...sessions.filter(({ metadata }) => metadata.uid !== value.metadata.uid)];
-}
-
-function replaceExecution(
-  executions: readonly ManagedAgentExecution[],
-  value: ManagedAgentExecution,
-): readonly ManagedAgentExecution[] {
-  return [value, ...executions.filter(({ metadata }) => metadata.uid !== value.metadata.uid)];
 }
 
 function formatTime(value: string): string {
@@ -269,7 +241,7 @@ export function AgentWorkspace({
           if (controller.signal.aborted) return;
           setResources((current) => ({
             ...current,
-            executions: replaceExecution(current.executions, result.value),
+            executions: replaceAgentExecution(current.executions, result.value),
             execution: result.value,
           }));
           if (isExecutionActive(selectedExecution) && !isExecutionActive(result.value))
@@ -441,7 +413,7 @@ export function AgentWorkspace({
           ),
         ]);
         setResources((current) => ({
-          sessions: replaceSession(current.sessions, sessionResult.value),
+          sessions: replaceAgentSession(current.sessions, sessionResult.value),
           session: sessionResult.value,
           ...loaded,
         }));
@@ -477,7 +449,7 @@ export function AgentWorkspace({
       setEvents([]);
       setInitialEventsRead(false);
       setResources((current) => ({
-        sessions: replaceSession(current.sessions, result.value),
+        sessions: replaceAgentSession(current.sessions, result.value),
         session: result.value,
         executions: Object.freeze([]),
       }));
@@ -507,7 +479,7 @@ export function AgentWorkspace({
       );
       setResources((current) => ({
         ...current,
-        sessions: replaceSession(current.sessions, result.value),
+        sessions: replaceAgentSession(current.sessions, result.value),
         session: result.value,
       }));
       setInitialEventsRead(false);
@@ -533,7 +505,7 @@ export function AgentWorkspace({
         );
         setResources((current) => ({
           ...current,
-          executions: replaceExecution(current.executions, result.value),
+          executions: replaceAgentExecution(current.executions, result.value),
           execution: result.value,
         }));
         setSelectedExecutionId(result.value.metadata.uid);
@@ -611,7 +583,7 @@ export function AgentWorkspace({
         pendingKeysRef.current.delete(executionKey);
         setResources((current) => ({
           ...current,
-          executions: replaceExecution(current.executions, result.value),
+          executions: replaceAgentExecution(current.executions, result.value),
           execution: result.value,
         }));
         setSelectedExecutionId(result.value.metadata.uid);
@@ -664,7 +636,7 @@ export function AgentWorkspace({
             : await client.interruptManagedAgentExecution(...args);
         setResources((current) => ({
           ...current,
-          executions: replaceExecution(current.executions, result.value),
+          executions: replaceAgentExecution(current.executions, result.value),
           execution: result.value,
         }));
         setInitialEventsRead(false);

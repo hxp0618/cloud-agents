@@ -4,9 +4,34 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import type { DeepSeekHarnessOptions } from "@deepseek-ai/dsh-sdk-client";
+import { ManagedCapabilityCallResultUnknownError } from "@cloud-agents/cloud-agent-provider-api/internal";
 import { startDeepSeekHarnessProviderRun } from "./index";
 
 describe("deepseek-harness Provider", () => {
+  it("rejects control characters in credential values before starting a session", () => {
+    expect(() =>
+      startDeepSeekHarnessProviderRun(
+        {
+          execution: { id: "execution-dsh-invalid-credential" },
+          workload: {
+            provider: "deepseek-harness",
+            inputText: "hello",
+            model: "model-dsh",
+          },
+          workspaceDirectory: "/tmp/cloud-agents-dsh-workspace",
+          providerStateDirectory: "/tmp/cloud-agents-dsh-state",
+        },
+        { payload: { apiKey: "secret\ndsh", baseUrl: "https://gateway.example/v1" } },
+        () => {},
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+          },
+        },
+      ),
+    ).toThrow(/non-empty string/u);
+  });
+
   it("composes the pinned MCP and Skill plugins from Host-managed materialization", async () => {
     const root = mkdtempSync(join(tmpdir(), "cloud-agent-dsh-capability-"));
     const workspace = join(root, "workspace");
@@ -101,6 +126,19 @@ describe("deepseek-harness Provider", () => {
                   method: "session.event",
                   params: {
                     event: {
+                      type: "tool/call",
+                      data: {
+                        callId: "mcp-call-1",
+                        name: "mcp__ca_server-1_abcc4a81__read",
+                        arguments: "{}",
+                      },
+                    },
+                  },
+                });
+                options?.onNotification?.({
+                  method: "session.event",
+                  params: {
+                    event: {
                       type: "tool/result",
                       data: { message: { source: { callId: "mcp-call-1" } } },
                     },
@@ -110,18 +148,11 @@ describe("deepseek-harness Provider", () => {
                   method: "session.event",
                   params: {
                     event: {
-                      type: "assistant/message",
+                      type: "tool/call",
                       data: {
-                        message: {
-                          content: [
-                            {
-                              type: "tool-call",
-                              id: "skill-call-1",
-                              name: "skill",
-                              arguments: '{"name":"managed-capability-acceptance"}',
-                            },
-                          ],
-                        },
+                        callId: "skill-call-1",
+                        name: "skill",
+                        arguments: '{"name":"managed-capability-acceptance"}',
                       },
                     },
                   },
@@ -150,6 +181,14 @@ describe("deepseek-harness Provider", () => {
         output: { provider: "deepseek-harness", text: "done" },
       });
       expect(harnessOptions?.patches).toHaveLength(2);
+      const modelPatch = readFileSync(harnessOptions?.patches?.[0] ?? "", "utf8");
+      expect(modelPatch).toContain("@deepseek-ai/dsh-llm-pi-ai");
+      expect(modelPatch).toContain("api: openai-responses");
+      expect(modelPatch).toContain("cloud-agents-openai");
+      expect(modelPatch).toContain("maxTokens: 32768");
+      expect(modelPatch).toContain("- id: tool-fs");
+      expect(modelPatch).toContain("  disabled: true");
+      expect(modelPatch).toContain("Use str_replace_editor for workspace files");
       const capabilityPatch = readFileSync(harnessOptions?.patches?.[1] ?? "", "utf8");
       expect(capabilityPatch).toContain("@deepseek-ai/dsh-mcp-client");
       expect(capabilityPatch).toContain("- id: skill-filesystem");
@@ -169,6 +208,36 @@ describe("deepseek-harness Provider", () => {
             itemType: "mcp__ca_server-1_abcc4a81__read",
             itemId: "mcp-call-1",
             capabilityResourceId: "server-1",
+            supportMode: "emulated",
+            status: "inProgress",
+          }),
+        }),
+      );
+      expect(
+        emitted.filter(
+          (message) =>
+            message.eventType === "runtime.provider.activity" &&
+            (message.payload as { itemId?: string }).itemId === "mcp-call-1" &&
+            (message.payload as { status?: string }).status === "inProgress",
+        ),
+      ).toHaveLength(1);
+      expect(
+        emitted.filter(
+          (message) =>
+            message.eventType === "runtime.provider.activity" &&
+            (message.payload as { itemId?: string }).itemId === "skill-call-1" &&
+            (message.payload as { status?: string }).status === "inProgress",
+        ),
+      ).toHaveLength(1);
+      expect(emitted).toContainEqual(
+        expect.objectContaining({
+          type: "event",
+          eventType: "runtime.provider.activity",
+          payload: expect.objectContaining({
+            itemType: "skill",
+            itemId: "skill-call-1",
+            capabilityResourceId: "skill-1",
+            supportMode: "emulated",
             status: "inProgress",
           }),
         }),
@@ -181,18 +250,7 @@ describe("deepseek-harness Provider", () => {
             itemType: "skill",
             itemId: "skill-call-1",
             capabilityResourceId: "skill-1",
-            status: "inProgress",
-          }),
-        }),
-      );
-      expect(emitted).toContainEqual(
-        expect.objectContaining({
-          type: "event",
-          eventType: "runtime.provider.activity",
-          payload: expect.objectContaining({
-            itemType: "skill",
-            itemId: "skill-call-1",
-            capabilityResourceId: "skill-1",
+            supportMode: "emulated",
             status: "completed",
           }),
         }),
@@ -205,6 +263,7 @@ describe("deepseek-harness Provider", () => {
             itemType: "mcp__ca_server-1_abcc4a81__read",
             itemId: "mcp-call-1",
             capabilityResourceId: "server-1",
+            supportMode: "emulated",
             status: "completed",
           }),
         }),
@@ -258,7 +317,7 @@ describe("deepseek-harness Provider", () => {
                             {
                               type: "tool-call",
                               id: "tool-1",
-                              name: "write",
+                              name: "write_file",
                               arguments: '{"path":"result.txt"}',
                             },
                           ],
@@ -392,6 +451,104 @@ describe("deepseek-harness Provider", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it.each(["notification", "run-result"] as const)(
+    "stops without ending the active tool when an MCP %s contains the unknown marker",
+    async (source) => {
+      const root = mkdtempSync(join(tmpdir(), "cloud-agent-dsh-result-unknown-"));
+      const workspace = join(root, "workspace");
+      mkdirSync(workspace);
+      const emitted: Array<Record<string, unknown>> = [];
+      let closed = 0;
+      const unknownNotification = {
+        method: "session.event",
+        params: {
+          event: {
+            type: "tool/result",
+            data: {
+              message: {
+                source: { callId: "mcp-call-unknown", name: "mcp__managed__side_effect" },
+                isError: true,
+                error: { code: -32000, message: "mcp_call_result_unknown" },
+              },
+            },
+          },
+        },
+      };
+      try {
+        const controller = startDeepSeekHarnessProviderRun(
+          {
+            execution: { id: `execution-dsh-${source}`, generation: 1 },
+            workload: {
+              provider: "deepseek-harness",
+              inputText: "use the managed side effect",
+              model: "model-dsh",
+            },
+            workspaceDirectory: workspace,
+            providerStateDirectory: join(root, "state"),
+          },
+          { payload: { apiKey: "secret-dsh", baseUrl: "https://gateway.example/v1" } },
+          (message) => emitted.push(message),
+          {
+            environment: {
+              CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+            },
+            harnessFactory() {
+              return {
+                close: async () => {
+                  closed += 1;
+                },
+                async run(_prompt, options) {
+                  options?.onNotification?.({
+                    method: "session.event",
+                    params: {
+                      event: {
+                        type: "assistant/message",
+                        data: {
+                          message: {
+                            content: [
+                              {
+                                type: "tool-call",
+                                id: "mcp-call-unknown",
+                                name: "mcp__managed__side_effect",
+                                arguments: "{}",
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  });
+                  if (source === "notification") options?.onNotification?.(unknownNotification);
+                  return {
+                    sessionId: options?.sessionId ?? "missing",
+                    finalResponse: "must not complete",
+                    events: [],
+                    notifications: source === "run-result" ? [unknownNotification] : [],
+                  };
+                },
+              };
+            },
+          },
+        );
+        await expect(controller.result).rejects.toBeInstanceOf(
+          ManagedCapabilityCallResultUnknownError,
+        );
+        expect(closed).toBeGreaterThan(0);
+        expect(
+          emitted
+            .filter(
+              (message) =>
+                message.eventType === "runtime.provider.activity" &&
+                (message.payload as { itemId?: string }).itemId === "mcp-call-unknown",
+            )
+            .map((message) => (message.payload as { status?: string }).status),
+        ).toEqual(["inProgress"]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("reconstructs a resumed Turn into a fresh SDK session", async () => {
     const root = mkdtempSync(join(tmpdir(), "cloud-agent-dsh-resume-"));

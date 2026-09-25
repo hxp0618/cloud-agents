@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolve } from "node:path";
 
 import claudePackage from "../../cloud-agent-provider-claude/package.json";
@@ -63,6 +63,22 @@ describe("cloud-agent distribution", () => {
     expect(Object.isFrozen(CLOUD_AGENT_DISTRIBUTION_MANIFEST.runtime)).toBe(true);
     expect(Object.isFrozen(CLOUD_AGENT_DISTRIBUTION_MANIFEST.providers)).toBe(true);
     expect(Object.isFrozen(CLOUD_AGENT_DISTRIBUTION_MANIFEST.providers[0])).toBe(true);
+  });
+
+  it("rejects an incompatible manifest before exposing the distribution", async () => {
+    vi.resetModules();
+    vi.doMock("../manifest.json", () => ({
+      default: {
+        ...CLOUD_AGENT_DISTRIBUTION_MANIFEST,
+        providerPluginAbi: 2,
+      },
+    }));
+    try {
+      await expect(import("./index")).rejects.toThrow("manifest ABI versions are unsupported");
+    } finally {
+      vi.doUnmock("../manifest.json");
+      vi.resetModules();
+    }
   });
 
   it("exposes the protocol schema through a stable distribution subpath", () => {

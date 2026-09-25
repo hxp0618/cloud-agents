@@ -41,8 +41,8 @@
         "name": "codex",
         "versionSource": "probe",
         "compatibleRange": {
-          "minimumInclusive": "0.150.1",
-          "maximumExclusive": "0.152.0"
+          "minimumInclusive": "0.154.0",
+          "maximumExclusive": "0.155.0"
         }
       },
       "capabilities": {
@@ -63,7 +63,7 @@
         "read-history": "emulated",
         "model-list": "unsupported",
         "model-switch": "emulated",
-        "skill-discovery": "unsupported",
+        "skill-discovery": "native",
         "skill-mentions": "unsupported",
         "plugin-discovery": "unsupported",
         "plugin-mentions": "unsupported",
@@ -108,8 +108,8 @@
         "read-history": "emulated",
         "model-list": "unsupported",
         "model-switch": "emulated",
-        "skill-discovery": "unsupported",
-        "skill-mentions": "unsupported",
+        "skill-discovery": "native",
+        "skill-mentions": "native",
         "plugin-discovery": "unsupported",
         "plugin-mentions": "unsupported",
         "native-commands": "unsupported",
@@ -363,8 +363,8 @@
         "read-history": "native",
         "model-list": "native",
         "model-switch": "unsupported",
-        "skill-discovery": "unsupported",
-        "skill-mentions": "unsupported",
+        "skill-discovery": "native",
+        "skill-mentions": "native",
         "plugin-discovery": "unsupported",
         "plugin-mentions": "unsupported",
         "native-commands": "unsupported",
@@ -408,8 +408,8 @@
         "read-history": "unsupported",
         "model-list": "unsupported",
         "model-switch": "unsupported",
-        "skill-discovery": "unsupported",
-        "skill-mentions": "unsupported",
+        "skill-discovery": "emulated",
+        "skill-mentions": "emulated",
         "plugin-discovery": "unsupported",
         "plugin-mentions": "unsupported",
         "native-commands": "unsupported",

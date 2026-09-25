@@ -136,6 +136,22 @@ func rawTenantRef(id string) *json.RawMessage {
 	return &raw
 }
 
+func TestGeneratedOpenAPIClientDecodesExecutionReconcileEvent(t *testing.T) {
+	body := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"EventPage","events":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Event","metadata":{"uid":"event-reconcile","projectId":"project-alpha","sessionId":"session-alpha","sequence":"1","occurredAt":"2026-09-23T08:00:00Z"},"spec":{"operation":"execution.reconcile","resource":"Execution","generation":2,"mutationDigest":"sha256:` + strings.Repeat("a", 64) + `","executionId":"execution-alpha","changes":[{"resource":"Execution","from":"recovery:awaiting_reconciliation","to":"recovery:none","version":2}]} }],"nextCursor":"","hasMore":false}`)
+	page, err := DecodeManagedAgentEventPageResponseJSON(body)
+	if err != nil || page.Value.Events[0].Spec.Operation != "execution.reconcile" {
+		t.Fatalf("event page = %#v / %v", page, err)
+	}
+	for name, invalid := range map[string][]byte{
+		"wrong resource":      bytes.Replace(body, []byte(`"resource":"Execution"`), []byte(`"resource":"Session"`), 1),
+		"missing executionId": bytes.Replace(body, []byte(`,"executionId":"execution-alpha"`), nil, 1),
+	} {
+		if _, err := DecodeManagedAgentEventPageResponseJSON(invalid); err == nil {
+			t.Errorf("%s event decoded", name)
+		}
+	}
+}
+
 func TestGeneratedOpenAPIClientUsesAdminDeploymentTargetRoute(t *testing.T) {
 	page := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"DeploymentTargetPage","deploymentTargets":[]}`)
 	var seen Request

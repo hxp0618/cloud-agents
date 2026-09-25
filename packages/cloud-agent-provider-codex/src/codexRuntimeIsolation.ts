@@ -61,7 +61,7 @@ export function codexMcpServersOverride(
 ): string {
   const entries = Object.entries(servers).map(
     ([name, server]) =>
-      `${JSON.stringify(name)}={url=${JSON.stringify(server.url)},bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)},required=true,omit_tools_from=["deferred"]}`,
+      `${JSON.stringify(name)}={url=${JSON.stringify(server.url)},bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)},required=true,default_tools_approval_mode="approve",omit_tools_from=[]}`,
   );
   return `mcp_servers={${entries.join(",")}}`;
 }
@@ -151,7 +151,8 @@ export function isCodexRuntimeIsolationConfigAttested(
       actual.enabled !== true ||
       actual.tool_timeout_sec !== null ||
       actual.required !== true ||
-      JSON.stringify(actual.omit_tools_from) !== '["deferred"]' ||
+      actual.default_tools_approval_mode !== "approve" ||
+      JSON.stringify(actual.omit_tools_from) !== "[]" ||
       !isLoopbackMcpUrl(expected.url)
     )
       return false;

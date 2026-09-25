@@ -20,6 +20,7 @@ import {
 } from "@cloud-agents/cloud-agent-provider-api/internal";
 
 import { startClaudeAgentSdkRun, type ClaudeQueryFactory } from "./claudeAgentSdkRuntime";
+import { managedSkillResourceIdsByQualifiedName } from "./managedSkillProvenance";
 
 export const CLAUDE_PROVIDER_KIND = "claudeAgent" as const;
 const CLAUDE_AGENT_SDK_VERSION = "0.3.207";
@@ -53,11 +54,20 @@ export function startClaudeProviderRun(
     capabilityManifest,
     options.environment ?? process.env,
   );
+  const skillBindings =
+    capabilityManifest?.bindings
+      .filter((binding) => binding.resourceKind === "skill-bundle") ?? [];
   if (options.operation?.commandType === "GenerateText" && capabilityManifest?.bindings.length) {
     throw new ManagedCapabilityUnavailableError(
       "Claude Provider GenerateText does not permit MCP or Skill capabilities.",
     );
   }
+  const skillResourceIdsByQualifiedName = managedSkillResourceIdsByQualifiedName(
+    skillDirectories.map((directory, index) => ({
+      directory,
+      resourceId: skillBindings[index]!.resourceId,
+    })),
+  );
   const mcpConfiguration = managedMcpConfiguration(
     capabilityManifest,
     options.environment ?? process.env,
@@ -83,6 +93,9 @@ export function startClaudeProviderRun(
       ? { mcpServers: mcpConfiguration.claudeServers }
       : {}),
     ...(skillDirectories.length ? { skillDirectories } : {}),
+    ...(Object.keys(skillResourceIdsByQualifiedName).length
+      ? { skillResourceIdsByQualifiedName }
+      : {}),
     ...(options.claudeQueryFactory ? { queryFactory: options.claudeQueryFactory } : {}),
   });
 }
@@ -96,11 +109,6 @@ export function createClaudeProvider(): CloudAgentProviderPluginV1 {
     displayName: "Claude",
     providerAliases: ["claude"],
     descriptor: { runtimeVersion: CLAUDE_AGENT_SDK_VERSION },
-    configurationSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: { model: { type: "string", minLength: 1 } },
-    },
     startRun: claudeExecutor,
   });
 }

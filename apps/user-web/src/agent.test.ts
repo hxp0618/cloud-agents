@@ -18,6 +18,8 @@ import {
   mergeAgentEvents,
   readAgentEventBatch,
   readAgentSelection,
+  replaceAgentExecution,
+  replaceAgentSession,
   writeAgentSelection,
   type AgentClient,
 } from "./agent";
@@ -225,6 +227,31 @@ describe("Agent event polling", () => {
     controller.abort(new DOMException("cancelled", "AbortError"));
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("Agent resource reconciliation", () => {
+  it("replaces by UID, puts the fresh resource first, and preserves the input list", () => {
+    const oldSession = session("session-old", "2026-09-02T00:00:00Z");
+    const otherSession = session("session-other", "2026-09-02T01:00:00Z");
+    const refreshedSession = session("session-old", "2026-09-02T02:00:00Z");
+    const sessions = Object.freeze([oldSession, otherSession]);
+    expect(replaceAgentSession(sessions, refreshedSession)).toEqual([
+      refreshedSession,
+      otherSession,
+    ]);
+    expect(sessions).toEqual([oldSession, otherSession]);
+    expect(replaceAgentSession([], refreshedSession)).toEqual([refreshedSession]);
+
+    const oldExecution = execution("execution-old", "turn-old", "2026-09-02T00:00:00Z");
+    const otherExecution = execution("execution-other", "turn-other", "2026-09-02T01:00:00Z");
+    const refreshedExecution = execution("execution-old", "turn-old", "2026-09-02T02:00:00Z");
+    const executions = Object.freeze([oldExecution, otherExecution]);
+    expect(replaceAgentExecution(executions, refreshedExecution)).toEqual([
+      refreshedExecution,
+      otherExecution,
+    ]);
+    expect(executions).toEqual([oldExecution, otherExecution]);
   });
 });
 

@@ -13,7 +13,11 @@ import {
 } from "./providerContentTrustPolicy";
 import { describe, expect, it } from "vitest";
 
-import type { ClaudeQueryFactory, ClaudeQueryRuntime } from "./claudeAgentSdkRuntime";
+import {
+  startClaudeAgentSdkRun,
+  type ClaudeQueryFactory,
+  type ClaudeQueryRuntime,
+} from "./claudeAgentSdkRuntime";
 import type {
   ProviderRunController,
   ProviderRunOptions,
@@ -36,29 +40,11 @@ process.env[PROVIDER_OUTER_SANDBOX_PROFILE_ENV] = "single-tenant-trusted-v1";
 describe("Claude Agent SDK runtime", () => {
   it("projects only the bound opaque ID for a managed MCP tool outcome", async () => {
     const messages: RunnerMessage[] = [];
-    const capabilityManifest = Buffer.from(
-      JSON.stringify({
-        version: 1,
-        bindings: [
-          {
-            resourceKind: "mcp-server",
-            resourceId: "mcp-1",
-            version: "v1",
-            digest: "sha256:" + "a".repeat(64),
-            transport: "streamable-http",
-            connectionRef: "connection-1",
-            credentialRef: "credential-1",
-            grantId: "grant-1",
-            networkPolicyRef: "policy-1",
-            expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 60,
-            permissions: ["tools.call"],
-            readOnly: false,
-          },
-        ],
-      }),
-    ).toString("base64url");
-    const queryFactory: ClaudeQueryFactory = () =>
-      fakeQuery(
+    let queryOptions: ClaudeQueryOptions | undefined;
+    const capabilityManifest = managedMcpCapabilityManifest();
+    const queryFactory: ClaudeQueryFactory = ({ options }) => {
+      queryOptions = options;
+      return fakeQuery(
         (async function* () {
           yield sdkMessage(systemInit("session-mcp", "claude-test"));
           yield sdkMessage({
@@ -87,6 +73,7 @@ describe("Claude Agent SDK runtime", () => {
           yield sdkMessage(successResult("session-mcp", "done", {}));
         })(),
       );
+    };
     const run = startProviderHostRun(
       claudeInput({ inputText: "call managed MCP" }),
       null,
@@ -103,6 +90,11 @@ describe("Claude Agent SDK runtime", () => {
     );
 
     await expect(run.result).resolves.toMatchObject({ output: { text: "done" } });
+    expect(queryOptions).toMatchObject({
+      strictMcpConfig: true,
+      managedSettings: { strictPluginOnlyCustomization: true },
+      mcpServers: { "cloud_agents_mcp-1": expect.any(Object) },
+    });
     expect(messages).toContainEqual(
       expect.objectContaining({
         eventType: "runtime.provider.activity",
@@ -115,6 +107,432 @@ describe("Claude Agent SDK runtime", () => {
     );
     expect(JSON.stringify(messages)).not.toContain("must-not-cross-the-wire");
     expect(JSON.stringify(messages)).not.toContain("runtime-token");
+  });
+
+  it("keeps a disconnected managed MCP call started until reconciliation", async () => {
+    const messages: RunnerMessage[] = [];
+    const queryFactory: ClaudeQueryFactory = ({ options }) =>
+      fakeQuery(
+        (async function* () {
+          yield sdkMessage(systemInit("session-mcp-unknown", "claude-test"));
+          yield sdkMessage({
+            type: "assistant",
+            session_id: "session-mcp-unknown",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "mcp-call-unknown",
+                  name: "mcp__cloud_agents_mcp-1__acceptance_side_effect",
+                  input: {},
+                },
+              ],
+            },
+          });
+          const failureHook = requiredOptions(options).hooks?.PostToolUseFailure?.[0]?.hooks[0];
+          expect(
+            await failureHook?.(
+              {
+                hook_event_name: "PostToolUseFailure",
+                tool_name: "mcp__cloud_agents_mcp-1__acceptance_side_effect",
+                tool_input: {},
+                tool_use_id: "mcp-call-unknown",
+                error: "MCP error -32000: mcp_call_result_unknown",
+              } as never,
+              undefined,
+              { signal: new AbortController().signal },
+            ),
+          ).toEqual({
+            continue: false,
+            stopReason: "Managed MCP call result is unknown.",
+          });
+        })(),
+      );
+    const run = startProviderHostRun(
+      claudeInput({ inputText: "call a managed MCP side effect" }),
+      null,
+      (message) => messages.push(message),
+      {
+        claudeQueryFactory: queryFactory,
+        environment: {
+          [PROVIDER_OUTER_SANDBOX_PROFILE_ENV]: "single-tenant-trusted-v1",
+          CLOUD_AGENT_CAPABILITY_MANIFEST_B64: managedMcpCapabilityManifest(),
+          CLOUD_AGENT_MCP_BROKER_URL: "http://127.0.0.1:48123/mcp",
+          CLOUD_AGENT_MCP_TOKEN_MCP_1: "runtime-token",
+        },
+      },
+    );
+
+    await expect(run.result).rejects.toThrow("Managed MCP call result is unknown.");
+    expect(
+      messages.flatMap((message) =>
+        message.type === "event" && message.eventType === "runtime.provider.activity"
+          ? [message.payload.status]
+          : [],
+      ),
+    ).toEqual(["started"]);
+  });
+
+  it.each([
+    {
+      label: "no managed Skill bundles",
+      resourceIdsByQualifiedName: undefined,
+      requestedSkill: "managed-capability-acceptance:managed-capability-acceptance",
+      expectedResourceId: undefined,
+    },
+    {
+      label: "one managed Skill bundle",
+      resourceIdsByQualifiedName: {
+        "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
+      },
+      requestedSkill: "managed-capability-acceptance:managed-capability-acceptance",
+      expectedResourceId: "skill-1",
+    },
+    {
+      label: "multiple managed Skill bundles",
+      resourceIdsByQualifiedName: {
+        "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
+        "other-plugin:other-skill": "skill-2",
+      },
+      requestedSkill: "other-plugin:other-skill",
+      expectedResourceId: "skill-2",
+    },
+    {
+      label: "a native builtin Skill name",
+      resourceIdsByQualifiedName: {
+        "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
+      },
+      requestedSkill: "pdf",
+      expectedResourceId: undefined,
+    },
+    {
+      label: "an Object prototype property name",
+      resourceIdsByQualifiedName: {
+        "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
+      },
+      requestedSkill: "toString",
+      expectedResourceId: undefined,
+    },
+    {
+      label: "an unqualified managed Skill name",
+      resourceIdsByQualifiedName: {
+        "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
+      },
+      requestedSkill: "managed-capability-acceptance",
+      expectedResourceId: undefined,
+    },
+  ])(
+    "admits only an exactly bound qualified Skill for $label",
+    async ({ resourceIdsByQualifiedName, requestedSkill, expectedResourceId }) => {
+      const messages: RunnerMessage[] = [];
+      const qualifiedNames = Object.keys(resourceIdsByQualifiedName ?? {});
+      const pluginNames = [
+        ...new Set(qualifiedNames.map((name) => name.slice(0, name.indexOf(":")))),
+      ];
+      const skillDirectories = pluginNames.map(() =>
+        mkdtempSync(join(tmpdir(), "cloud-agents-claude-managed-plugin-")),
+      );
+      let queryOptions: ClaudeQueryOptions | undefined;
+      const queryFactory: ClaudeQueryFactory = ({ options }) => {
+        queryOptions = options;
+        return fakeQuery(
+          (async function* () {
+            yield sdkMessage(
+              systemInit("session-skill", "claude-test", {
+                skills: ["deep-research", "verify", ...qualifiedNames],
+                plugins: pluginNames.map((name, index) => ({
+                  name,
+                  path: skillDirectories[index],
+                })),
+              }),
+            );
+            yield sdkMessage({
+              type: "assistant",
+              session_id: "session-skill",
+              message: {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "skill-call-1",
+                    name: "Skill",
+                    input: { skill: requestedSkill },
+                  },
+                ],
+              },
+            });
+            yield sdkMessage({
+              type: "user",
+              session_id: "session-skill",
+              message: {
+                content: [{ type: "tool_result", tool_use_id: "skill-call-1", content: "loaded" }],
+              },
+            });
+            yield sdkMessage(successResult("session-skill", "done", {}));
+          })(),
+        );
+      };
+      const input = claudeInput({ inputText: "load managed Skill" });
+      const run = startClaudeAgentSdkRun({
+        input,
+        environment: {},
+        usesAmbientAuthentication: true,
+        redact: (value) => value,
+        emit: (message) => messages.push(message),
+        authoritativePrompt: input.workload.inputText,
+        nativeResumePrompt: input.workload.inputText,
+        interactive: true,
+        ...(skillDirectories.length ? { skillDirectories } : {}),
+        ...(resourceIdsByQualifiedName
+          ? { skillResourceIdsByQualifiedName: resourceIdsByQualifiedName }
+          : {}),
+        queryFactory,
+      });
+
+      try {
+        if (expectedResourceId === undefined) {
+          await expect(run.result).rejects.toThrow(
+            "not authorized by a Host-managed Skill binding",
+          );
+        } else {
+          await expect(run.result).resolves.toMatchObject({ output: { text: "done" } });
+        }
+        expect(queryOptions?.skills).toEqual(qualifiedNames);
+        expect(queryOptions?.managedSettings).toMatchObject({
+          disableBundledSkills: true,
+          disableSkillShellExecution: true,
+          strictPluginOnlyCustomization: true,
+        });
+        const completedSkillMessage = messages.find(
+          (message) =>
+            message.type === "event" &&
+            message.eventType === "runtime.provider.activity" &&
+            message.payload.itemType === "Skill" &&
+            message.payload.status === "completed",
+        );
+        if (expectedResourceId === undefined) {
+          expect(completedSkillMessage).toBeUndefined();
+          return;
+        }
+        expect(completedSkillMessage).toBeDefined();
+        if (completedSkillMessage?.type !== "event") {
+          throw new Error("expected a completed Skill activity event");
+        }
+        expect(completedSkillMessage.payload).toMatchObject({
+          capabilityResourceId: expectedResourceId,
+        });
+      } finally {
+        for (const directory of skillDirectories) {
+          rmSync(directory, { recursive: true, force: true });
+        }
+      }
+    },
+  );
+
+  it("denies unbound qualified and builtin Skills in both Host admission callbacks", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-claude-skill-admission-"));
+    const qualifiedName = "managed-plugin:managed-skill";
+    const queryFactory: ClaudeQueryFactory = ({ options }) =>
+      fakeQuery(
+        (async function* () {
+          const queryOptions = requiredOptions(options);
+          yield sdkMessage(
+            systemInit("session-skill-admission", "claude-test", {
+              skills: ["deep-research", qualifiedName],
+              plugins: [{ name: "managed-plugin", path: directory }],
+            }),
+          );
+          const preToolUse = queryOptions.hooks?.PreToolUse?.[0]?.hooks[0];
+          for (const skill of ["deep-research", "managed-plugin:unverified-skill"]) {
+            await expect(
+              preToolUse?.(
+                {
+                  hook_event_name: "PreToolUse",
+                  tool_name: "Skill",
+                  tool_input: { skill },
+                } as never,
+                undefined,
+                { signal: new AbortController().signal },
+              ),
+            ).resolves.toMatchObject({
+              hookSpecificOutput: {
+                permissionDecision: "deny",
+                permissionDecisionReason:
+                  "Claude Skill is not authorized by a Host-managed Skill binding.",
+              },
+            });
+            await expect(
+              queryOptions.canUseTool?.(
+                "Skill",
+                { skill },
+                {
+                  signal: new AbortController().signal,
+                  toolUseID: `skill-${skill}`,
+                  requestId: `request-${skill}`,
+                },
+              ),
+            ).resolves.toEqual({
+              behavior: "deny",
+              message: "Claude Skill is not authorized by a Host-managed Skill binding.",
+            });
+          }
+          const admitted = await preToolUse?.(
+            {
+              hook_event_name: "PreToolUse",
+              tool_name: "Skill",
+              tool_input: { skill: qualifiedName },
+            } as never,
+            undefined,
+            { signal: new AbortController().signal },
+          );
+          if (!admitted || !("hookSpecificOutput" in admitted)) {
+            throw new Error("Expected a synchronous PreToolUse decision.");
+          }
+          const admittedOutput = admitted.hookSpecificOutput;
+          if (admittedOutput?.hookEventName !== "PreToolUse") {
+            throw new Error("Expected a PreToolUse decision.");
+          }
+          expect(admittedOutput.permissionDecision).not.toBe("deny");
+          yield sdkMessage(successResult("session-skill-admission", "done", {}));
+        })(),
+      );
+    const input = claudeInput({ inputText: "load managed Skill", runtimeMode: "full-access" });
+    const run = startClaudeAgentSdkRun({
+      input,
+      environment: {},
+      usesAmbientAuthentication: true,
+      redact: (value) => value,
+      emit: () => undefined,
+      authoritativePrompt: input.workload.inputText,
+      nativeResumePrompt: input.workload.inputText,
+      interactive: true,
+      skillDirectories: [directory],
+      skillResourceIdsByQualifiedName: { [qualifiedName]: "skill-1" },
+      queryFactory,
+    });
+    try {
+      await expect(run.result).resolves.toMatchObject({ output: { text: "done" } });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a managed plugin directory has no verified qualified Skill", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-claude-unmapped-plugin-"));
+    let queryStarted = false;
+    const input = claudeInput({ inputText: "load managed Skill" });
+    const run = startClaudeAgentSdkRun({
+      input,
+      environment: {},
+      usesAmbientAuthentication: true,
+      redact: (value) => value,
+      emit: () => undefined,
+      authoritativePrompt: input.workload.inputText,
+      nativeResumePrompt: input.workload.inputText,
+      interactive: true,
+      skillDirectories: [directory],
+      queryFactory: () => {
+        queryStarted = true;
+        return fakeQuery((async function* () {})());
+      },
+    });
+    try {
+      await expect(run.result).rejects.toThrow("lack verified qualified names");
+      expect(queryStarted).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["missing Skill", "duplicate Skill", "unexpected qualified Skill", "missing plugin"])(
+    "fails closed when SDK init reports %s attestation",
+    async (failure) => {
+      const directory = mkdtempSync(join(tmpdir(), "cloud-agents-claude-attestation-"));
+      const qualifiedName = "managed-plugin:managed-skill";
+      const reportedSkills =
+        failure === "missing Skill"
+          ? []
+          : failure === "duplicate Skill"
+            ? [qualifiedName, qualifiedName]
+            : failure === "unexpected qualified Skill"
+              ? [qualifiedName, "managed-plugin:unverified-skill"]
+              : [qualifiedName];
+      const reportedPlugins =
+        failure === "missing plugin" ? [] : [{ name: "managed-plugin", path: directory }];
+      const queryFactory: ClaudeQueryFactory = () =>
+        fakeQuery(
+          (async function* () {
+            yield sdkMessage(
+              systemInit("session-skill-attestation", "claude-test", {
+                skills: reportedSkills,
+                plugins: reportedPlugins,
+              }),
+            );
+            yield sdkMessage(successResult("session-skill-attestation", "done", {}));
+          })(),
+        );
+      const input = claudeInput({ inputText: "load managed Skill" });
+      const run = startClaudeAgentSdkRun({
+        input,
+        environment: {},
+        usesAmbientAuthentication: true,
+        redact: (value) => value,
+        emit: () => undefined,
+        authoritativePrompt: input.workload.inputText,
+        nativeResumePrompt: input.workload.inputText,
+        interactive: true,
+        skillDirectories: [directory],
+        skillResourceIdsByQualifiedName: { [qualifiedName]: "skill-1" },
+        queryFactory,
+      });
+      try {
+        await expect(run.result).rejects.toThrow("unexpected managed Skill");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects a managed Skill tool use before SDK plugin attestation", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-claude-pre-attestation-"));
+    const qualifiedName = "managed-plugin:managed-skill";
+    const queryFactory: ClaudeQueryFactory = () =>
+      fakeQuery(
+        (async function* () {
+          yield sdkMessage({
+            type: "assistant",
+            session_id: "session-skill-pre-attestation",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "skill-call-pre-attestation",
+                  name: "Skill",
+                  input: { skill: qualifiedName },
+                },
+              ],
+            },
+          });
+        })(),
+      );
+    const input = claudeInput({ inputText: "load managed Skill" });
+    const run = startClaudeAgentSdkRun({
+      input,
+      environment: {},
+      usesAmbientAuthentication: true,
+      redact: (value) => value,
+      emit: () => undefined,
+      authoritativePrompt: input.workload.inputText,
+      nativeResumePrompt: input.workload.inputText,
+      interactive: true,
+      skillDirectories: [directory],
+      skillResourceIdsByQualifiedName: { [qualifiedName]: "skill-1" },
+      queryFactory,
+    });
+    try {
+      await expect(run.result).rejects.toThrow("before plugin attestation");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("stores an oversized native tool Diff as a Runtime Output ArtifactCandidate", async () => {
@@ -2406,6 +2824,30 @@ function claudeInput(input: {
   };
 }
 
+function managedMcpCapabilityManifest(): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: 1,
+      bindings: [
+        {
+          resourceKind: "mcp-server",
+          resourceId: "mcp-1",
+          version: "v1",
+          digest: "sha256:" + "a".repeat(64),
+          transport: "streamable-http",
+          connectionRef: "connection-1",
+          credentialRef: "credential-1",
+          grantId: "grant-1",
+          networkPolicyRef: "policy-1",
+          expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 60,
+          permissions: ["tools.call"],
+          readOnly: false,
+        },
+      ],
+    }),
+  ).toString("base64url");
+}
+
 function nextInteraction(
   messages: RunnerMessage[],
   interactionType: "approval" | "user-input",
@@ -2486,12 +2928,17 @@ function requiredOptions(options: ClaudeQueryOptions | undefined): ClaudeQueryOp
   return options;
 }
 
-function systemInit(sessionId: string, model: string): Record<string, unknown> {
+function systemInit(
+  sessionId: string,
+  model: string,
+  capabilities: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     type: "system",
     subtype: "init",
     session_id: sessionId,
     model,
+    ...capabilities,
   };
 }
 

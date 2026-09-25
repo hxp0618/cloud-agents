@@ -35,6 +35,13 @@ const base = `services/control-plane/migrations/product/${current}`;
 const sqlPath = `services/control-plane/migrations/${latest[0]}`;
 const prior = json(`services/control-plane/migrations/product/${previous}/manifest.json`);
 const catalog = json(prior.schema_bundle.migrations.at(-1).catalog_contract.path);
+const existingFunctionTargets = new Set<string>(
+  catalog.source_descriptors
+    .flatMap((source: any) => source.statements)
+    .map((statement: any) => statement.classification)
+    .filter((classification: any) => classification.object_kind === "FUNCTION")
+    .map((classification: any) => classification.target_identity),
+);
 catalog.schema_head = current;
 const sql = read(sqlPath);
 const statements = splitPostgresStatements(sql).map((statement) => ({
@@ -42,7 +49,7 @@ const statements = splitPostgresStatements(sql).map((statement) => ({
   start: statement.start,
   end: statement.end,
   sha256: statement.sha256,
-  classification: classifyMigrationStatement(statement, current),
+  classification: classifyMigrationStatement(statement, current, existingFunctionTargets),
 }));
 catalog.source_descriptors.push({
   migration_id: current,
@@ -51,7 +58,9 @@ catalog.source_descriptors.push({
 });
 const additions = statements
   .filter(({ classification }) =>
-    classification.command === "CREATE" && classification.object_kind === "FUNCTION")
+    classification.command === "CREATE" &&
+    classification.object_kind === "FUNCTION" &&
+    !existingFunctionTargets.has(classification.target_identity))
   .map(({ classification }) => migrationObjectIdentity(classification.target_identity));
 for (const item of additions) validateObjectIdentity(item);
 catalog.declared_object_identities.push(...additions);

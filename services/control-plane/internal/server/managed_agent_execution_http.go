@@ -418,7 +418,7 @@ func (server *ManagedAgentExecutionHTTPServer) reconcileSideEffect(writer http.R
 	}
 	_, err = server.store.ReconcileManagedAgentExecutionSideEffect(request.Context(), tenantID, principal, internalmanagedagent.ReconcileRuntimeSideEffectInput{
 		RuntimeExecutionReference: runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, body.Generation),
-		CheckpointDigest:          body.CheckpointDigest, Outcome: body.Outcome, RequestID: requestID,
+		CheckpointDigest:          body.CheckpointDigest, Outcome: body.Outcome, RequestID: requestID, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		status, code := managedAgentExecutionErrorStatus(err)

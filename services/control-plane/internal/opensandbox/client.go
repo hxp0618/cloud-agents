@@ -1213,7 +1213,13 @@ func (c *Client) Exec(ctx context.Context, input ExecInput) (ExecResult, error) 
 			ExecutionTime int64  `json:"execution_time"`
 		}
 		if err := decoder.Decode(&event); err != nil {
-			return ExecResult{}, ErrUnavailable
+			// The command POST is not replay-safe once the upstream has emitted
+			// an execution id.  Reconcile the existing command through its
+			// status endpoint instead of issuing a second side-effecting POST.
+			if executionID == "" {
+				return ExecResult{}, ErrUnavailable
+			}
+			break
 		}
 		switch event.Type {
 		case "init":

@@ -27,7 +27,12 @@ import {
   type RunnerInput,
   type RunnerMessage,
 } from "./internalExecution";
-import { ProviderInterruptedError } from "./providerRunErrors";
+import {
+  MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER,
+  ManagedCapabilityCallResultUnknownError,
+  ProviderInterruptedError,
+  isManagedMcpCallResultUnknown,
+} from "./providerRunErrors";
 import { ManagedCapabilityUnavailableError } from "./capabilityManifest";
 
 type ProviderHostProviderKind = string;
@@ -148,16 +153,16 @@ describe("Provider Host Protocol v2", () => {
       },
     });
 
-    expect(codex.capabilityDescriptor.providerCliVersion).toBe("0.150.1");
+    expect(codex.capabilityDescriptor.providerCliVersion).toBe("0.154.0");
     expect(codex.capabilityDescriptor.runtime).toEqual({
       kind: "cli",
       name: "codex",
-      version: "0.150.1",
+      version: "0.154.0",
       available: true,
       versionSource: "probe",
       compatibleRange: {
-        minimumInclusive: "0.150.1",
-        maximumExclusive: "0.152.0",
+        minimumInclusive: "0.154.0",
+        maximumExclusive: "0.155.0",
       },
       compatible: true,
     });
@@ -451,6 +456,56 @@ describe("Provider Host Protocol v2", () => {
     },
   );
 
+  it("keeps an unknown managed MCP result non-retryable until reconciliation", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => ({
+        result: Promise.reject(new ManagedCapabilityCallResultUnknownError()),
+        interrupt: () => {},
+      }),
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-mcp-unknown"),
+    );
+
+    const result = await handle(
+      command("SendTurn", { inputText: "call managed MCP" }, "send-mcp-unknown"),
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: {
+        code: "provider_unavailable",
+        retryable: false,
+        requiresNewExecution: true,
+        requiresUserAction: false,
+        canReconstructFromHistory: false,
+        canMoveWorker: false,
+      },
+    });
+  });
+
+  it("recognizes the managed MCP unknown marker without unbounded traversal", () => {
+    expect(
+      isManagedMcpCallResultUnknown({
+        error: { code: -32_000, message: MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER },
+      }),
+    ).toBe(true);
+    expect(
+      isManagedMcpCallResultUnknown(
+        new Error(`MCP error -32000: ${MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER}`),
+      ),
+    ).toBe(true);
+    expect(
+      isManagedMcpCallResultUnknown(
+        `${"x".repeat(8_192)}${MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER}`,
+      ),
+    ).toBe(false);
+    expect(isManagedMcpCallResultUnknown({ error: "explicit tool failure" })).toBe(false);
+  });
+
   it("reports missing Host capability materialization as capability_unsupported", async () => {
     const handle = createProviderHostProtocolHandler({
       credential: null,
@@ -488,32 +543,32 @@ describe("Provider Host Protocol v2", () => {
       },
       {
         label: "unstable-semver",
-        probe: { available: true, output: "codex-cli 0.150.1-beta.1" },
+        probe: { available: true, output: "codex-cli 0.154.0-beta.1" },
         expected: "provider_version_incompatible",
       },
       {
         label: "below-minimum",
-        probe: { available: true, output: "codex-cli 0.150.0" },
+        probe: { available: true, output: "codex-cli 0.153.0" },
         expected: "provider_version_incompatible",
       },
       {
         label: "minimum",
-        probe: { available: true, output: "codex-cli 0.150.1" },
+        probe: { available: true, output: "codex-cli 0.154.0" },
         expected: "Result",
       },
       {
         label: "compatible-patch",
-        probe: { available: true, output: "codex-cli 0.150.99" },
+        probe: { available: true, output: "codex-cli 0.154.99" },
         expected: "Result",
       },
       {
         label: "compatible-next-minor",
-        probe: { available: true, output: "codex-cli 0.151.0" },
+        probe: { available: true, output: "codex-cli 0.154.1" },
         expected: "Result",
       },
       {
         label: "maximum-exclusive",
-        probe: { available: true, output: "codex-cli 0.152.0" },
+        probe: { available: true, output: "codex-cli 0.155.0" },
         expected: "provider_version_incompatible",
       },
     ] as const;
@@ -1552,7 +1607,7 @@ describe("Provider Host Protocol v2", () => {
 });
 
 function compatibleCodexProbe(): ProviderVersionProbeResult {
-  return { available: true, output: "codex-cli 0.150.1" };
+  return { available: true, output: "codex-cli 0.154.0" };
 }
 
 function enabledDescriptorForProvider(provider: ProviderHostProviderKind) {

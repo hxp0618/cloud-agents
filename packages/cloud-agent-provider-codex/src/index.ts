@@ -133,6 +133,9 @@ export function startCodexProviderRun(
       ? { skillRoots: skillDirectories.map((directory) => join(directory, "skills")) }
       : {}),
     ...(skillBindings.length === 1 ? { skillResourceId: skillBindings[0]!.resourceId } : {}),
+    ...(skillBindings.length > 1
+      ? { skillResourceIds: skillBindings.map((binding) => binding.resourceId) }
+      : {}),
   });
 }
 
@@ -154,11 +157,6 @@ export function createCodexProvider(
     providerKind: CODEX_PROVIDER_KIND,
     displayName: "Codex",
     descriptor: { runtimeVersionProbe: probeCodexVersion },
-    configurationSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: { model: { type: "string", minLength: 1 } },
-    },
     startRun: executor,
   });
 }

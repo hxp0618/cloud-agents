@@ -3,31 +3,46 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
-import { createDeterministicUstar } from "./platform-migration-ustar";
+import { createDeterministicUstar } from "./platform-migration-ustar.ts";
+import {
+  expectedArtifactCount,
+  expectedArtifactIdentities,
+  isPlatformReleaseVersion,
+  platformReleaseArtifact,
+  platformReleaseArtifactFilename,
+  PLATFORM_RELEASE_CLI_TARGETS,
+  PLATFORM_RELEASE_CONTRACTS,
+  PLATFORM_RELEASE_GO_COMMANDS,
+  PLATFORM_RELEASE_GO_SDK,
+  PLATFORM_RELEASE_RUNTIME,
+  PLATFORM_RELEASE_TARGETS,
+  PLATFORM_RELEASE_TYPESCRIPT_SDK,
+  validatePlatformReleaseDirectory,
+  validatePlatformReleaseManifest,
+  type PlatformReleaseArtifact,
+  type PlatformReleaseManifest,
+  type PlatformReleaseTarget,
+} from "./platform-release-verifier.ts";
 
-export const PLATFORM_RELEASE_TARGETS = ["linux-amd64", "linux-arm64"] as const;
-export const PLATFORM_RELEASE_CLI_TARGETS = [
-  "linux-amd64",
-  "linux-arm64",
-  "darwin-amd64",
-  "darwin-arm64",
-  "windows-amd64",
-  "windows-arm64",
-] as const;
-export type PlatformReleaseTarget =
-  | (typeof PLATFORM_RELEASE_TARGETS)[number]
-  | (typeof PLATFORM_RELEASE_CLI_TARGETS)[number];
+export {
+  expectedArtifactCount,
+  expectedArtifactIdentities,
+  platformReleaseArtifact,
+  platformReleaseArtifactFilename,
+  PLATFORM_RELEASE_CLI_TARGETS,
+  PLATFORM_RELEASE_CONTRACTS,
+  PLATFORM_RELEASE_GO_COMMANDS,
+  PLATFORM_RELEASE_GO_SDK,
+  PLATFORM_RELEASE_RUNTIME,
+  PLATFORM_RELEASE_TARGETS,
+  PLATFORM_RELEASE_TYPESCRIPT_SDK,
+  validatePlatformReleaseDirectory,
+  validatePlatformReleaseManifest,
+  type PlatformReleaseArtifact,
+  type PlatformReleaseManifest,
+  type PlatformReleaseTarget,
+};
 
-export const PLATFORM_RELEASE_GO_COMMANDS = [
-  "cloud-agents-access-gateway",
-  "cloud-agents-control-plane",
-  "cloud-agents-remote-worker",
-  "cloud-agentsctl",
-  "cloud-agents-worker",
-  "cloud-agents-product-migrate",
-] as const;
-
-export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
 export const PLATFORM_RELEASE_MIGRATION_HEAD = readdirSync(
   resolve(import.meta.dirname, "../../services/control-plane/migrations/product"),
   { withFileTypes: true },
@@ -38,35 +53,10 @@ export const PLATFORM_RELEASE_MIGRATION_HEAD = readdirSync(
   .at(-1)!;
 export const PLATFORM_RELEASE_MIGRATIONS = `cloud-agents-migrations-${PLATFORM_RELEASE_MIGRATION_HEAD}.tar`;
 export const PLATFORM_RELEASE_DEPLOYMENT = `cloud-agents-deployment-${PLATFORM_RELEASE_MIGRATION_HEAD}.tar`;
-export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
-export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
-export const PLATFORM_RELEASE_TYPESCRIPT_SDK = "cloud-agents-typescript-sdk.tgz";
-const SHA256 = /^sha256:[0-9a-f]{64}$/u;
-const SEMVER =
-  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
-const COMMIT = /^[0-9a-f]{40}$/u;
-
 export type PlatformReleaseOptions = {
   readonly outputDirectory: string;
   readonly version: string;
   readonly allowDirty: boolean;
-};
-
-export type PlatformReleaseArtifact = {
-  readonly name: string;
-  readonly target: string;
-  readonly filename: string;
-  readonly sizeBytes: number;
-  readonly sha256: string;
-};
-
-export type PlatformReleaseManifest = {
-  readonly schemaVersion: 1;
-  readonly kind: "cloud-agents-platform-release";
-  readonly version: string;
-  readonly sourceCommit: string;
-  readonly sourceDirty: boolean;
-  readonly artifacts: ReadonlyArray<PlatformReleaseArtifact>;
 };
 
 export function parsePlatformReleaseOptions(
@@ -99,7 +89,7 @@ export function parsePlatformReleaseOptions(
     }
     throw new Error(`Unknown argument: ${String(value)}`);
   }
-  if (!outputDirectory || !version || !SEMVER.test(version)) {
+  if (!outputDirectory || !version || !isPlatformReleaseVersion(version)) {
     throw new Error(
       "Usage: bun scripts/cloud-agents-platform-release.ts --version <semver> --output-dir <new-directory>",
     );
@@ -108,24 +98,6 @@ export function parsePlatformReleaseOptions(
     outputDirectory: resolve(cwd, outputDirectory),
     version,
     allowDirty,
-  };
-}
-
-export function platformReleaseArtifact(
-  name: string,
-  target: string,
-  filename: string,
-  bytes: Uint8Array,
-): PlatformReleaseArtifact {
-  if (!name || !target || !filename || filename.includes("/")) {
-    throw new Error("platform release artifact identity is invalid.");
-  }
-  return {
-    name,
-    target,
-    filename,
-    sizeBytes: bytes.byteLength,
-    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
   };
 }
 
@@ -177,6 +149,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "scripts/prepare-platform-docker-target.sh",
     "scripts/prepare-platform-kubernetes-target.sh",
     "scripts/bootstrap-platform-remote-worker.sh",
+    "scripts/lib/platform-release-verifier.ts",
     "scripts/test-platform-compose-admin-web.mjs",
     "scripts/test-platform-helm.sh",
     "scripts/test-platform-agent-interactions.sh",
@@ -289,7 +262,7 @@ export function buildPlatformGoSDKPackage(root: string): Uint8Array {
 }
 
 export function buildPlatformTypeScriptSDKPackage(root: string, version: string): Uint8Array {
-  if (!SEMVER.test(version)) throw new Error("TypeScript SDK version is not semver.");
+  if (!isPlatformReleaseVersion(version)) throw new Error("TypeScript SDK version is not semver.");
   const source = JSON.parse(
     readFileSync(resolve(root, "sdk/typescript/package.json"), "utf8"),
   ) as Record<string, unknown>;
@@ -322,88 +295,6 @@ export function buildPlatformTypeScriptSDKPackage(root: string, version: string)
     })),
   ]);
   return gzipSync(archive, { level: 9 });
-}
-
-export function validatePlatformReleaseManifest(
-  manifest: unknown,
-): asserts manifest is PlatformReleaseManifest {
-  if (
-    !isRecord(manifest) ||
-    manifest.schemaVersion !== 1 ||
-    manifest.kind !== "cloud-agents-platform-release"
-  ) {
-    throw new Error("platform release manifest identity is invalid.");
-  }
-  requireString(manifest.version, "platform release version");
-  if (!SEMVER.test(manifest.version)) throw new Error("platform release version is not semver.");
-  if (typeof manifest.sourceCommit !== "string" || !COMMIT.test(manifest.sourceCommit)) {
-    throw new Error("platform release source commit is invalid.");
-  }
-  if (typeof manifest.sourceDirty !== "boolean")
-    throw new Error("platform release sourceDirty is invalid.");
-  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== expectedArtifactCount()) {
-    throw new Error(`platform release must contain ${String(expectedArtifactCount())} artifacts.`);
-  }
-  const identities = new Set<string>();
-  const filenames = new Set<string>();
-  const expected = new Set(
-    expectedArtifactIdentities().map(({ name, target }) => `${name}\0${target}`),
-  );
-  for (const artifact of manifest.artifacts) {
-    if (!isRecord(artifact)) throw new Error("platform release artifact is invalid.");
-    const identity = `${requireString(artifact.name, "artifact name")}\0${requireString(artifact.target, "artifact target")}`;
-    if (identities.has(identity)) throw new Error(`duplicate platform artifact ${identity}.`);
-    identities.add(identity);
-    if (!expected.has(identity)) throw new Error(`unexpected platform artifact ${identity}.`);
-    const filename = requireString(artifact.filename, "artifact filename");
-    if (filename.includes("/") || filenames.has(filename))
-      throw new Error("platform artifact filename is invalid or duplicated.");
-    filenames.add(filename);
-    if (
-      typeof artifact.sizeBytes !== "number" ||
-      !Number.isSafeInteger(artifact.sizeBytes) ||
-      artifact.sizeBytes <= 0
-    ) {
-      throw new Error("platform artifact size is invalid.");
-    }
-    if (typeof artifact.sha256 !== "string" || !SHA256.test(artifact.sha256)) {
-      throw new Error("platform artifact sha256 is invalid.");
-    }
-  }
-  if (identities.size !== expected.size)
-    throw new Error("platform release artifact identities are incomplete.");
-}
-
-export function expectedArtifactIdentities(): ReadonlyArray<{
-  readonly name: string;
-  readonly target: string;
-}> {
-  return [
-    ...PLATFORM_RELEASE_TARGETS.flatMap((target) =>
-      PLATFORM_RELEASE_GO_COMMANDS.filter((name) => name !== "cloud-agentsctl").map((name) => ({
-        name,
-        target,
-      })),
-    ),
-    ...PLATFORM_RELEASE_CLI_TARGETS.map((target) => ({
-      name: "cloud-agentsctl",
-      target,
-    })),
-    { name: "cloud-agent-runtime", target: "portable" },
-    { name: "cloud-agents-migrations", target: "portable" },
-    { name: "cloud-agents-deployment", target: "portable" },
-    { name: "cloud-agents-contracts", target: "portable" },
-    { name: "cloud-agents-go-sdk", target: "portable" },
-    { name: "cloud-agents-typescript-sdk", target: "portable" },
-  ];
-}
-
-export function expectedArtifactCount(): number {
-  return (
-    PLATFORM_RELEASE_TARGETS.length * (PLATFORM_RELEASE_GO_COMMANDS.length - 1) +
-    PLATFORM_RELEASE_CLI_TARGETS.length +
-    6
-  );
 }
 
 const PUBLIC_PLATFORM_CONTRACT_PATHS = [
@@ -463,13 +354,4 @@ function readTree(root: string, directory: string): string[] {
     if (!entry.isFile()) throw new Error(`release package member is not a file: ${path}`);
     return [path];
   });
-}
-
-function requireString(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is missing.`);
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

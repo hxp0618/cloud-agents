@@ -48,6 +48,8 @@ import {
   type TerminalRedactor,
   TurnDiffCollector,
   WorkspaceGeneratedFileCollector,
+  isManagedMcpCallResultUnknown,
+  ManagedCapabilityCallResultUnknownError,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
 
 type JsonRpcId = string | number;
@@ -102,6 +104,7 @@ type CodexRunOptions = {
   mcpServers?: Readonly<Record<string, { url: string; bearer_token_env_var: string }>>;
   skillRoots?: ReadonlyArray<string>;
   skillResourceId?: string;
+  skillResourceIds?: ReadonlyArray<string>;
 };
 
 type CodexSkillUserInput = {
@@ -323,9 +326,21 @@ class CodexAppServerRuntime {
       if (!this.turnId) {
         throw new Error("Codex app-server turn/start response did not include a turn id.");
       }
+      const managedSkillActivity = this.managedSkillResourceIds();
+      if (managedSkillActivity.length > 0)
+        this.emitManagedSkillActivity(managedSkillActivity, "inProgress");
       if (this.interruptRequested) this.requestNativeInterrupt();
 
-      const completedTurn = await this.turnCompletion;
+      let completedTurn: Record<string, unknown>;
+      try {
+        completedTurn = await this.turnCompletion;
+      } catch (error) {
+        if (managedSkillActivity.length > 0)
+          this.emitManagedSkillActivity(managedSkillActivity, "failed");
+        throw error;
+      }
+      if (managedSkillActivity.length > 0)
+        this.emitManagedSkillActivity(managedSkillActivity, "completed");
       await this.generatedFiles.flush();
       await this.turnDiffs.flush();
       if (this.outputText.length === 0) {
@@ -867,6 +882,34 @@ class CodexAppServerRuntime {
     return server.slice("cloud_agents_".length);
   }
 
+  private managedSkillResourceIds(): ReadonlyArray<string> {
+    return (
+      this.options.skillResourceIds ??
+      (this.options.skillResourceId ? [this.options.skillResourceId] : [])
+    );
+  }
+
+  private emitManagedSkillActivity(
+    resourceIds: ReadonlyArray<string>,
+    status: "inProgress" | "completed" | "failed",
+  ): void {
+    resourceIds.forEach((capabilityResourceId, index) => {
+      this.options.emit({
+        type: "event",
+        eventType: "runtime.provider.activity",
+        payload: {
+          provider: "codex",
+          itemType: "skill",
+          sourceItemType: "skill",
+          itemId: `skill-load-${index + 1}`,
+          status,
+          capabilityResourceId,
+          supportMode: "native",
+        },
+      });
+    });
+  }
+
   private handleNotification(notification: JsonRpcNotification): void {
     if (this.turnSettled) return;
     const params = asRecord(notification.params) ?? {};
@@ -972,11 +1015,16 @@ class CodexAppServerRuntime {
         const signal = readString(item, "signal");
         const itemStatus = readString(item, "status")?.toLowerCase();
         const declined = notification.method === "item/completed" && itemStatus === "declined";
+        const managedMcpResultUnknown =
+          notification.method === "item/completed" &&
+          mcpCapabilityResourceId !== undefined &&
+          isManagedMcpCallResultUnknown(item);
         const failed =
           notification.method === "item/completed" &&
           ((exitCode !== undefined && exitCode !== 0) ||
             itemStatus === "failed" ||
-            itemStatus === "error");
+            itemStatus === "error" ||
+            managedMcpResultUnknown);
         if (terminal && notification.method === "item/completed") {
           if (!terminal.sawOutputDelta) terminal.output.write(codexTerminalOutput(item));
           terminal.output.flush();
@@ -994,11 +1042,13 @@ class CodexAppServerRuntime {
             status:
               notification.method === "item/started"
                 ? "started"
-                : declined
-                  ? "declined"
-                  : failed
-                    ? "failed"
-                    : "completed",
+                : managedMcpResultUnknown
+                  ? "updated"
+                  : declined
+                    ? "declined"
+                    : failed
+                      ? "failed"
+                      : "completed",
             ...(itemId ? { itemId } : {}),
             ...(itemType === "skill" ? { sourceItemType: "skill" } : {}),
             ...(itemType === "skill" && this.options.skillResourceId
@@ -1083,6 +1133,10 @@ class CodexAppServerRuntime {
             item: item ?? {},
             ...(readString(params, "turnId") ? { turnId: readString(params, "turnId") } : {}),
           });
+        }
+        if (managedMcpResultUnknown) {
+          this.failRuntime(new ManagedCapabilityCallResultUnknownError());
+          return;
         }
         if (notification.method === "item/completed" && itemId) {
           this.managedMcpItemCapabilities.delete(itemId);
@@ -1808,17 +1862,27 @@ function writeManagedWorkspaceTextFile(
   }
 
   const temporary = join(parent, `.cloud-agents-${randomUUID()}.tmp`);
+  let writeError: unknown;
   try {
     writeFileSync(temporary, content, { encoding: "utf8", flag: "wx", mode });
     chmodSync(temporary, mode);
     renameSync(temporary, destination);
-  } finally {
-    try {
-      unlinkSync(temporary);
-    } catch (error) {
-      if (nodeErrorCode(error) !== "ENOENT") throw error;
-    }
+  } catch (error) {
+    writeError = error;
   }
+  let cleanupError: unknown;
+  try {
+    unlinkSync(temporary);
+  } catch (error) {
+    if (nodeErrorCode(error) !== "ENOENT") cleanupError = error;
+  }
+  if (writeError !== undefined) {
+    if (cleanupError !== undefined) {
+      throw new AggregateError([writeError, cleanupError], "Managed Workspace write cleanup failed.");
+    }
+    throw writeError;
+  }
+  if (cleanupError !== undefined) throw cleanupError;
 }
 
 function ensureManagedWorkspaceDirectory(workspace: string, relativeDirectory: string): void {

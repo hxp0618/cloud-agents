@@ -1988,6 +1988,12 @@ export type ManagedAgentEvent = Readonly<{
       | "turn.create"
       | "execution.create"
       | "execution.start"
+      | "execution.reconnect"
+      | "execution.restart"
+      | "execution.takeover"
+      | "execution.recovery-blocked"
+      | "execution.reconcile"
+      | "execution.receipt-rejected"
       | "execution.complete"
       | "execution.fail"
       | "turn.interrupt"
@@ -11603,6 +11609,12 @@ function decodeManagedAgentEventPageWithCapabilities(value: unknown): ManagedAge
           "turn.create",
           "execution.create",
           "execution.start",
+          "execution.reconnect",
+          "execution.restart",
+          "execution.takeover",
+          "execution.recovery-blocked",
+          "execution.reconcile",
+          "execution.receipt-rejected",
           "execution.complete",
           "execution.fail",
           "turn.interrupt",
@@ -11626,6 +11638,18 @@ function decodeManagedAgentEventPageWithCapabilities(value: unknown): ManagedAge
       (operation.startsWith("skill.") && resource !== "SkillBundle")
     )
       error("CAPABILITY_EVENT_RESOURCE_MISMATCH", `${path}/spec/resource`);
+    if (
+      [
+        "execution.reconnect",
+        "execution.restart",
+        "execution.takeover",
+        "execution.recovery-blocked",
+        "execution.reconcile",
+        "execution.receipt-rejected",
+      ].includes(operation) &&
+      (resource !== "Execution" || spec.executionId === undefined)
+    )
+      error("INVALID_EVENT", path);
     const rawChanges = Array.isArray(spec.changes)
       ? spec.changes
       : error("INVALID_EVENTS", `${path}/spec/changes`);

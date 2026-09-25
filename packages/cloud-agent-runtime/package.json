@@ -59,6 +59,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@deepseek-ai/node-addon-landlock-run": "0.1.1"
+  },
   "devDependencies": {
     "@types/node": "24.10.13",
     "tsdown": "0.20.3",

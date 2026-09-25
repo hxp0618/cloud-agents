@@ -268,6 +268,20 @@ export function mergeAgentEvents(
   );
 }
 
+export function replaceAgentSession(
+  sessions: readonly ManagedAgentSession[],
+  value: ManagedAgentSession,
+): readonly ManagedAgentSession[] {
+  return [value, ...sessions.filter(({ metadata }) => metadata.uid !== value.metadata.uid)];
+}
+
+export function replaceAgentExecution(
+  executions: readonly ManagedAgentExecution[],
+  value: ManagedAgentExecution,
+): readonly ManagedAgentExecution[] {
+  return [value, ...executions.filter(({ metadata }) => metadata.uid !== value.metadata.uid)];
+}
+
 export function isExecutionActive(execution: ManagedAgentExecution | undefined): boolean {
   return execution?.spec.state === "queued" || execution?.spec.state === "running";
 }

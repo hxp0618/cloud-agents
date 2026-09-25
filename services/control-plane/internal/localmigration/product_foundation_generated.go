@@ -257,4 +257,10 @@ var productFoundationRunnerBindings = [...]generatedRunnerBindingSelector{
 	{selectorID: "product-000099", schemaHead: "000099", migrationCount: 99,
 		manifestPath: "services/control-plane/migrations/product/000099/manifest.json", manifestSizeBytes: 229799, manifestRawDigest: "sha256:606a8201f3e3529b72187001bfce8bb83bd22c8a4858191b8e69d59633a22836", manifestDigest: "sha256:4cddb22c49a653424ee1a69f94f5a26f1d4b3dbccf31699812aeb7b331b3af46",
 		schemaBundlePath: "services/control-plane/migrations/product/000099/schema-bundle.json", schemaBundleSizeBytes: 155392, schemaBundleRawDigest: "sha256:2960044279eca764edaa841a1d6c92f790c27edf5aeea983b95160209a80a7c4", schemaBundleDigest: "sha256:7f30d8e7963746c57d3dfa1fbe1d3f28a4a0af5aefefcb0bd2e15c5d8f6fcb73"},
+	{selectorID: "product-000100", schemaHead: "000100", migrationCount: 100,
+		manifestPath: "services/control-plane/migrations/product/000100/manifest.json", manifestSizeBytes: 232097, manifestRawDigest: "sha256:d766b01a78cec0e83add8ef3dadcf7ae46a98fe219f3ffe160315ac6ddcfb943", manifestDigest: "sha256:a4ddfb9f83a89081025075f9ccd930fa8ccc0d56ff03c32f3ec0e35c74f9c33c",
+		schemaBundlePath: "services/control-plane/migrations/product/000100/schema-bundle.json", schemaBundleSizeBytes: 156946, schemaBundleRawDigest: "sha256:b6defef613137e17d5f27348e0eebbdd8f92542aa77e90091632a84a8868ca4b", schemaBundleDigest: "sha256:fcb8dcbd70b620efd5175b640aaff4d4d88dc956e22ecaf9cd723f8acbb96a87"},
+	{selectorID: "product-000101", schemaHead: "000101", migrationCount: 101,
+		manifestPath: "services/control-plane/migrations/product/000101/manifest.json", manifestSizeBytes: 234436, manifestRawDigest: "sha256:09a1a4ba3a4e71c4804a840d3c357b9060e9fb1c644845c6fb86cd7b5bcdea7e", manifestDigest: "sha256:a97195135505fb6aad5e0a7efa34025e020f1036bf9cb31b496ca5c89755a81b",
+		schemaBundlePath: "services/control-plane/migrations/product/000101/schema-bundle.json", schemaBundleSizeBytes: 158527, schemaBundleRawDigest: "sha256:6803cb04f7d4f477bb4492d5e8e3a8d245c6c9fa75a346787a50a35708316723", schemaBundleDigest: "sha256:9245d5e4baf6631c2dbc400f5e1472d4289aebfcd425562f80838739bb469591"},
 }

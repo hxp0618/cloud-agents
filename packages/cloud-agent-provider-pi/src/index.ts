@@ -13,6 +13,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
+  ManagedCapabilityCallResultUnknownError,
   ProviderInterruptedError,
   WorkspaceGeneratedFileCollector,
   createProviderPlugin,
@@ -184,6 +185,7 @@ export function startPiProviderRun(
           event as unknown as Record<string, unknown>,
           generatedFiles,
           managedMcpTools?.metadataByToolName,
+          managedMcpTools?.unknownToolCallIds,
           emit,
         ),
       );
@@ -206,7 +208,13 @@ export function startPiProviderRun(
       ) {
         throw new Error(`Pi Provider does not support ${options.operation.commandType}.`);
       } else {
-        await session.prompt(prompt);
+        await Promise.race([
+          session.prompt(prompt),
+          managedMcpTools.resultUnknown.then((error) => {
+            void session?.abort();
+            throw error;
+          }),
+        ]);
       }
       cursor = session.sessionFile ?? cursor;
       const text = session.getLastAssistantText() ?? "";
@@ -217,6 +225,7 @@ export function startPiProviderRun(
         ...(cursor ? { providerResumeCursor: cursor } : {}),
       };
     } catch (error) {
+      if (error instanceof ManagedCapabilityCallResultUnknownError) throw error;
       if (interrupted) throw new ProviderInterruptedError();
       throw new Error(redact(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -276,11 +285,6 @@ export function createPiProvider(): CloudAgentProviderPluginV1 {
     providerKind: PI_PROVIDER_KIND,
     displayName: "Pi",
     descriptor: { runtimeVersion: PI_VERSION },
-    configurationSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: { model: { type: "string", minLength: 1 } },
-    },
     startRun: executor,
   });
 }
@@ -372,7 +376,7 @@ function configurePi(
       providers: {
         [MANAGED_PROVIDER]: {
           baseUrl: credentialBaseUrl(credential.payload, "Pi Credential"),
-          api: "openai-completions",
+          api: "openai-responses",
           apiKey: "$CLOUD_AGENT_PI_API_KEY",
           authHeader: true,
           models: [{ id: model, contextWindow: 128_000, maxTokens: 16_384 }],
@@ -421,6 +425,7 @@ function handlePiEvent(
   event: Record<string, unknown>,
   generatedFiles: WorkspaceGeneratedFileCollector,
   managedMcpTools: ReadonlyMap<string, ManagedPiMcpToolMetadata> | undefined,
+  unknownToolCallIds: ReadonlySet<string> | undefined,
   emit: (message: RunnerMessage) => void,
 ): void {
   const type = stringValue(event.type);
@@ -440,6 +445,7 @@ function handlePiEvent(
   const toolName = stringValue(event.toolName) ?? "tool";
   const managedMcpTool = managedMcpTools?.get(toolName);
   const itemId = stringValue(event.toolCallId) ?? toolName;
+  if (type === "tool_execution_end" && unknownToolCallIds?.has(itemId)) return;
   const args = recordValue(event.args);
   if (type === "tool_execution_start" && /^(?:edit|write)$/iu.test(toolName))
     generatedFiles.observe(args?.path ?? args?.filePath ?? args?.file_path);
@@ -478,7 +484,7 @@ function stringValue(value: unknown): string | undefined {
 
 function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || !value.trim())
+  if (typeof value !== "string" || !value.trim() || /[\r\n\0]/u.test(value))
     throw new Error(`${label} must be a non-empty string.`);
   return value.trim();
 }

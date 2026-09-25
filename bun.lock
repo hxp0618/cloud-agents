@@ -155,6 +155,9 @@
     "packages/cloud-agent-runtime": {
       "name": "@cloud-agents/cloud-agent-runtime",
       "version": "0.2.0-rc.1",
+      "dependencies": {
+        "@deepseek-ai/node-addon-landlock-run": "0.1.1",
+      },
       "devDependencies": {
         "@types/node": "24.10.13",
         "tsdown": "0.20.3",

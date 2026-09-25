@@ -11,3 +11,11 @@ export {
   type ManagedMcpBroker,
 } from "./capabilityBroker";
 export { materializeManagedSkills, type ManagedSkillMounts } from "./skillMaterializer";
+export {
+  assertManagedSkillRuntimeDirectories,
+  CLOUD_AGENT_LANDLOCK_LAUNCHER,
+  runManagedSkillSandbox,
+  verifyManagedSkillSandbox,
+  type ManagedSkillSandboxEvidence,
+  type ManagedSkillSandboxOptions,
+} from "./skillSandbox";

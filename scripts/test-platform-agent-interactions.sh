@@ -38,8 +38,15 @@ takeover_checkpoint_digest=
 takeover_needs_reconcile=0
 recovery_provider=${CLOUD_AGENTS_E2E_RECOVERY_PROVIDER-codex}
 recovery_fault=${CLOUD_AGENTS_E2E_RECOVERY_FAULT-both}
+recovery_environment=${CLOUD_AGENTS_E2E_ENVIRONMENT-docker}
 recovery_mcp_refs_json=${CLOUD_AGENTS_E2E_MCP_SERVER_REFS_JSON-}
 recovery_skill_refs_json=${CLOUD_AGENTS_E2E_SKILL_BUNDLE_REFS_JSON-}
+recovery_checkpoint_mode=${CLOUD_AGENTS_E2E_RECOVERY_CHECKPOINT_MODE-interaction}
+recovery_artifact_path=${CLOUD_AGENTS_E2E_RECOVERY_ARTIFACT_PATH-}
+recovery_expected_content=${CLOUD_AGENTS_E2E_RECOVERY_EXPECTED_CONTENT-}
+recovery_bash_command=${CLOUD_AGENTS_E2E_RECOVERY_BASH_COMMAND-}
+recovery_mcp_tool_name=${CLOUD_AGENTS_E2E_RECOVERY_MCP_TOOL_NAME-}
+recovery_skill_name=${CLOUD_AGENTS_E2E_RECOVERY_SKILL_NAME-managed-capability-acceptance}
 recovery_capability_bound=0
 case "$recovery_provider" in
   codex | claudeAgent | pi | deepseek-harness) ;;
@@ -49,6 +56,37 @@ case "$recovery_fault" in
   worker | agent | both) ;;
   *) echo "CLOUD_AGENTS_E2E_RECOVERY_FAULT is invalid" >&2; exit 1 ;;
 esac
+case "$recovery_environment" in
+  docker | remote-worker | kubernetes) ;;
+  *) echo "CLOUD_AGENTS_E2E_ENVIRONMENT is invalid" >&2; exit 1 ;;
+esac
+case "$recovery_checkpoint_mode" in
+  interaction | side-effect) ;;
+  *) echo "CLOUD_AGENTS_E2E_RECOVERY_CHECKPOINT_MODE is invalid" >&2; exit 1 ;;
+esac
+if [ "$recovery_checkpoint_mode" = side-effect ]; then
+  [ "$recovery_provider" = pi ] || [ "$recovery_provider" = deepseek-harness ] || {
+    echo "side-effect checkpoint recovery is reserved for Pi and deepseek-harness" >&2
+    exit 1
+  }
+  [ -n "$recovery_artifact_path" ] && [ -n "$recovery_expected_content" ] && [ -n "$recovery_bash_command" ] && [ -n "$recovery_mcp_tool_name" ] || {
+    echo "side-effect checkpoint recovery requires artifact, command and managed MCP inputs" >&2
+    exit 1
+  }
+  recovery_artifact_name=${recovery_artifact_path#".cloud-agents-stage3-acceptance/"}
+  case "$recovery_artifact_path:$recovery_artifact_name" in
+    .cloud-agents-stage3-acceptance/*:*.txt)
+      case "$recovery_artifact_name" in
+        '' | */* | *[!A-Za-z0-9_.-]*) echo "side-effect recovery artifact path is outside the acceptance workspace" >&2; exit 1 ;;
+      esac
+      ;;
+    *) echo "side-effect recovery artifact path is outside the acceptance workspace" >&2; exit 1 ;;
+  esac
+  case "$recovery_mcp_tool_name" in
+    mcp__[A-Za-z0-9_-]*__acceptance_marker | mcp__[A-Za-z0-9_-]*__acceptance_marker__[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]) ;;
+    *) echo "side-effect recovery MCP tool name is invalid" >&2; exit 1 ;;
+  esac
+fi
 if [ -n "$recovery_mcp_refs_json" ] || [ -n "$recovery_skill_refs_json" ]; then
   [ -n "$recovery_mcp_refs_json" ] && [ -n "$recovery_skill_refs_json" ] || {
     echo "capability-bound recovery requires both MCP Server and Skill Bundle refs" >&2
@@ -100,7 +138,7 @@ if [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ]; then
   }
 fi
 if [ -n "${CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID-}" ]; then
-  command -v docker >/dev/null
+  if [ "$recovery_environment" = docker ]; then command -v docker >/dev/null; fi
   printf '%s\n' "$CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' || {
     echo "Agent Runtime id is invalid" >&2
     exit 1
@@ -521,8 +559,25 @@ wait_for_success() {
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$diagnostic_file" node <<'NODE' >&2
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-const runtimeErrorCodes = (value.messages ?? []).flatMap((message) => message.messageType === "Error" && typeof message.error?.code === "string" ? [message.error.code] : []);
-process.stderr.write(`${JSON.stringify({ state: value.spec?.state, errorCode: value.spec?.errorCode, recoveryState: value.spec?.recoveryState, attemptNumber: value.spec?.attemptNumber, runtimeErrorCodes })}\n`);
+const errors = (value.messages ?? []).filter((message) => message.messageType === "Error");
+const runtimeErrorCodes = errors.flatMap((message) => typeof message.error?.code === "string" ? [message.error.code] : []);
+const classify = (message) => {
+  const normalized = String(message ?? "").toLowerCase();
+  if (normalized.includes("auth") || normalized.includes("401") || normalized.includes("403")) return "auth";
+  if (normalized.includes("credential") || normalized.includes("secret")) return "credential";
+  if (normalized.includes("timeout") || normalized.includes("timed out")) return "timeout";
+  if (normalized.includes("rate") || normalized.includes("429") || normalized.includes("quota")) return "rate";
+  if (normalized.includes("mcp")) return "mcp";
+  if (normalized.includes("skill")) return "skill";
+  if (normalized.includes("resume") || normalized.includes("thread")) return "resume";
+  if (normalized.includes("network") || normalized.includes("fetch") || normalized.includes("connect")) return "network";
+  return "other";
+};
+const errorDetails = errors.map((message) => {
+  const detail = typeof message.error?.message === "string" ? message.error.message : "";
+  return { category: classify(detail), messageLength: detail.length };
+});
+process.stderr.write(`${JSON.stringify({ state: value.spec?.state, errorCode: value.spec?.errorCode, recoveryState: value.spec?.recoveryState, attemptNumber: value.spec?.attemptNumber, runtimeErrorCodes, errorDetails })}\n`);
 NODE
     fi
     return 1
@@ -621,7 +676,8 @@ assert_interaction_takeover() {
   CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_RECOVERY_MODE="$expected_mode" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-if (value.spec?.attemptNumber !== 2 || value.spec?.recoveryState !== "recovered" || value.spec?.recoveryMode !== process.env.CLOUD_AGENTS_E2E_RECOVERY_MODE) {
+const expectedModes = new Set(process.env.CLOUD_AGENTS_E2E_RECOVERY_MODE.split("|"));
+if (value.spec?.attemptNumber !== 2 || value.spec?.recoveryState !== "recovered" || !expectedModes.has(value.spec?.recoveryMode)) {
   process.stderr.write(`${JSON.stringify({state: value.spec?.state, errorCode: value.spec?.errorCode, attemptNumber: value.spec?.attemptNumber, recoveryState: value.spec?.recoveryState, recoveryMode: value.spec?.recoveryMode, recoverySourceTargetId: value.spec?.recoverySourceTargetId, recoveryTargetId: value.spec?.recoveryTargetId})}\\n`);
   throw new Error(`interactive execution did not complete through ${process.env.CLOUD_AGENTS_E2E_RECOVERY_MODE}`);
 }
@@ -725,6 +781,27 @@ NODE
 }
 
 restart_worker_during_execution() {
+  if [ "$recovery_environment" = remote-worker ]; then
+    previous_started_at=$(docker inspect --format '{{.State.StartedAt}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER")
+    docker kill --signal KILL "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >/dev/null
+    docker start "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >/dev/null
+    attempt=0
+    while [ "$attempt" -lt 90 ]; do
+      attempt=$((attempt + 1))
+      running=$(docker inspect --format '{{.State.Running}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 2>/dev/null || true)
+      started_at=$(docker inspect --format '{{.State.StartedAt}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 2>/dev/null || true)
+      if [ "$running" = true ] && [ "$started_at" != "$previous_started_at" ] &&
+        target_output=$(run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_E2E_AGENT_TARGET_ID" \
+          --request-id "$CLOUD_AGENTS_E2E_RUN_ID-worker-restart-target-$attempt" target get 2>/dev/null) &&
+        case "$target_output" in *'"targetKind":"remote-worker"'*'"observedPhase":"ready"'*) true ;; *) false ;; esac; then
+        return 0
+      fi
+      sleep 1
+    done
+    echo "RemoteWorker did not become ready after the injected process exit" >&2
+    return 1
+  fi
+  [ "$recovery_environment" = docker ] || { echo "Worker fault target is unavailable for $recovery_environment" >&2; return 1; }
   previous_started_at=$(docker inspect --format '{{.State.StartedAt}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER")
   docker kill --signal KILL "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >/dev/null
   attempt=0
@@ -803,13 +880,202 @@ NODE
   return 1
 }
 
+restart_mcp_fixture_after_worker() {
+  fixture_container=${CLOUD_AGENTS_E2E_MCP_FIXTURE_CONTAINER-}
+  [ -n "$fixture_container" ] || return 0
+  case "$fixture_container" in
+    *[!A-Za-z0-9_.-]*) echo "invalid MCP fixture container name" >&2; return 1 ;;
+  esac
+  docker restart "$fixture_container" >/dev/null
+  attempt=0
+  while [ "$attempt" -lt 30 ]; do
+    if docker exec "$fixture_container" node -e \
+      'fetch("http://127.0.0.1:48765").then(() => process.exit(0)).catch(() => process.exit(1))' \
+      >/dev/null 2>&1; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.1
+  done
+  echo "MCP fixture did not recover after Worker restart" >&2
+  return 1
+}
+
 recovery_prompt() {
   marker=$1
+  if [ "$recovery_checkpoint_mode" = side-effect ]; then
+    if [ "$recovery_provider" = deepseek-harness ]; then
+      printf '%s' "Use the $recovery_skill_name Skill exactly once for this managed capability recovery request and follow it exactly. The exact Bash command supplied by this request is: $recovery_bash_command. After the command succeeds, reply with '$marker'. Do not reply before the command succeeds."
+    else
+      printf '%s' "Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill for this managed capability recovery request. Follow it exactly: use the Bash tool exactly once to run this exact command: $recovery_bash_command. Do not use another tool. After the command succeeds, reply with '$marker'. Do not reply before the command succeeds."
+    fi
+    return 0
+  fi
   if [ "$recovery_capability_bound" -eq 1 ]; then
-    printf '%s' "Use the managed-capability-acceptance Skill for this managed capability interactive recovery request and follow it exactly. You must call its managed MCP tool, then call AskUserQuestion exactly once with one non-secret environment question that offers Staging, and wait for the answer. Only after the answer, reply with '$marker'."
+    case "$recovery_provider" in
+      codex) recovery_skill_name=managed-capability-acceptance ;;
+      claudeAgent) recovery_skill_name=managed-capability-acceptance:managed-capability-acceptance ;;
+      *) echo "capability-bound recovery does not support Provider $recovery_provider" >&2; return 1 ;;
+    esac
+    printf '%s' "Use the $recovery_skill_name Skill for this managed capability interactive recovery request and follow it exactly. You must call its managed MCP tool, then call AskUserQuestion exactly once with one non-secret environment question that offers Staging, and wait for the answer. Only after the answer, reply with '$marker'."
   else
     printf '%s' "Before replying, call request_user_input exactly once with one non-secret question asking which environment to use and offer Staging as an option. After the answer, reply with '$marker'."
   fi
+}
+
+wait_for_recovery_side_effect_checkpoint() {
+  session_id=$1
+  turn_id=$2
+  execution_id=$3
+  checkpoint_file=$4
+  checkpoint_diagnostic_file="$checkpoint_file.diagnostic"
+  rm -f "$checkpoint_diagnostic_file"
+  attempt=0
+  while [ "$attempt" -lt 180 ]; do
+    attempt=$((attempt + 1))
+    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+      --request-id "$execution_id-recovery-checkpoint-$attempt" execution get >"$checkpoint_file" 2>/dev/null; then
+      if CLOUD_AGENTS_E2E_EXECUTION_FILE="$checkpoint_file" node <<'NODE' >"$checkpoint_diagnostic_file"
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const messages = value.messages ?? [];
+const completedCapability = (resourceId, sourceItemType) => typeof resourceId === "string" && messages.some((message) => {
+  const payload = message.payload?.payload;
+  return message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
+    payload?.status === "completed" && payload?.data?.capabilityResourceId === resourceId &&
+    (!sourceItemType || String(payload.data?.sourceItemType ?? "").toLowerCase() === sourceItemType);
+});
+const observedCapability = (resourceId, sourceItemType) => typeof resourceId === "string" && messages.some((message) => {
+  const eventType = message.payload?.eventType;
+  const payload = message.payload?.payload;
+  return message.messageType === "Event" && ["item.started", "item.updated", "item.completed"].includes(eventType) &&
+    payload?.data?.capabilityResourceId === resourceId &&
+    String(payload.data?.sourceItemType ?? "").toLowerCase() === sourceItemType;
+});
+const activeItems = new Map();
+for (const message of messages) {
+  const eventType = message.payload?.eventType;
+  const payload = message.payload?.payload;
+  const itemId = payload?.data?.providerItemId;
+  if (message.messageType !== "Event" || typeof itemId !== "string") continue;
+  if (eventType === "item.started" || eventType === "item.updated") activeItems.set(itemId, payload);
+  if (eventType === "item.completed") activeItems.delete(itemId);
+}
+const expectedMcp = value.spec?.mcpServerRefs?.[0]?.serverId;
+const expectedSkill = value.spec?.skillBundleRefs?.[0]?.bundleId;
+const pendingBash = [...activeItems.values()].some((payload) =>
+  payload?.itemType === "command_execution" &&
+  String(payload?.data?.sourceItemType ?? "").toLowerCase() === "bash");
+const gates = {
+  stateRunning: value.spec?.state === "running",
+  checkpointPresent: value.spec?.checkpoint?.sequence >= 1,
+  pendingSideEffect: value.spec?.checkpoint?.pendingSideEffect === true,
+  completedMcp: completedCapability(expectedMcp),
+  observedSkill: observedCapability(expectedSkill, "skill"),
+  activeBash: pendingBash,
+};
+const outline = messages.flatMap((message) => {
+  if (message.messageType !== "Event") return [];
+  const payload = message.payload?.payload;
+  return [{
+    eventType: message.payload?.eventType,
+    itemType: payload?.itemType,
+    status: payload?.status,
+    sourceItemType: payload?.data?.sourceItemType,
+    providerItemId: payload?.data?.providerItemId,
+    capabilityResourceId: payload?.data?.capabilityResourceId,
+  }];
+}).slice(-64);
+process.stdout.write(`${JSON.stringify({gates, outline})}\n`);
+const ready = Object.values(gates).every(Boolean);
+if (ready) process.exit(0);
+if (["succeeded", "failed", "cancelled"].includes(value.spec?.state)) process.exit(2);
+process.exit(1);
+NODE
+      then
+        rm -f "$checkpoint_diagnostic_file"
+        return 0
+      else
+        checkpoint_status=$?
+        if [ "$checkpoint_status" -eq 2 ]; then
+          cat "$checkpoint_diagnostic_file" >&2
+          rm -f "$checkpoint_diagnostic_file"
+          return 1
+        fi
+      fi
+    fi
+    sleep 1
+  done
+  if [ -s "$checkpoint_diagnostic_file" ]; then
+    cat "$checkpoint_diagnostic_file" >&2
+  fi
+  rm -f "$checkpoint_diagnostic_file"
+  echo "timed out waiting for capability-bound recovery side-effect checkpoint" >&2
+  return 1
+}
+
+recovery_artifact_digest() {
+  container=$1
+  artifact_absolute=$2
+  case "$artifact_absolute" in
+    /workspace/.cloud-agents/managed-agent/tenants/*/projects/*/sessions/*/workspace/.cloud-agents-stage3-acceptance/*.txt) ;;
+    *) echo "invalid recovery artifact probe path" >&2; return 1 ;;
+  esac
+  if [ "$recovery_environment" = docker ]; then
+    case "$container" in
+      '' | *[!A-Za-z0-9_.-]*) echo "invalid recovery runtime container" >&2; return 1 ;;
+    esac
+    docker exec "$container" sh -c 'if test -f "$1"; then sha256sum -- "$1" | cut -d" " -f1; else printf "absent\n"; fi' sh "$artifact_absolute"
+    return
+  fi
+  probe=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+    --request-id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-probe" sandbox exec \
+    --expected-generation "$sandbox_generation" \
+    --command "if test -f '$artifact_absolute'; then sha256sum -- '$artifact_absolute' | cut -d' ' -f1; else printf 'absent\n'; fi") || return 1
+  CLOUD_AGENTS_E2E_PROBE="$probe" node -e '
+    const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_PROBE);
+    if (value.exitCode !== 0 || !/^(?:[a-f0-9]{64}|absent)\n$/.test(value.stdout)) process.exit(1);
+    process.stdout.write(value.stdout.trim());'
+}
+
+reconcile_side_effect_takeover() {
+  session_id=$1
+  turn_id=$2
+  execution_id=$3
+  runtime_container=$4
+  artifact_absolute=$5
+  expected_digest=$6
+  if [ "$takeover_needs_reconcile" -ne 1 ]; then
+    return 0
+  fi
+  observed_digest=$(recovery_artifact_digest "$runtime_container" "$artifact_absolute") || {
+    echo "recovery side effect probe is unavailable" >&2
+    return 1
+  }
+  case "$observed_digest" in
+    "$expected_digest") outcome=confirmed ;;
+    absent) outcome=not-applied ;;
+    *) echo "recovery side effect has an unexpected digest" >&2; return 1 ;;
+  esac
+  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    --request-id "$execution_id-reconcile" --idempotency-key "$execution_id-reconcile" execution reconcile \
+    --generation "$takeover_generation" --checkpoint-digest "$takeover_checkpoint_digest" --outcome "$outcome" >/dev/null
+  printf 'side_effect_reconciliation=passed outcome=%s\n' "$outcome"
+}
+
+assert_side_effect_recovery_result() {
+  final_file=$1
+  expected_mode=$2
+  marker=$3
+  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_RECOVERY_MODE="$expected_mode" CLOUD_AGENTS_E2E_MARKER="$marker" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const expectedModes = new Set(process.env.CLOUD_AGENTS_E2E_RECOVERY_MODE.split("|"));
+if (value.spec?.attemptNumber !== 2 || value.spec?.recoveryState !== "recovered" || !expectedModes.has(value.spec?.recoveryMode) || value.spec?.state !== "succeeded") {
+  throw new Error("side-effect process recovery did not complete safely");
+}
+if (!JSON.stringify(value.messages ?? []).includes(process.env.CLOUD_AGENTS_E2E_MARKER)) throw new Error("recovered process result changed");
+NODE
 }
 
 wait_for_recovery_interaction() {
@@ -909,7 +1175,9 @@ const calledMcp = (value.messages ?? []).some((message) =>
   message.payload?.payload?.data?.capabilityResourceId === expectedMcp.serverId);
 const usedSkill = (value.messages ?? []).some((message) =>
   message.messageType === "Event" && message.payload?.eventType === "item.completed" &&
-  message.payload?.payload?.status === "completed" && message.payload?.payload?.data?.sourceItemType === "Skill");
+  message.payload?.payload?.status === "completed" &&
+  ["skill", "Skill"].includes(message.payload?.payload?.data?.sourceItemType) &&
+  message.payload?.payload?.data?.capabilityResourceId === expectedSkill.bundleId);
 if (!calledMcp || !usedSkill || mcpRefs.length !== 1 || mcpRefs[0]?.serverId !== expectedMcp.serverId ||
     skillRefs.length !== 1 || skillRefs[0]?.bundleId !== expectedSkill.bundleId) {
   throw new Error("recovery did not retain and use the bound MCP Server and Skill Bundle");
@@ -917,9 +1185,28 @@ if (!calledMcp || !usedSkill || mcpRefs.length !== 1 || mcpRefs[0]?.serverId !==
 NODE
 }
 
+complete_side_effect_process_recovery() {
+  session_id=$1
+  turn_id=$2
+  execution_id=$3
+  prompt=$4
+  final_file=$5
+  marker=$6
+  runtime_container=$7
+  artifact_absolute="/workspace/.cloud-agents/managed-agent/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/sessions/$session_id/workspace/$recovery_artifact_path"
+  expected_digest=$(CLOUD_AGENTS_E2E_EXPECTED_CONTENT="$recovery_expected_content" node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(`${process.env.CLOUD_AGENTS_E2E_EXPECTED_CONTENT}\n`).digest("hex"))')
+  prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$final_file" "$recovery_capability_bound"
+  reconcile_side_effect_takeover "$session_id" "$turn_id" "$execution_id" "$runtime_container" "$artifact_absolute" "$expected_digest"
+  start_execution "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$final_file" "$recovery_capability_bound"
+  wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
+  assert_side_effect_recovery_result "$final_file" 'process-restart|same-node-reconnect' "$marker"
+  assert_recovery_capabilities "$final_file"
+  printf 'process_side_effect_recovery=passed session=%s provider=%s capability_bound=%s\n' "$session_id" "$recovery_provider" "$recovery_capability_bound"
+}
+
 run_worker_exit_recovery() {
   case "$recovery_fault" in worker | both) ;; *) return 0 ;; esac
-  [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ] || return 0
+  [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ] || { echo "Worker fault target is required" >&2; return 1; }
   session_id="$CLOUD_AGENTS_E2E_RUN_ID-worker-exit"
   turn_id="$session_id-turn"
   execution_id="$session_id-execution"
@@ -928,9 +1215,17 @@ run_worker_exit_recovery() {
   create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
   final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
   interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
-  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
-  wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
+  if [ "$recovery_checkpoint_mode" = side-effect ]; then
+    start_execution "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$final_file" "$recovery_capability_bound"
+    wait_for_recovery_side_effect_checkpoint "$session_id" "$turn_id" "$execution_id" "$final_file.checkpoint"
+  else
+    start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+    wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
+  fi
   restart_worker_during_execution
+  if [ "$recovery_checkpoint_mode" = side-effect ] && [ "$recovery_environment" = docker ]; then
+    restart_mcp_fixture_after_worker
+  fi
   if [ -n "$execute_pid" ] && kill -0 "$execute_pid" 2>/dev/null; then
     kill "$execute_pid" >/dev/null 2>&1 || true
   fi
@@ -946,10 +1241,13 @@ run_worker_exit_recovery() {
     attempt=$((attempt + 1))
     run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$execution_id-after-worker-exit-$attempt" execution get >"$final_file.after-worker-exit"
-    if CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" node <<'NODE'
+    if CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" CLOUD_AGENTS_E2E_CHECKPOINT_MODE="$recovery_checkpoint_mode" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-process.exit(value.spec?.state === "running" && value.spec?.checkpoint?.sequence >= 1 && value.spec?.checkpoint?.pendingInteractionCount >= 1 ? 0 : 1);
+const ready = process.env.CLOUD_AGENTS_E2E_CHECKPOINT_MODE === "side-effect"
+  ? value.spec?.checkpoint?.pendingSideEffect === true
+  : value.spec?.checkpoint?.pendingInteractionCount >= 1;
+process.exit(value.spec?.state === "running" && value.spec?.checkpoint?.sequence >= 1 && ready ? 0 : 1);
 NODE
     then
       checkpoint_ready=1
@@ -965,71 +1263,10 @@ process.stderr.write(`${JSON.stringify({state: value.spec?.state, errorCode: val
 throw new Error("Worker exit settled or lost the checkpointed interaction");
 NODE
   fi
-  wait_for_claim_expiry "$session_id" "$turn_id" "$execution_id" "$final_file.claim-expired"
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-    --request-id "$execution_id-resolve" execution resolve-user-input \
-    --generation "$(interaction_field "$interaction_file" generation)" \
-    --interaction-request "$(interaction_field "$interaction_file" requestId)" \
-    --answers-json "$(question_id=$(interaction_field "$interaction_file" questionId); node -e 'process.stdout.write(JSON.stringify({[process.argv[1]]:["Staging"]}))' "$question_id")" >/dev/null
-  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
-  wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
-  assert_interaction_takeover "$final_file" same-node-reconnect
-  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_MARKER="$marker" node <<'NODE'
-const { readFileSync } = require("node:fs");
-const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-if (!JSON.stringify(value.messages ?? []).includes(process.env.CLOUD_AGENTS_E2E_MARKER)) throw new Error("recovered Worker execution result changed");
-NODE
-  assert_recovery_capabilities "$final_file"
-  printf 'worker_exit_survival=passed session=%s provider=%s capability_bound=%s\n' "$session_id" "$recovery_provider" "$recovery_capability_bound"
-}
-
-run_agent_exit_recovery() {
-  case "$recovery_fault" in agent | both) ;; *) return 0 ;; esac
-  [ -n "${CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID-}" ] || return 0
-  [ -z "$lease_id" ] || { echo "Agent Runtime recovery requires direct Sandbox binding" >&2; return 1; }
-  [ -n "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" ] || { echo "Agent Runtime target id is required" >&2; return 1; }
-  session_id="$CLOUD_AGENTS_E2E_RUN_ID-agent-exit"
-  turn_id="$session_id-turn"
-  execution_id="$session_id-execution"
-  marker="agent-exit-recovered-$CLOUD_AGENTS_E2E_RUN_ID"
-  prompt=$(recovery_prompt "$marker")
-  create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
-  final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
-  interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
-  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
-  wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
-  agent_runtime_container=$(docker ps -q \
-    --filter "label=opensandbox.io/id=$CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID")
-  if ! printf '%s\n' "$agent_runtime_container" | grep -Eq '^[0-9a-f]{12}$' ||
-    [ "$(printf '%s\n' "$agent_runtime_container" | wc -l)" -ne 1 ]; then
-    echo "Agent Runtime container inventory is not exact" >&2
-    docker ps --no-trunc --format '{{.ID}} {{.Names}} {{.Label "opensandbox.io/id"}} {{.Label "opensandbox.io/egress-sidecar-for"}} {{.Label "cloud-agents.dev/target"}}' \
-      --filter "label=opensandbox.io/id=$CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID" >&2 || true
-    return 1
+  if [ "$recovery_checkpoint_mode" = side-effect ]; then
+    complete_side_effect_process_recovery "$session_id" "$turn_id" "$execution_id" "$prompt" "$final_file" "$marker" "$CLOUD_AGENTS_E2E_WORKER_CONTAINER"
+    return 0
   fi
-  runtime_pid_digest=$(node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex"))' "$execution_id")
-  docker exec -e CLOUD_AGENT_PID_DIGEST="$runtime_pid_digest" "$agent_runtime_container" sh -c '
-    pid=$(cat "/tmp/cloud-agents-runtime/$CLOUD_AGENT_PID_DIGEST.pid") || exit 1
-    case "$pid" in ""|*[!0-9]*) exit 1;; esac
-    runtime_arg=$(tr "\000" "\n" <"/proc/$pid/cmdline" | sed -n "2p")
-    [ "$runtime_arg" = /usr/local/bin/cloud-agent-runtime ] || exit 1
-    kill -KILL "$pid"
-  '
-  if wait "$execute_pid"; then
-    echo "Agent execution completed after its Runtime process was killed" >&2
-    return 1
-  fi
-  execute_pid=
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-    --request-id "$execution_id-after-agent-exit" execution get >"$final_file.after-agent-exit"
-  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-agent-exit" node <<'NODE'
-const { readFileSync } = require("node:fs");
-const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
-if (value.spec?.state !== "running" || value.spec?.attemptNumber !== 1 || value.spec?.checkpoint?.sequence < 1 || value.spec?.checkpoint?.pendingInteractionCount < 1) {
-  process.stderr.write(`${JSON.stringify({state: value.spec?.state, errorCode: value.spec?.errorCode, attemptNumber: value.spec?.attemptNumber, recoveryState: value.spec?.recoveryState, checkpoint: value.spec?.checkpoint})}\n`);
-  throw new Error("Agent Runtime exit settled or lost the checkpointed interaction");
-}
-NODE
   prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-resolve" execution resolve-user-input \
@@ -1041,7 +1278,97 @@ NODE
   fi
   start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
   wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
-  assert_interaction_takeover "$final_file" same-node-reconnect
+  if ! assert_interaction_takeover "$final_file" same-node-reconnect; then
+    assert_interaction_takeover "$final_file" process-restart
+  fi
+  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_MARKER="$marker" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+if (!JSON.stringify(value.messages ?? []).includes(process.env.CLOUD_AGENTS_E2E_MARKER)) throw new Error("recovered Worker execution result changed");
+NODE
+  assert_recovery_capabilities "$final_file"
+  printf 'worker_exit_survival=passed session=%s provider=%s capability_bound=%s\n' "$session_id" "$recovery_provider" "$recovery_capability_bound"
+}
+
+run_agent_exit_recovery() {
+  case "$recovery_fault" in agent | both) ;; *) return 0 ;; esac
+  [ -n "${CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID-}" ] || { echo "Agent Runtime fault target is required" >&2; return 1; }
+  [ -z "$lease_id" ] || { echo "Agent Runtime recovery requires direct Sandbox binding" >&2; return 1; }
+  [ -n "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" ] || { echo "Agent Runtime target id is required" >&2; return 1; }
+  session_id="$CLOUD_AGENTS_E2E_RUN_ID-agent-exit"
+  turn_id="$session_id-turn"
+  execution_id="$session_id-execution"
+  marker="agent-exit-recovered-$CLOUD_AGENTS_E2E_RUN_ID"
+  prompt=$(recovery_prompt "$marker")
+  create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
+  final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
+  interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
+  if [ "$recovery_checkpoint_mode" = side-effect ]; then
+    start_execution "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$final_file" "$recovery_capability_bound"
+    wait_for_recovery_side_effect_checkpoint "$session_id" "$turn_id" "$execution_id" "$final_file.checkpoint"
+  else
+    start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+    wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
+  fi
+  runtime_pid_digest=$(node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex"))' "$execution_id")
+  runtime_kill_command="
+    pid=\$(cat '/tmp/cloud-agents-runtime/$runtime_pid_digest.pid') || exit 1
+    case \"\$pid\" in ''|*[!0-9]*) exit 1;; esac
+    runtime_arg=\$(tr '\000' '\n' <\"/proc/\$pid/cmdline\" | sed -n '1p')
+    [ \"\$runtime_arg\" = /usr/local/bin/cloud-agent-runtime ] || exit 1
+    kill -KILL \"\$pid\"
+  "
+  agent_runtime_container=
+  if [ "$recovery_environment" = docker ]; then
+    agent_runtime_container=$(docker ps -q --filter "label=opensandbox.io/id=$CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID")
+    if ! printf '%s\n' "$agent_runtime_container" | grep -Eq '^[0-9a-f]{12}$' ||
+      [ "$(printf '%s\n' "$agent_runtime_container" | wc -l)" -ne 1 ]; then
+      echo "Agent Runtime container inventory is not exact" >&2
+      return 1
+    fi
+    docker exec "$agent_runtime_container" sh -c "$runtime_kill_command"
+  else
+    kill_result=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+      --request-id "$execution_id-kill-runtime" sandbox exec \
+      --expected-generation "$sandbox_generation" --command "$runtime_kill_command") || return 1
+    CLOUD_AGENTS_E2E_KILL_RESULT="$kill_result" node -e '
+      const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_KILL_RESULT);
+      if (value.exitCode !== 0) process.exit(1);'
+  fi
+  if wait "$execute_pid"; then
+    echo "Agent execution completed after its Runtime process was killed" >&2
+    return 1
+  fi
+  execute_pid=
+  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    --request-id "$execution_id-after-agent-exit" execution get >"$final_file.after-agent-exit"
+  CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-agent-exit" CLOUD_AGENTS_E2E_CHECKPOINT_MODE="$recovery_checkpoint_mode" node <<'NODE'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
+const pending = process.env.CLOUD_AGENTS_E2E_CHECKPOINT_MODE === "side-effect"
+  ? value.spec?.checkpoint?.pendingSideEffect === true
+  : value.spec?.checkpoint?.pendingInteractionCount >= 1;
+if (value.spec?.state !== "running" || value.spec?.attemptNumber !== 1 || value.spec?.checkpoint?.sequence < 1 || !pending) {
+  process.stderr.write(`${JSON.stringify({state: value.spec?.state, errorCode: value.spec?.errorCode, attemptNumber: value.spec?.attemptNumber, recoveryState: value.spec?.recoveryState, checkpoint: value.spec?.checkpoint})}\n`);
+  throw new Error("Agent Runtime exit settled or lost the checkpointed interaction");
+}
+NODE
+  if [ "$recovery_checkpoint_mode" = side-effect ]; then
+    complete_side_effect_process_recovery "$session_id" "$turn_id" "$execution_id" "$prompt" "$final_file" "$marker" "$agent_runtime_container"
+    return 0
+  fi
+  prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    --request-id "$execution_id-resolve" execution resolve-user-input \
+    --generation "$(interaction_field "$interaction_file" generation)" \
+    --interaction-request "$(interaction_field "$interaction_file" requestId)" \
+    --answers-json "$(question_id=$(interaction_field "$interaction_file" questionId); node -e 'process.stdout.write(JSON.stringify({[process.argv[1]]:["Staging"]}))' "$question_id")" >/dev/null
+  if [ "$takeover_needs_reconcile" -eq 1 ]; then
+    reconcile_interaction_takeover "$session_id" "$turn_id" "$execution_id"
+  fi
+  start_execution "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
+  wait_for_success "$final_file" "$session_id" "$turn_id" "$execution_id"
+  assert_interaction_takeover "$final_file" 'process-restart|same-node-reconnect'
   CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file" CLOUD_AGENTS_E2E_MARKER="$marker" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -1097,7 +1424,7 @@ NODE
 
 if [ "${CLOUD_AGENTS_E2E_RECOVERY_ONLY:-0}" = 1 ]; then
   case "$recovery_fault" in
-    worker) [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ] && [ -n "$lease_id" ] || { echo "worker recovery requires Worker fault target and lease binding" >&2; exit 1; } ;;
+    worker) [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ] && { [ -n "$lease_id" ] || [ "$recovery_environment" = remote-worker ]; } || { echo "worker recovery requires an exact Worker fault target and binding" >&2; exit 1; } ;;
     agent) [ -n "${CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID-}" ] && [ -n "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" ] && [ -z "$lease_id" ] || { echo "agent recovery requires Agent Runtime fault target and direct Sandbox binding" >&2; exit 1; } ;;
     both) echo "recovery-only requires one fault target per invocation" >&2; exit 1 ;;
   esac

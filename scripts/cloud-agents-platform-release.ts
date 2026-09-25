@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { platformLandlockArtifacts } from "./lib/platform-landlock";
 
 import {
   expectedArtifactCount,
@@ -53,6 +54,12 @@ if (existsSync(options.outputDirectory))
 mkdirSync(options.outputDirectory, { recursive: true, mode: 0o755 });
 
 const artifacts: PlatformReleaseArtifact[] = [];
+for (const { artifact, bytes } of await platformLandlockArtifacts(repositoryRoot)) {
+  writeFileSync(join(options.outputDirectory, artifact.filename), bytes, {
+    mode: artifact.target === "portable" ? 0o444 : 0o555,
+  });
+  artifacts.push(artifact);
+}
 buildGoArtifacts(
   PLATFORM_RELEASE_TARGETS,
   PLATFORM_RELEASE_GO_COMMANDS.filter((name) => name !== "cloud-agentsctl"),

@@ -4,12 +4,33 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadSkillsFromDir, type AgentSessionEventListener } from "@earendil-works/pi-coding-agent";
+import { ManagedCapabilityCallResultUnknownError } from "@cloud-agents/cloud-agent-provider-api/internal";
 import { startPiProviderRun } from "./index";
 import { createManagedPiMcpTools } from "./managedMcpTools";
 
 describe("Pi Provider", () => {
+  it("rejects control characters in credential values before starting a session", () => {
+    expect(() =>
+      startPiProviderRun(
+        {
+          execution: { id: "execution-pi-invalid-credential" },
+          workload: { provider: "pi", inputText: "hello", model: "model-pi" },
+          workspaceDirectory: "/tmp/cloud-agents-pi-workspace",
+          providerStateDirectory: "/tmp/cloud-agents-pi-state",
+        },
+        { payload: { apiKey: "secret\npi", baseURL: "https://gateway.example/v1" } },
+        () => {},
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+          },
+        },
+      ),
+    ).toThrow(/non-empty string/u);
+  });
+
   it("fails closed before opening a session when the Host broker is missing", async () => {
     const manifest = {
       version: 1,
@@ -31,23 +52,23 @@ describe("Pi Provider", () => {
       ],
     };
     const controller = startPiProviderRun(
-        {
-          execution: { id: "execution-pi-mcp", generation: 1 },
-          workload: { provider: "pi", inputText: "use MCP", model: "model-pi" },
-          workspaceDirectory: "/tmp/cloud-agents-pi-workspace",
-          providerStateDirectory: "/tmp/cloud-agents-pi-state",
+      {
+        execution: { id: "execution-pi-mcp", generation: 1 },
+        workload: { provider: "pi", inputText: "use MCP", model: "model-pi" },
+        workspaceDirectory: "/tmp/cloud-agents-pi-workspace",
+        providerStateDirectory: "/tmp/cloud-agents-pi-state",
+      },
+      { payload: { apiKey: "secret-pi", baseURL: "https://gateway.example/v1" } },
+      () => {},
+      {
+        environment: {
+          CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+          CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(JSON.stringify(manifest)).toString(
+            "base64url",
+          ),
         },
-        { payload: { apiKey: "secret-pi", baseURL: "https://gateway.example/v1" } },
-        () => {},
-        {
-          environment: {
-            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
-            CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(JSON.stringify(manifest)).toString(
-              "base64url",
-            ),
-          },
-        },
-      );
+      },
+    );
     await expect(controller.result).rejects.toThrow(/Host-managed broker/u);
   });
 
@@ -144,9 +165,20 @@ describe("Pi Provider", () => {
       expect(managed.tools).toHaveLength(1);
       const tool = managed.tools[0];
       if (!tool) throw new Error("expected discovered MCP tool");
-      const result = await tool.execute("call-1", {}, new AbortController().signal, undefined, {} as never);
+      const result = await tool.execute(
+        "call-1",
+        {},
+        new AbortController().signal,
+        undefined,
+        {} as never,
+      );
       expect(result.content).toEqual([{ type: "text", text: "managed-ok" }]);
-      expect(methods).toEqual(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
+      expect(methods).toEqual([
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "tools/call",
+      ]);
       expect(authorizations.every((value) => value === "Bearer broker-secret")).toBe(true);
       expect(managed.metadataByToolName.get(tool.name)).toEqual({
         capabilityResourceId: "mcp-pi",
@@ -154,7 +186,177 @@ describe("Pi Provider", () => {
       });
       managed.close();
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("stops the turn without ending a tool activity when the MCP result is unknown", async () => {
+    const manifest = {
+      version: 1,
+      bindings: [
+        {
+          resourceKind: "mcp-server",
+          resourceId: "mcp-pi",
+          version: "v1",
+          digest: `sha256:${"a".repeat(64)}`,
+          transport: "streamable-http",
+          connectionRef: "connection-pi-mcp",
+          credentialRef: "credential-pi-mcp",
+          grantId: "grant-pi-mcp",
+          networkPolicyRef: "network-pi-mcp",
+          expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+          permissions: ["tools.call"],
+          readOnly: false,
+        },
+      ],
+    };
+    const emitted: Array<Record<string, unknown>> = [];
+    let listener: AgentSessionEventListener | undefined;
+    let aborted = false;
+    let executions = 0;
+    let resultUnknown = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        const request = JSON.parse(String(init?.body)) as { id?: number; method: string };
+        const headers = { "content-type": "application/json", "mcp-session-id": "pi-unknown" };
+        if (request.method === "notifications/initialized")
+          return new Response(null, { status: 202, headers });
+        const result =
+          request.method === "initialize"
+            ? {
+                protocolVersion: "2025-06-18",
+                capabilities: { tools: {} },
+                serverInfo: { name: "fixture", version: "1" },
+              }
+            : request.method === "tools/list"
+              ? {
+                  tools: [
+                    {
+                      name: "side_effect",
+                      description: "Performs a managed side effect.",
+                      inputSchema: { type: "object", properties: {} },
+                    },
+                  ],
+                }
+              : undefined;
+        return new Response(
+          JSON.stringify(
+            result
+              ? { jsonrpc: "2.0", id: request.id, result }
+              : {
+                  jsonrpc: "2.0",
+                  id: request.id,
+                  error: {
+                    code: -32000,
+                    message: resultUnknown ? "mcp_call_result_unknown" : "explicit tool failure",
+                  },
+                },
+          ),
+          { headers },
+        );
+      }),
+    );
+    try {
+      const ordinaryFailure = await createManagedPiMcpTools(manifest as never, {
+        CLOUD_AGENT_MCP_BROKER_URL: "http://127.0.0.1:8765/mcp",
+        CLOUD_AGENT_MCP_TOKEN_MCP_PI: "broker-secret",
+      });
+      await expect(
+        ordinaryFailure.tools[0]?.execute(
+          "mcp-call-failed",
+          {},
+          new AbortController().signal,
+          undefined,
+          {} as never,
+        ),
+      ).rejects.toThrow("MCP request failed");
+      expect(ordinaryFailure.unknownToolCallIds).not.toContain("mcp-call-failed");
+      ordinaryFailure.close();
+      resultUnknown = true;
+
+      const controller = startPiProviderRun(
+        {
+          execution: { id: "execution-pi-unknown", generation: 1 },
+          workload: { provider: "pi", inputText: "use MCP", model: "model-pi" },
+          workspaceDirectory: "/tmp/cloud-agents-pi-workspace",
+          providerStateDirectory: "/tmp/cloud-agents-pi-state",
+        },
+        { payload: { apiKey: "secret-pi", baseURL: "https://gateway.example/v1" } },
+        (message) => emitted.push(message),
+        {
+          environment: {
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
+            CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(JSON.stringify(manifest)).toString(
+              "base64url",
+            ),
+            CLOUD_AGENT_MCP_BROKER_URL: "http://127.0.0.1:8765/mcp",
+            CLOUD_AGENT_MCP_TOKEN_MCP_PI: "broker-secret",
+          },
+          async sessionFactory(options) {
+            const tool = options.customTools?.[0];
+            if (!tool) throw new Error("expected managed MCP tool");
+            return {
+              abort: async () => {
+                aborted = true;
+              },
+              compact: async () => ({}) as never,
+              dispose: () => {},
+              getLastAssistantText: () => "must not complete",
+              prompt: async () => {
+                listener?.({
+                  type: "tool_execution_start",
+                  toolName: tool.name,
+                  toolCallId: "mcp-call-unknown",
+                  args: {},
+                });
+                try {
+                  executions += 1;
+                  await tool.execute(
+                    "mcp-call-unknown",
+                    {},
+                    new AbortController().signal,
+                    undefined,
+                    {} as never,
+                  );
+                } catch (error) {
+                  listener?.({
+                    type: "tool_execution_end",
+                    toolName: tool.name,
+                    toolCallId: "mcp-call-unknown",
+                    result: error,
+                    isError: true,
+                  });
+                }
+              },
+              sessionFile: "/tmp/cloud-agents-pi-state/sessions/unknown.jsonl",
+              subscribe(callback) {
+                listener = callback;
+                return () => {};
+              },
+              steer: async () => {},
+            };
+          },
+        },
+      );
+      await expect(controller.result).rejects.toBeInstanceOf(
+        ManagedCapabilityCallResultUnknownError,
+      );
+      expect(aborted).toBe(true);
+      expect(executions).toBe(1);
+      expect(
+        emitted
+          .filter(
+            (message) =>
+              message.eventType === "runtime.provider.activity" &&
+              (message.payload as { itemId?: string }).itemId === "mcp-call-unknown",
+          )
+          .map((message) => (message.payload as { status?: string }).status),
+      ).toEqual(["inProgress"]);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
@@ -243,6 +445,7 @@ describe("Pi Provider", () => {
       expect(sessionOptions).toMatchObject({ model: "model-pi", apiKey: "secret-pi" });
       const modelConfig = readFileSync(join(root, "state/agent/models.json"), "utf8");
       expect(modelConfig).toContain("https://gateway.example/v1");
+      expect(modelConfig).toContain('"api":"openai-responses"');
       expect(modelConfig).not.toContain("secret-pi");
       expect(emitted).toContainEqual(
         expect.objectContaining({

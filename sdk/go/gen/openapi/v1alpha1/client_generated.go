@@ -4083,7 +4083,7 @@ func DecodeManagedAgentEventPageResponseJSON(data []byte) (common.ResponseEnvelo
 		return common.ResponseEnvelope[ManagedAgentEventPage]{}, common.ContractError("INVALID_EVENT_PAGE", "/events")
 	}
 	for index, event := range value.Events {
-		if event.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || event.Kind != "Event" || common.ValidateIdentifier(event.Metadata.UID, fmt.Sprintf("/events/%d/metadata/uid", index)) != nil || common.ValidateIdentifier(event.Metadata.ProjectID, fmt.Sprintf("/events/%d/metadata/projectId", index)) != nil || common.ValidateIdentifier(event.Metadata.SessionID, fmt.Sprintf("/events/%d/metadata/sessionId", index)) != nil || common.ValidateString(event.Metadata.Sequence, 1, 20, fmt.Sprintf("/events/%d/metadata/sequence", index)) != nil || common.ValidateDateTime(event.Metadata.OccurredAt, fmt.Sprintf("/events/%d/metadata/occurredAt", index)) != nil || !managedAgentEventOperation(event.Spec.Operation) || !managedAgentEventResource(event.Spec.Resource) || event.Spec.Generation > 9007199254740991 || !validCapabilityDigest(event.Spec.MutationDigest) || len(event.Spec.Changes) < 1 || len(event.Spec.Changes) > 4 || !managedAgentEventPair(event.Spec.Operation, event.Spec.Resource) || !validManagedAgentEventResult(event.Spec.Operation, event.Spec.Result) {
+		if event.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || event.Kind != "Event" || common.ValidateIdentifier(event.Metadata.UID, fmt.Sprintf("/events/%d/metadata/uid", index)) != nil || common.ValidateIdentifier(event.Metadata.ProjectID, fmt.Sprintf("/events/%d/metadata/projectId", index)) != nil || common.ValidateIdentifier(event.Metadata.SessionID, fmt.Sprintf("/events/%d/metadata/sessionId", index)) != nil || common.ValidateString(event.Metadata.Sequence, 1, 20, fmt.Sprintf("/events/%d/metadata/sequence", index)) != nil || common.ValidateDateTime(event.Metadata.OccurredAt, fmt.Sprintf("/events/%d/metadata/occurredAt", index)) != nil || !managedAgentEventOperation(event.Spec.Operation) || !managedAgentEventResource(event.Spec.Resource) || event.Spec.Generation > 9007199254740991 || !validCapabilityDigest(event.Spec.MutationDigest) || len(event.Spec.Changes) < 1 || len(event.Spec.Changes) > 4 || !managedAgentEventPair(event.Spec.Operation, event.Spec.Resource, event.Spec.ExecutionID) || !validManagedAgentEventResult(event.Spec.Operation, event.Spec.Result) {
 			return common.ResponseEnvelope[ManagedAgentEventPage]{}, common.ContractError("INVALID_EVENT", fmt.Sprintf("/events/%d", index))
 		}
 		for changeIndex, change := range event.Spec.Changes {
@@ -6840,7 +6840,7 @@ func validCapabilityDigest(value string) bool {
 }
 func managedAgentEventOperation(value string) bool {
 	switch value {
-	case "session.create", "session.close", "turn.create", "execution.create", "execution.start", "execution.complete", "execution.fail", "turn.interrupt", "turn.cancel", "mcp.call", "mcp.fail", "mcp.revoke", "skill.load", "skill.fail", "skill.revoke":
+	case "session.create", "session.close", "turn.create", "execution.create", "execution.start", "execution.reconnect", "execution.restart", "execution.takeover", "execution.recovery-blocked", "execution.reconcile", "execution.receipt-rejected", "execution.complete", "execution.fail", "turn.interrupt", "turn.cancel", "mcp.call", "mcp.fail", "mcp.revoke", "skill.load", "skill.fail", "skill.revoke":
 		return true
 	}
 	return false
@@ -6852,8 +6852,15 @@ func managedAgentEventResource(value string) bool {
 	}
 	return false
 }
-func managedAgentEventPair(operation, resource string) bool {
-	return !(strings.HasPrefix(operation, "mcp.") && resource != "McpServer") && !(strings.HasPrefix(operation, "skill.") && resource != "SkillBundle")
+func managedAgentEventPair(operation, resource, executionID string) bool {
+	if strings.HasPrefix(operation, "mcp.") && resource != "McpServer" || strings.HasPrefix(operation, "skill.") && resource != "SkillBundle" {
+		return false
+	}
+	switch operation {
+	case "execution.reconnect", "execution.restart", "execution.takeover", "execution.recovery-blocked", "execution.reconcile", "execution.receipt-rejected":
+		return resource == "Execution" && executionID != ""
+	}
+	return true
 }
 func validManagedAgentEventResult(operation, result string) bool {
 	capability := strings.HasPrefix(operation, "mcp.") || strings.HasPrefix(operation, "skill.")

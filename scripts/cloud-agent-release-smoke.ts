@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { platformLandlockArtifacts } from "./lib/platform-landlock.ts";
 
 import {
   assertSameCloudAgentBits,
@@ -121,6 +122,12 @@ const afterSmoke = beforeSmoke.map((item) => ({
 }));
 assertSameCloudAgentBits(beforeSmoke, afterSmoke);
 for (const item of afterSmoke) chmodSync(join(options.outputDirectory, item.filename), 0o444);
+const nativeRuntimeDependencies = await platformLandlockArtifacts(repositoryRoot);
+for (const { artifact, bytes } of nativeRuntimeDependencies) {
+  writeFileSync(join(options.outputDirectory, artifact.filename), bytes, {
+    mode: artifact.target === "portable" ? 0o444 : 0o555,
+  });
+}
 
 const candidate = {
   schemaVersion: 1,
@@ -135,6 +142,7 @@ const candidate = {
   sameBitsVerified: true,
   packedBinConformance,
   standaloneRuntime: standaloneRuntimeArtifact(options.outputDirectory),
+  nativeRuntimeDependencies: nativeRuntimeDependencies.map(({ artifact }) => artifact),
   packages: afterSmoke,
 };
 writeFileSync(
@@ -147,6 +155,9 @@ writeFileSync(
   `${[
     ...afterSmoke.map((item) => `${item.sha256.slice("sha256:".length)}  ${item.filename}`),
     `${candidate.standaloneRuntime.sha256.slice("sha256:".length)}  ${candidate.standaloneRuntime.filename}`,
+    ...candidate.nativeRuntimeDependencies.map(
+      (item) => `${item.sha256.slice("sha256:".length)}  ${item.filename}`,
+    ),
   ]
     .toSorted()
     .join("\n")}\n`,
@@ -163,7 +174,11 @@ writeFileSync(
     {
       _type: "https://in-toto.io/Statement/v1",
       predicateType: "https://slsa.dev/provenance/v1",
-      subject: afterSmoke.map((item) => ({
+      subject: [
+        ...afterSmoke,
+        candidate.standaloneRuntime,
+        ...candidate.nativeRuntimeDependencies,
+      ].map((item) => ({
         name: item.filename,
         digest: { sha256: item.sha256.slice("sha256:".length) },
       })),

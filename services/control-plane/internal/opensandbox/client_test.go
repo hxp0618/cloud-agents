@@ -499,6 +499,71 @@ func TestExecUsesExactReceiptAndBoundsOutput(t *testing.T) {
 	}
 }
 
+func TestExecReconcilesInterruptedStreamAfterInit(t *testing.T) {
+	id := identity()
+	statusRequests := 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestPath := strings.TrimPrefix(request.URL.Path, "/v1/sandboxes/physical-1/proxy/44772")
+		switch requestPath {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/44772", "headers": map[string]string{"X-EXECD-ACCESS-TOKEN": "owned"}})
+		case "/command":
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(writer, "{\"type\":\"init\",\"text\":\"command-interrupted\"}\n{\"type\":\"stdout\",\"text\":\"partial\"}\n")
+			if flusher, ok := writer.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			// Close the stream without a terminal event.  The command remains
+			// queryable and must not cause a second POST.
+		case "/command/status/command-interrupted":
+			statusRequests++
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "command-interrupted", "running": false, "exit_code": 0})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	result, err := client.Exec(context.Background(), ExecInput{Identity: id, RuntimeID: "physical-1", Command: "printf bounded", Timeout: time.Second})
+	if err != nil || result.Stdout != "partial" || result.ExitCode != 0 || statusRequests != 1 {
+		t.Fatalf("interrupted stream result=%+v statusRequests=%d err=%v", result, statusRequests, err)
+	}
+}
+
+func TestExecRejectsInterruptedStreamBeforeInit(t *testing.T) {
+	id := identity()
+	statusRequests := 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestPath := strings.TrimPrefix(request.URL.Path, "/v1/sandboxes/physical-1/proxy/44772")
+		switch requestPath {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/44772"})
+		case "/command":
+			writer.Header().Set("Content-Type", "text/event-stream")
+		case "/command/status/command-interrupted":
+			statusRequests++
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, "private-key")
+	_, err := client.Exec(context.Background(), ExecInput{Identity: id, RuntimeID: "physical-1", Command: "printf bounded", Timeout: time.Second})
+	if !errors.Is(err, ErrUnavailable) || statusRequests != 0 {
+		t.Fatalf("pre-init stream error=%v statusRequests=%d", err, statusRequests)
+	}
+}
+
 func TestPreviewUsesOnlyExactCandidateServerProxy(t *testing.T) {
 	id := identity()
 	unsafeTarget, bareTarget := false, false

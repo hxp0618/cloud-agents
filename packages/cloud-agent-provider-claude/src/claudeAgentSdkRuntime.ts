@@ -46,6 +46,8 @@ import {
   type TerminalRedactor,
   TurnDiffCollector,
   WorkspaceGeneratedFileCollector,
+  ManagedCapabilityCallResultUnknownError,
+  isManagedMcpCallResultUnknown,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
 
 export type ClaudeQueryRuntime = AsyncIterable<SDKMessage> & {
@@ -73,14 +75,17 @@ type ClaudeRunOptions = {
     Record<string, { type: "http"; url: string; headers: Record<string, string>; alwaysLoad: true }>
   >;
   skillDirectories?: ReadonlyArray<string>;
+  skillResourceIdsByQualifiedName?: Readonly<Record<string, string>>;
 };
 
 type AttemptState = {
   cursor?: string;
   model?: string;
+  managedSkillsAttested: boolean;
   outputText: string[];
   sawPartialText: boolean;
   hadTurnActivity: boolean;
+  mcpOutcomeUnknown: boolean;
   tools: Map<string, AttemptTool>;
   bashOutputs: Map<string, ClaudeBashOutput>;
   pendingBashToolResults: Map<string, PendingClaudeBashToolResult>;
@@ -107,6 +112,7 @@ type AttemptTool = {
   reportedTotalBytes?: number;
   outputTruncated: boolean;
   emittedArtifactPaths: Set<string>;
+  outcomeUnknown?: boolean;
 };
 
 type RuntimeOutputCandidate = {
@@ -143,11 +149,31 @@ type PromptStream = {
 
 function skillOptions(
   directories: ReadonlyArray<string> | undefined,
-): Pick<ClaudeQueryOptions, "plugins" | "skills"> {
-  if (!directories?.length) return {};
+  resourceIdsByQualifiedName: Readonly<Record<string, string>> | undefined,
+): Pick<ClaudeQueryOptions, "managedSettings" | "plugins" | "skills"> {
+  const qualifiedNames = Object.keys(resourceIdsByQualifiedName ?? {});
+  if (!directories?.length && qualifiedNames.length > 0) {
+    throw new Error("Managed Skill provenance is missing its plugin directories.");
+  }
+  if (directories?.length && qualifiedNames.length === 0) {
+    throw new Error("Managed Skill plugin directories lack verified qualified names.");
+  }
   return {
-    plugins: directories.map((path) => ({ type: "local" as const, path, skipMcpDiscovery: true })),
-    skills: "all",
+    managedSettings: {
+      disableBundledSkills: true,
+      disableSkillShellExecution: true,
+      strictPluginOnlyCustomization: true,
+    },
+    ...(directories?.length
+      ? {
+          plugins: directories.map((path) => ({
+            type: "local" as const,
+            path,
+            skipMcpDiscovery: true,
+          })),
+        }
+      : {}),
+    skills: qualifiedNames,
   };
 }
 
@@ -334,9 +360,11 @@ class ClaudeAgentSdkRuntime {
     authoritativeReconstruction = false,
   ): Promise<Extract<RunnerMessage, { type: "result" }>> {
     const state: AttemptState = {
+      managedSkillsAttested: !this.hasManagedSkills(),
       outputText: [],
       sawPartialText: false,
       hadTurnActivity: false,
+      mcpOutcomeUnknown: false,
       tools: new Map(),
       bashOutputs: new Map(),
       pendingBashToolResults: new Map(),
@@ -375,6 +403,9 @@ class ClaudeAgentSdkRuntime {
         }
       }
       if (terminalResult) {
+        if (!state.managedSkillsAttested) {
+          throw new Error("Claude Agent SDK did not attest the managed Skill plugins.");
+        }
         await this.drainPendingBashToolResults(state);
         if (state.tools.size > 0) {
           this.failOpenTools(state);
@@ -387,6 +418,13 @@ class ClaudeAgentSdkRuntime {
       if (this.interruptRequested) throw new ProviderInterruptedError();
       throw new Error("Claude Agent SDK ended before emitting a terminal result.");
     } catch (error) {
+      if (state.mcpOutcomeUnknown || isManagedMcpCallResultUnknown(error)) {
+        if (![...state.tools.values()].some((tool) => tool.outcomeUnknown)) {
+          this.markMcpOutcomeUnknown(state);
+        }
+        this.failOpenTools(state);
+        throw new ManagedCapabilityCallResultUnknownError();
+      }
       if (this.interruptRequested || error instanceof ProviderInterruptedError) {
         this.failOpenTools(state);
         throw new ProviderInterruptedError();
@@ -431,7 +469,7 @@ class ClaudeAgentSdkRuntime {
       settingSources: [],
       strictMcpConfig: true,
       ...(this.options.mcpServers ? { mcpServers: this.options.mcpServers } : {}),
-      ...skillOptions(this.options.skillDirectories),
+      ...skillOptions(this.options.skillDirectories, this.options.skillResourceIdsByQualifiedName),
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -451,6 +489,47 @@ class ClaudeAgentSdkRuntime {
     };
   }
 
+  private hasManagedSkills(): boolean {
+    return Boolean(
+      this.options.skillDirectories?.length ||
+      Object.keys(this.options.skillResourceIdsByQualifiedName ?? {}).length,
+    );
+  }
+
+  private attestManagedSkills(record: Record<string, unknown>, state: AttemptState): void {
+    if (!this.hasManagedSkills()) return;
+    const expectedSkills = Object.keys(this.options.skillResourceIdsByQualifiedName ?? {});
+    const reportedSkills = record.skills;
+    if (!attestsManagedSkillInventory(reportedSkills, expectedSkills)) {
+      throw new Error("Claude Agent SDK reported an unexpected managed Skill set.");
+    }
+
+    const directories = this.options.skillDirectories ?? [];
+    const expectedPaths = new Set(directories.map((path) => realpathSync.native(path)));
+    const expectedPluginNames = new Set(
+      expectedSkills.map((qualifiedName) => qualifiedName.slice(0, qualifiedName.indexOf(":"))),
+    );
+    const plugins = record.plugins;
+    if (!Array.isArray(plugins) || plugins.length !== expectedPaths.size) {
+      throw new Error("Claude Agent SDK reported an unexpected managed Skill plugin set.");
+    }
+    const reportedPaths = new Set<string>();
+    for (const value of plugins) {
+      const plugin = asRecord(value);
+      const name = readString(plugin, "name");
+      const path = readString(plugin, "path");
+      if (!name || !path || !expectedPluginNames.has(name)) {
+        throw new Error("Claude Agent SDK reported an unexpected managed Skill plugin.");
+      }
+      const canonicalPath = realpathSync.native(path);
+      if (!expectedPaths.has(canonicalPath) || reportedPaths.has(canonicalPath)) {
+        throw new Error("Claude Agent SDK reported an unexpected managed Skill plugin path.");
+      }
+      reportedPaths.add(canonicalPath);
+    }
+    state.managedSkillsAttested = true;
+  }
+
   private textGenerationQueryOptions(resume?: string): ClaudeQueryOptions {
     const model = trimmedString(this.options.input.workload.model);
     return {
@@ -459,7 +538,7 @@ class ClaudeAgentSdkRuntime {
       pathToClaudeCodeExecutable: "claude",
       settingSources: [],
       strictMcpConfig: true,
-      ...skillOptions(this.options.skillDirectories),
+      ...skillOptions(this.options.skillDirectories, this.options.skillResourceIdsByQualifiedName),
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -525,7 +604,7 @@ class ClaudeAgentSdkRuntime {
       pathToClaudeCodeExecutable: "claude",
       settingSources: [],
       strictMcpConfig: true,
-      ...skillOptions(this.options.skillDirectories),
+      ...skillOptions(this.options.skillDirectories, this.options.skillResourceIdsByQualifiedName),
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -562,6 +641,16 @@ class ClaudeAgentSdkRuntime {
       const toolName = input.tool_name;
       const toolInput = asRecord(input.tool_input) ?? {};
       state.hadTurnActivity = true;
+      const skillAdmissionError = this.managedSkillAdmissionError(toolName, toolInput, state);
+      if (skillAdmissionError) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: skillAdmissionError,
+          },
+        };
+      }
       const decision = this.preToolPermissionDecision(toolName, toolInput);
       if (!decision) return { continue: true };
       return {
@@ -648,6 +737,14 @@ class ClaudeAgentSdkRuntime {
     return async (input) => {
       if (input.hook_event_name !== "PostToolUseFailure") return { continue: true };
       state.hadTurnActivity = true;
+      if (/^mcp__/iu.test(input.tool_name) && isManagedMcpCallResultUnknown(input.error)) {
+        const toolUseId = trimmedString(input.tool_use_id);
+        this.markMcpOutcomeUnknown(state, toolUseId);
+        return {
+          continue: false,
+          stopReason: "Managed MCP call result is unknown.",
+        };
+      }
       const toolInput = asRecord(input.tool_input) ?? {};
       const toolUseId = this.resolveBashHookToolUseId(
         state,
@@ -706,6 +803,10 @@ class ClaudeAgentSdkRuntime {
               behavior: "deny",
               message: "Cloud Agents review mode permits only Read, Glob, and Grep.",
             };
+      }
+      const skillAdmissionError = this.managedSkillAdmissionError(toolName, toolInput, state);
+      if (skillAdmissionError) {
+        return { behavior: "deny", message: skillAdmissionError };
       }
       if (toolName === "AskUserQuestion") {
         if (!this.options.interactive) {
@@ -992,6 +1093,7 @@ class ClaudeAgentSdkRuntime {
       return undefined;
     }
     if (type === "system" && readString(record, "subtype") === "init") {
+      this.attestManagedSkills(record, state);
       const model = readString(record, "model");
       if (model) state.model = model;
       return undefined;
@@ -1019,7 +1121,7 @@ class ClaudeAgentSdkRuntime {
       if (!isClientSurfacedTool(toolName)) {
         const tool =
           (toolUseId ? state.tools.get(toolUseId) : undefined) ??
-          this.attemptTool(toolName, {}, toolUseId);
+          this.attemptTool(toolName, {}, state, toolUseId);
         this.emitToolActivity(tool, "updated", toolUseId);
       }
       return undefined;
@@ -1111,7 +1213,7 @@ class ClaudeAgentSdkRuntime {
       const toolName = readString(block, "name") ?? "tool";
       const toolUseId = readString(block, "id") ?? this.uniqueRequestId("tool");
       const input = asRecord(block?.input) ?? {};
-      const tool = this.attemptTool(toolName, input, toolUseId);
+      const tool = this.attemptTool(toolName, input, state, toolUseId);
       state.tools.set(toolUseId, tool);
       if (!isClientSurfacedTool(toolName)) {
         this.emitToolActivity(tool, "started", toolUseId);
@@ -1130,6 +1232,14 @@ class ClaudeAgentSdkRuntime {
       if (!toolUseId) continue;
       const tool = state.tools.get(toolUseId);
       if (!tool) continue;
+      if (
+        tool.capabilityResourceId &&
+        /^mcp__/iu.test(tool.toolName) &&
+        isManagedMcpCallResultUnknown({ content: block?.content, result: message.tool_use_result })
+      ) {
+        this.markMcpOutcomeUnknown(state, toolUseId);
+        continue;
+      }
       if (!isClientSurfacedTool(tool.toolName)) {
         const storedBashOutput = state.bashOutputs.get(toolUseId);
         const hookFailed = state.failedBashToolUses.delete(toolUseId);
@@ -1157,6 +1267,7 @@ class ClaudeAgentSdkRuntime {
         state.tools.delete(toolUseId);
       }
     }
+    if (state.mcpOutcomeUnknown) throw new ManagedCapabilityCallResultUnknownError();
   }
 
   private completePendingBashToolResult(
@@ -1422,7 +1533,7 @@ class ClaudeAgentSdkRuntime {
 
   private failOpenTools(state: AttemptState): void {
     for (const [toolUseId, tool] of state.tools) {
-      if (!isClientSurfacedTool(tool.toolName)) {
+      if (!tool.outcomeUnknown && !isClientSurfacedTool(tool.toolName)) {
         this.emitToolActivity(tool, "failed", toolUseId, {
           failureKind: "provider_error",
         });
@@ -1434,12 +1545,37 @@ class ClaudeAgentSdkRuntime {
     state.failedBashToolUses.clear();
   }
 
+  private markMcpOutcomeUnknown(state: AttemptState, toolUseId?: string): void {
+    state.mcpOutcomeUnknown = true;
+    if (toolUseId) {
+      const tool = state.tools.get(toolUseId);
+      if (tool?.capabilityResourceId && /^mcp__/iu.test(tool.toolName)) {
+        tool.outcomeUnknown = true;
+        return;
+      }
+    }
+    for (const tool of state.tools.values()) {
+      if (tool.capabilityResourceId && /^mcp__/iu.test(tool.toolName)) {
+        tool.outcomeUnknown = true;
+      }
+    }
+  }
+
   private attemptTool(
     toolName: string,
     input: Record<string, unknown>,
+    state: AttemptState,
     toolUseId?: string,
   ): AttemptTool {
-    const capabilityResourceId = managedMcpCapabilityResourceId(toolName, this.options.mcpServers);
+    const skillAdmissionError = this.managedSkillAdmissionError(toolName, input, state);
+    if (skillAdmissionError) throw new Error(skillAdmissionError);
+    const capabilityResourceId =
+      managedMcpCapabilityResourceId(toolName, this.options.mcpServers) ??
+      managedSkillCapabilityResourceId(
+        toolName,
+        input,
+        this.options.skillResourceIdsByQualifiedName,
+      );
     if (classifyRequestKind(toolName) !== "command") {
       return {
         toolName,
@@ -1469,6 +1605,27 @@ class ClaudeAgentSdkRuntime {
       outputTruncated: false,
       emittedArtifactPaths: new Set(),
     };
+  }
+
+  private managedSkillAdmissionError(
+    toolName: string,
+    input: Readonly<Record<string, unknown>>,
+    state: AttemptState,
+  ): string | undefined {
+    if (toolName !== "Skill") return undefined;
+    if (
+      !managedSkillCapabilityResourceId(
+        toolName,
+        input,
+        this.options.skillResourceIdsByQualifiedName,
+      )
+    ) {
+      return "Claude Skill is not authorized by a Host-managed Skill binding.";
+    }
+    if (!state.managedSkillsAttested) {
+      return "Claude Agent SDK used a managed Skill before plugin attestation.";
+    }
+    return undefined;
   }
 
   private emitToolActivity(
@@ -2133,6 +2290,20 @@ function numericFields(value: Record<string, unknown>): Record<string, number> {
   );
 }
 
+function attestsManagedSkillInventory(
+  value: unknown,
+  expected: ReadonlyArray<string>,
+): value is ReadonlyArray<string> {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return false;
+  const reported = new Set(value);
+  const expectedSet = new Set(expected);
+  return (
+    reported.size === value.length &&
+    expected.every((item) => reported.has(item)) &&
+    value.every((item) => !item.includes(":") || expectedSet.has(item))
+  );
+}
+
 function managedMcpCapabilityResourceId(
   toolName: string,
   servers:
@@ -2152,6 +2323,19 @@ function managedMcpCapabilityResourceId(
     if (/^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$/u.test(resourceId)) return resourceId;
   }
   return undefined;
+}
+
+function managedSkillCapabilityResourceId(
+  toolName: string,
+  input: Readonly<Record<string, unknown>>,
+  resourceIdsByQualifiedName: Readonly<Record<string, string>> | undefined,
+): string | undefined {
+  if (toolName !== "Skill" || !resourceIdsByQualifiedName) return undefined;
+  const qualifiedName = input.skill;
+  if (typeof qualifiedName !== "string" || qualifiedName !== qualifiedName.trim()) return undefined;
+  return Object.hasOwn(resourceIdsByQualifiedName, qualifiedName)
+    ? resourceIdsByQualifiedName[qualifiedName]
+    : undefined;
 }
 
 function boundedString(value: unknown, maximumLength: number): string | undefined {

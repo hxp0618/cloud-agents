@@ -30,7 +30,9 @@ type managedHostEnvironmentLeaseStoreFake struct {
 	after                                   string
 	limit                                   int
 	terminate                               int
+	terminateConflicts                      int
 	finalize                                int
+	finalizeErr                             error
 	upgrade                                 int
 	adminPreview                            internalmanagedhost.AdminEnvironmentLeaseUpgradePreview
 	adminStart                              postgres.AdminEnvironmentLeaseUpgradeStart
@@ -130,6 +132,10 @@ func (fake *managedHostEnvironmentLeaseStoreFake) CompleteAdminEnvironmentLeaseU
 
 func (fake *managedHostEnvironmentLeaseStoreFake) TerminateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
 	fake.terminate++
+	if fake.terminateConflicts > 0 {
+		fake.terminateConflicts--
+		return internalmanagedhost.Snapshot{}, postgres.ErrCoordinationRejected
+	}
 	fake.snapshot.Scope = input.Scope
 	fake.snapshot.LeaseID = input.LeaseID
 	fake.snapshot.DesiredPhase = "terminated"
@@ -142,6 +148,9 @@ func (fake *managedHostEnvironmentLeaseStoreFake) TerminateManagedHostEnvironmen
 
 func (fake *managedHostEnvironmentLeaseStoreFake) CompleteManagedHostEnvironmentLeaseTermination(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.CompleteEnvironmentLeaseTerminationInput) (internalmanagedhost.Snapshot, error) {
 	fake.finalize++
+	if fake.finalizeErr != nil {
+		return internalmanagedhost.Snapshot{}, fake.finalizeErr
+	}
 	fake.snapshot.ObservedPhase = "terminated"
 	fake.snapshot.CleanupPhase = "complete"
 	fake.snapshot.WorkerEndpoint, fake.snapshot.WorkerSPIFFEID, fake.snapshot.WorkerServerName = "", "", ""
@@ -212,6 +221,59 @@ func (fake *managedHostEnvironmentLeaseVerifierFake) Verify(_ string, request au
 		return nil, errors.New("verification failed")
 	}
 	return &authn.VerifiedPrincipal{}, nil
+}
+
+func TestManagedHostEnvironmentLeaseTerminationRetriesOnlyInitialCoordinationConflict(t *testing.T) {
+	now := time.Date(2026, time.September, 23, 12, 0, 0, 0, time.UTC)
+	verifier := &managedHostEnvironmentLeaseVerifierFake{}
+	store := &managedHostEnvironmentLeaseStoreFake{
+		terminateConflicts: 1,
+		snapshot: internalmanagedhost.Snapshot{
+			LeaseID: "lease-alpha", EnvironmentID: "lease-alpha", Generation: 1,
+			DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none",
+			ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+		},
+	}
+	handler, err := NewManagedHostEnvironmentLeaseHTTPServer(verifier, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:terminate", strings.NewReader(`{"expectedGeneration":1}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-terminate-conflict")
+	request.Header.Set("Idempotency-Key", "terminate-conflict-key-1234")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || store.terminate != 2 || store.finalize != 1 || len(verifier.requests) != 5 {
+		t.Fatalf("status=%d terminate=%d finalize=%d verifications=%d body=%s", response.Code, store.terminate, store.finalize, len(verifier.requests), response.Body.String())
+	}
+	for index, permission := range []string{"projects.act", "leases.act", "projects.act", "projects.act", "projects.act"} {
+		if verifier.requests[index].RequiredPermission != permission {
+			t.Fatalf("verification %d permission = %q, want %q", index, verifier.requests[index].RequiredPermission, permission)
+		}
+	}
+
+	store = &managedHostEnvironmentLeaseStoreFake{
+		finalizeErr: postgres.ErrCoordinationRejected,
+		snapshot: internalmanagedhost.Snapshot{
+			LeaseID: "lease-beta", EnvironmentID: "lease-beta", Generation: 1,
+			DesiredPhase: "active", ObservedPhase: "ready", CleanupPhase: "none",
+			ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now,
+		},
+	}
+	handler, err = NewManagedHostEnvironmentLeaseHTTPServer(&managedHostEnvironmentLeaseVerifierFake{}, store, nil, nil, nil, dockertarget.WorkerTrust{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-beta:terminate", strings.NewReader(`{"expectedGeneration":1}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-finalize-conflict")
+	request.Header.Set("Idempotency-Key", "finalize-conflict-key-1234")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || store.terminate != 1 || store.finalize != 1 {
+		t.Fatalf("finalize conflict status=%d terminate=%d finalize=%d body=%s", response.Code, store.terminate, store.finalize, response.Body.String())
+	}
 }
 
 func TestAdminEnvironmentLeaseHTTPListsResourcesAndChecksAdminScope(t *testing.T) {

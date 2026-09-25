@@ -9,3 +9,9 @@ session context; the session owns `execute()`, `events`, `close()`, and
 does not expose `Symbol.asyncDispose`. Hosts enable plugins by passing an explicit
 array to the Runtime registry; omitting a plugin disables it, and duplicate or
 ABI-incompatible entries fail during registration.
+
+The shared `createProviderPlugin` adapter owns the model-only configuration used
+by all bundled Providers, including its schema, validation, and Host model
+binding. Unknown fields are rejected before acquiring credentials. Plugins
+implementing the public ABI directly own any provider-specific configuration
+validation in `createSession`.

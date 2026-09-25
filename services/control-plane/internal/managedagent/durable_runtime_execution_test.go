@@ -6,11 +6,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +35,8 @@ type durableRuntimeExecutionStoreFake struct {
 	execution          ExecutionSnapshot
 	capabilityBindings []*workerruntimev1alpha1.RuntimeCapabilityBinding
 	capabilityError    error
+	checkpointError    error
+	completeError      error
 	capabilityEvents   []CapabilityEventInput
 	cancel             context.CancelFunc
 }
@@ -140,6 +144,12 @@ func (fake *durableRuntimeExecutionStoreFake) ReleaseQueuedManagedAgentExecution
 func (fake *durableRuntimeExecutionStoreFake) CheckpointManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CheckpointRuntimeExecutionInput) (RuntimeExecutionCheckpoint, error) {
 	fake.calls = append(fake.calls, "checkpoint")
 	fake.recordPrincipal(principal)
+	if fake.checkpointError != nil {
+		return RuntimeExecutionCheckpoint{}, fake.checkpointError
+	}
+	fake.execution.PendingSideEffect = input.PendingSideEffect
+	fake.execution.PendingInteractionCount = input.PendingInteractions
+	fake.execution.Messages = append([]runtimeprotocol.Message(nil), input.Messages...)
 	digest, err := RuntimeMessagesDigest(input.Messages, input.Claim.ExecutionID, input.Claim.Generation)
 	return RuntimeExecutionCheckpoint{Sequence: 1, Digest: digest, ExpiresAt: input.Claim.ExpiresAt.Add(time.Minute), CreatedAt: time.Now()}, err
 }
@@ -170,6 +180,9 @@ func (fake *durableRuntimeExecutionStoreFake) StartManagedAgentExecution(_ conte
 func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "complete")
 	fake.recordPrincipal(principal)
+	if fake.completeError != nil {
+		return ExecutionTransitionResult{}, fake.completeError
+	}
 	fake.execution.State = ExecutionSucceeded
 	fake.execution.Messages = append([]runtimeprotocol.Message(nil), input.Messages...)
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnCompleted}, Execution: fake.execution}, nil
@@ -245,6 +258,7 @@ type runtimeWorkerFake struct {
 	sendRuntimeErrorAfterCheckpoint bool
 	disconnectCode                  connect.Code
 	terminalErrorCode               string
+	terminalCommandIDMismatch       bool
 	capabilityResourceID            string
 	skillCapabilityResourceID       string
 	capabilityStartedOnly           bool
@@ -360,6 +374,9 @@ func (fake *runtimeWorkerFake) OpenSession(ctx context.Context, stream *connect.
 				return err
 			}
 		}
+		if fake.terminalCommandIDMismatch && command.CommandType == "SendTurn" {
+			message.CommandID += "-mismatch"
+		}
 		encoded, err := json.Marshal(message)
 		if err != nil {
 			return err
@@ -441,7 +458,7 @@ func TestDurableRuntimeExecutionAuditsUnknownStartedCapabilityFailure(t *testing
 	mcp := McpServerRef{ServerID: "mcp-server", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64)}
 	wire := &runtimeWorkerFake{
 		identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
-		now:      now, terminalErrorCode: "internal_error", capabilityResourceID: mcp.ServerID, capabilityStartedOnly: true,
+		now:      now, terminalErrorCode: "provider_unavailable", capabilityResourceID: mcp.ServerID, capabilityStartedOnly: true,
 	}
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
@@ -455,10 +472,72 @@ func TestDurableRuntimeExecutionAuditsUnknownStartedCapabilityFailure(t *testing
 		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
 		McpServerRefs: []McpServerRef{mcp}, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
 	})
-	if !errors.Is(err, ErrDurableRuntimeExecutionFailed) || result.Transition.Execution.State != ExecutionFailed {
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.State != ExecutionRunning || !store.execution.PendingSideEffect || slices.Contains(store.calls, "fail") {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	if len(store.capabilityEvents) != 2 || store.capabilityEvents[0].Result != "accepted" || store.capabilityEvents[1].Operation != "mcp.fail" || store.capabilityEvents[1].Result != "failed" || store.capabilityEvents[1].ErrorCode != "capability_call_unknown" || store.capabilityEvents[1].InputDigest == "" || store.capabilityEvents[1].ResultDigest != "" {
+		t.Fatalf("capability events=%+v", store.capabilityEvents)
+	}
+}
+
+func TestDurableRuntimeExecutionPreservesPendingCapabilityAcrossSettlementPaths(t *testing.T) {
+	now := time.Date(2026, 9, 16, 8, 0, 0, 0, time.UTC)
+	mcp := McpServerRef{ServerID: "mcp-server", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64)}
+	for _, test := range []struct {
+		name              string
+		commandIDMismatch bool
+	}{{name: "terminal-result"}, {name: "protocol-error", commandIDMismatch: true}} {
+		t.Run(test.name, func(t *testing.T) {
+			wire := &runtimeWorkerFake{
+				identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+				now:      now, capabilityResourceID: mcp.ServerID, capabilityStartedOnly: true,
+				terminalCommandIDMismatch: test.commandIDMismatch,
+			}
+			store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}}
+			coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+				Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, wire), Clock: func() time.Time { return now },
+				FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+				Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+				McpServerRefs: []McpServerRef{mcp}, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+			})
+			if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.State != ExecutionRunning || !store.execution.PendingSideEffect || slices.Contains(store.calls, "complete") || slices.Contains(store.calls, "fail") {
+				t.Fatalf("result=%#v calls=%v err=%v", result, store.calls, err)
+			}
+			if len(store.capabilityEvents) != 2 || store.capabilityEvents[1].Operation != "mcp.fail" || store.capabilityEvents[1].ErrorCode != "capability_call_unknown" {
+				t.Fatalf("capability events=%+v", store.capabilityEvents)
+			}
+		})
+	}
+}
+
+func TestDurableRuntimeExecutionPreservesPendingCapabilityWhenCheckpointFails(t *testing.T) {
+	now := time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)
+	mcp := McpServerRef{ServerID: "mcp-server", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64)}
+	wire := &runtimeWorkerFake{
+		identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+		now:      now, capabilityResourceID: mcp.ServerID, capabilityStartedOnly: true,
+	}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, checkpointError: errors.New("checkpoint unavailable")}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, wire), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		McpServerRefs: []McpServerRef{mcp}, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.State != ExecutionRunning || slices.Contains(store.calls, "complete") || slices.Contains(store.calls, "fail") {
+		t.Fatalf("result=%#v calls=%v err=%v", result, store.calls, err)
+	}
+	if len(store.capabilityEvents) != 2 || store.capabilityEvents[1].Operation != "mcp.fail" || store.capabilityEvents[1].ErrorCode != "capability_call_unknown" {
 		t.Fatalf("capability events=%+v", store.capabilityEvents)
 	}
 }
@@ -564,7 +643,7 @@ func TestDurableRuntimeExecutionKeepsCapabilityKindsDistinctWhenIDsMatch(t *test
 		McpServerRefs: []McpServerRef{mcp}, SkillBundleRefs: []SkillBundleRef{skill},
 		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
 	})
-	if !errors.Is(err, ErrDurableRuntimeExecutionFailed) || result.Transition.Execution.State != ExecutionFailed {
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.State != ExecutionRunning || !store.execution.PendingSideEffect || slices.Contains(store.calls, "fail") {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	if len(store.capabilityEvents) != 4 {
@@ -704,6 +783,15 @@ func TestRuntimeFailureCodeUsesOnlyPublicStableCodes(t *testing.T) {
 	}
 }
 
+func TestIndexCapabilityBindingsByResource(t *testing.T) {
+	mcp := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "mcp-server", ResourceId: "mcp-alpha"}
+	skill := &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "skill-bundle", ResourceId: "skill-alpha"}
+	indexed := indexCapabilityBindings([]*workerruntimev1alpha1.RuntimeCapabilityBinding{nil, mcp, skill, &workerruntimev1alpha1.RuntimeCapabilityBinding{ResourceKind: "unknown", ResourceId: "ignored"}})
+	if len(indexed) != 2 || indexed[capabilityBindingKey{resource: ResourceMcpServer, id: "mcp-alpha"}] != mcp || indexed[capabilityBindingKey{resource: ResourceSkillBundle, id: "skill-alpha"}] != skill {
+		t.Fatalf("indexed capability bindings = %#v", indexed)
+	}
+}
+
 func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	reference := RuntimeExecutionReference{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7}
 	key, err := durableRuntimeExecutionKey(reference)
@@ -802,6 +890,32 @@ func TestReceiveRuntimeMessagesRejectsPublicLimits(t *testing.T) {
 	}
 }
 
+func TestRuntimeSideEffectReconciliationDigestBindsIdempotencyKey(t *testing.T) {
+	input := ReconcileRuntimeSideEffectInput{
+		RuntimeExecutionReference: RuntimeExecutionReference{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7},
+		CheckpointDigest:          "sha256:" + strings.Repeat("a", 64), Outcome: "confirmed", RequestID: "request-one", IdempotencyKey: "idempotency-key-1",
+	}
+	digest, err := RuntimeSideEffectReconciliationDigest(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry := input
+	retry.RequestID = "request-two"
+	retryDigest, err := RuntimeSideEffectReconciliationDigest(retry)
+	if err != nil || retryDigest != digest {
+		t.Fatalf("retry digest = %q / %v, want %q", retryDigest, err, digest)
+	}
+	retry.IdempotencyKey = "idempotency-key-2"
+	otherDigest, err := RuntimeSideEffectReconciliationDigest(retry)
+	if err != nil || otherDigest == digest {
+		t.Fatalf("other digest = %q / %v, must differ from %q", otherDigest, err, digest)
+	}
+	retry.IdempotencyKey = ""
+	if _, err := RuntimeSideEffectReconciliationDigest(retry); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("empty idempotency key accepted: %v", err)
+	}
+}
+
 func TestRuntimeTerminalDigestBindsPublicMessage(t *testing.T) {
 	original := runtimeprotocol.Message{RequestID: "request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done", "providerResumeCursor": "private-cursor"}}
 	public := publicRuntimeMessage(original)
@@ -822,6 +936,71 @@ func TestRuntimeTerminalDigestBindsPublicMessage(t *testing.T) {
 	input.ResultDigest = "sha256:" + strings.Repeat("0", 64)
 	if _, err := RuntimeExecutionCompleteMutationDigest(input); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("mismatched terminal digest error = %v", err)
+	}
+}
+
+func TestRuntimeRecoveryTranscriptAllowsCommandChangeButKeepsFence(t *testing.T) {
+	progress := runtimeprotocol.Message{RequestID: "request-1", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command-1", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Progress", Payload: map[string]any{"text": "working"}}
+	result := runtimeprotocol.Message{RequestID: "request-2", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command-2", OccurredAt: time.Date(2026, 8, 29, 10, 0, 1, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done"}}
+	digest, err := RuntimeMessageDigest(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7, ResultDigest: digest, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idempotency-key-1234"}}, Messages: []runtimeprotocol.Message{progress, result}}
+	if _, err := RuntimeExecutionCompleteMutationDigest(input); err != nil {
+		t.Fatalf("recovery transcript rejected: %v", err)
+	}
+	for _, field := range []string{"execution", "generation", "terminal-position"} {
+		invalid := result
+		messages := []runtimeprotocol.Message{progress, invalid}
+		switch field {
+		case "execution":
+			messages[1].ExecutionID = "other-execution"
+		case "generation":
+			messages[1].Generation--
+		case "terminal-position":
+			messages = []runtimeprotocol.Message{invalid, progress, result}
+		}
+		if err := validateRuntimeMessageTranscript(messages, "execution", 7, true); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("invalid %s accepted: %v", field, err)
+		}
+	}
+	result.MessageType = "Error"
+	result.Payload = nil
+	result.Error = &runtimeprotocol.Error{Code: "provider_unavailable", Message: "unavailable"}
+	if _, err := RuntimeMessagesDigest([]runtimeprotocol.Message{progress, result}, "execution", 7); err != nil {
+		t.Fatalf("recovery failure transcript rejected: %v", err)
+	}
+}
+
+func TestRuntimeRecoveryTranscriptAllowsTwoBoundedAttempts(t *testing.T) {
+	messages := make([]runtimeprotocol.Message, maxRuntimeExecutionMessages)
+	for index := range messages {
+		messages[index] = runtimeprotocol.Message{
+			RequestID:   fmt.Sprintf("request-%d", index),
+			Protocol:    runtimeprotocol.Protocol{Major: 2, Minor: 3},
+			ExecutionID: "execution",
+			Generation:  7,
+			CommandID:   fmt.Sprintf("command-%d", index),
+			OccurredAt:  time.Date(2026, 8, 29, 10, 0, index, 0, time.UTC).Format(time.RFC3339Nano),
+			MessageType: "Progress",
+			Payload:     map[string]any{"text": "working"},
+		}
+	}
+	input := FailRuntimeExecutionInput{
+		FailExecutionInput: FailExecutionInput{
+			Scope:       Scope{TenantID: "tenant", ProjectID: "project"},
+			SessionID:   "session",
+			TurnID:      "turn",
+			ExecutionID: "execution",
+			Generation:  7,
+			ErrorCode:   "runtime_turn_failed",
+			Mutation:    Mutation{RequestID: "request", IdempotencyKey: "idempotency-key-1234"},
+		},
+		Messages: messages,
+	}
+	if _, err := RuntimeExecutionFailMutationDigest(input); err != nil {
+		t.Fatalf("bounded recovery transcript rejected: %v", err)
 	}
 }
 
@@ -976,6 +1155,29 @@ func TestDurableRuntimeExecutionRecoveryReopensExecutionCapabilities(t *testing.
 	}
 	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "capabilities", "capability-event", "capability-event", "claim", "complete"}) {
 		t.Fatalf("recovery calls=%v", store.calls)
+	}
+}
+
+func TestDurableRuntimeExecutionSettlesInvalidCompletion(t *testing.T) {
+	now := time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC)
+	worker := &runtimeWorkerFake{identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}, now: now}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, completeError: ErrInvalidInput}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrDurableRuntimeExecutionFailed) || result.Transition.Execution.State != ExecutionFailed {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim", "start", "complete", "fail"}) {
+		t.Fatalf("calls=%v", store.calls)
 	}
 }
 
@@ -1202,6 +1404,34 @@ func TestDurableRuntimeExecutionLeavesCheckpointedExecutionRunningWhenWorkerExit
 	}
 	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "claim", "start", "checkpoint"}) {
 		t.Fatalf("checkpointed execution was settled after Worker exit: calls=%v", store.calls)
+	}
+}
+
+func TestDurableRuntimeExecutionPreservesPendingCapabilityWhenWorkerExits(t *testing.T) {
+	now := time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
+	mcp := McpServerRef{ServerID: "mcp-server", Version: "v1", Digest: "sha256:" + strings.Repeat("a", 64)}
+	worker := &runtimeWorkerFake{
+		identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+		now:      now, disconnectAfterCheckpoint: true, disconnectCode: connect.CodeInternal,
+		capabilityResourceID: mcp.ServerID, capabilityStartedOnly: true,
+	}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		McpServerRefs: []McpServerRef{mcp}, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrRuntimeRecoveryRequiresUserAction) || result.Transition.Execution.State != ExecutionRunning || !store.execution.PendingSideEffect || slices.Contains(store.calls, "complete") || slices.Contains(store.calls, "fail") {
+		t.Fatalf("result=%#v calls=%v err=%v", result, store.calls, err)
+	}
+	if len(store.capabilityEvents) != 2 || store.capabilityEvents[1].Operation != "mcp.fail" || store.capabilityEvents[1].ErrorCode != "capability_call_unknown" {
+		t.Fatalf("capability events=%+v", store.capabilityEvents)
 	}
 }
 

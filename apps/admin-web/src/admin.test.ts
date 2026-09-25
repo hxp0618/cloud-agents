@@ -41,6 +41,7 @@ import {
   listAdminTargets,
   listAdminWorkers,
   loadAdminProjectLeaseQuota,
+  matchesAdminSearch,
   readSavedAdminConnection,
   remoteWorkerFoundationSupport,
   schedulingRequestFromPreview,
@@ -50,6 +51,13 @@ import {
 } from "./admin";
 
 describe("Admin Web boundary", () => {
+  it("normalizes shared search terms once and preserves empty-query matching", () => {
+    expect(matchesAdminSearch("  ALPHA ", ["beta", "Alpha target"])).toBe(true);
+    expect(matchesAdminSearch("missing", ["beta", "Alpha target"])).toBe(false);
+    expect(matchesAdminSearch("", [])).toBe(false);
+    expect(matchesAdminSearch("", ["anything"])).toBe(true);
+  });
+
   it("derives opaque capability binding relations without provider content", () => {
     const mcp = [
       {

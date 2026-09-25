@@ -39,6 +39,24 @@ async function listen(server: Server): Promise<number> {
   return address.port;
 }
 
+async function brokerFor(port: number, token = "upstream-token") {
+  return startManagedMcpBroker(manifest(), {
+    version: 1,
+    skills: [],
+    mcp: [
+      {
+        resourceId: "server-1",
+        version: "1.0.0",
+        digest,
+        transport: "streamable-http",
+        endpoint: `http://127.0.0.1:${port}/mcp`,
+        token,
+        allowedHosts: ["127.0.0.1"],
+      },
+    ],
+  });
+}
+
 describe("managed MCP broker", () => {
   it("forwards an authorized streamable HTTP call through loopback", async () => {
     let receivedAuthorization = "";
@@ -118,6 +136,119 @@ describe("managed MCP broker", () => {
     }
   });
 
+  it("marks only an ambiguous tools/call transport failure as result unknown", async () => {
+    const methods: string[] = [];
+    const upstream = createServer((request) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { method?: string };
+        methods.push(body.method ?? "");
+        request.socket.destroy();
+      });
+    });
+    const port = await listen(upstream);
+    const broker = await brokerFor(port);
+    try {
+      const toolCall = await fetch(broker!.url, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer upstream-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "call-1",
+          method: "tools/call",
+          params: { name: "side_effect", arguments: {} },
+        }),
+      });
+      expect(toolCall.status).toBe(200);
+      expect(await toolCall.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "call-1",
+        error: { code: -32000, message: "mcp_call_result_unknown" },
+      });
+
+      const list = await fetch(broker!.url, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer upstream-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+      });
+      expect(list.status).toBe(502);
+      expect(await list.json()).toEqual({ error: "mcp_upstream_unavailable" });
+      expect(methods).toEqual(["tools/call", "tools/list"]);
+    } finally {
+      await broker?.close();
+      upstream.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  });
+
+  it("marks a successful tools/call response body that cannot be read as result unknown", async () => {
+    const upstream = createServer((_request, response) => {
+      response.writeHead(200, {
+        "content-type": "application/json",
+        "content-length": String(4 * 1024 * 1024 + 1),
+      });
+      response.end();
+    });
+    const port = await listen(upstream);
+    const broker = await brokerFor(port);
+    try {
+      const response = await fetch(broker!.url, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer upstream-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: {} }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        jsonrpc: "2.0",
+        id: 3,
+        error: { code: -32000, message: "mcp_call_result_unknown" },
+      });
+    } finally {
+      await broker?.close();
+      upstream.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  });
+
+  it("forwards an explicit upstream JSON-RPC tool failure unchanged", async () => {
+    const explicit = {
+      jsonrpc: "2.0",
+      id: 4,
+      error: { code: -32603, message: "explicit tool failure" },
+    };
+    const upstream = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(explicit));
+    });
+    const port = await listen(upstream);
+    const broker = await brokerFor(port);
+    try {
+      const response = await fetch(broker!.url, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer upstream-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: {} }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(explicit);
+    } finally {
+      await broker?.close();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  });
+
   it("rejects unknown credentials and refuses a materialization identity mismatch", async () => {
     const upstream = createServer((_request, response) => response.end("ok"));
     const port = await listen(upstream);
@@ -143,7 +274,9 @@ describe("managed MCP broker", () => {
         body: "{}",
       });
       expect(response.status).toBe(401);
-      expect(await response.json()).toEqual({ error: "mcp_authorization_required" });
+      expect(await response.json()).toEqual({
+        error: "mcp_authorization_required",
+      });
     } finally {
       await broker?.close();
       await new Promise<void>((resolve) => upstream.close(() => resolve()));
@@ -151,7 +284,9 @@ describe("managed MCP broker", () => {
 
     const root = mkdtempSync(join(tmpdir(), "cloud-agent-capability-fd-"));
     const path = join(root, "materialization.json");
-    writeFileSync(path, JSON.stringify({ version: 1, mcp: [] }), { mode: 0o600 });
+    writeFileSync(path, JSON.stringify({ version: 1, mcp: [] }), {
+      mode: 0o600,
+    });
     const fd = openSync(path, "r");
     try {
       expect(() =>
@@ -160,6 +295,87 @@ describe("managed MCP broker", () => {
           manifest(),
         ),
       ).toThrow("does not match");
+    } finally {
+      closeSync(fd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects duplicate MCP resource identities while reading materialization", () => {
+    const base = manifest();
+    const duplicateManifest = {
+      ...base,
+      bindings: [base.bindings[0]!, { ...base.bindings[0]!, resourceId: "server-2" }],
+    };
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-capability-duplicate-"));
+    const path = join(root, "materialization.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        mcp: [
+          {
+            resourceId: "server-1",
+            version: "1.0.0",
+            digest,
+            transport: "streamable-http",
+            endpoint: "http://127.0.0.1:8765/mcp",
+            token: "token-1",
+            allowedHosts: ["127.0.0.1"],
+          },
+          {
+            resourceId: "server-1",
+            version: "1.0.0",
+            digest,
+            transport: "streamable-http",
+            endpoint: "http://127.0.0.1:8766/mcp",
+            token: "token-2",
+            allowedHosts: ["127.0.0.1"],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    const fd = openSync(path, "r");
+    try {
+      expect(() =>
+        readCapabilityMaterialization(
+          { CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD: String(fd) },
+          duplicateManifest,
+        ),
+      ).toThrow("duplicate MCP resources");
+    } finally {
+      closeSync(fd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads an inherited materialization FD repeatedly without consuming its offset", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-capability-reread-"));
+    const path = join(root, "materialization.json");
+    const value = {
+      version: 1 as const,
+      mcp: [
+        {
+          resourceId: "server-1",
+          version: "1.0.0",
+          digest,
+          transport: "streamable-http" as const,
+          endpoint: "http://127.0.0.1:8765/mcp",
+          token: "token-1",
+          allowedHosts: ["127.0.0.1"],
+        },
+      ],
+      skills: [],
+    };
+    writeFileSync(path, JSON.stringify(value), { mode: 0o600 });
+    const fd = openSync(path, "r");
+    try {
+      const environment = {
+        CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD: String(fd),
+      };
+      expect(readCapabilityMaterialization(environment, manifest())).toEqual(value);
+      expect(readCapabilityMaterialization(environment, manifest())).toEqual(value);
     } finally {
       closeSync(fd);
       rmSync(root, { recursive: true, force: true });
@@ -195,7 +411,9 @@ describe("managed MCP broker", () => {
         body: "{}",
       });
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ error: "mcp_capability_expired" });
+      expect(await response.json()).toEqual({
+        error: "mcp_capability_expired",
+      });
       expect(calls).toBe(0);
     } finally {
       await broker?.close();

@@ -67,7 +67,7 @@ describe("Codex app-server runtime", () => {
       "app-server",
       "--strict-config",
       "--config",
-      'mcp_servers={"managed"={url="http://127.0.0.1:1234/mcp",bearer_token_env_var="MCP_TOKEN",required=true,omit_tools_from=["deferred"]}}',
+      'mcp_servers={"managed"={url="http://127.0.0.1:1234/mcp",bearer_token_env_var="MCP_TOKEN",required=true,default_tools_approval_mode="approve",omit_tools_from=[]}}',
     ]);
   });
 
@@ -394,6 +394,45 @@ describe("Codex app-server runtime", () => {
         expect.objectContaining({ payload: expect.objectContaining({ status: "started" }) }),
         expect.objectContaining({ payload: expect.objectContaining({ status: "completed" }) }),
       ]);
+    });
+  });
+
+  it("fails closed when a native MCP item reports an unknown result", async () => {
+    await withFakeCodex("managed-mcp-native", async (directory, _tracePath, environment) => {
+      const manifest = {
+        version: 1,
+        bindings: [
+          {
+            resourceKind: "mcp-server",
+            resourceId: "mcp-1",
+            version: "1.0.0",
+            digest: `sha256:${"a".repeat(64)}`,
+            transport: "streamable-http",
+            connectionRef: "connection-1",
+            credentialRef: "credential-1",
+            grantId: "grant-1",
+            networkPolicyRef: "network-1",
+            expiresAtUnixSeconds: Math.floor(Date.now() / 1000) + 300,
+            permissions: ["mcp.call"],
+            readOnly: false,
+          },
+        ],
+      };
+      environment.CLOUD_AGENT_CAPABILITY_MANIFEST_B64 = Buffer.from(
+        JSON.stringify(manifest),
+      ).toString("base64url");
+      environment.CLOUD_AGENT_MCP_BROKER_URL = "http://127.0.0.1:43123/mcp";
+      environment.CLOUD_AGENT_MCP_TOKEN_MCP_1 = "unknown-token";
+      const messages: RunnerMessage[] = [];
+      const run = startProviderHostRun(codexInput(directory), null, (message) => messages.push(message), {
+        environment,
+      });
+      await expect(run.result).rejects.toThrow("Managed MCP call result is unknown.");
+      expect(messages).toContainEqual({
+        type: "event",
+        eventType: "runtime.provider.activity",
+        payload: expect.objectContaining({ itemType: "mcp_tool_call", status: "updated" }),
+      });
     });
   });
 
@@ -1602,7 +1641,7 @@ for (const name of ${JSON.stringify([
 }
 const appServerArguments = process.argv.slice(2);
 const managedMcpConfigArgument = appServerArguments.find((value) => value.startsWith("mcp_servers={"));
-if (scenario === "managed-mcp-native" && managedMcpConfigArgument !== ${JSON.stringify('mcp_servers={"cloud_agents_mcp-1"={url="http://127.0.0.1:43123/mcp",bearer_token_env_var="CLOUD_AGENT_MCP_TOKEN_MCP_1",required=true,omit_tools_from=["deferred"]}}')}) process.exit(25);
+if (scenario === "managed-mcp-native" && managedMcpConfigArgument !== ${JSON.stringify('mcp_servers={"cloud_agents_mcp-1"={url="http://127.0.0.1:43123/mcp",bearer_token_env_var="CLOUD_AGENT_MCP_TOKEN_MCP_1",required=true,default_tools_approval_mode="approve",omit_tools_from=[]}}')}) process.exit(25);
 const preToolUseHookConfigArgument = appServerArguments.find((value) => value.startsWith("hooks.PreToolUse="));
 const postToolUseHookConfigArgument = appServerArguments.find((value) => value.startsWith("hooks.PostToolUse="));
 const hookCommandStart = preToolUseHookConfigArgument?.indexOf("command=") ?? -1;
@@ -1784,7 +1823,8 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       send({ id: "dynamic-link-rpc", method: "item/tool/call", params: { threadId: "thread-new", turnId: "turn-1", callId: "dynamic-link-1", tool: "write_text_file", namespace: "workspace", arguments: { path: "linked/escape.txt", content: "must not escape\\n" } } });
     } else if (scenario === "managed-mcp-native") {
       send({ method: "item/started", params: { threadId: "thread-new", turnId: "turn-1", item: { id: "mcp-native-1", type: "mcpToolCall", status: "inProgress", server: "cloud_agents_mcp-1", tool: "write_managed_marker", arguments: {} } } });
-      send({ method: "item/completed", params: { threadId: "thread-new", turnId: "turn-1", item: { id: "mcp-native-1", type: "mcpToolCall", status: "completed", server: "cloud_agents_mcp-1", tool: "write_managed_marker", arguments: {}, result: { content: [{ type: "text", text: "MCP_MANAGED_OK" }] } } } });
+      const unknown = process.env.CLOUD_AGENT_MCP_TOKEN_MCP_1 === "unknown-token";
+      send({ method: "item/completed", params: { threadId: "thread-new", turnId: "turn-1", item: { id: "mcp-native-1", type: "mcpToolCall", status: unknown ? "error" : "completed", server: "cloud_agents_mcp-1", tool: "write_managed_marker", arguments: {}, result: unknown ? { error: { code: -32000, message: "mcp_call_result_unknown" } } : { content: [{ type: "text", text: "MCP_MANAGED_OK" }] } } } });
       complete("managed mcp complete");
     } else if (scenario === "large-diff") {
       const diff = ["diff --git a/large.txt b/large.txt", "--- a/large.txt", "+++ b/large.txt", "@@ -1,1 +1,5000 @@", "-before", ...Array.from({ length: 5000 }, (_, index) => "+after-" + index + "-" + "x".repeat(16)), ""].join("\\n");
@@ -1793,8 +1833,6 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     } else if (scenario === "credential-environment") {
       complete("credential isolated");
     } else if (scenario === "managed-skills") {
-      send({ method: "item/started", params: { threadId: "thread-new", turnId: "turn-1", item: { id: "skill-item-1", type: "skill", status: "inProgress", name: "managed-skill", path: "/tmp/cloud-agents-skills/codex-managed-skill/managed-skill/SKILL.md" } } });
-      send({ method: "item/completed", params: { threadId: "thread-new", turnId: "turn-1", item: { id: "skill-item-1", type: "skill", status: "completed", name: "managed-skill", path: "/tmp/cloud-agents-skills/codex-managed-skill/managed-skill/SKILL.md" } } });
       complete("managed skill complete");
     } else if (scenario === "ambient-hook") {
       complete("ambient hook isolated");

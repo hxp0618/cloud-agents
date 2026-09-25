@@ -297,6 +297,20 @@ INSERT INTO cloud_agents.deployment_targets (
       .split("\n")
       .filter((line) => !new Set(["BEGIN", "SET", "COMMIT"]).has(line))
       .at(-1);
+  assert.equal(
+    runtimeResult(`SELECT concat_ws('|',
+      has_function_privilege(current_user,'cloud_agents.settle_managed_agent_execution_v1(text,text,text,text,text,bigint,text,text,text,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.settle_managed_agent_execution_v2(text,text,text,text,text,bigint,text,text,text,text,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.settle_managed_agent_execution_v3(text,text,text,text,text,bigint,text,text,text,text,text,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.settle_managed_agent_execution_v4(text,text,text,text,text,bigint,text,text,text,text,text,text,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.cancel_managed_agent_execution_v1(text,text,text,text,text,bigint,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.interrupt_managed_agent_execution_v1(text,text,text,text,text,bigint,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.settle_claimed_managed_agent_execution_v1(text,text,text,text,text,bigint,text,text,text,text,text,text,text,text,bigint,text,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.cancel_managed_agent_execution_v2(text,text,text,text,text,bigint,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.interrupt_managed_agent_execution_v2(text,text,text,text,text,bigint,text,text)','EXECUTE')::text,
+      has_function_privilege(current_user,'cloud_agents.reconcile_managed_agent_execution_side_effect_v1(text,text,text,text,text,bigint,text,text,text)','EXECUTE')::text)`),
+    "false|false|false|false|false|false|true|true|true|true",
+  );
   const digest = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
   const progress = JSON.stringify({
     requestId: "runtime-request",
@@ -391,6 +405,41 @@ WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-reco
     'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,1,
     'control-plane-a','incarnation-a','claim-side-effect-a',1,'${sideEffectMessages}',
     '${sideEffectCheckpointDigest}','runtime-message-checkpoint-v1',NULL,true,0)`);
+  for (const query of [
+    `SELECT execution_state FROM cloud_agents.settle_claimed_managed_agent_execution_v1(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,'succeeded',
+      '${digest(terminal)}',NULL,'side-effect-settle-key','${d}',NULL,'${terminal}',
+      '${settledMessages}',1,'control-plane-a','incarnation-a','claim-side-effect-a')`,
+    `SELECT execution_state FROM cloud_agents.cancel_managed_agent_execution_v2(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'side-effect-cancel-key','${d}')`,
+    `SELECT execution_state FROM cloud_agents.interrupt_managed_agent_execution_v2(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'side-effect-interrupt-key','${d}')`,
+  ]) {
+    assert.throws(() => runtimeResult(query), /side effect requires reconciliation/);
+  }
+  assert.equal(
+    runtimeResult(`SELECT concat_ws('|',state,pending_side_effect::text,claim_holder_id,
+      claim_incarnation,claim_token,attempt_number::text)
+      FROM cloud_agents.managed_agent_executions WHERE project_uid='project'
+      AND execution_uid='execution-side-effect'`),
+    "running|true|control-plane-a|incarnation-a|claim-side-effect-a|1",
+  );
+  for (const query of [
+    `SELECT execution_state FROM cloud_agents.settle_claimed_managed_agent_execution_v1(
+      'other-tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,'succeeded',
+      '${digest(terminal)}',NULL,'cross-tenant-settle-key','${d}',NULL,'${terminal}',
+      '${settledMessages}',1,'control-plane-a','incarnation-a','claim-side-effect-a')`,
+    `SELECT execution_state FROM cloud_agents.cancel_managed_agent_execution_v2(
+      'other-tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'cross-tenant-cancel-key','${d}')`,
+    `SELECT execution_state FROM cloud_agents.interrupt_managed_agent_execution_v2(
+      'other-tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'cross-tenant-interrupt-key','${d}')`,
+  ]) {
+    assert.throws(() => runtimeResult(query), /input is invalid/);
+  }
   assert.throws(
     () => runtimeResult(`SELECT cloud_agents.reconcile_managed_agent_execution_side_effect_v1(
       'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
@@ -473,6 +522,48 @@ WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-reco
       AND execution_uid='execution-recovery'`),
     "succeeded|2|recovered",
   );
+  assert.equal(
+    runtimeResult(`SELECT execution_state FROM cloud_agents.cancel_managed_agent_execution_v2(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',7,
+      'side-effect-terminal-key','${d}')`),
+    "cancelled",
+  );
+  assert.throws(
+    () => runtimeResult(`SELECT execution_state FROM cloud_agents.cancel_managed_agent_execution_v2(
+      'tenant','project','session-recovery','turn-side-effect','execution-side-effect',6,
+      'side-effect-terminal-key','${d}')`),
+    /generation is stale/,
+  );
+  psql(
+    `SET ROLE cloud_agents_migration_owner;
+INSERT INTO cloud_agents.managed_agent_turns (
+  tenant_id,tenant_ref_id,project_uid,session_uid,turn_uid,input_digest,state,resource_version,
+  create_idempotency_key,create_request_digest,created_at,updated_at
+) VALUES ('tenant','tenant','project','session-recovery','turn-interrupt-replay','${d}','queued',1,
+  'turn-interrupt-replay-key','${d}',clock_timestamp(),clock_timestamp());
+INSERT INTO cloud_agents.managed_agent_executions (
+  tenant_id,tenant_ref_id,project_uid,session_uid,turn_uid,execution_uid,generation,state,
+  resource_version,create_idempotency_key,create_request_digest,created_at,updated_at
+) VALUES ('tenant','tenant','project','session-recovery','turn-interrupt-replay','execution-interrupt-replay',7,
+  'running',1,'execution-interrupt-key','${d}',clock_timestamp(),clock_timestamp());
+UPDATE cloud_agents.managed_agent_turns SET execution_uid='execution-interrupt-replay',state='running'
+WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-recovery'
+  AND turn_uid='turn-interrupt-replay';`,
+    "foundation_migration",
+    "foundation_fresh",
+  );
+  assert.equal(
+    runtimeResult(`SELECT execution_state FROM cloud_agents.interrupt_managed_agent_execution_v2(
+      'tenant','project','session-recovery','turn-interrupt-replay','execution-interrupt-replay',7,
+      'interrupt-terminal-key','${d}')`),
+    "cancelled",
+  );
+  assert.throws(
+    () => runtimeResult(`SELECT execution_state FROM cloud_agents.interrupt_managed_agent_execution_v2(
+      'tenant','project','session-recovery','turn-interrupt-replay','execution-interrupt-replay',6,
+      'interrupt-terminal-key','${d}')`),
+    /generation is stale/,
+  );
   const runServerTest = (testName) =>
     docker(
       "exec",
@@ -536,6 +627,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND session_uid='session-reco
         "database-time RemoteWorker online, degraded and offline Admin projection without secret or certificate bytes",
         "server-owned RemoteWorker DeploymentTarget unprobed, ready, offline, reconnect and revoked projection",
         "managed Agent checkpoint recovery with expired-claim takeover, stale-writer fencing and side-effect reconciliation",
+        "unknown side effects block every terminal path until reconciliation, legacy direct writers are revoked, and stale-generation replays fail closed",
         "redacted MCP capability admission event append/read and exact idempotent replay",
       ],
       boundary:

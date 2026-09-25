@@ -218,6 +218,7 @@ export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlSta
 export function classifyMigrationStatement(
   statement: SqlStatementSlice,
   migrationId: string,
+  existingFunctionTargets?: ReadonlySet<string>,
 ): SqlStatementClassification {
   const tokens = lexTopLevelTokens(statement.bytes);
   const first = tokens[0];
@@ -336,7 +337,8 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set([
+      ((existingFunctionTargets === undefined &&
+        !new Set([
         "000005",
         "000006",
         "000009",
@@ -368,7 +370,8 @@ export function classifyMigrationStatement(
         "000095",
         "000096",
         "000097",
-      ]).has(migrationId) ||
+        "000100",
+        ]).has(migrationId)) ||
         tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
@@ -673,8 +676,19 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:append_managed_agent_capability_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000100",
+          [
+            "function:unquoted:cloud_agents/unquoted:checkpoint_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:boolean,unquoted:integer)",
+            "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
-      if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
+      if (
+        !(existingFunctionTargets?.has(targetIdentity) ??
+          expectedReplacements?.includes(targetIdentity))
+      )
+        reject(tokens);
     }
     return classification("CREATE", kind!, targetIdentity!, null);
   }
@@ -784,7 +798,7 @@ export function classifyMigrationStatement(
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILES_PROVIDER_KINDS"].join("\0");
       const dropManagedAgentRuntimeMessagesConstraint =
-        migrationId === "000092" &&
+        new Set(["000092", "000100"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_executions" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "MANAGED_AGENT_EXECUTIONS_RUNTIME_MESSAGES"].join("\0");

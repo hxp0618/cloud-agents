@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -25,7 +26,7 @@ export type ManagedSkillMounts = Readonly<{
   close(): void;
 }>;
 
-/** Verifies and mounts Host-delivered Skill Bundles as immutable directories. */
+/** Verifies and prepares Host-delivered Skill Bundles for the enforced Runtime sandbox. */
 export function materializeManagedSkills(
   manifest: RuntimeCapabilityManifest | null,
   materialization: CapabilityMaterialization | null,
@@ -41,6 +42,14 @@ export function materializeManagedSkills(
     throw new Error("Skill Bundle materialization root is invalid.");
   }
   mkdirSync(rootDirectory, { recursive: true, mode: 0o755 });
+  const rootInfo = lstatSync(rootDirectory);
+  if (
+    !rootInfo.isDirectory() ||
+    rootInfo.isSymbolicLink() ||
+    realpathSync.native(rootDirectory) !== rootDirectory
+  ) {
+    throw new Error("Skill Bundle materialization root is untrusted.");
+  }
   const sessionRoot = mkdtempSync(join(rootDirectory, ".runtime-"));
   const generated: string[] = [sessionRoot];
   const environment: Record<string, string> = {};

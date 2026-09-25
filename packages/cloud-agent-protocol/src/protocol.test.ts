@@ -14,6 +14,7 @@ import {
   CLOUD_AGENT_RUNTIME_EVENT_TYPES,
   CLOUD_AGENT_RUNTIME_EVENT_VERSION,
 } from "./index";
+import { CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG } from "./providerCapabilityCatalog";
 import type { CloudAgentMessageEnvelope, CloudAgentPayloadMessageType } from "./index";
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
@@ -63,6 +64,24 @@ describe("cloud-agent protocol constants", () => {
     ]) {
       expect(new Set(values).size).toBe(values.length);
     }
+  });
+
+  it("records Claude managed Skill support only after the real adapter path is enabled", () => {
+    const claude = CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG.providers.find(
+      (provider) => provider.provider === "claudeAgent",
+    );
+    expect(claude?.capabilities["skill-discovery"]).toBe("native");
+    expect(claude?.capabilities["skill-mentions"]).toBe("native");
+  });
+
+  it("records Pi native and deepseek-harness emulated Skill support only after real Docker capability runs", () => {
+    const providers = CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG.providers;
+    const pi = providers.find((provider) => provider.provider === "pi");
+    const deepseek = providers.find((provider) => provider.provider === "deepseek-harness");
+    expect(pi?.capabilities["skill-discovery"]).toBe("native");
+    expect(pi?.capabilities["skill-mentions"]).toBe("native");
+    expect(deepseek?.capabilities["skill-discovery"]).toBe("emulated");
+    expect(deepseek?.capabilities["skill-mentions"]).toBe("emulated");
   });
 
   it("exposes every payload message as a discriminated union branch", () => {

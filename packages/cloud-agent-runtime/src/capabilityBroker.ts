@@ -1,10 +1,11 @@
 import { lookup } from "node:dns/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFileSync, fstatSync } from "node:fs";
+import { fstatSync, readSync } from "node:fs";
 import { isIP } from "node:net";
 
 import {
   CLOUD_AGENT_ENVIRONMENT,
+  MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER,
   capabilityTokenEnvironmentName,
   type RuntimeCapabilityManifest,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
@@ -72,7 +73,11 @@ export function readCapabilityMaterialization(
   if (!stat.isFile() || stat.size < 1 || stat.size > MAX_MATERIALIZATION_BYTES) {
     throw new Error("Capability materialization size is invalid.");
   }
-  const parsed: unknown = JSON.parse(readFileSync(fd, "utf8"));
+  const bytes = Buffer.allocUnsafe(stat.size);
+  if (readSync(fd, bytes, 0, bytes.length, 0) !== bytes.length) {
+    throw new Error("Capability materialization could not be read completely.");
+  }
+  const parsed: unknown = JSON.parse(bytes.toString("utf8"));
   if (
     !isRecord(parsed) ||
     !onlyKeys(
@@ -90,8 +95,13 @@ export function readCapabilityMaterialization(
   const materialized = parsed.mcp.map(readMcpMaterialization);
   const skills = Array.isArray(parsed.skills) ? parsed.skills.map(readSkillMaterialization) : [];
   const expected = new Map(mcp.map((binding) => [binding.resourceId, binding]));
+  const resourceIds = new Set<string>();
   const tokens = new Set<string>();
   for (const item of materialized) {
+    if (resourceIds.has(item.resourceId)) {
+      throw new Error("Capability materialization contains duplicate MCP resources.");
+    }
+    resourceIds.add(item.resourceId);
     const binding = expected.get(item.resourceId);
     if (
       !binding ||
@@ -153,7 +163,10 @@ export async function startManagedMcpBroker(
       throw new Error("Capability materialization environment references collide.");
     }
     environmentNames.add(environmentName);
-    byToken.set(item.token, { ...item, expiresAtUnixSeconds: binding.expiresAtUnixSeconds });
+    byToken.set(item.token, {
+      ...item,
+      expiresAtUnixSeconds: binding.expiresAtUnixSeconds,
+    });
   }
   const server = createServer((request, response) => {
     void handleRequest(request, response, byToken);
@@ -165,7 +178,9 @@ export async function startManagedMcpBroker(
     throw new Error("MCP broker failed to bind a loopback address.");
   }
   const url = `http://127.0.0.1:${address.port}/mcp`;
-  const environment: Record<string, string> = { CLOUD_AGENT_MCP_BROKER_URL: url };
+  const environment: Record<string, string> = {
+    CLOUD_AGENT_MCP_BROKER_URL: url,
+  };
   for (const item of materialization.mcp) {
     environment[capabilityTokenEnvironmentName(item.resourceId)] = item.token;
   }
@@ -208,6 +223,7 @@ async function handleRequest(
     const endpoint = parseEndpoint(materialization);
     await assertEndpointNetwork(endpoint, materialization.allowedHosts);
     const body = await readRequestBody(request);
+    const toolCallId = mcpToolCallId(body);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     timeout.unref();
@@ -230,12 +246,22 @@ async function handleRequest(
         signal: controller.signal,
       });
     } catch {
-      writeJson(response, 502, { error: "mcp_upstream_unavailable" });
+      if (toolCallId !== undefined) writeUnknownToolCallResult(response, toolCallId);
+      else writeJson(response, 502, { error: "mcp_upstream_unavailable" });
       return;
     } finally {
       clearTimeout(timeout);
     }
-    const payload = await readResponseBody(upstream);
+    let payload: Buffer;
+    try {
+      payload = await readResponseBody(upstream);
+    } catch (error) {
+      if (toolCallId !== undefined && upstream.ok) {
+        writeUnknownToolCallResult(response, toolCallId);
+        return;
+      }
+      throw error;
+    }
     response.statusCode = upstream.status;
     response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/json");
     response.setHeader("cache-control", "no-store");
@@ -443,7 +469,29 @@ async function readResponseBody(response: Response): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function writeJson(response: ServerResponse, status: number, value: Record<string, string>): void {
+function mcpToolCallId(body: Buffer): string | number | null | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body.toString("utf8"));
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || parsed.method !== "tools/call" || !("id" in parsed)) return undefined;
+  if (parsed.id === null) return null;
+  if (typeof parsed.id === "string" && parsed.id.length <= 256) return parsed.id;
+  if (typeof parsed.id === "number" && Number.isSafeInteger(parsed.id)) return parsed.id;
+  return undefined;
+}
+
+function writeUnknownToolCallResult(response: ServerResponse, id: string | number | null): void {
+  writeJson(response, 200, {
+    jsonrpc: "2.0",
+    id,
+    error: { code: -32_000, message: MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER },
+  });
+}
+
+function writeJson(response: ServerResponse, status: number, value: Record<string, unknown>): void {
   response.statusCode = status;
   response.setHeader("content-type", "application/json");
   response.setHeader("cache-control", "no-store");

@@ -17,6 +17,7 @@ import {
   readEnvironmentSelection,
   writeEnvironmentSelection,
 } from "./environment";
+import { providerLabel } from "./provider";
 
 type EnvironmentWorkspaceProps = Readonly<{
   client: Client;
@@ -33,15 +34,6 @@ function environmentTone(phase: UserEnvironment["observedPhase"]): string {
   if (phase === "ready" || phase === "terminated") return "success";
   if (phase === "failed") return "danger";
   return "running";
-}
-
-function providerLabel(provider: EnvironmentProfileSummary["providerKinds"][number]): string {
-  return {
-    codex: "Codex",
-    claudeAgent: "Claude Code",
-    pi: "Pi",
-    "deepseek-harness": "deepseek-harness",
-  }[provider];
 }
 
 export function EnvironmentWorkspace({

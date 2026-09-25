@@ -10,6 +10,7 @@ import {
 } from "@deepseek-ai/dsh-sdk-client";
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
+  ManagedCapabilityCallResultUnknownError,
   ProviderInterruptedError,
   WorkspaceGeneratedFileCollector,
   capabilityTokenEnvironmentName,
@@ -17,6 +18,7 @@ import {
   hasAuthoritativeResumeData,
   managedMcpConfiguration,
   managedSkillBundleDirectories,
+  isManagedMcpCallResultUnknown,
   providerEnvironment,
   reconstructedPrompt,
   requireProviderOuterSandboxProfile,
@@ -33,6 +35,7 @@ import {
 
 export const DEEPSEEK_HARNESS_PROVIDER_KIND = "deepseek-harness" as const;
 const DEEPSEEK_HARNESS_VERSION = "0.1.2-rc.1";
+const DEEPSEEK_HARNESS_ROUTE = "cloud-agents-openai";
 
 type Harness = Pick<DeepSeekHarness, "close" | "run">;
 type DeepSeekHarnessRunOptions = ProviderRunOptions & {
@@ -105,37 +108,56 @@ export function startDeepSeekHarnessProviderRun(
     cwd: effectiveInput.workspaceDirectory,
     env: environment,
     ...(dshBin ? { dshBin } : {}),
-    provider: "deepseek-official",
+    provider: DEEPSEEK_HARNESS_ROUTE,
     model,
     initializeTimeoutMs: 30_000,
   });
   let interrupted = false;
-  let turnFailure: string | undefined;
+  let turnFailure: Error | undefined;
+  let reportResultUnknown!: (error: ManagedCapabilityCallResultUnknownError) => void;
+  const resultUnknown = new Promise<ManagedCapabilityCallResultUnknownError>((resolve) => {
+    reportResultUnknown = resolve;
+  });
   const activeTools = new Map<string, { name: string; capabilityResourceId?: string }>();
+  const seenToolCalls = new Set<string>();
   const prompt = hasAuthoritativeResumeData(effectiveInput.workload, effectiveInput.memoryDocuments)
     ? reconstructedPrompt(effectiveInput, options.hostIdentity)
     : effectiveInput.workload.inputText;
 
   const result = (async (): Promise<Extract<RunnerMessage, { type: "result" }>> => {
     try {
-      const run = await harness.run(prompt, {
-        sessionId,
-        onNotification(notification) {
-          if (turnFailure) return;
-          const failure = handleHarnessNotification(
-            notification,
-            capabilityManifest,
-            activeTools,
-            generatedFiles,
-            emit,
-          );
-          if (failure) {
-            turnFailure = failure;
-            void harness.close();
-          }
-        },
-      });
-      if (turnFailure) throw new Error(turnFailure);
+      const run = await Promise.race([
+        harness.run(prompt, {
+          sessionId,
+          onNotification(notification) {
+            if (turnFailure) return;
+            const failure = handleHarnessNotification(
+              notification,
+              capabilityManifest,
+              activeTools,
+              seenToolCalls,
+              generatedFiles,
+              emit,
+            );
+            if (failure) {
+              turnFailure = failure;
+              void harness.close();
+              if (failure instanceof ManagedCapabilityCallResultUnknownError)
+                reportResultUnknown(failure);
+            }
+          },
+        }),
+        resultUnknown.then((error) => {
+          throw error;
+        }),
+      ]);
+      if (turnFailure) throw turnFailure;
+      if (
+        run.events.some(isManagedMcpCallResultUnknown) ||
+        run.notifications.some((notification) => isManagedMcpCallResultUnknown(notification.params))
+      ) {
+        throw new ManagedCapabilityCallResultUnknownError();
+      }
       if (run.finalResponse)
         emit({
           type: "event",
@@ -145,6 +167,7 @@ export function startDeepSeekHarnessProviderRun(
       await generatedFiles.flush();
       return providerResult(run, model);
     } catch (error) {
+      if (error instanceof ManagedCapabilityCallResultUnknownError) throw error;
       if (interrupted) throw new ProviderInterruptedError();
       throw new Error(redact(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -173,11 +196,6 @@ export function createDeepSeekHarnessProvider(): CloudAgentProviderPluginV1 {
     providerKind: DEEPSEEK_HARNESS_PROVIDER_KIND,
     displayName: "deepseek-harness",
     descriptor: { runtimeVersion: DEEPSEEK_HARNESS_VERSION },
-    configurationSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: { model: { type: "string", minLength: 1 } },
-    },
     startRun: executor,
   });
 }
@@ -194,9 +212,10 @@ function handleHarnessNotification(
   notification: HarnessNotification,
   capabilityManifest: RuntimeCapabilityManifest | null,
   activeTools: Map<string, { name: string; capabilityResourceId?: string }>,
+  seenToolCalls: Set<string>,
   generatedFiles: WorkspaceGeneratedFileCollector,
   emit: (message: RunnerMessage) => void,
-): string | undefined {
+): Error | undefined {
   if (notification.method !== "session.event") return undefined;
   const event = recordValue(notification.params.event);
   const type = stringValue(event?.type);
@@ -207,36 +226,38 @@ function handleHarnessNotification(
     for (const blockValue of content) {
       const block = recordValue(blockValue);
       if (block?.type !== "tool-call") continue;
-      const name = stringValue(block.name) ?? "tool";
-      const itemId = stringValue(block.id) ?? name;
-      const args = parseRecord(block.arguments);
-      const capabilityResourceId =
-        managedMcpCapabilityResourceId(name, capabilityManifest) ??
-        managedSkillCapabilityResourceId(name, args, capabilityManifest);
-      activeTools.set(itemId, {
-        name,
-        ...(capabilityResourceId ? { capabilityResourceId } : {}),
-      });
-      if (/^(?:edit|write|str_replace_editor)$/iu.test(name))
-        generatedFiles.observe(args?.path ?? args?.filePath ?? args?.file_path);
-      emit({
-        type: "event",
-        eventType: "runtime.provider.activity",
-        payload: {
-          provider: DEEPSEEK_HARNESS_PROVIDER_KIND,
-          itemType: name,
-          itemId,
-          status: "inProgress",
-          ...(capabilityResourceId ? { capabilityResourceId } : {}),
-        },
-      });
+      recordToolCall(
+        stringValue(block.id),
+        stringValue(block.name),
+        block.arguments,
+        capabilityManifest,
+        activeTools,
+        seenToolCalls,
+        generatedFiles,
+        emit,
+      );
     }
     const usage = recordValue(data?.usage);
     if (usage) emit({ type: "event", eventType: "runtime.usage", payload: usage });
     return undefined;
   }
+  if (type === "tool/call") {
+    recordToolCall(
+      stringValue(data?.callId),
+      stringValue(data?.name),
+      data?.arguments,
+      capabilityManifest,
+      activeTools,
+      seenToolCalls,
+      generatedFiles,
+      emit,
+    );
+    return undefined;
+  }
   if (type === "tool/result") {
     const message = recordValue(data?.message);
+    if (isManagedMcpCallResultUnknown(message))
+      return new ManagedCapabilityCallResultUnknownError();
     const source = recordValue(message?.source);
     const itemId = stringValue(source?.callId) ?? "tool";
     const sourceName = stringValue(source?.name) ?? stringValue(source?.toolName);
@@ -258,15 +279,54 @@ function handleHarnessNotification(
         itemId,
         status: failed ? "failed" : "completed",
         ...(capabilityResourceId ? { capabilityResourceId } : {}),
+        ...(capabilityResourceId ? { supportMode: "emulated" as const } : {}),
       },
     });
-    return failed ? "deepseek-harness managed tool failed." : undefined;
+    return failed ? new Error("deepseek-harness managed tool failed.") : undefined;
   }
   if (type !== "turn/end") return undefined;
   const reason = recordValue(data?.reason);
   if (reason?.kind !== "error") return undefined;
   const error = recordValue(reason.error);
-  return stringValue(error?.message) ?? "deepseek-harness turn failed.";
+  return new Error(stringValue(error?.message) ?? "deepseek-harness turn failed.");
+}
+
+function recordToolCall(
+  rawItemId: string | undefined,
+  rawName: string | undefined,
+  rawArguments: unknown,
+  capabilityManifest: RuntimeCapabilityManifest | null,
+  activeTools: Map<string, { name: string; capabilityResourceId?: string }>,
+  seenToolCalls: Set<string>,
+  generatedFiles: WorkspaceGeneratedFileCollector,
+  emit: (message: RunnerMessage) => void,
+): void {
+  const name = rawName ?? "tool";
+  const itemId = rawItemId ?? name;
+  if (seenToolCalls.has(itemId)) return;
+  seenToolCalls.add(itemId);
+  const args = parseRecord(rawArguments);
+  const capabilityResourceId =
+    managedMcpCapabilityResourceId(name, capabilityManifest) ??
+    managedSkillCapabilityResourceId(name, args, capabilityManifest);
+  activeTools.set(itemId, {
+    name,
+    ...(capabilityResourceId ? { capabilityResourceId } : {}),
+  });
+  if (/^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(name))
+    generatedFiles.observe(args?.path ?? args?.filePath ?? args?.file_path);
+  emit({
+    type: "event",
+    eventType: "runtime.provider.activity",
+    payload: {
+      provider: DEEPSEEK_HARNESS_PROVIDER_KIND,
+      itemType: name,
+      itemId,
+      status: "inProgress",
+      ...(capabilityResourceId ? { capabilityResourceId } : {}),
+      ...(capabilityResourceId ? { supportMode: "emulated" as const } : {}),
+    },
+  });
 }
 
 function managedMcpCapabilityResourceId(
@@ -301,12 +361,27 @@ function writeModelPatch(stateRoot: string, model: string): string {
   writeFileSync(
     path,
     [
-      "- id: llm-deepseek",
+      "- id: llm-pi-ai",
+      "  name: '@deepseek-ai/dsh-llm-pi-ai'",
       "  config:",
-      "    baseURL: !!js process.env.DEEPSEEK_BASE_URL",
-      "    models:",
-      `      - id: ${JSON.stringify(model)}`,
-      "        contextWindow: 128000",
+      "    providers:",
+      `      ${DEEPSEEK_HARNESS_ROUTE}:`,
+      "        api: openai-responses",
+      "        apiKeyEnv: DEEPSEEK_API_KEY",
+      "        baseURL: !!js process.env.DEEPSEEK_BASE_URL",
+      "        models:",
+      `          - id: ${JSON.stringify(model)}`,
+      "            contextWindow: 128000",
+      "            maxTokens: 32768",
+      "",
+      "- id: tool-fs",
+      "  disabled: true",
+      "",
+      "- id: system-prompt",
+      "  config:",
+      "    persona: >-",
+      "      Cloud Agents has already granted the current session its Host-managed workspace-write permission.",
+      "      Use str_replace_editor for workspace files; do not use shell commands or request sandbox escalation fields.",
       "",
     ].join("\n"),
     { mode: 0o600 },
@@ -413,7 +488,7 @@ function stringValue(value: unknown): string | undefined {
 
 function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || !value.trim())
+  if (typeof value !== "string" || !value.trim() || /[\r\n\0]/u.test(value))
     throw new Error(`${label} must be a non-empty string.`);
   return value.trim();
 }

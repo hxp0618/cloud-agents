@@ -1,5 +1,48 @@
 # 07. Admin Web 需求与交互设计
 
+2026-09-24 Admin 继续按真实证据投影：r542 的版本/digest、跨租户和旧 generation 拒绝只显示 opaque capability 元数据、稳定状态码与 Operation/Audit，不显示任何请求内容；r545 的 Pi×RemoteWorker `capabilityBound=true` 仅显示版本/digest、权限、兼容性、绑定关系、attempt、脱敏 RTO/RPO/计数与 recovery 状态。r544/r546 的进程故障超时/未形成 checkpoint 只保留 fail-closed 的稳定失败状态和审计关联，不能显示为 supported 或 recovery passed，也不得展示节点地址、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。细节与日志 digest 见 [06](06-status-tracker.md)。
+
+r548–r550 的 Admin 投影继续只允许稳定 opaque 结果：Codex transport fault 的错误成功只显示未通过/审计关联；r549 Claude `provider_unavailable` 与 Pi 未产生 MCP call 只显示稳定失败码、Provider/环境、版本/digest、绑定关系和 Operation/Audit。不得显示 transport 请求、Prompt、源码、工具输入输出、MCP 返回内容、节点地址、主机路径或 Secret，也不得把未到达的 transport/revocation 阶段显示为 supported。
+
+2026-09-22 r467/r468/r469/r471/r472/r476/r480/r482/r483/r490/r491 的 Admin 投影继续沿用 opaque 最小边界：只展示 capability opaque ID、版本、digest、权限、兼容 Provider、状态、绑定关系、脱敏 attempt/recovery mode/RTO/RPO/计数及 Operation/Audit。版本/digest 不兼容、跨租户 `401`、旧 generation `409`、`awaiting_reconciliation/side_effect_outcome_unknown` 和未计数前置失败只保留稳定状态码与审计关联；不得显示 Prompt、Skill 源码、工具输入输出、MCP 返回内容、Secret、Token、主机路径、节点/Pod/namespace、Worker 地址或代理变量。`capabilityBound=true` 只代表该 candidate/Provider/环境已经有真实接管证据：r482/r480/r483 的三格 Kubernetes cross-node 与 r467 的 Codex 同节点必须分开显示，不能推断其它格或把受控 gpt-5.5 结果显示为默认模型支持。
+
+四 Provider×Docker/RemoteWorker/Kubernetes 的正向/撤销子路径可按真实日志逐项显示 `passed`/`revoked`（撤销负向 `12/12`）；但完整格仍须等 Pi/deepseek Worker/Agent restart、Codex Kubernetes cross-node、完整断连重连和恢复后 Operation/Audit 对账证据；r473/r474/r475/r489 不得显示为成功。Admin 不读取用户主机任意路径，也不把 Secret 写入 Workspace Snapshot、日志、Event 或 Artifact。
+
+2026-09-22 r463 的 Pi×Kubernetes 同节点 recovery 只允许进入既有 opaque 投影：显示 capability ID、版本/digest、权限、兼容性、绑定关系、attempt、脱敏恢复模式与 RTO/RPO/计数、状态和 Operation/Audit；不得显示 namespace、Pod/node、主机路径、凭据、代理变量、Prompt、Skill 源码、工具输入输出或 MCP 返回内容。`capabilityBound=true` 仅代表该 candidate/Provider/环境的真实同节点证据，不得推断 Kubernetes cross-node、Worker/Agent 或完整 supported；其它未验收矩阵继续显示 unsupported/未验收。
+
+2026-09-21 r459 的 Admin 投影继续只允许 opaque capability ID、版本、digest、权限、兼容性、绑定关系、Operation/Audit、脱敏恢复模式与计数；Codex×Docker/RemoteWorker/Kubernetes 的 MCP/Skill outcome 可按真实验收状态显示，RemoteWorker `not-applied`/reconcile 只显示稳定状态码，不显示 side-effect 详情。不得展示 Worker/节点地址、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret；Codex Kubernetes cross-node 仍显示未验收，不能把 r467 同节点结果升级为 cross-node。
+
+r459 的 Codex×Kubernetes 单节点正向/撤销结果可在同一 opaque 投影中显示（版本/digest、权限、绑定关系、Operation/Audit、`passed`/`revoked` 状态和脱敏计数）；由于 recovery 未形成 checkpoint，Admin 不得显示 Kubernetes recovery 或 cross-node supported。诊断只保留稳定失败码/未计数 Operation，不显示 PostgreSQL 错误细节、Pod/namespace/node、主机路径、Prompt、源码、工具输入输出、MCP 返回内容、代理变量或 Secret。
+
+r459 当前 candidate 的 Pi×Docker 与 deepseek-harness×Docker 正向/撤销结果可在同一最小 opaque 投影中显示：只显示 capability opaque ID、版本、digest、权限、兼容性、绑定关系、`passed`/`revoked` 状态、脱敏计数和 Operation/Audit；不显示 Provider 凭据、代理变量、连接端点、Skill 路径/源码、Prompt、工具输入输出或 MCP 返回内容。该投影只覆盖本轮真实 Docker 子路径；RemoteWorker/Kubernetes、重启/跨节点仍按各自日志逐格显示，不能推断完整十二格 supported。
+
+r459 的 Pi×RemoteWorker 与 deepseek-harness×RemoteWorker capability-bound cross-node 结果沿用同一最小投影：Admin/Operation/Audit 只显示 opaque ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和脱敏 RTO/RPO/计数；不显示 DIND/Worker 地址、namespace、Pod/node、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。`capabilityBound=true` 只表示该 Provider/环境/候选的真实接管证据，不能推断 Kubernetes、Worker/Agent 或完整 supported。
+
+r459 的 Pi×Kubernetes 与 deepseek-harness×Kubernetes 正向/撤销子路径可显示 opaque MCP/Skill outcome、版本/digest、权限、兼容性、绑定关系、脱敏计数和 Operation/Audit；r480/r483 在受控 gpt-5.5 fixture 上的 cross-node takeover 只可显示对应 candidate/model 的 `passed` 与脱敏 RTO/RPO，不能升级为默认 gpt-5.6-luna 或所有模型支持。诊断只保留稳定失败码/未计数 Operation，不显示 namespace/Pod/node、主机路径、Prompt、源码、工具输入输出、MCP 返回内容、代理变量或 Secret。
+
+r448 的 Claude×RemoteWorker 能力绑定跨节点证据沿用最小 opaque 投影：Admin/Operation/Audit 只展示 capability ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和脱敏 RTO/RPO/计数；不展示 DIND/Worker 地址、namespace、Pod/node、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。r446/r447 的 fail-closed 诊断只保留稳定失败码/未计数 Operation，`capabilityBound=true` 也不得推断其它 Provider、环境或完整 supported 状态。
+
+Pi/deepseek-harness 的 r402/r403 capability 测试因物料配置错误未产生成功证据，Admin 不得据此显示成功；修正物料后的 r405 Pi×Docker、r406 deepseek-harness×Docker 已产生真实 opaque MCP/Skill outcome、Artifact 和事件续读，Admin 仅可显示 opaque ID、版本/digest、权限、状态、兼容性、绑定关系与 Operation/Audit，不显示 Prompt、源码、工具输入输出、MCP 返回内容或 Secret。无能力绑定的 Pi r404 baseline 仍不替代 MCP/Skill 验收；两个 Docker 子路径不代表 RemoteWorker/Kubernetes 或完整十二格通过。
+最新 r407/r408 RemoteWorker 结果沿用相同 Admin 最小投影；Admin 只显示 opaque capability outcome、版本/digest、绑定关系、Operation/Audit 和 `capabilityBound=false` 的脱敏状态，不显示节点地址、endpoint、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
+r409/r410 Kubernetes 结果继续沿用相同 opaque 投影；Admin 只显示 Provider/环境、版本/digest、绑定关系、Operation/Audit、恢复状态和 `capabilityBound=false`，不显示 namespace/Pod/node、endpoint、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
+r414 Claude×Docker 与 r415 Claude×Kubernetes 单节点结果可在同一最小投影中显示 opaque MCP/Skill outcome、版本/digest、绑定关系、Operation/Audit、`capabilityBound=true` 的同节点恢复状态；r412 Pi recovery 失败、r413 Claude Kubernetes 首次失败及未覆盖的跨节点/Worker/Agent 组合不得显示为支持。
+
+r422 Claude Docker Worker+Agent 组合的恢复探针随后收到 `provider_unavailable` 并 fail closed，Admin 只能保留脱敏 Operation/Audit 失败状态，不得把该轮显示为完整组合支持。
+
+r423 的 Claude×Docker Worker/Agent 组合已完整通过；Admin 可显示 opaque MCP/Skill outcome、版本/digest、绑定关系、Operation/Audit 及脱敏的同节点恢复状态，仍不得展示 Prompt、源码、工具输入输出、MCP 返回内容或 Secret；其它环境和未通过组合继续隐藏为 unsupported/未验收。
+
+r427 的 Pi×RemoteWorker 同节点恢复可沿用相同最小投影：只显示 opaque MCP/Skill outcome、版本/digest、绑定关系、Operation/Audit 和脱敏恢复状态；不显示节点地址、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret，跨节点/Kubernetes 未验收组合不得显示为支持。
+
+r428 的 deepseek-harness×RemoteWorker 同节点恢复沿用相同最小投影；Admin 只显示 opaque ID、版本/digest、权限、状态、兼容性、绑定关系和 Operation/Audit，不显示节点地址、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret，跨节点/Kubernetes 未验收组合不得显示为支持。
+
+r429 的 Pi×Kubernetes 单节点恢复沿用相同最小投影；Admin 只显示 opaque ID、版本/digest、权限、状态、兼容性、绑定关系和 Operation/Audit，不显示 namespace/Pod/node、主机路径、Prompt、源码、工具输入输出、MCP 返回内容或 Secret；Kubernetes cross-node 未验收，不得显示为支持。
+
+Admin 仅记录本次 Codex×Docker Worker recovery 的 opaque capability 元数据、Operation/Audit 和通过状态；未通过的 Provider/环境组合不显示为支持。
+
+Worker recovery 诊断仍只展示脱敏类别和长度，不展示 MCP 返回内容、工具输入输出、主机路径或 Secret；其它未通过的 Worker/Provider 组合，Admin 不得显示为已支持。
+
+2026-09-20 增量：r384 Claude×Docker 真实子路径通过 MCP/Skill/Artifact/事件续读、同节点 Control Plane SIGKILL 恢复和撤销负向；Admin/User browser smoke 仍为 1440/390、双主题、User→Admin 403。随后 Claude×RemoteWorker，以及 Codex×Docker/RemoteWorker/Kubernetes 的 MCP/Skill/事件续读、撤销和恢复子路径也真实通过；r387 又通过 Codex Docker Agent Runtime 进程退出后的 capability-bound recovery（MCP/Skill/事件续读、撤销负向）；r417、r418 分别补齐 Pi×Docker 和 deepseek-harness×Docker capability-bound process-restart/reconcile。独立 Docker-only retry3 仍通过，但完整 Claude×Kubernetes retry4 在 Docker `file_change=failed` 阶段未形成完整 Artifact/recovery，保持 fail closed。当前 candidate 的 Docker/Kubernetes/RemoteWorker contract-negative、跨租户 401 和 stale-generation 1→2/409 真实通过，但不显示为 Provider 能力；Codex Worker recovery、Claude Kubernetes、Kubernetes 跨节点、四 Provider Worker/Agent 重启和其它 Provider 的完整组合仍不显示为通过。Admin/Audit 仍只保留 opaque ID、版本/digest、权限、状态、绑定关系与 Operation/Audit，不把未完成的其它组合显示为通过。失败诊断仍不增加路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、主机路径或 Secret。该证据不关闭十二格；其它 Provider、Worker 重启、Kubernetes 跨节点和逐项负向仍开放。制品、命令、清理和未覆盖项统一见 [06](06-status-tracker.md)。
+
 - 状态：产品边界与既有视觉/双语/安全要求有效；新增技术细节为实施设计，未宣称已实现或验收
 - 日期：2026-09-05（基础设施＋Admin 联合交付；原需求日期 2026-09-03）
 - 原实现参考：`codex/cloud-agents-platform-p0@a6dd495`；当前代码与验收须逐次核对，不能沿用此 ref 声称当前完成
@@ -838,3 +881,49 @@ Candidate `0.3.0-dev.354` 只修复 Provider Host 内部的即时 `turnId` 竞�
 - [`DeploymentTarget` schema](../../../contracts/platform/v1alpha1/schemas/deployment-target.schema.json)
 - [`CloudEnvironmentLease` schema](../../../contracts/platform/v1alpha1/schemas/environment-lease.schema.json)
 - [`Managed Host` OpenAPI](../../../contracts/managed-host/v1alpha1/openapi.json)
+
+2026-09-19 Admin 投影验收边界：Codex×Docker 的真实 MCP/Skill 子链只向 Admin/Operation/Audit 暴露 opaque capability ID、版本、digest、权限、状态、兼容性、绑定关系及恢复/撤销的稳定结果；本轮日志与浏览器 smoke 不改变页面数据面。Prompt、Skill 源码、工具输入输出、MCP 返回内容、endpoint、主机路径、代理变量和 Secret 均未进入 Admin 或 Artifact；其余十一格与完整故障矩阵继续保持开放。
+
+Candidate `0.3.0-dev.375` 的 direct MCP 暴露修复只改变 Runtime 内部工具可见性，不扩大 Admin 数据面；页面仍只显示 opaque capability 元数据及 Operation/Audit 稳定状态，不显示 deferred/direct 配置、Prompt、源码、工具输入输出、MCP 返回内容、路径、代理变量或 Secret。
+
+r430 的 deepseek-harness×Kubernetes 真实结果继续使用相同最小 Admin 投影：只记录 opaque capability ID、版本、digest、权限、兼容性、绑定、Operation/Audit 状态、attempt、恢复模式和撤销的稳定计数；不显示 namespace、Pod/node、endpoint、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。OrbStack 单节点结果不能在 Admin 中推断 Kubernetes cross-node 或完整 supported。
+
+r431 的隔离 kind 三节点深度验收继续保持该投影：普通 cross-node takeover 的 `capabilityBound=false`、RTO/RPO 和 snapshot 只作为脱敏 Runtime 恢复结果，不得显示为 MCP/Skill 能力绑定成功；缺少 CRD 的 preflight 失败也只显示稳定失败码。Admin 不新增节点地址、namespace、Pod、endpoint、路径、Prompt、源码、工具输入输出、MCP 返回内容、代理变量或 Secret。
+
+r437 的 deepseek-harness Kubernetes 能力绑定跨节点验收也保持同一最小投影：Admin/Operation/Audit 只显示 opaque capability ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和撤销的稳定计数；不显示恢复目标 namespace/Pod/node、endpoint、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。`capabilityBound=true`、RTO/RPO、snapshot size 和 `mcp_requests` 只作为脱敏状态字段；其它 Provider/环境和完整十二格仍不得推断为 supported。
+
+r442 的 Pi×RemoteWorker 跨节点证据继续使用相同 opaque 投影：Admin/Operation/Audit 只展示 capability ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和脱敏的 RTO/RPO/计数；不展示 DIND/Worker 地址、namespace、Pod/node、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。`capabilityBound=true` 只表示本次已验证的能力绑定恢复，不得由页面推断其它 Provider、环境或完整 supported 状态。
+
+r445 的 deepseek-harness×RemoteWorker 跨节点证据保持相同最小投影：Admin/Operation/Audit 只展示 opaque capability ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和脱敏的 RTO/RPO/计数；不展示 DIND/Worker 地址、namespace、Pod/node、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。r444 的 HTTP 499 仅作为稳定失败码/未计数 Operation 结果保留，r445 的 `capabilityBound=true` 也不得推断其它 Provider、环境或完整 supported 状态。
+
+2026-09-23 Admin 投影继续只接受稳定 opaque 结果：r525 Claude×Kubernetes、Pi×Kubernetes 的 transport/revocation 通过只记录版本、digest、权限、兼容性、绑定、状态及 Operation/Audit；deepseek-harness r525/r527 的 `provider_unavailable` 和 Codex×RemoteWorker r524 的无 marker 只记录稳定失败码，不展示 Provider 返回、工具输入输出或 Secret。`capability_bound_recovery=0` 的 transport-only guard 与 32/32 静态验证不改变 Admin 数据面；版本不兼容、跨租户、旧 generation 和未知 side effect 继续以拒绝/待对账状态呈现，不得推断为 supported。
+
+2026-09-24 r551 Admin 投影继续只允许稳定的 opaque 结果：Codex×Docker 的不兼容/跨租户拒绝可展示为版本、digest、权限、兼容性、绑定和 Operation/Audit 状态；`provider_unavailable` 只能展示稳定失败码和未形成 checkpoint 的状态，不能展示 Provider 返回、Prompt、源码、工具输入输出、MCP 返回内容、网络代理、主机路径或 Secret。残留 OpenSandbox server 管理卷无本轮归属，不进入 Admin 数据面；未到达 transport/recovery 的阶段不得推断为 supported。
+
+模型 allowlist 阻塞期间，Admin 只投影稳定的 `MODEL_NOT_ALLOWED`/`provider_unavailable` 失败码和未形成 checkpoint 的 Operation/Audit 状态；不显示 Provider 返回原文、模型代理细节、Prompt、工具输入输出或 Secret，也不把未执行的 MCP/Skill 阶段标为 supported。
+
+Compose selector 修复不扩大 Admin 数据面；transport-only 与 capability-bound recovery 的选择仍只产生稳定 Operation/Audit 状态，未执行的阶段保持不可见且不推断为 supported。
+
+2026-09-24 r554 的 Admin 投影边界保持不变：仅允许展示 MCP/Skill opaque ID、版本、digest、权限、状态、兼容性、绑定关系以及 Operation/Audit 的稳定状态（包括 `provider_unavailable`、pending reconciliation 和 recovery outcome）。不得展示 Prompt、Bundle 源码、工具输入输出、MCP 返回内容、Secret、节点地址、主机路径或代理细节；本次真实结果也不把未执行的 Provider/环境阶段标为 supported。
+
+2026-09-25 r559 deepseek-harness×Docker 只增加真实 opaque 结果：能力 ID、版本/digest、权限、兼容性、绑定、MCP/Skill 状态、transport/revocation/stale-generation Operation/Audit 和脱敏计数。Admin 不展示 DSH route、模型名、`tool-fs` 配置、Host persona、endpoint、主机路径、Prompt、Bundle 源码、工具输入输出、MCP 返回内容、代理变量或 Secret；第一次未进入 Provider 的 Worker upgrade preflight 只保留稳定 Operation 失败状态，不得显示为 Provider failure 或 supported。完整十二格与正式 Gate 仍开放。
+
+2026-09-25 r561 Pi×Docker 只增加真实 opaque 结果：能力 ID、版本/digest、权限、兼容性、绑定、MCP/Skill 状态、transport/revocation/stale-generation Operation/Audit 和脱敏计数。Admin 不展示 Pi API 路由、模型名、endpoint、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret；未覆盖的 RemoteWorker/Kubernetes、重启和跨节点阶段不得由本格结果推断为 supported。
+
+同一 r561 的 Pi×RemoteWorker 结果只投影 opaque capability ID、版本/digest、权限、兼容性、绑定、`capabilityBound`、脱敏 RTO/RPO/attempt、transport/revocation/stale-generation Operation/Audit 和稳定计数。Admin 不展示 RemoteWorker 地址、目标节点、快照路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret；Pi×Kubernetes 与 Worker/Agent 退出仍不得由该结果推断为 supported。
+
+r561 Pi×Kubernetes transport 重跑仅投影 opaque capability 元数据、版本/digest、权限、兼容性、绑定关系、已到达的 acceptance 计数和 `unexpected EOF` 的稳定未计数 Operation/Audit 失败状态；不得把 wrapper exit 1 或未形成的 transport/revocation/stale-generation 终态显示为 supported。acceptance-only 诊断中未产生 MCP call 也只记录稳定失败码；Admin 不展示 Kubernetes namespace/Pod/node、Provider 返回、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量、主机路径或 Secret。历史 r525 Pi×Kubernetes transport/revocation 的 opaque 通过记录保持独立，不由 r561 失败覆盖或外推。
+
+r559 的 deepseek-harness×Kubernetes 仅出现终端 capability marker 但 wrapper 最终 exit 1，因此 Admin 只投影 opaque capability 元数据、版本/digest、权限、兼容性、绑定、未计数 transport/revocation/stale-generation Operation/Audit 和稳定失败状态；不得把该轮显示为 supported，也不显示 Provider 返回、Prompt、工具输入输出、MCP 返回内容、endpoint、节点地址或 Secret。RemoteWorker recovery 未形成 checkpoint 的轮次同样只显示稳定 fail-closed 状态。
+
+2026-09-25 closeout projection：r568 的 Codex×Kubernetes cross-node 只向 Admin/Operation/Audit 暴露 opaque capability ID、版本/digest、绑定状态、attempt、恢复模式、脱敏 RTO/RPO、snapshot size、snapshot digest 是否已由 harness 输出、稳定副作用 outcome、事件/撤销计数和 Operation 状态；不展示 kind 节点名、namespace、Pod、Worker 地址、snapshot 内容、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。r562–r566 的 FAILED/BLOCKED 只投影稳定失败码、未形成 checkpoint/recovery 的状态和审计引用，不得显示为 supported；Kubernetes direct Sandbox Worker fault 的 NOT APPLICABLE 也只显示适用性状态，不推断存在 Worker Pod。Pi×Kubernetes 历史 r525 PASS 与 r561 `unexpected EOF` FAILED 必须作为独立审计记录保留。
+
+r569 Codex×Kubernetes transport-only 只投影稳定的 `unexpected EOF`/外部 Kubernetes BLOCKED Operation 状态；没有 Provider、MCP、Skill、Artifact 或 transport marker 时，不展示任何 supported 状态，也不展示 token endpoint、namespace、Pod、节点、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
+
+r570 deepseek-harness×Kubernetes 只投影正向 acceptance 的 opaque 计数和 transport `unexpected EOF` 的 BLOCKED Operation/Audit；未形成 transport、撤销或旧 generation 终态时，不显示 supported，也不显示 fixture、Pod、namespace、节点、Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
+
+2026-09-25 r571 Admin projection：harness 已增加 opaque snapshot digest 的精确读取和格式校验，但真实重跑在 OpenSandbox 镜像拉取阶段因本机代理 `127.0.0.1:6152` connection refused BLOCKED，未产生新的 digest、Provider 或 cross-node 状态。Admin/Operation/Audit 只显示稳定的 `BLOCKED`、外部 registry/proxy 失败码和审计引用；不得把 r568 缺 digest 的 PASS 投影为完整 cross-node supported，也不得展示 registry URL、代理细节、节点、namespace、Pod、snapshot 内容、Prompt、Skill 源码、工具输入输出、MCP 返回内容或 Secret。r568 与 r571 必须作为独立记录保留。 日志 `.tmp/mcp-skill-runtime-v1-20260925-r571-codex-kubernetes-cross-node-digest-closeout.log` SHA-256 `798fbb9346e41d6e3e6451ae8f7639b1c2e6621b6986be4132fbab026413e752`。
+
+2026-09-25 evidence consolidation projection：r575 的 OpenSandbox lifecycle 只允许显示 opaque `PASS / lifecycle-preflight`、固定版本/digest、health 状态和 cleanup 审计引用；不显示 registry URL、配置路径、Kubernetes kubeconfig、endpoint、主机路径或 Secret，也不把 readiness 显示为 Provider supported。Worker image precheck 同样只可显示固定 image digest、四个 package version/digest 和 precheck 状态，不能替代 Provider acceptance。
+
+r582 Codex×Kubernetes snapshot closeout 可向 Admin/Operation/Audit 暴露 opaque provider/environment、capability binding 状态、attempt、恢复模式、脱敏 RTO/RPO、snapshot size、canonical snapshot digest、事件/撤销计数、side-effect outcome 和 evidence/log 审计引用。raw archive、Workspace/Sandbox 内容、PVC/PV、kind 节点、namespace、Pod、Worker 地址、registry/controller alias、Prompt、源码、工具输入输出、MCP 返回内容、代理变量、npm tarball 内容和 Secret 均不得进入页面或用户可读 receipt。r582 的 `PASS` 只适用于 Codex×Kubernetes capability-bound cross-node snapshot 子路径；transport 五格、Worker/Agent 的 `FAIL/BLOCKED/NOT APPLICABLE` 与其它 Provider×environment gap 必须以 06 的逐格状态投影，不能由该记录外推 supported。

@@ -11,11 +11,8 @@ import {
   type CloudAgentProviderPluginV1,
   type CloudAgentProviderSession,
 } from "./index";
-import {
-  createProviderHostProtocolHandler,
-  providerHostDescriptor,
-  type ProviderHostDescriptorOptions,
-} from "./providerProtocol";
+import { createProviderHostProtocolHandler } from "./providerProtocol";
+import { providerHostDescriptor, type ProviderHostDescriptorOptions } from "./providerDescriptor";
 import {
   readRunnerCredential,
   type ProviderRunExecutor,
@@ -30,7 +27,6 @@ export interface ProviderPluginOptions {
   readonly displayName: string;
   readonly providerAliases?: ReadonlyArray<string>;
   readonly descriptor?: ProviderHostDescriptorOptions;
-  readonly configurationSchema?: Readonly<Record<string, unknown>>;
   /** @internal Provider execution seam retained for adapter-level conformance tests. */
   readonly startRun: ProviderRunExecutor;
   /** @internal Bounded shutdown tuning used by conformance tests. */
@@ -42,6 +38,11 @@ export interface ProviderPluginOptions {
 }
 
 const DEFAULT_CLOSE_TASK_TIMEOUT_MS = 5_000;
+const MODEL_CONFIGURATION_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  properties: Object.freeze({ model: Object.freeze({ type: "string", minLength: 1 }) }),
+});
 
 /** Creates a Provider Plugin ABI adapter around the internal Provider Host protocol. */
 export function createProviderPlugin(options: ProviderPluginOptions): CloudAgentProviderPluginV1 {
@@ -274,7 +275,7 @@ function toPluginDescriptor(
     ...(descriptor.textGenerationTasks
       ? { textGenerationTasks: descriptor.textGenerationTasks }
       : {}),
-    ...(options.configurationSchema ? { configurationSchema: options.configurationSchema } : {}),
+    configurationSchema: MODEL_CONFIGURATION_SCHEMA,
   };
 }
 
@@ -312,9 +313,10 @@ function writableWorkspaceRoot(host: CloudAgentHostServices): string {
 }
 
 function readConfiguredModel(configuration: Readonly<Record<string, unknown>>): string | undefined {
-  const unsupported = Object.keys(configuration).filter((name) => name !== "model");
-  if (unsupported.length > 0) {
-    throw new Error(`Provider configuration does not support '${unsupported[0]}'.`);
+  if (!isRecord(configuration)) throw new Error("Provider configuration must be an object.");
+  const unsupported = Object.keys(configuration).find((name) => name !== "model");
+  if (unsupported !== undefined) {
+    throw new Error(`Provider configuration does not support '${unsupported}'.`);
   }
   if (configuration.model === undefined) return undefined;
   if (typeof configuration.model !== "string" || !configuration.model.trim()) {

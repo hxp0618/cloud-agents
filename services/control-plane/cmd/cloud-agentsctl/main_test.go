@@ -237,6 +237,7 @@ func TestRunAttachesPTYWithCursor(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer connection.Close()
+		_ = connection.WriteJSON(map[string]string{"type": "connected"})
 		_ = connection.WriteMessage(websocket.BinaryMessage, append([]byte{1}, []byte("hello")...))
 		_ = connection.WriteJSON(map[string]string{"type": "exit"})
 	}))
