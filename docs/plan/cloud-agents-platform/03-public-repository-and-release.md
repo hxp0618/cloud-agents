@@ -190,7 +190,7 @@ CP、Worker、CLI、Synara/T3 client 必须共同消费同一 validator；不能
 
 测试后任何 bit 变化会让关联 E2E/Release closure 失效。
 
-历史 `cloud-agent-m1-rc.1` 只能作为 immutable provenance 输入；Platform candidate 引用它之前仍须通过当前
+历史 prerelease 只能作为 immutable provenance 输入；Platform candidate 引用它之前仍须通过当前
 compatibility、vulnerability、SBOM/provenance/signature Gate。若历史 bits 无法满足当前策略，必须发布新的
 Runtime candidate，不能把旧 prerelease 自动升级为合格 Platform component。
 

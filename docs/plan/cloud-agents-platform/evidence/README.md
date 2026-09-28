@@ -1,92 +1,34 @@
-# Evidence index
+# Evidence 索引
 
-本目录在恢复实施后保存 Gate closure record 的索引；大日志和二进制只链接到 immutable CI/artifact store，
-不直接提交 secret、真实 pairing/auth material、数据库 dump 或未脱敏日志。
+本目录保存 Gate closure、阶段报告、应用 E2E 和独立复核的原始审计材料。它是证据来源，不是当前计划或状态入口；当前 Cloud Agents 实际状态只认 [`06-status-tracker.md`](../06-status-tracker.md)。
 
-建议结构：
+## Gate 分类
 
 ```text
 evidence/
-├── G-INVENTORY/
-├── G-BASELINE/
-├── G-CONTRACT/
-├── G-DATA/
-├── G-AUTHORITY/
-├── G-MANAGED-AGENT/
-├── G-WORKER-FENCING/
-├── G-MANAGED-HOST/
-├── G-ADAPTER/
-├── G-SECURITY/
-├── G-OPS/
-├── G-STANDALONE/
-├── G-SYNARA-CUTOVER/
-├── G-T3-INTEGRATION/
-├── G-SUPPLY-CHAIN/
-├── G-PLATFORM-RELEASE/
+├── G-INVENTORY/       ├── G-BASELINE/
+├── G-CONTRACT/        ├── G-DATA/
+├── G-AUTHORITY/       ├── G-MANAGED-AGENT/
+├── G-WORKER-FENCING/  ├── G-MANAGED-HOST/
+├── G-ADAPTER/         ├── G-SECURITY/
+├── G-OPS/             ├── G-STANDALONE/
+├── G-SYNARA-CUTOVER/  ├── G-T3-INTEGRATION/
+├── G-SUPPLY-CHAIN/    ├── G-PLATFORM-RELEASE/
 └── G-EXPOSURE/
 ```
 
-跨阶段 Gate 在对应目录下保存 phase record，例如 `G-AUTHORITY/P1/`、`G-SECURITY/P6/`；目录根部只保存
-aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDATED`，不得覆盖或删除历史证据。
+跨阶段 Gate 在对应目录下继续保存 phase record；phase record 即使被后续证据替代也保持原文并标记其当时状态。根目录只承担分类和链接，不复制 closure record。
 
-每条正式 Gate closure record 使用 [`../templates/gate-closure-record.md`](../templates/gate-closure-record.md)，并在
-[`../06-status-tracker.md`](../06-status-tracker.md) 登记状态与链接。
+## 当前 canonical links
 
-应用 E2E 报告保留在对应 `apps/*` 目录，包含 commit SHA、资源 ID 和实际观察到的 phase transition；
-本目录或状态追踪通过链接索引，不复制原始报告，也不要求普通应用报告套用 Gate closure 模板。
-验收计划先于执行记录，实际结果、证据索引与 closure record 在验证后记录；应用报告不能自动关闭 Gate，
-正式 closure 仍须满足对应 Gate 的全部证据和审批要求。
+- [最终状态汇总](../06-status-tracker.md)：12/12 Provider×Environment、适用故障结果、清理/安全汇总和 `CLOSED / APPROVED` Gate 状态。
+- [Gate closure 模板](../templates/gate-closure-record.md)：新 closure record 的字段约束。
+- [专项文档导航](../README.md)：04、05、06、07 的职责边界。
+- [P0 审计索引](../../p0/README.md)、[P1 审计索引](../../p1/README.md)、[standalone 审计索引](../../standalone/README.md)：跨目录的证据定位入口。
 
-当前 Cloud Agents closeout 已在 [06](../06-status-tracker.md) 汇总：12/12 Provider×Environment 单元为 `PASS`，适用故障/恢复为 `PASS` 或 `NOT APPLICABLE`，独立 reviewer 已 `APPROVE`，aggregate、release 与 feature Gate 为 `CLOSED / APPROVED`。下方历史 candidate 仍按其固定 source/ref 解释，不改写历史结论，也不替代当前汇总。
+## 记录规则
 
-## 当前底座记录方式
-
-当前执行计划只在 [04](../04-extraction-and-migration.md)，最终实际状态只在 [06](../06-status-tracker.md)。基础设施与 Admin Web 是同一个交付对象。文档清理结果也只在这两个入口维护，不为每次文字调整另建重复报告。新阶段报告记录固定 source/ref、实际检查、结果、未覆盖项和复用证据范围，使用 `BASE-M*` / `APP-M*`，不重命名旧报告、不自动关闭 `G-*`。文档核对记录属于 non-Gate，不需要把未执行的 runtime 检查伪写成通过。
-
-## 历史 Gate candidates（按固定 ref 解释）
-
-下列条目的 “current-source” 指其记录当时的候选；不是当前 HEAD 的实现清单或新的执行阻塞条件。保留原结论与正式 Gate 状态。
-
-- [`CAG-G-BASELINE-P0-20260823-R4`](G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md)：current verified P0
-  phase record；supersedes audit-semantics-invalid R3 while retaining the unchanged behavior evidence and all M1/
-  aggregate boundaries。
-
-- [`CAG-G-CONTRACT-P1-20260823-R1`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md)：historical candidate；其固定
-  source 已由 R2 supersede。R1 保留 contract/SDK/descriptor/fixture/lock identity 与 focused replay 证据，但不能作为
-  current-source review 或 Gate closure。
-- [`CAG-G-CONTRACT-P1-20260823-R2`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md)：historical blocked
-  candidate；独立 review 的 quantitative-claim/bytecode-residue findings 由 R3 修复，但 R2 本身不能关闭 Gate。
-- [`CAG-G-CONTRACT-P1-20260823-R3`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R3.md)：historical repaired
-  candidate；其固定 prerequisite 仍命名 Baseline R3，且 generation lock 已落后于 current source，因此不能关闭
-  `G-CONTRACT`。
-- [`CAG-G-CONTRACT-P1-20260823-R4`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md)：current-source R4 rebind
-  candidate；固定 Inventory R3、Baseline R4、当前 27-pipeline generation lock、fresh generated SDK consumer 与
-  migration `000012` bundle replay。[Independent review](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)
-  返回 `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`、7 个 formal `missing` 保持不变，Gate effect 为 none。
-- [`ADR-0028`](../../adr/0028-p1-generator-supply-profile.md) bounded generator-supply remediation：
-  [implementation](../../p1/g-contract-generator-supply-profile-implementation-20260824.md) 固定 native replay/isolation 与
-  acyclic evidence assembly；[planned late-bound independent review](../../p1/g-contract-generator-supply-profile-independent-review-20260824.md)
-  将单独绑定最终 late-bound bytes。它不是新的 Gate candidate record，不改写 R4 的 7 个 formal `missing`，且 Gate effect
-  为 none。
-
-- [`CAG-G-DATA-P1-20260823-R1`](G-DATA/CAG-G-DATA-P1-20260823-R1.md)：first current-source G-DATA
-  candidate；固定 Baseline R4、reviewed G-CONTRACT R4、当前十二条 migration，并只继承 exact retirement
-  control-plane 与 ADR-0023 Slice G migration subtrees；旧 EvidenceSink/catalog/quota records 仅作 historical
-  support。[Independent review](G-DATA/CAG-G-DATA-P1-20260823-R1-independent-review.md) 返回
-  `APPROVE, P0=0/P1=0/P2=0`。状态仍为 `IN PROGRESS`；expand/backfill/cutover/contract、deployed N/N-1、PITR
-  preflight 与 current filesystem Done 均保持 open，Gate effect 为 none。
-
-- [`CAG-G-AUTHORITY-P1-20260823-R1`](G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1.md)：first
-  current-source P1 authority candidate；只继承 exact G-CONTRACT generation、live-instance retirement 与 ADR-0023
-  Slice G review scopes。Fresh focused authority/store tests 与 descriptor checks PASS；provider catalog、enabled
-  operation receipt writer、published/runtime database authority、executable projection、current filesystem Done 与
-  accepted durability combination 均未完成。[Independent review](G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1-independent-review.md)
-  返回 `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`，Gate effect 为 none。
-
-- [`CAG-G-SECURITY-P1-20260823-R1`](G-SECURITY/P1/CAG-G-SECURITY-P1-20260823-R1.md)：first current-source
-  P1 security candidate；只继承 exact generated-contract、issuer/authz、A2.3/A2.4 coordination/compatibility-recovery、
-  ADR-0023 Slice G 与 ADR-0024 review scopes。Fresh focused identity/RBAC、tenant transaction/authorization 与
-  recovery redaction/profile tests PASS；生产 OIDC/JWT/JWKS verifier、whole-schema live RLS/pool isolation、current
-  vulnerability/secret/limit closure 与 accepted durability aggregation 均未完成。
-  [Independent review](G-SECURITY/P1/CAG-G-SECURITY-P1-20260823-R1-independent-review.md) 返回
-  `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`，Gate effect 为 none。
+- 应用 E2E 报告保留 commit、资源标识和实际 phase transition；它们不能单独关闭正式 Gate。
+- 正式 closure record 按模板记录输入范围、结果、未覆盖项、审批和 canonical artifact 链接；不把原始日志、Secret、数据库 dump 或真实 pairing/auth material 放入本目录。
+- evidence 中的 candidate、`OPEN`、`BLOCKED` 或历史失败记录保留为审计事实，不替代 06，也不提供默认下一步或新的授权。
+- 新阶段先记录计划，再记录实际结果和证据索引；文档整理本身不产生新的 runtime 验收结论。
