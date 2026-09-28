@@ -5,7 +5,7 @@
 ## 从这里开始
 
 - [04：实施计划](cloud-agents-platform/04-extraction-and-migration.md) 是唯一当前工作顺序，包含 BASE 联合切片、后续 Anywhere Runtime 和[新 Goal 提示词](cloud-agents-platform/04-extraction-and-migration.md#anywhere-runtime-goal)。
-- [06：当前状态与下一项](cloud-agents-platform/06-status-tracker.md) 是唯一当前进度记录；不要从旧计划的未完成清单选择下一项。
+- [06：当前状态与最终汇总](cloud-agents-platform/06-status-tracker.md) 是唯一当前状态与最终验收汇总；不要从旧计划的未完成清单选择下一项。
 - [专项文档导航](cloud-agents-platform/README.md) 按问题选择 01/02/03/05/07，不要求每次把整个 docs/plan 读完。
 - 历史文档集成与任务迁移的授权记录见 06；以当前请求和仍有效的同范围授权执行，不把旧集成说明当作永久暂停或新的实现授权。
 

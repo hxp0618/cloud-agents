@@ -37,13 +37,11 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 验收计划先于执行记录，实际结果、证据索引与 closure record 在验证后记录；应用报告不能自动关闭 Gate，
 正式 closure 仍须满足对应 Gate 的全部证据和审批要求。
 
-当前 Platform P0 phase 由 `G-INVENTORY` R3 与 `G-BASELINE-P0` R4 关闭；aggregate `G-BASELINE` 仍等待
-`G-BASELINE-M1`，所有 P1-P6 aggregate/phase Gate 仍保持 open、in progress 或 not started。不得用 P0、M1
-Runtime 历史证据或本地候选替代后续 immutable closure。
+当前 Cloud Agents closeout 已在 [06](../06-status-tracker.md) 汇总：12/12 Provider×Environment 单元为 `PASS`，适用故障/恢复为 `PASS` 或 `NOT APPLICABLE`，独立 reviewer 已 `APPROVE`，aggregate、release 与 feature Gate 为 `CLOSED / APPROVED`。下方历史 candidate 仍按其固定 source/ref 解释，不改写历史结论，也不替代当前汇总。
 
 ## 当前底座记录方式
 
-当前执行顺序只在 [04](../04-extraction-and-migration.md)，实际状态只在 [06](../06-status-tracker.md)。基础设施与 Admin Web 是同一个交付对象。文档清理结果也只在这两个入口维护，不为每次文字调整另建重复报告。新阶段报告记录固定 source/ref、实际检查、结果、未覆盖项和复用证据范围，使用 `BASE-M*` / `APP-M*`，不重命名旧报告、不自动关闭 `G-*`。文档核对记录属于 non-Gate，不需要把未执行的 runtime 检查伪写成通过。
+当前执行计划只在 [04](../04-extraction-and-migration.md)，最终实际状态只在 [06](../06-status-tracker.md)。基础设施与 Admin Web 是同一个交付对象。文档清理结果也只在这两个入口维护，不为每次文字调整另建重复报告。新阶段报告记录固定 source/ref、实际检查、结果、未覆盖项和复用证据范围，使用 `BASE-M*` / `APP-M*`，不重命名旧报告、不自动关闭 `G-*`。文档核对记录属于 non-Gate，不需要把未执行的 runtime 检查伪写成通过。
 
 ## 历史 Gate candidates（按固定 ref 解释）
 
