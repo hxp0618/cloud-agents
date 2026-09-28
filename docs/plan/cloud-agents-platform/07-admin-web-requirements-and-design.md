@@ -18,7 +18,7 @@ r459 当前 candidate 的 Pi×Docker 与 deepseek-harness×Docker 正向/撤销�
 
 r459 的 Pi×RemoteWorker 与 deepseek-harness×RemoteWorker capability-bound cross-node 结果沿用同一最小投影：Admin/Operation/Audit 只显示 opaque ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和脱敏 RTO/RPO/计数；不显示 DIND/Worker 地址、namespace、Pod/node、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。`capabilityBound=true` 只表示该 Provider/环境/候选的真实接管证据，不能推断 Kubernetes、Worker/Agent 或完整 supported。
 
-r459 的 Pi×Kubernetes 与 deepseek-harness×Kubernetes 正向/撤销子路径可显示 opaque MCP/Skill outcome、版本/digest、权限、兼容性、绑定关系、脱敏计数和 Operation/Audit；r480/r483 在受控 gpt-5.5 fixture 上的 cross-node takeover 只可显示对应 candidate/model 的 `passed` 与脱敏 RTO/RPO，不能升级为默认 gpt-5.6-luna 或所有模型支持。诊断只保留稳定失败码/未计数 Operation，不显示 namespace/Pod/node、主机路径、Prompt、源码、工具输入输出、MCP 返回内容、代理变量或 Secret。
+r459 的 Pi×Kubernetes 与 deepseek-harness×Kubernetes 正向/撤销子路径可显示 opaque MCP/Skill outcome、版本/digest、权限、兼容性、绑定关系、脱敏计数和 Operation/Audit；r480/r483 在受控 gpt-5.5 fixture 上的 cross-node takeover 只可显示对应 candidate/model 的 `passed` 与脱敏 RTO/RPO，不能升级为默认 tenant-local 配置中的模型 或所有模型支持。诊断只保留稳定失败码/未计数 Operation，不显示 namespace/Pod/node、主机路径、Prompt、源码、工具输入输出、MCP 返回内容、代理变量或 Secret。
 
 r448 的 Claude×RemoteWorker 能力绑定跨节点证据沿用最小 opaque 投影：Admin/Operation/Audit 只展示 capability ID、版本、digest、权限、兼容性、绑定关系、attempt、恢复模式、状态和脱敏 RTO/RPO/计数；不展示 DIND/Worker 地址、namespace、Pod/node、主机路径、Prompt、Skill 源码、工具输入输出、MCP 返回内容、代理变量或 Secret。r446/r447 的 fail-closed 诊断只保留稳定失败码/未计数 Operation，`capabilityBound=true` 也不得推断其它 Provider、环境或完整 supported 状态。
 
@@ -519,7 +519,7 @@ Prompt、消息正文、代码或 Artifact 内容。
 - Candidate `0.3.0-dev.253` 已补充 Claude Docker 的真实 MCP Provider 子路径：Host-managed MCP 的不可预知结果经过 fresh approval、真实 `tools/call` 和 completed event 后由 Agent 原样返回；Runtime digest 为 `sha256:1f9a0b81606141d31e436cf32239b5e364ceebae7a2a93a8da85db0ef8f22516`。这次直连 Runtime 探针不经过 Control Plane/Worker，所以 Admin 仍不得展示该工具输入、返回内容或 Secret，也不得把它冒充持久 Operation/Audit 或整格验收；只有后续经真实 event stream 写入的 opaque succeeded/failed/revoked 结果才能进入本页。
 - Candidate `0.3.0-dev.257` 已把同一 operator-owned capability descriptor 只读接到 Compose Control Plane 与 Worker，并给 Worker 增加显式 materialization 参数和 Skill `tmpfs`。真实 capability smoke 的 User/Admin 浏览器与 MCP/Skill catalog 创建通过，但 Claude execution 仍返回 `runtime_start_failed`，没有可供 Admin 展示的 `skill.load`、`mcp.call` 或 Provider outcome；fixture 又未启动其引用的 MCP upstream，因此页面不得把 catalog 存在或该失败冒充运行支持。脚本清理后测试资源为零。
 - Candidate `0.3.0-dev.281` 已产生首条真实 Control Plane/Worker Claude capability 结果链：同一 execution 完成 fresh approval、一次 MCP 外部副作用、一次签名 Skill 加载、文件 Artifact、`mcp.call`/`skill.load`/`execution.complete` 持久事件和断线续读；Admin 仍只显示 opaque identity、状态和计数，不显示 Token、Header、请求体、MCP 返回内容、marker 或 Skill 源码。其后 follow-up 暴露共享 Skill 路径的进程清理竞态，现已改为每个 Runtime 进程独立只读 Skill 根并通过重叠进程回归；candidate `0.3.0-dev.282` 的真实重跑被 Worker image 外部 `npm install` 构建失败阻断，所以页面不得把该修复、单次正向链或 Claude×Docker 整格标为 supported，failed/revoked、重启恢复和其余十一格继续开放。
-- deepseek-harness `0.1.2-rc.1` 的 adapter 已核实使用真实 `dsh-mcp-client`/`dsh-skill-filesystem` Cordis patch，并把 dsh custom root 精确指向受管 bundle 的 `skills/` 子目录；Admin 仍只应展示 opaque binding、版本/digest、权限、兼容性、状态与 Operation/Audit，不展示 dsh patch、Token 环境变量、连接端点、Skill 路径或工具结果。当前又有一条固定 `deepseek-v4-pro` 的独立 Docker Runtime 预检真实完成 `mcp.call`/`skill.load`、原生写文件和 ArtifactCandidate，使用本机 distribution artifact `sha256:c26a5a5c49b4fcd6b71be29d8c21acd3025e4b2f2034a78ad5bb9f49f022bb1e`（12,774,391 bytes）；fixture 仅记录 8 条脱敏 HTTP/RPC method，EOF 后 Skill 根为空，测试容器/临时凭据目录/live pointer 为 `0`。provider 已按真实 `skill({name})` 通知为 MCP 与单一 Skill Bundle 产生 opaque ID，Control Plane 可据此写入脱敏 succeeded/failed outcome；多 Bundle 无公开名称映射时不猜。该事件补丁仅有 TS/Go 定向测试，预检未经过 Control Plane/Worker，Admin 不得把它显示成真实持久 Operation/Audit 或十二格支持；原 `gpt-5.6-luna` 路由在无 capability baseline 即 malformed tool-call fail closed，故只登记机制和兼容性边界。
+- deepseek-harness `0.1.2-rc.1` 的 adapter 已核实使用真实 `dsh-mcp-client`/`dsh-skill-filesystem` Cordis patch，并把 dsh custom root 精确指向受管 bundle 的 `skills/` 子目录；Admin 仍只应展示 opaque binding、版本/digest、权限、兼容性、状态与 Operation/Audit，不展示 dsh patch、Token 环境变量、连接端点、Skill 路径或工具结果。当前又有一条固定 `deepseek-v4-pro` 的独立 Docker Runtime 预检真实完成 `mcp.call`/`skill.load`、原生写文件和 ArtifactCandidate，使用本机 distribution artifact `sha256:c26a5a5c49b4fcd6b71be29d8c21acd3025e4b2f2034a78ad5bb9f49f022bb1e`（12,774,391 bytes）；fixture 仅记录 8 条脱敏 HTTP/RPC method，EOF 后 Skill 根为空，测试容器/临时凭据目录/live pointer 为 `0`。provider 已按真实 `skill({name})` 通知为 MCP 与单一 Skill Bundle 产生 opaque ID，Control Plane 可据此写入脱敏 succeeded/failed outcome；多 Bundle 无公开名称映射时不猜。该事件补丁仅有 TS/Go 定向测试，预检未经过 Control Plane/Worker，Admin 不得把它显示成真实持久 Operation/Audit 或十二格支持；原 `tenant-local 配置中的模型` 路由在无 capability baseline 即 malformed tool-call fail closed，故只登记机制和兼容性边界。
 - 同候选的任务自有 kind v1.37.0 Helm smoke 已补充验证 Kubernetes Admin/User Web 与部署运维链（Admin 18 请求、User 6 请求、普通用户 Admin 403、重启、CA/服务身份轮换、无 Agent/Provider Secret），随后精确删除 kind/context/测试资源；没有 Provider 凭据，所以这不改变 Admin 的 Provider 结果链和十二格验收边界。
 - 未发布 candidate `0.3.0-dev.283` 的真实 Compose smoke 在补齐固定 `node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5` 后 exit 0，完成迁移、Capability/Admin 列表、User/Admin 浏览器隔离、过期 grant 负向、Control Plane/Access Gateway 重启、备份恢复和精确清理；Admin 继续只显示 opaque 元数据与脱敏状态。本轮无 Provider 凭据，不产生 Provider outcome，也不把部署/管理链显示为 MCP/Skill 支持。
 - 同一 `.283` 候选随后以现有受保护凭据的临时副本和签名 Skill/MCP fixture 完成真实 Claude×Docker Control Plane/Worker 结果链；命令 exit 0，`capability_acceptance=passed`（`mcp_requests=8`、`side_effects=1`、`skill=1`）及 `event_stream_resume=passed`（`resumed_events=6`、`post_terminal_events=1`）。日志 `.tmp/mcp-skill-runtime-v1-20260915-r284-claude-docker.log`（`sha256:dc542461e9fe99daaa2812cd5c46eca98b7ae3cdc728067884b2ab554022b2b9`）和 secret scan 均通过，fixture/镜像/Compose/OpenSandbox 资源为零，原凭据源未修改；Admin 只显示 opaque outcome/计数，不显示 Token、输入输出、MCP 返回内容或 Skill 源码。该结果不关闭 Claude×Docker 整格，负向 capability 矩阵与其他十一格继续开放。
@@ -927,3 +927,355 @@ r570 deepseek-harness×Kubernetes 只投影正向 acceptance 的 opaque 计数�
 2026-09-25 evidence consolidation projection：r575 的 OpenSandbox lifecycle 只允许显示 opaque `PASS / lifecycle-preflight`、固定版本/digest、health 状态和 cleanup 审计引用；不显示 registry URL、配置路径、Kubernetes kubeconfig、endpoint、主机路径或 Secret，也不把 readiness 显示为 Provider supported。Worker image precheck 同样只可显示固定 image digest、四个 package version/digest 和 precheck 状态，不能替代 Provider acceptance。
 
 r582 Codex×Kubernetes snapshot closeout 可向 Admin/Operation/Audit 暴露 opaque provider/environment、capability binding 状态、attempt、恢复模式、脱敏 RTO/RPO、snapshot size、canonical snapshot digest、事件/撤销计数、side-effect outcome 和 evidence/log 审计引用。raw archive、Workspace/Sandbox 内容、PVC/PV、kind 节点、namespace、Pod、Worker 地址、registry/controller alias、Prompt、源码、工具输入输出、MCP 返回内容、代理变量、npm tarball 内容和 Secret 均不得进入页面或用户可读 receipt。r582 的 `PASS` 只适用于 Codex×Kubernetes capability-bound cross-node snapshot 子路径；transport 五格、Worker/Agent 的 `FAIL/BLOCKED/NOT APPLICABLE` 与其它 Provider×environment gap 必须以 06 的逐格状态投影，不能由该记录外推 supported。
+
+2026-09-25 implementation boundary：Admin 继续只投影 opaque capability 状态和审计引用；`sse`/`stdio` 在 Provider 启动前被 Runtime binding/materialization 拒绝，不显示为 supported。公共 catalog 中保留的传输枚举只代表资源元数据，不改变 Gate 判定。
+
+2026-09-26 r584 Admin 投影继续保持 fail-closed：Codex×Kubernetes transport-only 在基础 smoke 的 `curl` 处理 `409` 处终止，未产生 Provider 或 capability marker，只显示稳定的 harness/preflight `BLOCKED` 状态与日志审计引用；不显示 Kubernetes endpoint、节点、namespace、Pod、Prompt、源码、工具输入输出、MCP 返回内容或 Secret，也不把该轮显示为 supported。
+
+同一 r584 scope 修复了 follow-up approval 的 `cat --` 命令匹配；修正重跑随后在外部 Kubernetes token 前置 `unexpected EOF` fail closed，仍没有 Provider 或 capability marker。Admin 只投影稳定的 `BLOCKED` 状态和日志审计引用，不显示 endpoint、节点、namespace、Pod、Prompt、源码、工具输入输出、MCP 返回内容或 Secret，也不把该轮显示为 supported。
+
+同一 harness 修正的 Codex×Docker 回归在 Provider 前的基础 Admin Worker upgrade 断言处 fail closed；Admin 继续只显示稳定的 preflight 状态和审计引用，不把该轮显示为 supported。
+
+本 Goal 的 sourceCommit 为 `29afe9b9103cac99088f637e02a8cd9bb3f48d58`、sourceDirty=true；由于优先格均被既有外部前置证据阻塞，没有新增 Provider、MCP、Skill、Artifact、事件、recovery 或 cleanup 记录。Admin 继续投影 `BLOCKED` 和既有日志审计引用，不把定向测试通过或历史子路径 PASS 显示成 supported。
+
+2026-09-26 `MCP-SKILL-RUNTIME-V1-UNBLOCK-AND-CLOSEOUT`：Admin/架构继续只投影 opaque 的前置状态、固定 image digest、Operation/Audit 引用和脱敏 Provider 失败码。OpenSandbox 一次 TokenRequest 与 Codex Docker 无 Provider upgrade preflight 通过；随后唯一一次 Codex×Docker transport/reconnect 在 Provider 层以 `provider_unavailable` 结束，没有 MCP/Skill/Artifact/transport/recovery marker。该记录不显示 token、endpoint、节点、namespace、Pod、Prompt、源码、工具输入输出、MCP 返回内容或 Secret，不把 contract-negative、静态回归、HTTP 200 Operation、readiness 或历史 PASS 推断为 supported；Codex×Kubernetes 本轮未启动，父级 Gate 保持 OPEN。
+## 2026-09-25：Codex × RemoteWorker transport/reconnect evidence（r583）
+
+- Admin/runtime evidence now records one real `codex/remote-worker` PASS: MCP `28`、Skill `1`、Artifact `verified`、events `6 resumed + 2 post-terminal`，transport reconnect passed with `replayed=0`，revocation zero requests/side effects，stale generation `409`。
+- Recovery record retains old writer fence、attempt `2`、`cross-node-takeover/recovered`、side-effect outcome `not-applied`、RPO `0`、RTO `7551 ms` and snapshot digest `sha256:ac11134493106b48367686eed8c209809764e6bcddcac14d7b0bbe29b6ce78b1`。Unknown side effects are reconciled and not replayed blindly.
+- Candidate/source and digest lineage: `0.3.0-dev.583`, `sourceCommit=29afe9b9103cac99088f637e02a8cd9bb3f48d58`, `sourceDirty=true`; manifest/checksums SHA-256 `0d1ed55092a19f6411baec3ce4e8ea4ebef47128d0a4161f3285f82d37623bf9` / `2994dec53fd03dc44e1efc9c377f4aa45c17737b79e0a1c06a2958106e50a24e`；full command, artifact/package digests, log SHA-256 `cff6904c91b832716bb17278868ffa8f6117eee018d09765c09b706033f1e978` and evidence JSON SHA-256 `e486642e2225b314e8af2470639eac5904c7ab743b22038a6d04f06e56c14b0c` are recorded in `.tmp/mcp-skill-runtime-v1-20260925-r583-codex-remote-worker-evidence.json`。Cleanup left zero task-owned Compose/RemoteWorker/OpenSandbox resources; this does not close the formal Gate or other matrix cells.
+
+2026-09-26 Provider 根因复核：Admin/架构只投影 `BLOCKED`、稳定 `provider_unavailable`/`MODEL_NOT_ALLOWED` 失败码、opaque candidate 与日志/evidence SHA-256 审计引用。修复探针使用允许模型返回 200 也不显示为 supported；原始模型、凭据、Authorization、endpoint 响应体、Prompt、源码、工具输入输出和 Secret 不进入页面或 receipt。只有外部 Provider 恢复原模型 allowlist 或完成明确授权的配置变更并形成完整终端证据后，才可更新 Provider×environment supported 状态。
+
+2026-09-26 Kubernetes 单次 transport/reconnect 运行越过修复后的 OpenSandbox/TokenRequest 前置并到达 Provider，但以稳定 `provider_unavailable` 结束。Admin/架构只投影该 BLOCKED 状态、opaque provider/environment、日志/evidence SHA-256 和 cleanup 审计；不显示 TokenRequest 内容、endpoint、节点、namespace、Pod、Prompt、源码、工具输入输出、MCP 返回内容或 Secret，也不把 contract-negative、runtime smoke 或 partial marker 显示为 supported。
+
+2026-09-26 approved-model evidence：Admin/架构可投影 opaque `provider=codex`、实际模型标识 `gpt-5.6-sol`、environment、版本/digest、transport/reconnect/revoke/stale-generation/reconcile 结果与日志/evidence SHA-256。历史 fixture compatibility gap 必须单独显示为 OPEN；当前模型应读取 `provider-credentials/tenant-local.*.json`，不得把历史替代模型 PASS 归并到当前模型 supported。凭据、Authorization、endpoint 响应体、Prompt、源码、工具输入输出、MCP 返回内容和 Secret 继续不进入页面或 receipt。
+
+2026-09-26 snapshot digest harness repair：Admin/架构只引用修复后的 semantic/raw digest provenance 与回归审计，不显示 Workspace 内容、raw archive、PVC/PV、Pod、节点或恢复路径。r580 raw-vs-semantic 比较错误已由 `scripts/lib/portable-snapshot-digest.mjs` 修复；r582 复制 source digest 的旧证据标记为 superseded，不得投影为 cross-node supported。当前 evidence JSON SHA-256 为 `a8bcc3163c8be313ab0d35c30554a27c25d9564172914832aded8534d2b59601`；静态回归、preflight PASS、readiness 和替代模型 partial/acceptance 仍不改变 supported 边界。
+
+### 2026-09-26：Provider 模型来源修正
+
+当前工作区的 `provider-credentials/tenant-local.*.json` 四份配置均以 `model` 字段提供 `gpt-6-luna`。验收脚本和回归检查按 `tenant-local.$provider.json` 读取模型，不在代码或文档中固定模型名；此前其它模型的运行记录仅作为历史 fixture 证据，不能外推为当前 tenant-local 模型支持。只读模型可用性证据 `.tmp/mcp-skill-runtime-v1-20260926-tenant-local-model-source.json` （SHA-256 `5f0299e1afa4936844256262c47e90401a0c3ed989593938a96546701250c0e7`）显示代理/直连均 HTTP 200、28 个模型且当前模型存在；随后 `/v1/responses` 代理/直连也均 HTTP 200 且有 response id。该证据明确 `providerAcceptance=not_run`、`supportedClaim=false`。
+
+### 2026-09-26：当前 tenant-local `gpt-6-luna` closeout projection
+
+Admin/架构当前只投影从 `provider-credentials/tenant-local.*.json` 读取的模型标识与 opaque provider/environment 状态。Codex×Docker、Codex×Kubernetes 各有一次当前模型真实 `providerAcceptance=passed`：MCP/Skill/Artifact、事件续读、reconnect、撤销、旧 generation、跨租户和未知副作用 reconcile 只投影稳定计数与终态；Kubernetes recovery 只投影 attempt、恢复模式、脱敏 RTO/RPO、semantic/raw digest 引用和 evidence/log 审计引用。当前证据 JSON 为 `.tmp/mcp-skill-runtime-v1-20260926-current-gpt6-luna-closeout-evidence.json`（SHA-256 `586b3fc50c1d992b5bed4faf80ec896e2f50e52e53ea649fae229c154f998959`）。
+
+页面不得把历史替代模型 fixture、partial marker、静态回归、preflight/readiness、HTTP 200 Operation 或旧 superseded digest 投影为当前模型 supported；也不得展示凭据、Authorization、Token、endpoint 响应体、Prompt、Skill 源码、工具输入输出、MCP 返回内容、节点/Pod/namespace、主机路径、代理变量或 Secret。当前只更新 Codex×Docker 与 Codex×Kubernetes 两个 supported claim，父级十二格 Gate 保持 `OPEN`。
+
+### 2026-09-27：当前 tenant-local 模型 transport/reconnect 投影
+
+Admin Web 与架构投影可记录 `codex/docker`、`codex/kubernetes` 当前模型 transport/reconnect 子门的 opaque 终态：MCP/Skill/Artifact、事件续读、reconnect/replayed、撤销、旧 generation、跨租户拒绝、reconciliation 状态以及日志/evidence SHA-256。两轮 wrapper exit `0` 且任务资源清零；证据见 `.tmp/mcp-skill-runtime-v1-20260927-r600-r601-evidence.json`。
+
+本轮未执行 Worker/Agent 故障或 capability-bound cross-node recovery，页面不得把这两条 transport PASS 投影为完整 Provider supported 或 aggregate Gate；不得展示凭据、Authorization、Token、endpoint 响应体、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径或 Secret。
+
+### 2026-09-27：Claude×RemoteWorker recovery 未完成的投影边界
+
+当前 tenant-local 模型来源、r602/r603/r604 recovery repair 以及日志/evidence SHA-256 仅作为脱敏审计引用；Admin/Web 只能展示 opaque provider/environment、阶段、稳定失败或未完成状态、attempt/recovery 摘要和证据哈希。不得显示凭据、Token、Authorization、endpoint、请求体、响应体、Prompt、源码、工具输入输出、主机路径、节点/namespace/Pod 细节。由于最新 harness 修复尚未有新的真实 PASS，不得把 Claude×RemoteWorker 写入 capability catalog supported，也不得关闭 aggregate Gate 或 release Gate。
+
+### 2026-09-27：deepseek-harness×RemoteWorker 与 Pi×Kubernetes 投影边界
+
+Admin/Web 可引用当前模型来源、provider/environment、脱敏阶段、稳定失败/未完成状态和 evidence SHA-256。deepseek-harness×RemoteWorker 的 recovery tool mismatch 与 Pi×Kubernetes 仅 transport/reconnect 子路径不得投影为完整 supported；不得显示凭据、Token、endpoint、Prompt、源码、工具输入输出、节点/namespace/Pod 路径或响应内容。
+
+### 2026-09-27：deepseek-harness recovery repair projection
+
+Admin/Web 只能显示 deepseek-harness recovery tool contract 的脱敏修复状态和 evidence hash；在修复后没有新的真实 PASS 前，不得投影为 supported，不得显示 Prompt、工具参数、源码、凭据、endpoint 或响应内容。
+
+### 2026-09-27：deepseek-harness×Kubernetes transport 投影边界
+
+Admin/Web 与架构只能投影 r608 的 opaque provider/environment、transport/reconnect、MCP/Skill/Artifact、事件续读、撤销、旧 generation、跨租户、cleanup 和 evidence/log SHA-256。该轮没有 capability-bound、Worker/Agent 或 cross-node recovery，因此不得显示为完整 supported、不得更新 capability catalog 或 Gate；不得展示凭据、Token、Authorization、endpoint、Prompt、源码、工具输入输出、节点/namespace/Pod 细节或 Secret。
+
+### 2026-09-27：Claude×RemoteWorker supported 投影
+
+Admin/Web 与架构可投影 `claudeAgent/remote-worker` 的 opaque supported 终态及 MCP/Skill/Artifact、事件续读、reconnect、revoke、stale-generation、cross-tenant、attempt、recovery mode、RPO/RTO、snapshot digest 引用、cleanup 和 evidence/log SHA-256。该 supported claim 只覆盖 r611 的当前 tenant-local 模型与 candidate；aggregate/release/feature Gate 仍 OPEN。页面不得展示凭据、Token、Authorization、endpoint、Prompt、源码、工具输入输出、节点/namespace/Pod 路径或 Secret。
+
+### 2026-09-27：deepseek-harness×RemoteWorker recovery 未完成投影
+
+Admin/Web 与架构只能投影 r612/r613 的 opaque `provider/environment`、Docker partial acceptance、recovery `state=succeeded`、缺失 pending-side-effect checkpoint、wrapper exit、cleanup 和 evidence/log SHA-256。不得将 Artifact candidate 或 readiness 写成 Provider supported；不得更新 capability catalog、aggregate/release/feature Gate；不得展示凭据、Token、Authorization、endpoint、Prompt、源码、工具输入输出、节点/namespace/Pod 路径或 Secret。
+
+### 2026-09-27：Pi×Kubernetes full recovery 前置 BLOCKED 投影
+
+Admin/Web 与架构只能投影 r614 的 opaque `pi/kubernetes`、稳定前置失败码、wrapper exit `2`、未启动 Provider、cleanup 与 evidence/log SHA-256。不得把 r607 transport/reconnect 或 readiness 显示为完整 supported；不得更新 capability catalog、aggregate/release/feature Gate；页面不展示 kubeconfig、节点、namespace、Pod、Token、Authorization、endpoint、Prompt、源码、工具输入输出或 Secret。
+
+### 2026-09-27 r615 Admin/架构投影边界：Codex×Docker supported
+
+Admin/架构可以投影当前 `codex/docker` 的 opaque supported 终态：provider/environment、实际模型标识 `gpt-6-luna`、candidate sourceCommit/dirty、MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、unknown-side-effect reconcile、capability-bound `attempt=2/process-restart/recovered`、RPO、cleanup 以及命令/log/evidence SHA-256。该 supported claim 仅来自 r615 当前 tenant-local 模型完整真实格；`codex/kubernetes` 的 r601 transport-only、r614 kind 前置 BLOCKED、其它 Provider 格和 parent Gate 不得被合并或外推。页面、receipt 和 API 响应继续排除凭据、Token、Authorization、endpoint body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret。
+
+### 2026-09-27 r616 Admin/架构投影边界：ClaudeAgent×Docker supported
+
+Admin/架构可以投影当前 `claudeAgent/docker` 的 opaque supported 终态：provider/environment、实际模型 `gpt-6-luna`、candidate sourceCommit/dirty、MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、unknown-side-effect reconcile、capability-bound `attempt=2/process-restart/recovered`、RPO、cleanup 和命令/log/evidence SHA-256。该 claim 只来自 r616 当前 tenant-local 完整格，并与 r611 的 ClaudeAgent×RemoteWorker 保持逐格分开；ClaudeAgent/Kubernetes、其它格与 parent Gate 不得外推。页面/receipt/API 继续排除凭据、Token、Authorization、endpoint body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret。
+
+### 2026-09-27 r617 Admin/架构投影边界：Pi×Docker supported
+
+Admin/架构可以投影当前 `pi/docker` 的 opaque supported 终态：provider/environment、实际模型 `gpt-6-luna`、candidate sourceCommit/dirty、MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、unknown-side-effect reconcile、capability-bound `attempt=2/process-restart/recovered`、RPO、cleanup 和命令/log/evidence SHA-256。该 claim 只来自 r617 当前 tenant-local 完整格；Pi/Kubernetes 的 r607 transport-only 与 r614 前置 BLOCKED 保持逐格分开，页面不得外推为 supported。凭据、Token、Authorization、endpoint body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret 继续排除。
+
+### 2026-09-27 r618 Admin/架构投影边界：deepseek-harness×Docker BLOCKED
+
+Admin/架构只能投影 deepseek-harness/Docker 的 opaque `BLOCKED`：provider/environment、model source reference、baseline MCP/Skill/Artifact/事件结果、稳定 recovery failure class、cleanup 和命令/log/evidence SHA-256。不得把 Artifact candidate、partial acceptance、readiness 或 `state=succeeded` 的 recovery Turn 显示为 supported；不得展示凭据、Token、Authorization、endpoint body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量或 Secret。该阻塞不改变已支持的 Docker cells，也不关闭 parent Gate。
+
+### 2026-09-27 r620 Admin/架构投影边界：Pi×RemoteWorker supported
+
+Admin/架构可以投影当前 `pi/remote-worker` 的 opaque supported 终态：provider/environment、实际模型 `gpt-6-luna`、candidate sourceCommit/dirty、Docker baseline 与 RemoteWorker MCP/Skill/Artifact/事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、old-writer fence、attempt/recovery mode/state、RPO/RTO、snapshot digest、snapshot-version-negative、cleanup 和命令/log/evidence SHA-256。r619 的 quota 前置诊断保持为独立 opaque BLOCKED，不合并进 r620；Pi/Kubernetes、deepseek-harness 和 parent Gate 不得外推。页面、receipt、API 继续排除凭据、Token、Authorization、endpoint body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret。
+
+### 2026-09-27：r621 Admin projection：Codex×Kubernetes 完整格
+
+r621 修复任务专属 kind 三节点集群的 OpenSandbox controller/server digest 预载后，当前 tenant-local `codex/kubernetes` 完整真实格 wrapper exit `0`：MCP `26`、Skill `1`、Artifact verified、事件续读、transport reconnect/replayed `0`、revoke `0/0/2`、stale generation `409`、cross-tenant rejection、未知副作用 reconcile、old-writer fence、destination takeover、attempt `2` `cross-node-takeover/recovered`、side effect confirmed、RPO `0`、RTO `83912 ms` 和 snapshot/restored digest 均有证据。Admin Web 只可投影该格的 supported/PASS 状态、脱敏计数、稳定错误码、RPO/RTO、证据引用和 cleanup；不得显示模型凭据、Token、Authorization、endpoint、请求/响应 body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量或 Secret。
+
+该状态只关闭 `codex/kubernetes`，不改变其它 Provider×Environment、适用 Worker/Agent faults 或 aggregate/release/feature Gate；Gate 继续 `OPEN`。
+
+### 2026-09-27：r622 Admin projection：Pi×Kubernetes 完整格
+
+r622 的当前 tenant-local `pi/kubernetes` 完整真实格 wrapper exit `0`：MCP `14`、Skill `1`、Artifact verified、事件续读、transport reconnect/replayed `0`、revoke `0/0/2`、stale generation `409`、cross-tenant rejection、未知副作用 reconcile、old-writer fence、destination takeover、attempt `2` `cross-node-takeover/recovered`、side effect confirmed、RPO `0`、RTO `82529 ms` 和 snapshot/restored digest 均有证据。Admin Web 只可投影该格的 supported/PASS 状态、脱敏计数、稳定错误码、RPO/RTO、证据引用和 cleanup；不得显示模型凭据、Token、Authorization、endpoint、请求/响应 body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量或 Secret。
+
+该状态只关闭 `pi/kubernetes`，不改变 deepseek-harness recovery、其它 Provider×Environment、适用 Worker/Agent faults 或 aggregate/release/feature Gate；Gate 继续 `OPEN`。
+
+### 2026-09-27：r623 Admin/架构投影边界：ClaudeAgent×Kubernetes supported
+
+Admin/架构可以投影当前 `claudeAgent/kubernetes` 的 opaque supported/PASS 终态：provider/environment、实际模型标识、candidate sourceCommit/dirty、MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、unknown-side-effect reconcile、old-writer fence、attempt `2`/`cross-node-takeover/recovered`、side effect、RPO/RTO、snapshot/restored digest、cleanup 和命令/log/evidence SHA-256。固定 OpenSandbox image digest 只作为脱敏版本引用。
+
+该 supported claim 只来自 r623 当前 tenant-local 模型与 `claudeAgent/kubernetes` 格；不得外推到 deepseek-harness recovery、其它 Provider×Environment 或适用 Worker/Agent faults，aggregate/release/feature Gate 继续 `OPEN`。页面、receipt 和 API 继续排除凭据、Token、Authorization、endpoint、请求/响应 body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret。
+
+### 2026-09-27：r624 Admin/架构投影边界：Codex×RemoteWorker 当前模型 supported
+
+Admin/架构可以投影当前 `codex/remote-worker` 的 opaque supported/PASS 终态：provider/environment、实际模型标识、candidate sourceCommit/dirty、Worker image digest、Docker/RemoteWorker MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、snapshot-version-negative、unknown-side-effect reconcile、old-writer fence、attempt `2`/`cross-node-takeover/recovered`、side effect outcome、RPO/RTO、snapshot digest、cleanup 和命令/log/evidence SHA-256。
+
+该 supported claim 只来自 r624 模型来源修正后的 `codex/remote-worker` 格；不得把 r583 旧模型记录与本轮混合，也不得外推到 deepseek-harness 未闭合格、其它 fault cells 或 aggregate/release/feature Gate。页面、receipt 和 API 继续排除凭据、Token、Authorization、endpoint、请求/响应 body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret。
+
+### 2026-09-27：r641 Admin/架构投影边界：deepseek-harness×RemoteWorker supported
+
+Admin/架构可以投影当前 `deepseek-harness/remote-worker` 的 opaque supported/PASS 终态：模型来源引用、candidate sourceCommit/dirty、Worker image digest、Docker/RemoteWorker MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、unknown-side-effect reconciliation、old-writer fence、attempt `2`/`cross-node-takeover/recovered`、side effect outcome、RPO/RTO、snapshot digest、cleanup 和命令/log/evidence SHA-256。该 claim 只来自 r641 当前 tenant-local 模型和修复后完整格；不得外推到 deepseek Docker/Kubernetes、适用 Worker/Agent faults 或 aggregate/release/feature Gate，后者继续 `OPEN`。
+
+页面、receipt 和 API 继续排除凭据、Token、Authorization、endpoint、请求/响应 body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret；延迟 hook 仅为未设置时无效的测试环境控制，不作为产品能力展示。
+
+### 2026-09-27：r656 Admin/架构投影边界：deepseek-harness×Docker supported
+
+Admin/架构可以投影当前 `deepseek-harness/docker` 的 opaque supported/PASS 终态：模型来源引用、candidate sourceCommit/dirty、Worker image digest、MCP/Skill/Artifact、事件续读、transport/replayed、版本/digest mismatch、cross-tenant、revoke、stale-generation、unknown-side-effect reconciliation、attempt `2`/process-restart/recovered、side effect outcome、RPO/RTO、cleanup 和命令/log/evidence SHA-256。页面、receipt 和 API 继续排除凭据、Token、Authorization、endpoint、请求/响应 body、Prompt、源码、工具/MCP 输入输出、节点/Pod/namespace、主机路径、代理变量和 Secret。
+
+该 claim 只来自 r656 当前 tenant-local 模型和 `deepseek-harness/docker` 格；不得外推到 deepseek-harness/Kubernetes、适用 Worker/Agent faults 或 aggregate/release/feature Gate，后者继续 `OPEN`。
+
+
+### 2026-09-27：deepseek-harness×Kubernetes 当前 tenant-local 完整格（r659）
+
+r659 完成当前 `deepseek-harness/kubernetes` Provider×Environment 单元。模型从受保护的 `provider-credentials/tenant-local.deepseek-harness.json` 动态读取，实际为 `gpt-6-luna`；`GET /v1/models` 与最小 `POST /v1/responses` 均 HTTP 200，配置模型存在且返回 response id，凭据、Authorization、请求体和响应体未记录。candidate version `0.3.0-dev.659`，sourceCommit `29afe9b9103cac99088f637e02a8cd9bb3f48d58`、sourceDirty=true；manifest/checksums SHA-256 为 `dc6e67a3822e044081dda114a748c9aae9091d64cc07043b7cc484923a2b909f` / `64066e80705b030e97b379f72ef8940b16159deed4b797d86b42608196de64c9`。
+
+本轮修复将受限的 deepseek recovery delay 传入 Kubernetes Worker Deployment 和 Runtime 启动命令，并延长 pending checkpoint 轮询窗口；定向 managedagent/kubernetestarget Go 测试、deepseek Vitest、`sh -n` 和 `git diff --check` 通过。固定 OpenSandbox digest、TokenRequest、CRD、RBAC、ServiceAccount 与 Kubernetes API/NO_PROXY 前置通过。Worker image `cloud-agents-worker:local-r659` image ID `sha256:81b2a62534a3e672d3464747a164415881e184d3215e6cf4603f502632e12a83`，Worker arm64 SHA-256 `c65e8f643c3ae33f7bee7d8015299dcd9325072e65ae25708a94b9dd5caaa944`，runtime SHA-256 `dab22f40ca7492f083dea970f8a0ffa8cee0a8bccc08c0ee07c13edc4e02eeb5`。
+
+命令 `.tmp/mcp-skill-runtime-v1-20260927-r659-deepseek-k8s-commands.sh` SHA-256 `a7a2e34b9caa47b1791e38ef2597a828fbfb03be66828f5834894c0a5c15931a`，wrapper exit `0`。Docker baseline MCP `8`、Kubernetes MCP `16`，Skill `1`、Artifact `verified`、events `resumed`；transport reconnect `passed`/replayed `0`，版本/digest 不兼容和跨租户拒绝通过，revoke 后 Runtime 请求/副作用 `0/0` 且有 `2` 个事件，旧 generation `409`，未知副作用先 reconcile 后继续。
+
+old writer fence、source node 失效、destination takeover 后 attempt `2` 为 `cross-node-takeover/recovered`，side effect `confirmed`，RPO `0`、RTO `83828 ms`；snapshot `890880` 字节，raw SHA-256 `386e3402255b566a60faf6687d17b2041996acf6bfd5ff1184a3d0843c9ab8f9`，semantic/restored digest `sha256:4ea81d24471a51114e4a190e35118b42f796620d23f6319c14c704fb49ab87d6`，restored archive SHA-256 `23f0c1d42db16a6713e2aa1c5472bf8450e0ddf9aebee3ce9a6703c0d20445d3`；恢复后 Workspace/Sandbox 与 MCP/Skill binding 重新注入并完成 acceptance。日志 SHA-256 `780f340718eefc80582c9f267b32efb38925f379764a3aac5695e072f279f178`，cross-node evidence JSON SHA-256 `16fdf64191b92547f7a933b65fbd8227feeec0e85a1c608f26ef493389e87fc8`，脱敏 evidence JSON SHA-256 `17dacdff038a8a95aba10df2bf40089c3d23e9a556a4d926afedfb773f2f585b`，task-owned cleanup 为 `0`。
+
+该单元现在登记为当前 `deepseek-harness/kubernetes` `supported=true / PASS`，从而十二个 Provider×Environment 单元均有独立当前模型真实证据；这不关闭适用 Worker/Agent fault cells 或 aggregate/release/feature Gate，后者继续 `OPEN`。
+
+
+### 2026-09-27：deepseek-harness×Docker Worker fault BLOCKED（r660）
+
+r660 只推进一次当前 `deepseek-harness/docker` Worker fault 单元，模型仍从受保护的 `tenant-local.deepseek-harness.json` 读取 `gpt-6-luna`，无副作用探针为 `/v1/models=200`（模型存在）和 `/v1/responses=200`（有 response id）。contract-negative 通过；fault 前 MCP/Skill 已观察到，但该故障单元不把 partial acceptance 计为 Provider PASS。
+
+Repair First 先修正 DeepSeek 与 recovery 工具契约：DeepSeek 的系统提示禁止 shell，因此恢复提示改为绝对 Workspace 路径的 `str_replace_editor create`；随后增加受限 delay hook、source-name fallback，并重建 candidate/Worker。三次真实尝试仍在 `str_replace_editor` 完成后结束，均未形成 `pendingSideEffect=true` 或 active Bash checkpoint；没有进入 Worker takeover、reconcile、attempt 2 或 recovery marker，未盲目 replay。
+
+脱敏 evidence JSON `.tmp/mcp-skill-runtime-v1-20260927-r660-deepseek-docker-worker-fault-evidence.json` SHA-256 `397a20d3ec7b986932629810cc481f7b2d303f6c87fe92ab024e757da6750cc8`；最终 candidate `0.3.0-dev.663`，manifest/checksums SHA-256 `ccab33ef46f4e533b4f6aafd2b2a68c0ef3fcbaf1f8a1a79e3e91d7d46c42dc1` / `ba5d6bd07dc2209007259121c0cdc46e45fe12aba98a3b8fb913ef6ec2201ca9`，Worker image `cloud-agents-worker:local-r663` image ID `sha256:b9ca3a5188477ab8a7a31da092aef14358b278cfea9f6ac72bf3e2a4ec085843`。最终命令/log SHA-256 为 `d07b726c239353af657a6b562ae9d5dfd5e3d5a925b3395f3f515b9b0bc007ad` / `b75f76274f7a53715653e4a31fa2e8cba2ccd3e71bf4d3f7ec0d5573fc69e69e`，wrapper exit `1`，cleanup 为 `0`。
+
+该 fault cell 记录为 `BLOCKED`，不改变十二个 Provider×Environment 当前模型 PASS，也不把 partial acceptance 或 readiness 写成 supported；需要可观察、可控的 pending-side-effect checkpoint 后再重试。其它独立 Worker/Agent fault cells 和 aggregate/release/feature Gate 继续 `OPEN`。
+
+
+### 2026-09-27：Pi×Docker Worker fault 当前模型通过（r664）
+
+r664 在修复并预拉取 `gcr.io/distroless/static-debian12:nonroot` 前置后，完成当前 `pi/docker` Worker fault 单元。模型从受保护的 `provider-credentials/tenant-local.pi.json` 动态读取，实际为 `gpt-6-luna`；`/v1/models=200` 且配置模型存在，`/v1/responses=200` 且有 response id，未记录凭据或 body。初次运行只在镜像 EOF 预检停止，不计 Provider 结果；预拉取成功后才执行唯一一次真实 fault 单元。
+
+命令 `.tmp/mcp-skill-runtime-v1-20260927-r664-pi-docker-worker-fault-commands.sh` SHA-256 `e6fd526e3fe103e2155d02843d31cf44bd82e36bfaf67454653b131f52762d48`，wrapper exit `0`；candidate `0.3.0-dev.663`，sourceCommit `29afe9b9103cac99088f637e02a8cd9bb3f48d58`、sourceDirty=true，manifest/checksums SHA-256 `ccab33ef46f4e533b4f6aafd2b2a68c0ef3fcbaf1f8a1a79e3e91d7d46c42dc1` / `ba5d6bd07dc2209007259121c0cdc46e45fe12aba98a3b8fb913ef6ec2201ca9`。Worker image `cloud-agents-worker:local-r663` image ID `sha256:b9ca3a5188477ab8a7a31da092aef14358b278cfea9f6ac72bf3e2a4ec085843`，Worker arm64 SHA-256 `8ccf720dfb20fd34629651e0f8628421638e1c78acc54d4675648ffae8c933e5`，runtime SHA-256 `f7a2eeb5dde2fd251dc90e3f3982e42de5791cb6eb75f35eaf93ddea893ec867`。
+
+Docker acceptance MCP `8`、Skill `1`、Artifact `verified`、events `resumed`；transport reconnect `passed`/replayed `0`，版本/digest 不兼容和跨租户拒绝通过，revoke 后 Runtime 请求/副作用 `0/0` 且有 `2` 个事件，旧 generation `409`，未知副作用先对账。Worker fault recovery 形成 pending side-effect checkpoint，side effect 对账为 `confirmed`，attempt `2` `process-restart/recovered`，RPO/RTO `0/0`；日志 SHA-256 `60e42418a282d5c17bbf5e34a1b0a8d43479aba3dcaaf51a008dbc460d7ff111`，脱敏 evidence JSON SHA-256 `a0e5df35c204a193cf594c2b3834c66b6afb18c94e18ae32fa4bd0e5b077fa32`，task-owned cleanup 为 `0`。
+
+该单元登记为当前 `pi/docker` Worker fault `PASS`；r660 DeepSeek Worker fault 仍独立 `BLOCKED`，其它适用 Worker/Agent fault cells 与 aggregate/release/feature Gate 继续 `OPEN`。
+
+### r665 Pi×Docker Agent fault evidence
+
+Agent Runtime fault 验收使用受保护 `tenant-local.pi.json` 的当前模型，探针与 contract-negative 通过；命令 SHA-256 `0dab09b3f34de3b4ce67876fcbc1c71137eaa6fac579e826298a3d99156505fd`，日志 SHA-256 `4126035581f052dbf143ba21d6ad86836932bec3431d3be7b885444fb9de9349`，wrapper exit `1`。Execution 有 checkpoint sequence `1`，但 Agent Runtime process recovery 未完成 attempt `2`，未产生 recovered/reconcile/Provider PASS 证据；脱敏 evidence SHA-256 `8a93580d9f35a713d63678a4d8f70543eab8deb672b7f16aa8339182045b0a1e`，清理为 `0`。页面继续显示 fault `BLOCKED` 与 Gate `OPEN`，不暴露凭据、Token、Authorization、body、工具输入输出或受保护路径。
+
+### r666 Codex×Docker Agent fault evidence
+
+Agent Runtime fault 验收使用受保护 `tenant-local.codex.json` 的当前模型，探针与 contract-negative 通过；命令 SHA-256 `46a7d8218bf5d78f64bca65b0bc761187cb55c50c022d9a4e3f4950ec8eef23e`，日志 SHA-256 `794b6d2a0b7b0926e8351e4547278dc4dcede8fd21c9bd5c93cf31b721f00f89`，wrapper exit `1`。Execution 进入 interaction checkpoint polling，但 Agent Runtime process recovery 未完成 attempt `2`，未产生 recovered/reconcile/Provider PASS 证据；脱敏 evidence SHA-256 `612244753665a1c80eec81faf25c5d301fc5a2765145a90e184a2b5bc0bcf4f3`，清理为 `0`。页面继续显示 fault `BLOCKED` 与 Gate `OPEN`，不暴露凭据、Token、Authorization、body、工具输入输出或受保护路径。
+
+### r667 Codex×Docker Worker fault evidence
+
+Worker fault 验收使用受保护 `tenant-local.codex.json` 的当前模型，探针与 contract-negative 通过；命令 SHA-256 `896e04751c675a30a36da3b18d9411f46fb62e8256c446844695ba55fa3d045c`，日志 SHA-256 `3b1e7bf098cf6ece6596d7c3972a93f6dd3a05477c855f479d9a93a2ffed1eeb`，wrapper exit `1`。恢复进入 attempt `2` / `recovered`，但恢复执行以 `provider_unavailable`（MCP）失败，未产生完整 acceptance PASS；脱敏 evidence SHA-256 `be01e2d4b0740b8741ca892052b708a82738dc10617a8401974a59be5732bed5`，清理为 `0`。页面继续显示 fault `BLOCKED` 与 Gate `OPEN`，不暴露凭据、Token、Authorization、body、工具输入输出或受保护路径。
+
+### r668 Codex×Docker Worker fault repair evidence
+
+Worker 重启后 task-owned MCP fixture 现在随 Docker network namespace 重启。r668 fault sub-cell 通过：attempt `2`、`recovered`、`process-restart`、Worker survival passed、MCP `14`、Skill `1`、Artifact verified、events resumed；命令 SHA-256 `896e04751c675a30a36da3b18d9411f46fb62e8256c446844695ba55fa3d045c`，日志 SHA-256 `f08f0d48aabf153106b3f9b33075b8c5b06f9939c199fb137894525c3ffeb04d`，脱敏 evidence SHA-256 `484697403276dc83562cd24700d61399ed56fc5c258df43f08279b269e666ce5`，清理为 `0`。后续正常 follow-up 未终态，页面显示 fault sub-cell PASS、整体运行未收口与 Gate OPEN，不显示 Provider PASS。
+
+### r669 Pi×Docker Agent fault evidence
+
+修复 interpreter-backed Runtime cmdline guard 后，Pi×Docker Agent fault 完整通过：attempt 2/recovered/process-restart、side-effect confirmed、MCP 8、Skill 1、Artifact verified、events resumed、transport reconnect passed/replayed 0、revoke 0/0/2、stale 1→2/409、wrapper 0。命令 SHA-256 `0dab09b3f34de3b4ce67876fcbc1c71137eaa6fac579e826298a3d99156505fd`，日志 SHA-256 `dd3c0f23b2a0c26f904364b17c939a2a0ae7e29aa8decd8a2645ddf03d7f5677`，脱敏 evidence SHA-256 `26a642df08a839fc49909beab45e738d2f040a7aa7add9277bf4c412b0cfb5b2`，清理为 `0`。页面显示 Pi Agent fault `PASS`，其它 fault 与 Gate 状态按证据保持。
+
+### r670 Codex×Docker Agent fault evidence
+
+修复 interpreter-backed Runtime cmdline guard 后，Codex×Docker Agent fault 完整通过：attempt 2/recovered/process-restart、MCP 14、Skill 1、Artifact verified、events resumed、transport reconnect passed/replayed 0、revoke 0/0/2、stale 1→2/409、wrapper 0。命令 SHA-256 `46a7d8218bf5d78f64bca65b0bc761187cb55c50c022d9a4e3f4950ec8eef23e`，日志 SHA-256 `a1cfa4c90806ee2aa9cdf6fcb085f5a8ac607d0ca0007587c0d00b5669cd5850`，脱敏 evidence SHA-256 `29248a0b95e55bb1cd96163a754dbf5c1f0052e1bd95b9582060d50e3d620bec`，清理为 `0`。页面显示 Codex Agent fault `PASS`，其它 fault 与 Gate 状态按证据保持。
+
+### r671 ClaudeAgent×Docker Worker fault evidence
+
+Worker fault 验收使用受保护 `tenant-local.claudeAgent.json` 的当前模型，探针与 contract-negative 通过；命令 SHA-256 `e3956164ce2a735b42a59e2d7648377f61b00580c1b4a913dbeb11502abb87d4`，日志 SHA-256 `0f20813977557f0fd22261072720ef4b63922bce45b4c997b87efce9fb9dd50c`，wrapper exit `1`。Worker 已重启，但恢复结果缺少要求的 marker，未产生完整 acceptance PASS；脱敏 evidence SHA-256 `f6563a0c386bdeea8499576722fe13d8d59fc93a47225fd87a64635fcaea81a0`，清理为 `0`。页面继续显示 fault `BLOCKED` 与 Gate `OPEN`，不暴露凭据、Token、Authorization、body、工具输入输出或受保护路径。
+
+### r672 ClaudeAgent×Docker Agent fault evidence
+
+修复 interpreter-backed Runtime cmdline guard 后，ClaudeAgent×Docker Agent fault 完整通过：attempt 2/recovered/process-restart、MCP 8、Skill 1、Artifact verified、events resumed、transport reconnect passed/replayed 0、revoke 0/0/2、stale 1→2/409、wrapper 0。命令 SHA-256 `30d82136954608fe25c062d4d54209d073600fe64411d52c0997d7f333d972582`，日志 SHA-256 `2c1f17bddae32addc637a09437dd6e6fbe344ef8b0beabd83ad8e6be067bb72e`，脱敏 evidence SHA-256 `c0becc42484806ca19c7867fc0eab1befe291d07eab2f1d55ba3defb6c8561e5`，清理为 `0`。页面显示 Claude Agent fault `PASS`，其它 fault 与 Gate 状态按证据保持。
+
+
+### 2026-09-27：Pi×RemoteWorker Worker fault BLOCKED（r673）
+
+r673 使用 dirty candidate `0.3.0-dev.663`；模型从受保护的 `provider-credentials/tenant-local.pi.json` 动态读取，实际为 `gpt-6-luna`。无副作用模型探针和 contract-negative 已通过。该单元命令 SHA-256 `31f8a0dfcbbaa379b9441a5508ac26a91782c397725c968b365134b833a137cc`，日志 SHA-256 `986f84f132a79a41e57aaacfee22bdade71e4aa0bc84d90a7d10bd78704a53da`，wrapper exit `1`。真实 RemoteWorker Worker fault 执行在故障注入前未形成 capability-bound `pendingSideEffect` checkpoint，等待超时后关闭；未进入 Worker takeover、attempt 2、reconcile 或 replay，故障证据不计 PASS。
+
+脱敏 evidence JSON `.tmp/mcp-skill-runtime-v1-20260927-r673-pi-remoteworker-worker-fault-evidence.json` SHA-256 `e4f224570e844ddff4fee2d9b17a77383510d7a33788ce611a7d7569e661125a`，task-owned Compose/RemoteWorker/OpenSandbox cleanup 为 `0`。该 fault cell 独立登记为 `BLOCKED`，不改变 `pi/remote-worker` Provider×Environment `PASS / supported=true`；其它独立 fault cells 与 aggregate/release/feature Gate 继续 `OPEN`。
+
+
+### 2026-09-27：Codex×RemoteWorker Agent fault 前置失败（r674）
+
+r674 的两次尝试均在 User Environment 创建前置停止：响应只到 `stableErrorCode` 字段边界，环境没有进入 `observedPhase=ready`，因此没有启动 Codex Agent fault，也没有 Provider、recovery 或 replay 结论。命令 SHA-256 `ad6535be18dad865eaed5dbf21ffe88d5f49c5a603bc8452793407387eaabd57`，日志 SHA-256 `c811f37c1faef6454f58d3b214b248bc89a787d5376d078cde8e3e71b4dba615`，脱敏 preflight evidence SHA-256 `2c662828787f32ab6921e2be49dc7f3d15d2edf218b08a9d44083d6b737845c1`，task-owned cleanup 为 `0`。该结果保持为 `PREFLIGHT_FAILED`，不改变 `codex/remote-worker` Provider×Environment `PASS / supported=true`，也不把前置失败写成 fault BLOCKED；需修复 User Environment 前置后再推进该 fault cell。
+
+
+### 2026-09-27：deepseek-harness×Docker Agent fault 前置失败（r675）
+
+r675 在 Agent fault 前置阶段停止：User Environment 创建响应带有 `stableErrorCode`，没有进入 ready，故没有启动 Deepseek Agent fault、recovery 或 replay。模型来源仍为受保护的 `provider-credentials/tenant-local.deepseek-harness.json`；命令 SHA-256 `9d0b9e711dfb208e6c91bdfbb4c365e8c68c96a638ed904c1b6e64fe5d95ba6b`，日志 SHA-256 `555b0a43e4e61830b41e1e2bec172e2b01a38196f9c46867f4ef8ca3cd0baa11`，脱敏 preflight evidence SHA-256 `dfa61689f6d64e00672ac95d170765a496ec2cc243c50850af6e3a5738f07ff3`，cleanup 为 `0`。该结果保持为 `PREFLIGHT_FAILED`，不改变 `deepseek-harness/docker` Provider×Environment `PASS / supported=true`，也不把前置失败写成 fault BLOCKED；需先修复 Docker User Environment 前置。
+
+### r675 deepseek-harness×Docker Agent fault：BLOCKED
+
+r675 的首次 User Environment 前置失败已通过非敏感 `stableErrorCode` 诊断重试；真实 fault 随后显示 Skill、MCP、`str_replace_editor` 同步完成，未产生可恢复 pending-side-effect checkpoint，故没有 Agent takeover、attempt 2 或 replay。命令/log/evidence SHA-256 为 `9d0b9e711dfb208e6c91bdfbb4c365e8c68c96a638ed904c1b6e64fe5d95ba6b` / `27a97d3bb7d73a7e5bf60021957cbca24eb6f5d56f2230c8187005048387022a` / `6bf06ef28dbe17a9c364fa0ae0d4f865d3fbf2e65f3ca51b63d9e79844e0eaac`，wrapper `1`，cleanup `0`。UI 继续显示 fault `BLOCKED` 与 Gate `OPEN`，不显示 Provider PASS 以外的 fault 支持结论。
+
+### r674 Codex×RemoteWorker Agent fault retry：BLOCKED
+
+User Environment 前置和 contract-negative 通过后，Agent fault 在 capability-bound user input 等待处超时，未产生 attempt 2/recovered/reconcile/replay。命令/log/evidence SHA-256 为 `ad6535be18dad865eaed5dbf21ffe88d5f49c5a603bc8452793407387eaabd57` / `bf08fb034ae78e993e8b1b886eab3be19316512727229c923bff7f22db1aedce` / `be8c9fde19a8dff478e04fbc8c50bf1d1cb84f2b166bbafdeb12b66845778de8`，wrapper `1`，cleanup `0`。UI 继续显示该 fault `BLOCKED` 与 formal Gate `OPEN`。
+
+### r676 ClaudeAgent×RemoteWorker Agent fault：BLOCKED
+
+前置和 contract-negative 通过后，capability-bound user input 等待超时，未发生 Agent fault 注入或 recovery。命令/log/evidence SHA-256 为 `3351bfd633d5cf358d64a0d5504e1228159654452946fc3e19538627821a6e65` / `714477689e3eadd0d3b939b54a4da2a274d41e702992ac964b672fc22d92e8af` / `fb4995a7cce75747a1eef90ac0f9a1549f40369d885d082db745720259539505`，wrapper `1`，cleanup `0`。UI 继续显示 fault `BLOCKED` 与 formal Gate `OPEN`。
+
+
+### 2026-09-27：Pi×RemoteWorker Agent fault BLOCKED（r677）
+
+r677 使用 dirty candidate `0.3.0-dev.663`；模型从受保护的 `provider-credentials/tenant-local.pi.json` 动态读取，实际为 `gpt-6-luna`。无副作用模型探针、Docker baseline 和 RemoteWorker contract-negative 通过。真实 Agent fault 在 capability-bound side-effect checkpoint 等待处超时，未形成 `pendingSideEffect=true`，未执行 Agent Runtime kill、attempt `2`、reconcile 或 replay；RemoteWorker source heartbeat 同期返回 `INTERNAL_ERROR`。wrapper exit `1`，cleanup `0`，不能计 PASS。
+
+命令 `.tmp/mcp-skill-runtime-v1-20260927-r677-pi-remoteworker-agent-fault-commands.sh` SHA-256 `66550be87bed3fcc59f7de0235d096c8bfc02f483771429d4d88b27532ae4897`，日志 SHA-256 `21b9bd815ade008e692f4edb645c0c49d179147e9ad383a3585a57468bed16fa`，脱敏 evidence JSON `.tmp/mcp-skill-runtime-v1-20260927-r677-pi-remoteworker-agent-fault-evidence.json` SHA-256 `f4144803e11ee269dfd95a6a32f0d4f0a36277f8b28c4b29159123fc4003e73a`。该 fault cell 独立记录为 `BLOCKED`，不改变 `pi/remote-worker` Provider×Environment `PASS / supported=true`；aggregate/release/feature Gate 继续 `OPEN`。
+
+### 2026-09-27：r679 RemoteWorker Agent fault evidence boundary
+
+r679 记录 Pi×RemoteWorker Agent fault 修复后重试：source heartbeat 保持 HTTP 200，Docker baseline 与 RemoteWorker contract-negative 通过；managed PTY Agent run 在 capability-bound pending-side-effect checkpoint 前结束，wrapper exit `1`，未进入 Agent takeover、attempt 2、reconcile 或 replay。模型来源、命令、日志和 evidence digest 已登记在 04/05/06；Provider supported 状态与正式 Gate 不变，仍 OPEN。
+
+
+### 2026-09-27：r695 Pi×RemoteWorker Agent fault UI evidence boundary
+
+r695 在 r694 dirty candidate 上验证了新的 Agent Runtime 进程终止顺序；模型来自受保护 `tenant-local.pi.json`，实际为 `gpt-6-luna`。模型探针、Docker/RemoteWorker contract-negative、Docker capability acceptance 和 RemoteWorker source heartbeat HTTP 200 通过，但 managed PTY claim-expiry 在 60 次轮询后超时，wrapper exit `1`、cleanup `0`。没有 `pendingSideEffect` checkpoint，也没有 attempt 2、reconcile 或 replay；UI 应继续显示 fault `BLOCKED`、Provider PASS 与 formal Gate `OPEN`。
+
+命令/log/bounded evidence JSON SHA-256 为 `0a114120e70c3b5b4ee942c634cfe7c2ceb2c1921d1ca2882ea0f59def1a5f3e` / `7c9aaeb3de5c085dfd042271ea624a16c87c0faa0135746b791e6c7e59154bce` / `69b01d2c42fd52f52b3f9fbe6704272848b011996169face77af32804a0b3ecd`；原始 harness checkpoint evidence 未生成。
+
+
+### 2026-09-27：r696 ClaudeAgent×Docker Worker fault UI evidence
+
+r696 通过收紧 interaction recovery prompt 修复 r671 的 recovery marker mismatch。模型来自受保护 `tenant-local.claudeAgent.json`，实际为 `gpt-6-luna`；Worker fault recovery 为 attempt `2`、`process-restart/recovered`、marker passed、side effect confirmed。MCP/Skill/Artifact/events、reconnect/replayed、revoke、stale-generation、unknown-side-effect reconcile 和 Compose smoke 全部通过，wrapper `0`、cleanup `0`。UI 应将当前 ClaudeAgent×Docker Worker fault 显示为 `PASS`，并继续显示其它未闭合 fault 与 formal Gate `OPEN`。
+
+命令/log/evidence SHA-256 为 `059264524a1b645523d9e6f1cbf5d782d7d322d1420874469843b2231156f5ed` / `b7542534f52ef06987b1d01b4110a3e7e05a3cb6d0abe2e678e61b55cd0afde6` / `92a0a3038fa02ff2a9753326cfb57e1c3b31a7a0265b0620280d79aba6777e20`。
+
+
+### 2026-09-27：r697 Codex×Docker Worker fault UI evidence
+
+r697 完成 Codex×Docker Worker fault 的完整 recovery：attempt `2`、`process-restart/recovered`、capability-bound marker passed，随后 MCP/Skill/Artifact/events、reconnect/replayed、revoke、stale-generation、unknown-side-effect reconcile 和 Compose smoke 全部通过，wrapper `0`、cleanup `0`。UI 应将当前 Codex×Docker Worker fault 显示为 `PASS`，并继续显示其它未闭合 fault 与 formal Gate `OPEN`。
+
+命令/log/evidence SHA-256 为 `9051ea0e38c52e3b2c8c240414fa2a43f43eeb6d62e389c3ed6452fe700ea31f` / `4a4f269f0422ac053dfbcc51138241d9411187dfa04ab2af16e95df48c91a362` / `d70549fe5015cb102b232e603254625a364bdfc3d41ed23f274acaaf89efe6ce`。
+
+### 2026-09-27：Pi×RemoteWorker Worker fault r698 UI evidence
+
+r698 的模型来源为受保护 `tenant-local.pi.json`，实际 `gpt-6-luna`；模型探针、Docker/RemoteWorker contract-negative、Docker capability acceptance 和 source heartbeat HTTP 200 通过。Worker 重启后执行仍为 active turn，未形成可安全接管的 capability-bound `pendingSideEffect` checkpoint，close 返回 `409`，没有 attempt `2`、reconcile 或 replay；wrapper `1`、cleanup `0`。命令/log/evidence SHA-256 为 `f8d6636b81b558a71a333840b7d2a7519a8d7cf1ec0746005ff46b58397f3428` / `67a5cfddfc75ff29e72078bc6663f14cbde003789d9886bb2cec76bb37716ed6` / `54562d8d2872a74dd8fa21d50da6ac96fcd05c436c23925521621a69ba565998`。UI 应继续显示该 fault `BLOCKED`、`pi/remote-worker` Provider `PASS` 和 formal Gate `OPEN`，不把 active-turn/close-409 写成 recovery PASS。
+
+### 2026-09-27：Pi×RemoteWorker Worker fault r699–r701 UI evidence
+
+UI 应显示 r699–r701 为同一 Pi×RemoteWorker Worker fault 的有界修复尝试：r699 在 checkpoint/restart 后受 OpenSandbox WebSocket `invalid status code` 阻塞，r700 在 claim-expiry 60 次轮询后超时，r701 在 35 秒 claim-fence 与五次 probe 重试后仍未确认接管。三轮均 wrapper `1`、cleanup `0`、无 attempt `2`/reconcile/replay。Provider `pi/remote-worker` 仍显示 `PASS`，该 fault 显示 `BLOCKED`，formal Gate 显示 `OPEN`，并链接对应 command/log/evidence SHA-256。
+
+### 2026-09-27：r708 Pi×RemoteWorker Worker fault UI evidence
+
+UI 应将当前 Pi×RemoteWorker Worker fault 显示为 `PASS`：r708 完成 PTY deletion/claim fencing、Worker exit survival、attempt `2` `process-restart/recovered`、side-effect reconcile `not-applied`、cross-node `cross-node-takeover/recovered/confirmed`、RPO `0`、RTO `9795 ms`、snapshot digest、恢复后 MCP/Skill binding 与事件续读；RemoteWorker MCP/Skill/Artifact/events 为 `14/1/verified/resumed`，reconnect/replayed 为 `passed/0`，revoke 为 `0/0/2`，stale generation 为 `409`，wrapper `0`、cleanup `0`。UI 同时保留 r698–r707 的修复历史，并继续显示其它未闭合 fault 与 formal Gate `OPEN`。
+
+命令/log/evidence SHA-256 为 `f8d6636b81b558a71a333840b7d2a7519a8d7cf1ec0746005ff46b58397f3428` / `64b21e33dc1281e6276ba1aa69814795bb3983ebd6c05f9b4e1bfbe70cac57be` / `51a803451243bf3783ca964e4c9809982aee96031f52b312e527a9c025a7ee96`。
+
+### 2026-09-27：Pi×RemoteWorker Agent fault r709–r710 UI repair history
+
+r709 的 Agent Runtime fault 仍被 managed PTY claim-expiry 阻塞；r710 在真实验收前因 recovery harness 未注入 Worker 容器句柄退出。UI 应保留两轮为 bounded repair history，不显示 recovery PASS。
+
+### 2026-09-27：r711 Pi×RemoteWorker Agent fault UI evidence
+
+UI 应将当前 Pi×RemoteWorker Agent fault 显示为 `PASS`：r711 完成 Agent Runtime exit survival、PTY deletion/claim fencing、attempt `2` `process-restart/recovered`、side-effect reconcile `not-applied`、cross-node `cross-node-takeover/recovered/confirmed`、RPO `0`、RTO `9729 ms`、snapshot digest、恢复后 MCP/Skill binding 和事件续读；RemoteWorker MCP/Skill/Artifact/events 为 `14/1/verified/resumed`，revoke 为 `0/0/2`，stale generation 为 `409`，wrapper `0`、cleanup `0`。transport reconnect 引用已有 Pi×RemoteWorker Provider cell；UI 继续显示其它未闭合 fault 与 formal Gate `OPEN`。
+
+命令/log/evidence SHA-256 为 `0a114120e70c3b5b4ee942c634cfe7c2ceb2c1921dca2882ea0f59def1a5f3e` / `fc51fa975f9a2058245dd692be9b0149b9db59e561d67f390f78ed64aa54c7b2` / `abb5174b33effe1d0a649e9d98eeeaf88381bb4c8083198384b8e58ec9ac079d`。
+
+### 2026-09-27：Codex×RemoteWorker Agent fault r712 UI evidence
+
+r712 的 Provider acceptance 与 Agent/cross-node recovery 前半程通过，但最终 Codex follow-up 因 `/bin/bash -c` 与 harness 旧 `/bin/bash -lc` approval 精确匹配不一致而停在 pending interaction，10 分钟后 wrapper `1`；UI 应显示该 fault `BLOCKED`，不显示 Agent recovery PASS。共享 approval 判定已修复为归一化两种 shell 变体，待下一轮真实重试。
+
+模型来自受保护 tenant-local Codex 配置，实际 `gpt-6-luna`；MCP/Skill/Artifact/events 为 `28/1/verified/resumed`，Agent attempt `2` 与 cross-node takeover/recovered/confirmed、RPO `0`、RTO `7571 ms`、snapshot digest 和 revoke/stale/reconcile 证据均保留。command/log/evidence SHA-256 为 `242cc6cf0aab53b5462de2e5edf57f787dca414bb35288f7d96a02b7172380c3` / `677788a4e777fad7becfc4939e24e9e47d5dabc2ad74e3070bf3274b23677a10` / `cafd7e1f2972fd3f6f3dad5c9c36673b4862b0bc155d3119251d9b255778ab80`；formal Gate 继续 `OPEN`。
+
+### 2026-09-27：Codex×RemoteWorker Agent fault r714 UI evidence
+
+UI 应将当前 Codex×RemoteWorker Agent fault 显示为 `PASS`：r714 在 approval shell 变体归一化修复后完成 Agent Runtime exit survival、PTY claim fence、attempt `2` `process-restart/recovered`、cross-node `cross-node-takeover/recovered/confirmed`、RPO `0`、RTO `9740 ms`、snapshot digest、恢复后 binding/事件续读、RemoteWorker MCP/Skill/Artifact/events `28/1/verified/resumed`、revoke `0/0/2`、stale `409`、unknown-side-effect reconcile、Compose smoke、wrapper `0`、cleanup `0`。r712/r713 作为 repair history 保留，formal Gate 继续 `OPEN`。
+
+command/log/evidence SHA-256 为 `242cc6cf0aab53b5462de2e5edf57f787dca414bb35288f7d96a02b7172380c3` / `7148eed1bea3bd7d548c4a9e15b0543585e988d5a8f723041a57d051043eba85` / `0540dde7da20cc752224c3beadba19c4f8416ecc113b68ba6941a799149d265a`。
+
+### 2026-09-27：ClaudeAgent×RemoteWorker Worker fault r715 UI evidence
+
+UI 应将当前 ClaudeAgent×RemoteWorker Worker fault 显示为 `PASS`：r715 完成 Worker exit survival、PTY claim fence、attempt `2` `process-restart/recovered`、side-effect `confirmed`、cross-node `cross-node-takeover/recovered/confirmed`、RPO `0`、RTO `13003 ms`、snapshot digest、恢复后 binding/事件续读、RemoteWorker MCP/Skill/Artifact/events `14/1/verified/resumed`、revoke `0/0/2`、stale `409`、unknown-side-effect reconcile、Compose smoke、wrapper `0`、cleanup `0`。formal Gate 继续 `OPEN`。
+
+command/log/evidence SHA-256 为 `04a14e21f08208ccd78d077c3c60c992c9e382f94e744f46d0ddd42f95ffdcd2` / `3393d6eff76dd403bb65e4f74781fbf647a52d19cc07dc300f87400d20792ada` / `844826ea1650f406f3a1e1606931878bde7b32bb85f1ec5c2b7d6ea947c97eee`。
+
+### 2026-09-27：ClaudeAgent×RemoteWorker Agent fault r716/r717 UI evidence
+
+UI 应保留 r716 为 marker repair history，不显示 recovery PASS；r717 应显示当前 ClaudeAgent×RemoteWorker Agent fault `PASS`：Agent Runtime exit survival、PTY claim fence、attempt `2` `process-restart/recovered`、短 marker、side-effect `confirmed`、cross-node `cross-node-takeover/recovered/confirmed`、RPO `0`、RTO `7591 ms`、snapshot digest、恢复后 binding/事件续读、RemoteWorker MCP/Skill/Artifact/events `14/1/verified/resumed`、revoke `0/0/2`、stale `409`、unknown-side-effect reconcile、Compose smoke、wrapper `0`、cleanup `0`。formal Gate 继续 `OPEN`。
+
+command/log/evidence SHA-256 为 `c159932b8f2427903b906282743bf0eaee66d536642a36096deeb577374cad28` / `655bd37d204fd39973552b3a08409a03d843e335d8f3c394942ffc8e7702234c` / `6bfe54fd453ad9964eaf36ff50f2edc368851f623394e26c65fe0868f6a25fd6`。
+
+
+### 2026-09-27：r718 deepseek-harness×Docker Agent fault UI evidence
+
+UI 应将当前 DeepSeek×Docker Agent fault 显示为 `PASS`：模型来自受保护 tenant-local DeepSeek 配置，实际 `gpt-6-luna`；r718 完成 pending side-effect、Agent Runtime exit survival、attempt `2` `process-restart/recovered`、短 marker、side-effect `confirmed`、reconcile `confirmed`、恢复后 MCP/Skill binding 与事件续读。Docker MCP/Skill/Artifact/events 为 `8/1/verified/resumed`，reconnect 引用已有 DeepSeek Docker Provider cell，revoke 为 `0/0/2`，stale generation `409`，cross-tenant/version-digest rejected，Compose smoke、wrapper `0`、cleanup `0`；Docker cross-node recovery 显示 `N/A`。
+
+r675 的无 checkpoint 结果、r718 的 Mach-O preflight、等待器 active-Bash 误判、PID guard 与 digest 修复保留为 repair history，不显示为 PASS。命令/log/evidence SHA-256 为 `e2b8f07ea171a9209b18ec55fe60668b2dca9271b4883e0f7c3f8a8e267b2db1` / `2c6b459c3c7294a9c644bca481fb0e5bf67ec037ecc87da1b03f16a41e738055` / `28b1f58ff5ad27d66838377455c39d8931cb6a413eb4ee7fb0083ce74dc12b87`。formal Gate 继续 `OPEN`。
+
+### 2026-09-28：r722 Codex×Kubernetes Agent fault UI evidence
+
+UI 应将当前 Codex×Kubernetes Agent fault 显示为 `PASS`：r721 的旧 fixture PID/`48765` `EADDRINUSE` 仅显示为 setup repair history；r722 修复共享 Kubernetes fixture 生命周期后完成 Agent Runtime exit survival、PTY claim fence、attempt `2` `process-restart/recovered`、marker `agent-exit-recovered`、恢复后 MCP/Skill binding 与事件续读。Kubernetes MCP/Skill/Artifact/events 为 `40/1/verified/resumed`，transport reconnect `replayed=0`，revoke `0/0/2`，stale `409`，cross-tenant/version-digest rejected，Compose smoke、wrapper `0`、cleanup `0`；本轮不重复既有 cross-node 证据，formal Gate 继续 `OPEN`。
+
+命令/log/evidence JSON SHA-256 为 `9ff2df865d9cefa17a12fff7b24a5fbd5b64efb3a51968b4d173dc17b59a2e5c` / `e34ffa904c9851518543363c9115fb29e7b47680166591956b174a0d0a475828` / `03b1f1a2d2e28c752306f73d12e0c1374fc6de9f1d2121e97ba3ca9e3264e3c4`。
+
+### 2026-09-28：r723 ClaudeAgent×Kubernetes Agent fault UI evidence
+
+UI 应将当前 ClaudeAgent×Kubernetes Agent fault 显示为 `PASS`：共享 Kubernetes fixture 生命周期修复后，r723 完成 Agent Runtime exit survival、PTY claim fence、attempt `2` `process-restart/recovered`、marker `agent-exit-recovered`、恢复后 MCP/Skill binding 与事件续读。Kubernetes MCP/Skill/Artifact/events 为 `22/1/verified/resumed`，transport reconnect `replayed=0`，revoke `0/0/2`，stale `409`，cross-tenant/version-digest rejected，Compose smoke、wrapper `0`、cleanup `0`；本轮不重复既有 cross-node 证据，formal Gate 继续 `OPEN`。
+
+命令/log/evidence JSON SHA-256 为 `a78752439e55d5940f5ee89e755764d022004f308e72b66f17281129aa753665` / `8c9162fc7486ffbc0e331b196da01040a477119b5bf283c0b8d28fb9b078f158` / `20662257340d06a3c05cade231b2d0b31480ba5c41976a45936994213b961fc3`。
+
+### 2026-09-28：r726 Pi×Kubernetes Agent fault UI evidence
+
+UI 应将当前 Pi×Kubernetes Agent fault 显示为 `PASS`：r724 的 probe 行尾误判和 r725 的 wrapper 捕获错误仅显示为 repair history；r726 完成 Agent Runtime exit survival、PTY claim fence、attempt `2` `process-restart/recovered`、side-effect `confirmed`、reconciliation、恢复后 MCP/Skill binding 与事件续读。Kubernetes MCP/Skill/Artifact/events 为 `24/1/verified/resumed`，transport `replayed=0`，revoke `0/0/2`，stale `409`，cross-tenant/version-digest rejected，Compose smoke、wrapper `0`、task-owned cleanup 通过。本轮不重复既有 Pi×Kubernetes cross-node 证据，formal Gate 继续 `OPEN`。
+
+命令/log/evidence SHA-256 为 `089581fb608ec0e51be6e67cbc0582d72bccac46626fb2327e7b02f392f474e5` / `46afa36d01df816118575a4b379af3c4807f06c8c10de94dba2a509e09e0dfd0` / `5fcff889960ae2ba75e2aef124fbbfb14624f11669ba8cdf439f9ce059e32671`。
+
+### 2026-09-28：deepseek-harness×Docker Worker fault r732 PASS
+
+Admin/架构投影可将当前 DeepSeek×Docker Worker fault 显示为 `PASS`：r719/r720/r728/r729/r730/r731 仅作为 repair history，r732 的模型来源只引用受保护 tenant-local 配置的字段名和实际模型 `gpt-6-luna`，不展示凭据或配置内容。candidate 为 `0.3.0-dev.732`、sourceCommit `29afe9b9103cac99088f637e02a8cd9bb3f48d58`、sourceDirty=true，Worker image digest 为 `sha256:99b058e0d6e4d6bc1f840b99348885756e3c40b6bcf92fa9a4d78288a196e2fb`。
+
+投影字段包括 pending-side-effect reconcile confirmed、attempt `2` `process-restart/recovered`、binding/事件续读、Docker MCP/Skill/Artifact/events `8/1/verified/resumed`、reconnect replayed `0`、revoke `0/0/2`、stale `1→2/409`、cross-tenant `401/401`、version/digest fail-closed、wrapper `0`、cleanup `0`。Docker cross-node 与同节点 RPO/RTO 为 N/A/未单独发出 snapshot evidence；command/log/evidence SHA-256 为 `288e54c5fd15b18c9c6d1e5a782328a5ebfcd51adcec1edf802ead96de65dbb9` / `2fb9f0f960cccce2b3be4e462939478a999218b46065e31a4141071937233688` / `810c3271f37ee58390e1eb8c07ec2308d20c8e4c022e3883abd881e1e81ea359`。aggregate/release/feature Gate 继续 `OPEN`。
+
+### 2026-09-28：deepseek-harness×RemoteWorker Worker fault r736 PASS
+
+Admin/架构投影可将当前 DeepSeek×RemoteWorker Worker fault 显示为 `PASS`：r733/r734 的 PTY 不适用与 r735 的重复 side-effect hold 仅显示为 repair history；r736 使用 authoritative resume snapshot 修复后完成 Worker recovery。模型来源只引用受保护 tenant-local 配置字段与实际模型 `gpt-6-luna`，不展示凭据或配置内容；candidate `0.3.0-dev.736`、sourceCommit `29afe9b9103cac99088f637e02a8cd9bb3f48d58`、sourceDirty=true，Worker image digest `sha256:d5a14517251f83604d700bbaaee7a14129b57d8067ef600ca75f627d60972866`。
+
+投影字段包括 RemoteWorker MCP/Skill/Artifact/events `14/1/verified/resumed`、reconcile `not-applied`、attempt `2`、cross-node `cross-node-takeover/recovered/confirmed`、RPO `0`、RTO `12863 ms`、snapshot digest `sha256:bacc26a8d65420d6fdfdefb8ae2ef36b00990d4621e3296c9e69a80c104c4e4e`、恢复后 binding/事件续读、revoke `0/0/2`、stale `409`、cross-tenant/version-digest negative、Compose smoke、wrapper `0`、cleanup `0`。transport reconnect 引用已有 DeepSeek×RemoteWorker Provider cell；command/log/evidence SHA-256 为 `269a3429c32d14942ee20d535e66117a0b6ca0e582856e92bd0767b63fdd6e48` / `e25944abbeaa04d78e5f82bd08a6b79955fd9bd58b70f9542fb6a32c16f6dd29` / `75eb62f984f2498a40fd1bfbb4e00a7176cdafcd084f4e44503acc8a7822fb4a`。aggregate/release/feature Gate 继续 `OPEN`，capability catalog supported 状态不变。
+
+### 2026-09-28：deepseek-harness×RemoteWorker Agent fault r740 PASS
+
+r740 完成 DeepSeek×RemoteWorker Agent fault。模型由受保护 tenant-local 配置动态读取为 `gpt-6-luna`；Agent Runtime exit survival、PTY fence 适配、reconcile `not-applied`、attempt `2` recovery、cross-node takeover/recovered/confirmed、RPO `0`、RTO `7617 ms`、snapshot digest `sha256:69685d36a6cfe494a0c1477ead0f7eb90c1d03942c72c0fe8dd3bc5fb0bf5134`、binding 和事件续读通过。RemoteWorker MCP/Skill/Artifact/events `14/1/verified/resumed`，revoke `0/0/2`，stale `409`，wrapper `0`、cleanup `0`。r737–r739 保留为 repair/external-failure history；DeepSeek×Kubernetes Agent 与正式 aggregate/release/feature Gate 仍为 `OPEN`。evidence JSON SHA-256：`b974d624fe728e0e9452a575f1dddf24494519563477e570f63bad1381cd3423`。
+
+### 2026-09-28：r741 Admin/架构投影边界：deepseek-harness×Kubernetes Agent PASS
+
+Admin/Web 与架构可以投影当前 `deepseek-harness/kubernetes` Agent fault 的 opaque `PASS` 终态：candidate/sourceCommit/dirty、实际模型标识、Worker image digest、MCP/Skill/Artifact/events `22/1/verified/resumed`、Agent recovery attempt `2`/`process-restart/recovered`、side-effect reconciliation `confirmed`、transport reconnect、revoke `0/0/2`、stale `409`、cross-tenant/version-digest negative、cleanup 以及命令/log/evidence SHA-256。cross-node 引用当前 tenant-local r659 独立证据；direct Sandbox Worker 显示为 `NOT APPLICABLE`。
+
+该投影只关闭 DeepSeek×Kubernetes Agent fault，不更新 capability catalog supported 状态，不关闭 aggregate/release/feature Gate；页面、receipt 和 API 继续排除凭据、Token、Authorization、endpoint/request/response body、Prompt、源码、工具/MCP payload、节点/Pod/namespace、主机路径和 Secret。
+
+### 2026-09-28：MCP-SKILL-RUNTIME-V1 Gate approval projection
+
+独立只读 reviewer 已明确 `APPROVE`。Admin/Web 与架构投影现可将 aggregate Gate、release Gate 与 feature closeout 显示为 `CLOSED / APPROVED`，依据为 12/12 当前 tenant-local Provider×Environment PASS、适用 fault/recovery PASS 或 `NOT APPLICABLE`、文档同步和 canonical evidence 哈希。capability catalog 的 adapter capability 语义保持不变；页面、receipt 和 API 继续排除凭据、Token、Authorization、endpoint/request/response body、Prompt、源码、工具/MCP payload、节点/Pod/namespace、主机路径和 Secret。

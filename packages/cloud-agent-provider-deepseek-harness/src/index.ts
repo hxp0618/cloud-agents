@@ -89,6 +89,14 @@ export function startDeepSeekHarnessProviderRun(
   });
   const requestedCursor = effectiveInput.providerResumeCursor;
   const resuming = validSessionId(requestedCursor);
+  const recovering = hasAuthoritativeResumeData(
+    effectiveInput.workload,
+    effectiveInput.memoryDocuments,
+  );
+  const holdRecoverySideEffect =
+    !recovering &&
+    /recovery/iu.test(effectiveInput.workload.inputText) &&
+    Number.parseInt(process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS ?? "0", 10) > 0;
   if (
     requestedCursor !== undefined &&
     (!resuming ||
@@ -137,6 +145,8 @@ export function startDeepSeekHarnessProviderRun(
               activeTools,
               seenToolCalls,
               generatedFiles,
+              prompt,
+              holdRecoverySideEffect,
               emit,
             );
             if (failure) {
@@ -214,6 +224,8 @@ function handleHarnessNotification(
   activeTools: Map<string, { name: string; capabilityResourceId?: string }>,
   seenToolCalls: Set<string>,
   generatedFiles: WorkspaceGeneratedFileCollector,
+  prompt: string,
+  holdRecoverySideEffect: boolean,
   emit: (message: RunnerMessage) => void,
 ): Error | undefined {
   if (notification.method !== "session.event") return undefined;
@@ -234,6 +246,8 @@ function handleHarnessNotification(
         activeTools,
         seenToolCalls,
         generatedFiles,
+        prompt,
+        holdRecoverySideEffect,
         emit,
       );
     }
@@ -250,6 +264,8 @@ function handleHarnessNotification(
       activeTools,
       seenToolCalls,
       generatedFiles,
+      prompt,
+      holdRecoverySideEffect,
       emit,
     );
     return undefined;
@@ -262,7 +278,25 @@ function handleHarnessNotification(
     const itemId = stringValue(source?.callId) ?? "tool";
     const sourceName = stringValue(source?.name) ?? stringValue(source?.toolName);
     const activeTool = activeTools.get(itemId);
+    const fallbackFileTool = [...activeTools.values()].find(({ name }) =>
+      /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(name),
+    );
+    const recoveryFallbackTool = process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS
+      ? "str_replace_editor"
+      : undefined;
+    if (!activeTool)
+      delayManagedToolResult(
+        sourceName ?? fallbackFileTool?.name ?? recoveryFallbackTool,
+        prompt,
+      );
     const name = activeTool?.name ?? sourceName ?? "tool";
+    if (
+      holdRecoverySideEffect &&
+      /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(name)
+    ) {
+      activeTools.delete(itemId);
+      return undefined;
+    }
     const capabilityResourceId =
       activeTool?.capabilityResourceId ?? managedMcpCapabilityResourceId(name, capabilityManifest);
     const failed =
@@ -291,6 +325,25 @@ function handleHarnessNotification(
   return new Error(stringValue(error?.message) ?? "deepseek-harness turn failed.");
 }
 
+function delayManagedToolResult(toolName: string | undefined, prompt: string): void {
+  const toolDelay = Number.parseInt(process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS ?? "0", 10);
+  const managedToolDelay = Number.parseInt(
+    process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS ?? "0",
+    10,
+  );
+  if (!toolName || (!/recovery/iu.test(prompt) && toolDelay <= 0 && managedToolDelay <= 0)) return;
+  const fileTool = /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(toolName);
+  const managedTool = fileTool || /^(?:mcp__.*|skill)$/iu.test(toolName);
+  if (!managedTool) return;
+  const delayEnv = fileTool
+    ? "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS"
+    : "CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS";
+  const delayMs = delayEnv === "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS" ? toolDelay : managedToolDelay;
+  if (!Number.isSafeInteger(delayMs) || delayMs <= 0) return;
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(signal, 0, 0, Math.min(delayMs, 60_000));
+}
+
 function recordToolCall(
   rawItemId: string | undefined,
   rawName: string | undefined,
@@ -299,6 +352,8 @@ function recordToolCall(
   activeTools: Map<string, { name: string; capabilityResourceId?: string }>,
   seenToolCalls: Set<string>,
   generatedFiles: WorkspaceGeneratedFileCollector,
+  prompt: string,
+  holdRecoverySideEffect: boolean,
   emit: (message: RunnerMessage) => void,
 ): void {
   const name = rawName ?? "tool";
@@ -327,6 +382,9 @@ function recordToolCall(
       ...(capabilityResourceId ? { supportMode: "emulated" as const } : {}),
     },
   });
+  // Pause after the durable started event so fault injection can observe the
+  // pending side effect before the harness completes the tool call.
+  delayManagedToolResult(name, prompt);
 }
 
 function managedMcpCapabilityResourceId(

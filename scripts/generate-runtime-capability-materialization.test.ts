@@ -115,6 +115,40 @@ describe("runtime capability materialization generator", () => {
     }
   });
 
+  it("rejects SSE because the common Runtime broker is streamable-http only", () => {
+    const root = `/tmp/cloud-agents-capability-generator-sse-${process.pid}-${Date.now()}`;
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    writeProtected(join(root, "token"), Buffer.from("token"));
+    writeProtected(
+      join(root, "config.json"),
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          tenantId: "tenant-alpha",
+          mcp: [
+            {
+              resourceId: "mcp-1",
+              version: "1",
+              digest: "sha256:" + "1".repeat(64),
+              transport: "sse",
+              endpoint: "https://mcp.example.test/sse",
+              tokenFile: "token",
+              allowedHosts: ["mcp.example.test"],
+            },
+          ],
+          skills: [],
+        }),
+      ),
+    );
+    try {
+      expect(() =>
+        generateRuntimeCapabilityMaterialization(join(root, "config.json"), join(root, "out")),
+      ).toThrow(/MCP materialization config entry is invalid/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects duplicate MCP identities, credentials, and Skill identities", () => {
     const root = `/tmp/cloud-agents-capability-generator-duplicates-${process.pid}-${Date.now()}`;
     mkdirSync(root, { recursive: true, mode: 0o700 });

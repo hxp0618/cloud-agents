@@ -331,6 +331,18 @@ describe("platform release", () => {
     expect(worker).toContain("secretName: {{ .Values.runtime.credentialSecretName }}");
   });
 
+  it("keeps acceptance model selection tenant-local", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    expect(composeSmoke).toContain(
+      '"$real_provider_credentials_directory/tenant-local.$provider.json"',
+    );
+  });
+
+  it("keeps acceptance model values outside the harness source", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    expect(composeSmoke).not.toMatch(/\bgpt-[0-9]/);
+  });
+
   it("packages opt-in Compose RemoteWorker authority", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     const remoteWorker = readFileSync("deploy/compose/docker-compose.remote-worker.yml", "utf8");
@@ -651,6 +663,83 @@ printf 'ready\\n'
     }
   });
 
+  it("keeps the Worker upgrade Operation assertion fail-closed with returned state diagnostics", () => {
+    const source = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    expect(source).toContain('NO_PROXY="$kubernetes_no_proxy" no_proxy="$kubernetes_no_proxy"');
+    expect(source).toContain("kubernetes_ctl get --raw /version >/dev/null");
+    expect(source).toContain("Kubernetes Runtime smoke requires digest-pinned OpenSandbox images");
+    const start = source.indexOf(
+      'CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$upgrade_operation_file" node <<\'NODE\'',
+    );
+    const script = source.slice(start).match(/node <<'NODE'\n([\s\S]*?)\nNODE/u)?.[1];
+    expect(script).toBeDefined();
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-upgrade-operation-"));
+    try {
+      const file = join(directory, "operation.json");
+      const operation = {
+        kind: "MaintenanceOperation",
+        action: "target.upgrade",
+        resourceId: "docker-compose-target",
+        resourceGeneration: 1,
+        state: "succeeded",
+        currentStep: "complete",
+      };
+      writeFileSync(file, JSON.stringify(operation));
+      const success = spawnSync(process.execPath, ["-e", script!], {
+        encoding: "utf8",
+        env: { ...process.env, CLOUD_AGENTS_COMPOSE_OPERATION_FILE: file },
+      });
+      expect(success.status).toBe(0);
+
+      writeFileSync(file, JSON.stringify({ ...operation, state: "failed", currentStep: "cleanup" }));
+      const failure = spawnSync(process.execPath, ["-e", script!], {
+        encoding: "utf8",
+        env: { ...process.env, CLOUD_AGENTS_COMPOSE_OPERATION_FILE: file },
+      });
+      expect(failure.status).not.toBe(0);
+      expect(failure.stderr).toContain('"state":"failed"');
+      expect(failure.stderr).toContain('"currentStep":"cleanup"');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps restored snapshot semantic digest independent from raw tar bytes", () => {
+    const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
+    expect(composeSmoke).toContain('portable-snapshot-digest.mjs');
+    expect(composeSmoke).toContain('tar -cf - -C /workspace .');
+    expect(composeSmoke).toContain('capture_kubernetes_restored_snapshot_digest');
+    expect(composeSmoke).toContain('kubernetes_ctl -n "$kubernetes_destination_namespace" exec "$kubernetes_recovery_bound_pod" -c binder');
+    expect(composeSmoke).not.toContain('node --input-type=module -e');
+    expect(composeSmoke).not.toContain(
+      'recovery_restored_content_digest_sha256=${recovery_snapshot_digest#sha256:}',
+    );
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-snapshot-digest-"));
+    try {
+      const file = join(directory, "file");
+      const archive = join(directory, "snapshot.tar");
+      writeFileSync(file, "hello", { mode: 0o600 });
+      expect(spawnSync("tar", ["-cf", archive, "-C", directory, "file"], { encoding: "utf8" }).status).toBe(0);
+      const result = spawnSync(process.execPath, ["scripts/lib/portable-snapshot-digest.mjs", archive], {
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(0);
+      const [semantic, raw] = result.stdout.trim().split(/\s+/);
+      const fileDigest = "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+      const expected = `sha256:${createHash("sha256").update(JSON.stringify([{
+        Name: "file", Link: "", Digest: fileDigest, Type: 48, Mode: 384, Size: 5,
+      }])).digest("hex")}`;
+      expect(semantic).toBe(expected);
+      expect(raw).toBe(createHash("sha256").update(readFileSync(archive)).digest("hex"));
+      expect(raw).not.toBe(semantic!.slice("sha256:".length));
+      const helper = readFileSync("scripts/lib/portable-snapshot-digest.mjs", "utf8");
+      expect(helper).toContain("type === 76");
+      expect(helper).toContain("type === 75");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each(["approval", "recovery"])(
     "keeps %s failure diagnostics free of error text and tool content",
     (kind) => {
@@ -744,7 +833,7 @@ printf 'ready\\n'
       'if [ "$cross_node_recovery" -eq 1 ] && [ -n "$real_provider_credentials_directory" ]; then',
     );
     expect(source).toContain(
-      'elif [ "$capability_bound_recovery" -eq 1 ] && [ -n "$real_provider_credentials_directory" ] &&\n    ! capability_bound_recovery_completed docker "$cross_node_provider_to_run"; then',
+      'elif [ "$capability_bound_recovery" -eq 1 ] && [ "$capability_bound_recovery_environment" != kubernetes ] && [ -n "$real_provider_credentials_directory" ] &&\n    ! capability_bound_recovery_completed docker "$cross_node_provider_to_run"; then',
     );
     expect(source).toContain(
       "CLOUD_AGENTS_COMPOSE_CAPABILITY_PROCESS_RECOVERY_FAULTS must be worker, agent or both",
@@ -952,6 +1041,12 @@ printf 'ready\\n'
     );
     expect(composeSmoke).toContain(
       "artifact_requirement=\"exactly one file at $artifact_prompt_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline\"",
+    );
+    expect(composeSmoke).toContain(
+      "followup_expected_command=\"/bin/bash -lc 'cat -- $artifact_path'\"",
+    );
+    expect(composeSmoke).toContain(
+      'followup_prompt="Run exactly this command and no other tool: cat -- $artifact_path. Reply with the command\'s exact single line. Do not modify any file."',
     );
     expect(composeSmoke).toContain(
       'followup_prompt="Read $artifact_prompt_path and reply with its exact single line. Do not modify any file."',

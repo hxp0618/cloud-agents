@@ -103,7 +103,7 @@ describe("readCapabilityManifest", () => {
           resourceId: "server-1",
           version: "v1",
           digest: `sha256:${"a".repeat(64)}`,
-          transport: "sse",
+          transport: "streamable-http",
           connectionRef: "connection-1",
           credentialRef: "credential-1",
           grantId: "grant-1",
@@ -139,18 +139,18 @@ describe("readCapabilityManifest", () => {
         CLOUD_AGENT_MCP_TOKEN_SERVER_1: "token\nforbidden",
       }),
     ).toThrow(/credential/u);
-    const stdio = readCapabilityManifest({
+    const unsupportedTransport = readCapabilityManifest({
       CLOUD_AGENT_CAPABILITY_MANIFEST_B64: encoded({
         ...raw,
-        bindings: [{ ...raw.bindings[0], transport: "stdio" }],
+        bindings: [{ ...raw.bindings[0], transport: "sse" }],
       }),
     });
     expect(() =>
-      managedMcpConfiguration(stdio, {
+      managedMcpConfiguration(unsupportedTransport, {
         CLOUD_AGENT_MCP_BROKER_URL: "http://127.0.0.1:8765/mcp",
         CLOUD_AGENT_MCP_TOKEN_SERVER_1: "secret",
       }),
-    ).toThrow(/stdio transport/u);
+    ).toThrow(/streamable-http transport/u);
   });
 
   it("redacts Host-managed MCP tokens from Provider diagnostics", () => {

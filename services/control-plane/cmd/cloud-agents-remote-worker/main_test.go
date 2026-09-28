@@ -176,7 +176,7 @@ func TestRemoteWorkerReconnectDoesNotReplayStartedCommands(t *testing.T) {
 	if err := saveNodeState(path, state); err != nil {
 		t.Fatal(err)
 	}
-	if err := executePendingSandboxExec(context.Background(), value, &state); err != nil {
+	if err := executePendingSandboxExec(context.Background(), value, &state, nil); err != nil {
 		t.Fatal(err)
 	}
 	if state.SandboxExecCommandReceipt == nil || state.SandboxExecCommandReceipt.Result != "failed" ||

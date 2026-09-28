@@ -684,13 +684,19 @@ func createWorkerContainer(ctx context.Context, client *http.Client, base string
 }
 
 func createWorkerContainerNamed(ctx context.Context, client *http.Client, base string, request DeployRequest, config DeploymentConfig, image string, labels map[string]string, name, workspaceSource string) (string, error) {
+	workerEnv := []string{
+		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
+		"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
+	}
+	if delay := os.Getenv("CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS"); delay != "" {
+		if parsed, err := strconv.ParseUint(delay, 10, 32); err == nil && parsed > 0 {
+			workerEnv = append(workerEnv, "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS="+delay)
+		}
+	}
 	body := map[string]any{
 		"Image": image,
 		"User":  "1000:1000",
-		"Env": []string{
-			"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
-			"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
-		},
+		"Env":   workerEnv,
 		"Cmd": []string{
 			"--listen", ":8091",
 			"--tls-cert", "/run/cloud-agents/worker-credentials/server.crt",

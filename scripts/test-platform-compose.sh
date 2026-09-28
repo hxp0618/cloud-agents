@@ -201,8 +201,11 @@ if [ "$sdk_live" -eq 1 ]; then
     command -v "$command" >/dev/null 2>&1 || { echo "live SDK consumer smoke requires $command" >&2; exit 2; }
   done
 fi
+kubernetes_api_host=
+kubernetes_no_proxy=${NO_PROXY-${no_proxy-}}
 kubernetes_ctl() {
-  kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" "$@"
+  NO_PROXY="$kubernetes_no_proxy" no_proxy="$kubernetes_no_proxy" \
+    kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" "$@"
 }
 verify_kubernetes_runtime_prerequisites() {
   for resource in crd/batchsandboxes.sandbox.opensandbox.io crd/pools.sandbox.opensandbox.io crd/sandboxsnapshots.sandbox.opensandbox.io clusterrole/opensandbox-manager-role; do
@@ -215,7 +218,22 @@ verify_kubernetes_runtime_prerequisites() {
 }
 if [ "$kubernetes_runtime" -eq 1 ]; then
   command -v kubectl >/dev/null 2>&1 || { echo "Kubernetes Runtime smoke requires kubectl" >&2; exit 2; }
+  kubernetes_api_host=$(kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" \
+    config view --raw --minify -o json | node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(0, "utf8"));
+const server = value.clusters?.[0]?.cluster?.server;
+if (typeof server !== "string") process.exit(1);
+const endpoint = new URL(server);
+if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.pathname !== "/" || endpoint.search || endpoint.hash) process.exit(1);
+process.stdout.write(endpoint.hostname);
+') || { echo "Kubernetes Runtime smoke requires an HTTPS API server endpoint" >&2; exit 2; }
+case ",$kubernetes_no_proxy," in
+  *,"$kubernetes_api_host",*) ;;
+  *) kubernetes_no_proxy="${kubernetes_no_proxy:+$kubernetes_no_proxy,}$kubernetes_api_host" ;;
+esac
   kubernetes_ctl cluster-info >/dev/null
+  kubernetes_ctl get --raw /version >/dev/null
   verify_kubernetes_runtime_prerequisites
 fi
 docker_host=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
@@ -369,10 +387,10 @@ cleanup() {
   docker rm -f "$kubernetes_destination_opensandbox_container" >/dev/null 2>&1 || true
   if [ "$kubernetes_runtime" -eq 1 ]; then
     for namespace in "$kubernetes_runtime_namespace" "$kubernetes_destination_namespace" "$kubernetes_operator_namespace"; do
-      owner=$(kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" get namespace "$namespace" -o json 2>/dev/null |
+      owner=$(kubernetes_ctl get namespace "$namespace" -o json 2>/dev/null |
         node -e 'const fs=require("node:fs");const input=fs.readFileSync(0,"utf8");if(input)process.stdout.write(JSON.parse(input).metadata?.labels?.["cloud-agents.dev/test-run"]??"")' || true)
       if [ "$owner" = "$project" ]; then
-        kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" delete namespace "$namespace" --wait=true --timeout=180s >/dev/null 2>&1 || status=1
+        kubernetes_ctl delete namespace "$namespace" --wait=true --timeout=180s >/dev/null 2>&1 || status=1
       elif [ -n "$owner" ]; then
         echo "refusing to delete Kubernetes namespace without the exact test ownership label: $namespace" >&2
         status=1
@@ -381,10 +399,10 @@ cleanup() {
     for resource in "clusterrolebinding/$kubernetes_version_binding" "clusterrolebinding/$kubernetes_manager_binding" \
       "clusterrolebinding/$kubernetes_destination_version_binding" "clusterrolebinding/$kubernetes_destination_manager_binding" \
       "clusterrole/$kubernetes_version_role"; do
-      owner=$(kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" get "$resource" -o json 2>/dev/null |
+      owner=$(kubernetes_ctl get "$resource" -o json 2>/dev/null |
         node -e 'const fs=require("node:fs");const input=fs.readFileSync(0,"utf8");if(input)process.stdout.write(JSON.parse(input).metadata?.labels?.["cloud-agents.dev/test-run"]??"")' || true)
       if [ "$owner" = "$project" ]; then
-        kubectl --kubeconfig "$kubernetes_kubeconfig" --context "$kubernetes_context" delete "$resource" --wait=true --timeout=60s >/dev/null 2>&1 || status=1
+        kubernetes_ctl delete "$resource" --wait=true --timeout=60s >/dev/null 2>&1 || status=1
       elif [ -n "$owner" ]; then
         echo "refusing to delete Kubernetes resource without the exact test ownership label: $resource" >&2
         status=1
@@ -714,9 +732,13 @@ const platform = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM;
 const dockerGateway = process.env.CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY;
 const codexWriteReceiptDelay = process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" &&
   process.env.CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER === "codex" ? "30000" : "12000";
+const deepseekHarnessToolDelay = process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS ?? "";
+const deepseekHarnessManagedToolDelay = process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS ?? "";
 if (![state, release, project, platform, dockerGateway].every((value) => value && !value.includes("\n"))) {
   throw new Error("invalid Compose smoke environment");
 }
+if (/[\r\n]/u.test(deepseekHarnessToolDelay)) throw new Error("invalid DeepSeek harness delay");
+if (/[\r\n]/u.test(deepseekHarnessManagedToolDelay)) throw new Error("invalid DeepSeek managed-tool delay");
 if (isIP(dockerGateway) !== 4) throw new Error("invalid Docker bridge gateway");
 const deploy = `${state}/deployment/deploy`;
 const issuer = "https://issuer.compose.test";
@@ -808,6 +830,8 @@ writeFileSync(`${state}/runtime.env`, [
   ...(process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1"
     ? [`CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS=${codexWriteReceiptDelay}`]
     : []),
+  ...(deepseekHarnessToolDelay ? [`CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS=${deepseekHarnessToolDelay}`] : []),
+  ...(deepseekHarnessManagedToolDelay ? [`CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS=${deepseekHarnessManagedToolDelay}`] : []),
   "",
 ].join("\n"));
 writeFileSync(`${state}/provider-credentials/tenant-compose-smoke.unavailable-provider.json`, '{"payload":{}}\n');
@@ -819,7 +843,7 @@ if (workerImageOverride && /[\r\n]/u.test(workerImageOverride)) throw new Error(
 const workerOverride = workerImageOverride
   ? `\n  worker:\n    image: ${JSON.stringify(workerImageOverride)}\n    build: !reset null\n`
   : "";
-const baseComposeOverride = `services:\n  access-gateway:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n  control-plane:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n      CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS: "${process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" ? codexWriteReceiptDelay : ""}"\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n`;
+const baseComposeOverride = `services:\n  access-gateway:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n  control-plane:\n    environment:\n      SSL_CERT_FILE: /run/cloud-agents/tls/ca.crt\n      CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS: "${process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" ? codexWriteReceiptDelay : ""}"\n      CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS: "${deepseekHarnessToolDelay}"\n      CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS: "${deepseekHarnessManagedToolDelay}"\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n`;
 writeFileSync(`${state}/compose-base-override.yml`, baseComposeOverride);
 writeFileSync(`${state}/compose-target-override.yml`, `${baseComposeOverride}${workerOverride}`);
 writeFileSync(`${state}/docker-proxy.mjs`, [
@@ -1203,6 +1227,15 @@ start_capability_mcp_fixture() {
   mcp_fixture_runtime_id=$1
   previous_mcp_fixture_docker_host=$mcp_fixture_docker_host
   mcp_fixture_preserve_state=${3:-0}
+  if [ "$mcp_fixture_kubernetes" -eq 1 ] && [ -n "${mcp_fixture_pid-}" ] &&
+    [ -n "${mcp_fixture_pod-}" ] && [ -n "${mcp_fixture_pod_container-}" ]; then
+    # Kubernetes Runtime reuses the Pod across checks; stop the prior fixture
+    # before binding its fixed loopback port again.
+    kubernetes_ctl -n "$kubernetes_active_namespace" exec "$mcp_fixture_pod" \
+      -c "$mcp_fixture_pod_container" -- sh -c "kill $mcp_fixture_pid 2>/dev/null || true" \
+      >/dev/null 2>&1 || true
+    mcp_fixture_pid=
+  fi
   if [ -n "$mcp_fixture_container" ] && [ "$mcp_fixture_kubernetes" -ne 1 ]; then
     if [ -n "$previous_mcp_fixture_docker_host" ]; then
       docker -H "$previous_mcp_fixture_docker_host" rm -f "$mcp_fixture_container" >/dev/null 2>&1 || true
@@ -1734,6 +1767,12 @@ if [ "$cross_node_recovery" -eq 1 ] && [ "$cross_node_environment" = kubernetes 
 fi
 
 if [ "$kubernetes_runtime" -eq 1 ]; then
+  for image in "$opensandbox_server_image" "$kubernetes_controller_image" "$kubernetes_execd_image" "$kubernetes_egress_image"; do
+    case "$image" in
+      *@sha256:????????????????????????????????????????????????????????????????) ;;
+      *) echo "Kubernetes Runtime smoke requires digest-pinned OpenSandbox images" >&2; exit 1 ;;
+    esac
+  done
   kubernetes_ctl apply -f - >/dev/null <<EOF
 apiVersion: v1
 kind: List
@@ -1981,6 +2020,15 @@ EOF
       -p "{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"$kubernetes_destination_node\"}}}}}" >/dev/null
     kubernetes_ctl -n "$kubernetes_operator_namespace" rollout status deployment/opensandbox-controller --timeout=180s >/dev/null
   fi
+
+  for service_account in control-plane opensandbox-server; do
+    kubernetes_ctl -n "$kubernetes_runtime_namespace" get serviceaccount "$service_account" >/dev/null
+  done
+  kubernetes_ctl -n "$kubernetes_runtime_namespace" get rolebinding foundation-workspace >/dev/null
+  kubernetes_ctl get clusterrolebinding "$kubernetes_manager_binding" >/dev/null
+  kubernetes_ctl auth can-i --as="system:serviceaccount:$kubernetes_runtime_namespace:control-plane" get /version >/dev/null
+  kubernetes_ctl auth can-i --as="system:serviceaccount:$kubernetes_runtime_namespace:opensandbox-server" create pods >/dev/null
+  kubernetes_ctl auth can-i --as="system:serviceaccount:$kubernetes_runtime_namespace:opensandbox-server" create pods/exec >/dev/null
 
   kubernetes_control_plane_token=$(kubernetes_ctl -n "$kubernetes_runtime_namespace" create token control-plane --duration=1h)
   kubernetes_opensandbox_token=$(kubernetes_ctl -n "$kubernetes_runtime_namespace" create token opensandbox-server --duration=1h)
@@ -2572,6 +2620,8 @@ NODE
     --label "cloud-agents.dev/test=$project" --network "${project}_default" --add-host host.docker.internal:host-gateway \
     --volume "$remote_worker_state_directory:/node-output" \
     --env SSL_CERT_FILE=/node-output/install/control-plane-ca.pem \
+    --env "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS=${CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS:-}" \
+    --env "CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS=${CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS:-}" \
     debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 \
     /node-output/install/run.sh >/dev/null
   remote_target_id=$(CLOUD_AGENTS_COMPOSE_PROJECT_ID="$project_id" CLOUD_AGENTS_COMPOSE_REMOTE_ENROLLMENT="$remote_enrollment_id" node -e \
@@ -2647,6 +2697,8 @@ NODE
       --label "cloud-agents.dev/test=$project" --network "${project}_default" --add-host host.docker.internal:host-gateway \
       --volume "$remote_destination_state_directory:/node-output" \
       --env SSL_CERT_FILE=/node-output/install/control-plane-ca.pem \
+      --env "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS=${CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS:-}" \
+      --env "CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS=${CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS:-}" \
       debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 \
       /node-output/install/run.sh >/dev/null
     attempt=0
@@ -3348,7 +3400,7 @@ const expectedKeys = ["apiVersion", "environmentId", "expiresAt", "kind", "obser
 const actualKeys = Object.keys(value).sort();
 if (value.kind !== "UserEnvironment" || value.profileId !== process.env.CLOUD_AGENTS_COMPOSE_PROFILE_ID ||
     value.profileVersion !== 1 || value.observedPhase !== "ready" || actualKeys.join("\n") !== expectedKeys.join("\n")) {
-  throw new Error(`Profile did not create a safe ready User Environment: ${actualKeys.join(",")}`);
+  throw new Error(`Profile did not create a safe ready User Environment: ${actualKeys.join(",")}${value.stableErrorCode ? ` stableErrorCode=${value.stableErrorCode}` : ""}`);
 }
 NODE
 replayed_user_environment_file="$smoke_directory/user-environment-replayed.json"
@@ -3630,7 +3682,7 @@ const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_OPERATION
 if (value.kind !== "MaintenanceOperation" || value.action !== "target.upgrade" ||
     value.resourceId !== "docker-compose-target" || value.resourceGeneration !== 1 ||
     value.state !== "succeeded" || value.currentStep !== "complete") {
-  throw new Error("Admin API did not close the Worker upgrade operation");
+  throw new Error(`Admin API did not close the Worker upgrade operation: ${JSON.stringify(value)}`);
 }
 NODE
 upgrade_replay_file="$smoke_directory/lease-upgrade-operation-replayed.json"
@@ -4515,7 +4567,7 @@ spec:
     - name: binder
       image: $worker_repository@$worker_release_digest
       imagePullPolicy: Never
-      command: ["/bin/sh", "-c", "true"]
+      command: ["/bin/sh", "-c", "sleep 3600"]
       volumeMounts:
         - name: workspace
           mountPath: /workspace
@@ -4525,8 +4577,7 @@ spec:
         claimName: $bind_volume_name
 EOF
     kubernetes_ctl -n "$bind_namespace" wait pod/ca-workspace-binder \
-      --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s >/dev/null
-    kubernetes_ctl -n "$bind_namespace" delete pod ca-workspace-binder --wait=true --timeout=60s >/dev/null
+      --for=jsonpath='{.status.phase}'=Running --timeout=120s >/dev/null
   }
   kubernetes_agent_sandbox_body=$(printf '{"workspaceId":"%s","workspaceName":"%s","sandboxId":"%s","runtimeProfileId":"%s","runtimeProfileVersion":1,"ttlSeconds":7200}' \
     "$kubernetes_agent_workspace_id" "$kubernetes_agent_workspace_id" "$kubernetes_agent_sandbox_id" "$kubernetes_agent_runtime_profile_id")
@@ -4683,6 +4734,8 @@ execute_real_provider_with_mcp_approvals() {
   approval_prompt=$5
   approval_execution_file=$6
   approval_expected_command=${7-}
+  approval_runtime_mode=${8:-approval-required}
+  approval_execution_idempotency_key=${9:-$approval_request_prefix}
   approval_status_file="$approval_execution_file.status"
   approval_error_file="$approval_execution_file.stderr"
   approval_current_file="$approval_execution_file.current"
@@ -4690,8 +4743,8 @@ execute_real_provider_with_mcp_approvals() {
     set +e
     cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
       --execution "$approval_execution_id" --request-id "$approval_request_prefix" \
-      --idempotency-key "$approval_request_prefix" execution execute \
-      --runtime-mode approval-required --interaction-mode default $capability_execution_flags --input "$approval_prompt" \
+      --idempotency-key "$approval_execution_idempotency_key" execution execute \
+      --runtime-mode "$approval_runtime_mode" --interaction-mode default $capability_execution_flags --input "$approval_prompt" \
       >"$approval_execution_file" 2>"$approval_error_file"
     printf '%s\n' "$?" >"$approval_status_file"
   ) &
@@ -4710,6 +4763,8 @@ const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
 const handled = new Set((process.env.CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS ?? "").split(" ").filter(Boolean));
 const expectedCommand = process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_COMMAND;
+const normalizeShellCommand = (command) => typeof command === "string"
+  ? command.replace(/^\/bin\/bash -l?c /, "/bin/bash -c ") : command;
 for (const message of value.messages ?? []) {
   if (message.messageType !== "InteractionRequest" || message.payload?.interactionType !== "approval") continue;
   const requestId = message.payload?.requestId;
@@ -4718,7 +4773,8 @@ for (const message of value.messages ?? []) {
   const isSkillApproval = message.payload?.toolName === "Skill" && message.payload?.requestKind === "tool";
   const isArtifactWriteApproval = message.payload?.toolName === "Write";
   const isExpectedCodexCommand = expectedCommand && message.payload?.provider === "codex" &&
-    message.payload?.requestKind === "command" && message.payload?.command === expectedCommand;
+    message.payload?.requestKind === "command" &&
+    normalizeShellCommand(message.payload?.command) === normalizeShellCommand(expectedCommand);
   const isCapabilityApproval = (isMcpApproval || isSkillApproval || isArtifactWriteApproval || isExpectedCodexCommand);
   const managedSkillQuote = String.fromCharCode(39);
   const managedSkillCommand = message.payload?.command ?? "";
@@ -4990,9 +5046,14 @@ NODE
       CLOUD_AGENTSCTL="$cli" \
         sh "$script_directory/test-platform-agent-interactions.sh" || return 1
     else
+      recovery_worker_container=
       case "$real_provider_environment_slug" in
         docker) recovery_runtime_id=$foundation_agent_runtime_id; recovery_target_id=docker-compose-target ;;
-        remote-worker) recovery_runtime_id=$remote_agent_runtime_id; recovery_target_id=$remote_target_id ;;
+        remote-worker)
+          recovery_runtime_id=$remote_agent_runtime_id
+          recovery_target_id=$remote_target_id
+          recovery_worker_container=$(docker inspect --format '{{.Id}}' "$remote_worker_container")
+          ;;
         kubernetes) recovery_runtime_id=$kubernetes_agent_runtime_id; recovery_target_id=$kubernetes_runtime_target_id ;;
       esac
       start_capability_mcp_fixture "$recovery_runtime_id"
@@ -5009,6 +5070,7 @@ NODE
       CLOUD_AGENTS_E2E_RUN_ID="compose-capability-process-recovery-$real_provider_environment_slug-agent-$project" \
       CLOUD_AGENTS_E2E_OUTPUT_DIR="$interaction_output_directory" \
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
+      CLOUD_AGENTS_E2E_WORKER_CONTAINER="$recovery_worker_container" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
       CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
       CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
@@ -5485,15 +5547,17 @@ NODE
 
   followup_turn_id="$turn_id-followup"
   followup_execution_id="$execution_id-followup"
-  followup_prompt="Read $artifact_prompt_path and reply with its exact single line. Do not modify any file."
+  followup_expected_command=
+  if [ "$provider_kind" = codex ]; then
+    followup_expected_command="/bin/bash -lc 'cat -- $artifact_path'"
+    followup_prompt="Run exactly this command and no other tool: cat -- $artifact_path. Reply with the command's exact single line. Do not modify any file."
+  else
+    followup_prompt="Read $artifact_prompt_path and reply with its exact single line. Do not modify any file."
+  fi
   cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$followup_turn_id" \
     --request-id "$real_provider_run_prefix-$provider_slug-followup-turn" --idempotency-key "$real_provider_run_prefix-$provider_slug-followup-turn" \
     turn create --input "$followup_prompt" >/dev/null
   followup_file="$smoke_directory/$followup_execution_id.json"
-  followup_expected_command=
-  if [ "$provider_kind" = codex ]; then
-    followup_expected_command="/bin/bash -lc 'cat $artifact_path'"
-  fi
   if ! execute_real_provider_with_safe_retry "$provider_kind" "$session_id" "$followup_turn_id" "$followup_execution_id" \
     "$real_provider_run_prefix-$provider_slug-followup-execution" "$followup_prompt" "$followup_file" \
     "$followup_expected_command"; then
@@ -6106,6 +6170,25 @@ run_recovery_sandbox_probe() {
   done
 }
 
+capture_kubernetes_restored_snapshot_digest() {
+  recovery_restored_archive_path="$smoke_directory/$recovery_prefix-restored-workspace.tar"
+  kubernetes_ctl -n "$kubernetes_destination_namespace" exec "$kubernetes_recovery_bound_pod" -c binder -- \
+    tar -cf - -C /workspace . >"$recovery_restored_archive_path"
+  recovery_restored_probe_values=$(node "$script_directory/lib/portable-snapshot-digest.mjs" \
+    "$recovery_restored_archive_path" | tr '\n' '|' | sed 's/|$//')
+  recovery_restored_content_digest=${recovery_restored_probe_values%%|*}
+  recovery_restored_snapshot_sha256=${recovery_restored_probe_values#*|}
+  printf '%s\n' "$recovery_restored_content_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || {
+    echo "Kubernetes restored Workspace/Sandbox semantic digest is missing or invalid" >&2
+    exit 1
+  }
+  printf '%s\n' "$recovery_restored_snapshot_sha256" | grep -Eq '^[0-9a-f]{64}$' || {
+    echo "Kubernetes restored Workspace/Sandbox archive digest is missing or invalid" >&2
+    exit 1
+  }
+  recovery_restored_content_digest_sha256=${recovery_restored_content_digest#sha256:}
+}
+
 stop_foundation_agent() {
   control_plane_api "$smoke_directory/admin-curl.conf" GET "$foundation_agent_admin_path" \
     compose-smoke-agent-sandbox-stopped >"$smoke_directory/foundation-agent-sandbox-stopped.json"
@@ -6305,11 +6388,17 @@ run_real_provider_recovery() {
       recovery_file_instruction="use the workspace.write_text_file tool exactly once with path '$artifact_path' and content '$expected_content\\n'"
       prompt="${recovery_file_instruction}. Do not use a shell command. Then reply done. Do not reply done unless the managed tool succeeds."
       ;;
-    claudeAgent | pi | deepseek-harness)
+    claudeAgent | pi)
       recovery_artifact_directory=${artifact_path%/*}
       recovery_shell_command="mkdir -p '$recovery_artifact_directory' && printf '%s\\n' '$expected_content' > '$artifact_path' && sleep 12"
       recovery_file_instruction="use the Bash tool exactly once to run this exact command: $recovery_shell_command"
       prompt="${recovery_file_instruction}. Do not use another tool. Then reply done. Do not reply done unless the tool succeeds."
+      ;;
+    deepseek-harness)
+      recovery_artifact_directory=${artifact_path%/*}
+      recovery_shell_command="mkdir -p '$recovery_artifact_directory' && printf '%s\\n' '$expected_content' > '$artifact_path' && sleep 12"
+      recovery_file_instruction="use the str_replace_editor tool exactly once with command=create, path='$recovery_artifact_absolute', and file_text='$expected_content\\n'"
+      prompt="${recovery_file_instruction}. Do not use a shell command or another tool. Then reply done. Do not reply done unless the tool succeeds."
       ;;
   esac
   if [ "$recovery_capability_bound" -eq 1 ]; then
@@ -6323,6 +6412,8 @@ run_real_provider_recovery() {
     fi
     if [ "$recovery_provider_kind" = "codex" ]; then
       prompt="Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill for this managed capability recovery request. The Codex Host-managed workspace.write_text_file tool is the only available file tool; follow the Skill's recovery intent with $recovery_file_instruction. Do not use a shell command or another tool. Then reply done. Do not reply done unless the managed tool succeeds."
+    elif [ "$recovery_provider_kind" = "deepseek-harness" ]; then
+      prompt="$recovery_file_instruction first. Then call the managed MCP tool named $recovery_mcp_tool_name exactly once and use the $recovery_skill_name Skill for this managed capability recovery request. Do not use a shell command or another tool. Then reply done. Do not reply done unless every managed tool succeeds."
     else
       prompt="Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill for this managed capability recovery request. Follow it exactly: $recovery_file_instruction. Do not use another tool. Then reply done. Do not reply done unless the tool succeeds."
     fi
@@ -6362,6 +6453,12 @@ run_real_provider_recovery() {
 
   recovery_checkpoint_file="$smoke_directory/$recovery_prefix-checkpoint.json"
   recovery_handled_approvals=
+  recovery_checkpoint_poll_sleep=1
+  recovery_checkpoint_attempt_limit=120
+  if [ "$recovery_provider_kind" = deepseek-harness ]; then
+    recovery_checkpoint_poll_sleep=0.05
+    recovery_checkpoint_attempt_limit=1200
+  fi
   attempt=0
   while :; do
     if [ -f "$recovery_execute_status" ]; then
@@ -6400,13 +6497,16 @@ const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE, "utf8"));
 const handled = new Set((process.env.CLOUD_AGENTS_COMPOSE_HANDLED_APPROVALS ?? "").split(" ").filter(Boolean));
 const expectedCommand = process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_COMMAND;
+const normalizeShellCommand = (command) => typeof command === "string"
+  ? command.replace(/^\/bin\/bash -l?c /, "/bin/bash -c ") : command;
 for (const message of value.messages ?? []) {
   if (message.messageType !== "InteractionRequest" || message.payload?.interactionType !== "approval") continue;
   const requestId = message.payload?.requestId;
   const categories = message.payload?.sensitiveAction?.categories;
   const isMcpApproval = Array.isArray(categories) && categories.includes("external-mcp-action");
   const isExpectedCodexCommand = expectedCommand && message.payload?.provider === "codex" &&
-    message.payload?.requestKind === "command" && message.payload?.command === expectedCommand;
+    message.payload?.requestKind === "command" &&
+    normalizeShellCommand(message.payload?.command) === normalizeShellCommand(expectedCommand);
   if (typeof requestId === "string" && !handled.has(requestId) &&
       (isMcpApproval || isExpectedCodexCommand) && Number.isSafeInteger(value.spec?.generation)) {
     process.stdout.write(`approval|${value.spec.generation}|${requestId}`);
@@ -6431,11 +6531,11 @@ NODE
       esac
     fi
     attempt=$((attempt + 1))
-    if [ "$attempt" -ge 120 ]; then
+    if [ "$attempt" -ge "$recovery_checkpoint_attempt_limit" ]; then
       echo "$recovery_provider_kind $recovery_environment_label recovery Turn did not persist a pending-side-effect checkpoint" >&2
       exit 1
     fi
-    sleep 1
+    sleep "$recovery_checkpoint_poll_sleep"
   done
 
   if [ "$recovery_environment_slug" != remote-worker ]; then
@@ -6477,6 +6577,7 @@ NODE
       recovery_workspace_id=$kubernetes_agent_workspace_id
       recovery_sandbox_id=$kubernetes_agent_sandbox_id
       recovery_sandbox_generation=$kubernetes_agent_generation
+      capture_kubernetes_restored_snapshot_digest
     elif [ "$recovery_environment_slug" = remote-worker ]; then
       move_remote_worker_recovery_to_destination
       recovery_workspace_id=$remote_agent_workspace_id
@@ -6523,8 +6624,8 @@ NODE
 
   set +e
   recovery_blocked_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" --turn "$turn_id" \
-    --execution "$execution_id" --request-id "$recovery_prefix-execution" \
-    --idempotency-key "$recovery_prefix-execution" execution execute \
+    --execution "$execution_id" --request-id "$recovery_prefix-blocked-execution" \
+    --idempotency-key "$recovery_prefix-blocked-execution" execution execute \
     --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" 2>&1)
   recovery_blocked_status=$?
   set -e
@@ -6534,6 +6635,20 @@ NODE
   fi
   cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_prefix-blocked" \
+    execution get >"$recovery_checkpoint_file"
+  set +e
+  recovery_claim_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    --execution "$execution_id" --request-id "$recovery_prefix-claim" \
+    --idempotency-key "$recovery_prefix-execution" execution execute \
+    --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" 2>&1)
+  recovery_claim_status=$?
+  set -e
+  if [ "$recovery_claim_status" -eq 0 ] || ! printf '%s' "$recovery_claim_output" | grep -Fq 'RECOVERY_REQUIRES_RECONCILIATION'; then
+    echo "$recovery_provider_kind $recovery_environment_label recovery claim did not fail closed for reconciliation" >&2
+    exit 1
+  fi
+  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    --execution "$execution_id" --request-id "$recovery_prefix-reconcile-state" \
     execution get >"$recovery_checkpoint_file"
   recovery_values=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" node -e \
     'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE,"utf8"));const checkpoint=value.spec?.checkpoint;if(value.spec?.state!=="running"||value.spec?.recoveryState!=="awaiting_reconciliation"||value.spec?.recoveryReason!=="side_effect_outcome_unknown"||!checkpoint?.digest)process.exit(1);process.stdout.write(`${value.spec.generation}|${checkpoint.digest}`)')
@@ -6557,15 +6672,17 @@ NODE
     --data "$recovery_reconcile_body" >/dev/null
 
   recovery_result_file="$smoke_directory/$recovery_prefix-result.json"
-  if [ "$recovery_provider_kind" = "codex" ] && [ "$recovery_capability_bound" -eq 1 ]; then
+  recovery_execute_prefix="$recovery_prefix-recovery-execution"
+  if [ "$recovery_capability_bound" -eq 1 ]; then
     if ! execute_real_provider_with_mcp_approvals "$session_id" "$turn_id" "$execution_id" \
-      "$recovery_prefix-execution" "$prompt" "$recovery_result_file" "$recovery_shell_command"; then
+      "$recovery_execute_prefix" "$prompt" "$recovery_result_file" "$recovery_shell_command" "$recovery_runtime_mode" \
+      "$recovery_prefix-execution"; then
       cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
         --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get >&2 || true
       exit 1
     fi
   elif ! cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
-      --execution "$execution_id" --request-id "$recovery_prefix-execution" \
+    --execution "$execution_id" --request-id "$recovery_execute_prefix" \
       --idempotency-key "$recovery_prefix-execution" execution execute \
       --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" >"$recovery_result_file"; then
     cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
@@ -6653,15 +6770,10 @@ NODE
   CLOUD_AGENTS_COMPOSE_EXPECTED_DIGEST="$expected_recovery_digest" node -e \
     'const value=JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION);if(value.exitCode!==0||value.stdout.trim()!==process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_DIGEST)process.exit(1)'
   if [ "$recovery_cross_node" -eq 1 ] && [ "$recovery_environment_slug" = kubernetes ]; then
-    recovery_restored_snapshot_probe=$(run_recovery_sandbox_probe snapshot-digest \
-      "cd /workspace && find . -mindepth 1 -print0 | tar --null --no-recursion -cf - -T - | sha256sum | cut -d' ' -f1")
-    recovery_restored_snapshot_sha256=$(CLOUD_AGENTS_COMPOSE_EXECUTION="$recovery_restored_snapshot_probe" node -e \
-      'const value=JSON.parse(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION);if(value.exitCode!==0)process.exit(1);process.stdout.write(value.stdout.trim())')
-    printf '%s\n' "$recovery_restored_snapshot_sha256" | grep -Eq '^[0-9a-f]{64}$' || {
-      echo "Kubernetes restored Workspace/Sandbox archive digest is missing or invalid" >&2
+    [ -n "${recovery_restored_content_digest_sha256:-}" ] || {
+      echo "Kubernetes restored Workspace/Sandbox digest was not captured before replay" >&2
       exit 1
     }
-    recovery_restored_content_digest_sha256=${recovery_snapshot_digest#sha256:}
     recovery_snapshot_pvc_json=$(kubernetes_ctl -n "$kubernetes_destination_namespace" get pvc "$kubernetes_agent_volume" -o json)
     recovery_snapshot_pv=$(printf '%s' "$recovery_snapshot_pvc_json" | node -e \
       'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.spec?.volumeName??"")')

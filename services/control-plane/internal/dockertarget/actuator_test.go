@@ -13,6 +13,7 @@ import (
 )
 
 func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
+	t.Setenv("CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS", "5000")
 	request := DeployRequest{
 		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "docker-alpha", LeaseID: "lease-alpha",
 		TargetGeneration: 1, LeaseGeneration: 1,
@@ -72,6 +73,7 @@ func TestDockerWorkerContainerUsesOnlyCredentialReferences(t *testing.T) {
 	if create["Image"] != image || !containsJSONStrings(environment,
 		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
 		"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
+		"CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS=5000",
 	) {
 		t.Fatalf("image/env = %#v/%#v", create["Image"], create["Env"])
 	}

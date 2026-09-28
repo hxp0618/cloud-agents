@@ -682,7 +682,7 @@ func executePendingWorkspaceSnapshot(ctx context.Context, value config, state *n
 	return saveNodeState(value.stateFile, *state)
 }
 
-func executePendingSandboxExec(ctx context.Context, value config, state *nodeState) error {
+func executePendingSandboxExec(ctx context.Context, value config, state *nodeState, renew func(context.Context) error) error {
 	if state == nil || state.SandboxExecCommand == nil || state.SandboxExecCommandReceipt != nil {
 		return nil
 	}
@@ -707,21 +707,58 @@ func executePendingSandboxExec(ctx context.Context, value config, state *nodeSta
 		}
 		if directoryErr == nil {
 			execContext, cancel := context.WithDeadline(ctx, deadline)
-			result, execErr := client.Exec(execContext, opensandbox.ExecInput{
-				Identity: opensandbox.Identity{Tenant: value.tenantID, Project: value.projectID,
-					Workspace: command.WorkspaceID, Sandbox: command.SandboxID,
-					Operation: command.RuntimeOperationID, Generation: command.SandboxGeneration,
-					SpecDigest: command.RuntimeSpecDigest},
-				RuntimeID: command.RuntimeID, Command: command.Command,
-				Timeout: time.Duration(command.TimeoutSeconds) * time.Second,
-			})
-			cancel()
-			if execErr == nil {
-				receipt.Result, receipt.ExitCode, receipt.Stdout, receipt.Stderr, receipt.ExecutionTimeMillis =
-					"succeeded", result.ExitCode, result.Stdout, result.Stderr, result.ExecutionTimeMillis
-			} else {
-				err = execErr
+			result := make(chan struct {
+				value opensandbox.ExecResult
+				err   error
+			}, 1)
+			go func() {
+				value, execErr := client.Exec(execContext, opensandbox.ExecInput{
+					Identity: opensandbox.Identity{Tenant: value.tenantID, Project: value.projectID,
+						Workspace: command.WorkspaceID, Sandbox: command.SandboxID,
+						Operation: command.RuntimeOperationID, Generation: command.SandboxGeneration,
+						SpecDigest: command.RuntimeSpecDigest},
+					RuntimeID: command.RuntimeID, Command: command.Command,
+					Timeout: time.Duration(command.TimeoutSeconds) * time.Second,
+				})
+				result <- struct {
+					value opensandbox.ExecResult
+					err   error
+				}{value: value, err: execErr}
+			}()
+			ticker := time.NewTicker(20 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case outcome := <-result:
+					cancel()
+					if outcome.err == nil {
+						receipt.Result, receipt.ExitCode, receipt.Stdout, receipt.Stderr, receipt.ExecutionTimeMillis =
+							"succeeded", outcome.value.ExitCode, outcome.value.Stdout, outcome.value.Stderr, outcome.value.ExecutionTimeMillis
+					} else {
+						err = outcome.err
+					}
+					goto settled
+				case <-ticker.C:
+					if renew == nil {
+						continue
+					}
+					if renewErr := renew(ctx); renewErr != nil {
+						cancel()
+						<-result
+						state.SandboxExecCommand = nil
+						state.ExecutingCommandID = ""
+						if saveErr := saveNodeState(value.stateFile, *state); saveErr != nil {
+							return saveErr
+						}
+						return renewErr
+					}
+				case <-ctx.Done():
+					cancel()
+					<-result
+					return ctx.Err()
+				}
 			}
+		settled:
 		} else {
 			err = directoryErr
 		}
@@ -1451,7 +1488,7 @@ func main() {
 	if err := executePendingWorkspaceSnapshot(ctx, value, &state); err != nil {
 		log.Fatal(err)
 	}
-	if err := executePendingSandboxExec(ctx, value, &state); err != nil {
+	if err := executePendingSandboxExec(ctx, value, &state, renew); err != nil {
 		log.Fatal(err)
 	}
 	if err := executePendingSandboxFile(ctx, value, &state); err != nil {
@@ -1475,7 +1512,7 @@ func main() {
 		if err := executePendingWorkspaceSnapshot(callContext, value, &state); err != nil {
 			return err
 		}
-		if err := executePendingSandboxExec(callContext, value, &state); err != nil {
+		if err := executePendingSandboxExec(callContext, value, &state, renew); err != nil {
 			return err
 		}
 		if err := executePendingSandboxFile(callContext, value, &state); err != nil {

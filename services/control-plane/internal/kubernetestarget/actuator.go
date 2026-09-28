@@ -390,6 +390,12 @@ func desiredResourcesWithStrategy(name string, request DeployRequest, config dep
 		volumeMounts = append(volumeMounts, map[string]any{"name": "skill-runtime", "mountPath": "/run/cloud-agents/skills"})
 		volumes = append(volumes, map[string]any{"name": "skill-runtime", "emptyDir": map[string]any{"medium": "Memory", "sizeLimit": "64Mi"}})
 	}
+	workerEnv := []map[string]string{{"name": "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS", "value": "codex,claudeAgent,pi,deepseek-harness"}, {"name": "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE", "value": "single-tenant-trusted-v1"}}
+	if delay := strings.TrimSpace(os.Getenv("CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS")); delay != "" {
+		if parsed, err := strconv.ParseUint(delay, 10, 32); err == nil && parsed > 0 {
+			workerEnv = append(workerEnv, map[string]string{"name": "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS", "value": delay})
+		}
+	}
 	return []desiredResource{
 		{path: base + "/persistentvolumeclaims/" + url.PathEscape(name), body: map[string]any{
 			"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": metadata(),
@@ -406,7 +412,7 @@ func desiredResourcesWithStrategy(name string, request DeployRequest, config dep
 				"spec": map[string]any{"automountServiceAccountToken": false, "terminationGracePeriodSeconds": 30, "securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1000, "runAsGroup": 1000, "fsGroup": 1000, "fsGroupChangePolicy": "OnRootMismatch", "seccompProfile": map[string]string{"type": "RuntimeDefault"}}, "containers": []map[string]any{{
 					"name": "worker", "image": config.WorkerImageRepository + "@" + request.ReleaseDigest, "imagePullPolicy": "IfNotPresent",
 					"args":            args,
-					"env":             []map[string]string{{"name": "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS", "value": "codex,claudeAgent,pi,deepseek-harness"}, {"name": "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE", "value": "single-tenant-trusted-v1"}},
+					"env":             workerEnv,
 					"ports":           []map[string]any{{"containerPort": workerPort, "name": "https", "protocol": "TCP"}},
 					"resources":       map[string]any{"limits": map[string]string{"cpu": fmt.Sprintf("%dm", request.CPULimitMillis), "memory": strconv.FormatInt(request.MemoryLimitBytes, 10)}, "requests": map[string]string{"cpu": fmt.Sprintf("%dm", request.CPULimitMillis), "memory": strconv.FormatInt(request.MemoryLimitBytes, 10)}},
 					"securityContext": map[string]any{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": map[string]any{"drop": []string{"ALL"}}},

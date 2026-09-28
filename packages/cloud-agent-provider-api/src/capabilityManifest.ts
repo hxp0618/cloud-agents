@@ -152,9 +152,9 @@ export function managedMcpConfiguration(
       codexServers: {},
       claudeServers: {},
     });
-  if (mcp.some((binding) => binding.transport === "stdio")) {
+  if (mcp.some((binding) => binding.transport !== "streamable-http")) {
     throw new ManagedCapabilityUnavailableError(
-      "MCP stdio transport is not available through the Host-managed broker.",
+      "Only MCP streamable-http transport is available through the Host-managed broker.",
     );
   }
   const broker = environment.CLOUD_AGENT_MCP_BROKER_URL?.trim();

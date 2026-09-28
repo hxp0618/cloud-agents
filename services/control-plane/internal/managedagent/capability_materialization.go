@@ -125,7 +125,7 @@ func foundationCapabilityMaterializationFile(directory, tenantID string, binding
 }
 
 func validFoundationMcpMaterialization(item foundationMcpMaterialization) bool {
-	if commonv1alpha1.ValidateIdentifier(item.ResourceID, "/capability/resourceId") != nil || commonv1alpha1.ValidateIdentifier(item.Version, "/capability/version") != nil || !foundationCapabilityDigest(item.Digest) || item.Transport != "sse" && item.Transport != "streamable-http" || item.Token == "" || len(item.Token) > 4096 {
+	if commonv1alpha1.ValidateIdentifier(item.ResourceID, "/capability/resourceId") != nil || commonv1alpha1.ValidateIdentifier(item.Version, "/capability/version") != nil || !foundationCapabilityDigest(item.Digest) || item.Transport != "streamable-http" || item.Token == "" || len(item.Token) > 4096 {
 		return false
 	}
 	for _, character := range item.Token {

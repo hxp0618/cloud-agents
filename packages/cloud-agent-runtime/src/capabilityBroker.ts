@@ -20,7 +20,7 @@ type McpMaterialization = Readonly<{
   resourceId: string;
   version: string;
   digest: `sha256:${string}`;
-  transport: "sse" | "streamable-http";
+  transport: "streamable-http";
   endpoint: string;
   token: string;
   allowedHosts: ReadonlyArray<string>;
@@ -211,10 +211,6 @@ async function handleRequest(
       writeJson(response, 403, { error: "mcp_capability_expired" });
       return;
     }
-    if (materialization.transport !== "streamable-http") {
-      writeJson(response, 501, { error: "mcp_transport_unsupported" });
-      return;
-    }
     if (request.method !== "POST") {
       response.setHeader("allow", "POST");
       writeJson(response, 405, { error: "mcp_stream_unavailable" });
@@ -284,7 +280,7 @@ function readMcpMaterialization(value: unknown): McpMaterialization {
     !identifier(value.resourceId) ||
     !identifier(value.version) ||
     !digest(value.digest) ||
-    !["sse", "streamable-http"].includes(value.transport as string) ||
+    value.transport !== "streamable-http" ||
     typeof value.endpoint !== "string" ||
     typeof value.token !== "string" ||
     value.token.length === 0 ||
@@ -301,7 +297,7 @@ function readMcpMaterialization(value: unknown): McpMaterialization {
     resourceId: value.resourceId,
     version: value.version,
     digest: value.digest as `sha256:${string}`,
-    transport: value.transport as "sse" | "streamable-http",
+    transport: "streamable-http",
     endpoint: value.endpoint,
     token: value.token,
     allowedHosts: Object.freeze([...value.allowedHosts]),

@@ -83,6 +83,15 @@ func TestFoundationRuntimeKeepsCredentialOutOfCommandAndRoutesBySandboxGeneratio
 	if strings.Contains(command, "secret-value") || !strings.Contains(command, "count="+strconv.Itoa(len(credential))) || !strings.Contains(command, "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex") || !strings.Contains(command, "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1") || !strings.Contains(command, foundationManagedWriteDelayEnv+"=12000") {
 		t.Fatalf("unsafe credential command = %q", command)
 	}
+	t.Setenv(foundationDeepseekToolDelayEnv, "5000")
+	t.Setenv(foundationDeepseekManagedToolDelayEnv, "5000")
+	remoteCommand := foundationRuntimeCommand(len(credential), "deepseek-harness", "remote-worker")
+	if !strings.Contains(remoteCommand, foundationDeepseekToolDelayEnv+"=5000") || !strings.Contains(remoteCommand, foundationDeepseekManagedToolDelayEnv+"=5000") {
+		t.Fatal("RemoteWorker deepseek delay was not injected")
+	}
+	if !strings.Contains(foundationRuntimeCommand(len(credential), "deepseek-harness", "kubernetes"), foundationDeepseekToolDelayEnv+"=5000") {
+		t.Fatal("Kubernetes deepseek delay was not injected")
+	}
 	if !strings.Contains(foundationRuntimeCommand(len(credential), "claudeAgent", "kubernetes"), "CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=kubernetes-restricted-v1") {
 		t.Fatal("Kubernetes Runtime did not receive its outer sandbox profile")
 	}
@@ -224,5 +233,27 @@ func TestFoundationCapabilityMaterializationReadsOnlyExactTenantBinding(t *testi
 	}
 	if _, err := foundationCapabilityMaterializationFile(root, "tenant-beta", []*workerruntimev1alpha1.RuntimeCapabilityBinding{binding}); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
 		t.Fatalf("missing tenant materialization error = %v", err)
+	}
+}
+
+func TestValidFoundationMcpMaterializationRejectsUnsupportedTransport(t *testing.T) {
+	base := foundationMcpMaterialization{
+		ResourceID:   "server-1",
+		Version:      "v1",
+		Digest:       "sha256:" + strings.Repeat("a", 64),
+		Endpoint:     "https://mcp.example.test/mcp",
+		Token:        "short-lived",
+		AllowedHosts: []string{"mcp.example.test"},
+	}
+	for _, transport := range []string{"sse", "stdio"} {
+		item := base
+		item.Transport = transport
+		if validFoundationMcpMaterialization(item) {
+			t.Fatalf("unsupported transport %q was accepted", transport)
+		}
+	}
+	base.Transport = "streamable-http"
+	if !validFoundationMcpMaterialization(base) {
+		t.Fatal("streamable-http transport was rejected")
 	}
 }

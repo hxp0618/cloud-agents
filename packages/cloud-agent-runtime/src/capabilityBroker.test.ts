@@ -301,6 +301,42 @@ describe("managed MCP broker", () => {
     }
   });
 
+  it("rejects SSE materialization before starting the broker", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-capability-sse-"));
+    const path = join(root, "materialization.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        mcp: [
+          {
+            resourceId: "server-1",
+            version: "1.0.0",
+            digest,
+            transport: "sse",
+            endpoint: "http://127.0.0.1:8765/mcp",
+            token: "token-1",
+            allowedHosts: ["127.0.0.1"],
+          },
+        ],
+        skills: [],
+      }),
+      { mode: 0o600 },
+    );
+    const fd = openSync(path, "r");
+    try {
+      expect(() =>
+        readCapabilityMaterialization(
+          { CLOUD_AGENT_CAPABILITY_MATERIALIZATION_FD: String(fd) },
+          manifest(),
+        ),
+      ).toThrow("MCP materialization is invalid");
+    } finally {
+      closeSync(fd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects duplicate MCP resource identities while reading materialization", () => {
     const base = manifest();
     const duplicateManifest = {

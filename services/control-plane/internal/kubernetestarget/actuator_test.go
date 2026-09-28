@@ -95,6 +95,7 @@ func TestCredentialDirectoryListsAndCleansManagedWorkers(t *testing.T) {
 }
 
 func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
+	t.Setenv("CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS", "5000")
 	request := DeployRequest{
 		TenantID: "tenant-alpha", ProjectID: "project-alpha", TargetID: "kubernetes-alpha", LeaseID: "lease-alpha",
 		TargetGeneration: 1, LeaseGeneration: 2, ReleaseDigest: "sha256:" + strings.Repeat("a", 64),
@@ -116,7 +117,7 @@ func TestKubernetesWorkerResourcesApplyBecomeReadyAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(encoded)
-	for _, expected := range []string{"PersistentVolumeClaim", "LoadBalancer", "Deployment", config.WorkerCredentialSecretRef, request.ProviderCredentialRef, config.CapabilityMaterializationSecretRef, "--capability-materialization-directory", "/run/cloud-agents/capabilities", "skill-runtime", "/run/cloud-agents/skills", config.WorkerImageRepository + "@" + request.ReleaseDigest, "readOnlyRootFilesystem", "1500m", workspaceStorage} {
+	for _, expected := range []string{"PersistentVolumeClaim", "LoadBalancer", "Deployment", config.WorkerCredentialSecretRef, request.ProviderCredentialRef, config.CapabilityMaterializationSecretRef, "--capability-materialization-directory", "/run/cloud-agents/capabilities", "skill-runtime", "/run/cloud-agents/skills", config.WorkerImageRepository + "@" + request.ReleaseDigest, "readOnlyRootFilesystem", "1500m", workspaceStorage, "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS", "5000"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("desired resources do not contain %q", expected)
 		}

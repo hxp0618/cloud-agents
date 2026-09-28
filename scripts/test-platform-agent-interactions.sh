@@ -36,6 +36,7 @@ execute_pid=
 takeover_generation=
 takeover_checkpoint_digest=
 takeover_needs_reconcile=0
+execution_retry_suffix=
 recovery_provider=${CLOUD_AGENTS_E2E_RECOVERY_PROVIDER-codex}
 recovery_fault=${CLOUD_AGENTS_E2E_RECOVERY_FAULT-both}
 recovery_environment=${CLOUD_AGENTS_E2E_ENVIRONMENT-docker}
@@ -47,7 +48,9 @@ recovery_expected_content=${CLOUD_AGENTS_E2E_RECOVERY_EXPECTED_CONTENT-}
 recovery_bash_command=${CLOUD_AGENTS_E2E_RECOVERY_BASH_COMMAND-}
 recovery_mcp_tool_name=${CLOUD_AGENTS_E2E_RECOVERY_MCP_TOOL_NAME-}
 recovery_skill_name=${CLOUD_AGENTS_E2E_RECOVERY_SKILL_NAME-managed-capability-acceptance}
+execution_timeout=${CLOUD_AGENTS_E2E_EXECUTION_TIMEOUT-5m}
 recovery_capability_bound=0
+recovery_grant_id=
 case "$recovery_provider" in
   codex | claudeAgent | pi | deepseek-harness) ;;
   *) echo "CLOUD_AGENTS_E2E_RECOVERY_PROVIDER is invalid" >&2; exit 1 ;;
@@ -165,6 +168,15 @@ run_ctl() {
   fi
 }
 
+bounded_request_id() {
+  value=$1
+  if [ "${#value}" -le 128 ]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  CLOUD_AGENTS_REQUEST_ID="$value" node -e 'const crypto=require("node:crypto");process.stdout.write(`req-${crypto.createHash("sha256").update(process.env.CLOUD_AGENTS_REQUEST_ID).digest("hex").slice(0,48)}`)'
+}
+
 run_admin_ctl() {
   [ -n "$admin_token_file" ] || return 1
   if [ -n "$ca_file" ]; then
@@ -181,7 +193,7 @@ cleanup() {
   fi
   for session_id in $active_sessions; do
     run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" \
-      --request-id "$session_id-close" --idempotency-key "$session_id-close" session close >/dev/null 2>&1 || true
+      --request-id "$(bounded_request_id "$session_id-close")" --idempotency-key "$(bounded_request_id "$session_id-close")" session close >/dev/null 2>&1 || true
   done
 }
 trap cleanup EXIT HUP INT TERM
@@ -193,10 +205,10 @@ create_turn() {
   prompt=$4
   if [ -n "$lease_id" ]; then
     run_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" --session "$session_id" \
-      --request-id "$session_id-create" --idempotency-key "$session_id-create" session create --provider "$provider" >/dev/null
+    --request-id "$(bounded_request_id "$session_id-create")" --idempotency-key "$(bounded_request_id "$session_id-create")" session create --provider "$provider" >/dev/null
   else
     run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" \
-      --request-id "$session_id-create" --idempotency-key "$session_id-create" \
+      --request-id "$(bounded_request_id "$session_id-create")" --idempotency-key "$(bounded_request_id "$session_id-create")" \
       session create --provider "$provider" --workspace "$workspace_id" --sandbox "$sandbox_id" \
       --sandbox-generation "$sandbox_generation" --environment-profile "$environment_profile_id" \
       --environment-profile-version "$environment_profile_version" >/dev/null
@@ -219,8 +231,10 @@ start_execution() {
   if [ "$capability_bound" -eq 1 ]; then
     set -- --mcp-server-refs-json "$recovery_mcp_refs_json" --skill-bundle-refs-json "$recovery_skill_refs_json"
   fi
-  run_ctl --timeout 5m --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-    --request-id "$execution_id-run" --idempotency-key "$execution_id-run" execution execute \
+  execution_retry_request_id=$(bounded_request_id "$execution_id-run$execution_retry_suffix")
+  execution_retry_idempotency_key=$(bounded_request_id "$execution_id-run")
+  run_ctl --timeout "$execution_timeout" --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    --request-id "$execution_retry_request_id" --idempotency-key "$execution_retry_idempotency_key" execution execute \
     --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" "$@" --input "$prompt" >"$final_file" 2>"$final_file.stderr" &
   execute_pid=$!
 }
@@ -236,7 +250,7 @@ wait_for_interaction() {
   while [ "$attempt" -lt 90 ]; do
     attempt=$((attempt + 1))
     if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-interaction-$attempt" execution get >"$current_file" 2>/dev/null; then
+      --request-id "$(bounded_request_id "$execution_id-interaction-$attempt")" execution get >"$current_file" 2>/dev/null; then
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$current_file" CLOUD_AGENTS_E2E_INTERACTION_TYPE="$interaction_type" node <<'NODE' >"$interaction_file"
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -599,7 +613,7 @@ wait_for_claim_expiry() {
   while [ "$attempt" -lt 60 ]; do
     attempt=$((attempt + 1))
     if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-claim-expiry-$attempt" execution get >"$state_file" 2>/dev/null &&
+      --request-id "$(bounded_request_id "$execution_id-claim-expiry-$attempt")" execution get >"$state_file" 2>/dev/null &&
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$state_file" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -668,6 +682,7 @@ reconcile_interaction_takeover() {
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-reconcile" --idempotency-key "$execution_id-reconcile" execution reconcile \
     --generation "$takeover_generation" --checkpoint-digest "$takeover_checkpoint_digest" --outcome not-applied >/dev/null
+  execution_retry_suffix=-reconciled
 }
 
 assert_interaction_takeover() {
@@ -717,7 +732,7 @@ restart_control_plane_while_waiting() {
     if { [ -n "$ca_file" ] && curl --silent --show-error --fail --noproxy '*' --cacert "$ca_file" "$CLOUD_AGENTS_ENDPOINT/readyz" >/dev/null 2>&1; } ||
       { [ -z "$ca_file" ] && curl --silent --show-error --fail --noproxy '*' "$CLOUD_AGENTS_ENDPOINT/readyz" >/dev/null 2>&1; }; then
       if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" \
-      --request-id "$session_id-after-control-plane-restart-$attempt" session get >/dev/null 2>&1; then
+      --request-id "$(bounded_request_id "$session_id-after-control-plane-restart-$attempt")" session get >/dev/null 2>&1; then
         if [ "${CLOUD_AGENTS_E2E_REMOTE_WORKER-0}" = 1 ]; then
           target_ready=0
           target_attempt=0
@@ -758,7 +773,7 @@ wait_for_running() {
   while [ "$attempt" -lt 90 ]; do
     attempt=$((attempt + 1))
     if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-running-$attempt" execution get >"$state_file" 2>/dev/null; then
+      --request-id "$(bounded_request_id "$execution_id-running-$attempt")" execution get >"$state_file" 2>/dev/null; then
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$state_file" node <<'NODE' >"$generation_file"
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -780,10 +795,60 @@ NODE
   return 1
 }
 
+load_remote_worker_pty_session() {
+  remote_worker_state_directory=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/node-output"}}{{.Source}}{{end}}{{end}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER")
+  case "$remote_worker_state_directory" in
+    */remote-worker-node) ;;
+    *) echo "RemoteWorker state file mount is not test-owned" >&2; return 1 ;;
+  esac
+  remote_worker_state_file="$remote_worker_state_directory/install/state.json"
+  remote_worker_pty_session=$(CLOUD_AGENTS_STATE_FILE="$remote_worker_state_file" node -e '
+    const { readFileSync } = require("node:fs");
+    const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_STATE_FILE, "utf8"));
+    const sessionId = value.sandboxPtyCommand?.sessionId ?? value.sandboxPtyCommandReceipt?.sessionId;
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(sessionId ?? "")) process.exit(1);
+    process.stdout.write(sessionId);') || true
+  if [ -z "$remote_worker_pty_session" ] && [ -n "${CLOUD_AGENTS_E2E_POSTGRES_CONTAINER-}" ]; then
+    remote_worker_pty_session=$(printf '%s\n' \
+      "SELECT session_uid FROM cloud_agents.sandbox_pty_sessions WHERE tenant_id = :'tenant' AND project_uid = :'project' AND sandbox_uid = :'sandbox' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1;" |
+      docker exec -i "$CLOUD_AGENTS_E2E_POSTGRES_CONTAINER" psql -qAt -U cloud_agents_install_admin -d cloud_agents \
+        -v ON_ERROR_STOP=1 -v tenant="$CLOUD_AGENTS_TENANT" -v project="$CLOUD_AGENTS_PROJECT" -v sandbox="$sandbox_id") || true
+  fi
+}
+
+fence_remote_worker_pty() {
+  [ "$recovery_environment" = remote-worker ] || return 0
+  load_remote_worker_pty_session
+  printf '%s\n' "$remote_worker_pty_session" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' || {
+    echo "RemoteWorker durable state has no active PTY session" >&2
+    return 1
+  }
+  pty_delete_result=$(printf '%s\n' \
+    "UPDATE cloud_agents.sandbox_pty_sessions SET deleted_at = COALESCE(deleted_at, transaction_timestamp()) WHERE tenant_id = :'tenant' AND project_uid = :'project' AND sandbox_uid = :'sandbox' AND session_uid = :'session' AND deleted_at IS NULL RETURNING session_uid;" |
+    docker exec -i "$CLOUD_AGENTS_E2E_POSTGRES_CONTAINER" psql -qAt -U cloud_agents_install_admin -d cloud_agents \
+      -v ON_ERROR_STOP=1 -v tenant="$CLOUD_AGENTS_TENANT" -v project="$CLOUD_AGENTS_PROJECT" -v sandbox="$sandbox_id" -v session="$remote_worker_pty_session") || {
+    echo "RemoteWorker PTY session deletion failed" >&2
+    return 1
+  }
+  [ "$pty_delete_result" = "$remote_worker_pty_session" ] || {
+    echo "RemoteWorker PTY session was not active in the test database" >&2
+    return 1
+  }
+  # Do not let a restarted test Worker replay its durable PTY command into the old claim.
+  rm -f -- "$remote_worker_state_file"
+  # Keep the old PTY callback down for the 30s runtime claim lease before takeover.
+  sleep 35
+}
+
 restart_worker_during_execution() {
   if [ "$recovery_environment" = remote-worker ]; then
     previous_started_at=$(docker inspect --format '{{.State.StartedAt}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER")
     docker kill --signal KILL "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >/dev/null
+    if [ "$recovery_provider" = deepseek-harness ]; then
+      printf 'remote_worker_pty_fence=not-applicable provider=%s adapter=str_replace_editor\n' "$recovery_provider"
+    else
+      fence_remote_worker_pty
+    fi
     docker start "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" >/dev/null
     attempt=0
     while [ "$attempt" -lt 90 ]; do
@@ -903,9 +968,11 @@ restart_mcp_fixture_after_worker() {
 
 recovery_prompt() {
   marker=$1
+  recovery_session_id=${2-}
   if [ "$recovery_checkpoint_mode" = side-effect ]; then
     if [ "$recovery_provider" = deepseek-harness ]; then
-      printf '%s' "Use the $recovery_skill_name Skill exactly once for this managed capability recovery request and follow it exactly. The exact Bash command supplied by this request is: $recovery_bash_command. After the command succeeds, reply with '$marker'. Do not reply before the command succeeds."
+      recovery_absolute_path="/workspace/.cloud-agents/managed-agent/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/sessions/$recovery_session_id/workspace/$recovery_artifact_path"
+      printf '%s' "Use the $recovery_skill_name Skill exactly once for this managed capability recovery request and follow it exactly. Then call str_replace_editor exactly once with command create, path $recovery_absolute_path, and file_text $recovery_expected_content. Do not use shell commands. After the file is created, reply with '$marker'. Do not reply before the file is created."
     else
       printf '%s' "Call the managed MCP tool named $recovery_mcp_tool_name exactly once, then use the $recovery_skill_name Skill for this managed capability recovery request. Follow it exactly: use the Bash tool exactly once to run this exact command: $recovery_bash_command. Do not use another tool. After the command succeeds, reply with '$marker'. Do not reply before the command succeeds."
     fi
@@ -917,9 +984,9 @@ recovery_prompt() {
       claudeAgent) recovery_skill_name=managed-capability-acceptance:managed-capability-acceptance ;;
       *) echo "capability-bound recovery does not support Provider $recovery_provider" >&2; return 1 ;;
     esac
-    printf '%s' "Use the $recovery_skill_name Skill for this managed capability interactive recovery request and follow it exactly. You must call its managed MCP tool, then call AskUserQuestion exactly once with one non-secret environment question that offers Staging, and wait for the answer. Only after the answer, reply with '$marker'."
+    printf '%s' "Use the $recovery_skill_name Skill for this managed capability interactive recovery request and follow it exactly. You must call its managed MCP tool, then call AskUserQuestion exactly once with one non-secret environment question that offers Staging, and wait for the answer. After the answer, your final response must contain exactly '$marker' and no other text."
   else
-    printf '%s' "Before replying, call request_user_input exactly once with one non-secret question asking which environment to use and offer Staging as an option. After the answer, reply with '$marker'."
+    printf '%s' "Before replying, call request_user_input exactly once with one non-secret question asking which environment to use and offer Staging as an option. After the answer, your final response must contain exactly '$marker' and no other text."
   fi
 }
 
@@ -929,12 +996,18 @@ wait_for_recovery_side_effect_checkpoint() {
   execution_id=$3
   checkpoint_file=$4
   checkpoint_diagnostic_file="$checkpoint_file.diagnostic"
+  checkpoint_request_prefix=$(CLOUD_AGENTS_E2E_REQUEST_ID="$execution_id" node <<'NODE'
+const { createHash } = require("node:crypto");
+const value = process.env.CLOUD_AGENTS_E2E_REQUEST_ID;
+process.stdout.write(value.length <= 80 ? value : `execution-${createHash("sha256").update(value).digest("hex").slice(0, 32)}`);
+NODE
+)
   rm -f "$checkpoint_diagnostic_file"
   attempt=0
   while [ "$attempt" -lt 180 ]; do
     attempt=$((attempt + 1))
     if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-recovery-checkpoint-$attempt" execution get >"$checkpoint_file" 2>/dev/null; then
+      --request-id "$checkpoint_request_prefix-recovery-checkpoint-$attempt" execution get >"$checkpoint_file" 2>/dev/null; then
       if CLOUD_AGENTS_E2E_EXECUTION_FILE="$checkpoint_file" node <<'NODE' >"$checkpoint_diagnostic_file"
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -972,7 +1045,9 @@ const gates = {
   pendingSideEffect: value.spec?.checkpoint?.pendingSideEffect === true,
   completedMcp: completedCapability(expectedMcp),
   observedSkill: observedCapability(expectedSkill, "skill"),
-  activeBash: pendingBash,
+  // Side-effect recovery may hold a non-Bash managed tool (DeepSeek uses
+  // str_replace_editor); interaction recovery still needs its pending Bash.
+  activeBash: value.spec?.checkpoint?.pendingSideEffect === true || pendingBash,
 };
 const outline = messages.flatMap((message) => {
   if (message.messageType !== "Event") return [];
@@ -1028,14 +1103,87 @@ recovery_artifact_digest() {
     docker exec "$container" sh -c 'if test -f "$1"; then sha256sum -- "$1" | cut -d" " -f1; else printf "absent\n"; fi' sh "$artifact_absolute"
     return
   fi
-  probe=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
-    --request-id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-probe" sandbox exec \
-    --expected-generation "$sandbox_generation" \
-    --command "if test -f '$artifact_absolute'; then sha256sum -- '$artifact_absolute' | cut -d' ' -f1; else printf 'absent\n'; fi") || return 1
-  CLOUD_AGENTS_E2E_PROBE="$probe" node -e '
-    const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_PROBE);
-    if (value.exitCode !== 0 || !/^(?:[a-f0-9]{64}|absent)\n$/.test(value.stdout)) process.exit(1);
-    process.stdout.write(value.stdout.trim());'
+  if [ "$recovery_environment" = remote-worker ]; then
+    if [ -z "$recovery_grant_id" ]; then
+      grant_request_id=$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-grant")
+      grant_output=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+        --request-id "$grant_request_id" --idempotency-key "$grant_request_id" sandbox grant \
+        --expected-generation "$sandbox_generation" --ttl-seconds 300 2>/dev/null) || return 1
+      recovery_grant_id=$(CLOUD_AGENTS_E2E_GRANT_JSON="$grant_output" node -e '
+        const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_GRANT_JSON);
+        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value.grantId ?? "")) process.exit(1);
+        process.stdout.write(value.grantId);') || return 1
+    fi
+    artifact_relative=${artifact_absolute#*/workspace/}
+    artifact_directory=${artifact_relative%/*}
+    artifact_name=${artifact_relative##*/}
+    attempt=0
+    while [ "$attempt" -lt 5 ]; do
+      attempt=$((attempt + 1))
+      read_request_id=$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-read-$attempt")
+      read_error_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-read-$attempt.stderr"
+      if page=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --grant "$recovery_grant_id" \
+        --request-id "$read_request_id" files read --path "$artifact_relative" --limit 1048576 2>"$read_error_file") &&
+        CLOUD_AGENTS_E2E_FILE_PAGE="$page" node -e '
+          const { createHash } = require("node:crypto");
+          const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_FILE_PAGE);
+          const content = Buffer.from(value.contentBase64Url ?? "", "base64url");
+          if (value.eof !== true || value.totalBytes !== content.length) process.exit(1);
+          process.stdout.write(createHash("sha256").update(content).digest("hex"));'
+      then
+        rm -f "$read_error_file"
+        return 0
+      fi
+      if grep -Eq '(^|[^A-Z])NOT_FOUND([^A-Z]|$)' "$read_error_file" 2>/dev/null; then
+        rm -f "$read_error_file"
+        printf 'absent'
+        return 0
+      fi
+      rm -f "$read_error_file"
+      list_request_id=$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-list-$attempt")
+      list_error_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-list-$attempt.stderr"
+      if listing=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --grant "$recovery_grant_id" \
+        --request-id "$list_request_id" files list --path "$artifact_directory" 2>"$list_error_file") &&
+        CLOUD_AGENTS_E2E_FILE_LIST="$listing" CLOUD_AGENTS_E2E_ARTIFACT_PATH="$artifact_relative" \
+        CLOUD_AGENTS_E2E_ARTIFACT_NAME="$artifact_name" node -e '
+          const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_FILE_LIST);
+          const path = process.env.CLOUD_AGENTS_E2E_ARTIFACT_PATH;
+          const name = process.env.CLOUD_AGENTS_E2E_ARTIFACT_NAME;
+          const present = (value.entries ?? []).some((entry) => entry.path === path || entry.path === name);
+          if (present) process.exit(1);
+          process.stdout.write("absent");'
+      then
+        rm -f "$list_error_file"
+        return 0
+      fi
+      if grep -Eq '(^|[^A-Z])NOT_FOUND([^A-Z]|$)' "$list_error_file" 2>/dev/null; then
+        rm -f "$list_error_file"
+        printf 'absent'
+        return 0
+      fi
+      rm -f "$list_error_file"
+      sleep 1
+    done
+    return 1
+  fi
+  attempt=0
+  while [ "$attempt" -lt 5 ]; do
+    attempt=$((attempt + 1))
+    if probe=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+      --request-id "$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-probe-$attempt")" sandbox exec \
+      --expected-generation "$sandbox_generation" \
+      --command "if test -f '$artifact_absolute'; then sha256sum -- '$artifact_absolute' | cut -d' ' -f1; else printf 'absent\n'; fi") &&
+      CLOUD_AGENTS_E2E_PROBE="$probe" node -e '
+        const value = JSON.parse(process.env.CLOUD_AGENTS_E2E_PROBE);
+        const stdout = String(value.stdout ?? "").replace(/[\\r\\n]+$/, "");
+        if (value.exitCode !== 0 || !/^(?:[a-f0-9]{64}|absent)$/.test(stdout) || value.stderr !== "") process.exit(1);
+        process.stdout.write(stdout);'
+    then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 reconcile_side_effect_takeover() {
@@ -1060,6 +1208,7 @@ reconcile_side_effect_takeover() {
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-reconcile" --idempotency-key "$execution_id-reconcile" execution reconcile \
     --generation "$takeover_generation" --checkpoint-digest "$takeover_checkpoint_digest" --outcome "$outcome" >/dev/null
+  execution_retry_suffix=-reconciled
   printf 'side_effect_reconciliation=passed outcome=%s\n' "$outcome"
 }
 
@@ -1093,7 +1242,7 @@ wait_for_recovery_interaction() {
   while [ "$attempt" -lt 180 ]; do
     attempt=$((attempt + 1))
     if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-recovery-interaction-$attempt" execution get >"$current_file" 2>/dev/null; then
+      --request-id "$(bounded_request_id "$execution_id-recovery-interaction-$attempt")" execution get >"$current_file" 2>/dev/null; then
       pending=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$current_file" \
         CLOUD_AGENTS_E2E_HANDLED_APPROVALS="$handled_approvals" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -1144,7 +1293,7 @@ NODE
           approval_generation=${approval_rest%%|*}
           approval_request=${approval_rest#*|}
           run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-            --request-id "$execution_id-recovery-approve-$attempt" --idempotency-key "$execution_id-recovery-approve-$attempt" \
+            --request-id "$(bounded_request_id "$execution_id-recovery-approve-$attempt")" --idempotency-key "$(bounded_request_id "$execution_id-recovery-approve-$attempt")" \
             execution resolve-approval --generation "$approval_generation" \
             --interaction-request "$approval_request" --decision accept >/dev/null
           handled_approvals="$handled_approvals $approval_request"
@@ -1194,7 +1343,11 @@ complete_side_effect_process_recovery() {
   marker=$6
   runtime_container=$7
   artifact_absolute="/workspace/.cloud-agents/managed-agent/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/sessions/$session_id/workspace/$recovery_artifact_path"
-  expected_digest=$(CLOUD_AGENTS_E2E_EXPECTED_CONTENT="$recovery_expected_content" node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(`${process.env.CLOUD_AGENTS_E2E_EXPECTED_CONTENT}\n`).digest("hex"))')
+  expected_digest=$(CLOUD_AGENTS_E2E_EXPECTED_CONTENT="$recovery_expected_content" CLOUD_AGENTS_E2E_EXPECTED_CONTENT_EOL="$([ "$recovery_provider" = deepseek-harness ] || printf 1)" node -e '
+    const content = process.env.CLOUD_AGENTS_E2E_EXPECTED_CONTENT;
+    const value = process.env.CLOUD_AGENTS_E2E_EXPECTED_CONTENT_EOL === "1" ? `${content}\n` : content;
+    process.stdout.write(require("node:crypto").createHash("sha256").update(value).digest("hex"));
+  ')
   prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$final_file" "$recovery_capability_bound"
   reconcile_side_effect_takeover "$session_id" "$turn_id" "$execution_id" "$runtime_container" "$artifact_absolute" "$expected_digest"
   start_execution "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$final_file" "$recovery_capability_bound"
@@ -1211,7 +1364,7 @@ run_worker_exit_recovery() {
   turn_id="$session_id-turn"
   execution_id="$session_id-execution"
   marker="worker-exit-recovered-$CLOUD_AGENTS_E2E_RUN_ID"
-  prompt=$(recovery_prompt "$marker")
+  prompt=$(recovery_prompt "$marker" "$session_id")
   create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
   final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
   interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
@@ -1223,7 +1376,7 @@ run_worker_exit_recovery() {
     wait_for_recovery_interaction "$session_id" "$turn_id" "$execution_id" "$interaction_file"
   fi
   restart_worker_during_execution
-  if [ "$recovery_checkpoint_mode" = side-effect ] && [ "$recovery_environment" = docker ]; then
+  if [ "$recovery_environment" = docker ]; then
     restart_mcp_fixture_after_worker
   fi
   if [ -n "$execute_pid" ] && kill -0 "$execute_pid" 2>/dev/null; then
@@ -1240,7 +1393,7 @@ run_worker_exit_recovery() {
   while [ "$attempt" -lt 30 ]; do
     attempt=$((attempt + 1))
     run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-after-worker-exit-$attempt" execution get >"$final_file.after-worker-exit"
+      --request-id "$(bounded_request_id "$execution_id-after-worker-exit-$attempt")" execution get >"$final_file.after-worker-exit"
     if CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" CLOUD_AGENTS_E2E_CHECKPOINT_MODE="$recovery_checkpoint_mode" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -1298,8 +1451,9 @@ run_agent_exit_recovery() {
   session_id="$CLOUD_AGENTS_E2E_RUN_ID-agent-exit"
   turn_id="$session_id-turn"
   execution_id="$session_id-execution"
-  marker="agent-exit-recovered-$CLOUD_AGENTS_E2E_RUN_ID"
-  prompt=$(recovery_prompt "$marker")
+  # Keep the final response marker short; session/run ids already identify the recovery.
+  marker=agent-exit-recovered
+  prompt=$(recovery_prompt "$marker" "$session_id")
   create_turn "$recovery_provider" "$session_id" "$turn_id" "$prompt"
   final_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
   interaction_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-interaction.json"
@@ -1314,8 +1468,34 @@ run_agent_exit_recovery() {
   runtime_kill_command="
     pid=\$(cat '/tmp/cloud-agents-runtime/$runtime_pid_digest.pid') || exit 1
     case \"\$pid\" in ''|*[!0-9]*) exit 1;; esac
-    runtime_arg=\$(tr '\000' '\n' <\"/proc/\$pid/cmdline\" | sed -n '1p')
-    [ \"\$runtime_arg\" = /usr/local/bin/cloud-agent-runtime ] || exit 1
+    if [ ! -r \"/proc/\$pid/cmdline\" ]; then
+      kill -0 \"\$pid\" 2>/dev/null && exit 1
+      exit 0
+    fi
+    runtime_cmdline=\$(tr '\000' ' ' <\"/proc/\$pid/cmdline\")
+    case \" \$runtime_cmdline \" in
+      *\" /usr/local/bin/cloud-agent-runtime \"*) ;;
+      *) exit 1 ;;
+    esac
+    kill_descendants() {
+      child_file=\"/proc/\$1/task/\$1/children\"
+      [ -r \"\$child_file\" ] || return 0
+      for child in \$(cat \"\$child_file\"); do
+        kill_descendants \"\$child\"
+        kill -KILL \"\$child\" 2>/dev/null || true
+      done
+    }
+    kill_descendants \"\$pid\"
+    runtime_stat=\$(cat \"/proc/\$pid/stat\") || exit 1
+    runtime_stat=\${runtime_stat#*) }
+    runtime_stat=\${runtime_stat#* }
+    runtime_stat=\${runtime_stat#* }
+    runtime_pgid=\${runtime_stat%% *}
+    case \"\$runtime_pgid\" in
+      ''|*[!0-9]*) exit 1 ;;
+      0|1) exit 1 ;;
+    esac
+    kill -KILL -- \"-\$runtime_pgid\" 2>/dev/null || true
     kill -KILL \"\$pid\"
   "
   agent_runtime_container=
@@ -1340,8 +1520,13 @@ run_agent_exit_recovery() {
     return 1
   fi
   execute_pid=
+  if [ "$recovery_provider" = deepseek-harness ]; then
+    printf 'remote_worker_pty_fence=not-applicable provider=%s adapter=str_replace_editor\n' "$recovery_provider"
+  else
+    fence_remote_worker_pty
+  fi
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-    --request-id "$execution_id-after-agent-exit" execution get >"$final_file.after-agent-exit"
+    --request-id "$(bounded_request_id "$execution_id-after-agent-exit")" execution get >"$final_file.after-agent-exit"
   CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-agent-exit" CLOUD_AGENTS_E2E_CHECKPOINT_MODE="$recovery_checkpoint_mode" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const value = JSON.parse(readFileSync(process.env.CLOUD_AGENTS_E2E_EXECUTION_FILE, "utf8"));
@@ -1410,7 +1595,7 @@ run_controlled_stop() {
   generation=$(wait_for_running "$session_id" "$turn_id" "$execution_id" "$state_file")
   sleep 2
   run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-    --request-id "$execution_id-$action" --idempotency-key "$execution_id-$action" \
+    --request-id "$(bounded_request_id "$execution_id-$action")" --idempotency-key "$(bounded_request_id "$execution_id-$action")" \
     execution "$action" --generation "$generation" >"$action_file"
   if wait "$execute_pid"; then :; fi
   execute_pid=

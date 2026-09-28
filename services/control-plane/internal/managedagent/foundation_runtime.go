@@ -22,10 +22,12 @@ import (
 )
 
 const (
-	maxFoundationProviderCredentialBytes = (64 << 10) - 1
-	foundationRuntimeInputReady          = "\x1ecloud-agent-runtime-input-ready\x1f"
-	foundationManagedWriteDelayEnv       = "CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS"
-	maxFoundationManagedWriteDelayMS     = 30_000
+	maxFoundationProviderCredentialBytes  = (64 << 10) - 1
+	foundationRuntimeInputReady           = "\x1ecloud-agent-runtime-input-ready\x1f"
+	foundationManagedWriteDelayEnv        = "CLOUD_AGENT_CODEX_MANAGED_WRITE_RECEIPT_DELAY_MS"
+	foundationDeepseekToolDelayEnv        = "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS"
+	foundationDeepseekManagedToolDelayEnv = "CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS"
+	maxFoundationManagedWriteDelayMS      = 30_000
 )
 
 const (
@@ -262,6 +264,16 @@ func foundationRuntimeCommandWithMaterialization(credentialBytes, capabilityMate
 	if delay := foundationManagedWriteDelay(); delay != "" {
 		runtimeEnvironment += " " + foundationManagedWriteDelayEnv + "=" + delay
 	}
+	if targetKind == "docker" || targetKind == "remote-worker" || targetKind == "kubernetes" {
+		if delay := foundationDeepseekToolDelay(); delay != "" {
+			runtimeEnvironment += " " + foundationDeepseekToolDelayEnv + "=" + delay
+		}
+	}
+	if targetKind == "remote-worker" {
+		if delay := foundationDeepseekManagedToolDelay(); delay != "" {
+			runtimeEnvironment += " " + foundationDeepseekManagedToolDelayEnv + "=" + delay
+		}
+	}
 	fence := ""
 	if len(executionIDs) > 0 && executionIDs[0] != "" {
 		digest := sha256.Sum256([]byte(executionIDs[0]))
@@ -324,6 +336,24 @@ func foundationRuntimeCapabilityManifest(session RuntimeSessionSnapshot) ([]byte
 
 func foundationManagedWriteDelay() string {
 	value := strings.TrimSpace(os.Getenv(foundationManagedWriteDelayEnv))
+	milliseconds, err := strconv.Atoi(value)
+	if err != nil || milliseconds <= 0 || milliseconds > maxFoundationManagedWriteDelayMS {
+		return ""
+	}
+	return strconv.Itoa(milliseconds)
+}
+
+func foundationDeepseekToolDelay() string {
+	value := strings.TrimSpace(os.Getenv(foundationDeepseekToolDelayEnv))
+	milliseconds, err := strconv.Atoi(value)
+	if err != nil || milliseconds <= 0 || milliseconds > maxFoundationManagedWriteDelayMS {
+		return ""
+	}
+	return strconv.Itoa(milliseconds)
+}
+
+func foundationDeepseekManagedToolDelay() string {
+	value := strings.TrimSpace(os.Getenv(foundationDeepseekManagedToolDelayEnv))
 	milliseconds, err := strconv.Atoi(value)
 	if err != nil || milliseconds <= 0 || milliseconds > maxFoundationManagedWriteDelayMS {
 		return ""

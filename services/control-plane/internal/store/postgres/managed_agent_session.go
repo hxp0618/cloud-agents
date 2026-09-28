@@ -718,6 +718,9 @@ func resolveRuntimeCapabilityBindings(ctx context.Context, handle *tenantReadHan
 		if digest != ref.Digest {
 			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "digest_mismatch")
 		}
+		if transport != "streamable-http" {
+			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "transport_unsupported")
+		}
 		if expires <= time.Now().UTC().Unix() || expires > time.Now().UTC().Add(15*time.Minute).Unix() {
 			return nil, "", runtimeCapabilityResolutionFailure(internalmanagedagent.ResourceMcpServer, ref.ServerID, ref.Version, ref.Digest, "grant_invalid")
 		}

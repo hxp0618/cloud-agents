@@ -27,7 +27,7 @@ export type RuntimeCapabilityMaterializationConfig = Readonly<{
     resourceId: string;
     version: string;
     digest: `sha256:${string}`;
-    transport: "sse" | "streamable-http";
+    transport: "streamable-http";
     endpoint: string;
     tokenFile: string;
     allowedHosts: ReadonlyArray<string>;
@@ -204,7 +204,7 @@ function assertMcp(
     !identifier(value.resourceId) ||
     !identifier(value.version) ||
     !digestString(value.digest) ||
-    (value.transport !== "sse" && value.transport !== "streamable-http") ||
+    value.transport !== "streamable-http" ||
     typeof value.endpoint !== "string" ||
     !relativePath(value.tokenFile) ||
     !Array.isArray(value.allowedHosts) ||
