@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -579,27 +578,11 @@ func managedAgentPagination(request *http.Request) (int, string, bool) {
 }
 
 func encodeManagedAgentSessionPageToken(tenantID, projectID, sessionID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("session/v1\x00" + tenantID + "\x00" + projectID + "\x00" + sessionID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodeProjectResourcePageToken("session/v1", tenantID, projectID, sessionID)
 }
 
 func decodeManagedAgentSessionPageToken(tenantID, projectID, token string) (string, bool) {
-	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
-		return "", false
-	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "session/v1" || parts[1] != tenantID || parts[2] != projectID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/sessionId") != nil {
-		return "", false
-	}
-	return parts[3], true
+	return decodeProjectResourcePageToken("session/v1", tenantID, projectID, token)
 }
 
 func HandlesManagedAgentSessionPath(path string) bool {

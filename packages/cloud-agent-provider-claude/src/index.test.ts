@@ -27,9 +27,7 @@ describe("createClaudeProvider", () => {
   });
 
   it("accepts deployment credential aliases and uses its model as a default", async () => {
-    const root = mkdtempSync(
-      join(tmpdir(), "cloud-agent-provider-claude-credential-"),
-    );
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-provider-claude-credential-"));
     try {
       const run = startClaudeProviderRun(
         {
@@ -47,8 +45,7 @@ describe("createClaudeProvider", () => {
         () => undefined,
         {
           environment: {
-            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE:
-              "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
             CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent",
           },
         },
@@ -56,9 +53,7 @@ describe("createClaudeProvider", () => {
       await run.result;
       const call = vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0];
       expect(call?.input.workload.model).toBe("claude-test");
-      expect(call?.environment.ANTHROPIC_BASE_URL).toBe(
-        "https://provider.example",
-      );
+      expect(call?.environment.ANTHROPIC_BASE_URL).toBe("https://provider.example");
       expect(call?.environment.CLAUDE_CODE_EFFORT_LEVEL).toBe("unset");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -66,14 +61,10 @@ describe("createClaudeProvider", () => {
   });
 
   it("passes only Host-mounted Skill Bundles to the pinned Claude SDK", async () => {
-    const root = mkdtempSync(
-      join(tmpdir(), "cloud-agent-provider-claude-skill-"),
-    );
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-provider-claude-skill-"));
     const managedSkillRoot = "/tmp/cloud-agents-skills";
     mkdirSync(managedSkillRoot, { recursive: true });
-    const bundleDirectory = mkdtempSync(
-      join(managedSkillRoot, "claude-provider-skill-"),
-    );
+    const bundleDirectory = mkdtempSync(join(managedSkillRoot, "claude-provider-skill-"));
     mkdirSync(join(bundleDirectory, ".claude-plugin"));
     mkdirSync(join(bundleDirectory, "skills", "managed-capability-acceptance"), {
       recursive: true,
@@ -112,8 +103,7 @@ describe("createClaudeProvider", () => {
         () => undefined,
         {
           environment: {
-            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE:
-              "single-tenant-trusted-v1",
+            CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE: "single-tenant-trusted-v1",
             CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent",
             CLOUD_AGENT_CAPABILITY_MANIFEST_B64: Buffer.from(
               JSON.stringify({ ...manifest, digest }),
@@ -123,13 +113,11 @@ describe("createClaudeProvider", () => {
         },
       );
       await run.result;
+      expect(vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0].skillDirectories).toEqual([
+        bundleDirectory,
+      ]);
       expect(
-        vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0]
-          .skillDirectories,
-      ).toEqual([bundleDirectory]);
-      expect(
-        vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0]
-          .skillResourceIdsByQualifiedName,
+        vi.mocked(startClaudeAgentSdkRun).mock.calls.at(-1)?.[0].skillResourceIdsByQualifiedName,
       ).toEqual({
         "managed-capability-acceptance:managed-capability-acceptance": "skill-1",
       });

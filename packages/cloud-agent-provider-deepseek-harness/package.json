@@ -9,7 +9,13 @@
     "url": "git+https://github.com/hxp0618/cloud-agents.git",
     "directory": "packages/cloud-agent-provider-deepseek-harness"
   },
-  "files": ["dist", "src", "!src/**/*.test.ts", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
@@ -18,18 +24,37 @@
     ".": {
       "bun": "./src/index.ts",
       "development": "./src/index.ts",
-      "import": { "types": "./dist/index.d.mts", "default": "./dist/index.mjs" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
-  "publishConfig": { "access": "public", "provenance": true },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsdown src/index.ts --format esm,cjs --dts --clean --no-fail-on-warn",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "@deepseek-ai/dsh-sdk-client": "0.1.2-rc.1" },
-  "devDependencies": { "tsdown": "0.20.3", "typescript": "5.7.3", "vitest": "4.1.10" },
-  "peerDependencies": { "@cloud-agents/cloud-agent-provider-api": "0.1.0-rc.1" },
-  "engines": { "node": ">=24.18.1 <25" }
+  "dependencies": {
+    "@deepseek-ai/dsh-sdk-client": "0.1.2-rc.1"
+  },
+  "devDependencies": {
+    "tsdown": "0.20.3",
+    "typescript": "5.7.3",
+    "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "@cloud-agents/cloud-agent-provider-api": "0.1.0-rc.1"
+  },
+  "engines": {
+    "node": ">=24.18.1 <25"
+  }
 }

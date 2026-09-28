@@ -1878,7 +1878,10 @@ function writeManagedWorkspaceTextFile(
   }
   if (writeError !== undefined) {
     if (cleanupError !== undefined) {
-      throw new AggregateError([writeError, cleanupError], "Managed Workspace write cleanup failed.");
+      throw new AggregateError(
+        [writeError, cleanupError],
+        "Managed Workspace write cleanup failed.",
+      );
     }
     throw writeError;
   }

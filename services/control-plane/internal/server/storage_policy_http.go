@@ -311,23 +311,11 @@ func HandlesStoragePolicyPath(path string) bool {
 }
 
 func encodeStoragePolicyPageToken(tenantID, projectID, policyID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(policyID, "/storagePolicyId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("storage-policy/v1\x00" + tenantID + "\x00" + projectID + "\x00" + policyID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodeProjectResourcePageToken("storage-policy/v1", tenantID, projectID, policyID)
 }
 
 func decodeStoragePolicyPageToken(tenantID, projectID, token string) (string, bool) {
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil || commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "storage-policy/v1" || parts[1] != tenantID || parts[2] != projectID || commonv1alpha1.ValidateIdentifier(parts[3], "/storagePolicyId") != nil {
-		return "", false
-	}
-	return parts[3], true
+	return decodeProjectResourcePageToken("storage-policy/v1", tenantID, projectID, token)
 }
 
 func encodeStoragePolicyAuditPageToken(tenantID, projectID, policyID string, occurredAt time.Time, eventID string) (string, bool) {

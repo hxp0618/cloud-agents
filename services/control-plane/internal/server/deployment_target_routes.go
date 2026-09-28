@@ -106,27 +106,11 @@ func HandlesAdminDeploymentTargetPath(path string) bool {
 }
 
 func encodeDeploymentTargetPageToken(tenantID, projectID, targetID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(targetID, "/targetId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("deployment-target/v1\x00" + tenantID + "\x00" + projectID + "\x00" + targetID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodeProjectResourcePageToken("deployment-target/v1", tenantID, projectID, targetID)
 }
 
 func decodeDeploymentTargetPageToken(tenantID, projectID, token string) (string, bool) {
-	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
-		return "", false
-	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "deployment-target/v1" || parts[1] != tenantID || parts[2] != projectID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/targetId") != nil {
-		return "", false
-	}
-	return parts[3], true
+	return decodeProjectResourcePageToken("deployment-target/v1", tenantID, projectID, token)
 }
 
 func encodeDeploymentTargetActivityPageToken(kind, tenantID, projectID, targetID string, timestamp time.Time, id string) (string, bool) {

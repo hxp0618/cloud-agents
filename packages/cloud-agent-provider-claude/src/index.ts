@@ -55,8 +55,7 @@ export function startClaudeProviderRun(
     options.environment ?? process.env,
   );
   const skillBindings =
-    capabilityManifest?.bindings
-      .filter((binding) => binding.resourceKind === "skill-bundle") ?? [];
+    capabilityManifest?.bindings.filter((binding) => binding.resourceKind === "skill-bundle") ?? [];
   if (options.operation?.commandType === "GenerateText" && capabilityManifest?.bindings.length) {
     throw new ManagedCapabilityUnavailableError(
       "Claude Provider GenerateText does not permit MCP or Skill capabilities.",

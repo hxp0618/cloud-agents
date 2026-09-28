@@ -5,10 +5,7 @@ import {
   CLOUD_AGENT_ENVIRONMENT,
   readCloudAgentEnvironment,
 } from "@cloud-agents/cloud-agent-provider-api";
-import {
-  SENSITIVE_ACTION_POLICY_RULES,
-  classifySensitiveAction,
-} from "./sensitiveActionPolicy";
+import { SENSITIVE_ACTION_POLICY_RULES, classifySensitiveAction } from "./sensitiveActionPolicy";
 import {
   CLOUD_AGENT_PROVIDER_PROVENANCE_IDENTITY,
   providerPendingUntrustedToolResultContext,

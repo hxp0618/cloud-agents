@@ -669,7 +669,7 @@ printf 'ready\\n'
     expect(source).toContain("kubernetes_ctl get --raw /version >/dev/null");
     expect(source).toContain("Kubernetes Runtime smoke requires digest-pinned OpenSandbox images");
     const start = source.indexOf(
-      'CLOUD_AGENTS_COMPOSE_OPERATION_FILE="$upgrade_operation_file" node <<\'NODE\'',
+      "CLOUD_AGENTS_COMPOSE_OPERATION_FILE=\"$upgrade_operation_file\" node <<'NODE'",
     );
     const script = source.slice(start).match(/node <<'NODE'\n([\s\S]*?)\nNODE/u)?.[1];
     expect(script).toBeDefined();
@@ -691,7 +691,10 @@ printf 'ready\\n'
       });
       expect(success.status).toBe(0);
 
-      writeFileSync(file, JSON.stringify({ ...operation, state: "failed", currentStep: "cleanup" }));
+      writeFileSync(
+        file,
+        JSON.stringify({ ...operation, state: "failed", currentStep: "cleanup" }),
+      );
       const failure = spawnSync(process.execPath, ["-e", script!], {
         encoding: "utf8",
         env: { ...process.env, CLOUD_AGENTS_COMPOSE_OPERATION_FILE: file },
@@ -706,29 +709,48 @@ printf 'ready\\n'
 
   it("keeps restored snapshot semantic digest independent from raw tar bytes", () => {
     const composeSmoke = readFileSync("scripts/test-platform-compose.sh", "utf8");
-    expect(composeSmoke).toContain('portable-snapshot-digest.mjs');
-    expect(composeSmoke).toContain('tar -cf - -C /workspace .');
-    expect(composeSmoke).toContain('capture_kubernetes_restored_snapshot_digest');
-    expect(composeSmoke).toContain('kubernetes_ctl -n "$kubernetes_destination_namespace" exec "$kubernetes_recovery_bound_pod" -c binder');
-    expect(composeSmoke).not.toContain('node --input-type=module -e');
+    expect(composeSmoke).toContain("portable-snapshot-digest.mjs");
+    expect(composeSmoke).toContain("tar -cf - -C /workspace .");
+    expect(composeSmoke).toContain("capture_kubernetes_restored_snapshot_digest");
+    expect(composeSmoke).toContain(
+      'kubernetes_ctl -n "$kubernetes_destination_namespace" exec "$kubernetes_recovery_bound_pod" -c binder',
+    );
+    expect(composeSmoke).not.toContain("node --input-type=module -e");
     expect(composeSmoke).not.toContain(
-      'recovery_restored_content_digest_sha256=${recovery_snapshot_digest#sha256:}',
+      "recovery_restored_content_digest_sha256=${recovery_snapshot_digest#sha256:}",
     );
     const directory = mkdtempSync(join(tmpdir(), "cloud-agents-snapshot-digest-"));
     try {
       const file = join(directory, "file");
       const archive = join(directory, "snapshot.tar");
       writeFileSync(file, "hello", { mode: 0o600 });
-      expect(spawnSync("tar", ["-cf", archive, "-C", directory, "file"], { encoding: "utf8" }).status).toBe(0);
-      const result = spawnSync(process.execPath, ["scripts/lib/portable-snapshot-digest.mjs", archive], {
-        encoding: "utf8",
-      });
+      expect(
+        spawnSync("tar", ["-cf", archive, "-C", directory, "file"], { encoding: "utf8" }).status,
+      ).toBe(0);
+      const result = spawnSync(
+        process.execPath,
+        ["scripts/lib/portable-snapshot-digest.mjs", archive],
+        {
+          encoding: "utf8",
+        },
+      );
       expect(result.status).toBe(0);
       const [semantic, raw] = result.stdout.trim().split(/\s+/);
       const fileDigest = "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
-      const expected = `sha256:${createHash("sha256").update(JSON.stringify([{
-        Name: "file", Link: "", Digest: fileDigest, Type: 48, Mode: 384, Size: 5,
-      }])).digest("hex")}`;
+      const expected = `sha256:${createHash("sha256")
+        .update(
+          JSON.stringify([
+            {
+              Name: "file",
+              Link: "",
+              Digest: fileDigest,
+              Type: 48,
+              Mode: 384,
+              Size: 5,
+            },
+          ]),
+        )
+        .digest("hex")}`;
       expect(semantic).toBe(expected);
       expect(raw).toBe(createHash("sha256").update(readFileSync(archive)).digest("hex"));
       expect(raw).not.toBe(semantic!.slice("sha256:".length));
@@ -913,8 +935,10 @@ printf 'ready\\n'
       "MCP_ACCEPTANCE_DISCONNECT_ARM=/tmp/cloud-agents-mcp-side-effect/disconnect-arm",
     );
     expect(source).toContain("-e MCP_ACCEPTANCE_DISCONNECT_ARM=/side-effect/disconnect-arm");
-    expect(source).toContain("mcp_fixture_docker exec \"$mcp_fixture_container\" sh -c");
-    expect(source).toContain(": > /side-effect/disconnect-arm; test -f /side-effect/disconnect-arm");
+    expect(source).toContain('mcp_fixture_docker exec "$mcp_fixture_container" sh -c');
+    expect(source).toContain(
+      ": > /side-effect/disconnect-arm; test -f /side-effect/disconnect-arm",
+    );
     expect(source).toContain("wait_capability_mcp_disconnect_commit()");
     expect(fixture).toContain("process.exit(137)");
     expect(source).toContain("assert_capability_mcp_listener_from_runtime_netns()");
@@ -941,15 +965,21 @@ printf 'ready\\n'
     expect(transport).toContain('fault.spec?.recoveryReason !== "side_effect_outcome_unknown"');
     expect(transport).toContain("fault.spec?.checkpoint?.pendingSideEffect !== true");
     expect(transport).toContain('Date.parse(value.spec?.claimExpiresAt??"")+1000<Date.now()');
-    expect(transport).toContain("capability transport recovery replay bypassed side-effect reconciliation");
-    expect(transport).toContain("grep -Fq 'RECOVERY_REQUIRES_RECONCILIATION' \"$transport_blocked_file\"");
+    expect(transport).toContain(
+      "capability transport recovery replay bypassed side-effect reconciliation",
+    );
+    expect(transport).toContain(
+      "grep -Fq 'RECOVERY_REQUIRES_RECONCILIATION' \"$transport_blocked_file\"",
+    );
     expect(transport).toContain(
       '--idempotency-key "$transport_prefix-disconnect-execution" execution execute',
     );
     expect(transport).toContain('--generation "$transport_reconcile_generation"');
     expect(transport).toContain('--checkpoint-digest "$transport_reconcile_checkpoint_digest"');
     expect(transport).toContain("--outcome confirmed");
-    expect(transport).toContain('execution cancel \\\n    --generation "$transport_reconcile_generation"');
+    expect(transport).toContain(
+      'execution cancel \\\n    --generation "$transport_reconcile_generation"',
+    );
     expect(transport).toContain('--request-id "$transport_prefix-disconnect-cancelled"');
     expect(transport).toContain('execution get >"$transport_fault_cancelled"');
     expect(transport).toContain(
@@ -962,13 +992,13 @@ printf 'ready\\n'
     expect(transport).toContain("cancelled.spec?.checkpoint?.pendingSideEffect !== false");
     expect(transport).toContain('event.spec?.operation === "execution.reconcile"');
     expect(transport).toContain('event.spec?.operation === "turn.cancel"');
-    expect(transport).toContain('faultPage.hasMore !== false || page.hasMore !== false');
-    expect(transport).toContain('event.spec?.executionId === fault.metadata?.uid');
-    expect(transport).toContain('event.spec?.turnId === fault.metadata?.turnId');
-    expect(transport).toContain('event.spec?.generation === fault.spec?.generation');
-    expect(transport).toContain('event.spec?.executionId === reconnect.metadata?.uid');
-    expect(transport).toContain('event.spec?.turnId === reconnect.metadata?.turnId');
-    expect(transport).toContain('event.spec?.generation === reconnect.spec?.generation');
+    expect(transport).toContain("faultPage.hasMore !== false || page.hasMore !== false");
+    expect(transport).toContain("event.spec?.executionId === fault.metadata?.uid");
+    expect(transport).toContain("event.spec?.turnId === fault.metadata?.turnId");
+    expect(transport).toContain("event.spec?.generation === fault.spec?.generation");
+    expect(transport).toContain("event.spec?.executionId === reconnect.metadata?.uid");
+    expect(transport).toContain("event.spec?.turnId === reconnect.metadata?.turnId");
+    expect(transport).toContain("event.spec?.generation === reconnect.spec?.generation");
     expect(transport.match(/event\.spec\?\.serverId === mcpId/gu)).toHaveLength(2);
     expect(
       transport.match(
@@ -976,12 +1006,10 @@ printf 'ready\\n'
       ),
     ).toHaveLength(2);
     expect(
-      transport.match(
-        /event\.spec\?\.digest === process\.env\.CLOUD_AGENTS_COMPOSE_MCP_DIGEST/gu,
-      ),
+      transport.match(/event\.spec\?\.digest === process\.env\.CLOUD_AGENTS_COMPOSE_MCP_DIGEST/gu),
     ).toHaveLength(2);
     expect(transport).toContain('event.spec?.result === "failed"');
-    expect(transport).toContain('event.spec?.errorCode === undefined');
+    expect(transport).toContain("event.spec?.errorCode === undefined");
     expect(transport.match(/event\.spec\?\.resource === "McpServer"/gu)).toHaveLength(2);
     expect(transport).toContain('event.spec.changes[0]?.to === "failed"');
     expect(transport).toContain('event.spec.changes[0]?.to === "succeeded"');

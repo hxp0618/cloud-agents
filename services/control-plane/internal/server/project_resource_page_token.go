@@ -7,6 +7,7 @@ import (
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
 
+// Project-scoped tokens bind the cursor to tenant and project, so cross-scope replay fails closed.
 func encodeProjectResourcePageToken(kind, tenantID, projectID, resourceID string) (string, bool) {
 	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(resourceID, "/resourceId") != nil {
 		return "", false

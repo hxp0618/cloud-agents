@@ -3,10 +3,33 @@ import type { FormEvent, ReactNode } from "react";
 import { AdminSheet } from "../AdminSheet";
 import { shortDigest } from "./presentation";
 import {
+  type ProjectLeaseQuota,
   type StoragePolicy,
   type WorkerRelease,
   type WorkerReleaseRegisterRequest,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
+
+export function quotaFormFrom(quota?: ProjectLeaseQuota) {
+  return {
+    maxConcurrentLeases: String(quota?.spec.maxConcurrentLeases ?? 8),
+    maxCpuMillis: String(quota?.spec.maxCpuMillis ?? 16_000),
+    maxMemoryMiB: String((quota?.spec.maxMemoryBytes ?? 34_359_738_368) / 1_048_576),
+    maxLeaseTtlSeconds: String(quota?.spec.maxLeaseTtlSeconds ?? 3_600),
+  };
+}
+
+export function storagePolicyFormFrom(policy?: StoragePolicy) {
+  return {
+    policyId: policy?.metadata.uid ?? "",
+    policyName: policy?.metadata.name ?? "",
+    userSummary: policy?.spec.userSummary ?? "",
+    workspaceCapacityGiB: String(
+      (policy?.spec.workspaceCapacityBytes ?? 21_474_836_480) / 1_073_741_824,
+    ),
+    snapshotBackendRef: policy?.spec.snapshotBackendRef ?? "",
+    artifactBackendRef: policy?.spec.artifactBackendRef ?? "",
+  };
+}
 
 export function StoragePolicyTable({
   policies,

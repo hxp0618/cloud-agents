@@ -284,8 +284,7 @@ export function NetworkPolicyPanel({
                 setForm({
                   ...form,
                   defaultEgress: event.target.value as NetworkPolicySetRequest["defaultEgress"],
-                  allowedEgress:
-                    event.target.value === "restricted" ? form.allowedEgress : "",
+                  allowedEgress: event.target.value === "restricted" ? form.allowedEgress : "",
                 })
               }
             >

@@ -98,7 +98,10 @@ describe("Codex runtime-isolation configuration attestation", () => {
     ).toBe(true);
 
     const deferred = structuredClone(response) as typeof response;
-    const deferredServer = deferred.config.mcp_servers["cloud_agents_mcp-1"] as Record<string, unknown>;
+    const deferredServer = deferred.config.mcp_servers["cloud_agents_mcp-1"] as Record<
+      string,
+      unknown
+    >;
     deferredServer.omit_tools_from = ["deferred"];
     expect(
       isCodexRuntimeIsolationConfigAttested(deferred, [

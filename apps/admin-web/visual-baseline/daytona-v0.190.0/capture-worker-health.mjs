@@ -138,8 +138,8 @@ try {
       2,
     ),
   );
-  console.log(
-    JSON.stringify({ checks: checks.length, errors: errors.length, apiRequests: requests.length }),
+  process.stdout.write(
+    `${JSON.stringify({ checks: checks.length, errors: errors.length, apiRequests: requests.length })}\n`,
   );
 } finally {
   await browser.close();

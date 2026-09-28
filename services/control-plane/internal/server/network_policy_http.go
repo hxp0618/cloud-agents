@@ -316,23 +316,11 @@ func HandlesNetworkPolicyPath(path string) bool {
 }
 
 func encodeNetworkPolicyPageToken(tenantID, projectID, policyID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(policyID, "/networkPolicyId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("network-policy/v1\x00" + tenantID + "\x00" + projectID + "\x00" + policyID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodeProjectResourcePageToken("network-policy/v1", tenantID, projectID, policyID)
 }
 
 func decodeNetworkPolicyPageToken(tenantID, projectID, token string) (string, bool) {
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil || commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "network-policy/v1" || parts[1] != tenantID || parts[2] != projectID || commonv1alpha1.ValidateIdentifier(parts[3], "/networkPolicyId") != nil {
-		return "", false
-	}
-	return parts[3], true
+	return decodeProjectResourcePageToken("network-policy/v1", tenantID, projectID, token)
 }
 
 func encodeNetworkPolicyAuditPageToken(tenantID, projectID, policyID string, occurredAt time.Time, eventID string) (string, bool) {

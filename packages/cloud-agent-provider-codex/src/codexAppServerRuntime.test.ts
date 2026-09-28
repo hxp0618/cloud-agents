@@ -424,9 +424,14 @@ describe("Codex app-server runtime", () => {
       environment.CLOUD_AGENT_MCP_BROKER_URL = "http://127.0.0.1:43123/mcp";
       environment.CLOUD_AGENT_MCP_TOKEN_MCP_1 = "unknown-token";
       const messages: RunnerMessage[] = [];
-      const run = startProviderHostRun(codexInput(directory), null, (message) => messages.push(message), {
-        environment,
-      });
+      const run = startProviderHostRun(
+        codexInput(directory),
+        null,
+        (message) => messages.push(message),
+        {
+          environment,
+        },
+      );
       await expect(run.result).rejects.toThrow("Managed MCP call result is unknown.");
       expect(messages).toContainEqual({
         type: "event",

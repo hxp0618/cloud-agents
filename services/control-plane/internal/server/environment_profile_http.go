@@ -417,23 +417,11 @@ func HandlesAdminEnvironmentProfilePath(path string) bool {
 }
 
 func encodeEnvironmentProfilePageToken(tenantID, projectID, profileVersionID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(profileVersionID, "/profileVersionId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("environment-profile/v1\x00" + tenantID + "\x00" + projectID + "\x00" + profileVersionID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodeProjectResourcePageToken("environment-profile/v1", tenantID, projectID, profileVersionID)
 }
 
 func decodeEnvironmentProfilePageToken(tenantID, projectID, token string) (string, bool) {
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil || commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "environment-profile/v1" || parts[1] != tenantID || parts[2] != projectID || commonv1alpha1.ValidateIdentifier(parts[3], "/profileVersionId") != nil {
-		return "", false
-	}
-	return parts[3], true
+	return decodeProjectResourcePageToken("environment-profile/v1", tenantID, projectID, token)
 }
 
 func encodeEnvironmentProfileAuditPageToken(tenantID, projectID, profileID string, version int64, occurredAt time.Time, eventID string) (string, bool) {

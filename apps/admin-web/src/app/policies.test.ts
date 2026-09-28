@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { workerReleaseForm, workerReleaseRegisterRequestFrom } from "./policies";
+import {
+  quotaFormFrom,
+  storagePolicyFormFrom,
+  workerReleaseForm,
+  workerReleaseRegisterRequestFrom,
+} from "./policies";
 
 describe("worker release form mapping", () => {
   it("trims release metadata and preserves selected architectures", () => {
@@ -30,6 +35,25 @@ describe("worker release form mapping", () => {
       claudeCodeVersion: "claude-v1",
       architectures: ["linux/amd64", "linux/arm64"],
       verificationEvidenceDigest: `sha256:${"b".repeat(64)}`,
+    });
+  });
+});
+
+describe("policy form defaults", () => {
+  it("keeps quota and storage defaults in the policy module", () => {
+    expect(quotaFormFrom()).toEqual({
+      maxConcurrentLeases: "8",
+      maxCpuMillis: "16000",
+      maxMemoryMiB: "32768",
+      maxLeaseTtlSeconds: "3600",
+    });
+    expect(storagePolicyFormFrom()).toEqual({
+      policyId: "",
+      policyName: "",
+      userSummary: "",
+      workspaceCapacityGiB: "20",
+      snapshotBackendRef: "",
+      artifactBackendRef: "",
     });
   });
 });

@@ -279,20 +279,21 @@ function handleHarnessNotification(
     const sourceName = stringValue(source?.name) ?? stringValue(source?.toolName);
     const activeTool = activeTools.get(itemId);
     const fallbackFileTool = [...activeTools.values()].find(({ name }) =>
-      /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(name),
+      /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(
+        name,
+      ),
     );
     const recoveryFallbackTool = process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS
       ? "str_replace_editor"
       : undefined;
     if (!activeTool)
-      delayManagedToolResult(
-        sourceName ?? fallbackFileTool?.name ?? recoveryFallbackTool,
-        prompt,
-      );
+      delayManagedToolResult(sourceName ?? fallbackFileTool?.name ?? recoveryFallbackTool, prompt);
     const name = activeTool?.name ?? sourceName ?? "tool";
     if (
       holdRecoverySideEffect &&
-      /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(name)
+      /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(
+        name,
+      )
     ) {
       activeTools.delete(itemId);
       return undefined;
@@ -326,19 +327,26 @@ function handleHarnessNotification(
 }
 
 function delayManagedToolResult(toolName: string | undefined, prompt: string): void {
-  const toolDelay = Number.parseInt(process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS ?? "0", 10);
+  const toolDelay = Number.parseInt(
+    process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS ?? "0",
+    10,
+  );
   const managedToolDelay = Number.parseInt(
     process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS ?? "0",
     10,
   );
   if (!toolName || (!/recovery/iu.test(prompt) && toolDelay <= 0 && managedToolDelay <= 0)) return;
-  const fileTool = /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(toolName);
+  const fileTool =
+    /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(
+      toolName,
+    );
   const managedTool = fileTool || /^(?:mcp__.*|skill)$/iu.test(toolName);
   if (!managedTool) return;
   const delayEnv = fileTool
     ? "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS"
     : "CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS";
-  const delayMs = delayEnv === "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS" ? toolDelay : managedToolDelay;
+  const delayMs =
+    delayEnv === "CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS" ? toolDelay : managedToolDelay;
   if (!Number.isSafeInteger(delayMs) || delayMs <= 0) return;
   const signal = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(signal, 0, 0, Math.min(delayMs, 60_000));
@@ -368,7 +376,11 @@ function recordToolCall(
     name,
     ...(capabilityResourceId ? { capabilityResourceId } : {}),
   });
-  if (/^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(name))
+  if (
+    /^(?:create_file|edit|file_write|str_replace_editor|write|write_file|write_text_file)$/iu.test(
+      name,
+    )
+  )
     generatedFiles.observe(args?.path ?? args?.filePath ?? args?.file_path);
   emit({
     type: "event",

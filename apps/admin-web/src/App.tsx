@@ -41,6 +41,8 @@ import {
   ReleaseTable,
   workerReleaseForm,
   workerReleaseRegisterRequestFrom,
+  quotaFormFrom,
+  storagePolicyFormFrom,
 } from "./app/policies";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -158,28 +160,6 @@ function initialTheme(): Theme {
   const saved = window.localStorage.getItem("cloud-agents-admin-theme");
   if (saved === "light" || saved === "dark") return saved;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function quotaFormFrom(quota?: ProjectLeaseQuota) {
-  return {
-    maxConcurrentLeases: String(quota?.spec.maxConcurrentLeases ?? 8),
-    maxCpuMillis: String(quota?.spec.maxCpuMillis ?? 16_000),
-    maxMemoryMiB: String((quota?.spec.maxMemoryBytes ?? 34_359_738_368) / 1_048_576),
-    maxLeaseTtlSeconds: String(quota?.spec.maxLeaseTtlSeconds ?? 3_600),
-  };
-}
-
-function storagePolicyFormFrom(policy?: StoragePolicy) {
-  return {
-    policyId: policy?.metadata.uid ?? "",
-    policyName: policy?.metadata.name ?? "",
-    userSummary: policy?.spec.userSummary ?? "",
-    workspaceCapacityGiB: String(
-      (policy?.spec.workspaceCapacityBytes ?? 21_474_836_480) / 1_073_741_824,
-    ),
-    snapshotBackendRef: policy?.spec.snapshotBackendRef ?? "",
-    artifactBackendRef: policy?.spec.artifactBackendRef ?? "",
-  };
 }
 
 export function App() {
