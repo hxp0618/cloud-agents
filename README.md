@@ -74,3 +74,9 @@ The release smoke emits seven read-only tarballs, a standalone runtime, checksum
 No package from this repository is published to npm yet. GitHub release candidates are engineering artifacts and do not imply deployment, public beta, production support, or GA.
 
 Tags matching `v<semver>` on `main` run the same product checks, publish the release assets to GitHub, and push multi-architecture Control Plane, Worker, and migration images to GHCR. Pre-release semver tags create GitHub pre-releases; published image digests are included in `cloud-agents-oci-images.json`.
+
+## Contributing, security and license
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request; it lists the checks for each changed surface. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in public issues.
+
+Cloud Agents is released under the [MIT License](LICENSE). The portable Runtime packages were extracted from the MIT-licensed Synara repository and keep their original notices; see [NOTICE](NOTICE) and [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md).

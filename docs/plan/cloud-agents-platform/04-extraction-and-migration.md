@@ -21,6 +21,8 @@
 
 第一阶段结束后，为开源合并到 `dev` 删除了过程材料：P0 基线与清单、旧计划/旧状态（history）、legacy 方案、逐轮 evidence 报告、原始日志与截图、应用下的 E2E 流水报告和未被引用的视觉对比脚本。仍被生成锁、closure profile 或 review digest 按字节绑定的 ADR、`p1/`、`standalone/` 与 `evidence/G-*` 记录原样保留。旧迁移计划中仍有效的安全条件移至 [数据迁移、删除与回滚安全要求](migration-and-rollback-safety.md)。
 
+第二轮整理删除了未被 CI 使用的 evidencefs/mount authority 包、migration bundle successor 生成器、G-CONTRACT v3 successor/phase 工具链、closure-profile v4 与 Daytona 参考截图；Admin 视觉几何基线和截图脚本移至 `scripts/e2e/admin-visual/`。
+
 以后删除任何文件，先列精确文件、替代入口和反向引用（生成锁、CI、生成器、测试 fixture）；被字节绑定的文件只能随生成器变更一起移除。
 
 ### 每次如何继续
@@ -214,7 +216,7 @@ User/Admin 身份、API 与内容权限分离；普通用户调用 Admin API 返
 | --- | --- | --- | --- |
 | MAINT-1 | `internal/migration` 拆分与退役 | 2026-09-29 完成：Go 1.26.6 `GOOS=linux` 可达性分析确认产品二进制只使用其中约 3k 行；这部分已抽成 `internal/migrationcore`（9 个源文件，无内部包依赖），`localmigration` 与产品命令改为依赖它，并由 `scripts/test-platform-go-products.sh` 完整覆盖。历史 `internal/migration`、`cmd/cloud-agents-migrate`、`scripts/data-recovery-validator`、分片测试工具及 5 个 runner-ledger Go 生成器已删除。 | 已达成。仍引用这 5 个 Go 生成文件路径的 contract-lock、replay、closure/generator-supply 冻结证据与工具不在当前检查链上，随 MAINT-3 一并退役或重建。 |
 | MAINT-2 | 产品迁移 schema 快照存储方式 | 2026-09-29 完成："基线 + 增量"。`product/<head>/` 仍保存完整 `manifest.json` 与 `schema-bundle.json`（运行时与发布包只读这两者），累计 catalog 改为 `catalog/schema-*.patch`：相对 manifest 中 `predecessor_catalog_contract` 的零上下文行补丁，首个产品版本以冻结的 `catalog/schema-000014.json` 为基线。`scripts/generate-foundation-migration-package.ts` 写出补丁，`--check` 逐版本重放并要求每个重建的 catalog 与冻结 `catalog_contract` 的大小和 SHA-256 一致；目录多余/缺失文件、补丁篡改、基线篡改和头部换绑均拒绝。`product/` 由约 98M 降至约 21M，新版本补丁约 1–50KB。 | 选定并实现"基线 + 增量"或仅保留必要完整快照的方案；由生成器产出，旧版本仍可按冻结 digest 精确验证，`platform:migrations:check` 与历史选择/拒绝测试通过。 |
-| MAINT-3 | v2/v3/v4 生成器合并 | 2026-09-29 完成：`platform-generator-supply-replay-v2/v3` 合并为共享内核 `platform-generator-supply-replay.ts`，`platform-contract-closure-profile-v3/v4` 合并为 `platform-contract-closure-profile-successor.ts`；版本模块只保留各自数据、错误类型，以及 v3 replay 固定的 authority/wrapper/核心输出和 v4 closure 新增的 authority、v3 fence 与 replay authority 绑定（两族共约 6.9k 行降至约 4.1k 行）。其余带版本后缀的族未合并：`successor-dag`、`successor-predecessor`、`generator-supply-profile`、`contract-lock` 各版本间共同代码仅 12–35%，属不同行为；`replay-platform-generators{,-v3}`、`-isolated{,-v3}.sh`、`g-contract-external-consumer{,-v2}` 和 durable lineage v2 相关脚本的字节被已提交 authority 以 digest 固定，改动会使历史 authority 失效。 | 提取共享内核，版本间只保留真实不同的行为与数据；确定性重新生成后所有已提交产物逐字节不变，历史版本选择与篡改拒绝保持。 |
+| MAINT-3 | v2/v3/v4 生成器合并 | 2026-09-29 完成：`platform-generator-supply-replay-v2/v3` 合并为共享内核 `platform-generator-supply-replay.ts`，`platform-contract-closure-profile-v3/v4` 合并为 `platform-contract-closure-profile-successor.ts`；版本模块只保留各自数据、错误类型，以及 v3 replay 固定的 authority/wrapper/核心输出和 v4 closure 新增的 authority、v3 fence 与 replay authority 绑定（两族共约 6.9k 行降至约 4.1k 行）。其余带版本后缀的族未合并：`successor-dag`、`successor-predecessor`、`generator-supply-profile`、`contract-lock` 各版本间共同代码仅 12–35%，属不同行为；`replay-platform-generators{,-v3}`、`-isolated{,-v3}.sh`、`g-contract-external-consumer{,-v2}` 和 durable lineage v2 相关脚本的字节被已提交 authority 以 digest 固定，改动会使历史 authority 失效。开源整理随后删除了 v3 replay、closure-profile v4 及 v3 successor/phase 工具链，共享内核现只服务 v2 replay 与 v3 closure。 | 提取共享内核，版本间只保留真实不同的行为与数据；确定性重新生成后所有已提交产物逐字节不变，历史版本选择与篡改拒绝保持。 |
 
 ## 1. 兼容、迁移与回滚的按需入口
 

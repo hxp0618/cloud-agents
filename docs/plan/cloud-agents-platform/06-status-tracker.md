@@ -10,7 +10,7 @@ aggregate Gate、release Gate 与 feature closeout 对 r741 candidate 的记录�
 
 ## 1.1 当前合并候选边界
 
-当前分支为 `codex/cloud-agents-platform-p0`，HEAD 为 `d80d825fb622dd8b538751ef0f0f880b82701a59`；工作区存在未提交的生产代码、生成器、迁移、测试和文档改动。r741 之后的改动尚未在一个干净 candidate 上重新完成 Provider×环境、恢复、跨节点、故障和安全矩阵，因此当前合并候选各格均记为 `NOT RUN`，不继承历史 `PASS`。这不是对 r741 正式记录的重开，而是对当前 dirty source 的合并边界。
+r741 之后的生产代码、生成器、迁移、测试和文档改动尚未在一个干净 candidate 上重新完成 Provider×环境、恢复、跨节点、故障和安全矩阵，因此当前合并候选各格均记为 `NOT RUN`，不继承历史 `PASS`。这不是对 r741 正式记录的重开，而是当前合并候选的边界。
 
 ## 2. Provider × Environment 矩阵（r741 历史证据）
 
@@ -47,7 +47,8 @@ aggregate Gate、release Gate 与 feature closeout 对 r741 candidate 的记录�
 - 2026-09-29：MAINT-1 `DONE`。产品迁移内核为 `internal/migrationcore`，历史 `internal/migration`（约 66k 行非测试代码）、`cloud-agents-migrate`、`data-recovery-validator`、分片测试工具和 5 个 runner-ledger Go 生成器已退役；同时退役 8 个校验这些已删除字节的 scripts 用例。Go 1.26.6 容器内 `scripts/test-platform-go-products.sh` 通过（58s，含 race/vet），`platform:go:check`（锁定 Go 1.26.6）、`platform:migrations:check`、`vitest run scripts`（58 个文件、457 个用例）通过。`migrationcore` 由自身测试和 `localmigration` 测试合并覆盖约 40% 语句；列/约束/索引/策略/触发器与表达式节点校验、`SQLLedgerStore.Insert` 尚无直接测试。
 - 2026-09-29：MAINT-2 `DONE`。产品迁移 catalog 改为生成器产出的逐版本补丁（`product/` 约 98M → 21M），manifest/schema-bundle 与所有冻结 digest 不变；`platform:migrations:check`、`localmigration` 与产品迁移命令 Go 测试及 `go vet` 通过，补丁/基线篡改、多余或缺失文件均被拒绝。
 - 2026-09-29：MAINT-3 `DONE`（范围见 [04 §0.6](04-extraction-and-migration.md#engineering-maintenance-items)）。replay v2/v3 与 closure-profile v3/v4 各合并为共享内核；在各自历史检查为绿的提交（`6af45061`、`700bc72f`）上叠加新代码后，相关生成器检查的退出码与输出、全部 scripts 用例的逐例状态均与原代码一致，closure v3/v4 `--write-source`/`--write` 重新生成的已提交产物逐字节不变。当前工作树 `vitest run scripts` 58 个文件、457 个用例通过。
-- 已知问题：MAINT-1 删除 `internal/migration` 后，`scripts/generate-platform-migration-bundle-successor.ts --check` 因仍固定 `internal/migration/bundle.go` 而失败（该检查不在 `platform:migrations:check`/CI 中）。
+- 2026-09-29：开源整理按用户批准删除未被 CI 使用的 evidencefs/mount authority 包、migration bundle successor 生成器、G-CONTRACT v3 successor/phase 工具链与 closure-profile v4、Daytona 参考截图；`successor/000014` 冻结产物不变。删除后 `platform:contracts:check`、`platform:migrations:check`、`platform:go:check`、`scripts/test-platform-go-products.sh`、各包测试与 `vitest run scripts`（47 个文件、400 个用例）通过。
+- 已知问题：`scripts/test-cloud-agents-dev.sh`（CI 步骤）失败：Session 创建自 anywhere runtime v1 起必须带 Lease 或完整 Foundation 绑定，而该 smoke 仍不带绑定创建 Session。`scripts/generate-platform-contract-lock.ts --check` 在清理前已因 OpenAPI JSON Pointer 错误失败，不在 CI 中。
 
 ## 6. 证据入口
 

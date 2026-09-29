@@ -19,6 +19,9 @@ to Proto sources are conformance vectors, not a second transport.
 
 ## Historical P1 bootstrap idempotency profiles
 
+Each paragraph below records a profile as it was first introduced. Later slices added the Go consumers, writers and
+HTTP routes; statements such as "not implemented" or "absent" describe the original slice, not the current tree.
+
 The initial P1 v1alpha1 bootstrap profile covered exactly one idempotent HTTP mutation (not the full current API):
 `managedAgentCreateProject`. Its canonical request intent is the strict-schema-validated
 `ManagedAgentCreateProjectIdempotencyProjection`: the exact OpenAPI `operationId`, authoritative path `tenantId`, and
