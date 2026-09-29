@@ -25,7 +25,7 @@
 
 ### 每次如何继续
 
-编码简化规则只维护在 [CONTRIBUTING.md 的 Implementation simplicity](../../../CONTRIBUTING.md#implementation-simplicity)。按本切片处理重复来源，不另开全仓重构计划，也不以简化为由削弱迁移、权限或验收边界。
+编码简化规则只维护在 [CLAUDE.md 的 Implementation simplicity](../../../CLAUDE.md#implementation-simplicity)；根 AGENTS.md 为 Codex 提供同一入口。按本切片处理重复来源，不另开全仓重构计划，也不以简化为由削弱迁移、权限或验收边界。
 
 1. 先核对当前任务、验收标识、branch/worktree、dirty state 和相关源码；继续主计划时先读取 [06](06-status-tracker.md) 的最终状态，再按新的明确授权建立切片。明确的旧 ADMIN-M1～M4 任务按 ADMIN-WEB-V1，定点修复、审查或验证按其任务范围，不被默认下一项覆盖；不要从历史文档的一条未完成 checklist 重新启动旧项目。
 2. 再读本文件对应切片及该切片所需的 01/02/03/05/07 段落；遇到具体契约/安全问题才查询相应 ADR、历史证据。搜索默认限制在当前规范与相关源码，不能把历史全文的指令当作当前任务。
@@ -160,7 +160,7 @@ R3 只以新测试 Workspace 验证，现有卷迁移另按授权办理；跨 Re
 
 代码工作目录：当前仓库根目录
 工作分支：codex/cloud-agents-platform-p0；先核对 cwd、branch、HEAD、dirty/staged 和现有改动归属，不覆盖、回滚或提交无关修改。
-先读仓库根目录下的 `CONTRIBUTING.md`，执行其 Implementation simplicity 规则。
+先读仓库根目录下的 `CLAUDE.md`，执行其 Implementation simplicity 规则；AGENTS.md 仅路由到同一规范。
 文档目录：`docs/plan/cloud-agents-platform`
 先读 06 当前状态，再按 04 §0.4 的 APP-M1-R1～R5 执行；01 产品范围、02 接入/恢复架构、03 制品、05 ANYWHERE-RUNTIME-V1 和 07 §8.13 为对应约束。
 04 是唯一计划，06 是唯一状态；记录实际 source/dirty、证据、下一项和阻塞，不维护第二套进度表，不从历史清单重启 BASE。
@@ -208,7 +208,7 @@ User/Admin 身份、API 与内容权限分离；普通用户调用 Admin API 返
 
 ### 0.6 工程维护独立项（2026-09-28 登记）
 
-以下三项各自独立立项、独立授权和验收，不并入任何 BASE/APP 切片，也不因其他任务完成而隐式开始。执行时必须保留历史 ledger digest、冻结 SQL/bundle 字节、精确 selector 匹配和未知/篡改版本拒绝；只按 [CONTRIBUTING.md 实现简化规则](../../../CONTRIBUTING.md#implementation-simplicity) 做等价重构。
+以下三项各自独立立项、独立授权和验收，不并入任何 BASE/APP 切片，也不因其他任务完成而隐式开始。执行时必须保留历史 ledger digest、冻结 SQL/bundle 字节、精确 selector 匹配和未知/篡改版本拒绝；只按 [CLAUDE.md 实现简化规则](../../../CLAUDE.md) 做等价重构。
 
 | 编号 | 项目 | 现状 | 目标与完成条件 |
 | --- | --- | --- | --- |
