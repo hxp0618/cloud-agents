@@ -49,7 +49,7 @@ HTML 全文标成已经逐项批准、实现或验收。
 
 ## 技术方案与参考的边界
 
-- [HTML 基准](../../coding_agent_cloud_infrastructure_design.html) 提供输入，但不整体提升为批准 authority。
+- 早期 HTML 设计基准（未随公开仓库发布）提供输入，但不整体提升为批准 authority。
   OpenSandbox 是优先验证的执行底座候选；先固定上游版本、契约、许可和真实行为，再决定替换范围。
   不把旧审计或上游文档当作当前能力证明，不预先 fork 或重建一套同类 runtime engine。
 - 单 Region 起步；Region/Pool 是资源归属和调度模型，不意味着先拆微服务或实现多 Region active-active。
