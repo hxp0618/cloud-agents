@@ -1,12 +1,12 @@
 # 06. 当前状态与最终汇总
 
-> 最后更新：2026-09-29。本文是 Cloud Agents 当前实际状态的唯一活动记录；旧运行明细、修复尝试和历史阻塞保留在 `evidence/`、`history/` 或固定 candidate record 中，不在这里重复。
+> 最后更新：2026-09-29。本文是 Cloud Agents 当前实际状态的唯一活动记录；第一阶段能力的可复现证据见 [phase-1 验收](../../acceptance/phase-1.md)；旧运行明细已在开源整理前归档，不在这里重复。
 
 ## 1. 最终结论
 
 历史 r741 candidate 的 tenant-local 验收记录为：四个 Provider 在 Docker、outbound RemoteWorker、Kubernetes 三类环境共 12 个 Provider×Environment 单元均为 `PASS`。适用的 Worker/Agent 故障、跨节点接管和恢复路径均有 `PASS` 或 `NOT APPLICABLE` 结论；独立只读 reviewer 已 `APPROVE`。该记录使用 `29afe9b9103cac99088f637e02a8cd9bb3f48d58` 的 dirty candidate。
 
-aggregate Gate、release Gate 与 feature closeout 对 r741 candidate 的记录为 `CLOSED / APPROVED`。本结论不改变 capability catalog 的既有 adapter capability 语义，也不把历史 candidate 的中间状态重新解释为当前工作区状态。当前工作区的候选边界和未复验项见 [开源候选审查摘要](evidence/open-source-candidate-audit-20260929.md)。
+aggregate Gate、release Gate 与 feature closeout 对 r741 candidate 的记录为 `CLOSED / APPROVED`。本结论不改变 capability catalog 的既有 adapter capability 语义，也不把历史 candidate 的中间状态重新解释为当前工作区状态。当前开源候选的边界和未复验项见下方 §1.1。
 
 ## 1.1 当前合并候选边界
 
@@ -51,10 +51,10 @@ aggregate Gate、release Gate 与 feature closeout 对 r741 candidate 的记录�
 
 ## 6. 证据入口
 
-- [Evidence index](evidence/README.md)：Gate closure record、阶段证据和历史 candidate 的索引。
+- [phase-1 验收](../../acceptance/phase-1.md)：能力 → 实现位置 → 检查命令 → 结果。
+- [Evidence index](evidence/README.md)：冻结 Gate 记录。
 - [Gate closure template](templates/gate-closure-record.md)：正式 closure record 格式。
-- [历史状态快照](history/06-status-tracker-20260905.md)：旧 P0/P1 状态和批准，仅按需读取。
-- [旧迁移计划](history/04-legacy-migration-plan.md) 与 [旧 Admin 验收](history/07-legacy-admin-milestones.md)：兼容迁移或旧任务范围需要时读取。
+- [数据迁移、删除与回滚安全要求](migration-and-rollback-safety.md)。
 
 ## 7. 后续文档规则
 

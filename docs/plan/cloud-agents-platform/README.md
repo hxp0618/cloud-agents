@@ -16,10 +16,7 @@
 
 ## 按需材料
 
-- [evidence 索引](evidence/README.md)：Gate closure、应用报告和 canonical evidence 链接；原始证据不在活动文档复制。
-- [history 索引](history/README.md)：旧计划与旧状态；历史事实不代表当前状态。
+- [phase-1 验收](../../acceptance/phase-1.md)：第一阶段能力到代码、测试和检查命令的对应表。
+- [evidence 索引](evidence/README.md)：冻结 Gate 记录。
 - [templates 索引](templates/README.md)：Gate 记录模板，不保存实际结果。
-- [总入口](../README.md)：全局目录分层和维护边界。
-- [ADR 索引](../adr/README.md)、[P0 索引](../p0/README.md)、[P1 索引](../p1/README.md)、[standalone 索引](../standalone/README.md)、[legacy 索引](../legacy/README.md)、[references 索引](../references/README.md)：规范或审计材料分类入口。
-
-详细 evidence/history/p0/p1/standalone/independent-review 文件保留原始内容，只按需访问；它们不提供默认下一步、全局暂停或当前 Cloud Agents 状态。需要当前状态时回到 06，需要顺序时回到 04。
+- [总入口](../README.md)、[ADR 索引](../adr/README.md)、[references 索引](../references/README.md)。

@@ -1,0 +1,14 @@
+Cloud Agents
+Copyright (c) 2026 T3 Tools Inc. Licensed under the MIT License (see LICENSE).
+
+The portable Runtime packages were extracted from the MIT-licensed Synara
+repository; see SOURCE_PROVENANCE.md.
+
+Third-party dependency notices are maintained next to each distributed component:
+  services/control-plane/THIRD_PARTY_NOTICES.md
+  sdk/go/THIRD_PARTY_NOTICES.md
+  sdk/typescript/THIRD_PARTY_NOTICES.md
+
+Some optional Provider packages depend on third-party SDKs under their own terms
+(for example @anthropic-ai/claude-agent-sdk). These are installed from their
+publishers and are not redistributed in this repository.

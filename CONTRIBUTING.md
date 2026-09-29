@@ -2,7 +2,7 @@
 
 Follow the [joint infrastructure/Admin boundary](docs/plan/adr/0032-infrastructure-admin-delivery-and-document-routing.md) and [execution plan](docs/plan/cloud-agents-platform/04-extraction-and-migration.md): infrastructure and the complete Admin Web form the first deliverable; new user conversation features follow their joint readiness. Reuse existing implementations without treating historical Agent evidence as foundation acceptance.
 
-Use Node.js `24.18.1` and Bun `1.3.14`; `.mise.toml` is the executable toolchain declaration. Install with `bun install --frozen-lockfile --ignore-scripts` after the lockfile exists.
+`.mise.toml` is the executable toolchain declaration (Node.js, Bun, Go, Python, uv, Helm). Run checks through `mise exec -- <command>`: the contract checks reject any other Bun/Python/uv version. Install with `bun install --frozen-lockfile --ignore-scripts` after the lockfile exists.
 
 For documentation-only changes, check the diff, local links, current-vs-target claims, and preserved approval/acceptance boundaries; runtime E2E and release closure are not prerequisites for editing prose. If executable examples, contracts, or behavior change, run the affected checks as well. This exception does not waive any explicit candidate/release gate.
 

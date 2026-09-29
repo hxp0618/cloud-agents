@@ -1,6 +1,6 @@
 # 04. 基础设施、Admin Web 与 Anywhere Runtime 实施计划
 
-本文件只维护实施顺序、切片范围、兼容迁移入口和 Goal 提示词。实际结果只记录在 [06 当前状态与最终汇总](06-status-tracker.md)，逐轮证据保留在 [evidence](evidence/README.md) 与 [history](history/06-status-tracker-20260905.md) 目录。
+本文件只维护实施顺序、切片范围、兼容迁移入口和 Goal 提示词。实际结果只记录在 [06 当前状态与最终汇总](06-status-tracker.md)，第一阶段验收证据见 [phase-1 验收](../../acceptance/phase-1.md)。
 
 ## 文档清理与执行计划
 
@@ -11,29 +11,17 @@
 | 顺序 | 工作与精确范围 | 完成条件 |
 | --- | --- | --- |
 | DOC-1 | 按 [ADR-0032](../adr/0032-infrastructure-admin-delivery-and-document-routing.md) 统一产品边界、授权识别与文档职责 | 所有活动入口都把基础设施＋Admin Web 作为第一阶段；文档集成依据用户最新明确合并授权，不外推代码实施或部署权限 |
-| DOC-2 | 精简根/计划 README 与 CLAUDE；将 06 旧固定状态、04 旧迁移步骤、07 旧 ADMIN 里程碑移到下方指定历史记录；删除重复收口报告 | 默认入口没有第二套当前顺序、陈旧暂停指令或重复源码清单；历史约束可查但不自动加载 |
+| DOC-2 | 精简根/计划 README 与 CLAUDE；删除旧固定状态、旧迁移步骤、旧 ADMIN 里程碑和重复收口报告 | 默认入口没有第二套当前顺序、陈旧暂停指令或重复源码清单；历史约束可查但不自动加载 |
 | DOC-3 | 核验本轮 diff、活动文档本地链接/锚点、HTML 结构、安全条款、被引用文件存在性及冻结输入字节 | 不修改契约/SQL/生成物/运行代码；只把实际通过的检查写入 06，不声称 runtime 或 Gate 验收 |
 | DOC-4 | worktree 复核后按用户最新明确授权集成当前分支 | 重叠草稿先备份，无关未提交改动、运行代码和历史提交保留；核对完整文档 diff 与引用，只提交相关路径，不 push；实际结果只记录在 06 |
 | BASE-M0～M5 | 下文的基础设施＋Admin Web 联合切片 | 对应后端、Admin 操作/状态/失败恢复、安全与真实验证同时达标；逐项完成 05 的 BASE-READY |
 | APP-M1 | 先交付 Anywhere Runtime/SDK，再承接完整用户对话、任务、审批、历史和结果 | BASE-READY 后按 §0.4 推进；Runtime 子范围采用 ANYWHERE-RUNTIME-V1，不改写 BASE 完成条件 |
 
-### 保留、清理与删除清单
+### 开源整理（2026-09-29）
 
-| 文件或范围 | 处置 | 原因、依赖与恢复 |
-| --- | --- | --- |
-| `README.md`、`CLAUDE.md`、`docs/plan/README.md`、本目录 `README.md` | 保留入口，删除重复计划、历史进度长段与易过期的源码库存 | 入口只路由，不拥有第二份顺序或状态；原文可由 Git 提交 `ed7d3ac5` 恢复 |
-| `01/02/03/04/05/06/07` | 保留并各司其职 | 当前架构、安全和执行规范；不按“文档多”删除有约束作用的正文 |
-| `06` 的旧 P0/P1 状态/决策/Gate registry/checklist | 归档到 [历史状态快照](history/06-status-tracker-20260905.md)；活动 06 只存当前状态和入口 | 原固定状态与批准仍可追溯；不把旧“HTTP absent / PAUSED”当作当前源码或全仓禁令 |
-| `04` 的旧 inventory/P0～P6/cutover/rollback 长段 | 归档到 [旧迁移计划](history/04-legacy-migration-plan.md) | 仅在实际涉及旧迁移/消费者时读取；其中数据迁移、回滚与删除的安全条件仍适用 |
-| `07` 的旧 ADMIN-M1～M4 实施链 | 归档到 [旧 Admin 里程碑及固定验收](history/07-legacy-admin-milestones.md#admin-web-v1) | 平台默认主线用 BASE；明确的旧任务继续按 ADMIN-WEB-V1 验收，两套范围不互相追加或豁免 |
-| `evidence/foundation-docs-realignment-20260905.md` | 删除重复的上轮文档整理报告，并移除索引链接 | 不是 Gate/E2E/生成器输入；本计划＋06 已承接结果；可从 `ed7d3ac5` 恢复 |
-| `docs/coding_agent_cloud_infrastructure_design.html` | 保留完整架构参考，同步边界并指向本计划 | 图和示例不是当前 API、全部技术已选定或后续增强已获准的声明 |
-| `docs/plan/synara-t3-cloud-agent-integration-architecture.md` | 保留后续消费者专题，移出默认执行阅读路径 | 不为当前第一阶段加载完整 T3/Synara 迁移；不得因此放宽已有消费者兼容要求 |
-| 已有 ADR、`p0/`、`p1/`、`standalone/`、`legacy/`、`references/`、固定 `evidence/G-*/` 与 `apps/*/*E2E*` | 保留路径与原字节，按需查询，不做批量删除 | 部分文件由生成锁、closure profile、review digest 或来源 manifest 引用；缺文件/改字节会让生成或校验失败 |
-| LICENSE、NOTICE、THIRD_PARTY_NOTICES、SOURCE_PROVENANCE、迁移 manifest、生成物/契约/SQL | 保留且本轮不改 | 法律、来源、ABI 和数据安全材料，不属于冗余说明 |
-| 未列明的其他删除目标 | 先列精确文件、替代入口、反向引用和恢复来源，再判断 | 不按日期、文件名带 old、无近期访问或“历史已通过”就推定可删；涉及独立批准边界时仅暂停该删除动作 |
+第一阶段结束后，为开源合并到 `dev` 删除了过程材料：P0 基线与清单、旧计划/旧状态（history）、legacy 方案、逐轮 evidence 报告、原始日志与截图、应用下的 E2E 流水报告和未被引用的视觉对比脚本。仍被生成锁、closure profile 或 review digest 按字节绑定的 ADR、`p1/`、`standalone/` 与 `evidence/G-*` 记录原样保留。旧迁移计划中仍有效的安全条件移至 [数据迁移、删除与回滚安全要求](migration-and-rollback-safety.md)。
 
-原稿主要风险及处理：`Admin 配套` 可能被解释为可后补 → 联合交付；多个入口的旧 `PAUSED` 与 `NOT STARTED` → 集中当前状态、历史按需；旧 `ADMIN-M*` 和 `P0～P6` 并列 → 只保留 BASE 当前顺序；“草案” → 不等于每个常规实现动作重新审批；删除证据 → 先查真实生成依赖。基础设施＋Admin 与用户对话边界不再按页面名称猜测。
+以后删除任何文件，先列精确文件、替代入口和反向引用（生成锁、CI、生成器、测试 fixture）；被字节绑定的文件只能随生成器变更一起移除。
 
 ### 每次如何继续
 
@@ -230,10 +218,10 @@ User/Admin 身份、API 与内容权限分离；普通用户调用 Admin API 返
 
 ## 1. 兼容、迁移与回滚的按需入口
 
-已有 Agent/Lease 调用方继续兼容；Workspace 数据归属和旧卷采用不能由文档更名隐式改变。实际涉及旧数据迁移、消费者 cutover 或破坏性回收时，读取[旧迁移/回滚安全要求](history/04-legacy-migration-plan.md)，核验授权、恢复点、N/N-1 与单一 writer，再执行该范围任务。不要为了新的 BASE 工作重新运行旧 P0 inventory 或提前实施 Synara/T3。
+已有 Agent/Lease 调用方继续兼容；Workspace 数据归属和旧卷采用不能由文档更名隐式改变。实际涉及旧数据迁移、消费者 cutover 或破坏性回收时，读取[数据迁移、删除与回滚安全要求](migration-and-rollback-safety.md)，核验授权、恢复点、N/N-1 与单一 writer，再执行该范围任务。不要为了新的 BASE 工作重新运行旧 P0 inventory 或提前实施 Synara/T3。
 
 ## 2. 当前文档规则
 
 - `04` 只描述计划和执行约束；`05` 只描述验收标准与 Gate；`06` 只描述最终实际状态；`07` 只描述 Admin Web 需求与设计。
-- 逐轮命令、候选版本、日志 digest、修复过程和旧阻塞记录不再复制到活动计划；需要审计时从 `evidence/`、`history/` 或其固定引用进入。
+- 逐轮命令、候选版本、日志 digest、修复过程和旧阻塞记录不再复制到活动计划；需要审计时从 [phase-1 验收](../../acceptance/phase-1.md) 或冻结 `evidence/` 记录进入。
 - 不因文档收口改变契约、迁移、安全、兼容、权限、数据保留或正式 Gate 规则。

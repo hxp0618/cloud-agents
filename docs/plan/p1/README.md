@@ -1,22 +1,53 @@
-# P1 审计材料索引
+# P1 冻结审计记录
 
-本目录保存 P1 契约、数据内核、恢复、身份、供给链、实现和 independent review 记录，是历史/技术证据入口。详细文件中的 `IN PROGRESS`、`OPEN`、`BLOCKED`、候选和阶段结果保留为历史事实，不代表当前 Cloud Agents 状态；当前状态只认 [06](../cloud-agents-platform/06-status-tracker.md)。
+本目录只保留仍被生成锁、closure profile 或 review digest 按路径和字节绑定的冻结记录。文件内容不可修改；其中指向已删除的过程材料的链接保留原样，属于历史事实。完整过程记录已在开源整理前归档，不随公开仓库发布。当前状态只认 [06](../cloud-agents-platform/06-status-tracker.md)。
 
-## 规范来源
+决策见 [ADR 索引](../adr/README.md)，契约原文见 [references](../references/README.md)。
 
-P1 决策集中在 [ADR 索引](../adr/README.md)，尤其是 ADR-0007–ADR-0030。契约原文见 [references/contracts](../references/README.md)。
+## 文件
 
-## Canonical evidence
-
-- [G-CONTRACT R4](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md) 与 [independent review](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)。
-- [G-DATA R1](../cloud-agents-platform/evidence/G-DATA/CAG-G-DATA-P1-20260823-R1.md) 与 [independent review](../cloud-agents-platform/evidence/G-DATA/CAG-G-DATA-P1-20260823-R1-independent-review.md)。
-- [G-AUTHORITY P1 R1](../cloud-agents-platform/evidence/G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1.md) 与 [independent review](../cloud-agents-platform/evidence/G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1-independent-review.md)。
-- [G-SECURITY P1 R1](../cloud-agents-platform/evidence/G-SECURITY/P1/CAG-G-SECURITY-P1-20260823-R1.md) 与 [independent review](../cloud-agents-platform/evidence/G-SECURITY/P1/CAG-G-SECURITY-P1-20260823-R1-independent-review.md)。
-- [Aggregate Gate gap audit](p1-aggregate-gate-gap-audit-20260822.md) 与 [independent review](p1-aggregate-gate-gap-audit-independent-review-20260822.md)。
-- [Runtime closure authority](g-contract-runtime-closure-profile-v4-authority-20260828.md) 与 [independent review](g-contract-runtime-closure-profile-v4-independent-review-20260828.md)。
-
-## 文件边界
-
-- 本目录的实现、复核、日志和机器输入按需访问；不把逐轮命令、运行编号、digest 或修复过程复制到活动文档。
-- independent review 只作为审计依据，不自动关闭 Gate；当前汇总和 Gate 状态回到 [06](../cloud-agents-platform/06-status-tracker.md)。
-- 当前实施顺序见 [04](../cloud-agents-platform/04-extraction-and-migration.md)，验收规则见 [05](../cloud-agents-platform/05-gates-and-acceptance.md)。
+- [tibility-recovery-service-entry-blocker-20260820.md](tibility-recovery-service-entry-blocker-20260820.md)
+- [dency-reviews/ajv-8.20.0.md](dency-reviews/ajv-8.20.0.md)
+- [dency-reviews/contract-standards-toolchain-20260823.md](dency-reviews/contract-standards-toolchain-20260823.md)
+- [dency-reviews/proto-sdk-toolchain-20260821.md](dency-reviews/proto-sdk-toolchain-20260821.md)
+- [dency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md](dency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md)
+- [dency-reviews/x-text-v0.39.0.md](dency-reviews/x-text-v0.39.0.md)
+- [le-project-create-identifier-hardening-independent-review-20260826.md](le-project-create-identifier-hardening-independent-review-20260826.md)
+- [le-project-create-identifier-hardening-successor-entry-20260826.md](le-project-create-identifier-hardening-successor-entry-20260826.md)
+- [le-project-create-migration-bundle-successor-20260827.md](le-project-create-migration-bundle-successor-20260827.md)
+- [le-project-create-migration-bundle-successor-independent-review-20260827.md](le-project-create-migration-bundle-successor-independent-review-20260827.md)
+- [tract-closure-profile-v3-independent-review-20260824.md](tract-closure-profile-v3-independent-review-20260824.md)
+- [tract-current-source-contract-standards-profile-repair-20260826.md](tract-current-source-contract-standards-profile-repair-20260826.md)
+- [tract-current-source-external-consumer-successor-authorization-20260826.md](tract-current-source-external-consumer-successor-authorization-20260826.md)
+- [tract-current-source-external-consumer-successor-v2-authorization-20260826.md](tract-current-source-external-consumer-successor-v2-authorization-20260826.md)
+- [tract-current-source-phase-successor-design-independent-review-20260825.md](tract-current-source-phase-successor-design-independent-review-20260825.md)
+- [tract-current-source-phase-successor-repair-independent-review-20260825.md](tract-current-source-phase-successor-repair-independent-review-20260825.md)
+- [tract-current-source-superseding-repair-authorization-20260826.md](tract-current-source-superseding-repair-authorization-20260826.md)
+- [tract-detached-review-binding-independent-review-20260824.md](tract-detached-review-binding-independent-review-20260824.md)
+- [tract-external-consumer-successor-independent-review-20260826.md](tract-external-consumer-successor-independent-review-20260826.md)
+- [tract-external-consumer-successor-v2-authority-implementation-20260826.md](tract-external-consumer-successor-v2-authority-implementation-20260826.md)
+- [tract-external-consumer-v2-independent-review-20260826.md](tract-external-consumer-v2-independent-review-20260826.md)
+- [tract-generator-supply-offline-wheelhouse-implementation-20260824.md](tract-generator-supply-offline-wheelhouse-implementation-20260824.md)
+- [tract-generator-supply-offline-wheelhouse-independent-review-20260824.md](tract-generator-supply-offline-wheelhouse-independent-review-20260824.md)
+- [tract-generator-supply-profile-implementation-20260824.md](tract-generator-supply-profile-implementation-20260824.md)
+- [tract-generator-supply-profile-independent-review-20260824.md](tract-generator-supply-profile-independent-review-20260824.md)
+- [tract-generator-supply-profile-v2-independent-review-20260824.md](tract-generator-supply-profile-v2-independent-review-20260824.md)
+- [tract-post-h-current-source-successor-entry-audit-20260825.md](tract-post-h-current-source-successor-entry-audit-20260825.md)
+- [tract-r5-b1-ajv-official-suite-audit-20260824.md](tract-r5-b1-ajv-official-suite-audit-20260824.md)
+- [tract-r5-b1-ajv-official-suite-audit-independent-review-20260824.md](tract-r5-b1-ajv-official-suite-audit-independent-review-20260824.md)
+- [tract-r5-b2-official-suite-evidence-closure-20260824.md](tract-r5-b2-official-suite-evidence-closure-20260824.md)
+- [tract-r5-formal-closure-profile-implementation-20260824.md](tract-r5-formal-closure-profile-implementation-20260824.md)
+- [tract-runtime-closure-profile-v4-authority-20260828.md](tract-runtime-closure-profile-v4-authority-20260828.md)
+- [tract-runtime-current-lineage-integration-independent-review-20260824.md](tract-runtime-current-lineage-integration-independent-review-20260824.md)
+- [tract-runtime-current-lineage-rebind-independent-review-20260828.md](tract-runtime-current-lineage-rebind-independent-review-20260828.md)
+- [tract-standards-independent-review-r3-20260823.md](tract-standards-independent-review-r3-20260823.md)
+- [ity-verifier-authz-binder-independent-review-20260824.md](ity-verifier-authz-binder-independent-review-20260824.md)
+- [ity-verifier-entry-20260823.md](ity-verifier-entry-20260823.md)
+- [tion-ledger-preflight-entry-blocker-20260821.md](tion-ledger-preflight-entry-blocker-20260821.md)
+- [r-ledger-consumer-entry-blocker-20260821.md](r-ledger-consumer-entry-blocker-20260821.md)
+- [r-ledger-entry-writer-contract-audit-20260822.md](r-ledger-entry-writer-contract-audit-20260822.md)
+- [r-ledger-recovery-contract-audit-20260822.md](r-ledger-recovery-contract-audit-20260822.md)
+- [r-ledger-recovery-contract-decision-20260822.md](r-ledger-recovery-contract-decision-20260822.md)
+- [dentity-closure-entry-20260820.md](dentity-closure-entry-20260820.md)
+- [dentity-closure-independent-review-20260821.md](dentity-closure-independent-review-20260821.md)
+- [roto-consumer-closure-20260821.md](roto-consumer-closure-20260821.md)

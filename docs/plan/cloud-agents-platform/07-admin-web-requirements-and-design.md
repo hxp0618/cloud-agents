@@ -702,7 +702,7 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 | 独立鉴权/部署隔离、视觉和完整运维回归 | 从首条相关路径持续验证，BASE-M5 收口 |
 | Codex/Claude Turn E2E | 既有兼容回归可运行；新用户产品完整验收归 APP-M1，不阻塞无 Agent 底座开发 |
 
-旧 ADMIN-M1～M4 定义及固定验收在 [ADMIN-WEB-V1](history/07-legacy-admin-milestones.md#admin-web-v1) 查询；旧报告不改名、不改结论。它们不提供平台默认下一步，也不把 Agent Turn 设为 BASE 前置条件；仍以原 M1～M4 为范围的有效任务按该固定验收执行，不因归档失去原范围或被自动切换为 BASE。
+旧 ADMIN-M1～M4 已随第一阶段完成，其固定验收为 ADMIN-WEB-V1（见下方 §15）。它们不提供平台默认下一步，也不把 Agent Turn 设为 BASE 前置条件；仍以原 M1～M4 为范围的有效任务按该固定验收执行，不因归档失去原范围或被自动切换为 BASE。
 
 ## 15. 实现验收标准
 
@@ -716,7 +716,7 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 
 ### ADMIN-WEB-V1
 
-完整固定条件见 [旧 Admin 任务验收基线](history/07-legacy-admin-milestones.md#admin-web-v1)。原提示词明确列出 User/Admin 拆分的 M1～M4，却只引用“第 15 节全部标准”时，该引用指向 ADMIN-WEB-V1，不追随本节后续新增的 BASE 条件。
+ADMIN-M1～M4 已完成；详细里程碑记录已在开源整理前归档。原提示词明确列出 User/Admin 拆分的 M1～M4，却只引用“第 15 节全部标准”时，该引用指向 ADMIN-WEB-V1，不追随本节后续新增的 BASE 条件。
 不得因此删去原任务要求的 Docker/Kubernetes/SSH 与真实 Codex/Claude Session/Turn 验收；也不得要求该旧任务补齐 outbound RemoteWorker 或独立 Workspace/Sandbox 才能完成。
 
 ### BASE-ADMIN-V1
@@ -744,7 +744,7 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 
 ## 16. 状态入口
 
-本文只维护 Admin Web 的需求、信息架构、交互与验收设计。实现进度和最终实际结果统一读取 [06](06-status-tracker.md)；历史运行明细保留在 `evidence/` 与 `history/`。
+本文只维护 Admin Web 的需求、信息架构、交互与验收设计。实现进度和最终实际结果统一读取 [06](06-status-tracker.md)；第一阶段验收证据见 [phase-1 验收](../../acceptance/phase-1.md)。
 
 ## 17. 参考
 

@@ -16,6 +16,20 @@ The portable Runtime keeps its host-neutral JavaScript/stdio ABI. Synara and T3 
 
 The seven Runtime packages and the public Control Plane SDK use the independent `@cloud-agents/*` namespace. They do not depend on a Synara application root or T3-private package.
 
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `services/control-plane`, `services/worker` | Go Control Plane (API, reconcilers, PostgreSQL migrations) and Worker |
+| `apps/admin-web`, `apps/user-web` | Admin Web console and user web client (Vite + React) |
+| `packages/` | Portable Runtime, protocol and Provider packages (`@cloud-agents/*`) |
+| `contracts/` | Wire contracts — the editable source for generated SDKs ([README](contracts/README.md)) |
+| `sdk/go`, `sdk/typescript` | Generated Control Plane SDKs; regenerate, never hand-edit |
+| `deploy/` | Docker, Compose and Helm deployment assets |
+| `scripts/` | Checks, generators, local dev and E2E harnesses |
+| `tools/` | Pinned generator supply, contract standards and identity verifier tooling |
+| `docs/` | [Plans and design](docs/plan/README.md), [phase-1 acceptance](docs/acceptance/phase-1.md), [release candidate](docs/release-candidate.md) |
+
 ## Runtime baseline
 
 - Node.js `24.18.1`
@@ -31,7 +45,7 @@ The coordinated RC keeps every internal package edge as an exact peer pin. Consu
 
 ## Local development
 
-With the pinned Node.js, Bun, and Go versions on `PATH` and Docker running:
+With the toolchain pinned in `.mise.toml` (Node.js, Bun, Go, Python, uv, Helm) on `PATH` — for example via `mise install` and `mise exec --` — and Docker running:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
@@ -52,6 +66,8 @@ bun run build
 bun run secret:scan
 node scripts/cloud-agent-release-smoke.ts --output-dir candidate
 ```
+
+The Go, contract and migration checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md). Contract checks verify the exact toolchain versions, so run them under `mise exec --`.
 
 The release smoke emits seven read-only tarballs, a standalone runtime, checksums, an SPDX 2.3 SBOM, SLSA-shaped provenance, and a candidate manifest. See `docs/release-candidate.md` for the exact boundary.
 
