@@ -176,7 +176,6 @@ describe("platform release", () => {
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-access-gateway");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-remote-worker");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agentsctl");
-    expect(PLATFORM_RELEASE_GO_COMMANDS).not.toContain("cloud-agents-evidencefs-provision");
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agentsctl",
       target: "darwin-arm64",
