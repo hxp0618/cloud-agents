@@ -305,9 +305,10 @@ is intentionally published through the versioned successor authority under
 `successor/000014/`. Its generated manifest/schema bundle and profile consume
 the exact `000013` bundle as a single predecessor and add only the SHA-256
 identifier replacement. The canonical `manifest.json` and `schema-bundle.json`
-remain at head `000013`; use
-`scripts/generate-platform-migration-bundle-successor.ts` to build or check the
-read-only successor runtime projection. A complete ledger is a no-op and entry
+remain at head `000013`. The successor artifacts are frozen: the generator that
+built them depended on the retired `internal/migration` package and has been
+removed, and the `successor-000014` runner binding in `internal/localmigration`
+remains the consumer that checks their exact bytes. A complete ledger is a no-op and entry
 or recovery writers remain `NOT_IMPLEMENTED`; this successor is not a
 production installation or release artifact.
 
