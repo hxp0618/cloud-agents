@@ -8,7 +8,7 @@ Use only a separately configured local SSH host alias for development access; do
 
 - Current execution plan: [04](docs/plan/cloud-agents-platform/04-extraction-and-migration.md).
 - Current status and next item: [06](docs/plan/cloud-agents-platform/06-status-tracker.md).
-- Authority, clarification and approval rules: [docs/plan/README.md](docs/plan/README.md#source-of-truth).
+- Authority, clarification and approval rules: [docs/plan/README.md](docs/plan/README.md#规范来源).
 - Read only the relevant numbered design, contract and source files after those entry points. Do not preload historical plans, old pause/checklists or all evidence.
 
 ## Product boundary
