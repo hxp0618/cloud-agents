@@ -25,7 +25,7 @@ import (
 )
 
 func TestParseLocalWorkerConfigRejectsNonLoopback(t *testing.T) {
-	for _, address := range []string{"0.0.0.0:8091", ":8091", "192.168.31.234:8091", "worker.test:8091", "127.0.0.1"} {
+	for _, address := range []string{"0.0.0.0:8091", ":8091", "192.0.2.10:8091", "worker.test:8091", "127.0.0.1"} {
 		if _, err := parseLocalWorkerConfig([]string{"--listen", address}); !errors.Is(err, errNonLoopbackListen) {
 			t.Errorf("%q error = %v, want loopback rejection", address, err)
 		}
@@ -59,7 +59,7 @@ func TestParseLocalWorkerConfigAcceptsBoundedRuntimeMode(t *testing.T) {
 }
 
 func TestRunMainReturnsFailureWithoutExitingProcess(t *testing.T) {
-	err := runMain([]string{"--listen", "192.168.31.234:8091", "--token-file", filepath.Join(t.TempDir(), "token")}, context.Background())
+	err := runMain([]string{"--listen", "192.0.2.10:8091", "--token-file", filepath.Join(t.TempDir(), "token")}, context.Background())
 	if !errors.Is(err, errNonLoopbackListen) {
 		t.Fatalf("runMain error = %v, want loopback rejection", err)
 	}
@@ -149,7 +149,7 @@ func TestLocalWorkerAuthMiddlewareBindsOnlyFixedIdentity(t *testing.T) {
 		"missing token":  func(req *http.Request) {},
 		"wrong token":    func(req *http.Request) { req.Header.Set("Authorization", "Bearer wrong") },
 		"duplicate":      func(req *http.Request) { req.Header.Add("Authorization", "Bearer token-alpha") },
-		"non-loopback":   func(req *http.Request) { req.RemoteAddr = "192.168.31.234:4242" },
+		"non-loopback":   func(req *http.Request) { req.RemoteAddr = "192.0.2.10:4242" },
 		"malformed-peer": func(req *http.Request) { req.RemoteAddr = "127.0.0.1:not-a-port" },
 	} {
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/test", nil)

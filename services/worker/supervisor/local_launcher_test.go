@@ -26,7 +26,7 @@ func TestValidateLocalLauncherEndpoint(t *testing.T) {
 	}
 	invalid := []string{
 		"", "https://127.0.0.1:8091", "http://localhost:8091", "http://0.0.0.0:8091",
-		"http://192.168.31.234:8091", "http://127.0.0.1:0", "http://127.0.0.1:65536",
+		"http://192.0.2.10:8091", "http://127.0.0.1:0", "http://127.0.0.1:65536",
 		"http://127.0.0.1:not-a-port", "http://user@127.0.0.1:8091", "http://127.0.0.1:8091/path",
 		"http://127.0.0.1:8091/?x=1", "http://127.0.0.1:8091/#frag", "http://[::1%25lo0]:8091",
 	}

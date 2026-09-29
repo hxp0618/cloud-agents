@@ -73,7 +73,7 @@ func TestValidateLoopbackListenAddress(t *testing.T) {
 			t.Errorf("%s: %v", address, err)
 		}
 	}
-	for _, address := range []string{"0.0.0.0:8080", ":8080", "192.168.31.234:8080", "localhost:8080", "example.test:8080"} {
+	for _, address := range []string{"0.0.0.0:8080", ":8080", "192.0.2.10:8080", "localhost:8080", "example.test:8080"} {
 		if !errors.Is(validateLoopbackListenAddress(address), errNonLoopbackListen) {
 			t.Errorf("%s should be rejected", address)
 		}
@@ -96,10 +96,10 @@ func TestParseLoopbackDatabaseConfig(t *testing.T) {
 		}
 	}
 	for _, databaseURL := range []string{
-		"postgres://runtime@192.168.31.234:5432/cloud_agents?sslmode=disable",
+		"postgres://runtime@192.0.2.10:5432/cloud_agents?sslmode=disable",
 		"postgres://runtime@example.test:5432/cloud_agents?sslmode=disable",
 		"postgres://runtime@localhost:5432/cloud_agents?sslmode=disable",
-		"postgres://runtime@127.0.0.1:5432,192.168.31.234:5432/cloud_agents?sslmode=disable",
+		"postgres://runtime@127.0.0.1:5432,192.0.2.10:5432/cloud_agents?sslmode=disable",
 		"not-a-database-url",
 	} {
 		if _, err := parseLoopbackDatabaseConfig(databaseURL); !errors.Is(err, errNonLoopbackDatabase) {

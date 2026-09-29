@@ -331,8 +331,8 @@ func TestParseLocalPGXConfigRejectsEveryNonLocalTarget(t *testing.T) {
 	}
 	for _, databaseURL := range []string{
 		"postgres://migration@localhost:5432/cloud_agents?sslmode=disable",
-		"postgres://migration@192.168.31.234:5432/cloud_agents?sslmode=disable",
-		"postgres://migration@127.0.0.1:5432,192.168.31.234:5432/cloud_agents?sslmode=disable",
+		"postgres://migration@192.0.2.10:5432/cloud_agents?sslmode=disable",
+		"postgres://migration@127.0.0.1:5432,192.0.2.10:5432/cloud_agents?sslmode=disable",
 		"not-a-database-url",
 	} {
 		if _, err := parseLocalPGXConfig(databaseURL); err == nil {
