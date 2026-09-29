@@ -24,8 +24,11 @@ const operatorNamespace = `${run}-ops`;
 const postgresName = `${run}-postgres`;
 const sandboxServerName = `${run}-opensandbox`;
 const credentialRef = "kubernetes-live";
-const kubeconfig = "/Users/huang/.kube/orbstack-config.yaml";
-const context = "orbstack";
+const kubeconfig = process.env.KUBECONFIG;
+const context = process.env.CLOUD_AGENTS_KUBERNETES_CONTEXT ?? "orbstack";
+if (!kubeconfig) {
+  throw new Error("KUBECONFIG must point to the kubeconfig for the test cluster");
+}
 const managerRole = "opensandbox-manager-role";
 const versionRole = `${run}-version`;
 const versionBinding = `${run}-version`;
