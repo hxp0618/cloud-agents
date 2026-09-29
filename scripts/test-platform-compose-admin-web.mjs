@@ -406,7 +406,7 @@ try {
     writeFileSync(fullUserTokenFile, adminDeniedToken, { mode: 0o600 });
     const captureScript = fileURLToPath(
       new URL(
-        "../apps/admin-web/visual-baseline/daytona-v0.190.0/capture-actual.mjs",
+        "./e2e/admin-visual/capture-actual.mjs",
         import.meta.url,
       ),
     );

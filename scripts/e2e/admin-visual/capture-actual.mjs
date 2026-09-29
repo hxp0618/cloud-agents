@@ -26,7 +26,7 @@ const runtimeProfileName =
   process.env.CLOUD_AGENTS_ADMIN_CAPTURE_RUNTIME_PROFILE ?? "visual-runtime";
 const sandboxName = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_SANDBOX ?? "visual-sandbox";
 const referenceBytes = readFileSync(
-  new URL("./reference-corrected/reference-evidence.json", import.meta.url),
+  new URL("./reference-evidence.json", import.meta.url),
 );
 const referenceEvidence = JSON.parse(referenceBytes);
 assert.equal(referenceEvidence.commit, "01c502bb1f1ff8f2885d0cd490e043736083dca8");
