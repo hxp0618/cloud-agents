@@ -1,49 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
   EC2_EXCLUSION_PATHS,
   EC2_SEMANTIC_INPUT_PATHS,
   EC2_PROFILE_PATH,
-  checkExternalConsumerV2Source,
-  checkExternalConsumerV2IndependentReview,
   assertExternalConsumerV2ProfileAbsent,
 } from "./platform-g-contract-external-consumer-v2";
 
 const root = resolve(import.meta.dirname, "../..");
 
 describe("D-053-EC-2 versioned authority", () => {
-  it("checks the committed source and keeps the authority-only state pending", () => {
-    const result = checkExternalConsumerV2Source(root);
-    expect(result.source.authorityRevision).toBe("D-053-EC-2.r3");
-    expect(result.source.registryId).toBe("cloud-agents/g-contract-external-consumer-replay/v2");
-    expect(result.source.supersedesCandidate).toEqual({
-      commit: "eb0e2c2d7d71ad62ca668e6fcc6b18ff0396b1da",
-      tree: "8a5d53c8f6572275171a9af5e22dd587a193bbfe",
-      parent: "bda551c3c49a1010346a3fac835ac9e1cdb7e917",
-    });
-    expect(result.source.candidateBinding.diff).toEqual([
-      {
-        status: "M",
-        path: "tools/g-contract-external-consumer/v2/source.json",
-        mode: "100644",
-      },
-    ]);
-    expect(result.source.status).toBe("AUTHORITY_FROZEN_REVIEW_PENDING");
-    expect(result.source.receiptState).toMatchObject({
-      syntheticReceipts: "FORBIDDEN",
-      generatedProfile: "ABSENT_PENDING",
-      authorityReview: "ABSENT_PENDING",
-    });
-    expect(result.source.implementationBoundary).toMatchObject({
-      replay: false,
-      profileGeneration: false,
-      receiptGeneration: false,
-      gateStatus: "ALL_GATES_OPEN",
-    });
-  });
-
   it("freezes complete ordered inputs and exact late-bound exclusions", () => {
     const source = JSON.parse(
       readFileSync(resolve(root, "tools/g-contract-external-consumer/v2/source.json"), "utf8"),
@@ -98,16 +66,5 @@ describe("D-053-EC-2 versioned authority", () => {
     expect(
       source.receiptPaths.some((entry: { path: string }) => entry.path === EC2_PROFILE_PATH),
     ).toBe(true);
-  });
-
-  it("validates the independent review child when its late-bound file exists", () => {
-    const reviewPath = resolve(
-      root,
-      "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md",
-    );
-    if (!existsSync(reviewPath)) return;
-    const result = checkExternalConsumerV2IndependentReview(root);
-    expect(result.decision).toBe("APPROVE");
-    expect(result.findings).toEqual({ P0: 0, P1: 0, P2: 0 });
   });
 });

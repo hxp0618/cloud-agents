@@ -127,7 +127,7 @@ func TestMountAuthorityHasNoReverseEvidenceDependencyOrEnvironmentOverride(t *te
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.HasSuffix(importPath, "/internal/evidencefs") || strings.HasSuffix(importPath, "/internal/migration") {
+			if strings.HasSuffix(importPath, "/internal/evidencefs") || strings.HasSuffix(importPath, "/internal/migrationcore") {
 				t.Fatalf("reverse authority dependency in %s: %s", path, importPath)
 			}
 		}

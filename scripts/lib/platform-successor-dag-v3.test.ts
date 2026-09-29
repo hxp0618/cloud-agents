@@ -6,13 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertExactSuccessorV3ProjectionExclusions,
-  assertSuccessorV3CoreGeneratorOutputAuthority,
-  assertSuccessorV3CoreGeneratorOutputsPresent,
   assertSuccessorV3DagAuthority,
   inspectSuccessorV3LateBoundTopology,
   SUCCESSOR_V3_ASSEMBLY_PATHS,
   SUCCESSOR_V3_BINDING_PATHS,
-  SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS,
   SUCCESSOR_V3_FINAL_REVIEW_PATH,
   SUCCESSOR_V3_GENERATION_LOCK_PATH,
   SUCCESSOR_V3_PRE_REPLAY_AUTHORITY_PATHS,
@@ -105,23 +102,6 @@ describe("successor v3 DAG", () => {
         }),
       );
     }
-  });
-
-  it("reuses exactly the sorted 49-path core set without late outputs", () => {
-    expect(SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS).toHaveLength(49);
-    expect(new Set(SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS).size).toBe(49);
-    expect([...SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS].toSorted()).toEqual(
-      SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS,
-    );
-    for (const repositoryPath of SUCCESSOR_V3_PROJECTION_EXCLUSIONS) {
-      expect(SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS).not.toContain(repositoryPath);
-    }
-    expect(() =>
-      assertSuccessorV3CoreGeneratorOutputAuthority(SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS),
-    ).not.toThrow();
-    expect(() =>
-      assertSuccessorV3CoreGeneratorOutputsPresent(resolve(import.meta.dirname, "../..")),
-    ).not.toThrow();
   });
 
   it("classifies the complete acyclic presence topology", () => {

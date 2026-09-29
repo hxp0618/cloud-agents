@@ -1,0 +1,450 @@
+--- services/control-plane/migrations/product/000063/catalog/schema-000062.json
++++ services/control-plane/migrations/product/000064/catalog/schema-000063.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000063",
++  "schema_head": "000064",
+@@ -20418,0 +20419,272 @@
++    },
++    {
++      "migration_id": "000064",
++      "sql_sha256": "sha256:bc0e8776aa29b2f8c6d46b293cd4b06fdd9b9ab16611218c832402a169c61779",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 1588,
++          "sha256": "sha256:6e4c3925d9c7c1a54c867efc0df17d9aa85dbab1585ddd2ae51102f73c39d224",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 1588,
++          "end": 1694,
++          "sha256": "sha256:1883c8c541a2694aa5f705beac8e7c0aad598520cefd2937cd06d2aa4ca58223",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "UPDATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 1694,
++          "end": 3915,
++          "sha256": "sha256:57250618bdf7273e0eb6c5cc03c2f05bdbfa7647d175c4db3da72a37f3a39593",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 3915,
++          "end": 4258,
++          "sha256": "sha256:c2ee4fe4e29b2c09edd13a541c7f7525a729135bce93029de1d132696a3722da",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:initialize_remote_worker_certificate_state_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 4258,
++          "end": 4477,
++          "sha256": "sha256:2f1185dba6e9c77ff458063251f93663d59a858b36dc38770dcab852549b915c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:initialize_remote_worker_certificate_state_v1",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 4477,
++          "end": 8100,
++          "sha256": "sha256:d3f878df98e2189401538f213b3c891218e7a33b986686864a5b60721546d3ec",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authorize_remote_worker_certificate_rotation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 8100,
++          "end": 14974,
++          "sha256": "sha256:1b8e2acd2e5408858330c60f71c39c1f2968da57022d12aab581f5994788c32f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:rotate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 14974,
++          "end": 20874,
++          "sha256": "sha256:c96639858a1318e9408dacf340be16c541a525a3889f4a6c2c1169f5cba07b98",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:revoke_remote_worker_enrollment_or_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 20874,
++          "end": 20990,
++          "sha256": "sha256:b13d8999a47117bca85a143b72e80ee4d009e179bd4ed359316d7807462431bd",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:initialize_remote_worker_certificate_state_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 20990,
++          "end": 21148,
++          "sha256": "sha256:82c1b2945e72b9e1665cee428aa58144cd878972f0789e88b6e5c9fabd58bfe2",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authorize_remote_worker_certificate_rotation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 21148,
++          "end": 21353,
++          "sha256": "sha256:c83450157f26a932ab686dd2f1b809044ee24fe042cd953e4125b116ed11bbbd",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:rotate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 21353,
++          "end": 21518,
++          "sha256": "sha256:d6b2e1b62ecd007c6cab5b8c1640a9cf230ecd112086ad537223c8d10c8cfc35",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:revoke_remote_worker_enrollment_or_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 21518,
++          "end": 21615,
++          "sha256": "sha256:1151f452e02993a1b029a2d84f8f5ea8d267eb55c274e12f330d1d4fcf69133a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:initialize_remote_worker_certificate_state_v1()",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 21615,
++          "end": 21755,
++          "sha256": "sha256:12cf40646b2158d333e3f16832984154c21d9c0f51c881626dc17caf15a0ddd6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authorize_remote_worker_certificate_rotation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 21755,
++          "end": 21942,
++          "sha256": "sha256:71fa34091e4e6981d8877a23c253e1cc375e3c71dc22249e855acaf263827ecc",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:rotate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 21942,
++          "end": 22089,
++          "sha256": "sha256:17b668be4f73cbb850ac6f73522eaef1f1953f584dc0966f24c6350d79d535d4",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:revoke_remote_worker_enrollment_or_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 22089,
++          "end": 22244,
++          "sha256": "sha256:c457513d1a767100c2bc7503cc0797d9b1488605e423193acf9329925dc08dde",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authorize_remote_worker_certificate_rotation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 22244,
++          "end": 22446,
++          "sha256": "sha256:a7c4906c169b59ce2f88b1a47139d320d9f45ad63f5cfaacafb341f01c685e20",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:rotate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 18,
++          "start": 22446,
++          "end": 22608,
++          "sha256": "sha256:16f53c9c63bf13ac784d65f65e71c6d3e710e9c8b2175c5d51644f31ece6d4d8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:revoke_remote_worker_enrollment_or_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -29614,0 +29887,171 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "initialize_remote_worker_certificate_state_v1",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "authorize_remote_worker_certificate_rotation_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "rotate_remote_worker_certificate_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "revoke_remote_worker_enrollment_or_certificate_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"

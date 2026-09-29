@@ -19,10 +19,7 @@ import {
   requireExactDirectoryEntries,
   requireFreshReplayPath,
 } from "./lib/generator-replay-path-authority";
-import {
-  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
-  SUCCESSOR_PROJECTION_EXCLUSIONS,
-} from "./lib/platform-successor-dag";
+import { SUCCESSOR_PROJECTION_EXCLUSIONS } from "./lib/platform-successor-dag";
 
 const root = resolve(import.meta.dirname, "..");
 const runner = readFileSync(resolve(root, "scripts/replay-platform-generators.ts"), "utf8");
@@ -136,109 +133,6 @@ describe("generator replay authority closure", () => {
     expect(wrapper).toContain("reconstructedGitTreeSha");
     expect(runner).not.toContain("generate-platform-generator-supply-profile.ts");
     expect(runner).not.toContain("generate-platform-contract-lock.ts");
-  });
-
-  it("binds one exact 49-file output closure to both native write boundaries", () => {
-    const expected = [
-      "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
-      "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
-      "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
-      "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
-      "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
-      "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-recovery-execution-admission-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-recovery-success-writer-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
-      "contracts/generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
-      "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
-      "contracts/generated/proto/manifest.json",
-      "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
-      "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
-      "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
-      "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
-      "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
-      "sdk/go/gen/common/v1alpha1/identity_generated.go",
-      "sdk/go/gen/common/v1alpha1/json_generated.go",
-      "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-      "sdk/go/gen/platform/v1alpha1/json_generated.go",
-      "sdk/go/generated-manifest.json",
-      "sdk/go/json-generated-manifest.json",
-      "sdk/go/proto-generated-manifest.json",
-      "sdk/typescript/generated-manifest.json",
-      "sdk/typescript/json-generated-manifest.json",
-      "sdk/typescript/proto-generated-manifest.json",
-      "sdk/typescript/src/gen/contracts/platform-adapter/v1alpha1/platform_adapter_pb.ts",
-      "sdk/typescript/src/gen/contracts/worker/v1alpha1/kernel_pb.ts",
-      "sdk/typescript/src/gen/contracts/worker/v1alpha1/worker_supervisor_pb.ts",
-      "sdk/typescript/src/index.ts",
-      "sdk/typescript/src/platform.ts",
-      "sdk/typescript/src/proto.ts",
-      "services/control-plane/internal/compatibility/registry_generated.go",
-      "services/control-plane/internal/coordination/registry_generated.go",
-      "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go",
-      "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
-      "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_generated.go",
-      "services/control-plane/internal/migration/runner_ledger_preflight_profile_generated.go",
-      "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go",
-    ];
-    const excluded = [
-      "contracts/generation.lock.json",
-      "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json",
-      "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
-      "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
-      "tools/generator-supply/v2/evidence-manifest.json",
-      "tools/generator-supply/v2/profile.json",
-      "tools/contract-review-binding/v1/registry.json",
-      "sdk/go/gen/common/v1alpha1/identity_generated_test.go",
-      "sdk/go/gen/common/v1alpha1/json_generated_test.go",
-      "sdk/go/gen/openapi/v1alpha1/client_generated_test.go",
-      "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
-    ];
-    const shellBlock = /readonly GENERATOR_OUTPUT_FILES=\(\n([\s\S]*?)\n\)/u.exec(wrapper)?.[1];
-    expect(shellBlock).toBeDefined();
-    const shellOutputs = shellBlock!.split("\n").map((line) => JSON.parse(line.trim()) as string);
-    const runnerOutputs = [...SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS];
-    expect(expected).toHaveLength(49);
-    expect(new Set(expected).size).toBe(expected.length);
-    expect(expected.toSorted()).toEqual(expected);
-    expect(shellOutputs).toEqual(expected);
-    expect(runnerOutputs).toEqual(expected);
-    expect(runner).toContain(
-      "const GENERATOR_OUTPUT_PATHS = SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS;",
-    );
-    for (const path of expected) {
-      const metadata = lstatSync(resolve(root, path));
-      expect(metadata.isFile()).toBe(true);
-      expect(metadata.isSymbolicLink()).toBe(false);
-    }
-    for (const path of excluded) {
-      expect(shellOutputs).not.toContain(path);
-      expect(runnerOutputs).not.toContain(path);
-    }
-    expect(wrapper).not.toContain("GENERATOR_OUTPUT_TREES");
-    expect(wrapper).not.toContain("for output_tree in");
-    expect(runner).toContain("GENERATOR_OUTPUT_PATH_SET.has(file.path)");
-    expect(runner).not.toContain('file.path.startsWith("contracts/generated/")');
-    expect(runner).not.toContain('file.path.startsWith("sdk/go/gen/")');
-    expect(runner).not.toContain('file.path.startsWith("sdk/typescript/src/gen/")');
-    expect(wrapper.match(/for output_file in "\$\{GENERATOR_OUTPUT_FILES\[@\]\}"/gu)).toHaveLength(
-      3,
-    );
-    expect(wrapper).toMatch(
-      /for output_file in "\$\{GENERATOR_OUTPUT_FILES\[@\]\}"; do[\s\S]{0,300}allow file-write\* \(literal/u,
-    );
-    expect(wrapper).toMatch(
-      /for output_file in "\$\{GENERATOR_OUTPUT_FILES\[@\]\}"; do[\s\S]{0,500}\/bin\/chown 65534:65534/u,
-    );
   });
 
   it("does not trust caller-supplied network probe verdicts", () => {

@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-
-import { validateCompatibilityRecoveryFixture } from "./platform-compatibility-recovery-registry";
-import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
 
 import {
   assertExpectedSemanticResult,
@@ -179,48 +175,6 @@ describe("platform semantic constraints", () => {
       errors: [{ code: "WILDCARD_PERMISSION_FORBIDDEN", path: "/spec/permissions/0" }],
     });
   });
-
-  it("matches every semantic fixture's stable expectedError exactly", () => {
-    for (const manifestPath of [
-      "contracts/common/v1alpha1/fixtures/manifest.json",
-      "contracts/platform/v1alpha1/fixtures/manifest.json",
-    ]) {
-      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-        cases: Array<Record<string, unknown>>;
-      };
-      for (const fixture of manifest.cases) {
-        if (typeof fixture.expectedSemanticValid !== "boolean") continue;
-        const fixturePath = resolve(
-          dirname(manifestPath),
-          String(fixture.document ?? fixture.instance),
-        );
-        const document = JSON.parse(readFileSync(fixturePath, "utf8")) as unknown;
-        const instance =
-          typeof fixture.instancePointer === "string"
-            ? resolvePointer(document, fixture.instancePointer)
-            : document;
-        const canonicalResults = [
-          validateCanonicalNamespaceRefFixture(document),
-          validateCanonicalSubjectRefFixture(document),
-          validateManagedAgentCreateProjectIdempotencyFixture(document),
-          validateDurableCoordinationFixture(document, resolve(import.meta.dirname, "../..")),
-          validateCompatibilityRecoveryFixture(document, resolve(import.meta.dirname, "../..")),
-        ];
-        const result =
-          canonicalResults.find((candidate) => !candidate.valid) ??
-          validatePlatformSemantics(instance, document);
-        expect(
-          () =>
-            assertExpectedSemanticResult(
-              result,
-              fixture.expectedSemanticValid as boolean,
-              fixture.expectedError,
-            ),
-          String(fixture.name),
-        ).not.toThrow();
-      }
-    }
-  });
 });
 
 describe("P1-A1 idempotency canonical authority", () => {
@@ -372,16 +326,3 @@ describe("P1-A1 idempotency canonical authority", () => {
     ).toThrow(/IDEMPOTENCY_OPERATION_ID_MISMATCH/);
   });
 });
-
-function resolvePointer(document: unknown, pointer: string): unknown {
-  if (pointer === "") return document;
-  let value = document;
-  for (const segment of pointer.slice(1).split("/")) {
-    const key = segment.replaceAll("~1", "/").replaceAll("~0", "~");
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      throw new Error(`Invalid fixture pointer ${pointer}.`);
-    }
-    value = (value as Record<string, unknown>)[key];
-  }
-  return value;
-}

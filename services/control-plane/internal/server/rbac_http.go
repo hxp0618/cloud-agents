@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -303,51 +302,39 @@ func rbacPath(path string) (string, string, string, bool) {
 }
 
 func encodeMembershipPageToken(tenantID, membershipID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(membershipID, "/membershipId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("membership/v1\x00" + tenantID + "\x00" + membershipID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodePageToken("membership/v1",
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: membershipID, path: "/membershipId"},
+	)
 }
 
 func decodeMembershipPageToken(tenantID, token string) (string, bool) {
-	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+	parts, ok := decodePageToken("membership/v1", token,
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{path: "/membershipId"},
+	)
+	if !ok {
 		return "", false
 	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 3 || parts[0] != "membership/v1" || parts[1] != tenantID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/membershipId") != nil {
-		return "", false
-	}
-	return parts[2], true
+	return parts[1], true
 }
 
 func encodeRoleBindingPageToken(tenantID, roleBindingID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(roleBindingID, "/roleBindingId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("role-binding/v1\x00" + tenantID + "\x00" + roleBindingID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodePageToken("role-binding/v1",
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: roleBindingID, path: "/roleBindingId"},
+	)
 }
 
 func decodeRoleBindingPageToken(tenantID, token string) (string, bool) {
-	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+	parts, ok := decodePageToken("role-binding/v1", token,
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{path: "/roleBindingId"},
+	)
+	if !ok {
 		return "", false
 	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 3 || parts[0] != "role-binding/v1" || parts[1] != tenantID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/roleBindingId") != nil {
-		return "", false
-	}
-	return parts[2], true
+	return parts[1], true
 }
 
 func rbacPermission(kind string) string {

@@ -13,7 +13,7 @@ For other code changes, select the applicable verification routes below. Reuse [
 | Changed surface | Existing verification route |
 | --- | --- |
 | Go Control Plane, Worker or Go SDK | `bun run platform:go:check` and `sh scripts/test-platform-go-products.sh` (product tests, race, vet and module integrity). Changes outside that script's declared package scope also need their affected package tests. |
-| Contracts or generated SDKs | `bun run platform:contracts:check`, `bun run platform:sdk:check`, and `bun run platform:sdk:consumers` when consumer compatibility is affected. |
+| Contracts or generated SDKs | `bun run platform:contracts:check` (includes `platform:sdk:check`), and `bun run platform:sdk:consumers` when consumer compatibility is affected. |
 | SQL/migration bundle | `bun run platform:migrations:check` plus the affected database, isolation and recovery tests in an authorized test environment; static checks do not prove a successful migration. |
 | Admin Web | `bun --filter @cloud-agents/admin-web typecheck`, `bun --filter @cloud-agents/admin-web test`, and `bun --filter @cloud-agents/admin-web build`; exercise affected rendered flows, including relevant authorization, language and visual states. |
 

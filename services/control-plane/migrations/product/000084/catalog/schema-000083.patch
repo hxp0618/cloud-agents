@@ -1,0 +1,937 @@
+--- services/control-plane/migrations/product/000083/catalog/schema-000082.json
++++ services/control-plane/migrations/product/000084/catalog/schema-000083.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000083",
++  "schema_head": "000084",
+@@ -26026,0 +26027,594 @@
++    },
++    {
++      "migration_id": "000084",
++      "sql_sha256": "sha256:180c48fd0cff93d0e3aa97ad6b07eaa035de2bed5c5abd7ae825172aeabee2a7",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 1718,
++          "sha256": "sha256:14b514fb02cdc4e9d99fc2ed9ba6c85aeb2bbd173692390af73ef9ac447f36df",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 1718,
++          "end": 3278,
++          "sha256": "sha256:56fc5deb1f630420078af4e88d5751c3196601d03bf3b2d31b79785059eca773",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3278,
++          "end": 4844,
++          "sha256": "sha256:29874c4e59b6485e0354578f59fe59f9b41d220a0c96197b808100fe29e929e6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 4844,
++          "end": 6436,
++          "sha256": "sha256:4499349ffa1b11d5dacc43395c23ee42c279f0676f3dc6c1f7ebef232827f83c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 6436,
++          "end": 8059,
++          "sha256": "sha256:d269ad663c039a7b197872bc702912535ca6269e6fb21f7c6006e6c918f7a2db",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 8059,
++          "end": 8304,
++          "sha256": "sha256:e9210c17fa40d5560e22e65aa4b53fa0af1a219fa8511787bba9f78bec53b617",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:workspace_snapshots",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 8304,
++          "end": 8864,
++          "sha256": "sha256:cd957b668534bff7f857d555f59bdc0757aff945dfb1e750d92040df8638df46",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:workspace_snapshots",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 8864,
++          "end": 8959,
++          "sha256": "sha256:9ca80125440483c098ac66ce014761543044637e17e97d42967a31af26b0d9d9",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:workspace_snapshots",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 8959,
++          "end": 9047,
++          "sha256": "sha256:c4c70413c8de0a1ae74e3068f71f8decd2f41b2bb584c3433b5612909d36f136",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:workspace_snapshots",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 9047,
++          "end": 11360,
++          "sha256": "sha256:de6010574f5eb8d139343a52eadcb73bc49232d2a37cea19f02a253157d16281",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:workspace_snapshots",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 11360,
++          "end": 11496,
++          "sha256": "sha256:2a2ebd8e02bc2686494662bbe4b7688b851f7ada93b22752fabc10259ba63c33",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents/unquoted:workspace_snapshots_expiry_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 11496,
++          "end": 13218,
++          "sha256": "sha256:5bfe713e3e27659214f22cb6973657b9b05b63aa50b9ff6951abe16884ddaaaf",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 13218,
++          "end": 13849,
++          "sha256": "sha256:11b2db689f3000d475e3b5bab8dc452febd9e73f869e62ec764160393958023e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:reject_expired_workspace_snapshot_restore_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 13849,
++          "end": 14064,
++          "sha256": "sha256:ba1d681a3e12865dbd88af29d0d14dbc4f18653d4087afcf5fea7123245a3262",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:workspace_snapshot_restores_reject_expired",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 14064,
++          "end": 22278,
++          "sha256": "sha256:1210bc80c34d30a8e8b258f08ebf40eb3791168b5c539128620360053d3c5940",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 22278,
++          "end": 25019,
++          "sha256": "sha256:c30a338eb0737be5529e3160af14063025b5926cc289c29739826e582756cdbb",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:expire_foundation_workspace_snapshot_v1(unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 25019,
++          "end": 30104,
++          "sha256": "sha256:a86273b7f8d53e5f056e5c7f6871db39ecb969d485c8d806b9aee305e31d3318",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 30104,
++          "end": 32674,
++          "sha256": "sha256:86ecdfccc62310ae9041cf77e3632bc5e6e615667a5fd3450fdacda1b6eb7aea",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:renew_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:integer)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 18,
++          "start": 32674,
++          "end": 40768,
++          "sha256": "sha256:e72eed258695232be065f0744b9ad159f04abcbdc07eb2c2c349b9cf168761cd",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 19,
++          "start": 40768,
++          "end": 47416,
++          "sha256": "sha256:29fdc490dd7f980e08ad0f08ee695c7f5349c2607fdd5727bb0e471dea6652df",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:reap_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 20,
++          "start": 47416,
++          "end": 47570,
++          "sha256": "sha256:9ef01390e87d7948a739e326cf2f850216075b9fe0af08f87683e19c90023db2",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 21,
++          "start": 47570,
++          "end": 47684,
++          "sha256": "sha256:5abd59f49c0c8a83f064fb87adb4e910824abfef13da9429abb1a7ca5386b6e5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:reject_expired_workspace_snapshot_restore_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 22,
++          "start": 47684,
++          "end": 47852,
++          "sha256": "sha256:0e8e799772e3dbabdaf4a9d2aabfabb515bf7b28555f6fe6104e0981005ab45e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 23,
++          "start": 47852,
++          "end": 47965,
++          "sha256": "sha256:7fa92ffecab6b16fab46b7652d3e994baa4b43793cae080cd1ec2847cdd24d09",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:expire_foundation_workspace_snapshot_v1(unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 24,
++          "start": 47965,
++          "end": 48113,
++          "sha256": "sha256:986db40844882a16ad07789e7118769bfc409273994a455369ad3504d31626a1",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 25,
++          "start": 48113,
++          "end": 48279,
++          "sha256": "sha256:35fa2d3dc02d87ab611ce7e321d927dbd40c7e272d523bcfa2263332a8f2bffc",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:renew_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:integer)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 26,
++          "start": 48279,
++          "end": 48452,
++          "sha256": "sha256:9b30d3649ea5758a4c50107352daf0542876198460289c2f466c55e033f09735",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 27,
++          "start": 48452,
++          "end": 48582,
++          "sha256": "sha256:4e5111a6c04d128eb92e57845cd3610306a10096d1835f9c2f42000537605afc",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:reap_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 28,
++          "start": 48582,
++          "end": 48717,
++          "sha256": "sha256:7a4c8ed5da215fb7f1fa589789e78c2052cfe5f2a90e6a9ac45fcfbbbcf23d17",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 29,
++          "start": 48717,
++          "end": 48867,
++          "sha256": "sha256:b255fe390df854ca3cf4a1e37d3b436e6c8e94b0d2a9939a286882abb7f869d7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 30,
++          "start": 48867,
++          "end": 48962,
++          "sha256": "sha256:9ca6199986f60566e37ee2dd41263d1a38d179e9d8d8d380ee2128638fd8854b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:expire_foundation_workspace_snapshot_v1(unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 31,
++          "start": 48962,
++          "end": 49092,
++          "sha256": "sha256:29b7f03d9b14f19a78315645a1b214208f29480a71d4d2010ae2bbc70f575947",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 32,
++          "start": 49092,
++          "end": 49240,
++          "sha256": "sha256:e11c4e8a60cb19e5d45cc9504f174ba009435d7ff9325031e820aa025e1ad5e9",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:renew_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:integer)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 33,
++          "start": 49240,
++          "end": 49395,
++          "sha256": "sha256:09c31d9dc78ad5a3bf6cd777d6f8c0d439d631cf626a9b5d9f47edb02d6282b9",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 34,
++          "start": 49395,
++          "end": 49507,
++          "sha256": "sha256:d106d714f35c30660a4e4dba5a27bd954307ce35e3715219f95fe00144cf32c3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:reap_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 35,
++          "start": 49507,
++          "end": 49657,
++          "sha256": "sha256:3105bc8dab20d5e7a57c0d8bc23bb463d791505aa76b793624369b3938848c19",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 36,
++          "start": 49657,
++          "end": 49822,
++          "sha256": "sha256:fda4b0c24b6da89826486587dfae386cf79233c4e6f673c31374fe321fba4102",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 37,
++          "start": 49822,
++          "end": 49932,
++          "sha256": "sha256:c92faaf4bfa20cf7e6a2608b44e6e1b747f54072c70a73b0f6dc6d789ff0ac88",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:expire_foundation_workspace_snapshot_v1(unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 38,
++          "start": 49932,
++          "end": 50077,
++          "sha256": "sha256:1604be90db06c8cae05455e7530c30c70087315b77473ebff5537c465b02b1d0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:claim_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 39,
++          "start": 50077,
++          "end": 50240,
++          "sha256": "sha256:b0d8aad5e35ddf87e66f57242308a801750faba403fe4d62d628b4c0d5812123",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:renew_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:integer)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 40,
++          "start": 50240,
++          "end": 50410,
++          "sha256": "sha256:cfac556a7f48e0fec7da6d953b6cec1a92059b3b41633e4162abf29240aa08f7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_foundation_workspace_snapshot_cleanup_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 41,
++          "start": 50410,
++          "end": 50537,
++          "sha256": "sha256:0ef6cd620872b8ec5a63f12ed99d63cab5804a908a5fa67a61880503a4f0bcea",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:reap_foundation_workspace_snapshot_cleanup_claim_v1(unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -38806,0 +39401,336 @@
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_registry_profile_is_registered",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_registry_digest_for_profile",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_profile_is_registered",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_profile_creates_operation",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_profile_outbox_class",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "accept_foundation_workspace_snapshot_v2",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "reject_expired_workspace_snapshot_restore_v1",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "accept_foundation_workspace_snapshot_cleanup_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "expire_foundation_workspace_snapshot_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "claim_foundation_workspace_snapshot_cleanup_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "renew_foundation_workspace_snapshot_cleanup_claim_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "settle_foundation_workspace_snapshot_cleanup_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "reap_foundation_workspace_snapshot_cleanup_claim_v1",
++        "arguments": [

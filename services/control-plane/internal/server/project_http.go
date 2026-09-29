@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -304,27 +303,23 @@ func projectPagination(request *http.Request) (string, int, string, bool) {
 }
 
 func encodeProjectPageToken(tenantID, organizationID, projectUID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(organizationID, "/organizationId") != nil || commonv1alpha1.ValidateIdentifier(projectUID, "/projectId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("project/v1\x00" + tenantID + "\x00" + organizationID + "\x00" + projectUID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodePageToken("project/v1",
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: organizationID, path: "/organizationId"},
+		pageTokenPart{value: projectUID, path: "/projectId"},
+	)
 }
 
 func decodeProjectPageToken(tenantID, organizationID, token string) (string, bool) {
-	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+	parts, ok := decodePageToken("project/v1", token,
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: organizationID, path: "/organizationId"},
+		pageTokenPart{path: "/projectId"},
+	)
+	if !ok {
 		return "", false
 	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "project/v1" || parts[1] != tenantID || parts[2] != organizationID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/organizationId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/projectId") != nil {
-		return "", false
-	}
-	return parts[3], true
+	return parts[2], true
 }
 
 func projectPath(path string) (string, string, bool) {

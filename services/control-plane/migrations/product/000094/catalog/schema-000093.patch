@@ -1,0 +1,124 @@
+--- services/control-plane/migrations/product/000093/catalog/schema-000092.json
++++ services/control-plane/migrations/product/000094/catalog/schema-000093.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000093",
++  "schema_head": "000094",
+@@ -28914,0 +28915,20 @@
++    },
++    {
++      "migration_id": "000094",
++      "sql_sha256": "sha256:157caa212705df117258bf20b9bcc669eab2a2cf08fbcb8f06eb446201ad7dec",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 4089,
++          "sha256": "sha256:ca12bfdffbb83be9dd27df565ad4f5bacd22baee954ec3f4ec3f45cec0b3b7f3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:request_remote_worker_sandbox_pty_v3(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:boolean,unquoted:text,unquoted:bytea,unquoted:boolean,unquoted:boolean,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        }
++      ]
+@@ -43285,0 +43306,97 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "request_remote_worker_sandbox_pty_v3",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "boolean"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "boolean"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "boolean"

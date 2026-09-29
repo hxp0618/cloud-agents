@@ -6471,8 +6471,8 @@ const { existsSync, readFileSync } = require("node:fs");
 const { createHash } = require("node:crypto");
 const readJSON = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return {}; } };
 const value = readJSON(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_FILE);
-const errorText = existsSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_ERROR_FILE)
-  ? readFileSync(process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_ERROR_FILE, "utf8") : "";
+const errorPath = process.env.CLOUD_AGENTS_COMPOSE_EXECUTION_ERROR_FILE;
+const errorText = errorPath && existsSync(errorPath) ? readFileSync(errorPath, "utf8") : "";
 const safe = (value) => typeof value === "string" && /^[a-z][a-z0-9_.-]{0,79}$/.test(value) ? value : undefined;
 console.error(JSON.stringify({ capabilityRecoveryFailure: {
   state: safe(value.spec?.state), errorCode: safe(value.spec?.errorCode),

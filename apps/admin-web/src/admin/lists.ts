@@ -17,393 +17,368 @@ import {
   type WorkspaceSnapshot,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
+import type { MessageKey } from "../i18n";
 import type { AdminClient } from "./client";
 import { AdminUIError } from "./errors";
 import { collectAdminPages } from "./pagination";
 import { newRequestId } from "./request";
 
-export async function listAdminTargets(
+const PAGE_SIZE = 200;
+
+type ListResponse<K extends string, T> = Promise<
+  Readonly<{ value: Readonly<Record<K, readonly T[]> & { nextPageToken?: string }> }>
+>;
+
+/** Loads every page of one Admin list endpoint and returns a frozen, optionally sorted copy. */
+async function listAll<T, K extends string>(
+  load: (requestId: string, pageSize: number, pageToken: string | undefined) => ListResponse<K, T>,
+  field: K,
+  pageTokenError: MessageKey,
+  compare?: (left: T, right: T) => number,
+): Promise<readonly T[]> {
+  const items = await collectAdminPages<T>(
+    (pageToken) =>
+      load(newRequestId(), PAGE_SIZE, pageToken).then(({ value }) => ({
+        items: value[field],
+        nextPageToken: value.nextPageToken,
+      })),
+    () => new AdminUIError(pageTokenError),
+  );
+  return Object.freeze(compare === undefined ? items : items.toSorted(compare));
+}
+
+const byName = (
+  left: { metadata: { name: string } },
+  right: { metadata: { name: string } },
+): number => left.metadata.name.localeCompare(right.metadata.name);
+
+const byNameThenNewestVersion = (
+  left: { metadata: { name: string }; spec: { version: number } },
+  right: { metadata: { name: string }; spec: { version: number } },
+): number => byName(left, right) || right.spec.version - left.spec.version;
+
+const newestCreatedFirst = (
+  left: { metadata: { createdAt: string } },
+  right: { metadata: { createdAt: string } },
+): number => right.metadata.createdAt.localeCompare(left.metadata.createdAt);
+
+export function listAdminTargets(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly DeploymentTarget[]> {
-  const targets = await collectAdminPages<DeploymentTarget>(
-    (pageToken) =>
-      client
-        .listAdminDeploymentTargets(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.deploymentTargets,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.targetPageToken"),
-  );
-  return Object.freeze(
-    targets.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminDeploymentTargets(
+        tenantId,
+        projectId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "deploymentTargets",
+    "error.targetPageToken",
+    byName,
   );
 }
 
-export async function listAdminLeases(
+export function listAdminLeases(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly EnvironmentLease[]> {
-  const leases = await collectAdminPages<EnvironmentLease>(
-    (pageToken) =>
-      client
-        .listAdminEnvironmentLeases(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.environmentLeases,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.leasePageToken"),
-  );
-  return Object.freeze(
-    leases.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminEnvironmentLeases(
+        tenantId,
+        projectId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "environmentLeases",
+    "error.leasePageToken",
+    byName,
   );
 }
 
-export async function listAdminWorkers(
+export function listAdminWorkers(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly Worker[]> {
-  const workers = await collectAdminPages<Worker>(
-    (pageToken) =>
-      client
-        .listAdminWorkers(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({ items: page.value.workers, nextPageToken: page.value.nextPageToken })),
-    () => new AdminUIError("error.workerPageToken"),
-  );
-  return Object.freeze(
-    workers.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminWorkers(tenantId, projectId, requestId, pageSize, pageToken, signal),
+    "workers",
+    "error.workerPageToken",
+    byName,
   );
 }
 
-export async function listAdminRemoteWorkerEnrollments(
+export function listAdminRemoteWorkerEnrollments(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly RemoteWorkerEnrollment[]> {
-  const enrollments = await collectAdminPages<RemoteWorkerEnrollment>(
-    (pageToken) =>
-      client
-        .listAdminRemoteWorkerEnrollments(
-          tenantId,
-          projectId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({
-          items: page.value.remoteWorkerEnrollments,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.remoteWorkerEnrollmentPageToken"),
-  );
-  return Object.freeze(
-    enrollments.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminRemoteWorkerEnrollments(
+        tenantId,
+        projectId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "remoteWorkerEnrollments",
+    "error.remoteWorkerEnrollmentPageToken",
+    byName,
   );
 }
 
-export async function listAdminRemoteWorkerEnrollmentAuditEvents(
+export function listAdminRemoteWorkerEnrollmentAuditEvents(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   enrollmentId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminAuditEvent[]> {
-  const events = await collectAdminPages<AdminAuditEvent>(
-    (pageToken) =>
-      client
-        .listAdminRemoteWorkerEnrollmentAuditEvents(
-          tenantId,
-          projectId,
-          enrollmentId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({ items: page.value.events, nextPageToken: page.value.nextPageToken })),
-    () => new AdminUIError("error.remoteWorkerEnrollmentAuditPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminRemoteWorkerEnrollmentAuditEvents(
+        tenantId,
+        projectId,
+        enrollmentId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "events",
+    "error.remoteWorkerEnrollmentAuditPageToken",
   );
-  return Object.freeze(events);
 }
 
-export async function listAdminRemoteWorkerOperations(
+export function listAdminRemoteWorkerOperations(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   enrollmentId: string,
   signal: AbortSignal,
 ): Promise<readonly MaintenanceOperation[]> {
-  const operations = await collectAdminPages<MaintenanceOperation>(
-    (pageToken) =>
-      client
-        .listAdminRemoteWorkerOperations(
-          tenantId,
-          projectId,
-          enrollmentId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({
-          items: page.value.operations,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.operationPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminRemoteWorkerOperations(
+        tenantId,
+        projectId,
+        enrollmentId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "operations",
+    "error.operationPageToken",
   );
-  return Object.freeze(operations);
 }
 
-export async function listAdminReleases(
+export function listAdminReleases(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly WorkerRelease[]> {
-  const releases = await collectAdminPages<WorkerRelease>(
-    (pageToken) =>
-      client
-        .listAdminWorkerReleases(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.workerReleases,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.releasePageToken"),
-  );
-  return Object.freeze(
-    releases.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminWorkerReleases(tenantId, projectId, requestId, pageSize, pageToken, signal),
+    "workerReleases",
+    "error.releasePageToken",
+    byName,
   );
 }
 
-export async function listAdminProfiles(
+export function listAdminProfiles(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly EnvironmentProfile[]> {
-  const profiles = await collectAdminPages<EnvironmentProfile>(
-    (pageToken) =>
-      client
-        .listAdminEnvironmentProfiles(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.environmentProfiles,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.profilePageToken"),
-  );
-  return Object.freeze(
-    profiles.toSorted(
-      (left, right) =>
-        left.metadata.name.localeCompare(right.metadata.name) ||
-        right.spec.version - left.spec.version,
-    ),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminEnvironmentProfiles(
+        tenantId,
+        projectId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "environmentProfiles",
+    "error.profilePageToken",
+    byNameThenNewestVersion,
   );
 }
 
-export async function listAdminRuntimeProfiles(
+export function listAdminRuntimeProfiles(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly RuntimeProfile[]> {
-  const profiles = await collectAdminPages<RuntimeProfile>(
-    (pageToken) =>
-      client
-        .listAdminRuntimeProfiles(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.runtimeProfiles,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.runtimeProfilePageToken"),
-  );
-  return Object.freeze(
-    profiles.toSorted(
-      (left, right) =>
-        left.metadata.name.localeCompare(right.metadata.name) ||
-        right.spec.version - left.spec.version,
-    ),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminRuntimeProfiles(tenantId, projectId, requestId, pageSize, pageToken, signal),
+    "runtimeProfiles",
+    "error.runtimeProfilePageToken",
+    byNameThenNewestVersion,
   );
 }
 
-export async function listAdminSandboxes(
+export function listAdminSandboxes(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminSandboxSession[]> {
-  const sandboxes = await collectAdminPages<AdminSandboxSession>(
-    (pageToken) =>
-      client
-        .listAdminSandboxSessions(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.sandboxSessions,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.sandboxPageToken"),
-  );
-  return Object.freeze(
-    sandboxes.toSorted((left, right) =>
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminSandboxSessions(tenantId, projectId, requestId, pageSize, pageToken, signal),
+    "sandboxSessions",
+    "error.sandboxPageToken",
+    (left, right) =>
       (right.metadata.updatedAt ?? right.metadata.createdAt).localeCompare(
         left.metadata.updatedAt ?? left.metadata.createdAt,
       ),
-    ),
   );
 }
 
-export async function listAdminSandboxAccessGrants(
+export function listAdminSandboxAccessGrants(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   sandboxId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminSandboxAccessGrant[]> {
-  const grants = await collectAdminPages<AdminSandboxAccessGrant>(
-    (pageToken) =>
-      client
-        .listAdminSandboxAccessGrants(
-          tenantId,
-          projectId,
-          sandboxId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({
-          items: page.value.accessGrants,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.sandboxGrantPageToken"),
-  );
-  return Object.freeze(
-    grants.toSorted((left, right) =>
-      right.metadata.createdAt.localeCompare(left.metadata.createdAt),
-    ),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminSandboxAccessGrants(
+        tenantId,
+        projectId,
+        sandboxId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "accessGrants",
+    "error.sandboxGrantPageToken",
+    newestCreatedFirst,
   );
 }
 
-export async function listAdminStoragePolicies(
+export function listAdminStoragePolicies(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly StoragePolicy[]> {
-  const policies = await collectAdminPages<StoragePolicy>(
-    (pageToken) =>
-      client
-        .listAdminStoragePolicies(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.storagePolicies,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.storagePolicyPageToken"),
-  );
-  return Object.freeze(
-    policies.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminStoragePolicies(tenantId, projectId, requestId, pageSize, pageToken, signal),
+    "storagePolicies",
+    "error.storagePolicyPageToken",
+    byName,
   );
 }
 
-export async function listAdminWorkspaceSnapshots(
+export function listAdminWorkspaceSnapshots(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly WorkspaceSnapshot[]> {
-  const snapshots = await collectAdminPages<WorkspaceSnapshot>(
-    (pageToken) =>
-      client
-        .listAdminWorkspaceSnapshots(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.workspaceSnapshots,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.workspaceSnapshotPageToken"),
-  );
-  return Object.freeze(
-    snapshots.toSorted((left, right) =>
-      right.metadata.createdAt.localeCompare(left.metadata.createdAt),
-    ),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminWorkspaceSnapshots(
+        tenantId,
+        projectId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "workspaceSnapshots",
+    "error.workspaceSnapshotPageToken",
+    newestCreatedFirst,
   );
 }
 
-export async function listAdminStoragePolicyAuditEvents(
+export function listAdminStoragePolicyAuditEvents(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   policyId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminAuditEvent[]> {
-  const events = await collectAdminPages<AdminAuditEvent>(
-    (pageToken) =>
-      client
-        .listAdminStoragePolicyAuditEvents(
-          tenantId,
-          projectId,
-          policyId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({ items: page.value.events, nextPageToken: page.value.nextPageToken })),
-    () => new AdminUIError("error.auditPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminStoragePolicyAuditEvents(
+        tenantId,
+        projectId,
+        policyId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "events",
+    "error.auditPageToken",
   );
-  return Object.freeze(events);
 }
 
-export async function listAdminNetworkPolicies(
+export function listAdminNetworkPolicies(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly NetworkPolicy[]> {
-  const policies = await collectAdminPages<NetworkPolicy>(
-    (pageToken) =>
-      client
-        .listAdminNetworkPolicies(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.networkPolicies,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.networkPolicyPageToken"),
-  );
-  return Object.freeze(
-    policies.toSorted((left, right) => left.metadata.name.localeCompare(right.metadata.name)),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminNetworkPolicies(tenantId, projectId, requestId, pageSize, pageToken, signal),
+    "networkPolicies",
+    "error.networkPolicyPageToken",
+    byName,
   );
 }
 
-export async function listAdminNetworkPolicyAuditEvents(
+export function listAdminNetworkPolicyAuditEvents(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   policyId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminAuditEvent[]> {
-  const events = await collectAdminPages<AdminAuditEvent>(
-    (pageToken) =>
-      client
-        .listAdminNetworkPolicyAuditEvents(
-          tenantId,
-          projectId,
-          policyId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({ items: page.value.events, nextPageToken: page.value.nextPageToken })),
-    () => new AdminUIError("error.auditPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminNetworkPolicyAuditEvents(
+        tenantId,
+        projectId,
+        policyId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "events",
+    "error.auditPageToken",
   );
-  return Object.freeze(events);
 }
 
 export async function loadAdminProjectLeaseQuota(
@@ -427,35 +402,34 @@ export async function listAdminProjectLeaseQuotaAuditEvents(
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminAuditEvent[]> {
-  const events: AdminAuditEvent[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
+  let loadedAny = false;
   try {
-    do {
-      const page = await client.listAdminProjectLeaseQuotaAuditEvents(
-        tenantId,
-        projectId,
-        newRequestId(),
-        200,
-        pageToken,
-        signal,
-      );
-      events.push(...page.value.events);
-      pageToken = page.value.nextPageToken;
-      if (pageToken !== undefined) {
-        if (seenTokens.has(pageToken)) throw new AdminUIError("error.auditPageToken");
-        seenTokens.add(pageToken);
-      }
-    } while (pageToken !== undefined);
+    return await listAll(
+      (requestId, pageSize, pageToken) =>
+        client
+          .listAdminProjectLeaseQuotaAuditEvents(
+            tenantId,
+            projectId,
+            requestId,
+            pageSize,
+            pageToken,
+            signal,
+          )
+          .then((page) => {
+            loadedAny ||= page.value.events.length > 0;
+            return page;
+          }),
+      "events",
+      "error.auditPageToken",
+    );
   } catch (error) {
-    if (events.length === 0 && error instanceof ClientError && error.status === 404)
+    if (!loadedAny && error instanceof ClientError && error.status === 404)
       return Object.freeze([]);
     throw error;
   }
-  return Object.freeze(events);
 }
 
-export async function listAdminProfileAuditEvents(
+export function listAdminProfileAuditEvents(
   client: AdminClient,
   tenantId: string,
   projectId: string,
@@ -463,93 +437,86 @@ export async function listAdminProfileAuditEvents(
   version: number,
   signal: AbortSignal,
 ): Promise<readonly AdminAuditEvent[]> {
-  const events = await collectAdminPages<AdminAuditEvent>(
-    (pageToken) =>
-      client
-        .listAdminEnvironmentProfileAuditEvents(
-          tenantId,
-          projectId,
-          profileId,
-          version,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({ items: page.value.events, nextPageToken: page.value.nextPageToken })),
-    () => new AdminUIError("error.auditPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminEnvironmentProfileAuditEvents(
+        tenantId,
+        projectId,
+        profileId,
+        version,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "events",
+    "error.auditPageToken",
   );
-  return Object.freeze(events);
 }
 
-export async function listAdminTargetOperations(
+export function listAdminTargetOperations(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   targetId: string,
   signal: AbortSignal,
 ): Promise<readonly MaintenanceOperation[]> {
-  const operations = await collectAdminPages<MaintenanceOperation>(
-    (pageToken) =>
-      client
-        .listAdminDeploymentTargetOperations(
-          tenantId,
-          projectId,
-          targetId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({
-          items: page.value.operations,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.operationPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminDeploymentTargetOperations(
+        tenantId,
+        projectId,
+        targetId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "operations",
+    "error.operationPageToken",
   );
-  return Object.freeze(operations);
 }
 
-export async function listAdminMaintenanceOperations(
+export function listAdminMaintenanceOperations(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly MaintenanceOperation[]> {
-  const operations = await collectAdminPages<MaintenanceOperation>(
-    (pageToken) =>
-      client
-        .listAdminMaintenanceOperations(tenantId, projectId, newRequestId(), 200, pageToken, signal)
-        .then((page) => ({
-          items: page.value.operations,
-          nextPageToken: page.value.nextPageToken,
-        })),
-    () => new AdminUIError("error.operationPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminMaintenanceOperations(
+        tenantId,
+        projectId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "operations",
+    "error.operationPageToken",
   );
-  return Object.freeze(operations);
 }
 
-export async function listAdminTargetAuditEvents(
+export function listAdminTargetAuditEvents(
   client: AdminClient,
   tenantId: string,
   projectId: string,
   targetId: string,
   signal: AbortSignal,
 ): Promise<readonly AdminAuditEvent[]> {
-  const events = await collectAdminPages<AdminAuditEvent>(
-    (pageToken) =>
-      client
-        .listAdminDeploymentTargetAuditEvents(
-          tenantId,
-          projectId,
-          targetId,
-          newRequestId(),
-          200,
-          pageToken,
-          signal,
-        )
-        .then((page) => ({ items: page.value.events, nextPageToken: page.value.nextPageToken })),
-    () => new AdminUIError("error.auditPageToken"),
+  return listAll(
+    (requestId, pageSize, pageToken) =>
+      client.listAdminDeploymentTargetAuditEvents(
+        tenantId,
+        projectId,
+        targetId,
+        requestId,
+        pageSize,
+        pageToken,
+        signal,
+      ),
+    "events",
+    "error.auditPageToken",
   );
-  return Object.freeze(events);
 }

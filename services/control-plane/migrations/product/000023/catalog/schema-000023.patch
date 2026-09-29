@@ -1,0 +1,53 @@
+--- services/control-plane/migrations/product/000022/catalog/schema-000022.json
++++ services/control-plane/migrations/product/000023/catalog/schema-000023.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000022",
++  "schema_head": "000023",
+@@ -9336,0 +9337,20 @@
++    },
++    {
++      "migration_id": "000023",
++      "sql_sha256": "sha256:2f51e244fa33fba6b3456d2d37630068c10760fd29fd29856870fbbfb2d2f888",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 4512,
++          "sha256": "sha256:5f090a48a2bf3ee94be87c4dc788ba189a35675a45fca99df48b063dc5d65338",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:append_managed_agent_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:jsonb)",
++            "grantee": null,
++            "special_case": null
++          }
++        }
++      ]
+@@ -9341,4 +9361,1 @@
+-    "catalog_projection_fields": [
+-      "schema_head",
+-      "body"
+-    ],
++    "catalog_projection_fields": ["schema_head", "body"],
+@@ -9363,17 +9380,3 @@
+-    "default_acl_fields": [
+-      "owner",
+-      "schema",
+-      "object_kind",
+-      "acl"
+-    ],
+-    "acl_set_fields": [
+-      "catalog_value",
+-      "entries"
+-    ],
+-    "acl_entry_fields": [
+-      "grantor",
+-      "grantee",
+-      "privileges",
+-      "grantable",
+-      "origin"
+-    ],
++    "default_acl_fields": ["owner", "schema", "object_kind", "acl"],
++    "acl_set_fields": ["catalog_value", "entries"],
++    "acl_entry_fields": ["grantor", "grantee", "privileges", "grantable", "origin"],

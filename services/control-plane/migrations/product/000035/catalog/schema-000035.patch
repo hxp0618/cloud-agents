@@ -1,0 +1,142 @@
+--- services/control-plane/migrations/product/000034/catalog/schema-000034.json
++++ services/control-plane/migrations/product/000035/catalog/schema-000035.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000034",
++  "schema_head": "000035",
+@@ -11102,0 +11103,90 @@
++    },
++    {
++      "migration_id": "000035",
++      "sql_sha256": "sha256:f4ff98c1cec34af6598e651b38601364e6b659e55bf572c67bc0d9bc3293aae5",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 88,
++          "sha256": "sha256:e07b0f91947bf015c2d229f59af1a7f6ec173ed201cb0bdfc046e2333fec5287",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 88,
++          "end": 224,
++          "sha256": "sha256:b78b598be80e65772ed8ed81bd6bf32b2b015427dec7f7823554c0900cb70dcb",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 224,
++          "end": 4101,
++          "sha256": "sha256:5ad6d0e5c6e4aba31543cd8f358f2acd81023f9c36c6fe217bdabf82c843ad26",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:register_deployment_target_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 4101,
++          "end": 4257,
++          "sha256": "sha256:3e0661a54dfec99acd14e448c36d3a2a69ddf12960e911f840b6e56cdbcf76ed",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:register_deployment_target_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 4257,
++          "end": 4394,
++          "sha256": "sha256:5674f9021a5fff388f2dd078f67ec520d7353e5a8145c412a12df619f469b1e3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:register_deployment_target_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 4394,
++          "end": 4546,
++          "sha256": "sha256:e2f4782573a507fdfbf77179d42b4a8b735d2b355dc667553886c7c534599156",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:register_deployment_target_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -14192,0 +14283,45 @@
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "register_deployment_target_v2",

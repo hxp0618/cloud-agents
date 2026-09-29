@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migration"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migrationcore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -102,7 +102,7 @@ func (session *pgxSession) SetMigrationRole(ctx context.Context) error {
 		return errors.New("dedicated migration owner role is unavailable")
 	}
 	var currentUser string
-	if err := session.connection.QueryRow(ctx, "SELECT current_user").Scan(&currentUser); err != nil || currentUser != migration.MigrationOwnerRole {
+	if err := session.connection.QueryRow(ctx, "SELECT current_user").Scan(&currentUser); err != nil || currentUser != migrationcore.MigrationOwnerRole {
 		return errors.New("dedicated migration owner role readback failed")
 	}
 	return nil
@@ -129,7 +129,7 @@ func (session *pgxSession) AcquireAdvisoryLock(ctx context.Context, key int64) e
 	return nil
 }
 
-func (session *pgxSession) ReadLedger(ctx context.Context) ([]migration.LedgerRow, error) {
+func (session *pgxSession) ReadLedger(ctx context.Context) ([]migrationcore.LedgerRow, error) {
 	var schemaExists, ledgerExists bool
 	if err := session.connection.QueryRow(ctx, `SELECT EXISTS (
  SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'cloud_agents'
@@ -141,7 +141,7 @@ func (session *pgxSession) ReadLedger(ctx context.Context) ([]migration.LedgerRo
 		return nil, errors.New("cannot inspect local migration schema")
 	}
 	if !schemaExists {
-		return []migration.LedgerRow{}, nil
+		return []migrationcore.LedgerRow{}, nil
 	}
 	if !ledgerExists {
 		var objects int64
@@ -153,9 +153,9 @@ WHERE namespace_row.nspname = 'cloud_agents'`).Scan(&objects); err != nil {
 		if objects != 0 {
 			return nil, errors.New("cloud_agents schema exists without migration ledger")
 		}
-		return []migration.LedgerRow{}, nil
+		return []migrationcore.LedgerRow{}, nil
 	}
-	rows, err := (migration.SQLLedgerStore{}).Read(ctx, queryAdapter{queryer: session.connection})
+	rows, err := (migrationcore.SQLLedgerStore{}).Read(ctx, queryAdapter{queryer: session.connection})
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ WHERE namespace_row.nspname = 'cloud_agents'`).Scan(&objects); err != nil {
 	return rows, nil
 }
 
-func (session *pgxSession) Apply(ctx context.Context, entry migration.MigrationEntry, sql []byte, bundle migration.Digest) error {
+func (session *pgxSession) Apply(ctx context.Context, entry migrationcore.MigrationEntry, sql []byte, bundle migrationcore.Digest) error {
 	if !session.locked {
 		return errors.New("manifest advisory lock is not held")
 	}
@@ -189,7 +189,7 @@ func (session *pgxSession) Apply(ctx context.Context, entry migration.MigrationE
 			return fmt.Errorf("PostgreSQL rejected migration SQL: %w", result.Err)
 		}
 	}
-	if err := (migration.SQLLedgerStore{}).Insert(ctx, execAdapter{executor: transaction}, entry, bundle); err != nil {
+	if err := (migrationcore.SQLLedgerStore{}).Insert(ctx, execAdapter{executor: transaction}, entry, bundle); err != nil {
 		return fmt.Errorf("insert migration ledger row: %w", err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
@@ -222,7 +222,7 @@ type pgxQuery interface {
 
 type queryAdapter struct{ queryer pgxQuery }
 
-func (adapter queryAdapter) Query(ctx context.Context, sql string, arguments ...any) (migration.Rows, error) {
+func (adapter queryAdapter) Query(ctx context.Context, sql string, arguments ...any) (migrationcore.Rows, error) {
 	rows, err := adapter.queryer.Query(ctx, sql, arguments...)
 	if err != nil {
 		return nil, err
@@ -230,7 +230,7 @@ func (adapter queryAdapter) Query(ctx context.Context, sql string, arguments ...
 	return rowsAdapter{rows: rows}, nil
 }
 
-func (adapter queryAdapter) QueryRow(ctx context.Context, sql string, arguments ...any) migration.Row {
+func (adapter queryAdapter) QueryRow(ctx context.Context, sql string, arguments ...any) migrationcore.Row {
 	return adapter.queryer.QueryRow(ctx, sql, arguments...)
 }
 
@@ -247,7 +247,7 @@ type pgxExecutor interface {
 
 type execAdapter struct{ executor pgxExecutor }
 
-func (adapter execAdapter) Exec(ctx context.Context, sql string, arguments ...any) (migration.CommandTag, error) {
+func (adapter execAdapter) Exec(ctx context.Context, sql string, arguments ...any) (migrationcore.CommandTag, error) {
 	return adapter.executor.Exec(ctx, sql, arguments...)
 }
 

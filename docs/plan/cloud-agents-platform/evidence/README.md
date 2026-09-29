@@ -21,7 +21,8 @@ evidence/
 
 ## 当前 canonical links
 
-- [最终状态汇总](../06-status-tracker.md)：12/12 Provider×Environment、适用故障结果、清理/安全汇总和 `CLOSED / APPROVED` Gate 状态。
+- [最终状态汇总](../06-status-tracker.md)：r741 历史 candidate 的 12/12 Provider×Environment、适用故障结果、清理/安全汇总和 `CLOSED / APPROVED` Gate 状态；当前 dirty worktree 见下方审查摘要。
+- [开源候选审查摘要](open-source-candidate-audit-20260929.md)：区分 r741 历史证据与当前 dirty worktree，并记录公开边界和合并前最小验证。
 - [Gate closure 模板](../templates/gate-closure-record.md)：新 closure record 的字段约束。
 - [专项文档导航](../README.md)：04、05、06、07 的职责边界。
 - [P0 审计索引](../../p0/README.md)、[P1 审计索引](../../p1/README.md)、[standalone 审计索引](../../standalone/README.md)：跨目录的证据定位入口。
@@ -30,5 +31,5 @@ evidence/
 
 - 应用 E2E 报告保留 commit、资源标识和实际 phase transition；它们不能单独关闭正式 Gate。
 - 正式 closure record 按模板记录输入范围、结果、未覆盖项、审批和 canonical artifact 链接；不把原始日志、Secret、数据库 dump 或真实 pairing/auth material 放入本目录。
-- evidence 中的 candidate、`OPEN`、`BLOCKED` 或历史失败记录保留为审计事实，不替代 06，也不提供默认下一步或新的授权。
+- evidence 中的 candidate、`OPEN`、`BLOCKED` 或历史失败记录保留为审计事实，不替代 06，也不提供默认下一步或新的授权。历史 candidate 的 PASS 不得外推到未复验的 dirty worktree。
 - 新阶段先记录计划，再记录实际结果和证据索引；文档整理本身不产生新的 runtime 验收结论。

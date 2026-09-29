@@ -88,6 +88,7 @@ import {
   filterAdminLeases,
   filterAdminWorkers,
   cleanupRequestFromPreview,
+  keepIfUnchanged,
   leaseReleaseRequestFromPreview,
   listAdminMaintenanceOperations,
   loadAdminManagedAgentRuntime,
@@ -109,6 +110,7 @@ import {
   replaceTarget,
   schedulingRequestFromPreview,
   selectAdminResourceId,
+  workerRefreshKey,
   writeSavedAdminConnection,
   type AdminClient,
   type SavedAdminConnection,
@@ -533,13 +535,16 @@ export function App() {
               loadedWorkspaceSnapshots,
             ]) => {
               if (controller.signal.aborted) return;
-              setTargets(loadedTargets.targets);
+              // Unchanged polls keep references, so they neither re-render nor restart this effect.
+              setTargets((current) => keepIfUnchanged(current, loadedTargets.targets));
               setSelectedTargetId(loadedTargets.selectedTargetId);
-              setLeases(loadedLeases.leases);
+              setLeases((current) => keepIfUnchanged(current, loadedLeases.leases));
               setSelectedLeaseId(loadedLeases.selectedLeaseId);
-              setWorkers(loadedWorkers);
-              setSandboxes(loadedSandboxes);
-              setWorkspaceSnapshots(loadedWorkspaceSnapshots);
+              setWorkers((current) => keepIfUnchanged(current, loadedWorkers, workerRefreshKey));
+              setSandboxes((current) => keepIfUnchanged(current, loadedSandboxes));
+              setWorkspaceSnapshots((current) =>
+                keepIfUnchanged(current, loadedWorkspaceSnapshots),
+              );
               setSelectedWorkerId((current) => selectAdminResourceId(loadedWorkers, current));
             },
           )

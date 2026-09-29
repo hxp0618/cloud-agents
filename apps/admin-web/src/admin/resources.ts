@@ -6,6 +6,7 @@ import type {
   RemoteWorkerEnrollment,
   RuntimeProfile,
   StoragePolicy,
+  Worker,
   WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
@@ -103,4 +104,40 @@ export function selectAdminResourceId(
   if (preferredId !== undefined && resources.some(({ metadata }) => metadata.uid === preferredId))
     return preferredId;
   return resources[0]?.metadata.uid ?? "";
+}
+
+/** Keeps the current reference when resource identities and versions are unchanged. */
+export function keepIfUnchanged<
+  T extends Readonly<{ metadata: Readonly<{ uid: string; resourceVersion: string }> }>,
+>(
+  current: readonly T[],
+  next: readonly T[],
+  key: (resource: T) => string = resourceVersionKey,
+): readonly T[] {
+  if (current === next || current.length !== next.length) return next;
+  for (let index = 0; index < current.length; index += 1) {
+    if (key(current[index]!) !== key(next[index]!)) return next;
+  }
+  return current;
+}
+
+function resourceVersionKey<
+  T extends Readonly<{ metadata: Readonly<{ uid: string; resourceVersion: string }> }>,
+>(resource: T): string {
+  return `${resource.metadata.uid}\0${resource.metadata.resourceVersion}`;
+}
+
+export function workerRefreshKey(worker: Worker): string {
+  const health = worker.spec.health;
+  return [
+    resourceVersionKey(worker),
+    worker.spec.state,
+    worker.spec.stableErrorCode,
+    worker.spec.lastHealthAt ?? "",
+    worker.spec.readyAt ?? "",
+    health?.state ?? "",
+    health?.checkedAt ?? "",
+    health?.expiresAt ?? "",
+    health?.lastSuccessAt ?? "",
+  ].join("\0");
 }

@@ -1,0 +1,2438 @@
+--- services/control-plane/migrations/product/000016/catalog/schema-000016.json
++++ services/control-plane/migrations/product/000017/catalog/schema-000017.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000016",
++  "schema_head": "000017",
+@@ -8264,0 +8265,314 @@
++    },
++    {
++      "migration_id": "000017",
++      "sql_sha256": "sha256:77c98098c8e6c832062de2715357da644fd6bc5cb5331b71c6cd9c2a1fa41e9f",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 3544,
++          "sha256": "sha256:7516abd4e92a3e051297eed7f605328af477aabb8cf8604de9e5fa699a99e1bf",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 3544,
++          "end": 3706,
++          "sha256": "sha256:51a726c6a80b6cab70ab9c993f0cf96c7f1e546505793608e674804ce02621e3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents/unquoted:managed_agent_executions_create_key_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3706,
++          "end": 3796,
++          "sha256": "sha256:fa9893e91159169356b03a21e76283688a9a9d4e84c2296d8b893e7b2f6de1b6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 3796,
++          "end": 3873,
++          "sha256": "sha256:b8c574a047f2e03e47f3cd262090b5428f31def1ece1ee40552ddad8b298b585",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 3873,
++          "end": 3949,
++          "sha256": "sha256:3b870ceca0700e03d6a2feb2eadcf5b24ccf3126b4e8acaac3f03fcae96b94c4",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 3949,
++          "end": 4197,
++          "sha256": "sha256:141862873955dd9248809e6dc7e2c9d52761f1bc91bad41e1fc011dce31a8d35",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:managed_agent_executions_runtime_tenant",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 4197,
++          "end": 4370,
++          "sha256": "sha256:dc3ee44d6647730504c0065ca87043cf58fb92f34e83015ec6dccf48395061af",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:managed_agent_executions_migration_owner",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 4370,
++          "end": 4442,
++          "sha256": "sha256:075cefff314a67041099b6747e16241a871a1516b89016d68934517817072af0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 4442,
++          "end": 4535,
++          "sha256": "sha256:49792fe87c52c4afc3335f69737301b5ec38f58532ed4d9080d0bbfc7dad3555",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 4535,
++          "end": 4620,
++          "sha256": "sha256:6f1c6c695902ace84b249be5f2c53bc4c2b053b3e54bd0f138f1c45c894ea6b8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_agent_executions",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 4620,
++          "end": 8981,
++          "sha256": "sha256:ba87e17dfce5425409d2b1a4a0ff30ff146df83031049252d258f296f975ab4a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 8981,
++          "end": 14335,
++          "sha256": "sha256:0dad904e3ceb1bc0ccc1f84141253bf03e792f48faca712aabfd649d3aa3b0ee",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:start_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 14335,
++          "end": 21084,
++          "sha256": "sha256:bfb099cdf845348f88203224fe3084b4bec3ee0b19545ce654e351ec5dd28f7d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 21084,
++          "end": 21240,
++          "sha256": "sha256:4d148855205debe137bcdfd3e1cb0d282fc2a98c53b15d678d286c6d989df80e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 21240,
++          "end": 21394,
++          "sha256": "sha256:a23d39259bd2de9e025ed1f31d0afc8dcbf47fc9345074e57b01773df1ae49b6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:start_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 21394,
++          "end": 21567,
++          "sha256": "sha256:e3bf35a317bd4d261c9f3f4df0e7d4790e02fad0e40417960c77b48c7307e896",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 21567,
++          "end": 21701,
++          "sha256": "sha256:62d952970320566433b9adfe64001517cf3aefd8951bfdb37f482a58ecfaa5ed",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 21701,
++          "end": 21833,
++          "sha256": "sha256:57facca62784cf7f9a65db61526e3cc1b7ca9de4b898d6dbe8c910919279cf27",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:start_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 18,
++          "start": 21833,
++          "end": 21984,
++          "sha256": "sha256:9c7736c0ce1518a8ebf53771f3b686c0af3a71ab331735c9b61a7d939a03dc41",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 19,
++          "start": 21984,
++          "end": 22132,
++          "sha256": "sha256:7bb51eb9c9a0434300915b7ac2039bca91c203fcbfc2725e2fd1c787663195c8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 20,
++          "start": 22132,
++          "end": 22279,
++          "sha256": "sha256:f9d794077d90ddfc2650d6dc13b9ba46a271efc1378572eba925d481da41ee4a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:start_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 21,
++          "start": 22279,
++          "end": 22445,
++          "sha256": "sha256:5c798a4c8fc40a37f83b7c4727fd7c9adfeca2ea2fb33fb8fe2109c71d78e350",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -8320,1 +8634,129 @@
+-        "name": "acknowledge_outbox_event",
++        "name": "compatibility_recovery_policy_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_policy_digest_v2",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_registry_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_registry_digest_v2",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_schema_catalog_digest_v2",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_schema_head_v2",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_schema_migration_digest_v2",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_state_machine_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_state_machine_digest_v2",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_current_registry_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_policy_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_project_create_registry_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_registry_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_state_machine_digest",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "require_runtime_mutation_principal",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "require_tenant_id",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "transition_membership",
+@@ -8328,1 +8770,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8336,1 +8778,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8344,4 +8785,0 @@
+-            "name": "timestamptz"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8361,1 +8799,1 @@
+-        "name": "acquire_coordination_leader",
++        "name": "revoke_membership",
+@@ -8369,1 +8807,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8377,11 +8815,2 @@
+-            "name": "integer"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "allocate_tenant_revision",
+-        "arguments": [
++            "name": "bigint"
++          },
+@@ -8394,5 +8823,1 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "timestamptz"
++            "name": "text"
+@@ -8407,1 +8832,1 @@
+-        "name": "append_coordination_audit",
++        "name": "revoke_role_binding",
+@@ -8415,1 +8840,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8423,1 +8848,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8432,1 +8857,10 @@
+-          },
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "suspend_membership",
++        "arguments": [
+@@ -8435,1 +8869,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -8447,4 +8880,0 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8460,12 +8889,0 @@
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "timestamptz"
+@@ -8545,1 +8963,1 @@
+-        "name": "bootstrap_platform_tenant",
++        "name": "create_membership",
+@@ -8552,0 +8971,4 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8566,10 +8988,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "claim_managed_agent_create_project_idempotency_v2",
+-        "arguments": [
++          },
+@@ -8589,0 +9003,4 @@
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8603,1 +9020,1 @@
+-        "name": "claim_managed_agent_create_project_idempotency",
++        "name": "allocate_tenant_revision",
+@@ -8611,1 +9028,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8615,9 +9032,1 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
++            "name": "timestamptz"
+@@ -8632,1 +9041,1 @@
+-        "name": "claim_outbox_event",
++        "name": "compatibility_recovery_migration_preflight_evaluate_v2",
+@@ -8639,0 +9049,4 @@
++            "name": "integer"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8652,1 +9065,1 @@
+-            "name": "integer"
++            "name": "bigint"
+@@ -8655,0 +9069,4 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8659,0 +9077,4 @@
++            "name": "boolean"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8669,1 +9090,1 @@
+-        "name": "close_managed_agent_session_v1",
++        "name": "compatibility_recovery_restore_evidence_reject_v2",
+@@ -8680,0 +9102,4 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8689,0 +9115,4 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -8698,1 +9127,1 @@
+-        "name": "compatibility_recovery_backfill_acquire_lease_v2",
++        "name": "compatibility_recovery_restore_evidence_complete_v2",
+@@ -8710,4 +9138,0 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8718,1 +9143,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -8722,4 +9146,0 @@
+-            "name": "integer"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8739,1 +9160,1 @@
+-        "name": "compatibility_recovery_backfill_advance_v2",
++        "name": "compatibility_recovery_restore_evidence_record_v2",
+@@ -8750,0 +9172,4 @@
++            "name": "integer"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -8755,1 +9180,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -8771,1 +9196,1 @@
+-            "name": "bigint"
++            "name": "timestamptz"
+@@ -8788,1 +9213,1 @@
+-        "name": "compatibility_recovery_backfill_complete_v2",
++        "name": "compatibility_recovery_retirement_receipt_collect_v2",
+@@ -8808,1 +9233,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8812,1 +9237,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8816,4 +9240,0 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8824,1 +9245,1 @@
+-            "name": "text"
++            "name": "boolean"
+@@ -8828,14 +9249,1 @@
+-            "name": "text"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_backfill_heartbeat_v2",
+-        "arguments": [
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
++            "name": "boolean"
+@@ -8845,1 +9253,1 @@
+-            "name": "text"
++            "name": "boolean"
+@@ -8849,1 +9257,1 @@
+-            "name": "text"
++            "name": "boolean"
+@@ -8853,1 +9261,1 @@
+-            "name": "bigint"
++            "name": "boolean"
+@@ -8857,1 +9265,1 @@
+-            "name": "integer"
++            "name": "boolean"
+@@ -8874,1 +9282,1 @@
+-        "name": "compatibility_recovery_backfill_reconcile_v2",
++        "name": "compatibility_recovery_retirement_receipt_complete_v2",
+@@ -8887,10 +9295,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_backfill_start_v2",
+-        "arguments": [
++          },
+@@ -8899,1 +9298,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8903,1 +9302,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8907,1 +9306,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8911,1 +9310,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8919,4 +9317,0 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8936,1 +9331,1 @@
+-        "name": "compatibility_recovery_backfill_transition_v2",
++        "name": "compatibility_recovery_retirement_receipt_reject_v2",
+@@ -8952,1 +9347,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -8956,8 +9350,0 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8968,4 +9354,0 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -8980,1 +9363,1 @@
+-            "name": "integer"
++            "name": "text"
+@@ -8997,1 +9380,1 @@
+-        "name": "compatibility_recovery_identity_digest_v2",
++        "name": "compatibility_recovery_live_instance_activate_v2",
+@@ -9013,1 +9396,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9016,0 +9400,12 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -9030,1 +9425,1 @@
+-        "name": "compatibility_recovery_live_instance_activate_v2",
++        "name": "compatibility_recovery_live_instance_begin_drain_v2",
+@@ -9075,1 +9470,1 @@
+-        "name": "compatibility_recovery_live_instance_begin_drain_v2",
++        "name": "compatibility_recovery_live_instance_fence_v2",
+@@ -9120,1 +9515,1 @@
+-        "name": "compatibility_recovery_live_instance_fence_v2",
++        "name": "compatibility_recovery_live_instance_finish_drain_v2",
+@@ -9165,1 +9560,1 @@
+-        "name": "compatibility_recovery_live_instance_finish_drain_v2",
++        "name": "compatibility_recovery_live_instance_heartbeat_v2",
+@@ -9193,1 +9588,1 @@
+-            "name": "bigint"
++            "name": "integer"
+@@ -9210,1 +9605,1 @@
+-        "name": "compatibility_recovery_live_instance_heartbeat_v2",
++        "name": "compatibility_recovery_live_instance_register_v2",
+@@ -9237,0 +9633,12 @@
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -9255,1 +9662,1 @@
+-        "name": "compatibility_recovery_live_instance_reconcile_v2",
++        "name": "compatibility_recovery_backfill_acquire_lease_v2",
+@@ -9278,0 +9686,4 @@
++            "name": "integer"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -9279,0 +9691,4 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -9288,1 +9703,1 @@
+-        "name": "compatibility_recovery_live_instance_register_v2",
++        "name": "compatibility_recovery_live_instance_reconcile_v2",
+@@ -9312,2 +9727,11 @@
+-            "name": "bigint"
+-          },
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_retirement_receipt_reconcile_v2",
++        "arguments": [
+@@ -9328,1 +9752,1 @@
+-            "name": "integer"
++            "name": "bigint"
+@@ -9332,1 +9756,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9345,1 +9769,1 @@
+-        "name": "compatibility_recovery_live_instance_transition_v2",
++        "name": "compatibility_recovery_restore_evidence_transition_v2",
+@@ -9361,1 +9785,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9365,1 +9789,1 @@
+-            "name": "bigint"
++            "name": "integer"
+@@ -9369,1 +9793,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9373,1 +9797,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9377,1 +9801,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9389,1 +9813,1 @@
+-            "name": "text"
++            "name": "timestamptz"
+@@ -9393,1 +9817,1 @@
+-            "name": "integer"
++            "name": "text"
+@@ -9410,1 +9834,1 @@
+-        "name": "compatibility_recovery_lock_v2",
++        "name": "compatibility_recovery_backfill_heartbeat_v2",
+@@ -9423,10 +9847,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_migration_preflight_evaluate_v2",
+-        "arguments": [
++          },
+@@ -9435,1 +9850,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9448,1 +9863,10 @@
+-          },
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "renew_coordination_leader",
++        "arguments": [
+@@ -9455,1 +9879,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9459,4 +9882,0 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -9467,1 +9887,1 @@
+-            "name": "boolean"
++            "name": "bigint"
+@@ -9471,1 +9891,1 @@
+-            "name": "text"
++            "name": "integer"
+@@ -9480,17 +9900,1 @@
+-        "name": "compatibility_recovery_policy_digest_v2",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_policy_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_profile_digest_v2",
++        "name": "compatibility_recovery_backfill_advance_v2",
+@@ -9501,10 +9905,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_profile_digest",
+-        "arguments": [
++          },
+@@ -9514,10 +9909,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_profile_is_registered_v2",
+-        "arguments": [
++          },
+@@ -9529,0 +9916,4 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -9531,10 +9921,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_profile_is_registered",
+-        "arguments": [
++          },
+@@ -9547,0 +9929,12 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -9556,1 +9949,1 @@
+-        "name": "compatibility_recovery_record_transition_v2",
++        "name": "compatibility_recovery_backfill_complete_v2",
+@@ -9572,1 +9965,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9588,8 +9980,0 @@
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -9600,4 +9984,0 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -9608,1 +9989,1 @@
+-            "name": "timestamptz"
++            "name": "text"
+@@ -9617,17 +9998,1 @@
+-        "name": "compatibility_recovery_registry_digest_v2",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_registry_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_require_principal_v2",
++        "name": "reap_expired_outbox_claim",
+@@ -9638,10 +10003,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_restore_evidence_complete_v2",
+-        "arguments": [
++          },
+@@ -9667,4 +10022,0 @@
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+@@ -9679,1 +10031,1 @@
+-        "name": "compatibility_recovery_restore_evidence_reconcile_v2",
++        "name": "acquire_coordination_leader",
+@@ -9691,0 +10044,4 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"
+@@ -9700,1 +10056,1 @@
+-        "name": "compatibility_recovery_restore_evidence_record_v2",
++        "name": "compatibility_recovery_retirement_receipt_transition_v2",
+@@ -9712,1 +10068,1 @@
+-            "name": "integer"
++            "name": "text"
+@@ -9720,1 +10076,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9724,1 +10080,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9728,1 +10084,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9732,1 +10088,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9736,1 +10092,1 @@
+-            "name": "timestamptz"
++            "name": "boolean"
+@@ -9740,1 +10096,1 @@
+-            "name": "text"
++            "name": "boolean"
+@@ -9744,11 +10100,2 @@
+-            "name": "text"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_restore_evidence_reject_v2",
+-        "arguments": [
++            "name": "boolean"
++          },
+@@ -9757,1 +10104,1 @@
+-            "name": "text"
++            "name": "boolean"
+@@ -9761,1 +10108,1 @@
+-            "name": "text"
++            "name": "boolean"
+@@ -9765,1 +10112,1 @@
+-            "name": "bigint"
++            "name": "boolean"
+@@ -9790,1 +10137,1 @@
+-        "name": "compatibility_recovery_restore_evidence_transition_v2",
++        "name": "compatibility_recovery_live_instance_transition_v2",
+@@ -9806,1 +10153,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9810,1 +10157,1 @@
+-            "name": "integer"
++            "name": "bigint"
+@@ -9814,1 +10161,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9818,1 +10165,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9822,1 +10169,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -9834,1 +10181,1 @@
+-            "name": "timestamptz"
++            "name": "text"
+@@ -9838,1 +10185,1 @@
+-            "name": "text"
++            "name": "integer"
+@@ -9855,1 +10202,1 @@
+-        "name": "compatibility_recovery_retirement_receipt_collect_v2",
++        "name": "compatibility_recovery_workload_principal_register_v2",
+@@ -9871,1 +10218,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9879,32 +10225,0 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "boolean"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "boolean"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "boolean"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "boolean"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "boolean"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "boolean"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -9924,1 +10239,1 @@
+-        "name": "compatibility_recovery_retirement_receipt_complete_v2",
++        "name": "compatibility_recovery_workload_principal_revoke_v2",
+@@ -9940,1 +10255,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9948,8 +10262,0 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -9961,4 +10267,0 @@
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+@@ -9973,1 +10276,1 @@
+-        "name": "compatibility_recovery_retirement_receipt_reconcile_v2",
++        "name": "claim_outbox_event",
+@@ -9989,1 +10292,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -9993,1 +10296,1 @@
+-            "name": "bigint"
++            "name": "integer"
+@@ -9997,0 +10301,4 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10006,1 +10313,1 @@
+-        "name": "compatibility_recovery_retirement_receipt_reject_v2",
++        "name": "compatibility_recovery_workload_principal_rotate_v2",
+@@ -10022,1 +10329,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10026,1 +10333,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10043,4 +10349,0 @@
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+@@ -10055,1 +10358,1 @@
+-        "name": "compatibility_recovery_retirement_receipt_transition_v2",
++        "name": "complete_managed_agent_create_project_success",
+@@ -10075,1 +10378,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10083,1 +10386,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10087,1 +10390,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10091,2 +10394,11 @@
+-            "name": "boolean"
+-          },
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "complete_managed_agent_create_project_success_v2",
++        "arguments": [
+@@ -10095,1 +10407,1 @@
+-            "name": "boolean"
++            "name": "text"
+@@ -10099,1 +10411,1 @@
+-            "name": "boolean"
++            "name": "text"
+@@ -10103,1 +10415,1 @@
+-            "name": "boolean"
++            "name": "text"
+@@ -10107,1 +10419,1 @@
+-            "name": "boolean"
++            "name": "text"
+@@ -10111,1 +10423,1 @@
+-            "name": "boolean"
++            "name": "text"
+@@ -10115,1 +10427,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -10136,41 +10448,1 @@
+-        "name": "compatibility_recovery_schema_catalog_digest_v2",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_schema_head_v2",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_schema_migration_digest_v2",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_state_machine_digest_v2",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_state_machine_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_transition_lock_v2",
++        "name": "compatibility_recovery_backfill_start_v2",
+@@ -10185,10 +10457,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_workload_principal_reconcile_v2",
+-        "arguments": [
++          },
+@@ -10208,0 +10472,4 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10209,0 +10477,4 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10218,1 +10489,1 @@
+-        "name": "compatibility_recovery_workload_principal_register_v2",
++        "name": "append_coordination_audit",
+@@ -10238,1 +10509,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10246,11 +10517,2 @@
+-            "name": "text"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_workload_principal_revoke_v2",
+-        "arguments": [
++            "name": "bigint"
++          },
+@@ -10259,1 +10521,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -10271,1 +10533,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -10275,1 +10537,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10283,0 +10546,8 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
+@@ -10292,1 +10562,1 @@
+-        "name": "compatibility_recovery_workload_principal_rotate_v2",
++        "name": "compatibility_recovery_workload_principal_transition_v2",
+@@ -10315,0 +10586,4 @@
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10337,1 +10611,1 @@
+-        "name": "compatibility_recovery_workload_principal_transition_v2",
++        "name": "compatibility_recovery_backfill_transition_v2",
+@@ -10368,0 +10643,4 @@
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10372,0 +10651,8 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10386,1 +10672,1 @@
+-        "name": "complete_managed_agent_create_project_failure_v2",
++        "name": "compatibility_recovery_record_transition_v2",
+@@ -10411,10 +10697,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "complete_managed_agent_create_project_failure",
+-        "arguments": [
++          },
+@@ -10435,1 +10712,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -10439,1 +10716,1 @@
+-            "name": "text"
++            "name": "bigint"
+@@ -10443,0 +10721,4 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
+@@ -10452,1 +10733,1 @@
+-        "name": "complete_managed_agent_create_project_success_v2",
++        "name": "create_managed_agent_project_durable_v1",
+@@ -10476,1 +10757,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10497,1 +10778,1 @@
+-        "name": "complete_managed_agent_create_project_success",
++        "name": "create_managed_agent_turn_v1",
+@@ -10521,4 +10801,0 @@
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -10530,4 +10806,0 @@
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+@@ -10542,17 +10815,1 @@
+-        "name": "coordination_current_registry_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_policy_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_profile_creates_operation",
++        "name": "compatibility_recovery_identity_digest_v2",
+@@ -10567,10 +10824,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_profile_is_registered",
+-        "arguments": [
++          },
+@@ -10584,10 +10832,1 @@
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_profile_outbox_class",
+-        "arguments": [
++          },
+@@ -10609,1 +10848,1 @@
+-        "name": "coordination_profile_replay_ttl_seconds",
++        "name": "complete_managed_agent_create_project_failure",
+@@ -10617,0 +10857,16 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10626,9 +10881,1 @@
+-        "name": "coordination_project_create_registry_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_registry_digest_for_profile",
++        "name": "complete_managed_agent_create_project_failure_v2",
+@@ -10642,0 +10890,16 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10651,9 +10914,1 @@
+-        "name": "coordination_registry_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_registry_profile_is_registered",
++        "name": "create_managed_agent_session_v1",
+@@ -10671,0 +10927,12 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10680,9 +10947,1 @@
+-        "name": "coordination_state_machine_digest",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "create_managed_agent_project_durable_v1",
++        "name": "transition_outbox_claim",
+@@ -10711,0 +10971,4 @@
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10733,1 +10996,1 @@
+-        "name": "create_managed_agent_session_v1",
++        "name": "dead_letter_outbox_event",
+@@ -10756,0 +11020,4 @@
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10757,0 +11025,8 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10766,1 +11041,1 @@
+-        "name": "create_managed_agent_turn_v1",
++        "name": "acknowledge_outbox_event",
+@@ -10789,0 +11065,4 @@
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -10803,1 +11082,1 @@
+-        "name": "create_membership",
++        "name": "retry_outbox_event",
+@@ -10811,1 +11090,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10827,1 +11106,1 @@
+-            "name": "text"
++            "name": "timestamptz"
+@@ -10835,0 +11115,13 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "bootstrap_platform_tenant",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10843,1 +11135,1 @@
+-            "name": "timestamptz"
++            "name": "text"
+@@ -10860,1 +11152,1 @@
+-        "name": "dead_letter_outbox_event",
++        "name": "claim_managed_agent_create_project_idempotency",
+@@ -10880,0 +11173,13 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "claim_managed_agent_create_project_idempotency_v2",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10884,1 +11189,1 @@
+-            "name": "timestamptz"
++            "name": "text"
+@@ -10905,1 +11210,1 @@
+-        "name": "is_valid_identifier",
++        "name": "close_managed_agent_session_v1",
+@@ -10909,0 +11215,16 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10918,1 +11239,1 @@
+-        "name": "reap_expired_outbox_claim",
++        "name": "compatibility_recovery_workload_principal_reconcile_v2",
+@@ -10934,1 +11255,14 @@
+-            "name": "bigint"
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_backfill_reconcile_v2",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10951,1 +11285,1 @@
+-        "name": "renew_coordination_leader",
++        "name": "compatibility_recovery_lock_v2",
+@@ -10963,0 +11298,13 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_restore_evidence_reconcile_v2",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -10967,1 +11314,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -10971,1 +11318,1 @@
+-            "name": "integer"
++            "name": "text"
+@@ -10980,2 +11327,15 @@
+-        "name": "require_runtime_mutation_principal",
+-        "arguments": []
++        "name": "coordination_registry_profile_is_registered",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
+@@ -10988,9 +11348,1 @@
+-        "name": "require_tenant_id",
+-        "arguments": []
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "retry_outbox_event",
++        "name": "subject_ref_digest",
+@@ -11009,1 +11361,10 @@
+-          },
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_profile_is_registered",
++        "arguments": [
+@@ -11017,1 +11378,10 @@
+-          },
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_profile_is_registered_v2",
++        "arguments": [
+@@ -11020,4 +11389,0 @@
+-            "name": "timestamptz"
+-          },
+-          {
+-            "schema": "pg_catalog",
+@@ -11037,1 +11403,1 @@
+-        "name": "revoke_membership",
++        "name": "compatibility_recovery_transition_lock_v2",
+@@ -11045,2 +11411,11 @@
+-            "name": "bigint"
+-          },
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_profile_creates_operation",
++        "arguments": [
+@@ -11053,2 +11428,11 @@
+-            "name": "bigint"
+-          },
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_profile_is_registered",
++        "arguments": [
+@@ -11070,1 +11454,1 @@
+-        "name": "revoke_role_binding",
++        "name": "coordination_profile_outbox_class",
+@@ -11078,2 +11462,11 @@
+-            "name": "bigint"
+-          },
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_profile_replay_ttl_seconds",
++        "arguments": [
+@@ -11086,2 +11479,11 @@
+-            "name": "bigint"
+-          },
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_registry_digest_for_profile",
++        "arguments": [
+@@ -11103,1 +11505,1 @@
+-        "name": "subject_ref_digest",
++        "name": "compatibility_recovery_profile_digest",
+@@ -11108,1 +11510,10 @@
+-          },
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_profile_digest_v2",
++        "arguments": [
+@@ -11112,1 +11523,10 @@
+-          },
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_require_principal_v2",
++        "arguments": [
+@@ -11124,1 +11544,1 @@
+-        "name": "suspend_membership",
++        "name": "is_valid_identifier",
+@@ -11128,0 +11549,13 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "settle_managed_agent_execution_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "unquoted:text"
+@@ -11132,1 +11565,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -11139,0 +11573,8 @@
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -11148,0 +11590,12 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
+@@ -11157,1 +11610,1 @@
+-        "name": "transition_membership",
++        "name": "create_managed_agent_execution_v1",
+@@ -11161,1 +11614,1 @@
+-            "name": "text"
++            "name": "unquoted:text"
+@@ -11165,1 +11618,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -11173,1 +11626,1 @@
+-            "name": "bigint"
++            "name": "text"
+@@ -11180,0 +11634,4 @@
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
+@@ -11194,1 +11651,1 @@
+-        "name": "transition_outbox_claim",
++        "name": "start_managed_agent_execution_v1",
+@@ -11198,1 +11655,1 @@
+-            "name": "text"
++            "name": "unquoted:text"
+@@ -11218,1 +11675,1 @@
+-            "name": "timestamptz"
++            "name": "bigint"
+@@ -11227,8 +11683,0 @@
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+@@ -11239,0 +11689,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "audit_facts"
++      }
++    },
++    {
+@@ -11272,0 +11729,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "builtin_role_permissions"
++      }
++    },
++    {
+@@ -11283,0 +11747,14 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "builtin_roles"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_backfills_v2"
++      }
++    },
++    {
+@@ -11294,0 +11772,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_live_instances_v2"
++      }
++    },
++    {
+@@ -11316,0 +11801,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_restore_evidence_v2"
++      }
++    },
++    {
+@@ -11327,0 +11819,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_retirement_receipts_v2"
++      }
++    },
++    {
+@@ -11338,0 +11837,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_transition_facts_v2"
++      }
++    },
++    {
+@@ -11349,0 +11855,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "compatibility_recovery_workload_principals_v2"
++      }
++    },
++    {
+@@ -11360,0 +11873,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "coordination_audit_facts"
++      }
++    },
++    {
+@@ -11415,0 +11935,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "idempotency_records"
++      }
++    },
++    {
+@@ -11459,0 +11986,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "instance_retirement_receipts"
++      }
++    },
++    {
+@@ -11470,0 +12004,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "leader_leases"
++      }
++    },
++    {
+@@ -11481,0 +12022,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "live_instances"
++      }
++    },
++    {
+@@ -11503,0 +12051,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_executions"
++      }
++    },
++    {
+@@ -11506,0 +12061,18 @@
++        "name": "managed_agent_executions_create_key_idx"
++      },
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_executions"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_sessions"
++      }
++    },
++    {
++      "kind": "index",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -11510,0 +12083,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_turns"
++      }
++    },
++    {
+@@ -11517,0 +12097,21 @@
++      "kind": "policy",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_turns_migration_owner"
++      }
++    },
++    {
++      "kind": "policy",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_turns_runtime_tenant"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "memberships"
++      }
++    },
++    {
+@@ -11583,0 +12184,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "migration_backfills"
++      }
++    },
++    {
+@@ -11594,0 +12202,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "operation_attempts"
++      }
++    },
++    {
+@@ -11616,0 +12231,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "operation_finalizers"
++      }
++    },
++    {
+@@ -11638,0 +12260,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "organizations"
++      }
++    },
++    {
+@@ -11660,0 +12289,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "outbox_events"
++      }
++    },
++    {
+@@ -11715,0 +12351,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "platform_operations"
++      }
++    },
++    {
+@@ -11748,0 +12391,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "platform_tenants"
++      }
++    },
++    {
+@@ -11759,0 +12409,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "projects"
++      }
++    },
++    {
+@@ -11792,0 +12449,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "resource_changes"
++      }
++    },
++    {
+@@ -11814,0 +12478,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "role_bindings"
++      }
++    },
++    {
+@@ -11891,0 +12562,14 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "schema_migrations"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "schema_restore_evidence"
++      }
++    },
++    {
+@@ -11902,0 +12587,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "tenant_resource_versions"
++      }
++    },
++    {
+@@ -11913,0 +12605,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "terminal_receipts"
++      }
++    },
++    {
+@@ -11935,0 +12634,7 @@
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "workload_database_principals"
++      }
++    },
++    {
+@@ -11959,14 +12663,0 @@
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_turns_migration_owner"
+-      }
+-    },
+-    {
+-      "kind": "policy",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_turns_runtime_tenant"
+-      }
+-    },
+-    {
+-      "kind": "policy",
+@@ -12070,0 +12762,16 @@
++        "name": "managed_agent_executions"
++      },
++      "name": "managed_agent_executions_migration_owner"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_executions"
++      },
++      "name": "managed_agent_executions_runtime_tenant"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
+@@ -12274,224 +12980,0 @@
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "audit_facts"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "builtin_role_permissions"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "builtin_roles"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_backfills_v2"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_live_instances_v2"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_restore_evidence_v2"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_retirement_receipts_v2"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_transition_facts_v2"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "compatibility_recovery_workload_principals_v2"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "coordination_audit_facts"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "idempotency_records"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "instance_retirement_receipts"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "leader_leases"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "live_instances"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_sessions"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_turns"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "memberships"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "migration_backfills"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "operation_attempts"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "operation_finalizers"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "organizations"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "outbox_events"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "platform_operations"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "platform_tenants"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "projects"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "resource_changes"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "role_bindings"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "schema_migrations"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "schema_restore_evidence"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "tenant_resource_versions"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "terminal_receipts"
+-      }
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "workload_database_principals"
+-      }

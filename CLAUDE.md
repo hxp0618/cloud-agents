@@ -1,9 +1,8 @@
 # Project instructions
-你需要先判断我在哪个网络下，如果我在家庭网络，代理是 export https_proxy=http://192.168.31.125:6152 http_proxy=http://192.168.31.125:6152 all_proxy=socks5://192.168.31.125:6153
-如果我实在公司网络环境下，我的代理是 export https_proxy=http://10.1.5.85:6152;export http_proxy=http://10.1.5.85:6152;export all_proxy=socks5://10.1.5.85:6153
+联网前先确认当前网络，并只通过进程级环境变量配置本地代理。代理地址属于本机环境配置，不要写入仓库、文档、日志或证据；缺少代理时保持命令未执行并记录为 `BLOCKED`。
 
 ## Dev environment
-you can use 'ssh hypers-accer' to connect my dev env
+Use only a separately configured local SSH host alias for development access; do not commit hostnames, credentials, or connection details.
 
 ## Start here
 

@@ -1,0 +1,322 @@
+--- services/control-plane/migrations/product/000066/catalog/schema-000065.json
++++ services/control-plane/migrations/product/000067/catalog/schema-000066.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000066",
++  "schema_head": "000067",
+@@ -21248,0 +21249,286 @@
++    },
++    {
++      "migration_id": "000067",
++      "sql_sha256": "sha256:ea2b7439ab3d19f688c7c6b61861391162a450bc27e502a75bc64929398ec10e",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 365,
++          "sha256": "sha256:929703d8d18b4d79f42733d20d846e1bf12c884eea514e08c38bf1e4c124c88a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:remote_worker_target_uid_v1(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 365,
++          "end": 451,
++          "sha256": "sha256:5ae45d9fd82033fe1e06f74845e8594e1b8ad5825933f66c165cd14e5b889e44",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 451,
++          "end": 611,
++          "sha256": "sha256:46cb68281908e1e3a46759e58951ebe4d4054b2dfdc7331962a75ebe837b9e50",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 611,
++          "end": 700,
++          "sha256": "sha256:cd86133739c8f03ea0451598e5ef66cd2b5af066a89a30784874d6abf38cf529",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 700,
++          "end": 1204,
++          "sha256": "sha256:c41c6ac607c1122568c5b2dbf92a233f9f8f09d3027f95bca16c3f77f5537025",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 1204,
++          "end": 1412,
++          "sha256": "sha256:d4260ed3b013abfe9598c4ae62f58f79e700ddebd49ebdb494e8a8d42025a2e6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 1412,
++          "end": 1573,
++          "sha256": "sha256:1b5b7f2ac00509ec6e05956f1be1e4235bcf7c1273a6363e5c691475c8fdc4d4",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 1573,
++          "end": 4021,
++          "sha256": "sha256:753ac1aa669bb7529cc14358c5d744031f3f60c7a6baa8389dd0b3129f26ef6a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "INSERT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 4021,
++          "end": 4334,
++          "sha256": "sha256:d1673f6dc022f8c90c8e2c6f39cabb859100df44ebee6c6c0c8cf68e6404e0ed",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 4334,
++          "end": 7350,
++          "sha256": "sha256:7f7d58b99902c1c60f93bfec1ef4224fb88b6b0dbc263473bed0f33a45b7a08c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:sync_remote_worker_target_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 7350,
++          "end": 7707,
++          "sha256": "sha256:16d215c3c26ffc87b453cfcaaeb84dd250e40e0eadb34a9741a55d58e0a72126",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:sync_remote_worker_target_v1",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 7707,
++          "end": 11134,
++          "sha256": "sha256:414854f0544ff507be5b1fad6c72d40f606dbe231195c577a232b4125150c313",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "VIEW",
++            "target_identity": "view:unquoted:cloud_agents/unquoted:deployment_target_admin_projection",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 11134,
++          "end": 11246,
++          "sha256": "sha256:ef0a8b040d42a99e4716ef5607513720cffad4bbf0ac0e295b1cdfce3b509011",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:remote_worker_target_uid_v1(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 11246,
++          "end": 11344,
++          "sha256": "sha256:424b90685c28d7680a2010e7d3b42e198b8fe6cdbceaba78bfe5301e784ffee7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:sync_remote_worker_target_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 11344,
++          "end": 11442,
++          "sha256": "sha256:96eb4e40e2e00ce727b5dcb8272d6bd9c9a97c1bfb24c108ac2b44487d81189b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "VIEW",
++            "target_identity": "view:unquoted:cloud_agents/unquoted:deployment_target_admin_projection",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 11442,
++          "end": 11535,
++          "sha256": "sha256:2c2f17b1777608aa1bbd5bbe50e2c69c6398fab0b901907f2370a7fe76b9c531",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:remote_worker_target_uid_v1(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 11535,
++          "end": 11615,
++          "sha256": "sha256:f7b24d921acc43e053647bcb9714d13d8aa082e48adef4185b79b0d685f8a293",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:sync_remote_worker_target_v1()",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 11615,
++          "end": 11696,
++          "sha256": "sha256:27a6b6d23e85ab8088e11155c9d2352c97046fbca7c218d918182447eb66dcef",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_target_admin_projection",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 18,
++          "start": 11696,
++          "end": 11804,
++          "sha256": "sha256:f6ceb9c7c34401ced3cdcad0bee496b8314afdddec738c088b5c48d2375d1b98",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:remote_worker_target_uid_v1(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 19,
++          "start": 11804,
++          "end": 11899,
++          "sha256": "sha256:221729b034d630461f398d460e0868f6dbdc973722d545325416dd33550d71e7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_target_admin_projection",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -30902,0 +31189,29 @@
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "remote_worker_target_uid_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "sync_remote_worker_target_v1",
++        "arguments": []

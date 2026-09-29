@@ -1,0 +1,602 @@
+--- services/control-plane/migrations/product/000046/catalog/schema-000046.json
++++ services/control-plane/migrations/product/000047/catalog/schema-000047.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000046",
++  "schema_head": "000047",
+@@ -13750,0 +13751,426 @@
++    },
++    {
++      "migration_id": "000047",
++      "sql_sha256": "sha256:4a1c03caa15a2240a9100c946bf73e17daebe0ee61fd8945c8e4b9d79c2c1beb",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 1453,
++          "sha256": "sha256:b3f5f3bd36e78162da14813ae17b667bd191eade41bbfedb543d2367306397b4",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quotas",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 1453,
++          "end": 3869,
++          "sha256": "sha256:2a1ce279360576d75331b452883ea3c51ef2233f8cb59861226dbe2834958e8c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quota_activity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3869,
++          "end": 4035,
++          "sha256": "sha256:52c278dfb4031f46ef0251fca74fc5fdffaf3b301a24b2a142b5584ec655db2d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents/unquoted:project_lease_quota_activity_audit_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 4035,
++          "end": 4121,
++          "sha256": "sha256:cfa198031c9c425a302502ae1bd8dc72a60d60d82a2f9f67f6ccebf9ca40b1f1",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quotas",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 4121,
++          "end": 4214,
++          "sha256": "sha256:c3a189aaa99e2f5265f1f16fc0377335c5aa5afdc8c4e7c6a2e2ca10505b2b6b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quota_activity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 4214,
++          "end": 4287,
++          "sha256": "sha256:696721b478114e04357f2b9743175b4c21830753e5e67a70417ec0fb2ba9f7ce",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quotas",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 4287,
++          "end": 4359,
++          "sha256": "sha256:25d6a0cdfc644c2d78fef894cfff4a124880e3310066dfc5d3e95f886630fa63",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quotas",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 4359,
++          "end": 4440,
++          "sha256": "sha256:ac16a5ba985eab24b5d7909d39e24d326392757caf2f4d5d1ca5d432f30709bd",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quota_activity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 4440,
++          "end": 4520,
++          "sha256": "sha256:9e1961430be3b8fb97329a7327bc69bf13119ef0518f14deb876e5c53c26db27",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quota_activity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 4520,
++          "end": 4751,
++          "sha256": "sha256:c91386e4bf4fd8167573184b28f07991c71e1936a715320c4f48ea61543cd802",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:project_lease_quotas_runtime_tenant",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 4751,
++          "end": 4907,
++          "sha256": "sha256:c53ccac56511a731812f68ccb77b56b7984e7dbf76db504efb5729db23355f6d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:project_lease_quotas_migration_owner",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 4907,
++          "end": 5154,
++          "sha256": "sha256:70de3da79ffba1fe59cf5400c8127379507b64fe91dd7f79a81dcf109735c7a4",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:project_lease_quota_activity_runtime_tenant",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 5154,
++          "end": 5326,
++          "sha256": "sha256:5106b40c0a8b94a214aa3b90473ebc65c8e798260c0b05e93a98943e8004f562",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:project_lease_quota_activity_migration_owner",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 5326,
++          "end": 5393,
++          "sha256": "sha256:2a54e608026f97e03c504f54b5328e50b3dd11f10fdeb5ab1f7bfadc31681050",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quotas",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 5393,
++          "end": 5468,
++          "sha256": "sha256:be78fa96fb20523845c2203bb66431083027bf79abb0c6d27ce8ce8932fe4cf5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quota_activity",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 5468,
++          "end": 5549,
++          "sha256": "sha256:62293e37c88ced9ed6f14d691ec1b6cec265815292df37233b40de3b543bc13e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quotas",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 5549,
++          "end": 5638,
++          "sha256": "sha256:e4deac7a40fec413026d44654d6426f90eef5098b5278ea59896676696dc4285",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:project_lease_quota_activity",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 5638,
++          "end": 12696,
++          "sha256": "sha256:b3075329547ffd202346cade4b8ec24372ade76a296be350a1e473036689d32e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:set_project_lease_quota_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 18,
++          "start": 12696,
++          "end": 14822,
++          "sha256": "sha256:e40dce175d89687b00d205d0b37f79f7f0b7f37aba47933c548b4093662aca17",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:enforce_project_lease_quota_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 19,
++          "start": 14822,
++          "end": 15031,
++          "sha256": "sha256:9586f9d35e737994277d4ef35a8653c6d05f8f655354870ec4cea7dcd7dcdd32",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:managed_host_environment_leases_project_quota",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 20,
++          "start": 15031,
++          "end": 16760,
++          "sha256": "sha256:18e5b62c6d734b7c2734ae0f09bb1737ce3376f98f298d74894baa8663f3414a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_user_environment_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 21,
++          "start": 16760,
++          "end": 16937,
++          "sha256": "sha256:036b2f8b533313b6da56dfe9aef56e4e25b69b4b0ac743168c6f0faaad8d71f0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:set_project_lease_quota_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 22,
++          "start": 16937,
++          "end": 17041,
++          "sha256": "sha256:1e105c3d1cf2e0f23fe82d03fb1693c2ff231fd8a05b2770e5c5305060493cb7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:enforce_project_lease_quota_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 23,
++          "start": 17041,
++          "end": 17191,
++          "sha256": "sha256:a8b11cc3515c02971b56facc1a9fe95bc4b38206e88a3eac63f5714e9caf9de5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_user_environment_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 24,
++          "start": 17191,
++          "end": 17349,
++          "sha256": "sha256:401817964e9ddc88984603e5921b07b1c6ad892e800139ac7fbdb53fa7e77e6b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:set_project_lease_quota_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 25,
++          "start": 17349,
++          "end": 17431,
++          "sha256": "sha256:fd20f62565d4a43a0b93db0dd19b94e430d6248f5e403c590edfa48f2503b8e8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:enforce_project_lease_quota_v1()",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 26,
++          "start": 17431,
++          "end": 17563,
++          "sha256": "sha256:66b2c781c87f037579fce0bbae43f9e2c88f612141c0c1730a8d2fbf334b74b0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_user_environment_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 27,
++          "start": 17563,
++          "end": 17713,
++          "sha256": "sha256:068dc1754dbd32359d33696d8a1945c85c3fe6edf3bd604a6180260d54021f54",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_user_environment_v3(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 28,
++          "start": 17713,
++          "end": 17886,
++          "sha256": "sha256:7505cfb044b256e480e9e77cf1c71cc891b9177d6dbb9cf4383f6590dd67e0c7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:set_project_lease_quota_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 29,
++          "start": 17886,
++          "end": 18033,
++          "sha256": "sha256:f8403dc7259e8916e0671724e6e0232916c652dedcde3c4fd3dca42164c51b2f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_user_environment_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -18689,0 +19116,102 @@
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "set_project_lease_quota_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "enforce_project_lease_quota_v1",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "create_user_environment_v4",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
+@@ -20218,0 +20747,66 @@
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quotas"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quota_activity"
++      }
++    },
++    {
++      "kind": "index",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quota_activity_audit_idx"
++      },
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quota_activity"
++      }
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quotas"
++      },
++      "name": "project_lease_quotas_runtime_tenant"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quotas"
++      },
++      "name": "project_lease_quotas_migration_owner"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quota_activity"
++      },
++      "name": "project_lease_quota_activity_runtime_tenant"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "project_lease_quota_activity"
++      },
++      "name": "project_lease_quota_activity_migration_owner"
++    },
++    {
++      "kind": "trigger",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_host_environment_leases"
++      },
++      "name": "managed_host_environment_leases_project_quota",
++      "owning_constraint": null

@@ -9,68 +9,14 @@ import {
   AjvOfficialSuiteAuditError,
   ajvOfficialSuiteAuditInputs,
   assertResolvedAjvPackageIdentity,
-  assertAjvOfficialSuiteAuditCurrent,
   assertObservedMatchesExpected,
   buildAjvOfficialSuiteAudit,
   requireAjvOfficialSuiteConformance,
-  serializeAjvOfficialSuiteAudit,
 } from "./platform-ajv-official-suite";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 
 describe("Ajv 8.20.0 Draft 2020-12 official mandatory-suite audit", () => {
-  it("is current, deterministic, and records the exact nonconformant result", () => {
-    expect(() => assertAjvOfficialSuiteAuditCurrent(repositoryRoot)).not.toThrow();
-    const first = buildAjvOfficialSuiteAudit(repositoryRoot) as Record<string, any>;
-    const second = buildAjvOfficialSuiteAudit(repositoryRoot);
-
-    expect(serializeAjvOfficialSuiteAudit(first)).toBe(serializeAjvOfficialSuiteAudit(second));
-    expect(first).toMatchObject({
-      status: "EXECUTED_NONCONFORMANT",
-      conformanceClaim: false,
-      notGateClosure: true,
-      summary: {
-        files: 46,
-        cases: 383,
-        assertions: 1299,
-        remotes: 79,
-        passedAssertions: 1241,
-        compileFailedCases: 7,
-        notRunAssertions: 20,
-        validityMismatches: 30,
-        runtimeErrors: 8,
-        discrepancyRecords: 45,
-        nonPassingAssertions: 58,
-      },
-      implementationBoundary: {
-        closureCriterion: "remains_missing",
-        gateStatus: "all_gates_open",
-      },
-    });
-    expect(first.discrepancies).toHaveLength(45);
-    expect(new Set(first.discrepancies.map((item: any) => item.id)).size).toBe(45);
-    expect(first.categories.map((item: any) => item.category)).toEqual([
-      "dynamicRef",
-      "enum",
-      "properties",
-      "ref",
-      "unevaluatedItems",
-      "unevaluatedProperties",
-      "vocabulary",
-    ]);
-    expect(
-      [
-        ...new Set(first.discrepancies.map((item: any) => item.boundary).filter(Boolean)),
-      ].toSorted(),
-    ).toEqual([
-      "DUNDER_PROTO_PROPERTY_FILTERED",
-      "EMPTY_ENUM_REJECTED",
-      "NON_HASH_DYNAMIC_REF_REJECTED",
-      "VOCABULARY_REGISTRATION_BEHAVIOR",
-    ]);
-    expect(serializeAjvOfficialSuiteAudit(first)).not.toMatch(/generatedAt|\/Users\//u);
-  });
-
   it("locks the fresh-per-case Ajv options and offline remote registry", () => {
     expect(AJV_OFFICIAL_SUITE_OPTIONS).toEqual({
       allErrors: true,

@@ -1,0 +1,40 @@
+--- services/control-plane/migrations/product/000037/catalog/schema-000037.json
++++ services/control-plane/migrations/product/000038/catalog/schema-000038.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000037",
++  "schema_head": "000038",
+@@ -11410,0 +11411,34 @@
++            "special_case": null
++          }
++        }
++      ]
++    },
++    {
++      "migration_id": "000038",
++      "sql_sha256": "sha256:da7585c75ce0c592434f634b3c997160d7d83cc468184fff59acba778663ac24",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 92,
++          "sha256": "sha256:3caa14377b89adaa2432625a4f50383acfa65042ce03402c059323a7c3d2f9af",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 92,
++          "end": 531,
++          "sha256": "sha256:4f5b7581841386a26fcae3e1e67751374260724039d990d712fa84083b52d1f7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:deployment_targets",
++            "grantee": null,

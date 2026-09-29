@@ -7,6 +7,8 @@ import {
   capabilityTokenEnvironmentName,
   isManagedMcpCallResultUnknown,
   managedMcpConfiguration,
+  recordValue,
+  stringValue,
   type RuntimeCapabilityBinding,
   type RuntimeCapabilityManifest,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
@@ -318,16 +320,6 @@ function optionalCursor(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 1024)
     throw unavailable("MCP tools/list cursor is invalid.");
   return value;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function unavailable(message: string): ManagedCapabilityUnavailableError {

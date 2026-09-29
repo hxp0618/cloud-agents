@@ -16,10 +16,14 @@ import {
   ManagedCapabilityCallResultUnknownError,
   ProviderInterruptedError,
   WorkspaceGeneratedFileCollector,
+  assertCredentialKeys,
+  credentialBaseUrl,
   createProviderPlugin,
   hasAuthoritativeResumeData,
   nativeResumeContinuationPrompt,
   providerEnvironment,
+  optionalCredentialString,
+  requiredCredentialString,
   reconstructedPrompt,
   requireProviderOuterSandboxProfile,
   validateRunnerInput,
@@ -27,6 +31,8 @@ import {
   isManagedSkillBundlePath,
   ManagedCapabilityUnavailableError,
   readCapabilityManifest,
+  recordValue,
+  stringValue,
   type RuntimeCapabilityBinding,
   type ProviderRunController,
   type ProviderRunExecutor,
@@ -44,6 +50,11 @@ import {
 export const PI_PROVIDER_KIND = "pi" as const;
 const PI_VERSION = "0.85.1";
 const MANAGED_PROVIDER = "cloud-agents-openai";
+const CREDENTIAL_STRING_OPTIONS = {
+  allowNull: false,
+  punctuation: ".",
+  singleLineMessage: false,
+} as const;
 
 type PiSession = Pick<
   AgentSession,
@@ -109,7 +120,11 @@ export function startPiProviderRun(
     model,
     credential,
   );
-  const apiKey = requiredString(environment.CLOUD_AGENT_PI_API_KEY, "Pi Credential apiKey");
+  const apiKey = requiredCredentialString(
+    environment.CLOUD_AGENT_PI_API_KEY,
+    "Pi Credential apiKey",
+    CREDENTIAL_STRING_OPTIONS,
+  );
   const generatedFiles = new WorkspaceGeneratedFileCollector({
     workspaceDirectory: effectiveInput.workspaceDirectory,
     provider: PI_PROVIDER_KIND,
@@ -375,7 +390,11 @@ function configurePi(
     JSON.stringify({
       providers: {
         [MANAGED_PROVIDER]: {
-          baseUrl: credentialBaseUrl(credential.payload, "Pi Credential"),
+          baseUrl: credentialBaseUrl(credential.payload, "Pi Credential", {
+            ...CREDENTIAL_STRING_OPTIONS,
+            required: true,
+            validateHttp: true,
+          })!,
           api: "openai-responses",
           apiKey: "$CLOUD_AGENT_PI_API_KEY",
           authHeader: true,
@@ -409,13 +428,25 @@ function applyPiCredentialEnvironment(
   environment: NodeJS.ProcessEnv,
   payload: Record<string, unknown>,
 ): void {
-  assertOnlyKeys(payload, ["apiKey", "baseUrl", "baseURL", "model"]);
-  environment.CLOUD_AGENT_PI_API_KEY = requiredString(payload.apiKey, "Pi Credential apiKey");
-  credentialBaseUrl(payload, "Pi Credential");
+  assertCredentialKeys(payload, ["apiKey", "baseUrl", "baseURL", "model"], "Pi Credential", ".");
+  environment.CLOUD_AGENT_PI_API_KEY = requiredCredentialString(
+    payload.apiKey,
+    "Pi Credential apiKey",
+    CREDENTIAL_STRING_OPTIONS,
+  );
+  credentialBaseUrl(payload, "Pi Credential", {
+    ...CREDENTIAL_STRING_OPTIONS,
+    required: true,
+    validateHttp: true,
+  });
 }
 
 function withCredentialModel(input: RunnerInput, credential: RunnerCredential | null): RunnerInput {
-  const configured = optionalString(credential?.payload.model, "Pi Credential model");
+  const configured = optionalCredentialString(
+    credential?.payload.model,
+    "Pi Credential model",
+    CREDENTIAL_STRING_OPTIONS,
+  );
   return configured && !input.workload.model?.trim()
     ? { ...input, workload: { ...input.workload, model: configured } }
     : input;
@@ -470,46 +501,4 @@ function handlePiEvent(
         : {}),
     },
   });
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function optionalString(value: unknown, label: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || !value.trim() || /[\r\n\0]/u.test(value))
-    throw new Error(`${label} must be a non-empty string.`);
-  return value.trim();
-}
-
-function requiredString(value: unknown, label: string): string {
-  const result = optionalString(value, label);
-  if (!result) throw new Error(`${label} is required.`);
-  return result;
-}
-
-function credentialBaseUrl(payload: Record<string, unknown>, label: string): string {
-  const lower = optionalString(payload.baseUrl, `${label} baseUrl`);
-  const upper = optionalString(payload.baseURL, `${label} baseURL`);
-  if (lower && upper && lower !== upper)
-    throw new Error(`${label} contains conflicting baseUrl and baseURL values.`);
-  const value = lower ?? upper;
-  if (!value) throw new Error(`${label} requires baseUrl.`);
-  const url = new URL(value);
-  if (url.protocol !== "https:" && url.protocol !== "http:")
-    throw new Error(`${label} baseUrl protocol is unsupported.`);
-  return url.toString().replace(/\/$/u, "");
-}
-
-function assertOnlyKeys(payload: Record<string, unknown>, allowed: ReadonlyArray<string>): void {
-  const allowedKeys = new Set(allowed);
-  const extra = Object.keys(payload).find((key) => !allowedKeys.has(key));
-  if (extra) throw new Error(`Pi Credential contains unsupported field ${extra}.`);
 }

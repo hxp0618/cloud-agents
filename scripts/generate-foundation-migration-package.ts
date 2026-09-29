@@ -4,6 +4,11 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { migrationDigest } from "./lib/platform-migration-json";
+import {
+  formatCatalogPatch,
+  productCatalogPatchPath,
+  readProductCatalogs,
+} from "./lib/platform-migration-catalog-patch";
 import { splitPostgresStatements, classifyMigrationStatement } from "./lib/platform-migration-sql";
 import { validateObjectIdentity } from "./lib/platform-migration-projection";
 import { migrationObjectIdentity } from "./lib/platform-migration-bundle";
@@ -34,7 +39,10 @@ const migrationName = latest.groups.name!;
 const base = `services/control-plane/migrations/product/${current}`;
 const sqlPath = `services/control-plane/migrations/${latest[0]}`;
 const prior = json(`services/control-plane/migrations/product/${previous}/manifest.json`);
-const catalog = json(prior.schema_bundle.migrations.at(-1).catalog_contract.path);
+const priorCatalog = prior.schema_bundle.migrations.at(-1).catalog_contract;
+// Catalogs are stored as patches; --check also replays the committed head.
+const catalogs = readProductCatalogs(root, mode === "--check" ? [previous, current] : [previous]);
+const catalog = JSON.parse(catalogs.get(previous)!.toString());
 const existingFunctionTargets = new Set<string>(
   catalog.source_descriptors
     .flatMap((source: any) => source.statements)
@@ -76,7 +84,7 @@ schema.migrations.push({
   schema_from: previous,
   schema_to: current,
   sql_artifact: artifact(sqlPath),
-  predecessor_catalog_contract: prior.schema_bundle.migrations.at(-1).catalog_contract,
+  predecessor_catalog_contract: priorCatalog,
   catalog_contract: catalogArtifact,
 });
 const schemaDigest = migrationDigest({
@@ -124,7 +132,15 @@ ${runnerBindings.join(",\n")},
 }
 `;
 for (const [path, data] of new Map([
-  [catalogArtifact.path, catalogBytes],
+  [
+    productCatalogPatchPath(catalogArtifact.path),
+    formatCatalogPatch(
+      priorCatalog.path,
+      catalogArtifact.path,
+      catalogs.get(previous)!,
+      catalogBytes,
+    ),
+  ],
   [schemaArtifact.path, schemaBytes],
   [`${base}/manifest.json`, manifestBytes],
   [

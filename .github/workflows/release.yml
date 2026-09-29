@@ -48,12 +48,12 @@ jobs:
       - run: bash scripts/test-cloud-agents-dev.sh
       - run: bun run platform:go:check
       - run: bun run platform:contracts:check
-      - run: bun run platform:sdk:check
+      - run: bun run platform:migrations:check
       - run: sh scripts/test-platform-go-products.sh
       - run: bun run platform:sdk:consumers
       - run: bun run typecheck
       - run: bun run --filter '@cloud-agents/*' test
-      - run: bunx vitest run scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
+      - run: bunx vitest run scripts
       - run: bun run build
       - run: bun run secret:scan
       - name: Build release assets

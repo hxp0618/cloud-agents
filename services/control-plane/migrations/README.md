@@ -322,6 +322,16 @@ artifact sizes, SHA-256 values, source-closure inputs, deterministic runtime
 and bootstrap archives, ancestor/ledger projections, and the RFC 8785 bundle
 digests. A placeholder or manually maintained digest is forbidden.
 
+Independent-product versions under `product/<head>/` keep the runtime
+`manifest.json` and `schema-bundle.json` in full, but store the cumulative
+catalog only as `catalog/schema-*.patch`: a zero-context unified line patch
+against the catalog named by the manifest's `predecessor_catalog_contract`
+(the first product version starts from the frozen `catalog/schema-000014.json`).
+`scripts/generate-foundation-migration-package.ts` writes the patch, and
+`--check` replays every product version, requiring each reconstructed catalog to
+match the frozen `catalog_contract` size and SHA-256. The product runner and
+release packages never read these catalogs.
+
 The original bootstrap bundle's recorded status is `UNPUBLISHED_BOOTSTRAP_MUTABLE`: runtime
 catalog introspection and signing/publication are `NOT_IMPLEMENTED`, and this
 status is not a Gate-closure or release claim. Until the catalog adapter,

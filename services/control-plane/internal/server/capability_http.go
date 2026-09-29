@@ -2,11 +2,9 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
@@ -362,24 +360,30 @@ func writeCapabilityError(writer http.ResponseWriter, err error) {
 }
 
 func encodeCapabilityPageToken(kind, tenantID, projectID, resourceID string) (string, bool) {
-	if kind != "mcp" && kind != "skill" || common.ValidateIdentifier(tenantID, "/tenantId") != nil || common.ValidateIdentifier(projectID, "/projectId") != nil || common.ValidateIdentifier(resourceID, "/resourceId") != nil {
+	if kind != "mcp" && kind != "skill" {
 		return "", false
 	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("capability/" + kind + "/v1\x00" + tenantID + "\x00" + projectID + "\x00" + resourceID))
-	return token, common.ValidatePageToken(token, "/pageToken") == nil
+	return encodePageToken("capability/"+kind+"/v1",
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: projectID, path: "/projectId"},
+		pageTokenPart{value: resourceID, path: "/resourceId"},
+	)
 }
 
 func decodeCapabilityPageToken(kind, tenantID, projectID, token string) (string, bool) {
 	if token == "" {
 		return "", true
 	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil || common.ValidatePageToken(token, "/pageToken") != nil {
+	if kind != "mcp" && kind != "skill" {
 		return "", false
 	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 4 || parts[0] != "capability/"+kind+"/v1" || parts[1] != tenantID || parts[2] != projectID || common.ValidateIdentifier(parts[3], "/resourceId") != nil {
+	parts, ok := decodePageToken("capability/"+kind+"/v1", token,
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: projectID, path: "/projectId"},
+		pageTokenPart{path: "/resourceId"},
+	)
+	if !ok {
 		return "", false
 	}
-	return parts[3], true
+	return parts[2], true
 }

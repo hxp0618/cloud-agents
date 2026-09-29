@@ -12,6 +12,9 @@ import {
 import { join } from "node:path";
 
 import type { RunnerInput } from "./internalExecution";
+import { isRecord } from "./json";
+
+export { isRecord } from "./json";
 
 const EMULATED_HISTORY_FILE = "cloud-agent-conversation-history-v1.json";
 const MAX_EMULATED_HISTORY_BYTES = 1 << 20;
@@ -80,8 +83,4 @@ export function persistConversationHistory(
   } finally {
     rmSync(temporary, { force: true });
   }
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

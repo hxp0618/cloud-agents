@@ -26,9 +26,7 @@ test_packages() {
 
 sdk_packages=$(go -C "$repository_root/sdk/go" list ./...)
 worker_packages=$(go -C "$repository_root/services/worker" list ./...)
-# The production migrator uses cmd/cloud-agents-product-migrate and internal/localmigration.
-# internal/migration is the historical Gate/evidence implementation, not a product package.
-control_plane_packages=$(go -C "$repository_root/services/control-plane" list ./... | awk '$0 !~ /\/internal\/migration$/')
+control_plane_packages=$(go -C "$repository_root/services/control-plane" list ./...)
 
 test_packages sdk/go "$sdk_packages"
 test_packages services/worker "$worker_packages"

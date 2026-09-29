@@ -1,0 +1,110 @@
+--- services/control-plane/migrations/product/000019/catalog/schema-000019.json
++++ services/control-plane/migrations/product/000020/catalog/schema-000020.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000019",
++  "schema_head": "000020",
+@@ -8814,0 +8815,62 @@
++    },
++    {
++      "migration_id": "000020",
++      "sql_sha256": "sha256:0c7aeb128457b9e13d5bf966982b597a9d8cdf31ded392648103bf09b357955c",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 6104,
++          "sha256": "sha256:f9bc5a9b3f0d309ed3dc98f184c2bfc002bd32c982d0521ee9fc13119a31d9cf",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:interrupt_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 6104,
++          "end": 6263,
++          "sha256": "sha256:24352d949968addbc303cf0e7ed70626a4151aa9cc08c845ee8b5bf712ffb563",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:interrupt_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 6263,
++          "end": 6399,
++          "sha256": "sha256:c5fa941d61c70eabbee77a362fc795b8eb6020af0fd5fec7a92d5cceab433335",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:interrupt_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 6399,
++          "end": 6550,
++          "sha256": "sha256:63b7ea5fceb56e061622ed0ce858cc5b8d134d6826820d6ed43b7fef7a64410e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:interrupt_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -13310,0 +13373,41 @@
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "interrupt_managed_agent_execution_v1",

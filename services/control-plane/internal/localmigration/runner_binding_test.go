@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migration"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migrationcore"
 )
 
 func TestRunnerBindingAcceptsOnlyTheClosedSelectorSet(t *testing.T) {
@@ -276,7 +276,7 @@ func copyRunnerBindingFixture(t *testing.T) string {
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		manifest, _, decodeErr := migration.DecodeManifest(data)
+		manifest, _, decodeErr := migrationcore.DecodeManifest(data)
 		if decodeErr != nil {
 			t.Fatal(decodeErr)
 		}

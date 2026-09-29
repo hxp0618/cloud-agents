@@ -1,0 +1,187 @@
+--- services/control-plane/migrations/product/000024/catalog/schema-000024.json
++++ services/control-plane/migrations/product/000025/catalog/schema-000025.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000024",
++  "schema_head": "000025",
+@@ -9432,0 +9433,76 @@
++    },
++    {
++      "migration_id": "000025",
++      "sql_sha256": "sha256:9aa34730af21860cdbf2d8718235ed40b617971beeb3c8dfe503b6d9512f07a2",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 18080,
++          "sha256": "sha256:687059f4f3b1a4e18c06eec9575957ee9758e92d1516945619b530c2d4fa9475",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:bootstrap_tenant_administrator_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 18080,
++          "end": 18294,
++          "sha256": "sha256:8e12f0b2575f7c742ad5ab9e34a54be1ab4746334f4eb902d71caf3d4e38a695",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:bootstrap_tenant_administrator_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 18294,
++          "end": 18489,
++          "sha256": "sha256:7a414b65fc9ad0d07196d57437053b019ecb2e332cd26b40b23fc4500487b3fe",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:bootstrap_tenant_administrator_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 18489,
++          "end": 18698,
++          "sha256": "sha256:979c099d2439514ba7b650fce0dd79a2c74663ff07477ae6a1d02cb1f313187e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:bootstrap_tenant_administrator_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 18698,
++          "end": 18916,
++          "sha256": "sha256:2431bf07d58f2147f8562bd6681d8c79587ca21e2d4506dac5f223ba642a2960",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:bootstrap_tenant_administrator_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
++            "special_case": null
++          }
++        }
++      ]
+@@ -9437,4 +9513,1 @@
+-    "catalog_projection_fields": [
+-      "schema_head",
+-      "body"
+-    ],
++    "catalog_projection_fields": ["schema_head", "body"],
+@@ -9459,17 +9532,3 @@
+-    "default_acl_fields": [
+-      "owner",
+-      "schema",
+-      "object_kind",
+-      "acl"
+-    ],
+-    "acl_set_fields": [
+-      "catalog_value",
+-      "entries"
+-    ],
+-    "acl_entry_fields": [
+-      "grantor",
+-      "grantee",
+-      "privileges",
+-      "grantable",
+-      "origin"
+-    ],
++    "default_acl_fields": ["owner", "schema", "object_kind", "acl"],
++    "acl_set_fields": ["catalog_value", "entries"],
++    "acl_entry_fields": ["grantor", "grantee", "privileges", "grantable", "origin"],
+@@ -11852,0 +11912,77 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "bootstrap_tenant_administrator_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"

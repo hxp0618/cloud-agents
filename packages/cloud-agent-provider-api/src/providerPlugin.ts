@@ -19,6 +19,7 @@ import {
   type RunnerInput,
 } from "./internalExecution";
 import { CLOUD_AGENT_ENVIRONMENT } from "./environment";
+import { isRecord } from "./json";
 
 export type PortableProviderKind = string;
 
@@ -428,10 +429,6 @@ function portableRelativePath(value: string): string | undefined {
   return segments.some((segment) => !segment || segment === "." || segment === "..")
     ? undefined
     : normalized;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 class AsyncMessageQueue<T> implements AsyncIterable<T>, AsyncIterator<T> {

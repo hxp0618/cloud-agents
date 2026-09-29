@@ -1,3 +1,5 @@
+import { isRecord } from "./json";
+
 export type TextGenerationRequest = {
   readonly task: "thread-title" | "branch-name" | "commit-message" | "pr-content";
   readonly model?: string;
@@ -104,8 +106,4 @@ function optionalGeneratedText(value: unknown, maximumLength: number): string | 
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized ? normalized.slice(0, maximumLength) : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

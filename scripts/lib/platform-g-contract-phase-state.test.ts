@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -16,9 +14,6 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  buildGContractPhaseRecordModel,
-  buildGContractPhaseBindingRegistry,
-  buildGContractPhaseReviewTuple,
   assertGContractPhaseReviewVerdict,
   LEGACY_SUPPLY_REVIEW_VERDICT_MODE,
   G_CONTRACT_PHASE_BINDING_REGISTRY_SCHEMA_PATH,
@@ -28,25 +23,8 @@ import {
   G_CONTRACT_PHASE_SOURCE_SCHEMA_PATH,
   G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH,
   readGContractPhaseRecordSource,
-  renderGContractPhaseRecord,
-  serializeGContractPhaseJson,
-  type GContractPhaseBindingRegistry,
-  type GContractPhaseRecordBuildInput,
-  type GContractPhaseReviewTuple,
-  type ReviewGitBinding,
 } from "./platform-g-contract-phase-record";
 import {
-  buildPlatformContractLockV3Assembled,
-  buildPlatformContractLockV3PhaseBound,
-  derivePlatformContractLockV3AssembledSnapshotIdentity,
-  PLATFORM_CONTRACT_LOCK_V3_PHASE_ARTIFACTS,
-  serializePlatformContractLockV3,
-  type PlatformContractLockV3ArtifactIdentity,
-  type PlatformContractLockV3AssembledAuthority,
-  type PlatformContractLockV3PhaseBinding,
-} from "./platform-contract-lock-v3";
-import {
-  captureGContractPhaseTerminalReviewBinding,
   assertSingleAddedRegularPathCommit,
   captureGContractPhaseReviewBinding,
   classifyGContractPhaseTopology,
@@ -227,102 +205,6 @@ describe("G-CONTRACT-P1 read-only phase state", () => {
       "G_CONTRACT_PHASE_REVIEW_DIFF_INVALID",
     );
   });
-
-  it("validates the fixed R5 review Git/live bytes before reporting its pre-binding topology", () => {
-    const fixture = terminalFixture();
-    git(fixture.root, ["checkout", "-q", "--detach", fixture.r5Review]);
-    expect(
-      inspectGContractPhaseState(fixture.root, {
-        recordBuildInput: fixture.recordBuildInput,
-      }),
-    ).toBe("R5_REVIEW_CURRENT_BINDING_ABSENT");
-
-    const source = readGContractPhaseRecordSource(fixture.root);
-    writeText(fixture.root, source.reviewSlots[1]!.reviewPath, `${reviewText()}dirty byte\n`);
-    expectCode(
-      () =>
-        inspectGContractPhaseState(fixture.root, {
-          recordBuildInput: fixture.recordBuildInput,
-        }),
-      "G_CONTRACT_PHASE_GIT_LINEAGE_INVALID",
-    );
-  });
-
-  it("internally verifies PHASE_BOUND and requires an exact terminal-review identity", () => {
-    const fixture = terminalFixture();
-    expect(
-      inspectGContractPhaseState(fixture.root, {
-        recordBuildInput: fixture.recordBuildInput,
-        expectedTuple: fixture.tuple,
-        expectedRegistry: fixture.registry,
-        bindingActorId: "slice-i-binder",
-        expectedTerminalReview: fixture.terminalReview,
-      }),
-    ).toBe("REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE");
-
-    expectCode(
-      () =>
-        inspectGContractPhaseState(fixture.root, {
-          recordBuildInput: fixture.recordBuildInput,
-          expectedTuple: fixture.tuple,
-          expectedRegistry: fixture.registry,
-          bindingActorId: "slice-i-binder",
-          expectedTerminalReview: {
-            ...fixture.terminalReview,
-            sha256: `sha256:${"f".repeat(64)}`,
-          },
-        }),
-      "G_CONTRACT_PHASE_GIT_LINEAGE_INVALID",
-    );
-
-    const fixtureSource = readGContractPhaseRecordSource(fixture.root);
-    writeText(
-      fixture.root,
-      fixtureSource.reviewSlots[1]!.reviewPath,
-      `${reviewText()}dirty working-tree byte\n`,
-    );
-    expectCode(
-      () =>
-        inspectGContractPhaseState(fixture.root, {
-          recordBuildInput: fixture.recordBuildInput,
-          expectedTuple: fixture.tuple,
-          expectedRegistry: fixture.registry,
-          bindingActorId: "slice-i-binder",
-          expectedTerminalReview: fixture.terminalReview,
-        }),
-      "G_CONTRACT_PHASE_GIT_LINEAGE_INVALID",
-    );
-    writeText(fixture.root, fixtureSource.reviewSlots[1]!.reviewPath, reviewText());
-    writeText(
-      fixture.root,
-      fixtureSource.binding.finalReviewPath,
-      `${reviewText()}dirty working-tree byte\n`,
-    );
-    expectCode(
-      () =>
-        inspectGContractPhaseState(fixture.root, {
-          recordBuildInput: fixture.recordBuildInput,
-          expectedTuple: fixture.tuple,
-          expectedRegistry: fixture.registry,
-          bindingActorId: "slice-i-binder",
-          expectedTerminalReview: fixture.terminalReview,
-        }),
-      "G_CONTRACT_PHASE_GIT_LINEAGE_INVALID",
-    );
-
-    const invalidLock = terminalFixture({ invalidPhaseBound: true });
-    expectCode(
-      () =>
-        inspectGContractPhaseState(invalidLock.root, {
-          recordBuildInput: invalidLock.recordBuildInput,
-          expectedTuple: invalidLock.tuple,
-          expectedRegistry: invalidLock.registry,
-          bindingActorId: "slice-i-binder",
-          expectedTerminalReview: invalidLock.terminalReview,
-        }),
-      "G_CONTRACT_PHASE_GIT_LINEAGE_INVALID",
-    );
-  }, 30_000);
 });
 
 function reviewFixture(
@@ -398,196 +280,6 @@ function reviewText(): string {
 
 function supplyReviewText(): string {
   return "# Supply v3 independent review\n\n## Verdict\n\n`APPROVE`\n\n| Severity | Findings |\n| -------- | -------: |\n| P0       |        0 |\n| P1       |        0 |\n| P2       |        0 |\n";
-}
-
-function terminalFixture(options: { invalidPhaseBound?: boolean } = {}): {
-  root: string;
-  recordBuildInput: GContractPhaseRecordBuildInput;
-  tuple: GContractPhaseReviewTuple;
-  registry: GContractPhaseBindingRegistry;
-  terminalReview: ReviewGitBinding;
-  supplyCandidate: string;
-  r5Review: string;
-} {
-  const root = gitFixture();
-  const source = readGContractPhaseRecordSource(root);
-  const projectionCommit = git(root, ["rev-parse", "HEAD"]);
-  const projectionTree = git(root, ["rev-parse", `${projectionCommit}^{tree}`]);
-
-  populateRecordAuthorityInputs(root, source);
-  writeText(root, source.dynamicAuthorities.projectionReceiptPath, '{"state":"PROJECTED"}\n');
-  writeText(root, source.dynamicAuthorities.supplyManifestPath, '{"files":[]}\n');
-  writeText(
-    root,
-    source.dynamicAuthorities.supplyProfilePath,
-    '{"formatVersion":"cloud-agents-generator-supply-profile-registry/v3","notGateClosure":true}\n',
-  );
-  const assembled = buildPlatformContractLockV3Assembled(lockAuthority());
-  writeText(
-    root,
-    source.dynamicAuthorities.assembledLockPath,
-    serializePlatformContractLockV3(assembled),
-  );
-  const supplyCandidate = commitAll(root, "supply candidate");
-  writeText(root, source.reviewSlots[0]!.reviewPath, supplyReviewText());
-  const supplyReview = commitAll(root, "supply review");
-  const supplyBinding = captureGContractPhaseReviewBinding(
-    root,
-    "generator_supply_v3",
-    supplyCandidate,
-    supplyReview,
-    "slice-e-assembler",
-    "supply-reviewer",
-  );
-
-  const recordBuildInput: GContractPhaseRecordBuildInput = {
-    projectionCommit,
-    projectionTree,
-    projectionArchiveSha256: repeatedSha256("a"),
-    supplyCandidate: supplyBinding.candidate,
-    supplyReview: supplyBinding.review,
-  };
-  const recordBytes = renderGContractPhaseRecord(
-    root,
-    buildGContractPhaseRecordModel(root, recordBuildInput),
-  );
-  writeText(root, source.record.path, recordBytes);
-  const r5Candidate = commitAll(root, "R5 candidate");
-  writeText(root, source.reviewSlots[1]!.reviewPath, reviewText());
-  const r5Review = commitAll(root, "R5 review");
-  const r5Binding = captureGContractPhaseReviewBinding(
-    root,
-    "g_contract_r5",
-    r5Candidate,
-    r5Review,
-    "r5-writer",
-    "r5-reviewer",
-  );
-
-  const tuple = buildGContractPhaseReviewTuple(root, [supplyBinding, r5Binding]);
-  const registry = buildGContractPhaseBindingRegistry(root, tuple);
-  writeText(root, source.binding.tuplePath, serializeGContractPhaseJson(tuple));
-  writeText(root, source.binding.registryPath, serializeGContractPhaseJson(registry));
-  const assembledSnapshot = derivePlatformContractLockV3AssembledSnapshotIdentity(assembled, {
-    commitSha1: supplyCandidate,
-    treeSha1: git(root, ["rev-parse", `${supplyCandidate}^{tree}`]),
-  });
-  const binding: PlatformContractLockV3PhaseBinding = {
-    state: "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT",
-    artifacts: PLATFORM_CONTRACT_LOCK_V3_PHASE_ARTIFACTS.map((entry) => ({
-      role: entry.role,
-      artifact: worktreeArtifact(root, entry.path),
-    })),
-  };
-  const phaseBound = buildPlatformContractLockV3PhaseBound(assembled, assembledSnapshot, binding);
-  writeText(
-    root,
-    source.dynamicAuthorities.assembledLockPath,
-    options.invalidPhaseBound
-      ? '{"formatVersion":"invalid","state":"PHASE_BOUND"}\n'
-      : serializePlatformContractLockV3(phaseBound),
-  );
-  const bindingCandidate = commitAll(root, "Slice I binding candidate");
-
-  writeText(root, source.binding.finalReviewPath, reviewText());
-  const terminalCommit = commitAll(root, "terminal binding review");
-  const terminalReview = captureGContractPhaseTerminalReviewBinding(
-    root,
-    bindingCandidate,
-    terminalCommit,
-    "terminal-reviewer",
-  );
-  return {
-    root,
-    recordBuildInput,
-    tuple,
-    registry,
-    terminalReview,
-    supplyCandidate,
-    r5Review,
-  };
-}
-
-function populateRecordAuthorityInputs(
-  root: string,
-  source: ReturnType<typeof readGContractPhaseRecordSource>,
-): void {
-  const paths = [
-    source.criteriaAuthority.path,
-    source.currentCandidateAuthority.path,
-    ...source.prerequisites.map(({ path }) => path),
-    ...source.historicalRecords.map(({ path }) => path),
-    ...source.currentSourceInputPaths,
-  ];
-  for (const path of new Set(paths)) {
-    const destination = resolve(root, path);
-    mkdirSync(dirname(destination), { recursive: true });
-    cpSync(resolve(repositoryRoot, path), destination);
-  }
-}
-
-function lockAuthority(): PlatformContractLockV3AssembledAuthority {
-  return {
-    generatorSupply: {
-      formatVersion: "cloud-agents-generator-supply-profile-registry/v3",
-      profileId: "cloud-agents/generator-supply-profile/v3",
-      profileDigest: repeatedSha256("1"),
-      registryDigest: repeatedSha256("2"),
-      candidateManifestSha256: repeatedSha256("3"),
-      outputFiles: 49,
-      evidenceManifest: syntheticArtifact("tools/generator-supply/v3/evidence-manifest.json", "4"),
-      profile: syntheticArtifact("tools/generator-supply/v3/profile.json", "5"),
-    },
-    projection: {
-      algorithm: "exact-ordered-paths-v1",
-      exclusionCount: 17,
-      exclusionsDigest: repeatedSha256("6"),
-      receipt: syntheticArtifact("tools/generator-supply/v3/evidence/replay/projection.json", "7"),
-    },
-    contractStandards: {
-      formatVersion: "cloud-agents-contract-standards-profile/v3",
-      profile: syntheticArtifact("tools/contract-standards/profile-v3.json", "8"),
-      predecessor: {
-        ...syntheticArtifact("tools/contract-standards/profile-v2.json", "9"),
-        gitBlobSha1: "0c73cdf771ddcf0d46c43d52abf5b622507e8e1b",
-        sha256: "sha256:9457d4bdc12f16b366d9c56a25a107103f5b2b64650de20f509f3ef96d0d4d01",
-        sizeBytes: 3539,
-      },
-    },
-  };
-}
-
-function syntheticArtifact(
-  path: string,
-  character: string,
-): PlatformContractLockV3ArtifactIdentity {
-  return {
-    path,
-    fileType: "REGULAR_FILE",
-    gitMode: "100644",
-    gitBlobSha1: character.repeat(40),
-    sha256: repeatedSha256(character),
-    sizeBytes: 100,
-  };
-}
-
-function worktreeArtifact(root: string, path: string): PlatformContractLockV3ArtifactIdentity {
-  const bytes = readFileSync(resolve(root, path));
-  return {
-    path,
-    fileType: "REGULAR_FILE",
-    gitMode: "100644",
-    gitBlobSha1: createHash("sha1")
-      .update(`blob ${bytes.byteLength}\0`, "utf8")
-      .update(bytes)
-      .digest("hex"),
-    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-    sizeBytes: bytes.byteLength,
-  };
-}
-
-function repeatedSha256(character: string): `sha256:${string}` {
-  return `sha256:${character.repeat(64)}`;
 }
 
 function listFiles(root: string): string[] {

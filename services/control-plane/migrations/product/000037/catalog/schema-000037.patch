@@ -1,0 +1,176 @@
+--- services/control-plane/migrations/product/000036/catalog/schema-000036.json
++++ services/control-plane/migrations/product/000037/catalog/schema-000037.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000036",
++  "schema_head": "000037",
+@@ -11282,0 +11283,132 @@
++    },
++    {
++      "migration_id": "000037",
++      "sql_sha256": "sha256:4c34dc77c7815f53f7d9380112280a7cddc5068ef64de4fb33d4064033f38eec",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 101,
++          "sha256": "sha256:db9f71a7355b7af001c45c9101489393e4fa221ea9cec8f54aa8458edfd9eb91",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 101,
++          "end": 202,
++          "sha256": "sha256:54aedfc31fcdd263a634beb1104da823af6d933b76373d2b9ad3573c5a233133",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 202,
++          "end": 403,
++          "sha256": "sha256:c4bc68d930371280c73d9fb0e5bbdd0f3c69a119e64428431297eca4bce29164",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 403,
++          "end": 623,
++          "sha256": "sha256:e417a5afb1a54d92272277cc6a85cf3226eae47f05908b755e9fbfee06b61384",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 623,
++          "end": 840,
++          "sha256": "sha256:1fbdd427f861f3f29062cd8453b30a203091d6f220f804006a4a65a6ab91d72b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 840,
++          "end": 5361,
++          "sha256": "sha256:6338889c70a2e264c106811c4865e84868775eee45df3f551a5bcf70ccd0f0f5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:begin_managed_host_environment_lease_upgrade_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 5361,
++          "end": 5525,
++          "sha256": "sha256:db19a927bc35bbb1a92feb1405c83e5ddfec3642ff6261cc37384be526f981e0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:begin_managed_host_environment_lease_upgrade_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 5525,
++          "end": 5670,
++          "sha256": "sha256:a3c350b852e1b771b268152cda5ab47aafebd4d79a07a148aa2679f52d9871fa",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:begin_managed_host_environment_lease_upgrade_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 5670,
++          "end": 5830,
++          "sha256": "sha256:005a656b7f71abfad90344c6a7c0cd6513505d9ff0d3480d9b3ee4b598d09d07",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:begin_managed_host_environment_lease_upgrade_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -12914,0 +13047,37 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "begin_managed_host_environment_lease_upgrade_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"

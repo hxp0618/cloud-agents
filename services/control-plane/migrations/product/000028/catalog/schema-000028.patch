@@ -1,0 +1,157 @@
+--- services/control-plane/migrations/product/000027/catalog/schema-000027.json
++++ services/control-plane/migrations/product/000028/catalog/schema-000028.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000027",
++  "schema_head": "000028",
+@@ -9730,0 +9731,90 @@
++    },
++    {
++      "migration_id": "000028",
++      "sql_sha256": "sha256:ea11055570e1ad546709c3a14e8f88c5b34ddafa5ad1e20a6e95a6bf8a0b0f58",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 76,
++          "sha256": "sha256:35d810b3afef18042b82b9059a75b9fbb47e4ecb84e33dcf00ea6c95fca38fe6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 76,
++          "end": 477,
++          "sha256": "sha256:840c73dd741922efceb93d735cdd3258666586e574bcbe7ac10eaa44bb3e8b4c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 477,
++          "end": 4059,
++          "sha256": "sha256:be138199e4d6b80734ac334e717371bc04d45c86efc064638b89e77d21e6e5cf",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:transition_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 4059,
++          "end": 4743,
++          "sha256": "sha256:ae2966ad2a961fe103ba76fbf6ea4555d771273a6a12361328d3eca5acefe022",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:resume_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 4743,
++          "end": 4855,
++          "sha256": "sha256:d2235a3daefc851f3c515fb05ae2b88ea0aac25b68151ca6806be9418e95c9a6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:resume_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 4855,
++          "end": 4982,
++          "sha256": "sha256:8008a30fd0cc1093295fed1ef562a655d45d8b3f84ab80713abfde5874cf9d23",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:resume_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -9735,1 +9825,4 @@
+-    "catalog_projection_fields": ["schema_head", "body"],
++    "catalog_projection_fields": [
++      "schema_head",
++      "body"
++    ],
+@@ -9754,3 +9847,17 @@
+-    "default_acl_fields": ["owner", "schema", "object_kind", "acl"],
+-    "acl_set_fields": ["catalog_value", "entries"],
+-    "acl_entry_fields": ["grantor", "grantee", "privileges", "grantable", "origin"],
++    "default_acl_fields": [
++      "owner",
++      "schema",
++      "object_kind",
++      "acl"
++    ],
++    "acl_set_fields": [
++      "catalog_value",
++      "entries"
++    ],
++    "acl_entry_fields": [
++      "grantor",
++      "grantee",
++      "privileges",
++      "grantable",
++      "origin"
++    ],
+@@ -14625,0 +14733,33 @@
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "resume_membership",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }

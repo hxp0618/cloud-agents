@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRecord } from "./json";
 
 const MANIFEST_ENV = "CLOUD_AGENT_CAPABILITY_MANIFEST_B64";
 export const CLOUD_AGENT_SKILL_ROOT_ENV = "CLOUD_AGENT_SKILL_ROOT";
@@ -233,7 +234,7 @@ function readBinding(value: unknown): RuntimeCapabilityBinding {
     !identifier(value.version) ||
     !digest(value.digest) ||
     !identifier(value.grantId) ||
-    !Number.isSafeInteger(value.expiresAtUnixSeconds) ||
+    !safeInteger(value.expiresAtUnixSeconds) ||
     value.expiresAtUnixSeconds <= Math.floor(Date.now() / 1000) ||
     !Array.isArray(permissions) ||
     !permissions.every(
@@ -326,12 +327,12 @@ function identifier(value: unknown): value is string {
   );
 }
 
-function digest(value: unknown): value is string {
-  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
+function safeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+function digest(value: unknown): value is string {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
 
 function onlyKeys(value: Record<string, unknown>, allowed: ReadonlyArray<string>): boolean {

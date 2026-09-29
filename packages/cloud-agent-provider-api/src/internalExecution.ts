@@ -8,6 +8,7 @@ import {
   readCloudAgentEnvironment,
   type CloudAgentEnvironmentName,
 } from "./environment";
+import { isRecord } from "./json";
 
 export type RunnerInput = {
   execution: { id: string; generation?: number };
@@ -860,8 +861,4 @@ function collectSecretStrings(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(collectSecretStrings);
   if (isRecord(value)) return Object.values(value).flatMap(collectSecretStrings);
   return [];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

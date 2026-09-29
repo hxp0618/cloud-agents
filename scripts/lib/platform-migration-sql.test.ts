@@ -3,9 +3,16 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readProductCatalogs } from "./platform-migration-catalog-patch";
 import { classifyMigrationStatement, splitPostgresStatements } from "./platform-migration-sql";
 
 const root = resolve(import.meta.dirname, "../..");
+const productCatalogs = readProductCatalogs(root, [
+  ...Array.from({ length: 12 }, (_, index) => String(index + 25).padStart(6, "0")),
+  "000100",
+]);
+const productCatalog = (version: string) =>
+  JSON.parse(productCatalogs.get(version)!.toString("utf8"));
 
 describe("postgresql-lex-v1 bootstrap", () => {
   it("admits bounded before-row triggers without per-version definitions", () => {
@@ -144,15 +151,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
     expect(classifications[0]!.target_identity).toContain("bootstrap_tenant_administrator_v1");
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000025/catalog/schema-000025.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000025") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -196,15 +195,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
     expect(classifications[2]!.target_identity).toContain("settle_managed_agent_execution_v3");
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000026/catalog/schema-000026.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000026") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -248,15 +239,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
     expect(classifications[6]!.target_identity).toContain("create_organization");
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000027/catalog/schema-000027.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000027") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -298,15 +281,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(classifications[2]!.target_identity).toContain("transition_membership");
     expect(classifications[3]!.target_identity).toContain("resume_membership");
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000028/catalog/schema-000028.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000028") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -350,15 +325,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
     expect(classifications[2]!.target_identity).toContain("settle_managed_agent_execution_v4");
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000029/catalog/schema-000029.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000029") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -419,15 +386,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000030/catalog/schema-000030.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000030") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -478,15 +437,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000031/catalog/schema-000031.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000031") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -543,15 +494,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000032/catalog/schema-000032.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000032") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -606,15 +549,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000033/catalog/schema-000033.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000033") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -662,15 +597,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000034/catalog/schema-000034.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000034") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -715,15 +642,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000035/catalog/schema-000035.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000035") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
       declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
     };
@@ -763,15 +682,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "GRANT",
     ]);
 
-    const catalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000036/catalog/schema-000036.json",
-        ),
-        "utf8",
-      ),
-    ) as {
+    const catalog = productCatalog("000036") as {
       source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
@@ -1456,15 +1367,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
         ),
       ),
     );
-    const predecessorCatalog = JSON.parse(
-      readFileSync(
-        resolve(
-          root,
-          "services/control-plane/migrations/product/000100/catalog/schema-000099.json",
-        ),
-        "utf8",
-      ),
-    );
+    const predecessorCatalog = productCatalog("000100");
     const existingFunctionTargets = new Set<string>(
       predecessorCatalog.source_descriptors
         .flatMap((source: any) => source.statements)

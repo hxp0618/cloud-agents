@@ -1,0 +1,110 @@
+--- services/control-plane/migrations/product/000018/catalog/schema-000018.json
++++ services/control-plane/migrations/product/000019/catalog/schema-000019.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000018",
++  "schema_head": "000019",
+@@ -8752,0 +8753,62 @@
++    },
++    {
++      "migration_id": "000019",
++      "sql_sha256": "sha256:77234c1d6c9bb386b0ad75447b3439ac3e5f95313f5a5aa6230b9155d823e6ac",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 6046,
++          "sha256": "sha256:c9bfdfca2a160140a1b6808dda6e6571b46694bb5abbb8d6785cb62f4fe08914",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:cancel_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 6046,
++          "end": 6202,
++          "sha256": "sha256:9b21bc02e8a35a6db8218f6d23fe70483e2a9da393d14352efff66d838615fae",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:cancel_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 6202,
++          "end": 6335,
++          "sha256": "sha256:4a29c451e0dc829cc9e06de800526562e5e2f24c89621643f3e4c6e541a4cde8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:cancel_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 6335,
++          "end": 6483,
++          "sha256": "sha256:bd409a6dc9623841f5a86917e66f1e41649764730d6adc694898cc5cd85ac430",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:cancel_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -13239,0 +13302,41 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "cancel_managed_agent_execution_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"

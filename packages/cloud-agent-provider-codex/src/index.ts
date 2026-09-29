@@ -8,11 +8,15 @@ import {
 } from "@cloud-agents/cloud-agent-provider-api";
 import {
   createProviderPlugin,
+  assertCredentialKeys,
+  credentialBaseUrl,
   hasAuthoritativeResumeData,
   nativeResumeContinuationPrompt,
+  optionalCredentialString,
   providerEnvironment,
   providerProcessEnvironment,
   reconstructedPrompt,
+  requiredCredentialString,
   requireProviderOuterSandboxProfile,
   validateRunnerInput,
   managedMcpConfiguration,
@@ -194,8 +198,12 @@ function applyCodexCredentialEnvironment(
   environment: NodeJS.ProcessEnv,
   payload: Record<string, unknown>,
 ): void {
-  assertOnlyKeys(payload, ["apiKey", "baseUrl", "baseURL", "organization", "model"]);
-  environment.OPENAI_API_KEY = requiredString(payload.apiKey, "Codex Credential apiKey");
+  assertCredentialKeys(
+    payload,
+    ["apiKey", "baseUrl", "baseURL", "organization", "model"],
+    "Codex Credential",
+  );
+  environment.OPENAI_API_KEY = requiredCredentialString(payload.apiKey, "Codex Credential apiKey");
   assignOptional(
     environment,
     "OPENAI_BASE_URL",
@@ -218,28 +226,18 @@ function withCredentialModel(input: RunnerInput, credential: RunnerCredential | 
 
 function credentialModel(payload: Record<string, unknown> | undefined): string | undefined {
   if (payload?.model === undefined) return undefined;
-  const value = optionalString(payload.model, "Provider Credential model");
+  const value = optionalCredentialString(payload.model, "Provider Credential model");
   if (!value) return undefined;
   if (value.length > 128) throw new Error("Provider Credential model exceeds 128 characters");
   return value;
 }
 
-function credentialBaseUrl(payload: Record<string, unknown>, label: string): unknown {
-  if (payload.baseUrl !== undefined && payload.baseURL !== undefined) {
-    const lower = optionalString(payload.baseUrl, `${label} baseUrl`);
-    const upper = optionalString(payload.baseURL, `${label} baseURL`);
-    if (lower !== upper)
-      throw new Error(`${label} contains conflicting baseUrl and baseURL values`);
-    return lower;
-  }
-  return payload.baseUrl ?? payload.baseURL;
-}
 function writeControlledCodexConfig(
   root: string,
   environment: NodeJS.ProcessEnv,
   excludedEnvironmentNames: ReadonlyArray<string> = [],
 ): string {
-  const apiKey = requiredString(environment.OPENAI_API_KEY, "Codex Credential apiKey");
+  const apiKey = requiredCredentialString(environment.OPENAI_API_KEY, "Codex Credential apiKey");
   const baseUrl = controlledBaseUrl(environment.OPENAI_BASE_URL);
   const codexHome = join(root, "codex-home");
   mkdirSync(codexHome, { recursive: true, mode: 0o700 });
@@ -295,22 +293,6 @@ function controlledBaseUrl(value: string | undefined): string {
     throw new Error("Codex Credential baseUrl must use HTTP(S) without userinfo or a fragment");
   return candidate.replace(/\/+$/u, "");
 }
-function assertOnlyKeys(payload: Record<string, unknown>, allowed: ReadonlyArray<string>): void {
-  const set = new Set(allowed);
-  const extra = Object.keys(payload).find((key) => !set.has(key));
-  if (extra) throw new Error(`Codex Credential contains unsupported field ${extra}`);
-}
-function requiredString(value: unknown, label: string): string {
-  const result = optionalString(value, label);
-  if (!result) throw new Error(`${label} is required`);
-  return result;
-}
-function optionalString(value: unknown, label: string): string | undefined {
-  if (value == null) return undefined;
-  if (typeof value !== "string" || !value.trim() || hasLineBreakOrNull(value))
-    throw new Error(`${label} must be a non-empty single-line string`);
-  return value.trim();
-}
 function hasLineBreakOrNull(value: string): boolean {
   return value.includes("\r") || value.includes("\n") || value.includes("\0");
 }
@@ -320,6 +302,6 @@ function assignOptional(
   value: unknown,
   label: string,
 ): void {
-  const normalized = optionalString(value, label);
+  const normalized = optionalCredentialString(value, label);
   if (normalized) environment[key] = normalized;
 }

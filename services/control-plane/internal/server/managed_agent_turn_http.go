@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -254,29 +253,25 @@ func managedAgentTurnPath(path string) (tenantID, projectID, sessionID, turnID, 
 }
 
 func encodeManagedAgentTurnPageToken(tenantID, projectID, sessionID, turnID string) (string, bool) {
-	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil ||
-		commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil || commonv1alpha1.ValidateIdentifier(turnID, "/turnId") != nil {
-		return "", false
-	}
-	token := base64.RawURLEncoding.EncodeToString([]byte("turn/v1\x00" + tenantID + "\x00" + projectID + "\x00" + sessionID + "\x00" + turnID))
-	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+	return encodePageToken("turn/v1",
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: projectID, path: "/projectId"},
+		pageTokenPart{value: sessionID, path: "/sessionId"},
+		pageTokenPart{value: turnID, path: "/turnId"},
+	)
 }
 
 func decodeManagedAgentTurnPageToken(tenantID, projectID, sessionID, token string) (string, bool) {
-	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+	parts, ok := decodePageToken("turn/v1", token,
+		pageTokenPart{value: tenantID, path: "/tenantId"},
+		pageTokenPart{value: projectID, path: "/projectId"},
+		pageTokenPart{value: sessionID, path: "/sessionId"},
+		pageTokenPart{path: "/turnId"},
+	)
+	if !ok {
 		return "", false
 	}
-	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
-	if err != nil {
-		return "", false
-	}
-	parts := strings.Split(string(decoded), "\x00")
-	if len(parts) != 5 || parts[0] != "turn/v1" || parts[1] != tenantID || parts[2] != projectID || parts[3] != sessionID ||
-		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil ||
-		commonv1alpha1.ValidateIdentifier(parts[3], "/sessionId") != nil || commonv1alpha1.ValidateIdentifier(parts[4], "/turnId") != nil {
-		return "", false
-	}
-	return parts[4], true
+	return parts[3], true
 }
 
 func HandlesManagedAgentTurnPath(path string) bool {

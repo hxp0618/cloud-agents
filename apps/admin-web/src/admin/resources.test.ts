@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { EnvironmentProfile } from "@cloud-agents/cloud-agent-platform-sdk/platform";
+import type { EnvironmentProfile, Worker } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-import { replaceProfile, selectAdminResourceId, upsertAdminResource } from "./resources";
+import {
+  keepIfUnchanged,
+  replaceProfile,
+  selectAdminResourceId,
+  upsertAdminResource,
+  workerRefreshKey,
+} from "./resources";
 
 describe("admin resources", () => {
   it("replaces by UID without mutating the input", () => {
@@ -60,5 +66,39 @@ describe("admin resources", () => {
 
   it("returns an empty ID when no resources exist", () => {
     expect(selectAdminResourceId([], "missing")).toBe("");
+  });
+
+  it("keeps the current reference only when refreshed data is identical", () => {
+    const current = Object.freeze([
+      { metadata: { uid: "id-1", name: "One", resourceVersion: "1" } },
+    ]);
+
+    expect(
+      keepIfUnchanged(current, [{ metadata: { uid: "id-1", name: "One", resourceVersion: "1" } }]),
+    ).toBe(current);
+    const changed = [{ metadata: { uid: "id-1", name: "Renamed", resourceVersion: "2" } }];
+    expect(keepIfUnchanged(current, changed)).toBe(changed);
+  });
+
+  it("refreshes workers when derived health expires without a resource version change", () => {
+    const worker = (state: "online" | "expired") =>
+      ({
+        metadata: { uid: "worker-1", resourceVersion: "1" },
+        spec: {
+          state: "ready",
+          stableErrorCode: "",
+          lastHealthAt: "2026-09-28T00:00:00Z",
+          readyAt: "2026-09-28T00:00:00Z",
+          health: {
+            state,
+            checkedAt: "2026-09-28T00:00:00Z",
+            expiresAt: "2026-09-28T00:01:00Z",
+          },
+        },
+      }) as unknown as Worker;
+    const current = [worker("online")];
+    const changed = [worker("expired")];
+
+    expect(keepIfUnchanged(current, changed, workerRefreshKey)).toBe(changed);
   });
 });

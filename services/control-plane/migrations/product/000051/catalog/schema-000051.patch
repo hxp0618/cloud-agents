@@ -1,0 +1,133 @@
+--- services/control-plane/migrations/product/000050/catalog/schema-000050.json
++++ services/control-plane/migrations/product/000051/catalog/schema-000051.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000050",
++  "schema_head": "000051",
+@@ -15538,0 +15539,90 @@
++    },
++    {
++      "migration_id": "000051",
++      "sql_sha256": "sha256:2793ba63b32916f0e54964e89ea29c22f515d120725b33de7159d4bd89b90307",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 3208,
++          "sha256": "sha256:cf3b73fd1409e950c4c2ee22f9d2b9717453c3444a522010470fa39a702d2e4f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:guard_managed_agent_target_admission_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 3208,
++          "end": 3318,
++          "sha256": "sha256:25d24f9149d2ba57c7381166fab05954aebc9176ff903681476479038ad5bab8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:guard_managed_agent_target_admission_v1()",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3318,
++          "end": 3409,
++          "sha256": "sha256:492ef1fb3a80c005f990f1f68d0ac6fd9a6b623fbef874e26d38d8db6d9a30a9",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:guard_managed_agent_target_admission_v1()",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 3409,
++          "end": 3604,
++          "sha256": "sha256:f75277dadfc3ac65c31e9870c6cbaaf7320e201f23f07fa23823e8f90cd3b5f7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:managed_agent_sessions_target_admission",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 3604,
++          "end": 3792,
++          "sha256": "sha256:7709dc32c15ad163ea966d36320e4db7c04802f78812b883ce6df081bde0927f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:managed_agent_turns_target_admission",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 3792,
++          "end": 4009,
++          "sha256": "sha256:a3b79f471209dc104654ee0e87648db174b106e915c60bf78fc0927687695742",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TRIGGER",
++            "target_identity": "trigger:unquoted:cloud_agents/unquoted:managed_agent_executions_target_admission",
++            "grantee": null,
++            "special_case": null
++          }
++        }
++      ]
+@@ -15696,0 +15787,8 @@
++        "name": "guard_managed_agent_target_admission_v1",
++        "arguments": []
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -22800,0 +22899,27 @@
++    },
++    {
++      "kind": "trigger",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_executions"
++      },
++      "name": "managed_agent_executions_target_admission",
++      "owning_constraint": null
++    },
++    {
++      "kind": "trigger",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_sessions"
++      },
++      "name": "managed_agent_sessions_target_admission",
++      "owning_constraint": null
++    },
++    {
++      "kind": "trigger",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_turns"
++      },
++      "name": "managed_agent_turns_target_admission",
++      "owning_constraint": null

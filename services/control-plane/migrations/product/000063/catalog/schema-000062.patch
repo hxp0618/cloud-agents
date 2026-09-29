@@ -1,0 +1,277 @@
+--- services/control-plane/migrations/product/000062/catalog/schema-000061.json
++++ services/control-plane/migrations/product/000063/catalog/schema-000062.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000062",
++  "schema_head": "000063",
+@@ -20258,0 +20259,160 @@
++    },
++    {
++      "migration_id": "000063",
++      "sql_sha256": "sha256:215ff965ecc428bfa1ae16014616476f603f184adbd8367f9de987e9c5d48647",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 2894,
++          "sha256": "sha256:677ed979106d7bf39b6097626a9041f3e231fa1bb15f0151065dd19df34737d1",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollments",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 2894,
++          "end": 3022,
++          "sha256": "sha256:4587b3ef6b1062da83b3c506251c09a219ae980a4240c6dcb567bc3e9064557c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollment_activity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3022,
++          "end": 3346,
++          "sha256": "sha256:ff4d45fabc039e364f80084685c9f952d3e43655db55e15ca1702ff4ca8aaf7f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:remote_worker_enrollment_activity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 3346,
++          "end": 4786,
++          "sha256": "sha256:da057b8aa204e9132d5561f1f2c56ca1565e286fff1fcd992995f79cbd5ccf00",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authenticate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 4786,
++          "end": 11128,
++          "sha256": "sha256:8f9866570d1b6756f63ba0e001d91e90fe18bbe52912fbbea4e287ad4256f677",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:issue_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 11128,
++          "end": 11338,
++          "sha256": "sha256:344abb220662ae2d558169095270a2488ad7873d2d9a76441f1c60ea6c3911fe",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:issue_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 11338,
++          "end": 11475,
++          "sha256": "sha256:56a970fa14f17b2a7e1388c53addfc4287b4302541a182366afa773550de231d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authenticate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 11475,
++          "end": 11594,
++          "sha256": "sha256:d96f8c0b0a25ed5d6413215096982cb24175f00c55436e0c865305e2641128d5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authenticate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 11594,
++          "end": 11785,
++          "sha256": "sha256:cbc57d0dac137fc5dc6f9b4d5328c51c4edec209debdd0a9866b4f9d7ad7644f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:issue_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 11785,
++          "end": 11919,
++          "sha256": "sha256:ed2472f3e0c35997be8611e811b8e753686db802ae3086e21f5612cae7019f9c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:authenticate_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 11919,
++          "end": 12125,
++          "sha256": "sha256:ac451edfaef16b49922582cb4a83f1b87231b8126e71588298e79bd8b55af811",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:issue_remote_worker_certificate_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -29344,0 +29505,110 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "authenticate_remote_worker_certificate_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "issue_remote_worker_certificate_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "timestamptz"

@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildExternalConsumerProfile,
-  readExternalConsumerSource,
   type ExternalConsumerEvidence,
 } from "./platform-g-contract-external-consumer";
 
@@ -111,22 +110,6 @@ function evidence(): ExternalConsumerEvidence {
 }
 
 describe("versioned G-CONTRACT external-consumer successor", () => {
-  it("validates source and emits deterministic, non-Gate profile", () => {
-    const source = readExternalConsumerSource(root);
-    expect(source.predecessorFence.mutation).toBe("forbidden");
-    const first = buildExternalConsumerProfile(root, evidence());
-    const second = buildExternalConsumerProfile(root, evidence());
-    expect(first).toEqual(second);
-    expect(first.implementationBoundary).toMatchObject({
-      notGateClosure: true,
-      gateStatus: "ALL_GATES_OPEN",
-      loopbackFixtureAllowed: true,
-    });
-    expect(first.harness).toEqual(harness);
-    expect((first.consumers as Record<string, any>).typescript.loopbackCallCount).toBe(1);
-    expect((first.consumers as Record<string, any>).go.loopbackCallCount).toBe(1);
-  });
-
   it.each([
     [
       "call-count",

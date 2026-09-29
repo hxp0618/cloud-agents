@@ -765,7 +765,8 @@ function discoverOperations(root: string): IdempotentHttpOperation[] {
           coordination === "secret-authenticated-csr-exchange" ||
           coordination === "current-or-previous-certificate-exact-replay" ||
           coordination === "synchronous-access" ||
-          coordination === "durable-access-grant"
+          coordination === "durable-access-grant" ||
+          coordination === "append-only-audit"
         )
           continue;
         const parameters = [

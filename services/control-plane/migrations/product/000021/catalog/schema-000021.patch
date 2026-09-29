@@ -1,0 +1,713 @@
+--- services/control-plane/migrations/product/000020/catalog/schema-000020.json
++++ services/control-plane/migrations/product/000021/catalog/schema-000021.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000020",
++  "schema_head": "000021",
+@@ -8876,0 +8877,258 @@
++    },
++    {
++      "migration_id": "000021",
++      "sql_sha256": "sha256:38b3a504ac0ce07dd2b06b4d74965fff84f714c5366a53a16bc2743577d00dc1",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 2981,
++          "sha256": "sha256:5de5337cd6b7ce38c7bcd2d3be338f719d77bbb47d6a136f792dffedd7aac261",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 2981,
++          "end": 3139,
++          "sha256": "sha256:a8bf73adb48cb4be976422e41e1ec546a4490a7f1e8b167ae5287e7743c6f83d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents/unquoted:managed_host_leases_create_key_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3139,
++          "end": 3236,
++          "sha256": "sha256:e1c0827f681b8416a6adc6784b73e1136c5ab2e679fafba734ffc20e030f03cc",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 3236,
++          "end": 3320,
++          "sha256": "sha256:14a804575fc8c8d8dac500f6a9b961cf85934ad03c458111046f38ff414d79a0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 3320,
++          "end": 3403,
++          "sha256": "sha256:f52d44718e361f4239b887db2cda4e6a88d765a0594633149f1e9163d725c5a8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 3403,
++          "end": 3644,
++          "sha256": "sha256:d9be72554c64d2f5b8d6e1b41c1ad4ff4334a9ffb3a0f3fb9bea2e5c29c8125b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:managed_host_leases_runtime_tenant",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 3644,
++          "end": 3810,
++          "sha256": "sha256:3956148c0a7615f4df935c3823c1caddf5a392982ee193896518bae5c2431bc8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "POLICY",
++            "target_identity": "policy:unquoted:cloud_agents/unquoted:managed_host_leases_migration_owner",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 3810,
++          "end": 3888,
++          "sha256": "sha256:d94a3fdefb654285390e638fe863259389b5a1c3db5f271c2fbf8432cec2e3d6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 3888,
++          "end": 3988,
++          "sha256": "sha256:65cd577b3576009aebe3385f259f3694c7e5de8b662fc21a6ab2a92dd0a244a3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 3988,
++          "end": 4080,
++          "sha256": "sha256:ac356ab8f60cb5cad97ee8b8e1cb067b6c9e206a374b4b3f9f02e23fad4425ff",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:managed_host_environment_leases",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 4080,
++          "end": 8126,
++          "sha256": "sha256:2c94c22c7f08b25f6f472a77a33d7a44171944f64a7f76b201a2c167925aaaf4",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 8126,
++          "end": 11798,
++          "sha256": "sha256:358beb6718491e143cb15ca4a2517c97480b7b5dc7f469a20ef309172289700c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:terminate_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 11798,
++          "end": 11957,
++          "sha256": "sha256:f524fdd77341942549fffc4b758bee39f3d9a83de8e46e3377627a6b7afd1d18",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 11957,
++          "end": 12106,
++          "sha256": "sha256:e8a0c50e497e76e1cdb6bc5f249d01c906421fc0a3e0cacedcc9719e67138e29",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:terminate_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 12106,
++          "end": 12246,
++          "sha256": "sha256:d673f5638eb17fd435944035784594300e136f4c6880bfbc887db11b4fc1ce19",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 12246,
++          "end": 12377,
++          "sha256": "sha256:7a137ad1ae324094508f5e9660f2d6b06d5ebd47053d2df311188ad48b57cca8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:terminate_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 12377,
++          "end": 12532,
++          "sha256": "sha256:4d4f4fadac14572db808edb1e00fa37752676b8ca10b9ad087575b6552c1d4bf",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 12532,
++          "end": 12678,
++          "sha256": "sha256:73420dfc3df2c972d17aa1f0a13815d485c48942da952c371d911b69b0a1ed7f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:terminate_managed_host_environment_lease_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -10328,0 +10587,33 @@
++        "name": "terminate_managed_host_environment_lease_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -10745,0 +11037,41 @@
++        "name": "cancel_managed_agent_execution_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -10786,0 +11119,82 @@
++        "name": "create_managed_host_environment_lease_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "interrupt_managed_agent_execution_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -10969,0 +11384,61 @@
++        "name": "append_managed_agent_event_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "jsonb"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -12351,0 +12827,7 @@
++        "name": "managed_agent_events"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -12411,0 +12894,18 @@
++        "name": "managed_host_environment_leases"
++      }
++    },
++    {
++      "kind": "index",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "managed_host_leases_create_key_idx"
++      },
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_host_environment_leases"
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents",
+@@ -13059,0 +13560,16 @@
++        "name": "managed_agent_events"
++      },
++      "name": "managed_agent_events_migration_owner"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_agent_events"
++      },
++      "name": "managed_agent_events_runtime_tenant"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
+@@ -13091,0 +13608,16 @@
++        "name": "managed_host_environment_leases"
++      },
++      "name": "managed_host_leases_migration_owner"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "managed_host_environment_leases"
++      },
++      "name": "managed_host_leases_runtime_tenant"
++    },
++    {
++      "kind": "policy",
++      "relation": {
++        "schema": "cloud_agents",
+@@ -13283,166 +13814,0 @@
+-    },
+-    {
+-      "kind": "relation",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_events"
+-      }
+-    },
+-    {
+-      "kind": "policy",
+-      "relation": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_events"
+-      },
+-      "name": "managed_agent_events_migration_owner"
+-    },
+-    {
+-      "kind": "policy",
+-      "relation": {
+-        "schema": "cloud_agents",
+-        "name": "managed_agent_events"
+-      },
+-      "name": "managed_agent_events_runtime_tenant"
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "append_managed_agent_event_v1",
+-        "arguments": [
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "jsonb"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "cancel_managed_agent_execution_v1",
+-        "arguments": [
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "kind": "function",
+-      "identity": {
+-        "schema": "cloud_agents",
+-        "name": "interrupt_managed_agent_execution_v1",
+-        "arguments": [
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "bigint"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          },
+-          {
+-            "schema": "pg_catalog",
+-            "name": "text"
+-          }
+-        ]
+-      }

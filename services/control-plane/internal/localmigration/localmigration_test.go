@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migration"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migrationcore"
 )
 
 type fakeConnector struct {
@@ -21,17 +21,17 @@ func (connector *fakeConnector) Connect(context.Context, string) (Session, error
 }
 
 type fakeSession struct {
-	rows   []migration.LedgerRow
+	rows   []migrationcore.LedgerRow
 	apply  []string
 	closed bool
 }
 
 func (session *fakeSession) SetMigrationRole(context.Context) error           { return nil }
 func (session *fakeSession) AcquireAdvisoryLock(context.Context, int64) error { return nil }
-func (session *fakeSession) ReadLedger(context.Context) ([]migration.LedgerRow, error) {
+func (session *fakeSession) ReadLedger(context.Context) ([]migrationcore.LedgerRow, error) {
 	return session.rows, nil
 }
-func (session *fakeSession) Apply(_ context.Context, entry migration.MigrationEntry, _ []byte, bundle migration.Digest) error {
+func (session *fakeSession) Apply(_ context.Context, entry migrationcore.MigrationEntry, _ []byte, bundle migrationcore.Digest) error {
 	session.apply = append(session.apply, entry.ID)
 	session.rows = append(session.rows, ledgerRow(entry, bundle, "localdev"))
 	return nil
@@ -181,7 +181,7 @@ func TestRunRejectsUnknownHistoricalBundleDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := &fakeSession{rows: []migration.LedgerRow{ledgerRow(bundle.manifest.SchemaBundle.Migrations[0], migration.DigestBytes([]byte("unknown-bundle")), "unknown-release")}}
+	session := &fakeSession{rows: []migrationcore.LedgerRow{ledgerRow(bundle.manifest.SchemaBundle.Migrations[0], migrationcore.DigestBytes([]byte("unknown-bundle")), "unknown-release")}}
 	if _, err := Run(context.Background(), config, &fakeConnector{session: session}); err == nil {
 		t.Fatal("unknown historical bundle digest unexpectedly accepted")
 	}
@@ -258,7 +258,7 @@ func TestRunResumesPartialAndRejectsDivergentLedgers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	partial := &fakeSession{rows: []migration.LedgerRow{ledgerRow(bundle.manifest.SchemaBundle.Migrations[0], bundle.manifest.SchemaBundleDigest, "localdev")}}
+	partial := &fakeSession{rows: []migrationcore.LedgerRow{ledgerRow(bundle.manifest.SchemaBundle.Migrations[0], bundle.manifest.SchemaBundleDigest, "localdev")}}
 	result, err := Run(context.Background(), testConfig(t), &fakeConnector{session: partial})
 	if err != nil || result.Applied != 12 || result.SchemaHead != "000013" {
 		t.Fatalf("partial ledger result=%+v err=%v", result, err)
@@ -270,7 +270,7 @@ func TestRunResumesPartialAndRejectsDivergentLedgers(t *testing.T) {
 	for _, entry := range bundle.manifest.SchemaBundle.Migrations {
 		row := ledgerRow(entry, bundle.manifest.SchemaBundleDigest, "localdev")
 		if entry.ID == "000007" {
-			row.SQLSHA256 = migration.DigestBytes([]byte("different"))
+			row.SQLSHA256 = migrationcore.DigestBytes([]byte("different"))
 		}
 		divergent.rows = append(divergent.rows, row)
 	}
@@ -341,7 +341,7 @@ func TestParseLocalPGXConfigRejectsEveryNonLocalTarget(t *testing.T) {
 	}
 }
 
-func artifactPaths(manifest *migration.Manifest) []string {
+func artifactPaths(manifest *migrationcore.Manifest) []string {
 	result := make([]string, 0, len(manifest.SchemaBundle.Migrations))
 	for _, entry := range manifest.SchemaBundle.Migrations {
 		result = append(result, entry.SQLArtifact.Path)

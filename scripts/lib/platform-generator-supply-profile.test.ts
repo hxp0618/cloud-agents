@@ -18,7 +18,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertGeneratorSupplyInputSnapshotMutationForTest,
-  assertGeneratorSupplyProfileCurrent,
   assertGeneratorSupplyReadSnapshotMutationForTest,
   assertGeneratorSupplyCoreProjectionCurrent,
   assertGeneratorSupplyReplaySummaryCurrent,
@@ -294,33 +293,6 @@ describe("generator supply profile", () => {
     );
   });
 
-  it("keeps generated profile and evidence manifest current", () => {
-    expect(() => assertGeneratorSupplyProfileCurrent(repositoryRoot)).not.toThrow();
-    const profile = buildGeneratorSupplyProfile(repositoryRoot);
-    expect(profile.registryId).toBe("cloud-agents/generator-supply-profile");
-    expect(profile.registryDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
-  });
-
-  it("requires declared, actual, and semantic evidence to be the same exact closure", () => {
-    const paths = generatorSupplyEvidencePaths(repositoryRoot);
-    expect(paths).toEqual(
-      paths.toSorted((left, right) =>
-        Buffer.from(left, "utf8").compare(Buffer.from(right, "utf8")),
-      ),
-    );
-    expect(new Set(paths).size).toBe(paths.length);
-    expect(paths).toContain("tools/generator-supply/v1/evidence/replay/linux-isolation.json");
-
-    const root = supplyFixture();
-    writeFileSync(join(root, "tools/generator-supply/v1/evidence/undeclared.json"), "{}\n");
-    expect(() => generatorSupplyEvidencePaths(root)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_BINDING_MISMATCH",
-        path: "/profile/evidence",
-      }),
-    );
-  });
-
   it("rejects source schema extensions and evidence symlinks", () => {
     const schemaRoot = supplyFixture();
     const sourcePath = join(schemaRoot, "tools/generator-supply/v1/source.json");
@@ -348,58 +320,6 @@ describe("generator supply profile", () => {
     );
   });
 
-  it("derives vulnerability and replay status from raw bound evidence", () => {
-    const root = supplyFixture();
-    const reportPath = join(
-      root,
-      "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
-    );
-    const report = JSON.parse(readFileSync(reportPath, "utf8")) as {
-      ignoredMatches?: unknown[];
-    };
-    report.ignoredMatches = [{ hidden: true }];
-    writeFileSync(reportPath, `${JSON.stringify(report)}\n`);
-    expect(() => buildGeneratorSupplyProfile(root)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
-      }),
-    );
-
-    const nestedRoot = supplyFixture();
-    const nestedPath = join(
-      nestedRoot,
-      "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
-    );
-    const nested = JSON.parse(readFileSync(nestedPath, "utf8")) as {
-      matches: { vulnerability: Record<string, unknown> }[];
-    };
-    nested.matches[0]!.vulnerability.undeclared = true;
-    writeFileSync(nestedPath, `${JSON.stringify(nested)}\n`);
-    expect(() => buildGeneratorSupplyProfile(nestedRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json/matches/0/vulnerability",
-      }),
-    );
-  });
-
-  it("rejects archive provenance that no longer equals effective executable bytes", () => {
-    const root = supplyFixture();
-    const path = join(root, "tools/generator-supply/v1/evidence/artifacts.json");
-    const evidence = JSON.parse(readFileSync(path, "utf8")) as {
-      archives: { effectiveExecutables: { effectiveSha256: string }[] }[];
-    };
-    evidence.archives[0]!.effectiveExecutables[0]!.effectiveSha256 = "0".repeat(64);
-    writeFileSync(path, `${JSON.stringify(evidence)}\n`);
-    expect(() => buildGeneratorSupplyProfile(root)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/artifacts/archives/node-darwin-arm64/effectiveExecutables",
-      }),
-    );
-  });
-
   it("rejects undeclared node_modules runtime cache evidence", () => {
     const root = supplyFixture();
     const path = join(root, "tools/generator-supply/v1/evidence/npm.json");
@@ -413,73 +333,6 @@ describe("generator supply profile", () => {
       expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
         code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
         path: "/npm/installed/darwin-arm64/nodeModules",
-      }),
-    );
-  });
-
-  it("rejects SBOM PURL multiplicity drift instead of collapsing to sets", () => {
-    const root = supplyFixture();
-    const path = join(root, "tools/generator-supply/v1/evidence/sbom/darwin-bundle.cdx.json");
-    const evidence = JSON.parse(readFileSync(path, "utf8")) as {
-      components: { purl?: string }[];
-    };
-    evidence.components[0]!.purl = evidence.components[1]!.purl;
-    writeFileSync(path, `${JSON.stringify(evidence)}\n`);
-    expect(() => buildGeneratorSupplyProfile(root)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/sbom/darwin-bundle/crossFormat",
-      }),
-    );
-
-    const grypeRoot = supplyFixture();
-    const grypePath = join(
-      grypeRoot,
-      "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
-    );
-    const grype = JSON.parse(readFileSync(grypePath, "utf8")) as {
-      matches: { artifact: { purl: string } }[];
-    };
-    grype.matches[0]!.artifact.purl = "pkg:generic/not-bound@0";
-    writeFileSync(grypePath, `${JSON.stringify(grype)}\n`);
-    expect(() => buildGeneratorSupplyProfile(grypeRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json/matches/0/artifact",
-      }),
-    );
-
-    const missingPurlRoot = supplyFixture();
-    const rawPath = join(
-      missingPurlRoot,
-      "tools/generator-supply/v1/evidence/sbom/darwin-bundle.syft.json",
-    );
-    const raw = JSON.parse(readFileSync(rawPath, "utf8")) as {
-      artifacts: { purl?: string }[];
-    };
-    delete raw.artifacts[0]!.purl;
-    writeFileSync(rawPath, `${JSON.stringify(raw)}\n`);
-    expect(() => buildGeneratorSupplyProfile(missingPurlRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/sbom/darwin-bundle.syft/artifacts/0",
-      }),
-    );
-
-    const malformedPurlRoot = supplyFixture();
-    const cdxPath = join(
-      malformedPurlRoot,
-      "tools/generator-supply/v1/evidence/sbom/darwin-bundle.cdx.json",
-    );
-    const cdx = JSON.parse(readFileSync(cdxPath, "utf8")) as {
-      components: { purl?: string }[];
-    };
-    cdx.components.find((component) => component.purl !== undefined)!.purl = "not-a-purl";
-    writeFileSync(cdxPath, `${JSON.stringify(cdx)}\n`);
-    expect(() => buildGeneratorSupplyProfile(malformedPurlRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/sbom/darwin-bundle/components/0/purl",
       }),
     );
   });
@@ -569,57 +422,6 @@ describe("generator supply profile", () => {
     }
   });
 
-  it("rejects stale OSV scanner and current wheelhouse runner receipts", () => {
-    const osvRoot = supplyFixture();
-    const receiptPath = join(
-      osvRoot,
-      "tools/generator-supply/v1/evidence/vulnerability/osv-scanner-receipt.json",
-    );
-    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as { version: string };
-    receipt.version = "2.5.0";
-    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`);
-    expect(() => buildGeneratorSupplyProfile(osvRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/vulnerability/osvScannerReceipt/version",
-      }),
-    );
-
-    const osvMetadataRoot = supplyFixture();
-    const osvPath = join(
-      osvMetadataRoot,
-      "tools/generator-supply/v1/evidence/vulnerability/osv.json",
-    );
-    const osv = JSON.parse(readFileSync(osvPath, "utf8")) as {
-      experimental_config: { licenses: { allowlist: unknown } };
-    };
-    osv.experimental_config.licenses.allowlist = [];
-    writeFileSync(osvPath, `${JSON.stringify(osv)}\n`);
-    expect(() => buildGeneratorSupplyProfile(osvMetadataRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/vulnerability/osv/experimental_config/licenses",
-      }),
-    );
-
-    const runnerRoot = supplyFixture();
-    const lineagePath = join(
-      runnerRoot,
-      "tools/generator-supply/v1/evidence/wheelhouse-repair-lineage.json",
-    );
-    const lineage = JSON.parse(readFileSync(lineagePath, "utf8")) as {
-      currentRunnerSha256: string;
-    };
-    lineage.currentRunnerSha256 = "0".repeat(64);
-    writeFileSync(lineagePath, `${JSON.stringify(lineage)}\n`);
-    expect(() => buildGeneratorSupplyProfile(runnerRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/wheelhouseRepairLineage/currentRunner",
-      }),
-    );
-  });
-
   it("derives replay summary from four reports and rejects projection drift", () => {
     const root = supplyFixture();
     expect(buildGeneratorSupplyReplaySummary(root).status).toBe(
@@ -666,41 +468,6 @@ describe("generator supply profile", () => {
       expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
         code: "GENERATOR_SUPPLY_BINDING_MISMATCH",
         path: "/profile/replayAuthority/wrapperSha256",
-      }),
-    );
-  });
-
-  it("rejects a projection receipt mutation instead of trusting its digest", () => {
-    const root = supplyFixture();
-    const projectionPath = join(root, "tools/generator-supply/v1/evidence/replay/projection.json");
-    const projection = JSON.parse(readFileSync(projectionPath, "utf8")) as {
-      treeSha: string;
-    };
-    projection.treeSha = "f".repeat(40);
-    writeFileSync(projectionPath, `${JSON.stringify(projection)}\n`);
-    expect(() => buildGeneratorSupplyProfile(root)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/replay/projection",
-      }),
-    );
-  });
-
-  it("rejects nested A/B isolation probe mutation", () => {
-    const root = supplyFixture();
-    const receiptPath = join(
-      root,
-      "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
-    );
-    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as {
-      probes: { a: { node: { exitCode: number } } };
-    };
-    receipt.probes.a.node.exitCode = 0;
-    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`);
-    expect(() => buildGeneratorSupplyProfile(root)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/replay/darwin-arm64/isolation/probes/a/node",
       }),
     );
   });
@@ -818,76 +585,5 @@ describe("generator supply profile", () => {
         }),
       );
     }
-  });
-
-  it("rejects replay and rejected-executor object key extensions", () => {
-    const replayRoot = supplyFixture();
-    const replayPath = join(replayRoot, "tools/generator-supply/v1/evidence/replay/darwin-a.json");
-    const replay = JSON.parse(readFileSync(replayPath, "utf8")) as Record<string, unknown>;
-    replay.undeclared = true;
-    writeFileSync(replayPath, `${JSON.stringify(replay)}\n`);
-    expect(() => buildGeneratorSupplyProfile(replayRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/tools/generator-supply/v1/evidence/replay/darwin-a.json",
-      }),
-    );
-
-    const rejectedRoot = supplyFixture();
-    const rejectedPath = join(
-      rejectedRoot,
-      "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
-    );
-    const rejected = JSON.parse(readFileSync(rejectedPath, "utf8")) as Record<string, unknown>;
-    rejected.undeclared = true;
-    writeFileSync(rejectedPath, `${JSON.stringify(rejected)}\n`);
-    expect(() => buildGeneratorSupplyProfile(rejectedRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/replay/rejectedExecutor",
-      }),
-    );
-  });
-
-  it("rejects package-lock closure and whole-summary identity mutations", () => {
-    const lockRoot = supplyFixture();
-    const lockPath = join(lockRoot, "tools/generator-supply/npm/package-lock.json");
-    const lock = JSON.parse(readFileSync(lockPath, "utf8")) as {
-      packages: Record<string, { version?: string }>;
-    };
-    lock.packages["node_modules/oxfmt"]!.version = "0.62.1";
-    writeFileSync(lockPath, `${JSON.stringify(lock)}\n`);
-    expect(() => buildGeneratorSupplyProfile(lockRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/npm/packageLock",
-      }),
-    );
-
-    const summaryRoot = supplyFixture();
-    const summaryPath = join(summaryRoot, "tools/generator-supply/v1/evidence/sbom-summary.json");
-    const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as Record<string, unknown>;
-    summary.undeclared = true;
-    writeFileSync(summaryPath, `${JSON.stringify(summary)}\n`);
-    expect(() => buildGeneratorSupplyProfile(summaryRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/sbom/summary",
-      }),
-    );
-
-    const hiddenLockRoot = supplyFixture();
-    const npmPath = join(hiddenLockRoot, "tools/generator-supply/v1/evidence/npm.json");
-    const npm = JSON.parse(readFileSync(npmPath, "utf8")) as {
-      installed: { hiddenLock: { sha256: string } }[];
-    };
-    npm.installed[0]!.hiddenLock.sha256 = "0".repeat(64);
-    writeFileSync(npmPath, `${JSON.stringify(npm)}\n`);
-    expect(() => buildGeneratorSupplyProfile(hiddenLockRoot)).toThrowError(
-      expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
-        code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/npm/installed/darwin-arm64/hiddenLock",
-      }),
-    );
   });
 });

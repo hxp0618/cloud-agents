@@ -4,6 +4,7 @@ import {
   type CloudAgentError as ProviderHostError,
   type CloudAgentMessageEnvelope as ProviderHostMessageEnvelope,
 } from "@cloud-agents/cloud-agent-protocol";
+import { isRecord } from "./json";
 
 export function payloadMessage(
   command: ProviderHostCommand,
@@ -97,8 +98,4 @@ export function protocolFallbackCommand(value?: unknown): ProviderHostCommand {
 
 function safeWireString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : fallback;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

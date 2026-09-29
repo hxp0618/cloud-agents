@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
-  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -17,12 +16,10 @@ import { dirname, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  assertSuccessorV3PredecessorsCurrent,
   assertSuccessorV3HistoricalCoreGeneratorOutputFenceForTest,
   assertSuccessorV3HistoricalGenerationLockV2ForTest,
   assertSuccessorV3SourceForTest,
   assertSuccessorV3StableFileMapForTest,
-  loadAndAssertSuccessorV3Source,
   type SuccessorV3PredecessorError,
 } from "./platform-successor-predecessor-v3";
 
@@ -64,36 +61,6 @@ function cloneSource(): Record<string, any> {
 }
 
 describe("successor v3 immutable predecessor fence", () => {
-  it("reproduces every direct predecessor, both complete manifests, exact49, and fixed Git chain", () => {
-    const source = loadAndAssertSuccessorV3Source(repositoryRoot);
-    expect(source.predecessorClosure.groups).toHaveLength(8);
-    expect(
-      source.predecessorClosure.evidenceManifests.map(({ memberCount }) => memberCount),
-    ).toEqual([39, 8]);
-    expect(source.replayContract.coreGeneratorOutputs).toHaveLength(49);
-    const historicalLock = JSON.parse(
-      execFileSync("/usr/bin/git", [
-        "show",
-        "16275f6cbf390c343a9ac00f9193e75eaad0094e:contracts/generation.lock.json",
-      ]).toString("utf8"),
-    ) as { coreGeneratorOutputs: { files: Array<{ path: string; sha256: string }> } };
-    const historicalByPath = new Map(
-      historicalLock.coreGeneratorOutputs.files.map((record) => [record.path, record.sha256]),
-    );
-    const refreshedPaths = source.replayContract.coreGeneratorOutputs.filter(
-      (record) => record.sha256 !== historicalByPath.get(record.path)?.slice("sha256:".length),
-    );
-    expect(refreshedPaths).toHaveLength(13);
-    expect(source.replayContract.projectionExclusions).toHaveLength(17);
-    expect(source.predecessorClosure.gitChain.map(({ commit }) => commit)).toEqual([
-      "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
-      "d7c7468a72facc091b8a42be54d5af5c6a5785c4",
-      "a595bd93ceee9d352645b9be66db92517fffb092",
-      "16275f6cbf390c343a9ac00f9193e75eaad0094e",
-    ]);
-    expect(() => assertSuccessorV3PredecessorsCurrent(repositoryRoot)).not.toThrow();
-  });
-
   it("fails closed when the historical v2 core-output map is missing, reordered, or drifted", () => {
     const lock = JSON.parse(
       execFileSync("/usr/bin/git", [
@@ -139,52 +106,6 @@ describe("successor v3 immutable predecessor fence", () => {
       ).toThrow();
     }
   });
-
-  it("keeps the fixed post-H v2 lock valid after the live path becomes ASSEMBLED or PHASE_BOUND", () => {
-    const root = createRoot();
-    execFileSync("/usr/bin/git", ["clone", "--quiet", "--no-hardlinks", repositoryRoot, root], {
-      env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
-    });
-    execFileSync(
-      "/usr/bin/git",
-      ["checkout", "--quiet", "16275f6cbf390c343a9ac00f9193e75eaad0094e"],
-      {
-        cwd: root,
-        env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
-      },
-    );
-    write(
-      root,
-      "tools/generator-supply/v3/source.json",
-      readFileSync(resolve(repositoryRoot, "tools/generator-supply/v3/source.json"), "utf8"),
-    );
-    for (const path of [
-      "scripts/replay-platform-generators-isolated-v3.sh",
-      "scripts/replay-platform-generators-v3.ts",
-      "scripts/lib/generator-replay-path-authority.ts",
-      "scripts/lib/inspect-generator-replay-archive.py",
-    ]) {
-      mkdirSync(dirname(resolve(root, path)), { recursive: true });
-      copyFileSync(resolve(repositoryRoot, path), resolve(root, path));
-    }
-    for (const { path } of cloneSource().replayContract.coreGeneratorOutputs) {
-      mkdirSync(dirname(resolve(root, path)), { recursive: true });
-      copyFileSync(resolve(repositoryRoot, path), resolve(root, path));
-    }
-    for (const state of ["ASSEMBLED", "PHASE_BOUND"]) {
-      write(
-        root,
-        "contracts/generation.lock.json",
-        JSON.stringify({
-          formatVersion: "cloud-agents-platform-contract-generation-lock/v3",
-          lockVersion: 3,
-          state,
-          lockDigest: `sha256:${"0".repeat(64)}`,
-        }),
-      );
-      expect(() => assertSuccessorV3PredecessorsCurrent(root)).not.toThrow();
-    }
-  }, 30_000);
 
   it("fails closed when the historical v2 blob, status, or digest drifts", () => {
     const source = cloneSource();

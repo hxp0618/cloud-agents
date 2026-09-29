@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migration"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/migrationcore"
 )
 
 type Config struct {
@@ -39,14 +39,14 @@ type Connector interface {
 type Session interface {
 	SetMigrationRole(context.Context) error
 	AcquireAdvisoryLock(context.Context, int64) error
-	ReadLedger(context.Context) ([]migration.LedgerRow, error)
-	Apply(context.Context, migration.MigrationEntry, []byte, migration.Digest) error
+	ReadLedger(context.Context) ([]migrationcore.LedgerRow, error)
+	Apply(context.Context, migrationcore.MigrationEntry, []byte, migrationcore.Digest) error
 	ReleaseAdvisoryLock(context.Context, int64) error
 	Close(context.Context) error
 }
 
 type loadedBundle struct {
-	manifest *migration.Manifest
+	manifest *migrationcore.Manifest
 	sql      map[string][]byte
 }
 
@@ -163,7 +163,7 @@ func loadAndVerify(config Config) (*loadedBundle, error) {
 		return nil, err
 	}
 	raw := selection.manifestRaw
-	manifest, _, err := migration.DecodeManifest(raw)
+	manifest, _, err := migrationcore.DecodeManifest(raw)
 	if err != nil {
 		return nil, fmt.Errorf("decode manifest: %w", err)
 	}
@@ -187,7 +187,7 @@ func loadAndVerify(config Config) (*loadedBundle, error) {
 		if err != nil {
 			return nil, fmt.Errorf("migration %s SQL artifact cannot be read", entry.ID)
 		}
-		if uint64(len(data)) != entry.SQLArtifact.SizeBytes || migration.DigestBytes(data) != entry.SQLArtifact.SHA256 {
+		if uint64(len(data)) != entry.SQLArtifact.SizeBytes || migrationcore.DigestBytes(data) != entry.SQLArtifact.SHA256 {
 			return nil, fmt.Errorf("migration %s SQL artifact differs from manifest", entry.ID)
 		}
 		files[entry.ID] = data
@@ -287,7 +287,7 @@ func bindGeneratedRunnerSelection(root string, config Config) (boundRunnerSelect
 	if err != nil {
 		return boundRunnerSelection{}, errors.New("runner binding profile cannot be read")
 	}
-	profileValue, err := migration.ParseStrictJSON(profileRaw)
+	profileValue, err := migrationcore.ParseStrictJSON(profileRaw)
 	if err != nil {
 		return boundRunnerSelection{}, fmt.Errorf("runner binding profile JSON: %w", err)
 	}
@@ -391,8 +391,8 @@ func selectGeneratedRunnerBinding(config Config) (generatedRunnerBindingSelector
 	return *selected, nil
 }
 
-func verifyRunnerBindingProfile(value migration.JSONValue) error {
-	object, ok := value.(map[string]migration.JSONValue)
+func verifyRunnerBindingProfile(value migrationcore.JSONValue) error {
+	object, ok := value.(map[string]migrationcore.JSONValue)
 	if !ok {
 		return errors.New("runner binding profile must be an object")
 	}
@@ -408,13 +408,13 @@ func verifyRunnerBindingProfile(value migration.JSONValue) error {
 	if !ok || digestValue != runnerBindingProfileDigest {
 		return errors.New("runner binding profile digest differs from generated authority")
 	}
-	withoutDigest := make(map[string]migration.JSONValue, len(object)-1)
+	withoutDigest := make(map[string]migrationcore.JSONValue, len(object)-1)
 	for key, entry := range object {
 		if key != "profileDigest" {
 			withoutDigest[key] = entry
 		}
 	}
-	canonical, err := migration.CanonicalJSON(withoutDigest)
+	canonical, err := migrationcore.CanonicalJSON(withoutDigest)
 	if err != nil {
 		return fmt.Errorf("runner binding profile canonicalization: %w", err)
 	}
@@ -432,11 +432,11 @@ func verifyRunnerBindingProfile(value migration.JSONValue) error {
 	return nil
 }
 
-func verifyRunnerBindingPolicy(profile map[string]migration.JSONValue) error {
+func verifyRunnerBindingPolicy(profile map[string]migrationcore.JSONValue) error {
 	// These fields are checked structurally as well as by the frozen blob
 	// digest, so a future generated profile cannot silently widen the runner
 	// boundary without changing this binding code and its review.
-	runner, ok := profile["runner"].(map[string]migration.JSONValue)
+	runner, ok := profile["runner"].(map[string]migrationcore.JSONValue)
 	if !ok || stringValue(runner, "mode") != "localdev_only" ||
 		stringValue(runner, "completeLedger") != "no-op" ||
 		stringValue(runner, "entryWriter") != "NOT_IMPLEMENTED" ||
@@ -445,7 +445,7 @@ func verifyRunnerBindingPolicy(profile map[string]migration.JSONValue) error {
 		!boolValue(runner, "bindBeforeConnect") {
 		return errors.New("runner binding policy is not fail-closed")
 	}
-	boundary, ok := profile["implementationBoundary"].(map[string]migration.JSONValue)
+	boundary, ok := profile["implementationBoundary"].(map[string]migrationcore.JSONValue)
 	if !ok || stringValue(boundary, "databaseWrites") != "not_authorized" ||
 		stringValue(boundary, "productionRunner") != "forbidden" ||
 		stringValue(boundary, "http") != "forbidden" ||
@@ -460,7 +460,7 @@ func verifyRunnerBindingPolicy(profile map[string]migration.JSONValue) error {
 }
 
 func verifySelectedBundle(selector generatedRunnerBindingSelector, manifestRaw, schemaRaw []byte) error {
-	schemaDocument, err := migration.DecodeSchemaBundleDocument(schemaRaw)
+	schemaDocument, err := migrationcore.DecodeSchemaBundleDocument(schemaRaw)
 	if err != nil {
 		return fmt.Errorf("selected schema bundle decode: %w", err)
 	}
@@ -469,7 +469,7 @@ func verifySelectedBundle(selector generatedRunnerBindingSelector, manifestRaw, 
 		len(schemaDocument.SchemaBundle.Migrations) != selector.migrationCount {
 		return errors.New("selected schema bundle identity differs from generated selector")
 	}
-	manifest, manifestValue, err := migration.DecodeManifest(manifestRaw)
+	manifest, manifestValue, err := migrationcore.DecodeManifest(manifestRaw)
 	if err != nil {
 		return fmt.Errorf("selected manifest decode: %w", err)
 	}
@@ -482,15 +482,15 @@ func verifySelectedBundle(selector generatedRunnerBindingSelector, manifestRaw, 
 	// The manifest and external schema bundle must describe the same signed
 	// schema object; comparing their canonical JSON prevents a self-consistent
 	// pair from being substituted under an otherwise valid raw blob.
-	manifestObject, ok := manifestValue.(map[string]migration.JSONValue)
+	manifestObject, ok := manifestValue.(map[string]migrationcore.JSONValue)
 	if !ok {
 		return errors.New("selected manifest is not an object")
 	}
-	schemaValue, err := migration.ParseStrictJSON(schemaRaw)
+	schemaValue, err := migrationcore.ParseStrictJSON(schemaRaw)
 	if err != nil {
 		return fmt.Errorf("selected schema bundle JSON: %w", err)
 	}
-	schemaObject, ok := schemaValue.(map[string]migration.JSONValue)
+	schemaObject, ok := schemaValue.(map[string]migrationcore.JSONValue)
 	if !ok || !jsonValuesEqual(manifestObject["schema_bundle"], schemaObject["schema_bundle"]) {
 		return errors.New("selected manifest/schema bundle payload differs")
 	}
@@ -518,14 +518,14 @@ func readBoundArtifact(root string, artifact generatedRunnerBindingArtifact) ([]
 	if err != nil {
 		return nil, fmt.Errorf("%s cannot be read", artifact.path)
 	}
-	if len(data) != artifact.sizeBytes || string(migration.DigestBytes(data)) != artifact.rawDigest {
+	if len(data) != artifact.sizeBytes || string(migrationcore.DigestBytes(data)) != artifact.rawDigest {
 		return nil, fmt.Errorf("%s bytes differ from generated authority", artifact.path)
 	}
 	return data, nil
 }
 
-func artifactValueMatches(value migration.JSONValue, expected generatedRunnerBindingArtifact) bool {
-	object, ok := value.(map[string]migration.JSONValue)
+func artifactValueMatches(value migrationcore.JSONValue, expected generatedRunnerBindingArtifact) bool {
+	object, ok := value.(map[string]migrationcore.JSONValue)
 	if !ok {
 		return false
 	}
@@ -535,19 +535,19 @@ func artifactValueMatches(value migration.JSONValue, expected generatedRunnerBin
 		stringValue(object, "sha256") == expected.rawDigest
 }
 
-func stringValue(object map[string]migration.JSONValue, key string) string {
+func stringValue(object map[string]migrationcore.JSONValue, key string) string {
 	value, _ := object[key].(string)
 	return value
 }
 
-func boolValue(object map[string]migration.JSONValue, key string) bool {
+func boolValue(object map[string]migrationcore.JSONValue, key string) bool {
 	value, _ := object[key].(bool)
 	return value
 }
 
-func jsonValuesEqual(left, right migration.JSONValue) bool {
-	leftCanonical, leftErr := migration.CanonicalJSON(left)
-	rightCanonical, rightErr := migration.CanonicalJSON(right)
+func jsonValuesEqual(left, right migrationcore.JSONValue) bool {
+	leftCanonical, leftErr := migrationcore.CanonicalJSON(left)
+	rightCanonical, rightErr := migrationcore.CanonicalJSON(right)
 	return leftErr == nil && rightErr == nil && reflect.DeepEqual(leftCanonical, rightCanonical)
 }
 
@@ -559,7 +559,7 @@ func digestDomain(domain string, canonical []byte) string {
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
-func ledgerRowMatches(row migration.LedgerRow, entry migration.MigrationEntry, index, currentCount int) bool {
+func ledgerRowMatches(row migrationcore.LedgerRow, entry migrationcore.MigrationEntry, index, currentCount int) bool {
 	return row.MigrationID == entry.ID &&
 		row.MigrationName == entry.Name &&
 		equalOptional(row.PredecessorID, entry.PredecessorID) &&
@@ -573,14 +573,14 @@ func ledgerRowMatches(row migration.LedgerRow, entry migration.MigrationEntry, i
 
 // Each row retains the bundle digest that originally wrote it; upgrades append
 // rows and never rewrite that history.
-func knownLedgerBundleDigest(digest migration.Digest, index, currentCount int) bool {
+func knownLedgerBundleDigest(digest migrationcore.Digest, index, currentCount int) bool {
 	for _, selector := range generatedRunnerBindingSelectors {
-		if selector.migrationCount >= index && selector.migrationCount <= currentCount && digest == migration.Digest(selector.schemaBundleDigest) {
+		if selector.migrationCount >= index && selector.migrationCount <= currentCount && digest == migrationcore.Digest(selector.schemaBundleDigest) {
 			return true
 		}
 	}
 	for _, selector := range productFoundationRunnerBindings {
-		if selector.migrationCount >= index && selector.migrationCount <= currentCount && digest == migration.Digest(selector.schemaBundleDigest) {
+		if selector.migrationCount >= index && selector.migrationCount <= currentCount && digest == migrationcore.Digest(selector.schemaBundleDigest) {
 			return true
 		}
 	}
@@ -591,8 +591,8 @@ func equalOptional(left, right *string) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
 
-func ledgerRow(entry migration.MigrationEntry, bundle migration.Digest, appliedBy string) migration.LedgerRow {
-	return migration.LedgerRow{
+func ledgerRow(entry migrationcore.MigrationEntry, bundle migrationcore.Digest, appliedBy string) migrationcore.LedgerRow {
+	return migrationcore.LedgerRow{
 		MigrationID: entry.ID, MigrationName: entry.Name, PredecessorID: entry.PredecessorID,
 		Phase: entry.Phase, SchemaFrom: entry.SchemaFrom, SchemaTo: entry.SchemaTo,
 		CompatibleBinaryMin: entry.CompatibleControlPlaneMin, CompatibleBinaryMax: entry.CompatibleControlPlaneMax,

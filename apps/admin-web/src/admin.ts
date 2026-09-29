@@ -62,6 +62,7 @@ export {
 export type { ClusterHostSummary, WorkerStatusFilter } from "./admin/filters";
 export { newIdempotencyKey, newRequestId } from "./admin/request";
 export {
+  keepIfUnchanged,
   replaceLease,
   replaceNetworkPolicy,
   replaceProfile,
@@ -71,6 +72,7 @@ export {
   replaceStoragePolicy,
   replaceTarget,
   selectAdminResourceId,
+  workerRefreshKey,
 } from "./admin/resources";
 
 export type { AdminClient } from "./admin/client";

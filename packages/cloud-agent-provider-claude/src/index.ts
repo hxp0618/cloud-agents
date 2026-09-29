@@ -1,6 +1,8 @@
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
   createProviderPlugin,
+  assertCredentialKeys,
+  credentialBaseUrl,
   hasAuthoritativeResumeData,
   nativeResumeContinuationPrompt,
   providerEnvironment,
@@ -10,6 +12,7 @@ import {
   managedMcpConfiguration,
   ManagedCapabilityUnavailableError,
   managedSkillBundleDirectories,
+  optionalCredentialString,
   readCapabilityManifest,
   type ProviderRunExecutor,
   type ProviderRunOptions,
@@ -123,15 +126,19 @@ function applyClaudeCredentialEnvironment(
   environment: NodeJS.ProcessEnv,
   payload: Record<string, unknown>,
 ): void {
-  assertOnlyKeys(payload, ["apiKey", "authToken", "baseUrl", "baseURL", "model"]);
-  const apiKey = optionalString(payload.apiKey, "Claude Credential apiKey");
-  const authToken = optionalString(payload.authToken, "Claude Credential authToken");
+  assertCredentialKeys(
+    payload,
+    ["apiKey", "authToken", "baseUrl", "baseURL", "model"],
+    "Claude Credential",
+  );
+  const apiKey = optionalCredentialString(payload.apiKey, "Claude Credential apiKey");
+  const authToken = optionalCredentialString(payload.authToken, "Claude Credential authToken");
   if ((apiKey ? 1 : 0) + (authToken ? 1 : 0) !== 1) {
     throw new Error("Claude Credential requires exactly one of apiKey or authToken");
   }
   if (apiKey) environment.ANTHROPIC_API_KEY = apiKey;
   if (authToken) environment.ANTHROPIC_AUTH_TOKEN = authToken;
-  const baseUrl = optionalString(
+  const baseUrl = optionalCredentialString(
     credentialBaseUrl(payload, "Claude Credential"),
     "Claude Credential baseUrl",
   );
@@ -164,33 +171,8 @@ function withCredentialModel(input: RunnerInput, credential: RunnerCredential | 
 
 function credentialModel(payload: Record<string, unknown> | undefined): string | undefined {
   if (payload?.model === undefined) return undefined;
-  const value = optionalString(payload.model, "Provider Credential model");
+  const value = optionalCredentialString(payload.model, "Provider Credential model");
   if (!value) return undefined;
   if (value.length > 128) throw new Error("Provider Credential model exceeds 128 characters");
   return value;
-}
-
-function credentialBaseUrl(payload: Record<string, unknown>, label: string): unknown {
-  if (payload.baseUrl !== undefined && payload.baseURL !== undefined) {
-    const lower = optionalString(payload.baseUrl, `${label} baseUrl`);
-    const upper = optionalString(payload.baseURL, `${label} baseURL`);
-    if (lower !== upper)
-      throw new Error(`${label} contains conflicting baseUrl and baseURL values`);
-    return lower;
-  }
-  return payload.baseUrl ?? payload.baseURL;
-}
-
-function assertOnlyKeys(payload: Record<string, unknown>, allowed: ReadonlyArray<string>): void {
-  const allowedKeys = new Set(allowed);
-  const extra = Object.keys(payload).find((key) => !allowedKeys.has(key));
-  if (extra) throw new Error(`Claude Credential contains unsupported field ${extra}`);
-}
-
-function optionalString(value: unknown, label: string): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string" || !value.trim() || /[\r\n\0]/u.test(value)) {
-    throw new Error(`${label} must be a non-empty single-line string`);
-  }
-  return value.trim();
 }

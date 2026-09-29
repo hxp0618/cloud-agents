@@ -170,10 +170,10 @@ R3 只以新测试 Workspace 验证，现有卷迁移另按授权办理；跨 Re
 ```text
 创建并持续推进 Goal：完成 Cloud Agents 的 ANYWHERE-RUNTIME-V1。
 
-代码工作目录：/Users/huang/devel/project/huang/business/cloud-agents
+代码工作目录：当前仓库根目录
 工作分支：codex/cloud-agents-platform-p0；先核对 cwd、branch、HEAD、dirty/staged 和现有改动归属，不覆盖、回滚或提交无关修改。
-先读 /Users/huang/devel/project/huang/business/cloud-agents/CLAUDE.md，执行其 Implementation simplicity 规则；AGENTS.md 仅路由到同一规范。
-文档目录：/Users/huang/devel/project/huang/business/cloud-agents/docs/plan/cloud-agents-platform
+先读仓库根目录下的 `CLAUDE.md`，执行其 Implementation simplicity 规则；AGENTS.md 仅路由到同一规范。
+文档目录：`docs/plan/cloud-agents-platform`
 先读 06 当前状态，再按 04 §0.4 的 APP-M1-R1～R5 执行；01 产品范围、02 接入/恢复架构、03 制品、05 ANYWHERE-RUNTIME-V1 和 07 §8.13 为对应约束。
 04 是唯一计划，06 是唯一状态；记录实际 source/dirty、证据、下一项和阻塞，不维护第二套进度表，不从历史清单重启 BASE。
 
@@ -215,6 +215,18 @@ User/Admin 身份、API 与内容权限分离；普通用户调用 Admin API 返
 3. Worker/Foundation Runtime 统一注入 manifest；只允许 Host-managed MCP broker、短期凭据、网络 allowlist 和签名 digest 校验的只读 Skill Bundle，禁止主机任意路径和 Secret 持久化。
 4. 逐个验证 Codex、Claude Code、Pi、deepseek-harness 的真实 native/emulated/unsupported 接口；仅凭真实运行结果更新能力目录。
 5. Admin 展示 opaque 元数据、绑定和 Operation/Audit；完成 Docker、RemoteWorker、Kubernetes 十二格真实验收与故障矩阵后，才允许在 06 登记支持。
+
+<a id="engineering-maintenance-items"></a>
+
+### 0.6 工程维护独立项（2026-09-28 登记）
+
+以下三项各自独立立项、独立授权和验收，不并入任何 BASE/APP 切片，也不因其他任务完成而隐式开始。执行时必须保留历史 ledger digest、冻结 SQL/bundle 字节、精确 selector 匹配和未知/篡改版本拒绝；只按 [CLAUDE.md 实现简化规则](../../../CLAUDE.md) 做等价重构。
+
+| 编号 | 项目 | 现状 | 目标与完成条件 |
+| --- | --- | --- | --- |
+| MAINT-1 | `internal/migration` 拆分与退役 | 2026-09-29 完成：Go 1.26.6 `GOOS=linux` 可达性分析确认产品二进制只使用其中约 3k 行；这部分已抽成 `internal/migrationcore`（9 个源文件，无内部包依赖），`localmigration` 与产品命令改为依赖它，并由 `scripts/test-platform-go-products.sh` 完整覆盖。历史 `internal/migration`、`cmd/cloud-agents-migrate`、`scripts/data-recovery-validator`、分片测试工具及 5 个 runner-ledger Go 生成器已删除。 | 已达成。仍引用这 5 个 Go 生成文件路径的 contract-lock、replay、closure/generator-supply 冻结证据与工具不在当前检查链上，随 MAINT-3 一并退役或重建。 |
+| MAINT-2 | 产品迁移 schema 快照存储方式 | 2026-09-29 完成："基线 + 增量"。`product/<head>/` 仍保存完整 `manifest.json` 与 `schema-bundle.json`（运行时与发布包只读这两者），累计 catalog 改为 `catalog/schema-*.patch`：相对 manifest 中 `predecessor_catalog_contract` 的零上下文行补丁，首个产品版本以冻结的 `catalog/schema-000014.json` 为基线。`scripts/generate-foundation-migration-package.ts` 写出补丁，`--check` 逐版本重放并要求每个重建的 catalog 与冻结 `catalog_contract` 的大小和 SHA-256 一致；目录多余/缺失文件、补丁篡改、基线篡改和头部换绑均拒绝。`product/` 由约 98M 降至约 21M，新版本补丁约 1–50KB。 | 选定并实现"基线 + 增量"或仅保留必要完整快照的方案；由生成器产出，旧版本仍可按冻结 digest 精确验证，`platform:migrations:check` 与历史选择/拒绝测试通过。 |
+| MAINT-3 | v2/v3/v4 生成器合并 | 2026-09-29 完成：`platform-generator-supply-replay-v2/v3` 合并为共享内核 `platform-generator-supply-replay.ts`，`platform-contract-closure-profile-v3/v4` 合并为 `platform-contract-closure-profile-successor.ts`；版本模块只保留各自数据、错误类型，以及 v3 replay 固定的 authority/wrapper/核心输出和 v4 closure 新增的 authority、v3 fence 与 replay authority 绑定（两族共约 6.9k 行降至约 4.1k 行）。其余带版本后缀的族未合并：`successor-dag`、`successor-predecessor`、`generator-supply-profile`、`contract-lock` 各版本间共同代码仅 12–35%，属不同行为；`replay-platform-generators{,-v3}`、`-isolated{,-v3}.sh`、`g-contract-external-consumer{,-v2}` 和 durable lineage v2 相关脚本的字节被已提交 authority 以 digest 固定，改动会使历史 authority 失效。 | 提取共享内核，版本间只保留真实不同的行为与数据；确定性重新生成后所有已提交产物逐字节不变，历史版本选择与篡改拒绝保持。 |
 
 ## 1. 兼容、迁移与回滚的按需入口
 

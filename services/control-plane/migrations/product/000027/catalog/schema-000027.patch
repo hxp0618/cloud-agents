@@ -1,0 +1,176 @@
+--- services/control-plane/migrations/product/000026/catalog/schema-000026.json
++++ services/control-plane/migrations/product/000027/catalog/schema-000027.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000026",
++  "schema_head": "000027",
+@@ -9598,0 +9599,132 @@
++    },
++    {
++      "migration_id": "000027",
++      "sql_sha256": "sha256:e78ccf5e1aa27184a0542aceecd95b243040981a6d55fb909b04a1d640fb2d46",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 76,
++          "sha256": "sha256:35d810b3afef18042b82b9059a75b9fbb47e4ecb84e33dcf00ea6c95fca38fe6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 76,
++          "end": 161,
++          "sha256": "sha256:d10b2f2e3ce2872d53f567d0890f6f80bae0f4dcd5e193fcb3ab698c972feaef",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 161,
++          "end": 248,
++          "sha256": "sha256:437b70b99b11eb45f9f96d04e0c29f3b9987b70ee5dbb545d869717c380b67b5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 248,
++          "end": 616,
++          "sha256": "sha256:4b6c386a0b9d9eccd2b8b165cda42a536ce4f867b5ae170d7436c1911462e448",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 616,
++          "end": 795,
++          "sha256": "sha256:2ed957a0f547f4ba3a7a591f6717d2684d2f942000224c3261c7ceca6976eb11",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 795,
++          "end": 1213,
++          "sha256": "sha256:e6ad7ed748587420259cfa485754621354513a246bf7610250f046ab38a47fef",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:audit_facts",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 1213,
++          "end": 4105,
++          "sha256": "sha256:b8cd18d353167b7fe56105ba6d7c1543c65a25107a649bef9aafe574c668bde6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_organization(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 4105,
++          "end": 4225,
++          "sha256": "sha256:80ea0b068fa559ef039c6af988b4e9f7e1ca8b0c1423bf4819f228ea6e6ed74b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_organization(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 4225,
++          "end": 4360,
++          "sha256": "sha256:3e0a564ad9049510496f59f828c35635e2f1a8be233d3d40ac8da313db3f6ea2",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:create_organization(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -10006,0 +10139,37 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "create_organization",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bigint"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
